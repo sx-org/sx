@@ -683,6 +683,9 @@ pub const Lambda = struct {
     type_params: []const StructTypeParam = &.{},
     /// The `_{ … }` env written between the parameter list and the return type.
     env: []const EnvField = &.{},
+    /// True when the source wrote `_{`, including the empty `_{ }` — which is
+    /// a written env with no fields, not an absent one.
+    has_env: bool = false,
 };
 
 pub const TypeExpr = struct {
@@ -992,6 +995,8 @@ pub const Juxtaposition = struct {
     params: []const Param = &.{},
     /// The header's `_{ … }` env, spelled as a closure literal's.
     env: []const EnvField = &.{},
+    /// True when the source wrote `_{`, including the empty `_{ }`.
+    has_env: bool = false,
     type_params: []const StructTypeParam = &.{},
     /// True when the source wrote `|…|` after `{`, including empty `| |`.
     has_header: bool = false,

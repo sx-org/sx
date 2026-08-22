@@ -1,0 +1,25 @@
+// Unique call forms: a `_{ … }` IIFE, a field, and an index all call through
+// the env's address; `try` / `catch` see the unique's return type.
+
+@import "modules/std.sx";
+
+main :: () -> (i64, !) {
+    n := 5;
+    print("iife {}\n", (|x: i64|_{ n = n } -> i64 x + n)(1));
+    print("empty-iife {}\n", (|x: i64|_{ } -> i64 x * 3)(5));
+
+    f := |x: i64|_{ n = n } -> (i64, !) { x + n };
+    v := try f(1);
+    print("try {}\n", v);
+    w := f(1) catch { return 1; };
+    print("catch {}\n", w);
+
+    s := .{ f = |x: i64|_{ n = n } x + n };
+    print("field {}\n", s.f(1));
+
+    counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
+    arr := .[counter];
+    print("index {} {}\n", arr[0](1), arr[0](0));
+
+    return 0;
+}

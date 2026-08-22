@@ -2883,7 +2883,7 @@ pub const Parser = struct {
         const start = self.tokens.start(self.tok);
         try self.expect(.l_brace);
         var params: []const ast.Param = &.{};
-        var env: []const ast.EnvField = &.{};
+        var env: ?[]const ast.EnvField = null;
         var has_header = false;
         if (self.tokens.tag(self.tok) == .pipe) {
             has_header = true;
@@ -2904,7 +2904,8 @@ pub const Parser = struct {
             .expr = head,
             .block = block,
             .params = params,
-            .env = env,
+            .env = env orelse &.{},
+            .has_env = env != null,
             .type_params = try self.collectTypeParams(params),
             .has_header = has_header,
         } });
@@ -4719,15 +4720,16 @@ pub const Parser = struct {
             .return_type = return_type,
             .body = body,
             .type_params = type_params,
-            .env = env,
+            .env = env orelse &.{},
+            .has_env = env != null,
         } });
     }
 
-    /// The `_{ name = expr, … }` env, when the cursor is on its `_{`; empty
+    /// The `_{ name = expr, … }` env, when the cursor is on its `_{`; null
     /// otherwise. Every field is named — the name the body reads, bound to the
     /// expression as it stands where the literal is written.
-    fn parseEnv(self: *Parser) anyerror![]const ast.EnvField {
-        if (self.tokens.tag(self.tok) != .underscore_l_brace) return &.{};
+    fn parseEnv(self: *Parser) anyerror!?[]const ast.EnvField {
+        if (self.tokens.tag(self.tok) != .underscore_l_brace) return null;
         self.advance(); // skip '_{'
         var fields = std.ArrayList(ast.EnvField).empty;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
@@ -6240,6 +6242,16 @@ test "the env precedes the return type" {
     try std.testing.expect(lam.env[0].value.data == .binary_op);
     try std.testing.expectEqualStrings("j", lam.env[1].name);
     try std.testing.expectEqualStrings("i64", lam.return_type.?.data.type_expr.name);
+}
+
+test "an empty `_{ }` is a written env, and no `_{` at all is not" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const empty = try pipeLambda(arena.allocator(), "|x: i64|_{ } x + 1");
+    try std.testing.expect(empty.has_env);
+    try std.testing.expectEqual(@as(usize, 0), empty.env.len);
+    const absent = try pipeLambda(arena.allocator(), "|x: i64| x + 1");
+    try std.testing.expect(!absent.has_env);
 }
 
 test "`_ {` with a space is an identifier and a brace" {

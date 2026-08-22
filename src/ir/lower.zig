@@ -450,6 +450,9 @@ pub const Lowering = struct {
     /// instantiation can say what they are. Set around a dispatch to such a
     /// method; null everywhere else.
     impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
+    /// The env struct a `|…|_{ … }` literal IS, mapped to the function it calls.
+    /// A type answers here exactly when it is some literal's own unique type.
+    unique_lambdas: std.AutoHashMap(TypeId, lower_closure.UniqueLambda),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
     /// the registry: there is no enrollment API, and which set a name means is a
     /// question about which declaration it reaches.
@@ -1232,6 +1235,7 @@ pub const Lowering = struct {
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
+            .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
             .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
@@ -3835,6 +3839,8 @@ pub const Lowering = struct {
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;
     pub const collectCaptures = lower_closure.collectCaptures;
     pub const computeEnvSize = lower_closure.computeEnvSize;
+    pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
+    pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
     pub const initTargetOf = lower_init_plan.initTargetOf;

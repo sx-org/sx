@@ -23,6 +23,30 @@ const Scope = lower.Scope;
 ///             (spec §12.1).
 pub const EnvStorage = enum { heap, stack };
 
+/// A `|…|_{ … }` literal's own type: the env struct the literal IS, together
+/// with the function that reads it. The value carries no pointer, so a call
+/// hands the function the ADDRESS of whatever storage holds the value.
+pub const UniqueLambda = struct {
+    func: FuncId,
+    params: []const TypeId,
+    ret: TypeId,
+};
+
+/// The unique lambda `ty` IS, or null when `ty` is any other type.
+pub fn uniqueLambdaOf(self: *Lowering, ty: TypeId) ?UniqueLambda {
+    return self.unique_lambdas.get(ty);
+}
+
+/// `uniqueLambdaOf` reaching through one level of `*T`, so `*$F` calls the
+/// same function against the env the pointer names.
+pub fn uniqueLambdaThrough(self: *Lowering, ty: TypeId) ?UniqueLambda {
+    if (uniqueLambdaOf(self, ty)) |u| return u;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return uniqueLambdaOf(self, info.pointer.pointee);
+}
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     return lowerLambdaTyped(self, lam, .heap, null);
 }
@@ -32,6 +56,25 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
+    // A written `_{ … }` makes the literal's value its own env struct. Every
+    // field is evaluated HERE, in the forming frame, before the guard below
+    // retires the enclosing flow state.
+    var written_env = std.ArrayList(CaptureInfo).empty;
+    defer written_env.deinit(self.alloc);
+    {
+        const saved_env_target = self.target_type;
+        self.target_type = null;
+        defer self.target_type = saved_env_target;
+        for (lam.env) |f| {
+            const ref = self.lowerExpr(f.value);
+            written_env.append(self.alloc, .{
+                .name = f.name,
+                .ty = self.builder.getRefType(ref),
+                .ref = ref,
+                .is_alloca = false,
+            }) catch {};
+        }
+    }
     // Flow narrowing does NOT cross into the lambda body: the
     // body is a separate function whose `Ref` space overlaps the enclosing
     // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
@@ -52,10 +95,14 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     for (lam.params) |p| {
         param_names.put(p.name, {}) catch {};
     }
+    // A written field IS the binding the body reads, so the name is no longer
+    // free — implicit capture then feeds whatever is left into the same env.
+    for (lam.env) |f| param_names.put(f.name, {}) catch {};
 
     // Pre-scan lambda body AST for free variables (captures)
     var captures = std.ArrayList(CaptureInfo).empty;
     defer captures.deinit(self.alloc);
+    captures.appendSlice(self.alloc, written_env.items) catch {};
     self.collectCaptures(lam.body, &param_names, &captures);
 
     // Deduplicate captures
@@ -71,19 +118,20 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     }
     const capture_list = deduped.items;
 
-    // Build env struct type if there are captures
+    // The env struct. A unique literal always has one — an empty env is a
+    // zero-field struct, which is the whole value.
+    const is_unique = lam.has_env;
     var env_struct_ty: TypeId = .void;
-    if (capture_list.len > 0) {
+    if (capture_list.len > 0 or is_unique) {
         const env_field_data = self.alloc.alloc(types.TypeInfo.StructInfo.Field, capture_list.len) catch unreachable;
         for (capture_list, 0..) |cap, i| {
-            var nbuf: [32]u8 = undefined;
-            const fname = std.fmt.bufPrint(&nbuf, "cap_{d}", .{i}) catch "cap";
             env_field_data[i] = .{
-                .name = self.module.types.internString(fname),
+                .name = self.module.types.internString(cap.name),
                 .ty = cap.ty,
             };
         }
-        const env_name = std.fmt.bufPrint(&buf, "__env_{d}", .{self.block_counter}) catch "__env";
+        var env_buf: [64]u8 = undefined;
+        const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
         const env_name_id = self.module.types.internString(env_name);
         env_struct_ty = self.module.types.intern(.{ .@"struct" = .{
             .name = env_name_id,
@@ -262,8 +310,16 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     self.pack_arg_types = null;
     self.pack_constraint = null;
 
-    // Bind captures from env struct (at env_param_idx)
-    if (capture_list.len > 0) {
+    // A unique value IS its env, so the body binds each field straight through
+    // the caller's storage: a write reaches the value the caller holds, and
+    // nothing is snapshotted per call.
+    if (is_unique and capture_list.len > 0) {
+        const env_param_ref = Ref.fromIndex(env_param_idx);
+        for (capture_list, 0..) |cap, i| {
+            const field_ptr = self.builder.structGepTyped(env_param_ref, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
+            lambda_scope.put(cap.name, .{ .ref = field_ptr, .ty = cap.ty, .is_alloca = true });
+        }
+    } else if (capture_list.len > 0) {
         const env_param_ref = Ref.fromIndex(env_param_idx);
         // Alloca env struct locally so struct_gep can resolve the type
         const env_local = self.builder.alloca(env_struct_ty);
@@ -390,6 +446,22 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         param_types_list.append(self.alloc, p.ty) catch unreachable;
     }
     const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
+
+    // The unique value: the env struct itself, filled where it was written.
+    if (is_unique) {
+        self.unique_lambdas.put(env_struct_ty, .{
+            .func = func_id,
+            .params = self.alloc.dupe(TypeId, param_types_list.items) catch unreachable,
+            .ret = ret_ty,
+        }) catch {};
+        const env_local = self.builder.alloca(env_struct_ty);
+        for (capture_list, 0..) |cap, i| {
+            const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
+            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
+            self.builder.store(gep, val);
+        }
+        return self.builder.load(env_local, env_struct_ty);
+    }
 
     // Build env and closure in the caller's scope
     if (capture_list.len > 0) {
