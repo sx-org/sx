@@ -1,7 +1,7 @@
 // Postfix cast `expr.(T)` — the conversion regime. A
 // statically-typed receiver converts through the
 // explicit-target `xx` engine: same coercion ladder, same
-// protocol-erasure ownership modes — one engine. "Safe" means
+// interface erasure — one engine. "Safe" means
 // WELL-DEFINED, not value-preserving: `1000.(i8)` truncates by
 // definition. Postfix-tier precedence (`-x.(i8)` = `-(x.(i8))`);
 // `56.(i8)` lexes as a cast, not a float; `0..(5)` stays a range.
