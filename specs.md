@@ -1420,7 +1420,8 @@ returned expression — the temporary dies at the return. The spine is:
 - the `?I` wrap operand on that spine;
 - both arms of an `if` or `match` in return position.
 
-The spine propagates from a `return` operand, and is **cleared** at
+The spine propagates from a `return` operand and from a function body's
+trailing expression — both are exits — and is **cleared** at
 call-argument lists, assignments, bindings, `push` fields, and nested
 function and closure bodies:
 
@@ -1428,6 +1429,7 @@ function and closure bodies:
 return f(Widget{});             // legal — an argument list clears the spine
 return a.make(Widget{});        // legal — same
 return S{ inner = Widget{} };   // refused — the literal is the returned expression
+f :: () -> Sizable { Widget{} } // refused — the trailing expression is the exit
 ```
 ```
 error: cannot return a 'P' handle over a temporary — the handle borrows a
