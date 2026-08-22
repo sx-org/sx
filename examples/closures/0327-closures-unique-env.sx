@@ -43,7 +43,7 @@ main :: () {
     both := |x: i64|_{ n = n } x + n + k;
     print("implicit {} size {}\n", both(1), size_of(type_of(both)));
 
-    // An inner literal is sealed against the outer one and names what it takes.
+    // The inner env takes the outer's `n`.
     outer := |x: i64|_{ n = n } -> i64 {
         step := |y: i64|_{ n = n } y * n;
         return step(x) + n;

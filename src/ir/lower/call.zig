@@ -1983,6 +1983,29 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Check if field is a closure type — call as closure, not method
             switch (self.lookupField(obj_ty, fa.field)) {
                 .hit, .private => |h| {
+                    if (self.uniqueLambdaThrough(h.ty)) |u| {
+                        if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
+                        if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
+                        // The field is the env; GEP its slot so the call writes the field.
+                        const env_ptr: Ref = blk: {
+                            if (!obj_ty.isBuiltin()) {
+                                const oi = self.module.types.get(obj_ty);
+                                if (oi == .pointer) {
+                                    break :blk self.builder.structGepTyped(obj, h.index, self.module.types.ptrTo(h.ty), oi.pointer.pointee);
+                                }
+                            }
+                            const base = if (self.isLvalueExpr(c.callee))
+                                self.lowerExprAsPtr(effective_obj_node)
+                            else b2: {
+                                const slot = self.builder.alloca(obj_ty);
+                                self.builder.store(slot, obj);
+                                break :b2 slot;
+                            };
+                            break :blk self.builder.structGepTyped(base, h.index, self.module.types.ptrTo(h.ty), obj_ty);
+                        };
+                        const env_addr = uniqueEnvAddress(self, h.ty, env_ptr, true).?;
+                        return callUniqueLambda(self, u, env_addr, args.items);
+                    }
                     if (!h.ty.isBuiltin()) {
                         const fti = self.module.types.get(h.ty);
                         if (fti == .closure) {
@@ -2578,17 +2601,24 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.builder.enumInit(tag, payload, target);
         },
         else => {
-            // Indirect call through expression. The callee can be a plain
-            // function pointer OR a closure value (e.g. `g?!()` where
-            // `g : ?Closure(...)` — the force-unwrap yields the closure
-            // struct). Inspect the callee's static type so we emit the
-            // right op: `call_closure` splits `{fn_ptr, env}` and threads
-            // env (and implicit ctx), whereas `call_indirect` would treat
-            // the whole struct as a bare fn pointer and miscompile.
-            const callee_ty = self.inferExprType(c.callee);
+            // Indirect call through an expression. Unique-typed storage
+            // writes through its env address; a `_{ … }` IIFE infers as
+            // Closure and lowers as the env, so uniqueness follows the
+            // lowered ref. Closure values use `call_closure`; fn pointers
+            // use `call_indirect`.
+            const inferred = self.inferExprType(c.callee);
+            if (self.uniqueLambdaThrough(inferred)) |u| {
+                if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
+                const env_addr = if (self.isLvalueExpr(c.callee))
+                    uniqueEnvAddress(self, inferred, self.lowerExprAsPtr(c.callee), true).?
+                else
+                    uniqueEnvAddress(self, inferred, self.lowerExpr(c.callee), false).?;
+                return callUniqueLambda(self, u, env_addr, args.items);
+            }
+            const callee_ref = self.lowerExpr(c.callee);
+            const callee_ty = self.builder.getRefType(callee_ref);
             if (self.uniqueLambdaThrough(callee_ty)) |u| {
                 if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
-                const callee_ref = self.lowerExpr(c.callee);
                 const env_addr = uniqueEnvAddress(self, callee_ty, callee_ref, false).?;
                 return callUniqueLambda(self, u, env_addr, args.items);
             }
@@ -2598,7 +2628,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // Exact-arity + spread-placeholder validation against
                     // the callee expression's closure TYPE.
                     if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = cti.closure.params.len, .pack_start = cti.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                    const callee_ref = self.lowerExpr(c.callee);
                     // Coerce user args to the closure's param types.
                     coerceClosureCallArgs(self, args.items, cti.closure.params);
                     // Prepend implicit ctx for the sx-side closure call ABI
@@ -2625,7 +2654,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 coerceFnPointerCallArgs(self, args.items, fi);
             }
             const ret_ty: TypeId = if (fn_info) |fi| fi.ret else .i64;
-            const callee_ref = self.lowerExpr(c.callee);
             // An expression callee dispatches with the SAME ABI as a
             // fn-pointer local / global / field: the implicit ctx is
             // prepended when the pointee's convention wants it.

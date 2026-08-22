@@ -237,12 +237,17 @@ pub const CallResolver = struct {
                     .expands_defaults = defaultsFor(fd, c.args.len),
                 };
             }
-            // Local closure- / function-typed binding (e.g. a `cb: Closure(...)
-            // -> R` or bare `cb: (T) -> R` parameter) — extract its declared
-            // return type so `try` / `catch` on the call see the (possibly
-            // failable) result.
+            // Local callable binding (unique lambda / Closure / fn-pointer) —
+            // extract its return type so `try` / `catch` on the call see the
+            // (possibly failable) result.
             if (self.l.scope) |scope| {
                 if (scope.lookup(bare_name)) |binding| {
+                    if (self.l.uniqueLambdaThrough(binding.ty)) |u| return .{
+                        .kind = .closure,
+                        .return_type = u.ret,
+                        .target = .{ .named = bare_name },
+                        .prepends_ctx = self.l.implicit_ctx_enabled,
+                    };
                     if (!binding.ty.isBuiltin()) {
                         const ti = self.l.module.types.get(binding.ty);
                         if (ti == .closure) return .{
@@ -377,6 +382,11 @@ pub const CallResolver = struct {
             // plan only needs the field's `.ret` so typing matches.
             switch (self.l.lookupField(recv_ty, cfa.field)) {
                 .hit, .private => |h| if (!h.ty.isBuiltin()) {
+                    if (self.l.uniqueLambdaThrough(h.ty)) |u| return .{
+                        .kind = .closure,
+                        .return_type = u.ret,
+                        .target = .{ .named = cfa.field },
+                    };
                     const fti = self.l.module.types.get(h.ty);
                     if (fti == .closure) return .{
                         .kind = .closure,
