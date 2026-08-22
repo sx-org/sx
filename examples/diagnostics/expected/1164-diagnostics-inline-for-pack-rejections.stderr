@@ -1,4 +1,4 @@
-error: 'v' is not part of protocol 'Show' — a pack element exposes only the protocol's interface
+error: 'v' is not part of 'Show' — a pack element exposes only the methods of that constraint or interface
   --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:15:23
    |
 15 |         print("{}\n", x.v);

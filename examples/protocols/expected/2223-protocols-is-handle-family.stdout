@@ -1,0 +1,4 @@
+is interface: true false false
+handle:       true false true false
+referent:     true true true true
+dispatch:     3 3

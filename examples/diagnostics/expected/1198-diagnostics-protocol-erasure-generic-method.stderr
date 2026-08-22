@@ -1,4 +1,4 @@
-error: 'Dog' does not implement protocol 'Speaker': method 'speak' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the protocol's signature exactly
+error: 'Dog' does not implement interface 'Speaker': method 'speak' has a mismatched signature — an interface-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the interface's signature exactly
   --> examples/diagnostics/1198-diagnostics-protocol-erasure-generic-method.sx:16:8
    |
 16 |   s := d.(Speaker);   // <- 'Dog.speak' has a mismatched signature

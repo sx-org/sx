@@ -314,7 +314,7 @@ test "a protocol method meets the boundary rules on every kind" {
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a protocol method is an sx call and has no C signature"));
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a constraint or interface method is an sx call and has no C signature"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
     try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());

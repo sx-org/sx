@@ -1,7 +1,7 @@
 // A `dual`-mode intrinsic is dispatched two ways: folded at lowering when the
 // type argument is statically resolvable, and serviced by the comptime VM when
-// it is not. `type_name` / `is_unsigned` / `type_info` are the only three
-// (see `ir/intrinsics.zig`).
+// it is not. `type_name`, the `is unsigned` read, and `type_info` are the
+// only three (see `ir/intrinsics.zig`).
 //
 // Both stages agree: the same intrinsic evaluated behind `@run` and at runtime
 // yields the same answer.
@@ -18,7 +18,7 @@ CT_SIZE     :: @run size_of(P);
 main :: () {
     // comptime vs runtime — the two columns must match.
     print("type_name         ct={} rt={}\n", CT_NAME, type_name(P));
-    print("is_unsigned  ct={} rt={}\n", CT_UNSIGNED, u32 is unsigned);
-    print("is_unsigned  ct={} rt={}\n", CT_SIGNED, i32 is unsigned);
+    print("is unsigned       ct={} rt={}\n", CT_UNSIGNED, u32 is unsigned);
+    print("is unsigned       ct={} rt={}\n", CT_SIGNED, i32 is unsigned);
     print("size_of           ct={} rt={}\n", CT_SIZE, size_of(P));
 }

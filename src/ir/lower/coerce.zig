@@ -166,7 +166,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                 if (dinfo == .pointer and self.getProtocolInfo(dinfo.pointer.pointee) != null) {
                     if (self.diagnostics) |d| {
                         const cs = self.builder.current_span;
-                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the protocol value itself, take its address with prefix `*`", .{});
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the handle itself, take its address with prefix `*`", .{});
                     }
                     return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-ptr-recovery") }, dst_ty);
                 }
@@ -246,7 +246,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
 fn refuseUnusedIntoAlloc(self: *Lowering, dst_ty: TypeId) Ref {
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an allocator argument only applies to Into or an owning protocol erasure", .{});
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an allocator argument only applies to Into", .{});
     }
     return self.builder.constUndef(dst_ty);
 }
@@ -495,7 +495,7 @@ fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, fun
 /// True for expression shapes that name an addressable storage location
 /// (variables, fields, array elements, dereferenced pointers). Used by
 /// `xx <struct-typed expr>` to decide between the borrow arms (lvalue →
-/// take the address) and the rvalue arms (value/own → the demand error).
+/// take the address) and the rvalue arms (a frame temporary to borrow).
 pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
     return switch (node.data) {
         .identifier, .deref_expr => true,

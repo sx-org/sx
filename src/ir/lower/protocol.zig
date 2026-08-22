@@ -20,8 +20,8 @@ const Lowering = lower.Lowering;
 const ProtocolImplMethod = lower.ProtocolImplMethod;
 const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 
-/// Shared implementation for the `has_impl(P, T)` builtin and its
-/// `tryConstBoolCondition` arm. The protocol expression is either:
+/// Shared implementation for the conformance `T is P` question and its
+/// `tryConstBoolCondition` arm. The contract expression is either:
 /// - Plain `Hash` (identifier / type_expr) → `protocol_thunk_map["Hash\x00<T>"]`.
 /// - Parameterised `Into(Block)` (call) → `param_impl_map` keyed by
 ///   `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
@@ -242,7 +242,7 @@ fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
     return kind == .erased;
 }
 
-/// The protocol a `has_impl`-shaped spelling names, whatever its kind.
+/// The contract a conformance right operand names, whatever its kind.
 fn protocolTypeOf(self: *Lowering, proto_node: *const Node) ?TypeId {
     const name = spelledProtocolName(proto_node) orelse return null;
     const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
@@ -595,7 +595,7 @@ pub fn lowerSoftPointerRecovery(
         const written = self.module.types.get(ptr_ty).pointer.pointee;
         if (self.diagnostics) |d| {
             if (self.getProtocolInfo(written) != null) {
-                d.addFmt(.err, pc.type_expr.span, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the protocol value itself, take its address with prefix '*'", .{});
+                d.addFmt(.err, pc.type_expr.span, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the handle itself, take its address with prefix '*'", .{});
             } else {
                 d.addFmt(.err, pc.type_expr.span, "the soft ctx recovery tests the pointee type, and '{s}' names no concrete type — name the conformer ('p.(?*YourConcrete)'), or take the unchecked raw ctx with 'p.(*void)'", .{self.formatTypeName(written)});
             }
@@ -657,7 +657,7 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
     // The guidance is use-site only: stay concrete, or bind through a
     // constraint. Whether the protocol should have runtime values is its
     // author's decision, made at the declaration.
-    d.addFmt(.err, span, "cannot {s} '{s}' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/{s}') where polymorphism is needed", .{ what, name, name });
+    d.addFmt(.err, span, "cannot {s} '{s}' — a constraint has no runtime values; use the concrete type, or a generic bound ('$T/{s}') where polymorphism is needed", .{ what, name, name });
     return true;
 }
 
@@ -824,7 +824,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
     if (operand.data == .field_access) {
         if (self.diagnostics) |d| {
             const pname = self.formatTypeName(proto_ty);
-            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
+            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows a global's own symbol — this path is rooted at a global VALUE ('g.field'), which has no symbol of its own", .{ vd.name, pname });
         }
         return .refused;
     }
@@ -1351,7 +1351,7 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
         if (typesClearlyDiffer(self, proto_pty, impl_pty)) {
             const proto_name = self.formatTypeName(proto_pty);
             const impl_name = self.formatTypeName(impl_pty);
-            const detail = std.fmt.allocPrint(self.alloc, "parameter '{s}': protocol declares '{s}', impl declares '{s}'{s}", .{
+            const detail = std.fmt.allocPrint(self.alloc, "parameter '{s}': required '{s}', impl '{s}'{s}", .{
                 impl_param.name,
                 proto_name,
                 impl_name,
@@ -1367,7 +1367,7 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     if (typesClearlyDiffer(self, proto_ret, impl_ret)) {
         const proto_name = self.formatTypeName(proto_ret);
         const impl_name = self.formatTypeName(impl_ret);
-        const detail = std.fmt.allocPrint(self.alloc, "return type: protocol declares '{s}', impl declares '{s}'{s}", .{
+        const detail = std.fmt.allocPrint(self.alloc, "return type: required '{s}', impl '{s}'{s}", .{
             proto_name,
             impl_name,
             if (std.mem.eql(u8, proto_name, impl_name)) " (same spelling, distinct nominal declarations)" else "",
@@ -1406,7 +1406,7 @@ fn conformerProtocolMethodMismatch(
         if (typesClearlyDiffer(self, req_ty, prov_ty)) {
             const req_name = self.formatTypeName(req_ty);
             const prov_name = self.formatTypeName(prov_ty);
-            const detail = std.fmt.allocPrint(self.alloc, "parameter: protocol declares '{s}', impl declares '{s}'{s}", .{
+            const detail = std.fmt.allocPrint(self.alloc, "parameter: required '{s}', impl '{s}'{s}", .{
                 req_name,
                 prov_name,
                 if (std.mem.eql(u8, req_name, prov_name)) " (same spelling, distinct nominal declarations)" else "",
@@ -1419,7 +1419,7 @@ fn conformerProtocolMethodMismatch(
     if (typesClearlyDiffer(self, req_ret, prov_ret)) {
         const req_name = self.formatTypeName(req_ret);
         const prov_name = self.formatTypeName(prov_ret);
-        const detail = std.fmt.allocPrint(self.alloc, "return type: protocol declares '{s}', impl declares '{s}'{s}", .{
+        const detail = std.fmt.allocPrint(self.alloc, "return type: required '{s}', impl '{s}'{s}", .{
             req_name,
             prov_name,
             if (std.mem.eql(u8, req_name, prov_name)) " (same spelling, distinct nominal declarations)" else "",
@@ -1487,9 +1487,8 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the `.(P, alloc)`
-/// owning erasure's allocation. Goes through the ordinary method dispatch,
-/// so the allocator protocol's kind stays a property of its declaration.
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE. Goes through the
+/// ordinary method dispatch, so `Allocator`'s declaration stays the stdlib's.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
     const alloc_ty = self.builder.getRefType(allocator);
     const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);
@@ -1598,10 +1597,10 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
     if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
         if (self.diagnostics) |d| {
             switch (nc.kind) {
-                .missing => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': no `impl {s} for {s}` provides method '{s}' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)", .{ concrete_type_name, proto_name, proto_name, concrete_type_name, nc.method }),
-                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the protocol's signature exactly", .{ concrete_type_name, proto_name, nc.method }),
-                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — {s} (a protocol-method impl must match the protocol's declared types exactly, with `Self` written as `{s}`)", .{ concrete_type_name, proto_name, nc.method, nc.detail, concrete_type_name }),
-                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' {s}", .{ concrete_type_name, proto_name, nc.method, nc.detail }),
+                .missing => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': no `impl {s} for {s}` provides method '{s}' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)", .{ concrete_type_name, proto_name, proto_name, concrete_type_name, nc.method }),
+                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — an interface-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the interface's signature exactly", .{ concrete_type_name, proto_name, nc.method }),
+                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' has a mismatched signature — {s} (an interface-method impl must match the interface's declared types exactly, with `Self` written as `{s}`)", .{ concrete_type_name, proto_name, nc.method, nc.detail, concrete_type_name }),
+                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement interface '{s}': method '{s}' {s}", .{ concrete_type_name, proto_name, nc.method, nc.detail }),
             }
         } else {
             // Gap 2 — no diagnostics channel (e.g. a comptime sub-lowering that

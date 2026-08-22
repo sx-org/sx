@@ -1,0 +1,6 @@
+P:   interface=true struct=false
+Ord: interface=false struct=false
+S:   interface=false struct=true
+iface-first:  interface neither struct
+struct-first: interface neither struct
+static: true false true

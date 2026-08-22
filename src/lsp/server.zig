@@ -710,11 +710,15 @@ pub const Server = struct {
             });
         }
 
+        // `constraint` and `interface` are contextual — heads in the `::`-head
+        // slot, ordinary identifiers elsewhere — but a completion list has no
+        // slot to condition on, so they are offered like any other head word.
         const keywords = [_][]const u8{
-            "if",    "else",  "then",  "return", "defer",
-            "match", "case",  "break", "enum",   "struct",
-            "true",  "false", "xx",    "while",  "continue",
-            "and",   "or",    "union",
+            "if",         "else",      "then",  "return", "defer",
+            "match",      "case",      "break", "enum",   "struct",
+            "true",       "false",     "xx",    "while",  "continue",
+            "and",        "or",        "union", "is",     "impl",
+            "constraint", "interface",
         };
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{

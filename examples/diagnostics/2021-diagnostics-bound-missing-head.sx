@@ -1,5 +1,5 @@
 // Every `/` in a bound list introduces one bound, so a trailing slash has no
-// protocol head to name.
+// bound name.
 @import "modules/std.sx";
 
 first :: (a: $T/) -> i32 { 1 }

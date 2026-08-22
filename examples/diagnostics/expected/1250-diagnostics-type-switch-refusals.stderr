@@ -1,4 +1,4 @@
-error: this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)
+error: this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)
   --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:16:14
    |
 16 |         case i64: |v| { print("i64 {}\n", v); }   // unreachable: int claims i64
@@ -10,7 +10,7 @@ error: a category arm cannot bind a value — it names a kind, not one type; rea
 19 |         case struct: |s| { _ = s; }               // category arms bind nothing
    |         ^^^^^^^^^^^
 
-error: this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)
+error: this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)
   --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:24:14
    |
 24 |         case i64: { }                             // duplicate = unreachable

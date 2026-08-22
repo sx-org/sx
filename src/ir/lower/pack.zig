@@ -205,7 +205,7 @@ pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: 
             .storage => d.addHelpFmt(id, span, null, "to store it, materialize a tuple: `(..{s})`", .{name}),
             .call_arg => d.addHelpFmt(id, span, null, "to pass it to a `[]any`/`[]P` parameter, materialize it with `xx {s}`", .{name}),
             .return_value => d.addHelpFmt(id, span, null, "to return it, return a tuple `(..{s})` and make the return type that tuple", .{name}),
-            .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for x in {s}` (or `inline for i in 0..{s}.len` for the index); for a runtime loop declare it as `..{s}: []P` (a protocol slice) instead of a pack", .{ name, name, name }),
+            .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for x in {s}` (or `inline for i in 0..{s}.len` for the index); for a runtime loop declare it as `..{s}: []P` (an interface slice) instead of a pack", .{ name, name, name }),
             .generic => d.addHelpFmt(id, span, null, "materialize a tuple `(..{s})` to store it, or `xx {s}` to convert it to an expected `[]any`/`[]P` slice", .{ name, name }),
         }
     }
@@ -852,8 +852,8 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
         }
     }
 
-    // Concrete -> protocol value: preserve the AST so @identity parameters
-    // borrow lvalues while value/own parameters keep owning semantics.
+    // Concrete -> handle: preserve the AST so the parameter borrows the
+    // lvalue it is given rather than a copy of it.
     if (self.getProtocolInfo(param_ty) != null) {
         const concrete_ty = self.inferExprType(arg);
         if (concrete_ty != .unresolved and concrete_ty != param_ty and concrete_ty != .any and
@@ -1122,7 +1122,7 @@ pub fn lowerPackFnCallNamed(
             for (call_node.args[pack_start..], pack_arg_types.items) |arg_node, arg_ty| {
                 if (!self.protocolResolver().packArgConformsTo(proto, arg_ty)) {
                     if (self.diagnostics) |diags| {
-                        diags.addFmt(.err, arg_node.span, "pack argument of type '{s}' does not conform to protocol '{s}'", .{ self.formatTypeName(arg_ty), proto });
+                        diags.addFmt(.err, arg_node.span, "pack argument of type '{s}' does not conform to '{s}'", .{ self.formatTypeName(arg_ty), proto });
                     }
                 }
             }

@@ -7,7 +7,7 @@
 // so the read works and the type's name prints. The comptime interpreter
 // stores a first-class `Type` as a bare `.type_tag`, so the struct_get
 // mirrors that same `{ .any, tid }` layout — the layout reflection over the
-// same `any` (`type_name`, `is_unsigned`) reads.
+// same `any` (`type_name`, `is unsigned`) reads.
 
 @import "modules/std.sx";
 

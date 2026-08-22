@@ -1,4 +1,4 @@
-// The second `.warn` producer: a protocol whose type-arg and method share a
+// The second `.warn` producer: a constraint whose type-arg and method share a
 // name is legal, and the warning tells the reader that `..pack.value`
 // resolves by position. Like every warning it must render on a clean
 // compile. This one carries no span, so it renders as a bare

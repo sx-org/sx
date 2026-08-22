@@ -1,0 +1,26 @@
+// `signed` and `unsigned` partition `int`: a refinement and the umbrella both
+// hold of the same type, and neither reaches a float. The left operand may be
+// a type spelling, a statically-typed value (it folds through its own type),
+// or an `any` — whose TAG answers, unpeeled, so a `Type`-holding `any` is a
+// `Type` until `.(Type)` unboxes it.
+@import "modules/std.sx";
+
+Wrap :: struct($T: Type) { v: T; }
+
+main :: () {
+    print("umbrella:   {} {}\n", u32 is int, u32 is unsigned);
+    print("refinement: {} {}\n", i32 is signed, i32 is unsigned);
+    print("float:      {} {}\n", f64 is signed, f64 is int);
+
+    // A value folds through its static type; an integer literal defaults to i64.
+    x := 3;
+    print("value:      {} {} {}\n", 5 is unsigned, 5 is signed, x is struct);
+
+    // A parameterized head is one type expression, matched by identity.
+    print("param head: {} {}\n", i32 is Wrap(i64), Wrap(i64) is Wrap(i64));
+
+    at : any = i64;
+    au : any = u32;
+    print("any tag:    {} {}\n", at is type, at is unsigned);
+    print("unboxed:    {} {}\n", at.(Type) is unsigned, au.(Type) is unsigned);
+}

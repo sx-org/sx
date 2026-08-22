@@ -271,7 +271,7 @@ fn anyFieldRefusesSignature(self: *Lowering, fields: []const types.TypeInfo.Stru
 pub fn refuseMethodParam(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
     if (isCursorType(self, ty)) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "a protocol method is an sx call and has no C signature for '{s}' — take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
+            d.addFmt(.err, span, "a constraint or interface method is an sx call and has no C signature for '{s}' — take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
         return true;
     }
     return refuseParam(self, ty, span, false);

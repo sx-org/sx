@@ -31,11 +31,11 @@ total :: (x: $T/Summable) -> i32 { 1 }
 // A parameterized head with no visible impl for the binding.
 degrees :: (c: $C/Into(i32)) -> i32 { 1 }
 
-// A head that names nothing at all — not a protocol in scope, not one of this
+// A head that names nothing at all — not a constraint or interface in scope, not one of this
 // declaration's own type parameters.
 mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
 
-// A parameterized protocol spelled WITHOUT its type arguments names no
+// A parameterized constraint spelled WITHOUT its type arguments names no
 // instantiation, so it could not constrain anything.
 arity :: (v: $T/Into2) -> i32 { 1 }
 

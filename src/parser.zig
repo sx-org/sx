@@ -1001,7 +1001,7 @@ pub const Parser = struct {
     fn parseBoundExpr(self: *Parser) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
-            return self.fail("expected protocol name after '/'");
+            return self.fail("expected a bound name after '/'");
         }
         var head = self.tokens.slice(self.tok);
         self.advance();
@@ -1633,7 +1633,7 @@ pub const Parser = struct {
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
             if (!self.isMemberDeclName()) {
-                return self.failMemberDeclName("expected method name in protocol body");
+                return self.failMemberDeclName("expected method name in the body");
             }
             const method_name = self.tokens.slice(self.tok);
             self.advance();
@@ -1652,7 +1652,7 @@ pub const Parser = struct {
                 }
                 // Parse: name: type
                 if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .kw_Self) {
-                    return self.fail("expected parameter name in protocol method");
+                    return self.fail("expected parameter name in the method");
                 }
                 const pname = self.tokens.slice(self.tok);
                 try param_name_spans.append(self.allocator, .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) });
@@ -1665,14 +1665,14 @@ pub const Parser = struct {
             }
             try self.expect(.r_paren);
 
-            // Every protocol method must declare its receiver EXPLICITLY as the
+            // Every constraint, interface, or open-set method must declare its receiver EXPLICITLY as the
             // first parameter — `self: *Self` (or `self: Self`) — matching how
             // `impl` methods and ordinary methods are written, so no listed
             // param is ambiguous between receiver and extra arg. The receiver
             // is validated and then stripped here, so downstream lowering sees
             // only the EXTRA-arg params.
             if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
-                return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
+                return self.fail("a method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
             }
             const receiver_is_pointer = blk: {
                 const rtype = param_types.items[0];
@@ -1681,7 +1681,7 @@ pub const Parser = struct {
                     rtype.data.pointer_type_expr.pointee_type.data == .type_expr and
                     std.mem.eql(u8, rtype.data.pointer_type_expr.pointee_type.data.type_expr.name, "Self");
                 if (!is_self_val and !is_self_ptr) {
-                    return self.fail("protocol method receiver must be typed `*Self` or `Self`");
+                    return self.fail("method receiver must be typed `*Self` or `Self`");
                 }
                 break :blk is_self_ptr;
             };
@@ -2186,7 +2186,7 @@ pub const Parser = struct {
         // Protocol name. A contract protocol (`impl @BuildSink(P) for …`) is an
         // ordinary protocol here — the `@` is part of its name.
         if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
-            return self.fail("expected protocol name after 'impl'");
+            return self.fail("expected a constraint or interface name after 'impl'");
         }
         const protocol_name = self.tokens.slice(self.tok);
         self.advance();
@@ -2207,7 +2207,7 @@ pub const Parser = struct {
 
         // 'for' — note: 'for' is a keyword (kw_for), not an identifier
         if (self.tokens.tag(self.tok) != .kw_for) {
-            return self.fail("expected 'for' after protocol name in impl block");
+            return self.fail("expected 'for' after the name in an impl block");
         }
         self.advance();
 
@@ -2436,12 +2436,12 @@ pub const Parser = struct {
             // Optional type annotation: if no ':', infer type from context
             if (self.tokens.tag(self.tok) != .colon) {
                 // A variadic binding has no context to infer from: the slice
-                // and protocol forms are their annotation, and `..$name` is a
+                // and constraint or interface forms are their annotation, and `..$name` is a
                 // comptime pack whose types come from the call.
                 if (is_variadic and !is_ct_param) {
                     return self.failAt(
                         param_name_span,
-                        "a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a protocol pack, '..$name' a comptime pack",
+                        "a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a constraint or interface pack, '..$name' a comptime pack",
                     );
                 }
                 const inferred_node = try self.createNode(param_name_span.start, .{ .inferred_type = {} });

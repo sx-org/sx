@@ -1,4 +1,4 @@
-// A protocol method that omits the explicit receiver is a parse error: the
+// A method that omits the explicit receiver is a parse error: the
 // receiver `self: *Self`/`self: Self` is the required first parameter.
 @import "modules/std.sx";
 

@@ -182,8 +182,8 @@ fn spelledHead(self: *Lowering, bound: *const Node, proto_name: []const u8) []co
 
 fn reportUnknownHead(self: *Lowering, bound: *const Node, name: []const u8, param: []const u8) void {
     const d = self.diagnostics orelse return;
-    const id = d.addFmtId(.err, bound.span, "unknown protocol '{s}' in the bound on '${s}'", .{ name, param });
-    d.addHelpFmt(id, bound.span, null, "a bound names a protocol in scope, an open set, or one of this declaration's own type parameters", .{});
+    const id = d.addFmtId(.err, bound.span, "unknown '{s}' in the bound on '${s}'", .{ name, param });
+    d.addHelpFmt(id, bound.span, null, "a bound names a constraint or interface in scope, an open set, or one of this declaration's own type parameters", .{});
 }
 
 /// An OPEN SET bound: the binding must be a MEMBER of the set. Nothing here asks
@@ -246,7 +246,7 @@ fn checkOne(
         return;
     }
     // A parameterized head names an instantiation, whose conformance is the
-    // keyed impl question `has_impl` already answers.
+    // keyed impl question.
     if (p.params > 0) {
         if (self.computeHasImpl(bound, bound_ty)) return;
         reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,
@@ -308,7 +308,7 @@ fn reportBoundNonConformance(
     if (handle) {
         switch (b.nc.kind) {
             .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
-                "method '{s}' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the protocol's signature exactly", .{b.nc.method}),
+                "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
             .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
                 "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
             .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
@@ -460,7 +460,7 @@ fn checkAgainstSibling(
             const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' writes {d} type argument{s}, but '${s}' is bound to '{s}', which takes {d}", .{
                 param, spelled_args, if (spelled_args == 1) "" else "s", sibling, self.formatTypeName(sib_ty), pd.type_params.len,
             });
-            d0.addHelpFmt(id, bound.span, null, "the arity is the bound protocol's, and '${s}' is only known at the call that binds it", .{sibling});
+            d0.addHelpFmt(id, bound.span, null, "the arity is the bound's, and '${s}' is only known at the call that binds it", .{sibling});
             return;
         }
     }

@@ -1,4 +1,4 @@
-error: cannot form an initializer for 'Drawable' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Drawable') where polymorphism is needed
+error: cannot form an initializer for 'Drawable' — a constraint has no runtime values; use the concrete type, or a generic bound ('$T/Drawable') where polymorphism is needed
   --> examples/fluent/2049-fluent-sink-shape-refused.sx:40:17
    |
 40 |     content.run(*sink);

@@ -850,7 +850,7 @@ fn resolveTypeListElement(self: *Lowering, element: *const Node) ?TypeId {
         const info = self.module.types.get(ty);
         if (info == .@"struct" and info.@"struct".is_protocol) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a protocol", .{self.module.types.typeName(ty)});
+                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a constraint or interface", .{self.module.types.typeName(ty)});
             return null;
         }
     }
@@ -1208,8 +1208,8 @@ fn lowerComptimeRuntimeArg(
         }
     }
 
-    // Concrete -> protocol value keeps the argument AST so @identity
-    // parameters borrow lvalues and value/own parameters retain ownership.
+    // Concrete -> handle keeps the argument AST so the parameter borrows
+    // the lvalue it is given.
     if (self.getProtocolInfo(param_ty) != null) {
         const concrete_ty = self.inferExprType(arg);
         if (concrete_ty != .unresolved and concrete_ty != param_ty and concrete_ty != .any and
