@@ -65,7 +65,7 @@ sx lsp                   # start language server
 | `*T` / `[*]T` | Single / many pointer |
 | `?T` | Optional |
 | `struct` / `enum` / `union` | Aggregates |
-| `Closure(args) -> ret` | Closure (`\|params\| body`) |
+| `Closure(args) -> ret` | Erased callable — `closure(\|params\|_{ caps } body)` |
 
 `[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
 
@@ -113,12 +113,13 @@ combine :: (a: i32, b: i32) -> (sum: i32 = 0, good: bool) {
 
 ### Named arguments and trailing blocks
 
-Positional first, then `name = value` in any order. A block after a call is the last parameter as a closure: `f(args) { body }` ≡ `f(args, content = || { body })`.
+Positional first, then `name = value` in any order. A block after a call is the last parameter as a closure literal: `f(args) { body }` ≡ `f(args, content = || { body })`. The last parameter takes it when it is `$F/(…) -> R` or `@BuildBlock(P)`.
 
 ```sx
 scaffold(content = chat_list);
 scaffold(top_bar = toolbar) { chat_list(); };
 each(items) { |item| text(item.name); };
+each(items) { |item|_{ pad = pad } text(item.name, pad); };
 vstack(8.0) { text("hello"); }.padded();
 ```
 
@@ -169,11 +170,15 @@ List :: struct ($T: Type) {
     len :: (self: *List(T)) -> i64 @get => self.items.len;
 }
 
-make_adder :: (n: i64) -> Closure(i64) -> i64 { return |x: i64| -> i64 x + n; }
+apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }
+
+make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
 add5 := make_adder(5);
+
+boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n = n } x + n); }
 ```
 
-Closures capture by value. Bare fns promote. A capturing literal allocates through `context.allocator`; `free(cl)` / `free(cl, alloc)` releases it.
+A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fn_ptr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
 
 ### Constraints and interfaces
 

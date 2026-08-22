@@ -344,14 +344,16 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `---`  | undefined value                      |
 | `()`   | grouping / params                    |
 | `\|…\|` | closure literal parameters           |
+| `_{}`  | closure literal captures             |
 | `{}`   | blocks / bodies                      |
 
 ### Spacing and terminators
 
 `!` is prefix `not`. `?!` is postfix force-unwrap. `{` juxtaposes with the
-expression before it wherever that statement is open. Everywhere else
-whitespace is free. `;` is what ends a statement, and a line break is ordinary
-space.
+expression before it wherever that statement is open. `_{` is one token — the
+closure-literal env — so `_ {` with a space is an identifier and a brace
+instead. Everywhere else whitespace is free. `;` is what ends a statement, and a
+line break is ordinary space.
 
 **Free — `(`, `[`, and a prefix `-` / `--` / `*` take any spacing.** A `(`
 applies arguments and a `[` indexes however much space stands between it and
@@ -1182,6 +1184,9 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
 - An **interface** head takes concrete conformers. `impl Q for I` with
   both `Q` and `I` interfaces is refused — an interface handle is not a
   concrete type, and re-erasure (§6.4) is the conversion between them.
+- A **function-type** head — `impl (i64) -> i64 for Accumulator` — makes a
+  nominal callable, declares `call`, and is limited to one per conformer; see
+  [Generic bounds](#generic-bounds).
 - In a blanket impl, `$T` introduces the parameter at its first mention;
   later mentions are bare references.
 - Impl methods also register as ordinary methods of the type
@@ -2510,11 +2515,14 @@ sum :: (a: $T, b: T) -> T {
 ```
 - `$T` in a parameter type **introduces** type parameter `T`
 - Bare `T` (without `$`) **references** the introduced type parameter
-- At call sites, type arguments are **inferred** from actual argument types:
+- A binder introduced in a parameter type is **inferred** at each call site from the actual argument:
   ```sx
   sum(40, 2)       // T = i32
   sum(1.5, 2.5)    // T = f64
   ```
+- A function-type bound written as the function's **return** type introduces the binder there:
+  `make_adder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
+  type, which must satisfy the head. The call supplies no type argument for F.
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`
 
@@ -2524,25 +2532,64 @@ A binder carries zero or more **bounds**, each introduced by `/`:
 
 ```
 Bound        := '/' BoundHead [ '(' TypeExpr { ',' TypeExpr } ')' ]
-BoundHead    := identifier | at_identifier | QualifiedHead
+BoundHead    := identifier | at_identifier | QualifiedHead | FnType
 QualifiedHead:= identifier { '.' identifier }
+FnType       := '(' [ TypeExpr { ',' TypeExpr } ] ')' '->' TypeExpr
 ```
 
 ```sx
 largest   :: (xs: []$T/Ord) -> T { … }                  // one bound
 are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
+apply     :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }   // function-type head
 ```
 
 A head names what is required of the binder: a declared **constraint**, a
 declared **interface**, an **open set** — where the requirement is MEMBERSHIP
-rather than conformance (see Open Sets) — an enclosing type parameter, or a
-compiler-owned `@` contract (`@Init`, `@BuildBlock`). A parameterized head takes
-its type arguments in the bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An
-argument is an ordinary type expression, so it may introduce a binder of its
-own, with its own bounds: `$I/@Init($V/Drawable)`.
+rather than conformance (see Open Sets) — an enclosing type parameter, a
+compiler-owned `@` contract (`@Init`, `@BuildBlock`), or a **function type**,
+which asks that the binder be CALLABLE at that signature. A parameterized head
+takes its type arguments in the bound — `$B/@BuildBlock(View)`,
+`$I/@Init(Button)`. An argument is an ordinary type expression, so it may
+introduce a binder of its own, with its own bounds: `$I/@Init($V/Drawable)`.
 
 `is` is not bound-head grammar: a bound is written with `/`.
+
+**A function-type head is `/` plus a function type.** The `->` belongs to the
+head, so `$F/(i64)` is an error naming `$F/(i64) -> void`, and no extra
+parentheses wrap it. The return is an ordinary type expression, so a failable
+callable is `$F/(i64) -> (i64, !)`. A function-type head takes no argument list
+of its own; a later `/` opens the binder's next bound (`$F/(i64) -> i64/Ord`).
+`$` **introduces** inside the head and a bare name **refers**, exactly as in a
+parameter list — `$F/(..$A) -> $R` introduces the pack `A` and the return `R`,
+and `Closure(..A) -> R` elsewhere in the same signature names them.
+
+Four kinds of type satisfy it: a `|…|` literal's own [unique type](#closures), a
+function pointer of that signature, a `Closure` of that signature, and a nominal
+type carrying a matching `impl`.
+
+```sx
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; self.total }
+}
+
+acc := Accumulator{ total = 0 };
+acc(5);                      // ≡ call(*acc, 5)
+p := *acc;
+p(5);                        // a *Accumulator calls the same way
+```
+
+`call` is the impl's one required method, and the call is global: any expression
+whose type is `Accumulator` or `*Accumulator` is callable. Coherence keys on the
+pair `(function type, conformer)`, and a nominal carries **at most one**
+function-type impl — a second `impl (…) -> … for Accumulator`, at any signature,
+is an error at the impls. Conformers are nominal — a struct, an untagged union,
+or an enum. `impl (i64) -> i64 for i64`, an interface head
+(`impl (i64) -> i64 for Show`), and an unconstrained blanket
+(`impl (i64) -> i64 for $T`) are refused. A callable nominal does not coerce to
+a function pointer; it satisfies the bound and nothing else.
 
 A head may be **qualified** by the module that owns it — `$V/compose.View`,
 `$T/geometry.Ord` — naming a declaration a module reached by name makes. What
@@ -2569,6 +2616,7 @@ Where the check lands depends on what the head names:
 | the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a constraint or an interface, as **identity** when `P` is a concrete type |
 | `@Init(T)` | the binder holds an initializer the compiler formed for `T` — see [`@Init(T)`](#initt) |
 | `@BuildBlock(P)` | the binder holds a build block the compiler formed for `P` — see [`@BuildBlock(P)`](#buildblockp) |
+| a function type (`(i64) -> i64`) | the binding is a unique lambda, a function pointer, or a `Closure` of that signature, or a nominal with `impl (i64) -> i64 for <binding>` |
 
 **An interface head asks conformance, and the interface satisfies it.** `$V/View`
 binds `View` itself by TypeId identity — the short-circuit that also makes
@@ -3778,10 +3826,10 @@ statement position, that publishes. And a value in statement position whose type
 the frame that formed it, captured **by reference**: forming allocates nothing,
 a replay further down the call chain reads those locals live, and a second `run`
 observes what the first one changed. It is therefore valid only within the call
-that received it — binding it to a local, capturing it in a closure, and
-returning it are all refused. Take a `Closure()` parameter instead when the body
-must be stored or run later; that is the model that copies its captures into an
-allocated environment and outlives the frame.
+that received it — binding it to a local, capturing it in an env, and returning
+it are all refused. Take a `$F/() -> void` parameter instead when the body must
+be stored or run later: its env is a copy of what the block named, and
+`closure(f)` gives it a home that outlives the frame.
 
 **A block's names are asked of the file that wrote it.** A replay lowers in the
 receiving function's instruction stream, but the body is resolved where it was
@@ -4487,7 +4535,7 @@ answers from site-local visibility at either phase.
 | `vector` | `@Vector(N, T)` |
 | `optional` | `?T` |
 | `error_set` | declared and inferred error sets |
-| `closure` | `Closure(…) -> R` |
+| `closure` | `Closure(…) -> R` — the erased form only; a unique lambda is its env, so it answers `struct` |
 | `type` | `Type` |
 | `interface` | interface types |
 
@@ -4846,8 +4894,9 @@ for val, ix in arr, 0.. {
 |params| expr
 |params| { body }
 |params| -> return_type expr
+|params|_{ captures } expr
 ```
-Anonymous function. Produces a `Closure` value. `|` opens a closure literal
+Anonymous function — a **lambda**. `|` opens a closure literal
 only where a primary starts; after a completed operand it is bitwise OR. `||`
 is two `|` tokens around an empty parameter list. A parameter default is an
 ordinary expression except that the first `|` on that default's own value spine
@@ -4863,6 +4912,34 @@ and the return type annotation is optional. A closure literal may not open an
 expression statement: bind it, pass it, or `return` it. In a value position — a
 block tail, an `if` branch, a `match` arm — it is parenthesized.
 
+**A body is sealed, and `_{ … }` is what it captures.** The body reads its own
+parameters, its own locals, and module-level names; an enclosing function's
+local, parameter, or local `::` const it reaches only through an **env** written
+directly after the parameter list — `_{ field = expr, … }`, before the optional
+`-> R` and before the body. `_{` is one token, legal in that position only:
+`_ {` with a space is an identifier and a brace, and `.{ … }` is a struct
+literal. Fields are named (`n = n` is not shortened), each holds a copy of the
+expression evaluated where the literal is written, and the body names the field.
+A pack is spread explicitly — `_{ args = .{..args} }` binds a tuple, while
+`_{ args = args }` is an error.
+
+```sx
+n := 5;
+inc := |x: i64|_{ n = n } x + n;              // env field `n`
+mul := |x: i64|_{ k = n * 2 } -> i64 x * k;   // env, then the return type
+bad := |x: i64| x + n;                        // error: 'n' is not in scope
+```
+
+A nested literal is sealed against its enclosing literal the same way — the
+inner env reads the outer one's field, and each level names what it takes:
+
+```sx
+outer := |x: i64|_{ n = n } {
+    step := |y: i64|_{ n = n } y + n;
+    step(x);
+};
+```
+
 Two brace forms carry the same `|…|` spelling as a **header** right after their
 `{`: a call's [trailing block](#trailing-blocks), whose header is its parameter
 list, and a [self-trailing](#struct-literals) `.{ … }`, whose header names the
@@ -4870,10 +4947,7 @@ value pointer. No other `{` takes a header — there a `|` opens a statement and
 is refused.
 
 ```sx
-n := 5;
-inc := |x: i32| x + n;                        // Closure(i32) -> i32
-pump := || { print("tick\n"); };               // Closure()
-scaled := |x: i64, k: i64| -> i64 x * k + n;  // annotated return
+pump := || { print("tick\n"); };                // empty env
 add : Closure(i64, i64) -> i64 = |a, b| a + b;  // params typed from the target
 ```
 
@@ -4883,7 +4957,15 @@ reads the type `Pol.a`): write such a body as a block (`-> Pol { .a }`).
 
 ### Closures
 
-A **closure** is a function bundled with captured state. It is represented as a fat pointer `{ fn_ptr, env }` (16 bytes), unlike a bare function pointer which is 8 bytes.
+A lambda's value is the env struct it named, and nothing
+else. That type is **unique** to the literal, is written only through a binder —
+`$F/(…) -> R` in a parameter or a return — and carries no pointer: an empty env
+is a zero-sized value, and a two-field env is those two fields.
+
+`Closure(…) -> R` is the **erased** form of a callable — a fat pointer
+`{ fn_ptr, env }` (16 bytes), against a bare function pointer's 8. A unique
+lambda becomes one through [`closure`](#persisting--closure), which is where the
+env's storage is decided.
 
 #### Closure Type
 ```sx
@@ -4893,56 +4975,115 @@ Closure(param_types)          // void return: Closure(i64) -> void
 Closure(..Ts) -> R            // pack-expanded params (see Variadic Heterogeneous Type Packs)
 ```
 
-#### Creating Closures — closure literals
-A closure literal IS the closure value — there is no wrapping
-intrinsic, and `closure` is an ordinary identifier, not a keyword.
+`closure` is an ordinary identifier, and `Closure(` is a type constructor in type
+position only.
+
+#### Unique Lambda Types
 ```sx
 offset := 50;
-f := |x: i32| -> i32 x + offset;   // expression body
-g := |x: i32| -> i32 {             // block body
+f := |x: i32|_{ offset = offset } -> i32 x + offset;   // env field `offset`
+g := |x: i32|_{ offset = offset } -> i32 {
     if x < 0 { return 0; }
     return x + offset;
 };
+
+run :: (h: $F/(i32) -> i32, x: i32) -> i32 { h(x) }
+run(f, 10);
 ```
 
-A closure literal:
-1. Analyzes its body for free variables (variables from outer scope)
-2. Allocates an env struct on the heap containing captured values
-3. Generates a trampoline function with signature `(env: *void, params...) -> R`
-4. Evaluates to a `Closure` value `{ trampoline, env_ptr }`
+A unique lambda is storage like any other value, so a **copy forks**: the copy
+carries its own env fields and the two run independently. Sharing one env is a
+pointer — `*$F/(i32) -> i32`. An erased `Closure` is the other way round: its
+`{ fn_ptr, env }` copies **alias** the one env the pointer names.
 
-**Capture semantics**: capture by value (snapshot at creation time). Mutating the original variable after creating the closure does not affect the captured value.
+**Captures are by value.** A field holds the value the capture expression had
+where the literal is written; assigning the outer name afterwards changes
+nothing.
 ```sx
 n := 10;
-f := |x: i64| -> i64 x + n;
+f := |x: i64|_{ n = n } -> i64 x + n;
 n = 999;
-print("{}\n", f(5));  // 15, not 1004
+print("{}\n", f(5));  // 15
 ```
 
 #### Calling Closures
-Closures are called with normal function call syntax:
+Every callable is called with the same syntax:
 ```sx
 result := f(10);
 ```
-The compiler prepends the env pointer to the argument list and does an indirect call through the fn_ptr.
+A unique lambda is monomorphized with its env as the receiver, a function pointer
+calls directly, a `Closure` prepends the env pointer and calls indirectly through
+`fn_ptr`, and a callable nominal calls its `impl`'s `call`.
 
 #### Auto-Promotion
-A bare function can be implicitly promoted to a `Closure` where one is expected. The compiler generates a static thunk that ignores the env parameter, with a null env pointer.
+A **function pointer** and an **empty-env** lambda promote to `Closure` where one
+is expected: the compiler emits a static thunk that ignores the env parameter,
+and the value's env word is null. Neither allocates.
 ```sx
 double :: (x: i32) -> i32 { return x * 2; }
 apply :: (f: Closure(i32) -> i32, x: i32) -> i32 { return f(x); }
-apply(double, 10);  // double auto-promoted to Closure
+apply(double, 10);          // static thunk, null env
+apply(|x: i32| x * 3, 10);  // empty env — same thunk shape
 ```
 
-#### Factory Functions
-Functions can return closures, enabling the factory pattern:
+A **capturing** lambda does not promote. Its env has to live somewhere and a
+`Closure` slot does not say where, so the store is an error that names the fix:
 ```sx
-make_adder :: (n: i32) -> Closure(i32) -> i32 {
-    return |x: i32| -> i32 x + n;
-}
-add5 := make_adder(5);
-print("{}\n", add5(100));  // 105
+h : Closure(i64) -> i64 = |x|_{ n = n } x + n;
 ```
+```
+error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
+       environment has no home here; persist it with 'closure(f)' (help:
+       'closure(f, alloc)' to choose the allocator)
+```
+
+#### Persisting — `closure`
+`closure` is an ordinary `core.sx` function over a callable-bound binder:
+```sx
+closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
+    inline match F {
+        case closure: return f;
+        else: {
+            p := alloc.make(@env_of(f));
+            return .{ fn_ptr = @call_ptr(F), env = p };
+        }
+    }
+}
+```
+
+- `@env_type(F)` is the env type, `@env_of(f)` the `@Init` `make` writes, and
+  `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`.
+- A `Closure` argument is returned unchanged, so `closure` composes.
+- An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
+  `make` does not write a null dest; `alloc_bytes(0)` returns null and
+  allocates nothing; `dealloc_bytes(null)` is a no-op.
+  `p := alloc.make(@env_of(f))` is null for a 0-sized env, so an erased empty
+  lambda carries a null env word and funds nothing.
+- `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
+
+#### Factory Functions
+A factory either returns the unique lambda or erases it, and the return type says
+which:
+```sx
+make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
+add5 := make_adder(5);                 // the env itself — no heap
+print("{}\n", add5(100));              // 105
+
+make_handler :: (n: i64) -> Closure(i64) -> i64 {
+    return closure(|x|_{ n = n } x + n);   // env on context.allocator
+}
+```
+
+`$F` on `make_adder` is the return binder in Generic Functions: the body fixes F
+(here the literal's unique type). A body returns one type — one literal on two
+paths is one type; two literals are two types and cannot both be the return. The
+caller binds the value (`add5 := make_adder(5)`) and does not spell F; a later
+signature names the unique by introducing its own binder (`apply(add5, 1)`,
+`closure(add5)`).
+
+A slot written with no binder — a field, an array element, an interface method's
+parameter — is a `Closure`, so anything capturing that reaches it goes through
+`closure` first.
 
 #### Optional Closures
 `?Closure` is supported for nullable callbacks. Uses `fn_ptr == null` as the none sentinel (zero overhead — same layout as `Closure`).
@@ -4952,16 +5093,25 @@ Button :: struct {
     on_click: ?Closure(i64) -> void;
 }
 btn := Button{label = "OK", on_click = null };
+btn_id := 7;
+btn.on_click = closure(|x|_{ id = btn_id } print("{} {}\n", id, x));
 if handler := btn.on_click {
     handler(1);
 }
 ```
 
 #### Memory
-Closure env is allocated via `context.allocator`. The compiler auto-initializes `context` with a default GPA (malloc/free wrapper) at the start of `main()`. Use `push Context` to override with a custom allocator. Auto-promoted closures have a null env and require no allocation.
+A `|…|` literal allocates nothing: its env is the value, living wherever the
+binding, parameter, or temporary lives. Heap enters at `closure(f, alloc)` and
+only there, defaulting to `context.allocator` — the compiler initializes
+`context` with a default GPA (malloc/free wrapper) at the start of `main()`, and
+`push Context` overrides it. An auto-promoted function pointer or empty lambda
+has a null env and funds nothing.
 ```sx
-f := |x: i64| -> i64 x + 10;   // env allocated via default GPA
-print("{}\n", f(5));
+base  := 10;
+arena := Arena.init(context.allocator, 4096);
+f  := |x: i64|_{ base = base } -> i64 x + base;   // env in f's storage
+cb := closure(f, arena);                          // env copied into the arena
 ```
 
 ### Function Call
@@ -4984,7 +5134,7 @@ struct literals exactly (`name = value` — the argument slot is free because
 assignment is statement-only).
 
 ```sx
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) { ... }
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) { ... }
 
 scaffold(content = chat_list);                       // reach past defaults by name
 scaffold(top_bar = toolbar, content = chat_list);    // any order among named
@@ -5033,6 +5183,8 @@ definitional — every other rule (duplicates, defaults, evaluation order)
 follows from it; the block is not a special argument kind:
 
 ```sx
+vstack :: (gap: f32, content: $F/() -> void) { … }
+
 vstack(8.0) { text("a"); text("b"); };
 // ≡
 vstack(8.0, content = || { text("a"); text("b"); });
@@ -5045,20 +5197,28 @@ scaffold(top_bar = toolbar) { chat_list(); };  // named slots + trailing block
 scaffold() { chat_list(); };                   // defaults skipped, block binds `content`
 ```
 
-- **Binding**: the block binds the last declared parameter, which must be a
-  non-variadic `Closure` type — or a **build block** parameter, which gives the
-  same source block a second meaning (see [`@BuildBlock(P)`](#buildblockp)).
-  Otherwise a targeted error names the parameter ("'f' cannot take a trailing
-  block — its last parameter 'x' is not a `Closure`", or "… its last parameter
-  '..xs' is variadic").
+- **Binding**: the block binds the last declared parameter, which must be
+  non-variadic and carry either a **function-type bound** (`$F/(…) -> R`) or a
+  **build block** bound, which gives the same source block a second meaning (see
+  [`@BuildBlock(P)`](#buildblockp)). A `Closure` parameter takes no trailing
+  block — erasing one is an allocation, and it is written where it is paid, as
+  `f(closure(|…| …))`. Otherwise a targeted error names the parameter ("'f'
+  cannot take a trailing block — its last parameter 'x' is neither
+  `$F/(…) -> R` nor `@BuildBlock`", or "… its last parameter '..xs' is
+  variadic").
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
 - **Header**: a `|params|` header directly after the `{` declares the closure's
   parameters, spelled exactly as a `|…|` closure literal spells them
-  (annotations and defaults included). Without a header the closure is
-  zero-param. An empty `| |` is a header with zero parameters. The header's
-  arity must match the parameter's `Closure(…)`, and a build block takes no
-  header — it is replayed against a sink, never called.
+  (annotations and defaults included), and an `_{ … }` env follows the header the
+  same way. Without a header the block is `|| { body }`. An empty `| |` is a
+  header with zero parameters. The header's arity must match the parameter's
+  function type, and a build block takes no header — it is replayed against a
+  sink, never called.
+- **Sealed like any literal**: the body reads an enclosing local only through its
+  env, so capturing means writing the header —
+  `each(items) { |x|_{ n = n } print("{}\n", x + n); };`, and
+  `vstack(8.0) { | |_{ n = n } text(n); };` where there are no parameters.
 - **Juxtaposition**: `expr { … }` is two adjacent expressions, and one node
   carries both readings until **types** settle it. A head that names a type —
   a bare or qualified name, a type application, a generic type constructor, a
@@ -5102,12 +5262,11 @@ scaffold() { chat_list(); };                   // defaults skipped, block binds 
   ("parameter 'content' is bound both by a named argument and by the
   trailing block").
 
-No `inline` keyword exists or is needed: a capture-free block promotes to a
-null-env static thunk (zero allocation); a capturing block allocates its
-environment through `context.allocator` like any closure literal. A block bound
-to a **build block** parameter allocates nothing at all, and captures by
-reference instead — that is the difference the two parameter kinds buy
-([`@BuildBlock(P)`](#buildblockp)).
+No `inline` keyword exists or is needed: neither parameter kind allocates. A
+block bound through a function-type bound passes its env by value, monomorphized
+into the callee; a block bound to a **build block** parameter carries the frame
+by reference and is replayed against a sink — that is the difference the two
+parameter kinds buy ([`@BuildBlock(P)`](#buildblockp)).
 
 ### UFCS (Uniform Function Call Syntax)
 ```sx
@@ -6411,8 +6570,8 @@ function, or at top level, is rejected.
 ### Closures with `!`
 
 - **Explicit annotation required.** A closure literal's value type is inferred
-  as today, but if its body raises or `try`-escapes, the `!` channel is **not**
-  inferred — declare it (`|x: i32| -> (i32, !) { ... }`). This keeps
+  from its body, but if that body raises or `try`-escapes, the `!` channel is
+  **not** inferred — declare it (`|x: i32| -> (i32, !) { ... }`). This keeps
   adding a `raise` from silently changing a closure's type.
 - **Program-wide union per shape.** All `Closure(<sig>) -> (T, !)` occurrences
   with the same signature share one inferred-set node; the SCC pass unions
@@ -6535,7 +6694,7 @@ juxt            = brace_group       // `expr { … }` — two adjacent expressio
                   // for / while value, a block, a `.{ … }` primary, and a
                   // juxtaposition itself never take one, and it does not stack
 self_block      = '.' '{' ('|' IDENT '|')? stmt* '}'   // writes into the value
-brace_group     = '{' ('|' params? '|')? brace_item* '}'
+brace_group     = '{' ('|' params? '|' env?)? brace_item* '}'
 brace_item      = IDENT '=' expr (';' | ',' | &'}')    // a field init or a store
                 | stmt                                 // `,` ends an item here too
                   // the label is an IDENT — a keyword label is backticked
@@ -6561,7 +6720,9 @@ arm_body        = 'break' end
                 | stmt*                 // every form ends as a statement does
 else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | IDENT
-closure         = '|' params? '|' ('->' type)? (expr | block)
+closure         = '|' params? '|' env? ('->' type)? (expr | block)
+env             = '_{' (IDENT '=' expr (',' IDENT '=' expr)* ','?)? '}'
+                  // one token '_{': `_ {` with a space is not it
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
@@ -6586,10 +6747,9 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   may **not** reference an enclosing function's local, parameter, or local `::`
   const — a static fn has no captured frame to read it from, and doing so is a
   compile error ("a nested function cannot reference the enclosing local 'x' —
-  use a closure ('x := || …') to capture it"). Capturing enclosing locals is
-  the CLOSURE's job — spell it `x := || …` (`:=` + a `|…|` literal), which captures by
-  pointer. (Enclosing local consts are rejected too rather than comptime-folded:
-  a static nested fn's frame cannot carry them, and the closure spelling captures
-  them uniformly.)
+  a lambda names what it captures: `|…|_{ x = x } …`"). Carrying enclosing
+  locals is the LAMBDA's job — one env field per name, by value. (Enclosing
+  local consts are rejected too rather than comptime-folded: a static nested fn's
+  frame cannot carry them, and the env spelling carries them uniformly.)
 - **Operator overloading**: Not shown — presumably no.
 - **Top-level expressions**: Are bare expressions allowed at the top level or only declarations?
