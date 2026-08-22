@@ -35,7 +35,7 @@ main :: () -> i32 {
     w : Widget = .{ base = 5 };
     p : *Widget = *w;
 
-    m := p.(Measurable);   // snapshot of the pointee
+    m := p.(Measurable);
     s := m.measure();          // 0 extra args
     s2 := m.scaled(3);         // 1 extra arg
     print("measure={}x{}\n", s.w, s.h);    // 5x10

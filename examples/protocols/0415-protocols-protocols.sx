@@ -384,7 +384,7 @@ main :: () {
     // `vtable`-kind protocol — xx conversion + dynamic dispatch
     {
         acc := Accumulator{ total = 0 };
-        a := acc.(Adder);              // owning copy (postfix erasure)
+        a := acc.(Adder);
         a.add(10);
         a.add(20);
         a.add(12);

@@ -777,16 +777,16 @@ fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?prog
 
 /// What the protocol-typed arm of the global-initializer serializer decided.
 pub const ProtocolGlobalInit = union(enum) {
-    /// Not a borrow-kind protocol-typed global — the ordinary serializer owns it.
+    /// Not an interface-typed global — the ordinary serializer owns it.
     not_applicable,
     folded: inst_mod.ConstantValue,
     /// Refused; the diagnostic is already out.
     refused,
 };
 
-/// The static initializer of a borrow-kind protocol-typed global (§7.6): the
+/// The static initializer of an interface-typed global (§7.6): the
 /// identity erasure of a NAMED global instance, written `g`, `m.g`, or `xx`
-/// of either. A protocol value in static data is a borrow, and only a global
+/// of either. An interface handle in static data is a borrow, and only a global
 /// has an address to borrow — so every other initializer shape is refused
 /// HERE, before the shape dispatch serializes it field-wise against the
 /// handle's layout and builds a value whose ctx word is a payload byte.

@@ -38,8 +38,7 @@ main :: () {
     // A constraint protocol still bounds generics — that is its whole job.
     print("{}\n", smaller(3, 7));
 
-    // A parameterized head carries its kind into every instantiation:
-    // `Slot(i64)` erases and borrows, like any interface.
+    // A parameterized interface instantiation erases and borrows, like any interface.
     p := Point{ x = 5 };
     sl : Slot(i64) = p;
     print("{}\n", sl.get());
