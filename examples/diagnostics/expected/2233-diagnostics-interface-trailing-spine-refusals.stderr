@@ -1,0 +1,22 @@
+error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:12:28
+   |
+12 | trailing_cast :: () -> P { W{ v = 1 }.(P) }
+   |                            ^^^^^^^^^^
+
+error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:13:45
+   |
+13 | trailing_in_literal :: () -> S { S{ inner = W{ v = 2 } } }
+   |                                             ^^^^^^^^^^
+
+error: '.{ }' is the zero handle, and a 'P' return has no absence to carry it
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:14:35
+   |
+14 | trailing_zero_handle :: () -> P { .{} }
+   |                                   ^^^
+
+help: return '?P', where '.{ }' is the absent sentinel
+   |
+14 | trailing_zero_handle :: () -> P { .{} }
+   |                                   ^^^

@@ -1,0 +1,28 @@
+// A body's trailing expression is its return operand, so the return-value
+// spine reaches it: the rvalue arm and the zero handle are refused there just
+// as under an explicit `return`. An argument list and a binding CLEAR the
+// spine, so both forms below the refusals compile.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl P for W { a :: (self: *W) -> i64 { self.v } }
+S :: struct { inner: P; }
+
+trailing_cast :: () -> P { W{ v = 1 }.(P) }
+trailing_in_literal :: () -> S { S{ inner = W{ v = 2 } } }
+trailing_zero_handle :: () -> P { .{} }
+
+take :: (v: P) -> P { v }
+through_argument :: () -> P { take(W{ v = 3 }) }
+through_binding :: () -> P { r : P = ---; r = W{ v = 4 }; r }
+absent :: () -> ?P { .{} }
+
+main :: () {
+    _ = trailing_cast();
+    _ = trailing_in_literal();
+    _ = trailing_zero_handle();
+    _ = through_argument();
+    _ = through_binding();
+    _ = absent();
+}
