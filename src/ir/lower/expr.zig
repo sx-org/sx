@@ -3632,6 +3632,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // sx-side use from the cast alone.
                         }
                     }
+                    // A callable binder takes the value's OWN shape, and a bare
+                    // function's shape is its signature — the integer-shaped
+                    // word below answers no bound and calls through nothing.
+                    if (self.lambda_sig_target != null) {
+                        if (self.bareFnNameSignature(node)) |sig_ty|
+                            break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
+                    }
                     // A bare function value keeps the integer-shaped IR
                     // used by the async/fiber lowering paths, but
                     // that word must match the target pointer width. Hard-coded

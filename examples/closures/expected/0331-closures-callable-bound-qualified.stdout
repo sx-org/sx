@@ -1,0 +1,9 @@
+qualified lambda 15
+qualified unique 12
+qualified fnptr 10
+qualified closure 10
+static lambda 15
+static unique 12
+static fnptr 10
+static closure 10
+target-typed 15

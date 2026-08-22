@@ -267,6 +267,18 @@ fn bodyTailSpan(body: *const Node) ast.Span {
     return body.span;
 }
 
+/// What a value handed back answers to. A return-position callable binder has
+/// no type yet, so it demands the SIGNATURE its bound spells and never a
+/// `Closure` shape: the callable the body hands back keeps its own.
+fn returnDemand(self: *Lowering, ret_ty: TypeId) Lowering.ParamDemand {
+    if (self.pending_callable_return) |binder| {
+        if (self.boundCallableSig(binder)) |sig| return .{ .callable = sig };
+        return .none;
+    }
+    if (ret_ty == .void or ret_ty == .noreturn) return .none;
+    return .{ .coerce = ret_ty };
+}
+
 /// THE entry for every user-authored function body. Callers pass a body and a
 /// declared return type and decide nothing else: the demand, the tail's
 /// destination, return position and the implicit exit are all owned here.
@@ -277,14 +289,8 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) 
     // return-position callable binder has no type yet, so the body types against
     // the SIGNATURE the bound spells — which is what an unannotated `|x|` reads
     // its parameter from.
-    const saved_target = self.target_type;
-    self.target_type = if (self.pending_callable_return) |binder|
-        self.callableClosureOf(binder)
-    else if (ret_ty != .void and ret_ty != .noreturn)
-        ret_ty
-    else
-        null;
-    defer self.target_type = saved_target;
+    var body_demand = self.enterDemand(returnDemand(self, ret_ty));
+    defer body_demand.restore();
 
     // `currentFunc` is the CALLER while an inlined body is being lowered, so a
     // naked caller must not make the inlined callee naked.
@@ -1329,15 +1335,32 @@ fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
 /// Fix a return-position callable binder to the type of the value handed back,
 /// returning that type. The binder names the callable this body produces, so the
 /// value IS the answer — a `_{ … }` literal stays its own env struct.
+///
+/// A body returns ONE type. The first exit fixes it and answers the bound; every
+/// later exit is measured against that, and the binder stays pending so each one
+/// still types its value from the bound's signature.
 fn fixCallableReturn(self: *Lowering, ret_val: Ref) ?TypeId {
     const binder = self.pending_callable_return orelse return null;
     const ty = self.builder.getRefType(ret_val);
     if (ty == .unresolved or ty == .void) return null;
-    self.pending_callable_return = null;
+    if (self.fixed_callable_ret) |fixed| {
+        if (ty != fixed) reportSecondCallableReturn(self, binder, fixed, ty);
+        return fixed;
+    }
+    self.fixed_callable_ret = ty;
     self.builder.currentFunc().ret = ty;
     const bound = Lowering.callableBound(binder) orelse return ty;
     self.checkCallableBound(bound, binder.data.type_expr.name, ty);
     return ty;
+}
+
+fn reportSecondCallableReturn(self: *Lowering, binder: *const Node, fixed: TypeId, got: TypeId) void {
+    const d = self.diagnostics orelse return;
+    const name = binder.data.type_expr.name;
+    const id = d.addFmtId(.err, binder.span, "'${s}' is the callable this body hands back, and this body hands back two: '{s}' and '{s}'", .{
+        name, self.module.types.formatTypeName(self.alloc, fixed), self.module.types.formatTypeName(self.alloc, got),
+    });
+    d.addHelpFmt(id, binder.span, null, "one literal on two paths is one type; two literals are two types — erase both with 'closure(...)' to hand back one", .{});
 }
 
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
@@ -1379,7 +1402,10 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     if (target_for_value != .void) self.target_type = target_for_value;
     // A return-position callable binder has no type yet: what the value is typed
     // against is the SIGNATURE its bound spells.
-    if (self.pending_callable_return) |binder| self.target_type = self.callableClosureOf(binder);
+    const ret_demand: ?Lowering.DemandScope = if (self.pending_callable_return != null)
+        self.enterDemand(returnDemand(self, ret_ty_for_target))
+    else
+        null;
     // A `return <expr>` for a value-returning function is a VALUE position, just
     // like a `:=`/`=` RHS or a call argument: an `if`/`match`/block operand must
     // produce a value (a phi'd merge), not be demoted to a statement whose result
@@ -1399,6 +1425,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    if (ret_demand) |d| d.restore();
     if (ret_val) |rv| {
         // `return proc.exit(0);` never returns: the operand took control where
         // it stands, so no defer, coercion or exit follows it.

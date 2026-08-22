@@ -205,9 +205,13 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
             // Unannotated lambda params take their type positionally from
             // the target `Closure(T0, …)` signature. Resolve them here so
             // `resolveParamType` (which would diagnose a missing annotation)
-            // is only called for params that carry one.
+            // is only called for params that carry one. A slot nothing has
+            // decided is no answer — stamping it onto the IR function reaches
+            // codegen — so it falls to the diagnostic, as the ret arm does.
             if (p.type_expr.data == .inferred_type) {
-                if (target_closure_params != null and pi < target_closure_params.?.len) {
+                if (target_closure_params != null and pi < target_closure_params.?.len and
+                    target_closure_params.?[pi] != .unresolved)
+                {
                     break :blk target_closure_params.?[pi];
                 }
                 if (self.diagnostics) |d| {

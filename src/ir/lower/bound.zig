@@ -32,6 +32,7 @@ const ast = @import("../../ast.zig");
 const contracts = @import("../../contracts.zig");
 const types = @import("../types.zig");
 const lower_protocol = @import("protocol.zig");
+const lower_closure = @import("closure.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -80,17 +81,34 @@ pub fn callableBound(node: *const Node) ?*const Node {
     return null;
 }
 
-/// The `Closure(params) -> R` a callable binder's bound spells — the shape a
-/// value takes to answer it, and what types an unannotated `|x|` written where
-/// the binder is expected.
-pub fn callableClosureOf(self: *Lowering, binder: *const Node) ?TypeId {
+/// The signature a callable binder's bound SPELLS. It is what an unannotated
+/// `|x|` reads its parameter from, and never the type of the value written
+/// there: that value answers the bound out of its own shape.
+pub fn boundCallableSig(self: *Lowering, binder: *const Node) ?lower_closure.CallableSig {
     const bound = callableBound(binder) orelse return null;
     const fte = bound.data.function_type_expr;
     var params = std.ArrayList(TypeId).empty;
-    defer params.deinit(self.alloc);
     for (fte.param_types) |p| params.append(self.alloc, self.resolveTypeWithBindings(p)) catch return null;
     const ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
-    return self.module.types.closureType(params.items, ret);
+    return .{ .params = params.toOwnedSlice(self.alloc) catch return null, .ret = ret };
+}
+
+/// Whether `name` is the binder a parameter's own function-type bound is written
+/// on: `$F/($A) -> $R` is that bound on F, and A and R are names it introduces.
+/// What F is, is the argument's own shape — known once the argument lowers.
+pub fn boundOnBinder(node: *const Node, name: []const u8) bool {
+    if (callableBound(node) == null) return false;
+    return std.mem.eql(u8, node.data.type_expr.name, name);
+}
+
+/// What `fd`'s parameter at `index` asks of its argument. THE producer: every
+/// site that lowers a value against a declared parameter installs this, so a
+/// callable binder contributes its signature everywhere and its bound's
+/// `Closure` shape nowhere.
+pub fn paramDemand(self: *Lowering, fd: *const ast.FnDecl, index: usize) Lowering.ParamDemand {
+    if (index >= fd.params.len) return .none;
+    if (boundCallableSig(self, fd.params[index].type_expr)) |sig| return .{ .callable = sig };
+    return .{ .coerce = self.resolveDeclParamType(fd, index) };
 }
 
 /// The head's written name, whatever it resolved to.

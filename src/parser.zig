@@ -4861,7 +4861,10 @@ pub const Parser = struct {
                 // brace, so the decl is classified as a fn DEF and the
                 // return-position refusal lands on the return type.
                 self.tokens.tag(self.tok) == .at_identifier or
-                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
+                // `..` spells a pack in a return type (`-> Closure(..A) -> R`),
+                // so it is one more type token the scan reads through.
+                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dot_dot or
+                self.tokens.tag(self.tok) == .dollar or
                 self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
                 self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
                 self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or

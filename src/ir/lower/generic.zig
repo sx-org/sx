@@ -9,7 +9,8 @@ const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
-const GenericResolver = @import("../generics.zig").GenericResolver;
+const generics_mod = @import("../generics.zig");
+const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 
@@ -43,7 +44,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
     const saved_scope = self.scope;
-    const saved_bindings = self.type_bindings;
     const saved_defer_base = self.func_defer_base;
     const saved_block_terminated = self.block_terminated;
     const saved_target = self.target_type;
@@ -70,8 +70,10 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
 
-    // Install type bindings
-    self.type_bindings = bindings.*;
+    // Install this instance's substitution — AFTER the isolation above, whose
+    // nulls are the caller's pack state and not this instance's.
+    var binding_scope = generics_mod.installTypeBindings(self, bindings.*);
+    defer binding_scope.exit();
 
     // Pin to the template's defining module for the whole monomorphization
     // (return type, param types, body), so a library-internal bare TYPE ref
@@ -215,7 +217,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     }
 
     // Restore builder state
-    self.type_bindings = saved_bindings;
     self.scope = saved_scope;
     self.func_defer_base = saved_defer_base;
     self.block_terminated = saved_block_terminated;

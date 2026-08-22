@@ -669,9 +669,11 @@ pub const Lowering = struct {
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
     /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
     /// it names is still unknown. Nothing at a call decides that binder, so the
-    /// value the body hands back fixes the function's return type and clears
-    /// this.
+    /// value the body hands back fixes the function's return type.
     pending_callable_return: ?*const ast.Node = null,
+    /// The type a return-position callable binder is fixed to, once an exit has
+    /// handed one back. Every later exit answers to it: a body returns one type.
+    fixed_callable_ret: ?TypeId = null,
     /// Parameter and return types an unannotated `|x|` reads when the expected
     /// type is a callable binder. The argument's type is its own shape; this is
     /// only the bound's signature.
@@ -1171,12 +1173,14 @@ pub const Lowering = struct {
         inline_return_target: ?InlineExit,
         current_fn_decl: ?*const ast.FnDecl,
         pending_callable_return: ?*const ast.Node,
+        fixed_callable_ret: ?TypeId,
         lambda_sig_target: ?lower_closure.CallableSig,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
                 .l = l,
                 .pending_callable_return = l.pending_callable_return,
+                .fixed_callable_ret = l.fixed_callable_ret,
                 .lambda_sig_target = l.lambda_sig_target,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
@@ -1198,6 +1202,7 @@ pub const Lowering = struct {
             l.inline_return_target = null;
             l.current_fn_decl = null;
             l.pending_callable_return = null;
+            l.fixed_callable_ret = null;
             l.lambda_sig_target = null;
             return g;
         }
@@ -1217,9 +1222,60 @@ pub const Lowering = struct {
             g.l.inline_return_target = g.inline_return_target;
             g.l.current_fn_decl = g.current_fn_decl;
             g.l.pending_callable_return = g.pending_callable_return;
+            g.l.fixed_callable_ret = g.fixed_callable_ret;
             g.l.lambda_sig_target = g.lambda_sig_target;
         }
     };
+
+    /// What a declared parameter or return asks of the value written at it. A
+    /// callable binder asks for a SIGNATURE and never for a TypeId: the value
+    /// keeps its own shape, and the bound only says what it must be callable at.
+    pub const ParamDemand = union(enum) {
+        none,
+        coerce: TypeId,
+        callable: lower_closure.CallableSig,
+
+        /// The type the demand coerces to. A callable binder has none.
+        pub fn coerceType(d: ParamDemand) ?TypeId {
+            return switch (d) {
+                .coerce => |t| t,
+                .none, .callable => null,
+            };
+        }
+    };
+
+    /// The two typing channels a demand installs, restored together.
+    pub const DemandScope = struct {
+        l: *Lowering,
+        target_type: ?TypeId,
+        lambda_sig_target: ?lower_closure.CallableSig,
+
+        pub fn restore(s: DemandScope) void {
+            s.l.target_type = s.target_type;
+            s.l.lambda_sig_target = s.lambda_sig_target;
+        }
+    };
+
+    /// Install `d` on both typing channels for the value about to be lowered.
+    /// `null` is the slot no parameter declares — a C-variadic tail — where the
+    /// ambient target stands and no signature rides with it.
+    pub fn enterDemand(self: *Lowering, d: ?ParamDemand) DemandScope {
+        const scope = DemandScope{
+            .l = self,
+            .target_type = self.target_type,
+            .lambda_sig_target = self.lambda_sig_target,
+        };
+        self.lambda_sig_target = null;
+        switch (d orelse return scope) {
+            .callable => |sig| {
+                self.lambda_sig_target = sig;
+                self.target_type = null;
+            },
+            .coerce => |t| self.target_type = if (t == .unresolved or t == .void) null else t,
+            .none => self.target_type = null,
+        }
+        return scope;
+    }
 
     pub fn init(module: *Module) Lowering {
         return .{
@@ -3555,7 +3611,9 @@ pub const Lowering = struct {
     pub const checkBoundBindings = lower_bound.checkBindings;
     pub const callableBound = lower_bound.callableBound;
     pub const checkCallableBound = lower_bound.checkCallable;
-    pub const callableClosureOf = lower_bound.callableClosureOf;
+    pub const boundCallableSig = lower_bound.boundCallableSig;
+    pub const boundOnBinder = lower_bound.boundOnBinder;
+    pub const paramDemand = lower_bound.paramDemand;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
 
     // --- lower/coerce.zig (lower_coerce) ---

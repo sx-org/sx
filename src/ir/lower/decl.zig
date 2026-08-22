@@ -3914,8 +3914,13 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     }
 
     const saved_pcr = self.pending_callable_return;
-    defer self.pending_callable_return = saved_pcr;
+    const saved_fcr = self.fixed_callable_ret;
+    defer {
+        self.pending_callable_return = saved_pcr;
+        self.fixed_callable_ret = saved_fcr;
+    }
     self.pending_callable_return = callableReturnBinder(fd, ret_ty);
+    self.fixed_callable_ret = null;
     self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();
@@ -4077,8 +4082,13 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     }
 
     const saved_pcr = self.pending_callable_return;
-    defer self.pending_callable_return = saved_pcr;
+    const saved_fcr = self.fixed_callable_ret;
+    defer {
+        self.pending_callable_return = saved_pcr;
+        self.fixed_callable_ret = saved_fcr;
+    }
     self.pending_callable_return = callableReturnBinder(fd, ret_ty);
+    self.fixed_callable_ret = null;
     self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();

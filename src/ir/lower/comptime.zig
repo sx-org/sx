@@ -18,6 +18,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_bound = @import("bound.zig");
 const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
@@ -1147,12 +1148,13 @@ fn checkComptimeCallArity(
 fn lowerComptimeRuntimeArg(
     self: *Lowering,
     arg: *const Node,
-    param_ty: TypeId,
+    demand: Lowering.ParamDemand,
     is_receiver: bool,
 ) Ref {
-    const saved_target = self.target_type;
-    if (param_ty != .unresolved) self.target_type = param_ty;
-    defer self.target_type = saved_target;
+    var dem = self.enterDemand(demand);
+    defer dem.restore();
+    // A callable binder coerces to nothing: the value's own shape is the answer.
+    const param_ty = demand.coerceType() orelse .unresolved;
 
     if (param_ty != .unresolved) {
         if (self.foldComptimeFloatInit(arg, param_ty)) |folded| return folded;
@@ -1353,13 +1355,15 @@ fn lowerComptimeCallArgsMode(
             self.stampCallerSource(@constCast(arg_node));
             cpn.put(param.name, arg_node) catch {};
         } else {
-            const pty = self.resolveDeclParamType(fd, param_idx);
+            const demand = lower_bound.paramDemand(self, fd, param_idx);
             const arg_val = lowerComptimeRuntimeArg(
                 self,
                 arg_node,
-                pty,
+                demand,
                 first_arg_is_receiver and param_idx == skip_params,
             );
+            // A callable-binder parameter's local IS the value handed to it.
+            const pty = demand.coerceType() orelse self.builder.getRefType(arg_val);
             runtime_args.append(self.alloc, .{ .name = param.name, .ty = pty, .value = arg_val }) catch unreachable;
         }
     }
