@@ -3390,12 +3390,17 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // tripwire — diagnose at the declaration instead. Named unknown types
     // (`-> Bogus`) are covered by the semantic pass's "unknown type".
     if (ret_ty == .unresolved) {
+        // A CALLABLE binder is the exception: `-> $F/(i64) -> i64` names the
+        // callable the body returns, so the body binds it and no call site has to.
         if (fd.return_type) |rtn| {
-            if (returnGenericLeaf(rtn)) |gen_name| {
-                if (self.diagnostics) |d| {
-                    d.addFmt(.err, rtn.span, "generic return type '${s}' cannot be bound — '{s}' has no parameter mentioning '${s}', so no call site can infer it", .{ gen_name, name, gen_name });
+            const binds_from_body = Lowering.callableBound(rtn) != null;
+            if (!binds_from_body) {
+                if (returnGenericLeaf(rtn)) |gen_name| {
+                    if (self.diagnostics) |d| {
+                        d.addFmt(.err, rtn.span, "generic return type '${s}' cannot be bound — '{s}' has no parameter mentioning '${s}', so no call site can infer it", .{ gen_name, name, gen_name });
+                    }
+                    return;
                 }
-                return;
             }
         }
     }
@@ -3908,6 +3913,9 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         }
     }
 
+    const saved_pcr = self.pending_callable_return;
+    defer self.pending_callable_return = saved_pcr;
+    self.pending_callable_return = callableReturnBinder(fd, ret_ty);
     self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();
@@ -4068,9 +4076,20 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
         }
     }
 
+    const saved_pcr = self.pending_callable_return;
+    defer self.pending_callable_return = saved_pcr;
+    self.pending_callable_return = callableReturnBinder(fd, ret_ty);
     self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();
+}
+
+/// The return-position callable binder this body has to fix, or null. A resolved
+/// return type is already the answer, so only an unresolved one is pending.
+fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node {
+    if (ret_ty != .unresolved) return null;
+    const rtn = fd.return_type orelse return null;
+    return if (Lowering.callableBound(rtn) != null) rtn else null;
 }
 
 // ── Module-const emission ───────────────────────────────────────

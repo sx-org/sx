@@ -47,6 +47,21 @@ pub fn uniqueLambdaThrough(self: *Lowering, ty: TypeId) ?UniqueLambda {
     return uniqueLambdaOf(self, info.pointer.pointee);
 }
 
+/// The signature a value is callable at.
+pub const CallableSig = struct { params: []const TypeId, ret: TypeId };
+
+/// The signature `ty` is callable at — a unique lambda's env struct, a
+/// `Closure`, or a function pointer — or null when nothing calls it.
+pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
+    if (uniqueLambdaThrough(self, ty)) |u| return .{ .params = u.params, .ret = u.ret };
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .closure => |c| .{ .params = c.params, .ret = c.ret },
+        .function => |f| .{ .params = f.params, .ret = f.ret },
+        else => null,
+    };
+}
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     return lowerLambdaTyped(self, lam, .heap, null);
 }

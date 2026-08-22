@@ -667,6 +667,11 @@ pub const Lowering = struct {
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
+    /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
+    /// it names is still unknown. Nothing at a call decides that binder, so the
+    /// value the body hands back fixes the function's return type and clears
+    /// this.
+    pending_callable_return: ?*const ast.Node = null,
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
     /// Flow-sensitive narrowing. The set of local variable names
@@ -1161,10 +1166,12 @@ pub const Lowering = struct {
         build_scopes: std.ArrayList(lower_build_block.Scope),
         inline_return_target: ?InlineExit,
         current_fn_decl: ?*const ast.FnDecl,
+        pending_callable_return: ?*const ast.Node,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
                 .l = l,
+                .pending_callable_return = l.pending_callable_return,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
@@ -1184,6 +1191,7 @@ pub const Lowering = struct {
             l.build_scopes = .empty;
             l.inline_return_target = null;
             l.current_fn_decl = null;
+            l.pending_callable_return = null;
             return g;
         }
 
@@ -1201,6 +1209,7 @@ pub const Lowering = struct {
             g.l.build_scopes = g.build_scopes;
             g.l.inline_return_target = g.inline_return_target;
             g.l.current_fn_decl = g.current_fn_decl;
+            g.l.pending_callable_return = g.pending_callable_return;
         }
     };
 
@@ -3536,6 +3545,9 @@ pub const Lowering = struct {
     pub const boundNonConformance = lower_protocol.boundNonConformance;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const checkBoundBindings = lower_bound.checkBindings;
+    pub const callableBound = lower_bound.callableBound;
+    pub const checkCallableBound = lower_bound.checkCallable;
+    pub const callableClosureOf = lower_bound.callableClosureOf;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
 
     // --- lower/coerce.zig (lower_coerce) ---
@@ -3841,6 +3853,7 @@ pub const Lowering = struct {
     pub const computeEnvSize = lower_closure.computeEnvSize;
     pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
     pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
+    pub const callableSigOf = lower_closure.callableSigOf;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
     pub const initTargetOf = lower_init_plan.initTargetOf;

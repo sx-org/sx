@@ -2936,6 +2936,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
 pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []const u8, call_node: *const ast.Call, lowered_args: []Ref) Ref {
     var bindings = self.genericResolver().buildTypeBindings(fd, call_node.args);
     defer bindings.deinit();
+    bindCallableBinders(self, fd, call_node.args, lowered_args, &bindings);
 
     // An uninferrable TYPE param must diagnose here: monomorphizing with
     // it unbound stamps `.unresolved` through the body and trips the
@@ -3008,6 +3009,49 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     }
 
     return self.emitError(base_name, call_node.callee.span);
+}
+
+/// Does this type parameter carry a function-type bound — is it a CALLABLE
+/// binder (`$F/(i64) -> i64`)?
+fn isCallableBinder(tp: ast.StructTypeParam) bool {
+    for (tp.protocol_constraints) |b| if (b.data == .function_type_expr) return true;
+    return false;
+}
+
+/// Rebind each callable binder from the value its argument lowered to. A
+/// callable's type is its shape, not its annotation: a `_{ … }` literal IS its
+/// env struct, and a lambda with no `-> R` takes its return from its body —
+/// neither is known until the argument is lowered. An argument that lowered to
+/// something uncallable keeps the annotation's binding, so the bound diagnoses it.
+fn bindCallableBinders(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    args_ast: []const *const Node,
+    lowered_args: []Ref,
+    bindings: *std.StringHashMap(TypeId),
+) void {
+    const types_explicit = self.genericResolver().typesPassedExplicitly(fd, args_ast);
+    for (fd.type_params) |tp| {
+        if (!isCallableBinder(tp)) continue;
+        var arg_idx: usize = 0;
+        for (fd.params) |param| {
+            const is_type_decl = isTypeParamDecl(&param, fd.type_params);
+            defer if (!is_type_decl) {
+                arg_idx += 1;
+            };
+            if (is_type_decl) {
+                if (types_explicit) arg_idx += 1;
+                continue;
+            }
+            if (arg_idx >= lowered_args.len) continue;
+            if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
+            const arg_ty = self.builder.getRefType(lowered_args[arg_idx]);
+            if (self.callableSigOf(arg_ty) == null) continue;
+            if (self.extractTypeParam(param.type_expr, arg_ty, tp.name)) |ty| {
+                bindings.put(tp.name, ty) catch {};
+            }
+        }
+    }
 }
 
 /// The five `Ordering` variants by declaration-order tag. INVARIANT: the sx
@@ -5504,7 +5548,15 @@ fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *co
         self.type_bindings = gbindings.?;
     }
     var types_list = std.ArrayList(TypeId).empty;
-    for (fd.params, 0..) |_, param_idx| {
+    for (fd.params, 0..) |p, param_idx| {
+        // A CALLABLE binder is typed by its BOUND, not by whatever the argument
+        // inference guessed for it: the signature is what an unannotated `|x|`
+        // reads its parameter from, and the binder itself is fixed from the value
+        // the argument lowers to.
+        if (self.callableClosureOf(p.type_expr)) |sig| {
+            types_list.append(self.alloc, sig) catch unreachable;
+            continue;
+        }
         types_list.append(self.alloc, self.resolveDeclParamType(fd, param_idx)) catch unreachable;
     }
     return types_list.items;

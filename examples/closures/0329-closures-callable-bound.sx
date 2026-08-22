@@ -1,0 +1,34 @@
+// `$F/(…) -> R` is a bound whose head is a function TYPE: it asks that whatever
+// binds `F` be CALLABLE at that signature. A unique `_{ … }` literal, a bare
+// function, and a `Closure` each answer it out of their own shape, so one call
+// site takes all three — and `F` binds to the argument's own type, so nothing
+// erases and nothing allocates.
+//
+// In RETURN position the binder introduces there: no call decides it, so the
+// callable the body hands back is the one it names.
+
+@import "modules/std.sx";
+
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+twice :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(f(v)); }
+double :: (x: i64) -> i64 { return x * 2; }
+
+make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
+
+main :: () {
+    n := 7;
+    print("unique {}\n", apply(|x: i64|_{ n = n } x + n, 5));   // 12
+    print("fnptr {}\n", apply(double, 5));                      // 10
+    c : Closure(i64) -> i64 = double;
+    print("closure {}\n", apply(c, 5));                         // 10
+
+    // An unannotated `|x|` reads its parameter from the bound's signature.
+    print("literal {}\n", apply(|x| x * 3, 5));                 // 15
+    print("twice {}\n", twice(double, 5));                      // 20
+
+    // Each adder IS its own env, so `n` travels with the value and two adders
+    // are independent.
+    add3 := make_adder(3);
+    add10 := make_adder(10);
+    print("adders {} {} size {}\n", add3(4), add10(4), size_of(type_of(add3)));
+}

@@ -270,11 +270,20 @@ fn bodyTailSpan(body: *const Node) ast.Span {
 /// THE entry for every user-authored function body. Callers pass a body and a
 /// declared return type and decide nothing else: the demand, the tail's
 /// destination, return position and the implicit exit are all owned here.
-pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
+pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) void {
+    var ret_ty = ret_ty_in;
     // The body types against its OWN return type: a bare `.{...}` / `.X` in the
-    // tail resolves to it rather than to whatever leaked in from the caller.
+    // tail resolves to it rather than to whatever leaked in from the caller. A
+    // return-position callable binder has no type yet, so the body types against
+    // the SIGNATURE the bound spells — which is what an unannotated `|x|` reads
+    // its parameter from.
     const saved_target = self.target_type;
-    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
+    self.target_type = if (self.pending_callable_return) |binder|
+        self.callableClosureOf(binder)
+    else if (ret_ty != .void and ret_ty != .noreturn)
+        ret_ty
+    else
+        null;
     defer self.target_type = saved_target;
 
     // `currentFunc` is the CALLER while an inlined body is being lowered, so a
@@ -308,6 +317,7 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
             return;
         },
         .value => |val| {
+            if (fixCallableReturn(self, val)) |fixed| ret_ty = fixed;
             const val_ty = self.builder.getRefType(val);
             if (val_ty != .void) {
                 const span = bodyTailSpan(body);
@@ -366,7 +376,11 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
         // an already-diagnosed failed return. (If a real error fired, surfacing
         // the redundant missing-value note would just be noise.)
         if (diags.errorCount() == errs_before) {
-            diags.addFmt(.err, bodyTailSpan(body), "function returns '{s}' but its body produces no value — end it with a trailing expression or an explicit `return`", .{self.formatTypeName(ret_ty)});
+            if (self.pending_callable_return) |binder| {
+                diags.addFmt(.err, bodyTailSpan(body), "'${s}' is the callable this body hands back, and this body hands back none", .{binder.data.type_expr.name});
+            } else {
+                diags.addFmt(.err, bodyTailSpan(body), "function returns '{s}' but its body produces no value — end it with a trailing expression or an explicit `return`", .{self.formatTypeName(ret_ty)});
+            }
         }
     }
     self.ensureTerminator(ret_ty);
@@ -1312,6 +1326,21 @@ fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
     }
 }
 
+/// Fix a return-position callable binder to the type of the value handed back,
+/// returning that type. The binder names the callable this body produces, so the
+/// value IS the answer — a `_{ … }` literal stays its own env struct instead of
+/// erasing into the `Closure` an annotation would have had to spell.
+fn fixCallableReturn(self: *Lowering, ret_val: Ref) ?TypeId {
+    const binder = self.pending_callable_return orelse return null;
+    const ty = self.builder.getRefType(ret_val);
+    if (ty == .unresolved or ty == .void) return null;
+    self.pending_callable_return = null;
+    self.builder.currentFunc().ret = ty;
+    const bound = Lowering.callableBound(binder) orelse return ty;
+    self.checkCallableBound(bound, binder.data.type_expr.name, ty);
+    return ty;
+}
+
 pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
     if (rs.value == null) rejectValuelessReturn(self, span);
     // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
@@ -1349,6 +1378,9 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // comptime-body return path too (iri.ret_ty is the failable tuple there).
     const target_for_value = self.failableReturnTarget(ret_ty_for_target, rs_value);
     if (target_for_value != .void) self.target_type = target_for_value;
+    // A return-position callable binder has no type yet: what the value is typed
+    // against is the SIGNATURE its bound spells.
+    if (self.pending_callable_return) |binder| self.target_type = self.callableClosureOf(binder);
     // A `return <expr>` for a value-returning function is a VALUE position, just
     // like a `:=`/`=` RHS or a call argument: an `if`/`match`/block operand must
     // produce a value (a phi'd merge), not be demoted to a statement whose result
@@ -1380,6 +1412,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     }
     self.force_block_value = saved_fbv_ret;
     self.target_type = old_target;
+    if (ret_val) |rv| _ = fixCallableReturn(self, rv);
 
     // Emit ALL pending defers for THIS function in LIFO order before the exit.
     // An inlined body drains only to its own base, so a caller defer that
