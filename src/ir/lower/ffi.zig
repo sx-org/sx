@@ -134,8 +134,11 @@ pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, 
         return Ref.none;
     }
 
-    // Receiver expression.
+    // Receiver is a pointer; `null` is nil.
+    const saved_recv_tt = self.target_type;
+    self.target_type = self.module.types.ptrTo(.void);
     const recv = self.lowerExpr(fic.args[0]);
+    self.target_type = saved_recv_tt;
 
     // Selector. Literal selectors get interned into a module-
     // scoped `SEL*` slot — emit_llvm.zig tags the slot into

@@ -15,13 +15,13 @@ error: global 'g' must be initialized by a compile-time constant
 12 | g : S = .{ inner = W{ v = 4 } };
    |         ^^^^^^^^^^^^^^^^^^^^^^^
 
-error: '.{ }' is refused at a static 'P' position — a null ctx is the '?P' absent sentinel, and this position must hold a live handle
+error: '.{ }' is a struct literal, not a 'P' handle
   --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:15:20
    |
 15 | z : S = .{ inner = .{} };
    |                    ^^^
 
-help: name a module-scope global of a conforming type
+help: a static 'P' position names a module-scope global of a conforming type
    |
 15 | z : S = .{ inner = .{} };
    |                    ^^^

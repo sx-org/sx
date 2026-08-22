@@ -191,7 +191,7 @@ shape.draw(10, 20);
 - `constraint`: bounds only, no runtime value.
 - `interface`: an erased `{ctx, type_id, vtable}` handle, dynamic dispatch. `type_of(shape)` is the concrete type.
 - A handle borrows its referent: copies alias it, nothing owns it, and `free` refuses one.
-- An interface-typed target coerces an lvalue in place, a `*T` to its pointee, and an rvalue to a frame temporary; `a.make(v)` gives a value a longer life.
+- An interface-typed target coerces an lvalue in place, a `*T` to its pointee, or copies an existing handle; a concrete rvalue is a compile error. `a.make(v)` writes the value into allocated storage.
 - `Self` past the receiver belongs to a `constraint` — bind through `$T/Eq`.
 
 ### Open Sets

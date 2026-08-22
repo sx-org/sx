@@ -171,11 +171,6 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
-            // A body's trailing expression IS its return operand, so the spine
-            // reaches this node and no statement before it.
-            const saved_spine = self.return_component;
-            if (demand == .return_value) self.return_component = true;
-            defer self.return_component = saved_spine;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .terminated;
             return .{ .value = v };
@@ -332,13 +327,10 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
                 // slot (a `string` body "returning" i64 would ship the pointer
                 // as the int). Diagnose; on failure skip the coerce (the build
                 // aborts via hasErrors before this ret could run).
-                const saved_spine = self.return_component;
-                self.return_component = true;
                 const coerced = if (self.checkReturnable(val, val_ty, ret_ty, span))
                     self.coerceToType(val, val_ty, ret_ty)
                 else
                     val;
-                self.return_component = saved_spine;
                 emitBodyExit(self, coerced, ret_ty, .fallthrough);
                 return;
             }
@@ -707,11 +699,6 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
 }
 
 pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
-    // A binding clears the return spine: the handle names storage the binding
-    // owns, not the value handed back.
-    const saved_spine = self.return_component;
-    self.return_component = false;
-    defer self.return_component = saved_spine;
     if (vd.value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             const ph = self.diagPackAsValue(val.data.identifier.name, val.span, .storage);
@@ -1380,10 +1367,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // lowering — `reorderNamedReturn` is a no-op for positional / non-tuple
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
-    const saved_spine = self.return_component;
-    self.return_component = true;
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
-    self.return_component = saved_spine;
     if (ret_val) |rv| {
         // `return proc.exit(0);` never returns: the operand took control where
         // it stands, so no defer, coercion or exit follows it.
@@ -1430,13 +1414,10 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             // it into the return slot; on failure skip the coerce (the build
             // aborts via hasErrors before this ret could run).
             const val_ty = self.builder.getRefType(ref);
-            const saved_ret_spine = self.return_component;
-            self.return_component = true;
             const coerced = if (self.checkReturnable(ref, val_ty, exit_ty, rs.value.?.span))
                 self.coerceToType(ref, val_ty, exit_ty)
             else
                 ref;
-            self.return_component = saved_ret_spine;
             emitBodyExit(self, coerced, exit_ty, .return_like);
         }
     } else {

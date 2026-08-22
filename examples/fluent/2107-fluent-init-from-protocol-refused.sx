@@ -54,8 +54,10 @@ form_Wide :: ufcs (value: $I/@Init(Wide)) {
 }
 
 main :: () -> i32 {
-    b := Round{ s = "vtable" }.(Boxed);
-    x := Wide{ a = 1, b = 2 }.(Boxed);
+    r := Round{ s = "vtable" };
+    b := r.(Boxed);
+    w := Wide{ a = 1, b = 2 };
+    x := w.(Boxed);
 
     form_Round(b);
     b.form_Round();

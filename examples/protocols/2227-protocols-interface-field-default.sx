@@ -1,7 +1,6 @@
 // An interface-typed field default is the identity erasure of a named global,
 // and it lands identically whether the aggregate is built on a frame or
-// serialized into the image. `.{ }` at an ordinary interface target is the
-// zero handle — the `?I` absent bit pattern — which a binding may hold.
+// serialized into the image. Absence of `?I` is `null`.
 @import "modules/std.sx";
 
 P :: interface { a :: (self: *Self) -> i64; }
@@ -25,7 +24,6 @@ main :: () {
     the_w.v = 11;
     print("{} {} {}\n", frame_default.inner.a(), static_default.inner.a(), static_named.inner.a());
 
-    zero : P = .{};
-    opt : ?P = zero;
-    print("zero handle absent: {}\n", opt == null);
+    opt : ?P = null;
+    print("absent: {}\n", opt == null);
 }

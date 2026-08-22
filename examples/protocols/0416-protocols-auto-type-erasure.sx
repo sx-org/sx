@@ -64,18 +64,20 @@ main :: () {
         print("AE2: {}\n", a.value());
     }
 
-    // AE3: struct-literal argument, rvalue source
+    // AE3: function argument, named local
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
+        sc := SimpleCounter{ val = 100 };
+        result := use_counter(sc.(Counter));
         print("AE3: {}\n", result);
     }
 
-    // AE4: call-result receiver, rvalue source
+    // AE4: call result bound, then argument
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
         mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }
-        result := use_counter(mk().(Counter));
+        made := mk();
+        result := use_counter(made.(Counter));
         print("AE4: {}\n", result);
     }
 

@@ -34,7 +34,8 @@ main :: () {
     print("{} {}\n", type_eq(Buffer(f32), Buffer(i64)), type_eq(BufF, BufI));
     //stdout: false false
 
-    a := Buffer(f32){ n = 7 }.(Series(f32));
+    buf := Buffer(f32){ n = 7 };
+    a := buf.(Series(f32));
 
     // The arm names the alias and matches the instantiation's value.
     match a {
@@ -51,6 +52,8 @@ main :: () {
     print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI{ v = 6 })));
     //stdout: Box__i64 Box__i64
 
-    print("{} {}\n", seen(Box(i64){ v = 1 }.(Show)), seen(BoxI{ v = 2 }.(Show)));
+    b1 := Box(i64){ v = 1 };
+    b2 := BoxI{ v = 2 };
+    print("{} {}\n", seen(b1.(Show)), seen(b2.(Show)));
     //stdout: 1 2
 }

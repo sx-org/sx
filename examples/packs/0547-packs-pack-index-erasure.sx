@@ -1,9 +1,6 @@
-// `<pack>[i].(I)` — a pack element coerced into an interface-typed local.
-//
-// A pack index is a comptime rvalue: a pack has no runtime storage, and
-// `sources[i]` resolves to the call-site argument, which gets storage only
-// when it is lowered as a value. So the coercion takes the rvalue arm — a
-// frame-scoped temporary the handle borrows.
+// A comptime-pack element bound to a named local, then coerced into an
+// interface-typed handle. `sources[i]` is a pack index (no runtime storage of
+// its own); the local is the storage the handle borrows.
 
 @import "modules/std.sx";
 
@@ -12,7 +9,8 @@ IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
 first :: (..sources: VL) -> i64 {
-    x := sources[0].(VL(i64));
+    s := sources[0];
+    x := s.(VL(i64));
     return x.get();
 }
 

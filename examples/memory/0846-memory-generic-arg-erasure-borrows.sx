@@ -62,11 +62,12 @@ main :: () {
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
     // A coercion under a pushed allocator still allocates nothing: the handle
-    // borrows the temporary the frame holds.
+    // borrows the named widget.
     t3 := Tracker{ allocs = 0, deallocs = 0 };
+    w := Widget{ value = 5 };
     s : Sizable = ---;
     push .{ allocator = t3 } {
-        s = Widget{ value = 5 }.(Sizable);
+        s = w.(Sizable);
     }
     print("no fund: {}/{} size {}\n", t3.allocs, t3.deallocs, s.size());
 

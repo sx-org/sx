@@ -10,6 +10,7 @@ impl Show for W { show :: (self: *W) -> string { "w" } }
 draw :: (v: $T/View) -> i64 { 1 }
 
 main :: () {
-    h : Show = W{ n = 1 };
+    w := W{ n = 1 };
+    h : Show = w;
     print("{}\n", draw(h));
 }

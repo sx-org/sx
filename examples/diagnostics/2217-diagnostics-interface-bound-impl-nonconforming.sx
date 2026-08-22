@@ -42,7 +42,8 @@ concrete :: (v: $T/Show) -> i64 { 1 }
 relay :: ($P: Type, v: $V/P) -> i64 { 1 }
 
 main :: () {
-    h : Show = W{ n = 1 };
+    w := W{ n = 1 };
+    h : Show = w;
     print("{}\n", miss(h));
     print("{}\n", bad(h));
     print("{}\n", ret(h));

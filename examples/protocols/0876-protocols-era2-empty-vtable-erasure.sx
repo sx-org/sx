@@ -24,6 +24,7 @@ main :: () {
         else: { print("switch:      miss\n"); }
     }
 
-    mo := Sq{ side = 9 }.(Marker);
+    sq9 := Sq{ side = 9 };
+    mo := sq9.(Marker);
     print("erased {}\n", type_of(mo) is Marker);
 }

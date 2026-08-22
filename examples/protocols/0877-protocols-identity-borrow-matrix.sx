@@ -2,9 +2,8 @@
 // This is the POSITIVE matrix: lvalue coercion via `xx`, the
 // target-explicit postfix `x.(I)`, decl targets, call args, and
 // struct-field targets all alias the original (mutations visible both
-// ways); `push .{ allocator = gpa }` borrows the same way. The refusals
-// (returning a handle over a temporary, `free`) are pinned in
-// diagnostics/1255.
+// ways); `push .{ allocator = gpa }` borrows the same way. An I-typed
+// target never invents a temp; those refusals live under diagnostics/.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 

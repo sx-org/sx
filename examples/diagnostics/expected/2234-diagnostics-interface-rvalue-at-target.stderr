@@ -1,0 +1,29 @@
+error: cannot borrow a temporary into a 'Sizable' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2234-diagnostics-interface-rvalue-at-target.sx:19:19
+   |
+19 |     t : Sizable = Widget{ value = 7 };
+   |                   ^^^^^^^^^^^^^^^^^^^
+
+error: cannot borrow a temporary into a 'Sizable' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2234-diagnostics-interface-rvalue-at-target.sx:20:17
+   |
+20 |     _ = measure(Widget{ value = 7 });
+   |                 ^^^^^^^^^^^^^^^^^^^
+
+error: cannot borrow a temporary into a 'Sizable' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2234-diagnostics-interface-rvalue-at-target.sx:22:17
+   |
+22 |     list.append(Widget{ value = 7 });
+   |                 ^^^^^^^^^^^^^^^^^^^
+
+error: cannot borrow a temporary into a 'Show' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2234-diagnostics-interface-rvalue-at-target.sx:23:10
+   |
+23 |     each(A{ x = 1 }.(Show));
+   |          ^^^^^^^^^^
+
+error: cannot borrow a temporary into a 'Sizable' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2234-diagnostics-interface-rvalue-at-target.sx:24:20
+   |
+24 |     g : ?Sizable = Widget{ value = 2 };
+   |                    ^^^^^^^^^^^^^^^^^^^

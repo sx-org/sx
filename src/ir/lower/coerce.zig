@@ -495,7 +495,7 @@ fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, fun
 /// True for expression shapes that name an addressable storage location
 /// (variables, fields, array elements, dereferenced pointers). Used by
 /// `xx <struct-typed expr>` to decide between the borrow arms (lvalue →
-/// take the address) and the rvalue arms (a frame temporary to borrow).
+/// take the address) and a concrete rvalue, which an I-typed target refuses.
 pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
     return switch (node.data) {
         .identifier, .deref_expr => true,
@@ -506,13 +506,11 @@ pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
         // erasure a garbage address (the value fallback of lowerExprAsPtr).
         // A rvalue base routes to the self-contained copy path instead.
         .field_access => |fa| self.isLvalueExpr(fa.object),
-        // A comptime pack index (`pack[i]`) is NOT an lvalue: a pack is
-        // comptime-only with no runtime storage — `pack[i]` resolves to the
-        // call-site arg node, which only acquires storage when lowered as a
-        // value. Taking its address via `lowerExprAsPtr` would lower the bare
-        // pack as a value and trip the pack-as-value error.
-        // Reporting it as an rvalue routes `buildProtocolErasure` into its
-        // rvalue arms over the already-materialized element.
+        // A comptime pack index (`pack[i]`) is not an lvalue: a pack has no
+        // runtime storage — `pack[i]` resolves to the call-site arg node.
+        // Taking its address via `lowerExprAsPtr` would lower the bare pack as
+        // a value and trip the pack-as-value error. An I-typed target then
+        // refuses the materialized rvalue.
         // A non-pack index (array/slice element) is a genuine lvalue.
         //
         // Decide pack-ness with the SAME predicate the value path uses —
@@ -948,25 +946,38 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 
     if (concrete_type_name) |ctn| {
         if (is_rvalue) {
-            if (self.refuseReturnedRvalueErasure(dst_ty, proto_name, operand_node.span))
-                return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
-            const slot = self.builder.alloca(concrete_ty);
-            self.builder.store(slot, operand);
-            concrete_ptr = slot;
+            self.refuseRvalueInterfaceErasure(proto_name, operand_node.span);
+            return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
         }
         return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
     }
     return operand;
 }
 
-/// The return-spine refusal: an rvalue erased at an interface target borrows a
-/// frame temp, so handing the handle back outlives the storage it names.
-pub fn refuseReturnedRvalueErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u8, span: ast.Span) bool {
-    if (!self.return_component) return false;
+/// An interface-typed target never invents a temp: a concrete rvalue has no
+/// storage of its own to borrow.
+pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_name: []const u8, span: ast.Span) void {
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot return a '{s}' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that", .{proto_name});
+        d.addFmt(.err, span, "cannot borrow a temporary into a '{s}' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that", .{proto_name});
     }
-    _ = dst_ty;
+}
+
+/// `null` is the absence of `?T` and the null pointer. It does not type at a
+/// non-optional value slot. Pointer-shaped slots (`*T`, `[*]T`, `cstring`, a
+/// function type) take `null` as the null address.
+pub fn refuseNullAtNonOptional(self: *Lowering, dst_ty: TypeId, span: ast.Span) bool {
+    if (dst_ty == .void or dst_ty == .unresolved or dst_ty == .cstring) return false;
+    if (!dst_ty.isBuiltin()) {
+        switch (self.module.types.get(dst_ty)) {
+            .optional, .pointer, .many_pointer, .function => return false,
+            else => {},
+        }
+    }
+    if (self.diagnostics) |d| {
+        const shown = self.formatTypeName(dst_ty);
+        const id = d.addFmtId(.err, span, "cannot assign 'null' to '{s}'", .{shown});
+        d.addHelpFmt(id, span, null, "'null' is the absence of '?{s}'", .{shown});
+    }
     return true;
 }
 
@@ -1939,11 +1950,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // than the AST: a READ of named storage borrows that storage.
                 concrete_ptr = addr;
             } else {
-                if (self.refuseReturnedRvalueErasure(dst_ty, proto_name, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end }))
-                    return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
-                const slot = self.builder.alloca(src_ty);
-                self.builder.store(slot, val);
-                concrete_ptr = slot;
+                self.refuseRvalueInterfaceErasure(proto_name, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end });
+                return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
             }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
         },

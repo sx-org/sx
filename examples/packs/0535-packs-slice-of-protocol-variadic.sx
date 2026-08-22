@@ -1,11 +1,8 @@
 // Slice-of-protocol variadic `..xs: []P` — the RUNTIME counterpart to the
-// comptime pack `..xs: P`. Each trailing arg is `xx`-erased to a `P` protocol
-// value {ctx, vtable} and packed into a runtime `[]P`, so the elements can be
-// indexed by a RUNTIME index and dispatched through the protocol interface
-// (unlike a pack, which is comptime-only — see 0526).
-//
-// This is the type-safe way to iterate a heterogeneous arg list at runtime:
-// concrete per-position types are erased to the constraint protocol.
+// comptime pack `..xs: P`. Each trailing arg coerces per §5.2 into a `P`
+// handle and packs into a runtime `[N]P`; the array is call-scoped and does
+// not invent referents. Elements are indexed by a RUNTIME index and dispatched
+// through the handle (unlike a pack, which is comptime-only — see 0526).
 
 @import "modules/std.sx";
 
@@ -25,7 +22,10 @@ each :: (..xs: []Show) -> void {
 }
 
 main :: () -> i32 {
-    each(A{ x = 1 }.(Show), B{ s = "hi" }.(Show), A{ x = 3 }.(Show));
+    a1 := A{ x = 1 };
+    b1 := B{ s = "hi" };
+    a3 := A{ x = 3 };
+    each(a1.(Show), b1.(Show), a3.(Show));
     each();                                            // empty is fine (len 0)
     0
 }

@@ -1,0 +1,43 @@
+error: '.{ }' is a struct literal, not a 'P' handle
+  --> examples/diagnostics/2235-diagnostics-interface-empty-and-null.sx:8:13
+   |
+ 8 |     x : P = .{};
+   |             ^^^
+
+help: bind a named value, or write it through 'Allocator.make'
+   |
+ 8 |     x : P = .{};
+   |             ^^^
+
+error: '.{ }' is a struct literal, not a 'P' handle
+  --> examples/diagnostics/2235-diagnostics-interface-empty-and-null.sx:9:14
+   |
+ 9 |     y : ?P = .{};
+   |              ^^^
+
+help: absence of '?P' is spelled 'null'
+   |
+ 9 |     y : ?P = .{};
+   |              ^^^
+
+error: cannot assign 'null' to 'P'
+  --> examples/diagnostics/2235-diagnostics-interface-empty-and-null.sx:10:13
+   |
+10 |     z : P = null;
+   |             ^^^^
+
+help: 'null' is the absence of '?P'
+   |
+10 |     z : P = null;
+   |             ^^^^
+
+error: cannot assign 'null' to 'i64'
+  --> examples/diagnostics/2235-diagnostics-interface-empty-and-null.sx:11:15
+   |
+11 |     n : i64 = null;
+   |               ^^^^
+
+help: 'null' is the absence of '?i64'
+   |
+11 |     n : i64 = null;
+   |               ^^^^

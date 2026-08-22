@@ -548,8 +548,8 @@ main :: () {
     // xx in function return position (tested in standalone test_return.sx)
     // Covered by: make_adder :: (acc: *Accumulator) -> Adder { xx acc; }
 
-    // Protocol values in arrays — each element OWNS its copy, so reads
-    // go through the erased values, not the sources.
+    // Protocol values in arrays — each element copies the handle and aliases
+    // the named source.
     {
         acc := Accumulator{ total = 0 };
         dbl := Doubler{ val = 0 };
@@ -562,17 +562,19 @@ main :: () {
         print("P2.6: {} {}\n", adders[0].value(), adders[1].value());
     }
 
-    // postfix erasure of an inline struct literal (no intermediate variable)
+    // postfix erasure of a named local at an interface argument
     {
         use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
-        result := use_adder(Accumulator{ total = 5 }.(Adder));
+        acc := Accumulator{ total = 5 };
+        result := use_adder(acc.(Adder));
         print("P2.7: {}\n", result);
     }
 
-    // postfix erasure of a struct literal at an interface target
+    // named local at an interface argument
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
+        sc := SimpleCounter{ val = 100 };
+        result := use_counter(sc.(Counter));
         print("P3.3: {}\n", result);
     }
 }

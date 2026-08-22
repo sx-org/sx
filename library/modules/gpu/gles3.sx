@@ -88,7 +88,7 @@ Gles3Gpu :: struct {
     // lists through the long-lived allocator, even when a caller (e.g.
     // glyph_cache atlas-grow during render) is currently inside a transient
     // arena context.
-    parent_allocator: Allocator = .{};
+    parent_allocator: Allocator = ---;
 }
 
 // ── GPU impl ───────────────────────────────────────────────────────────

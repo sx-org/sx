@@ -1264,7 +1264,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
             break :blk arm.body;
         } else arm.body;
 
-        if (last_node.data == .null_literal) {
+        if (self.armContributesNull(arm.body)) {
             has_null = true;
             continue;
         }

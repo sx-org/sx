@@ -48,7 +48,8 @@ main :: () -> i32 {
     print("union       = {} {}\n", t.i1, t.`i1);      // bare + backtick — same tag
 
     items : List(Speaker) = .{};
-    items.append(Dog{ n = 7 }.(Speaker));
+    d := Dog{ n = 7 };
+    items.append(d.(Speaker));
     print("dispatch    = {}\n", items.items[0].i2()); // bare reserved-name method call
     return 0;
 }

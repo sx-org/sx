@@ -4131,7 +4131,10 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
             return self.builder.constString(sid);
         },
         .undef_literal => return self.builder.constUndef(ci.ty),
-        .null_literal => return self.builder.constNull(ci.ty),
+        .null_literal => {
+            if (self.refuseNullAtNonOptional(ci.ty, ci.value.span)) return self.builder.constUndef(ci.ty);
+            return self.builder.constNull(ci.ty);
+        },
         else => {
             // Complex expressions (struct_literal, call, etc.) — lower on demand
             const saved_target = self.target_type;

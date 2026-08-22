@@ -1,0 +1,12 @@
+// `.{ }` is a struct literal, not a handle and not `?T` absence. `null` is
+// the absence of `?T` and does not type at a non-optional slot.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+
+main :: () {
+    x : P = .{};
+    y : ?P = .{};
+    z : P = null;
+    n : i64 = null;
+}

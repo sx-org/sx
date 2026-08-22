@@ -1382,7 +1382,13 @@ an assignment, and the operand of a `?I` wrap.
 | `*T`, `T` conforming | handle borrowing the pointee |
 | `*I` | loads the handle out of the pointee |
 | a value already of type `I` | the handle, copied |
-| rvalue of a conforming concrete type | frame-scoped temporary; the handle borrows it |
+
+There is no rvalue arm. An I-typed target never invents a temp: a
+concrete rvalue has no storage of its own to borrow, so every such
+position is a compile error — including a `..xs: []I` element and the
+operand of a `?I` wrap. Optional is not an escape hatch:
+`g : ?Sizable = Widget{ value = 2 }` is the same error as
+`t : Sizable = Widget{ value = 2 }`.
 
 The `*I` arm is read before the pointer arm, so a `*I` operand yields
 the stored handle rather than a handle over the pointer.
@@ -1395,69 +1401,54 @@ impl Sizable for Widget {
 }
 
 measure :: (v: Sizable) -> i64 { v.size() }
+pretty  :: (v: $T/Sizable) -> i64 { v.size() }
 
 w  := Widget{ value = 7 };
 s : Sizable = w;                    // borrows w in place
 measure(w);                         // same coercion at the argument
 measure(*w);                        // a pointer borrows its pointee
-t : Sizable = Widget{ value = 8 };  // frame-scoped temporary, borrowed
 u : Sizable = s;                    // the handle, copied — one referent
+pretty(Widget{ value = 8 });        // $T/I is not an I-typed target
+p := a.make(Widget{ value = 9 });   // @Init argument, *T result
+measure(p);                         // *T arm
 ```
 
-An rvalue's temporary is scoped to the enclosing function frame. The
-temporaries a `[]I` variadic builds are scoped to the call (§6.7).
+```sx
+t : Sizable = Widget{ value = 8 };          // error
+measure(Widget{ value = 8 });               // error
+g : ?Sizable = Widget{ value = 2 };         // error — wrap operand is an I target
+return Widget{ value = 1 };                 // error at `-> Sizable`
+return S{ inner = Widget{ value = 1 } };    // error — field init is an I target
+```
+```
+error: cannot borrow a temporary into a 'Sizable' handle — bind the
+       value where it lives, or write it through 'Allocator.make' and
+       use the handle over that
+```
+
+`$T/I` is not an I-typed target. `pretty(v: $T/Sizable)` plus a concrete
+literal is a Widget argument. `measure(v: Sizable)` plus a concrete
+literal is the error.
 
 **Explicit coercion.** `x.(I)` states the same coercion, over the same
 arms, at any expression position. There is no allocating form: `.(I,
-alloc)` is not a spelling.
+alloc)` is not a spelling. The postfix is optional when the destination
+is already I-typed: `measure(w)` and `measure(w.(Sizable))` are the same
+coercion. On a concrete rvalue it is the same error.
 
-**The return-value spine.** The rvalue arm is refused on the spine of a
-returned expression — the temporary dies at the return. The spine is:
+**`.{ }` is a struct literal.** It never forms a handle and is never
+`?T` absence. `x : I = .{}` and `x : ?I = .{}` are compile errors.
 
-- the returned expression itself;
-- the field and element initializers of an aggregate literal that IS the
-  returned expression;
-- the `?I` wrap operand on that spine;
-- both arms of an `if` or `match` in return position.
+**`?T` none is `null`.** Absence of `?I` is spelled `null`, the same as
+`?i32` and `?Closure`. `null` does not type at a non-optional slot:
+`x : I = null` and `x : i64 = null` are compile errors (the diagnostic
+names `?I` / `?i64`). `*T = null` is the null pointer.
 
-The spine propagates from a `return` operand and from a function body's
-trailing expression — both are exits — and is **cleared** at
-call-argument lists, assignments, bindings, `push` fields, and nested
-function and closure bodies:
-
-```sx
-return f(Widget{});             // legal — an argument list clears the spine
-return a.make(Widget{});        // legal — same
-return S{ inner = Widget{} };   // refused — the literal is the returned expression
-f :: () -> Sizable { Widget{} } // refused — the trailing expression is the exit
-```
-```
-error: cannot return a 'P' handle over a temporary — the handle borrows a
-       frame slot the caller outlives; bind the value where it lives, or
-       write it through 'Allocator.make' and return the handle over that
-```
-
-The refusal is a **spelling rule**, not a lifetime guarantee. The same
-expression written through a binding compiles:
-
-```sx
-r : Sizable = ---;
-r = Widget{ value = 1 };
-return r;                       // compiles; the handle outlives the temporary it borrows
-```
-
-That is the hazard of §5.4.
-
-**`.{ }` at an interface-typed target** is the **zero handle**: a null
-`ctx`, the bit pattern `?I` reads as absent. It is never a coercion of
-an empty aggregate.
-
-- At an ordinary (non-static) interface-typed target — a binding, an
-  assignment, a field initializer, a `push` field — it is legal.
-- At a static position (§6.6) it is refused.
-- On the return spine of a non-optional `-> I` it is refused; the
-  diagnostic names `?I`.
-- `return .{}` at `-> ?I` is the absent sentinel.
+**`---` is uninit.** A non-optional I slot may be `---` (LLVM undef, no
+handle). `parent_allocator: Allocator = ---` is the GPU dummy: `init`
+writes the field. A statically-constructed struct cannot take `---` at
+an I field — the operand of a static position names a module-scope
+global (§6.6).
 
 ##### 5.3 `free`
 
@@ -1476,6 +1467,9 @@ collect :: (out: *List(View)) {
     out.append(b);       // the handle borrows `b`, which dies at the return
 }
 ```
+
+A `$T/I` callee that stores `v` as `I` borrows the parameter slot, which
+dies at callee return — not policed.
 
 Struct fields, containers, and the Context snapshot a thread or fiber
 inherits all carry handles this way; keeping the referent alive is the
@@ -1563,8 +1557,9 @@ The initializer is a bare or module-qualified path whose **root** is a
 module namespace, with `xx` recursing into it. A path rooted at a global
 *value* (`g.field`) is refused — the coercion needs the global's own
 symbol. Every other operand refuses, `@run` included: the position is
-judged on the written shape. `.{ }` is refused here, and legal at an
-ordinary interface-typed struct field (§5.2).
+judged on the written shape. `.{ }` is a struct literal, never a handle,
+and is refused here as at every other I-typed target. `---` is uninit and
+is refused at a static I field: the operand names a module-scope global.
 
 `push .{ allocator = arena }` is not a static position: a `push` field
 is an ordinary interface-typed target over a frame-scoped Context.
@@ -1582,8 +1577,9 @@ thread when the ambient one does not.
 
 - `..xs: []I` (runtime variadic, erased element): each trailing argument
   coerces per §5.2 and packs into a runtime `[N]I`;
-  `xs[i].method()` dispatches dynamically. An rvalue argument's
-  temporary is scoped to the **call**.
+  `xs[i].method()` dispatches dynamically. The array is call-scoped; the
+  handles do not invent referents — each element is already an lvalue, a
+  `*T`, or a handle.
 - `..xs: I` and `..xs: C` (comptime heterogeneous pack): each element
   keeps its concrete type and calls monomorphize. A pack head may be
   either declaration. An element already typed as the head interface
@@ -1793,11 +1789,13 @@ owns the declaration and no compiler change follows an edit to it.
 | `impl Q for I` (both interfaces) | refused — an interface handle is not a concrete conformer; `p.(Q)` is the conversion |
 | impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |
 | interface-typed member (`m :: (self: *Self, v: View)`) | ordinary — the parameter coerces per §5.2 at the call |
-| rvalue at `I` | frame-scoped temporary, borrowed (§5.2) |
-| rvalue at `I` on the return-value spine | compile error — the temporary dies at the return; the diagnostic names `Allocator.make` |
-| `.{ }` at an ordinary interface target | the zero handle: null ctx, `?I`-absent bit pattern |
-| `.{ }` at a static interface position | compile error (§6.6) |
-| `.{ }` on the return spine of `-> I` | compile error, naming `?I`; `return .{}` at `-> ?I` is the absent sentinel |
+| rvalue at `I` | compile error — an I-typed target never invents a temp (§5.2) |
+| rvalue at `?I` | compile error — the wrap operand is an I-typed target |
+| `.{ }` at an I-typed target (`I` or `?I`) | compile error — `.{ }` is a struct literal, not a handle |
+| `null` at a non-optional value (`I`, `i64`, …) | compile error — `null` is the absence of `?T`; `*T = null` stays |
+| `.{ }` at a static interface position | compile error (§6.6) — same struct-literal refusal |
+| `---` at a static I field | compile error — a static operand names a module-scope global |
+| `---` at a runtime I slot | uninit (LLVM undef, no handle) |
 | static interface position whose initializer is `g.field` | compile error — the path root must be a module namespace |
 | `free` on: an interface handle / constraint-typed anything | compile error in each case (a handle owns nothing; a constraint has no values at all) |
 | `p.(@Interface)` | field-wise build per layout |
@@ -2637,12 +2635,13 @@ path_join :: (..parts: []string) -> string { ... }
   before packing; `args[i]` reads back the view.
 - For `[]I` (the element type is an interface, e.g. `..xs: []Show`), each
   trailing arg coerces to a handle per the view-coercion arms (see Constraints
-  and Interfaces §5.2; an rvalue's temporary is scoped to the CALL, and a
-  constraint element type is refused as a storable position) and is packed into
-  a runtime `[N]I`. `xs[runtime_i].method()` then dispatches through the
-  handle — this is the **runtime** counterpart to the comptime heterogeneous
-  pack `..xs: I`. A `..` spread of an existing slice into `[]I` coerces
-  per element the same way.
+  and Interfaces §5.2; a concrete rvalue is refused — the `[N]I` array does
+  not invent referents — and a constraint element type is refused as a
+  storable position) and is packed into a runtime `[N]I`.
+  `xs[runtime_i].method()` then dispatches through the handle — this is the
+  **runtime** counterpart to the comptime heterogeneous pack `..xs: I`. A
+  `..` spread of an existing slice into `[]I` coerces per element the same
+  way.
 - A `..` spread at the call site unpacks an existing slice/array into the variadic
   tail: `sum(..arr)`.
 - The heterogeneous comptime-pack form `..$args: []Type` binds per-position
@@ -3090,12 +3089,13 @@ ladder, one engine rather than a second cast. "Safe" means
 An INTERFACE target `expr.(I)` is the explicit view coercion (see
 Constraints and Interfaces §5.2): a conforming lvalue borrows in
 place, a `*Concrete` receiver borrows its pointee, a `*I` receiver
-loads the stored handle, an `I` receiver copies the handle, and an
-rvalue borrows a frame-scoped temporary. There is no allocating
-form. A CONSTRAINT target refuses (no runtime values). A soft
-interface target on a concrete receiver is the conformance PROBE;
-an interface-to-interface conversion is RE-ERASURE — both defined in
-Constraints and Interfaces.
+loads the stored handle, an `I` receiver copies the handle. A
+concrete rvalue is a compile error — the target never invents a temp.
+The postfix is optional when the destination is already I-typed.
+There is no allocating form. A CONSTRAINT target refuses (no runtime
+values). A soft interface target on a concrete receiver is the
+conformance PROBE; an interface-to-interface conversion is RE-ERASURE
+— both defined in Constraints and Interfaces.
 
 ```sx
 b := a.(i8);            // narrow (truncates)

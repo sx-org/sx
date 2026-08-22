@@ -21,7 +21,8 @@ goptptr_0850 : ?*i64 = *target_0850;
 target_0850 : i64 = 42;
 
 main :: () -> i32 {
-    p := make_arr_0850()[next_0850()].(P0850);
+    arr_0850 := make_arr_0850();
+    p := arr_0850[next_0850()].(P0850);
     f := freefn_0850;
     list : List(struct { a: i64; b: bool }) = .{};
     list.append(.{a = 1, b = true});

@@ -69,7 +69,8 @@ forwards_arrow :: () -> !Failed => fails();
 
 // An erased protocol handle is a tail like any other: built, then dropped.
 erase_tail :: () -> !Failed {
-    Label{ text = "hi" }.(Drawable);
+    lab := Label{ text = "hi" };
+    lab.(Drawable);
 }
 
 // The tail's EFFECT still happens; only its value is dropped.

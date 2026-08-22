@@ -11,7 +11,7 @@ S :: struct { inner: P; }
 // A conformer LITERAL: no symbol for the handle to borrow.
 g : S = .{ inner = W{ v = 4 } };
 
-// The zero handle: a null ctx is the `?P` absent sentinel, never a live handle.
+// A struct literal is not a handle, including at a static I field.
 z : S = .{ inner = .{} };
 
 main :: () { print("unreachable\n"); }

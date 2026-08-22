@@ -1,0 +1,25 @@
+// A concrete rvalue at an I-typed target has no storage of its own to borrow:
+// a binding, a `v: I` argument, `List.append`, a `..xs: []I` element, an
+// explicit `.(I)` on an rvalue, and the operand of a `?I` wrap. Optional is
+// not an escape hatch.
+@import "modules/std.sx";
+
+Sizable :: interface { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+Show :: interface { show :: (self: *Self) -> string; }
+A :: struct { x: i64; }
+impl Show for A { show :: (self: *A) -> string => "A"; }
+
+measure :: (v: Sizable) -> i64 { v.size() }
+each :: (..xs: []Show) { _ = xs; }
+
+main :: () {
+    t : Sizable = Widget{ value = 7 };
+    _ = measure(Widget{ value = 7 });
+    list : List(Sizable) = .{};
+    list.append(Widget{ value = 7 });
+    each(A{ x = 1 }.(Show));
+    g : ?Sizable = Widget{ value = 2 };
+}

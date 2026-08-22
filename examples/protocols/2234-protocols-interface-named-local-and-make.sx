@@ -1,0 +1,41 @@
+// Legal I-typed forms: `$T/I` plus a concrete literal; `Allocator.make` then
+// `*T` / append / return; `?I = null`; a named local then append;
+// `Allocator = ---` on a runtime-constructed struct.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+Sizable :: interface { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+pretty :: (v: $T/Sizable) -> i64 { v.size() }
+
+made :: () -> Sizable {
+    p := context.allocator.make(Widget{ value = 9 });
+    return p.(Sizable);
+}
+
+Holder :: struct { parent_allocator: Allocator = ---; }
+
+main :: () {
+    print("{}\n", pretty(Widget{ value = 7 }));
+
+    list : List(Sizable) = .{};
+    p := context.allocator.make(Widget{ value = 8 });
+    list.append(p);
+    print("{}\n", list.items[0].size());
+
+    h := made();
+    print("{}\n", h.size());
+
+    o : ?Sizable = null;
+    print("{}\n", o == null);
+
+    b := Widget{ value = 3 };
+    list.append(b);
+    print("{}\n", list.items[1].size());
+
+    dummy : Holder = .{};
+    dummy.parent_allocator = context.allocator;
+    print("dummy\n");
+}

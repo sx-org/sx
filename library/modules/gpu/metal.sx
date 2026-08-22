@@ -273,7 +273,7 @@ MetalGPU :: struct {
     // Captured at init() so resource creation always grows the cache lists
     // through the long-lived allocator, even when the caller is currently
     // inside a transient arena context (e.g. glyph atlas grow during render).
-    parent_allocator: Allocator = .{};
+    parent_allocator: Allocator = ---;
 
     // Handle → retained object lookups shared by the buffer/shader paths.
     lookup_buffer :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {

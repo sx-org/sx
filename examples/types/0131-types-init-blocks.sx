@@ -105,9 +105,10 @@ main :: () {
     // IB5: init block + auto type erasure combined
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 0 }.{
+        c0 := SimpleCounter{ val = 0 }.{
             self.val = 50;
-        }.(Counter));
+        };
+        result := use_counter(c0.(Counter));
         print("IB5: {}\n", result);
     }
 

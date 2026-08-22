@@ -16,7 +16,8 @@ open :: (s: Series(f32)) {
 }
 
 main :: () {
-    a := Buffer(f32){ n = 7 }.(Series(f32));
+    buf := Buffer(f32){ n = 7 };
+    a := buf.(Series(f32));
     open(a);
     //stdout: f32 arm 7
 

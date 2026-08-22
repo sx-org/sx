@@ -211,8 +211,8 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
     const d = self.diagnostics orelse return null;
     const shown = self.formatTypeName(expected_ty);
     if (operand.data == .struct_literal and operand.data.struct_literal.field_inits.len == 0) {
-        const id = d.addFmtId(.err, expr.span, "'.{{ }}' is refused at a static '{s}' position — a null ctx is the '?{s}' absent sentinel, and this position must hold a live handle", .{ shown, shown });
-        d.addHelpFmt(id, expr.span, null, "name a module-scope global of a conforming type", .{});
+        const id = d.addFmtId(.err, expr.span, "'.{{ }}' is a struct literal, not a '{s}' handle", .{shown});
+        d.addHelpFmt(id, expr.span, null, "a static '{s}' position names a module-scope global of a conforming type", .{shown});
         return null;
     }
     const id = d.addFmtId(.err, expr.span, "a static '{s}' position takes a module-scope global, and this operand is not one", .{shown});

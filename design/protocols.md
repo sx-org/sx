@@ -44,26 +44,19 @@ operand of a `?I` wrap. `x.(I)` states the same coercion explicitly.
 | `*T`, `T` conforming | handle borrowing the pointee |
 | `*I` | loads the stored handle |
 | a value already of type `I` | the handle, copied |
-| conforming rvalue | frame-scoped temporary; the handle borrows it |
 
-The `*I` arm precedes the pointer arm. A `[]I` variadic scopes its temporaries
-to the call rather than the frame.
+There is no rvalue arm. An I-typed target never invents a temp: a concrete
+rvalue at any of those positions is a compile error, including a `..xs: []I`
+element and the operand of a `?I` wrap. Optional is not an escape hatch.
+`$T/I` is not an I-typed target, so `pretty(v: $T/Sizable)` plus a concrete
+literal is a Widget argument. A `[]I` variadic still packs handles into a
+call-scoped `[N]I`; the array does not invent referents.
 
-On the spine of a returned expression the rvalue arm is refused: the temporary
-dies at the return. The spine covers the returned expression, the field and
-element initializers of an aggregate literal that is the returned expression,
-the `?I` wrap operand on it, and both arms of an `if` or `match` in return
-position; it clears at call-argument lists, assignments, bindings, `push`
-fields, and nested function and closure bodies. So `return f(Widget{})` is
-legal and `return S{ inner = Widget{} }` is refused.
-
-That refusal is a spelling rule. `r : I = ---; r = Widget{}; return r;`
-compiles and dangles — the ordinary borrow hazard, unchanged by the rule.
-
-`.{ }` at a non-static interface-typed target is the **zero handle**: a null
-`ctx`, the bit pattern `?I` reads as absent. It is refused at a static position,
-and refused on the return spine of a non-optional `-> I` (the diagnostic names
-`?I`); `return .{}` at `-> ?I` is the absent sentinel.
+`.{ }` is a struct literal. It never forms a handle and is never `?T`
+absence. `?T` none is `null`. `null` does not type at a non-optional slot
+(`x : I = null`, `x : i64 = null`). `---` is uninit (LLVM undef, no handle);
+`parent_allocator: Allocator = ---` is the GPU dummy. A statically-constructed
+struct cannot take `---` at an I field.
 
 ## Static positions
 
@@ -141,15 +134,11 @@ constraint matches no category, and there is no `constraint` category word.
   is spelled (`Allocator.make`), `free` has one answer for handles, and the
   escape rules follow the referent.
 
-- **Why coercion is position-gated.** A handle over a temporary is only safe
-  where the temporary outlives it. Making the positions explicit is what lets
-  the rvalue arm produce a frame-scoped temporary at a binding and be refused on
-  a return spine, without a lifetime system.
-
-- **Why the return-spine rule is a spelling rule.** It catches the shape a
-  reader would otherwise read as safe — a literal handed straight back — at zero
-  analysis cost. Extending it into a guarantee needs escape analysis across
-  assignments, which is a different language.
+- **Why there is no rvalue arm.** A handle names storage the operand already
+  has. Inventing a temp at the target would give the handle a clock the type
+  does not mention. `$T/I` is the pretty parameter for a concrete literal;
+  `Allocator.make` is the spelling that writes a value into storage the caller
+  owns. Named locals are the collect form (§5.4).
 
 - **Why `Self` beyond the receiver bars an interface.** Vtable slots must be
   typable with `Self` unknown, and no caller-side type exists for a `Self`

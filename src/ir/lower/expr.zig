@@ -29,23 +29,24 @@ const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
-    // `.{ }` at an interface target is the ZERO handle, whose null ctx is the
-    // `?I` absent sentinel. On the return spine of a non-optional `-> I` there
-    // is no absence to express, so the spelling is refused there.
-    if (sl.type_expr == null and sl.field_inits.len == 0 and self.return_component) {
-        // An optional exit carries the absence, so the sentinel is what it
-        // wants; the target may already have been narrowed to the child here,
-        // which is why the EXIT type is what decides.
-        const optional_exit = if (self.effectiveReturnType()) |r|
-            !r.isBuiltin() and self.module.types.get(r) == .optional
-        else
-            false;
+    // `.{ }` is a struct literal. It is not a handle and not `?I` absence.
+    if (sl.type_expr == null and sl.field_inits.len == 0) {
         if (self.target_type) |t| {
-            if (!optional_exit and self.isErasedProtocolType(t)) {
+            var iface = t;
+            var optional_iface = false;
+            if (!t.isBuiltin() and self.module.types.get(t) == .optional) {
+                iface = self.module.types.get(t).optional.child;
+                optional_iface = self.isErasedProtocolType(iface);
+            }
+            if (self.isErasedProtocolType(t) or optional_iface) {
                 if (self.diagnostics) |d| {
-                    const shown = self.formatTypeName(t);
-                    const id = d.addFmtId(.err, span, "'.{{ }}' is the zero handle, and a '{s}' return has no absence to carry it", .{shown});
-                    d.addHelpFmt(id, span, null, "return '?{s}', where '.{{ }}' is the absent sentinel", .{shown});
+                    const shown = self.formatTypeName(if (optional_iface) iface else t);
+                    const id = d.addFmtId(.err, span, "'.{{ }}' is a struct literal, not a '{s}' handle", .{shown});
+                    if (optional_iface or (!t.isBuiltin() and self.module.types.get(t) == .optional)) {
+                        d.addHelpFmt(id, span, null, "absence of '?{s}' is spelled 'null'", .{shown});
+                    } else {
+                        d.addHelpFmt(id, span, null, "bind a named value, or write it through 'Allocator.make'", .{});
+                    }
                 }
                 return self.builder.constUndef(t);
             }
@@ -534,8 +535,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             struct_fields[i].ty
         else if (i < failable_fields.len)
             failable_fields[i]
+        else if (array_elem_ty != .unresolved)
+            array_elem_ty
         else
-            array_elem_ty;
+            fatPointerSlotType(self, ty, fi.name, i) orelse .unresolved;
         if (elem_target != .unresolved) self.target_type = elem_target;
         var val = self.lowerExpr(fi.value);
         self.target_type = saved_tt;
@@ -705,6 +708,31 @@ pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: as
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
     return true;
+}
+
+/// Slot type of a `{ptr,len}` fat pointer or `{fn_ptr,env}` closure literal,
+/// keyed by field name or by position. `getStructFields` is empty for these.
+fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
+    const is_string = ty == .string;
+    const is_slice = !ty.isBuiltin() and self.module.types.get(ty) == .slice;
+    const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
+    if (is_string or is_slice) {
+        const is_ptr = if (name) |n| std.mem.eql(u8, n, "ptr") else index == 0;
+        const is_len = if (name) |n| std.mem.eql(u8, n, "len") else index == 1;
+        if (is_ptr) {
+            const elem = if (is_string) TypeId.u8 else self.getElementType(ty);
+            return self.module.types.manyPtrTo(elem);
+        }
+        if (is_len) return self.module.types.lenTypeOf(ty);
+        return null;
+    }
+    if (is_closure) {
+        const is_fn = if (name) |n| std.mem.eql(u8, n, "fn_ptr") else index == 0;
+        const is_env = if (name) |n| std.mem.eql(u8, n, "env") else index == 1;
+        if (is_fn or is_env) return self.module.types.ptrTo(.void);
+        return null;
+    }
+    return null;
 }
 
 /// Get the field list for a struct TypeId, or empty if not a struct.
@@ -3343,7 +3371,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // legitimate typeless literal, not a failed lookup: `.void` is its
         // intentional default (emitConstNull/emitConstUndef handle void as
         // null-ptr / undef-i64). Not a candidate for the `.unresolved` tripwire.
-        .null_literal => self.builder.constNull(self.target_type orelse .void),
+        .null_literal => blk: {
+            const t = self.target_type orelse .void;
+            if (self.refuseNullAtNonOptional(t, node.span)) break :blk self.builder.constUndef(t);
+            break :blk self.builder.constNull(t);
+        },
         .undef_literal => self.builder.constUndef(self.target_type orelse .void),
 
         .identifier => |id| blk: {

@@ -703,12 +703,6 @@ pub const Lowering = struct {
     /// `narrowed_refs`.
     xx_passthrough_refs: std.AutoHashMap(Ref, void) = undefined,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
-    /// Set while lowering the expression a `return` (or a trailing-expression
-    /// body exit) hands back. An interface handle borrows a frame temp, which
-    /// the frame outlives — so an rvalue erasure on this spine is refused. The
-    /// flag is cleared wherever the value stops being the returned one: call
-    /// arguments, assignments, bindings, push fields, and nested bodies.
-    return_component: bool = false,
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
     // the failable error slot). The slots are bound as in-scope assignable locals;
@@ -1039,7 +1033,6 @@ pub const Lowering = struct {
         defer_base: usize,
         block_terminated: bool,
         force_block_value: bool,
-        return_component: bool,
         source_file: ?[]const u8,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
@@ -1064,7 +1057,6 @@ pub const Lowering = struct {
                 .defer_base = l.func_defer_base,
                 .block_terminated = l.block_terminated,
                 .force_block_value = l.force_block_value,
-                .return_component = l.return_component,
                 .source_file = l.current_source_file,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
@@ -1104,7 +1096,6 @@ pub const Lowering = struct {
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
-            l.return_component = false;
             return g;
         }
 
@@ -1115,7 +1106,6 @@ pub const Lowering = struct {
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
             l.force_block_value = g.force_block_value;
-            l.return_component = g.return_component;
             l.builder.func = g.func;
             l.builder.current_block = g.block;
             l.builder.inst_counter = g.counter;
@@ -3546,7 +3536,8 @@ pub const Lowering = struct {
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
-    pub const refuseReturnedRvalueErasure = lower_coerce.refuseReturnedRvalueErasure;
+    pub const refuseRvalueInterfaceErasure = lower_coerce.refuseRvalueInterfaceErasure;
+    pub const refuseNullAtNonOptional = lower_coerce.refuseNullAtNonOptional;
     pub const isClosureToBlockCast = lower_coerce.isClosureToBlockCast;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;
     pub const tryUserConversion = lower_coerce.tryUserConversion;

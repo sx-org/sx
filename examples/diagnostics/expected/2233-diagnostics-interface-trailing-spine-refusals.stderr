@@ -1,22 +1,34 @@
-error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
-  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:12:28
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:11:28
    |
-12 | trailing_cast :: () -> P { W{ v = 1 }.(P) }
+11 | trailing_cast :: () -> P { W{ v = 1 }.(P) }
    |                            ^^^^^^^^^^
 
-error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
-  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:13:45
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:12:45
    |
-13 | trailing_in_literal :: () -> S { S{ inner = W{ v = 2 } } }
+12 | trailing_in_literal :: () -> S { S{ inner = W{ v = 2 } } }
    |                                             ^^^^^^^^^^
 
-error: '.{ }' is the zero handle, and a 'P' return has no absence to carry it
-  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:14:35
+error: '.{ }' is a struct literal, not a 'P' handle
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:13:37
    |
-14 | trailing_zero_handle :: () -> P { .{} }
-   |                                   ^^^
+13 | trailing_empty_literal :: () -> P { .{} }
+   |                                     ^^^
 
-help: return '?P', where '.{ }' is the absent sentinel
+help: bind a named value, or write it through 'Allocator.make'
    |
-14 | trailing_zero_handle :: () -> P { .{} }
-   |                                   ^^^
+13 | trailing_empty_literal :: () -> P { .{} }
+   |                                     ^^^
+
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:16:36
+   |
+16 | through_argument :: () -> P { take(W{ v = 3 }) }
+   |                                    ^^^^^^^^^^
+
+error: cannot borrow a temporary into a 'P' handle — bind the value where it lives, or write it through 'Allocator.make' and use the handle over that
+  --> examples/diagnostics/2233-diagnostics-interface-trailing-spine-refusals.sx:17:43
+   |
+17 | through_binding :: () -> P { r : P = ---; r = W{ v = 4 }; r }
+   |                                           ^^^^^^^^^^^^^^^

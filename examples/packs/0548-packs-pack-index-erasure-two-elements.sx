@@ -1,10 +1,6 @@
-// Coerce two DISTINCT comptime-pack elements into interface locals — each
-// borrows its own frame temporary and resolves to its OWN concrete type's
-// method (IntCell.get vs Doubler.get), so the per-element coercion picks the
-// right vtable.
-//
-// Single-element `pack[i].(I)` has its own path, distinct from lowering the
-// bare pack as a value.
+// Two distinct comptime-pack elements, each bound to a named local and then
+// coerced to an interface handle. Each handle borrows its local and dispatches
+// that concrete type's method (IntCell.get vs Doubler.get).
 
 @import "modules/std.sx";
 
@@ -15,8 +11,10 @@ Doubler :: struct { n: i64; }
 impl VL(i64) for Doubler { get :: (self: *Doubler) -> i64 => self.n * 2; }
 
 sum_two :: (..sources: VL) -> i64 {
-    a := sources[0].(VL(i64));
-    b := sources[1].(VL(i64));
+    s0 := sources[0];
+    s1 := sources[1];
+    a := s0.(VL(i64));
+    b := s1.(VL(i64));
     return a.get() + b.get();
 }
 
