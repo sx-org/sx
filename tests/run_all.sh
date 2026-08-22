@@ -54,9 +54,11 @@ if [[ $QUICK -eq 0 ]]; then
     # Rebuilds in every optimize mode. Debug-only testing is how both the
     # UBSan link break and the dead-stripped dlsym symbols stayed invisible.
     run_check "JIT dlsym symbols retained" ./tests/jit_symbols_retained.sh
-    # Skips itself cleanly when lldb is absent.
+    # The mode sweep leaves `zig-out/bin/sx` non-Debug and the lldb smoke drives
+    # that binary; this restores Debug for it, and the tree keeps it afterwards.
+    zig build >/dev/null 2>&1
+    # Skips itself cleanly when the host cannot run a debugger.
     run_check "debug stepping (lldb)"      ./tests/debug_stepping_smoke.sh
-    zig build >/dev/null 2>&1   # leave the tree on the Debug binary
 fi
 
 printf '\n========================================\n'

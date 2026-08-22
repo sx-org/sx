@@ -6,7 +6,8 @@
 # NOT part of `run_examples.sh` (it needs `lldb`, and is macOS-specific via the
 # debug-map → kept `.o`). Run manually:  bash tests/debug_stepping_smoke.sh
 #
-# Exit 0 = lldb resolved a file:line breakpoint + a source-mapped backtrace.
+# Exit 0 = lldb resolved a file:line breakpoint + a source-mapped backtrace, or
+# the host cannot run a debugger at all and the lldb rungs skipped.
 
 set -u
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,9 +34,17 @@ EOF
 
 "$SX" build --emit-obj "$SRC" -o "$BIN" >/dev/null 2>&1 || { echo "FAIL: build"; exit 1; }
 
+# Without developer mode, `run` blocks on the taskgated authorization dialog —
+# an unattended run has nothing to answer it with.
+if ! DevToolsSecurity -status 2>/dev/null | grep -q "currently enabled"; then
+    echo "SKIP: developer mode disabled, lldb cannot launch (sudo DevToolsSecurity -enable)"
+    rm -f "$SRC" "$BIN" "$TMP/main.o"
+    exit 0
+fi
+
 # Breakpoint on the `return c;` line; expect lldb to resolve it + a backtrace
 # mapping both frames to dbg_smoke.sx.
-out=$(cd "$ROOT_DIR" && lldb --batch \
+out=$(cd "$ROOT_DIR" && timeout 120 lldb --batch \
     -o "breakpoint set --file dbg_smoke.sx --line 3" \
     -o "run" -o "bt" -o "quit" "$BIN" 2>&1)
 
