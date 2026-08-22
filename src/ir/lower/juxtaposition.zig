@@ -142,6 +142,7 @@ fn trailingCall(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.
         .return_type = null,
         .body = jx.block,
         .type_params = jx.type_params,
+        .env = jx.env,
     } } };
     if (self.site_index) |idx| idx.adopt(lambda, jx.block);
     const marker = self.alloc.create(Node) catch unreachable;

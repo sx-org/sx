@@ -669,11 +669,20 @@ pub const StructLiteral = struct {
     init_block_self: ?[]const u8 = null,
 };
 
+/// One field of a closure literal's `_{ … }` env: the name the body reads and
+/// the expression it holds, evaluated where the literal is written.
+pub const EnvField = struct {
+    name: []const u8,
+    value: *Node,
+};
+
 pub const Lambda = struct {
     params: []const Param,
     return_type: ?*Node,
     body: *Node,
     type_params: []const StructTypeParam = &.{},
+    /// The `_{ … }` env written between the parameter list and the return type.
+    env: []const EnvField = &.{},
 };
 
 pub const TypeExpr = struct {
@@ -981,6 +990,8 @@ pub const Juxtaposition = struct {
     block: *Node,
     /// The block's `|params|` header, spelled as a closure literal's.
     params: []const Param = &.{},
+    /// The header's `_{ … }` env, spelled as a closure literal's.
+    env: []const EnvField = &.{},
     type_params: []const StructTypeParam = &.{},
     /// True when the source wrote `|…|` after `{`, including empty `| |`.
     has_header: bool = false,
@@ -1217,6 +1228,10 @@ pub const ImplBlock = struct {
     methods: []const *Node, // fn_decl nodes
     protocol_type_args: []const *Node = &.{}, // for `impl Into(Block) for Source` — type args on the protocol side
     target_type_expr: ?*Node = null, // populated for parameterised-protocol impls; carries non-identifier source spellings (e.g. `Closure() -> void`)
+    /// `impl (i64) -> i64 for Accumulator` — the function-type head, which
+    /// makes the conformer callable. It names no protocol, so `protocol_name`
+    /// is empty wherever this is set.
+    protocol_fn_type: ?*Node = null,
 };
 
 // ── Expansion cloning ───────────────────────────────────────────────────
