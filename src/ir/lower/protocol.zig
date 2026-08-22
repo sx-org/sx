@@ -777,16 +777,16 @@ fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?prog
 
 /// What the protocol-typed arm of the global-initializer serializer decided.
 pub const ProtocolGlobalInit = union(enum) {
-    /// Not a borrow-kind protocol-typed global — the ordinary serializer owns it.
+    /// Not an interface-typed global — the ordinary serializer owns it.
     not_applicable,
     folded: inst_mod.ConstantValue,
     /// Refused; the diagnostic is already out.
     refused,
 };
 
-/// The static initializer of a borrow-kind protocol-typed global (§7.6): the
+/// The static initializer of an interface-typed global (§7.6): the
 /// identity erasure of a NAMED global instance, written `g`, `m.g`, or `xx`
-/// of either. A protocol value in static data is a borrow, and only a global
+/// of either. An interface handle in static data is a borrow, and only a global
 /// has an address to borrow — so every other initializer shape is refused
 /// HERE, before the shape dispatch serializes it field-wise against the
 /// handle's layout and builds a value whose ctx word is a payload byte.
@@ -1498,13 +1498,13 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
 
 /// Postfix erasure `expr.(I)` — an interface handle BORROWS its referent, so
 /// there is no allocating spelling: an allocator argument is refused.
-pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
+pub fn lowerInterfaceErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
 
     if (pc.alloc_arg != null) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.({s}, alloc)' allocates, but an '{s}' handle borrows its referent — write '.({s})'", .{ dst_pi.name, dst_pi.name, dst_pi.name });
+            d.addFmt(.err, span, "'.({s}, alloc)' allocates, but an interface handle borrows its referent — write '.({s})'", .{ dst_pi.name, dst_pi.name });
         return self.builder.constUndef(dst_ty);
     }
 
@@ -1524,8 +1524,8 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
 
 /// Build a protocol value over `concrete_ptr` as its ctx:
 /// struct_init { ctx, __type_id, &vtable }.
-/// The pointer is used directly — the caller owns the pointee's lifetime;
-/// any owning heap copy is made BEFORE this call (`lowerOwningErasure`).
+/// The pointer is used directly — it is the caller's referent, and the caller
+/// owns its lifetime.
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId) Ref {
     const pd = self.getProtocolInfo(proto_ty) orelse return concrete_ptr;
 

@@ -31,22 +31,11 @@ MetalOffscreen :: struct {
         self.h = h;
         if !self.gpu.init_offscreen(w, h) { return false; }
         // Route shaders + atlas through Metal BEFORE renderer/font init.
-        // These handles borrow THIS storage — `open` runs on a pre-erasure
-        // stack value, so the factory re-borrows through the owning
-        // PixelSurface copy (same reason it rebinds the global font there).
         self.renderer.gpu = self.gpu.(GPU);
         self.font.gpu = self.gpu.(GPU);
         self.renderer.init();
         self.font.init(font_path, font_size);
         true
-    }
-
-    // Re-point the intra-struct GPU borrows at self. Must run on the
-    // OWNING copy after erasure — without this, renderer/font dispatch
-    // into the dead pre-erasure stack value.
-    rebind :: (self: *MetalOffscreen) {
-        self.renderer.gpu = self.gpu.(GPU);
-        self.font.gpu = self.gpu.(GPU);
     }
 }
 

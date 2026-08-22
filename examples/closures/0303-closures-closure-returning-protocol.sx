@@ -1,5 +1,5 @@
-// Closure whose return type is a `vtable`-kind protocol value — exercises
-// the indirect-call path where the result is a boxed protocol.
+// Closure whose return type is an interface handle — exercises the
+// indirect-call path where the result is a handle over `make` storage.
 
 @import "modules/std.sx";
 
@@ -13,15 +13,13 @@ impl MyProtocol for MyImpl {
 }
 
 make_thing :: () -> MyProtocol {
-    MyImpl{ value = 42 }.(MyProtocol)
+    context.allocator.make(MyImpl{ value = 42 }).(MyProtocol)
 }
 
 main :: () -> void {
-    // Direct call works:
     v := make_thing();
     out("direct call works\n");
 
-    // Closure call crashes:
     c := make_thing;
     result := c();
     out("closure call works\n");

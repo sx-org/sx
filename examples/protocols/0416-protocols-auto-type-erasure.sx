@@ -28,7 +28,6 @@ impl Summable for Point {
     sum :: (self: *Point) -> i32 { self.x + self.y }
 }
 
-// `vtable`-kind protocol for dynamic dispatch
 Adder :: interface {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;
@@ -48,8 +47,7 @@ main :: () {
     // --- Auto type erasure (AE) ---
     print("=== Auto Type Erasure ===\n");
 
-    // AE1: function argument — explicit owning copy of an lvalue (an
-    // implicit `use_counter(sc)` is the demand error)
+    // AE1: function argument, lvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };
@@ -57,7 +55,7 @@ main :: () {
         print("AE1: {}\n", result);
     }
 
-    // AE2: protocol variable from an lvalue — the postfix owning copy
+    // AE2: interface variable, lvalue source
     {
         acc := Accumulator{ total = 0 };
         a := acc.(Adder);
@@ -66,15 +64,14 @@ main :: () {
         print("AE2: {}\n", a.value());
     }
 
-    // AE3: struct-literal argument — the postfix owning copy (an
-    // implicit `use_counter(SimpleCounter{...})` is the demand error)
+    // AE3: struct-literal argument, rvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         result := use_counter(SimpleCounter{ val = 100 }.(Counter));
         print("AE3: {}\n", result);
     }
 
-    // AE4: call-result receiver — the postfix owning copy of an rvalue
+    // AE4: call-result receiver, rvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
         mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }

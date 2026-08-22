@@ -1,4 +1,4 @@
-// A borrow-kind default takes the symbol of a module-scope global, reached
+// An interface-typed default takes the symbol of a module-scope global, reached
 // bare or through a module namespace. A path rooted at a global VALUE has no
 // symbol of its own, so it is refused at the Context field and at a static
 // aggregate field alike.

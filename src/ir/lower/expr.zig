@@ -4115,7 +4115,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     }
                 }
                 if (!recv_erased and self.getProtocolInfo(dst) != null) {
-                    break :blk self.lowerOwningErasure(&pc, dst, node.span);
+                    break :blk self.lowerInterfaceErasure(&pc, dst, node.span);
                 }
             }
             // `value.(P)` on an OPEN SET is the explicit spelling of ordinary set
@@ -4130,7 +4130,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // Same-interface `p.(I, alloc)`: routed through the erasure
                 // so one place refuses the allocating spelling.
                 if (self.getProtocolInfo(dst) != null and self.inferExprType(pc.operand) == dst) {
-                    break :blk self.lowerOwningErasure(&pc, dst, node.span);
+                    break :blk self.lowerInterfaceErasure(&pc, dst, node.span);
                 }
                 if (self.isOpenSet(dst)) {
                     if (self.diagnostics) |d| {

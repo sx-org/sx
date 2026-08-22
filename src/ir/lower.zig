@@ -3520,7 +3520,7 @@ pub const Lowering = struct {
     pub const buildProtocolValue = lower_protocol.buildProtocolValue;
     pub const emitProtocolDispatch = lower_protocol.emitProtocolDispatch;
     pub const refuseProtocolAssertTargetOnAny = lower_protocol.refuseProtocolAssertTargetOnAny;
-    pub const lowerOwningErasure = lower_protocol.lowerOwningErasure;
+    pub const lowerInterfaceErasure = lower_protocol.lowerInterfaceErasure;
     pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
     pub const refuseNonConformer = lower_protocol.refuseNonConformer;
     /// The declared-signature comparison pair, shared by protocol conformance and

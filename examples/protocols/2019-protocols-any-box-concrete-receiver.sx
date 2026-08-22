@@ -1,8 +1,8 @@
 // Boxing a protocol value into `any` yields a view of the CONCRETE receiver
-// (§7.3), never of the protocol handle. Every binding position funnels
+// (§6.3), never of the interface handle. Every binding position funnels
 // through the one coercion seam, so the declaration target, an assignment,
 // a call argument, a field init, a container element and a return all box
-// the concrete receiver — on both ownership classes.
+// the concrete receiver — through either interface.
 @import "modules/std.sx";
 
 Sized :: interface { size :: (self: *Self) -> i64; }

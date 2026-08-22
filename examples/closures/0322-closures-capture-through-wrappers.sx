@@ -1,5 +1,5 @@
 // A capture is reached through every expression WRAPPER a closure body can
-// put it behind: a postfix cast's operand (`V{ w = side }.(Shape, a)`), a
+// put it behind: a postfix cast's operand (`V{ w = side }.(Shape)`), a
 // named argument's value (`f(b = side)`), and a trailing block's lambda
 // (`f(1.0) { … side … }`).
 // `collectCaptures` carries an arm for `postfix_cast`, `named_arg` and

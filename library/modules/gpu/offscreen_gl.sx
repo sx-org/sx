@@ -41,9 +41,6 @@ GlOffscreen :: struct {
         load_gl(SDL_GL_GetProcAddress);
         self.renderer.init();
         self.font.init(font_path, font_size);
-        // The global font is NOT set here: `open` runs on a pre-erasure
-        // stack value, and the owning PixelSurface copy is the one that
-        // lives — the factory rebinds the global to that copy.
         true
     }
 }

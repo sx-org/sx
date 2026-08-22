@@ -1,6 +1,6 @@
-// `List(Protocol)` appended from inside a helper function, dispatched
-// repeatedly from `main` after the helper returns. Exercises the heap-copy
-// path for both implicit-erasure-on-append and pre-erased protocol values.
+// `List(Sizable)` appended from inside a helper function, dispatched
+// repeatedly from `main` after the helper returns: the helper funds its
+// referent with `Allocator.make`, so the appended handle outlives that frame.
 
 @import "modules/std.sx";
 
@@ -29,8 +29,8 @@ main :: () -> void {
     r2 := list_a.items[0].size();
     print("second: {} (expected 42)\n", r2);
 
-    // The protocol value is created inside add(); both dispatches read the
-    // heap copy, not add()'s returned frame.
+    // The handle is created inside add(); both dispatches read the `make`
+    // storage, not add()'s frame.
     out("=== Created in add() ===\n");
     list_b : List(Sizable) = .{};
     add(*list_b, Leaf{ value = 99 });

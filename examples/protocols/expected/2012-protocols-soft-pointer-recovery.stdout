@@ -1,10 +1,10 @@
-ident hard 2
-ident value 2
-ident ptr 2
-ident ptr miss null
-ident borrowed 9
-vtable hard 2
-vtable value 2
-vtable ptr 2
-vtable ptr miss null
-vtable borrowed 14
+bound hard 2
+bound value 2
+bound ptr 2
+bound ptr miss null
+bound borrowed 9
+cast hard 2
+cast value 2
+cast ptr 2
+cast ptr miss null
+cast borrowed 14

@@ -1,7 +1,7 @@
 // Postfix cast `expr.(T)` — the conversion regime. A
 // statically-typed receiver converts through the
 // explicit-target `xx` engine: same coercion ladder, same
-// protocol-erasure ownership modes — one engine. "Safe" means
+// interface erasure — one engine. "Safe" means
 // WELL-DEFINED, not value-preserving: `1000.(i8)` truncates by
 // definition. Postfix-tier precedence (`-x.(i8)` = `-(x.(i8))`);
 // `56.(i8)` lexes as a cast, not a float; `0..(5)` stays a range.
@@ -43,9 +43,8 @@ main :: () {
     // Optional wrap rides the same ladder.
     o := 5.(?i64);
     print("opt: {}\n", o != null);
-    // Protocol erasure: postfix on an lvalue receiver is the OWNING copy
-    // (— the value is independent of its source; borrow-for-transient
-    // moved to `*Speaker` views).
+    // Interface erasure: postfix on an lvalue borrows that storage, so a
+    // store through `d` is visible through `s`.
     d := Dog{ n = 42 };
     s := d.(Speaker);
     print("speak: {}\n", s.speak());

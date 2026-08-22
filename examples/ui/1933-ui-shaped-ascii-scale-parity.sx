@@ -8,9 +8,9 @@
 // Other desktops go GL over a hidden SDL window (bare externs):
 //     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1933-ui-shaped-ascii-scale-parity.sx
 //
-// NOT part of the byte-exact corpus (no expected/ files): measuring needs a
-// real font and a GPU-backed atlas, and the suite must pass where neither
-// exists — hence the clean skip.
+// The corpus compiles this file but does not run it: measuring needs a real
+// font and a GPU-backed atlas, so the measurement stays a manual host gate
+// and a host without a display/GPU reports a clean skip.
 @import "modules/std.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/font.sx";

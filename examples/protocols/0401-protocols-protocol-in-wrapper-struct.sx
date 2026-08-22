@@ -1,8 +1,5 @@
-// Protocol value as a field of a wrapper struct, constructed from a stack
-// local inside a function and appended to a `List`. The payload must be
-// heap-copied so dispatch survives the constructing function returning —
-// under the ownership model the copy is EXPLICIT: `p.(Sizable, alloc)` owns
-// (an implicit `view = p` is the demand error, pinned in 1256).
+// Interface value as a field of a wrapper struct, filled inside a function
+// and appended to a `List`.
 
 @import "modules/std.sx";
 
@@ -27,7 +24,6 @@ Container :: struct {
         // The handle borrows, so the referent is funded here to outlive the frame.
         self.items.append(Item{ view = context.allocator.make(w) });
 
-        // Works here: stack local `p` is still alive
         out("inside add: ");
         print("{}\n", self.items.items[self.items.len - 1].view.size());
     }
@@ -38,8 +34,8 @@ main :: () -> void {
     c.add(Widget{ value = 42 });
     c.add(Widget{ value = 99 });
 
-    // Each entry dispatches over its own heap copy: without one, both
-    // protocol values would share `add()`'s `p` stack slot.
+    // Each entry borrows its own heap referent, so the two dispatch
+    // independently.
     r0 := c.items.items[0].view.size();
     r1 := c.items.items[1].view.size();
     print("items[0] = {} (expected 42)\n", r0);
