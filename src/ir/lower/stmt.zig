@@ -171,6 +171,11 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
+            // A body's trailing expression IS its return operand, so the spine
+            // reaches this node and no statement before it.
+            const saved_spine = self.return_component;
+            if (demand == .return_value) self.return_component = true;
+            defer self.return_component = saved_spine;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .terminated;
             return .{ .value = v };
