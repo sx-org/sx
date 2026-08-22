@@ -96,6 +96,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // (unsound unwrap of a captured-but-not-proven-present optional). The body
     // builds its own narrowing from scratch; the outer state is restored on
     // return (re-arming narrowing for the rest of the enclosing expression).
+    const sig_target = self.lambda_sig_target;
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
     defer nested_guard.restore();
 
@@ -179,21 +180,24 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         .ty = env_ptr_ty,
     }) catch unreachable;
     // Get target closure param types for inference (from Closure(T1, T2) -> R annotations)
-    const target_closure_params: ?[]const TypeId = if (self.target_type) |tt| blk: {
-        if (!tt.isBuiltin()) {
-            const tti = self.module.types.get(tt);
-            if (tti == .closure) break :blk tti.closure.params;
-            // Unwrap ?Closure(...) → Closure(...)
-            if (tti == .optional) {
-                const inner = tti.optional.child;
-                if (!inner.isBuiltin()) {
-                    const inner_info = self.module.types.get(inner);
-                    if (inner_info == .closure) break :blk inner_info.closure.params;
+    const target_closure_params: ?[]const TypeId = blk: {
+        if (self.target_type) |tt| {
+            if (!tt.isBuiltin()) {
+                const tti = self.module.types.get(tt);
+                if (tti == .closure) break :blk tti.closure.params;
+                // Unwrap ?Closure(...) → Closure(...)
+                if (tti == .optional) {
+                    const inner = tti.optional.child;
+                    if (!inner.isBuiltin()) {
+                        const inner_info = self.module.types.get(inner);
+                        if (inner_info == .closure) break :blk inner_info.closure.params;
+                    }
                 }
             }
         }
+        if (sig_target) |s| break :blk s.params;
         break :blk null;
-    } else null;
+    };
     // User params follow the ctx (optional) + env slots in `params`.
     const user_param_base: usize = (if (lambda_wants_ctx) @as(usize, 1) else 0) + 1;
     for (lam.params, 0..) |p, pi| {
@@ -241,6 +245,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
                 }
             }
         }
+        if (sig_target) |s| if (s.ret != .unresolved) break :blk s.ret;
         // Lambda without explicit return type — infer from the body.
         // Temporarily bind params in scope so inference can resolve param types.
         var temp_scope = Scope.init(self.alloc, self.scope);

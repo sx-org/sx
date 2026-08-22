@@ -1328,8 +1328,7 @@ fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
 
 /// Fix a return-position callable binder to the type of the value handed back,
 /// returning that type. The binder names the callable this body produces, so the
-/// value IS the answer — a `_{ … }` literal stays its own env struct instead of
-/// erasing into the `Closure` an annotation would have had to spell.
+/// value IS the answer — a `_{ … }` literal stays its own env struct.
 fn fixCallableReturn(self: *Lowering, ret_val: Ref) ?TypeId {
     const binder = self.pending_callable_return orelse return null;
     const ty = self.builder.getRefType(ret_val);

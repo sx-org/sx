@@ -275,24 +275,46 @@ pub fn checkCallable(
     const fte = bound.data.function_type_expr;
     const spelled = self.formatTypeName(self.resolveTypeWithBindings(bound));
     const sig = self.callableSigOf(bound_ty) orelse
-        return reportUncallable(self, bound, spelled, param, bound_ty,
-            "a unique lambda, a 'Closure', or a function pointer answers this bound", .{});
-    if (sig.params.len != fte.param_types.len) {
-        return reportUncallable(self, bound, spelled, param, bound_ty,
-            "it takes {d} argument{s}, and the bound calls it with {d}", .{
+        return reportUncallable(self, bound, spelled, param, bound_ty, "a unique lambda, a 'Closure', or a function pointer answers this bound", .{});
+    var got_i: usize = 0;
+    for (fte.param_types) |want_node| {
+        if (want_node.data == .spread_expr) {
+            const want = self.resolveTypeWithBindings(want_node.data.spread_expr.operand);
+            if (want != .unresolved and !want.isBuiltin() and self.module.types.get(want) == .pack) {
+                const rest = sig.params[got_i..];
+                const elems = self.module.types.get(want).pack.elements;
+                if (elems.len != rest.len) {
+                    return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
+                        sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
+                    });
+                }
+                for (elems, rest, 0..) |w, g, j| {
+                    if (w == .unresolved or w == g) continue;
+                    return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i + j + 1, self.formatTypeName(g), self.formatTypeName(w) });
+                }
+            }
+            got_i = sig.params.len;
+            continue;
+        }
+        if (got_i >= sig.params.len) {
+            return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
                 sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
             });
-    }
-    for (fte.param_types, sig.params, 0..) |want_node, got, i| {
+        }
         const want = self.resolveTypeWithBindings(want_node);
+        const got = sig.params[got_i];
+        got_i += 1;
         if (want == .unresolved or want == got) continue;
-        return reportUncallable(self, bound, spelled, param, bound_ty,
-            "argument {d} is '{s}', and the bound passes '{s}'", .{ i + 1, self.formatTypeName(got), self.formatTypeName(want) });
+        return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i, self.formatTypeName(got), self.formatTypeName(want) });
+    }
+    if (got_i != sig.params.len) {
+        return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
+            sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
+        });
     }
     const want_ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
     if (want_ret == .unresolved or want_ret == sig.ret) return;
-    reportUncallable(self, bound, spelled, param, bound_ty,
-        "it returns '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(sig.ret), self.formatTypeName(want_ret) });
+    reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(sig.ret), self.formatTypeName(want_ret) });
 }
 
 /// The violation report for a callable, naming the binding by the signature it

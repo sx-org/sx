@@ -672,6 +672,10 @@ pub const Lowering = struct {
     /// value the body hands back fixes the function's return type and clears
     /// this.
     pending_callable_return: ?*const ast.Node = null,
+    /// Parameter and return types an unannotated `|x|` reads when the expected
+    /// type is a callable binder. The argument's type is its own shape; this is
+    /// only the bound's signature.
+    lambda_sig_target: ?lower_closure.CallableSig = null,
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
     /// Flow-sensitive narrowing. The set of local variable names
@@ -1167,11 +1171,13 @@ pub const Lowering = struct {
         inline_return_target: ?InlineExit,
         current_fn_decl: ?*const ast.FnDecl,
         pending_callable_return: ?*const ast.Node,
+        lambda_sig_target: ?lower_closure.CallableSig,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
                 .l = l,
                 .pending_callable_return = l.pending_callable_return,
+                .lambda_sig_target = l.lambda_sig_target,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
@@ -1192,6 +1198,7 @@ pub const Lowering = struct {
             l.inline_return_target = null;
             l.current_fn_decl = null;
             l.pending_callable_return = null;
+            l.lambda_sig_target = null;
             return g;
         }
 
@@ -1210,6 +1217,7 @@ pub const Lowering = struct {
             g.l.inline_return_target = g.inline_return_target;
             g.l.current_fn_decl = g.current_fn_decl;
             g.l.pending_callable_return = g.pending_callable_return;
+            g.l.lambda_sig_target = g.lambda_sig_target;
         }
     };
 

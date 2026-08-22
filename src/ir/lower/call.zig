@@ -881,8 +881,26 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         lowered_args.append(self.alloc, Ref.none) catch unreachable;
                     } else {
                         const saved_target = self.target_type;
+                        const saved_sig = self.lambda_sig_target;
                         const tgt: ?TypeId = if (ai < arg_targets.items.len) arg_targets.items[ai] else null;
                         self.target_type = tgt;
+                        const param: ?*const ast.Param = blk: {
+                            if (types_explicit) break :blk if (ai < fd.params.len) &fd.params[ai] else null;
+                            var vi: usize = 0;
+                            for (fd.params) |*p| {
+                                if (isTypeParamDecl(p, fd.type_params)) continue;
+                                if (vi == ai) break :blk p;
+                                vi += 1;
+                            }
+                            break :blk null;
+                        };
+                        if (param) |p| {
+                            if (callableSigTarget(self, p.type_expr)) |sig| {
+                                self.lambda_sig_target = sig;
+                                // A callable binder is not a Closure target.
+                                self.target_type = null;
+                            }
+                        }
                         const r = blk: {
                             // A `$I/@Init(T)` param forms its recipe instead of
                             // evaluating the argument (same arm as the direct
@@ -909,6 +927,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         };
                         lowered_args.append(self.alloc, r) catch unreachable;
                         self.target_type = saved_target;
+                        self.lambda_sig_target = saved_sig;
                     }
                 }
                 return self.lowerGenericCall(fd, early_name, c, lowered_args.items);
@@ -3011,18 +3030,13 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     return self.emitError(base_name, call_node.callee.span);
 }
 
-/// Does this type parameter carry a function-type bound — is it a CALLABLE
-/// binder (`$F/(i64) -> i64`)?
-fn isCallableBinder(tp: ast.StructTypeParam) bool {
-    for (tp.protocol_constraints) |b| if (b.data == .function_type_expr) return true;
-    return false;
-}
-
-/// Rebind each callable binder from the value its argument lowered to. A
-/// callable's type is its shape, not its annotation: a `_{ … }` literal IS its
-/// env struct, and a lambda with no `-> R` takes its return from its body —
-/// neither is known until the argument is lowered. An argument that lowered to
-/// something uncallable keeps the annotation's binding, so the bound diagnoses it.
+/// Rebind each type parameter a callable-binder argument speaks for from the
+/// value that argument lowered to. A callable's type is its shape, not its
+/// annotation: a `_{ … }` literal IS its env struct, and a lambda with no `-> R`
+/// takes its return from its body — neither is known until the argument is
+/// lowered. Binders the function-type bound introduces extract from that
+/// signature. An argument that lowered to something uncallable keeps the
+/// annotation's binding, so the bound diagnoses it.
 fn bindCallableBinders(
     self: *Lowering,
     fd: *const ast.FnDecl,
@@ -3032,7 +3046,6 @@ fn bindCallableBinders(
 ) void {
     const types_explicit = self.genericResolver().typesPassedExplicitly(fd, args_ast);
     for (fd.type_params) |tp| {
-        if (!isCallableBinder(tp)) continue;
         var arg_idx: usize = 0;
         for (fd.params) |param| {
             const is_type_decl = isTypeParamDecl(&param, fd.type_params);
@@ -3044,6 +3057,7 @@ fn bindCallableBinders(
                 continue;
             }
             if (arg_idx >= lowered_args.len) continue;
+            if (Lowering.callableBound(param.type_expr) == null) continue;
             if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
             const arg_ty = self.builder.getRefType(lowered_args[arg_idx]);
             if (self.callableSigOf(arg_ty) == null) continue;
@@ -5548,18 +5562,19 @@ fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *co
         self.type_bindings = gbindings.?;
     }
     var types_list = std.ArrayList(TypeId).empty;
-    for (fd.params, 0..) |p, param_idx| {
-        // A CALLABLE binder is typed by its BOUND, not by whatever the argument
-        // inference guessed for it: the signature is what an unannotated `|x|`
-        // reads its parameter from, and the binder itself is fixed from the value
-        // the argument lowers to.
-        if (self.callableClosureOf(p.type_expr)) |sig| {
-            types_list.append(self.alloc, sig) catch unreachable;
-            continue;
-        }
+    for (fd.params, 0..) |_, param_idx| {
         types_list.append(self.alloc, self.resolveDeclParamType(fd, param_idx)) catch unreachable;
     }
     return types_list.items;
+}
+
+fn callableSigTarget(self: *Lowering, binder: *const Node) ?lower_closure.CallableSig {
+    const bound = Lowering.callableBound(binder) orelse return null;
+    const fte = bound.data.function_type_expr;
+    var params = std.ArrayList(TypeId).empty;
+    for (fte.param_types) |p| params.append(self.alloc, self.resolveTypeWithBindings(p)) catch return null;
+    const ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
+    return .{ .params = params.toOwnedSlice(self.alloc) catch return null, .ret = ret };
 }
 
 pub fn resolveCallParamTypes(
