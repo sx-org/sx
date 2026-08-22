@@ -178,7 +178,7 @@ add5 := make_adder(5);
 boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n = n } x + n); }
 ```
 
-A `|…|` literal IS its env struct, and `_{ … }` names what it captures — by value, and nothing else is in scope. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fn_ptr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
+A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fn_ptr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
 
 ### Constraints and interfaces
 

@@ -4978,8 +4978,8 @@ position only.
 #### Unique Lambda Types
 ```sx
 offset := 50;
-f := |x: i32|_{ offset = offset } -> i32 x + offset;   // f IS `{ offset: i32 }`
-g := |x: i32|_{ offset = offset } -> i32 {             // block body
+f := |x: i32|_{ offset = offset } -> i32 x + offset;   // env field `offset`
+g := |x: i32|_{ offset = offset } -> i32 {
     if x < 0 { return 0; }
     return x + offset;
 };
@@ -5048,12 +5048,13 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 }
 ```
 
-- `@env_type(F)` is the env type, `@env_of(f)` the env value `make` writes, and
+- `@env_type(F)` is the env type, `@env_of(f)` the `@Init` `make` writes, and
   `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`.
 - A `Closure` argument is returned unchanged, so `closure` composes.
-- An empty env is zero-sized, so `alloc.make` allocates nothing and returns null
-  (§Allocator: `alloc_bytes(0)` is null, `dealloc_bytes(null)` a no-op) — an
-  erased empty lambda has a null env word.
+- An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
+  `make` does not write a null dest; `alloc_bytes(0)` returns null and
+  allocates nothing; `dealloc_bytes(null)` is a no-op. An erased empty
+  lambda has a null env word — `p := alloc.make(@env_of(f))` for that env.
 - `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
 
 #### Factory Functions
@@ -6706,7 +6707,7 @@ arm_body        = 'break' end
 else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | IDENT
 closure         = '|' params? '|' env? ('->' type)? (expr | block)
-env             = '_{' field_init_list? '}'   // captures — named fields only,
+env             = '_{' (IDENT '=' expr (',' IDENT '=' expr)* ','?)? '}'
                   // one token '_{': `_ {` with a space is not it
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
