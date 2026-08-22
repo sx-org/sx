@@ -32,6 +32,8 @@ pub const CoercionResolver = struct {
         unbox_any, // any → concrete
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
+        unique_to_closure, // empty-env unique lambda → Closure (static thunk, null env)
+        unique_to_closure_reject, // capturing unique lambda → Closure (diagnostic; the env has no home)
         struct_elementwise, // anon struct → anon struct, same arity, element-wise
         optional_unwrap, // ?T → concrete (narrowing)
         optional_to_bool_reject, // ?T → bool (no presence-test coercion; diagnostic)
@@ -88,6 +90,12 @@ pub const CoercionResolver = struct {
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             if (self.l.module.types.get(src_ty) == .closure and self.l.module.types.get(dst_ty) == .function) {
                 return .closure_to_fn_reject;
+            }
+            // A unique lambda erases only when its env is empty: the thunk then
+            // carries a null env word and nothing has to be stored anywhere.
+            if (self.l.uniqueLambdaOf(src_ty) != null and self.l.module.types.get(dst_ty) == .closure) {
+                const env = self.l.module.types.get(src_ty).@"struct";
+                return if (env.fields.len == 0) .unique_to_closure else .unique_to_closure_reject;
             }
         }
 

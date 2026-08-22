@@ -16,6 +16,7 @@ const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
+const lower_closure = @import("closure.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -388,8 +389,39 @@ fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
     };
     if (binding.pack_elem != null) return false;
     if (binding.ty.isBuiltin()) return false;
+    if (self.uniqueLambdaThrough(binding.ty) != null) return true;
     const ti = self.module.types.get(binding.ty);
     return ti == .function or ti == .closure;
+}
+
+/// Call the function a unique lambda's env `env_addr` belongs to. The value IS
+/// the env, so the address stands in for the fat pointer a `Closure` carries.
+fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+    coerceClosureCallArgs(self, args, u.params);
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    if (self.module.functions.items[u.func.index()].has_implicit_ctx) {
+        call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+    }
+    call_args.append(self.alloc, env_addr) catch unreachable;
+    call_args.appendSlice(self.alloc, args) catch unreachable;
+    const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
+    return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+}
+
+/// The env address behind a value of unique type `ty`: a `*$F` names one
+/// directly, a binding names its own storage.
+fn uniqueEnvAddress(self: *Lowering, ty: TypeId, ref: Ref, is_alloca: bool) ?Ref {
+    if (self.uniqueLambdaOf(ty) != null) {
+        if (is_alloca) return ref;
+        const slot = self.builder.alloca(ty);
+        self.builder.store(slot, ref);
+        return slot;
+    }
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer or self.uniqueLambdaOf(info.pointer.pointee) == null) return null;
+    return if (is_alloca) self.builder.load(ref, ty) else ref;
 }
 
 /// Indirect call through a local VALUE binding (fn-pointer local, or the
@@ -1359,9 +1391,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // through unused: the enclosing local is invisible
                             // to a static nested fn, so the name correctly
                             // resolves to the module-scope callable below.
-                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function)) {
+                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or self.uniqueLambdaThrough(binding.ty) != null)) {
                                 _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
                                 return Ref.none;
+                            }
+                            if (self.uniqueLambdaThrough(binding.ty)) |u| {
+                                if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
+                                const env_addr = uniqueEnvAddress(self, binding.ty, binding.ref, binding.is_alloca).?;
+                                return callUniqueLambda(self, u, env_addr, args.items);
                             }
                             if (ty_info == .closure) {
                                 // Exact-arity + spread-placeholder validation
@@ -2549,6 +2586,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // env (and implicit ctx), whereas `call_indirect` would treat
             // the whole struct as a bare fn pointer and miscompile.
             const callee_ty = self.inferExprType(c.callee);
+            if (self.uniqueLambdaThrough(callee_ty)) |u| {
+                if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
+                const callee_ref = self.lowerExpr(c.callee);
+                const env_addr = uniqueEnvAddress(self, callee_ty, callee_ref, false).?;
+                return callUniqueLambda(self, u, env_addr, args.items);
+            }
             if (!callee_ty.isBuiltin()) {
                 const cti = self.module.types.get(callee_ty);
                 if (cti == .closure) {

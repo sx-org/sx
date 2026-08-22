@@ -1,0 +1,58 @@
+// A `|…|_{ … }` literal's value IS its env struct: the fields are the whole
+// value, so its size is the env's size and it carries no pointer. A call hands
+// the lowered function the address of that storage, so the body writes through
+// to the value the caller holds — a COPY forks, a `*` shares. Fields not
+// written are still fed by implicit capture.
+//
+// An empty env erases to a `Closure` slot with a null env, exactly as a bare
+// function pointer does; both are allocation-free.
+
+@import "modules/std.sx";
+
+apply :: (f: Closure(i64) -> i64, x: i64) -> i64 { return f(x); }
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    n := 5;
+    f := |x: i64|_{ n = n } x + n;
+    print("call {}\n", f(1));                                   // 6
+
+    // The value is the env, so `n = n` snapshots: a later write to the outer
+    // `n` is not the field.
+    n = 999;
+    print("snapshot {}\n", f(1));                               // 6
+
+    // One i64 field is one i64.
+    print("size {} {}\n", size_of(type_of(f)), size_of(i64));   // 8 8
+
+    // A field the body writes is the value's own storage, across calls.
+    counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
+    print("write-through {} {} {}\n", counter(1), counter(2), counter(3));
+
+    // A copy carries its own fields — the two run independently.
+    fork := counter;
+    print("fork {} orig {}\n", fork(10), counter(20));          // 16 26
+
+    // A pointer names one env, so both spellings reach the same fields.
+    p := *counter;
+    print("shared {} {}\n", p(100), counter(0));                // 126 126
+
+    // A name the body reads without writing it in the env still reaches the
+    // same env — here two fields, so two i64s.
+    k := 100;
+    both := |x: i64|_{ n = n } x + n + k;
+    print("implicit {} size {}\n", both(1), size_of(type_of(both)));
+
+    // An inner literal is sealed against the outer one and names what it takes.
+    outer := |x: i64|_{ n = n } -> i64 {
+        step := |y: i64|_{ n = n } y * n;
+        return step(x) + n;
+    };
+    print("nested {}\n", outer(3));                             // 3*999 + 999
+
+    // Empty env, bare fn, and an unwritten literal all reach a Closure slot
+    // through a null env.
+    print("empty {}\n", apply(|x: i64|_{ } x * 3, 5));          // 15
+    print("fnptr {}\n", apply(double, 5));                      // 10
+    print("literal {}\n", apply(|x: i64| x * 4, 5));            // 20
+}
