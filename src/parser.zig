@@ -3494,10 +3494,10 @@ pub const Parser = struct {
             } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
                 if (self.tokens.tag(self.tok) == .l_paren) {
-                    // Postfix cast `expr.(T)`. One type, plus
-                    // an optional ALLOCATOR expression for the owning
-                    // erasure `expr.(P, alloc)` (protocol targets only —
-                    // validated at lowering).
+                    // Postfix cast `expr.(T)`. One type, plus an optional
+                    // ALLOCATOR expression naming what an `Into` conversion
+                    // funds from — validated at lowering, which refuses it
+                    // for an interface target.
                     self.advance(); // '('
                     const target = try self.parseTypeExpr();
                     var alloc_arg: ?*Node = null;

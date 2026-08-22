@@ -29,9 +29,7 @@ zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
     c : Combined($R, ..sources.T) = ---;
     c.sources = .{..sources};
     c.value = mapper(..sources.get);
-    // Owning copy — the erased value escapes this frame (`xx c` borrows
-    // the local and returns a dangle).
-    return c.(VL(R));
+    return context.allocator.make(c).(VL(R));
 }
 
 main :: () -> i32 {

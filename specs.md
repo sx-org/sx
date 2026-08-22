@@ -1420,10 +1420,9 @@ returned expression — the temporary dies at the return. The spine is:
 - the `?I` wrap operand on that spine;
 - both arms of an `if` or `match` in return position.
 
-The spine propagates from a `return` operand and from a function body's
-trailing expression, and is **cleared** at call-argument lists,
-assignments, bindings, `push` fields, and nested function and closure
-bodies:
+The spine propagates from a `return` operand, and is **cleared** at
+call-argument lists, assignments, bindings, `push` fields, and nested
+function and closure bodies:
 
 ```sx
 return f(Widget{});             // legal — an argument list clears the spine
@@ -1431,9 +1430,9 @@ return a.make(Widget{});        // legal — same
 return S{ inner = Widget{} };   // refused — the literal is the returned expression
 ```
 ```
-error: an interface handle over a temporary cannot be returned — the
-       temporary dies at the return; bind the value in the caller, or
-       allocate it ('Allocator.make')
+error: cannot return a 'P' handle over a temporary — the handle borrows a
+       frame slot the caller outlives; bind the value where it lives, or
+       write it through 'Allocator.make' and return the handle over that
 ```
 
 The refusal is a **spelling rule**, not a lifetime guarantee. The same

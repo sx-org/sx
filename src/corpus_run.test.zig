@@ -370,11 +370,15 @@ const BuildConfig = struct {
     /// is accepted as an alias for `macos`.
     host_os: ?[]const u8 = null,
 
-    /// Cross-target compile-only mode (requires `target`). The example is
-    /// compiled for the target and asserts exit code + stderr ONLY — no `.ir`
-    /// snapshot exists or is compared. This is the cross-target mode for
-    /// examples whose point is "this compiles (or diagnoses) for the target":
-    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx.
+    /// Compile-only mode: the example asserts exit code + stderr ONLY — no
+    /// `.ir` snapshot exists or is compared, and it is never executed. IR text
+    /// tracks LLVM's printer, so snapshotting it tests LLVM, not sx.
+    ///
+    /// With `target`, this is the cross-target flavour ("this compiles or
+    /// diagnoses for the target"), and an example whose target matches the
+    /// host still runs. Without `target`, the example compiles host-native and
+    /// stops there — for programs whose run needs a display, a GPU, or another
+    /// host resource the suite cannot assume.
     compile_only: bool = false,
 
     /// Symbols that must NOT appear in the built binary (requires `aot`).
@@ -794,7 +798,9 @@ fn runOne(
 
     // An example pinned to a non-host target cannot execute here; it routes
     // to ir-only mode (verify via `sx ir` only — see the first arm below).
-    const ir_only = if (cfg.target) |t| !hostMatchesTarget(t) else false;
+    // Without a `target`, `compile_only` routes there for the same reason:
+    // running it needs host resources the suite cannot assume.
+    const ir_only = if (cfg.target) |t| !hostMatchesTarget(t) else cfg.compile_only;
 
     // Android `.apk` smoke test: self-contained build+inspect branch. We
     // cross-compile for aarch64-linux-android (can't run on the host), so
@@ -871,12 +877,11 @@ fn runOne(
     var act_ir: ?[]const u8 = null;
 
     if (ir_only) {
-        // Cross-target: cannot run on this host. Verify via `sx ir` —
-        // exit code and diagnostics (stderr), plus the IR snapshot
-        // (stdout) UNLESS the example opted into `compile_only`, whose
-        // whole assertion is "compiles/diagnoses for the target" with no
-        // IR text pinned (IR snapshots test LLVM's printer, not sx). A
-        // non-compile_only example still REQUIRES its .ir snapshot: its
+        // Cannot run here. Verify via `sx ir` — exit code and diagnostics
+        // (stderr), plus the IR snapshot (stdout) UNLESS the example opted
+        // into `compile_only`, whose whole assertion is "compiles/diagnoses"
+        // with no IR text pinned (IR snapshots test LLVM's printer, not sx).
+        // A non-compile_only example still REQUIRES its .ir snapshot: its
         // absence is a loud failure, never a silent pass.
         if (ir_raw == null and !cfg.compile_only) {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: cross-target example (target={s}) needs an .ir snapshot for ir-only mode (or `compile_only`)", .{ name, cfg.target.? });

@@ -831,8 +831,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // type-param slots). Each resolvable param supplies its arg's
                 // target exactly like the direct-call path: without it, an
                 // `xx local` arg to a protocol param lowers node-lessly and
-                // the later value-wise coercion HEAP-COPIES the local through
-                // context.allocator instead of borrowing it. An
+                // the later value-wise coercion copies the local into a frame
+                // temp and borrows THAT instead of the local. An
                 // unresolvable param slot keeps a null target (the ambient
                 // target must still not leak into the arg).
                 const early_param_types = astCalleeParamTypes(self, fd, c.args);
@@ -2622,11 +2622,10 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 }
 
 /// Emit `context.allocator.alloc(size)` dispatch — used by internal
-/// compiler-driven heap copies (e.g. the `xx value` protocol-erasure
-/// path in `buildProtocolValue`). Routes through whatever allocator is
-/// currently installed in `context`, so a surrounding
-/// `push Context{ allocator = my_alloc, ... })` actually backs every
-/// allocation including the ones the compiler inserts.
+/// compiler-driven allocations (the closure env buffer in `lowerLambda`).
+/// Routes through whatever allocator is currently installed in `context`,
+/// so a surrounding `push Context{ allocator = my_alloc, ... })` actually
+/// backs every allocation including the ones the compiler inserts.
 ///
 /// If `Context` isn't registered (the program doesn't import std.sx),
 /// emits a diagnostic and returns a placeholder. It deliberately does
@@ -2660,7 +2659,7 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
     const allocator = self.builder.structGet(ctx, af.index, af.ty);
     // Through the same dispatch every `a.alloc_bytes(n)` in sx goes through,
     // so the allocator protocol's KIND is a property of its declaration and
-    // not something the compiler-driven heap copies re-encode.
+    // not something the compiler-driven allocations re-encode.
     const cs = self.builder.current_span;
     const dispatched = self.emitProtocolDispatch(
         allocator,

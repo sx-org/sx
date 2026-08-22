@@ -887,8 +887,8 @@ pub const PostfixCast = struct {
     operand: *Node,
     type_expr: *Node,
     is_optional_chain: bool = false,
-    // `expr.(P, alloc)` — the owning-erasure form's explicit allocator
-    // (protocol targets only; lvalue-only, enforced at lowering).
+    // `expr.(T, alloc)` — the allocator an `Into` conversion funds from
+    // (lvalue-only; an interface target refuses it, both at lowering).
     alloc_arg: ?*Node = null,
 };
 

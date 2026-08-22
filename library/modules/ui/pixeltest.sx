@@ -5,9 +5,9 @@
 // produces the buffer — gpu/offscreen_metal.sx on macOS, gpu/offscreen_gl.sx
 // elsewhere — and hands it here.
 //
-// Pixel examples live OUTSIDE the byte-exact corpus: the test suite
-// must pass on hosts with no GPU or display, so pixel goldens run as
-// their own explicit gate on machines that render.
+// The corpus compiles pixel examples but does not run them: the suite must
+// pass on hosts with no GPU or display, so pixel goldens are their own
+// explicit gate on machines that render.
 @import "modules/std.sx";
 @import "modules/std/fs.sx";
 
