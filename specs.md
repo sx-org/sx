@@ -6757,7 +6757,7 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   may **not** reference an enclosing function's local, parameter, or local `::`
   const — a static fn has no captured frame to read it from, and doing so is a
   compile error ("a nested function cannot reference the enclosing local 'x' —
-  a lambda names what it captures: `|…|_{ x } …`"). Carrying enclosing
+  a lambda names what it captures: `|…|_{ x = x } …`"). Carrying enclosing
   locals is the LAMBDA's job — one env field per name, by value. (Enclosing
   local consts are rejected too rather than comptime-folded: a static nested fn's
   frame cannot carry them, and the env spelling carries them uniformly.)
