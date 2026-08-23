@@ -1,0 +1,19 @@
+@import "modules/std.sx";
+
+Pt :: struct {
+    x: i64;
+    y: i64;
+}
+
+N :: @run { i := 0; s := 0; while i < 1000000 { s += i; i += 1; } s };
+P :: @run { a := 3; b := 4; Pt{ x = a, y = b } };
+S :: @run { t := "hi"; t };
+
+main :: () {
+    print("{}\n", N);
+    print("{} {} {}\n", P.x, P.y, S);
+    L :: @run { k := 0; while k < 5 { k += 1; } k };
+    print("{}\n", L);
+    inner := @run { q := 7; q * 6 };
+    print("{}\n", inner);
+}
