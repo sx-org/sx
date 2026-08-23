@@ -18,7 +18,7 @@ add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
 main :: () {
     // Closure with a captured struct + packed struct param.
     off_c5 := Point{ x = 10, y = 20 };
-    f_c5 := |p: Point| -> Point Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
+    f_c5 := |p: Point|_{ off_c5 = off_c5 } -> Point Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
     res_c5 := f_c5(Point{ x = 1, y = 2 });
     print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 

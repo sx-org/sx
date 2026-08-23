@@ -141,7 +141,7 @@ main :: () -> i32 {
     push .{ allocator = owner } {
         far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner);
         counted := *built;
-        build := || -> View {
+        build : Closure() -> View = || -> View {
             counted.* += 1;
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})

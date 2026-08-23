@@ -9,7 +9,7 @@
 main :: () -> i32 {
   x : i64 = 42;
   y : i64 = 100;
-  cl := || { print("x + y = {}\n", x + y); };
+  cl : Closure() -> void = || { print("x + y = {}\n", x + y); };
   b : Block = xx cl;
   invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
   invoke_fn(*b);

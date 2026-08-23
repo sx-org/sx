@@ -29,11 +29,11 @@ make_thunk :: (..args: any) -> Closure() -> i64 {
 
 // pack captured into a closure: spread AND comptime-indexed
 capture_both :: (dst: *string, ..args: any) {
-    captured := || { dst.* = join(..args); };
+    captured := ||_{ dst = dst, args = .{..args} } { dst.* = join(..args); };
     captured();
 }
 capture_index :: (po: *i64, ..args: any) {
-    captured := || { po.* = args[0] + args[1]; };
+    captured := ||_{ po = po, args = .{..args} } { po.* = args[0] + args[1]; };
     captured();
 }
 
