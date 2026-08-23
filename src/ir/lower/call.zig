@@ -5800,56 +5800,56 @@ pub fn resolveCallParamTypes(
                 const all = astCalleeParamTypes(self, method.fd, eff_args);
                 return if (all.len > 0) all[1..] else &.{};
             }
-            if (self.hasPlainStructAuthor(obj_ty)) return &.{};
-
-            const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch return &.{};
-            // Try already-lowered functions first
-            if (self.resolveFuncByName(qualified)) |fid| {
-                const func = &self.module.functions.items[@intFromEnum(fid)];
-                // Skip both `__sx_ctx` (if present) AND `self` param;
-                // caller args include neither.
-                const skip: usize = (if (func.has_implicit_ctx) @as(usize, 1) else 0) + 1;
-                if (func.params.len > skip) {
-                    var demands = std.ArrayList(ParamDemand).empty;
-                    for (func.params[skip..]) |p| {
-                        demands.append(self.alloc, .{ .coerce = p.ty }) catch unreachable;
+            if (!self.hasPlainStructAuthor(obj_ty)) {
+                const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch return &.{};
+                // Try already-lowered functions first
+                if (self.resolveFuncByName(qualified)) |fid| {
+                    const func = &self.module.functions.items[@intFromEnum(fid)];
+                    // Skip both `__sx_ctx` (if present) AND `self` param;
+                    // caller args include neither.
+                    const skip: usize = (if (func.has_implicit_ctx) @as(usize, 1) else 0) + 1;
+                    if (func.params.len > skip) {
+                        var demands = std.ArrayList(ParamDemand).empty;
+                        for (func.params[skip..]) |p| {
+                            demands.append(self.alloc, .{ .coerce = p.ty }) catch unreachable;
+                        }
+                        return demands.items;
                     }
-                    return demands.items;
                 }
-            }
-            // Try AST map (not yet lowered)
-            if (self.program_index.fn_ast_map.get(qualified)) |fd| {
-                if (fd.params.len > 0) {
-                    // A generic method's params (`xs: []$T`) only have a
-                    // meaning under this call site's bindings. Resolving them
-                    // unbound INTERNS the poison (`[]unresolved`) into the
-                    // TypeTable, where `resolveTypeCategoryTags`'s category
-                    // scan later hands it to `any_to_string`'s `case slice`
-                    // arm and monomorphizes an uncompilable
-                    // `slice_to_string__unresolved`. Bind first,
-                    // receiver prepended so positions line up with
-                    // `fd.params[0] = self`.
-                    var eff_args = std.ArrayList(*const Node).empty;
-                    defer eff_args.deinit(self.alloc);
-                    eff_args.append(self.alloc, fa.object) catch unreachable;
-                    for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
-                    const all = astCalleeParamTypes(self, fd, eff_args.items);
-                    return if (all.len > 1) all[1..] else &.{};
-                }
-            }
-            // Generic-struct instance method param types: select the method
-            // body via the instance's STAMPED author (CP-4), substituting the
-            // instance's bindings so `T → concrete`. The param source-pin
-            // follows the selected `fd` (its own `body.source_file`).
-            if (self.genericInstanceMethod(sname, fa.field)) |gm| {
-                if (gm.fd.params.len > 0) {
-                    var scope = generics_mod.installTypeBindings(self, gm.bindings.*);
-                    defer scope.exit();
-                    var demands = std.ArrayList(ParamDemand).empty;
-                    for (1..gm.fd.params.len) |i| {
-                        demands.append(self.alloc, lower_bound.paramDemand(self, gm.fd, i)) catch unreachable;
+                // Try AST map (not yet lowered)
+                if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+                    if (fd.params.len > 0) {
+                        // A generic method's params (`xs: []$T`) only have a
+                        // meaning under this call site's bindings. Resolving them
+                        // unbound INTERNS the poison (`[]unresolved`) into the
+                        // TypeTable, where `resolveTypeCategoryTags`'s category
+                        // scan later hands it to `any_to_string`'s `case slice`
+                        // arm and monomorphizes an uncompilable
+                        // `slice_to_string__unresolved`. Bind first,
+                        // receiver prepended so positions line up with
+                        // `fd.params[0] = self`.
+                        var eff_args = std.ArrayList(*const Node).empty;
+                        defer eff_args.deinit(self.alloc);
+                        eff_args.append(self.alloc, fa.object) catch unreachable;
+                        for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
+                        const all = astCalleeParamTypes(self, fd, eff_args.items);
+                        return if (all.len > 1) all[1..] else &.{};
                     }
-                    return demands.items;
+                }
+                // Generic-struct instance method param types: select the method
+                // body via the instance's STAMPED author (CP-4), substituting the
+                // instance's bindings so `T → concrete`. The param source-pin
+                // follows the selected `fd` (its own `body.source_file`).
+                if (self.genericInstanceMethod(sname, fa.field)) |gm| {
+                    if (gm.fd.params.len > 0) {
+                        var scope = generics_mod.installTypeBindings(self, gm.bindings.*);
+                        defer scope.exit();
+                        var demands = std.ArrayList(ParamDemand).empty;
+                        for (1..gm.fd.params.len) |i| {
+                            demands.append(self.alloc, lower_bound.paramDemand(self, gm.fd, i)) catch unreachable;
+                        }
+                        return demands.items;
+                    }
                 }
             }
         }

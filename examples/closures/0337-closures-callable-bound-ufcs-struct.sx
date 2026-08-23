@@ -1,0 +1,23 @@
+@import "modules/std.sx";
+
+Plain :: struct {
+    v: i64;
+    raw :: (self: *Plain) -> i64 { return self.v; }
+}
+
+apply :: ufcs (self: Plain, f: $F/(i64) -> i64) -> i64 { return f(self.v); }
+via   :: ufcs (self: *Plain, f: $F/(i64) -> i64) -> i64 { return f(self.v); }
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    n := 7;
+    c : Closure(i64) -> i64 = double;
+    p : Plain = ---; p.v = 5;
+    print("lambda {}\n", p.apply(|x| x * 3));
+    print("unique {}\n", p.apply(|x: i64|_{ n = n } x + n));
+    print("fnptr {}\n", p.apply(double));
+    print("closure {}\n", p.apply(c));
+    print("view {}\n", p.via(|x| x * 3));
+    print("method {}\n", p.raw());
+}
