@@ -17,7 +17,7 @@ describe :: (av: any) -> string {
 
 main :: () {
     n := 10;
-    cap := |x: i64| -> i64 { x + n };
+    cap : Closure(i64) -> i64 = |x: i64| -> i64 { x + n };
     bare := |x: i64| -> i64 { x * 2 };   // capture-free — still a closure
 
     print("{}\n", describe(cap));

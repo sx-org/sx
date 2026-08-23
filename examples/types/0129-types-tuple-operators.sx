@@ -459,12 +459,12 @@ main :: () {
     {
         // capture scalar
         n := 42;
-        f := |x: i32| x + n;
+        f := |x: i32|_{ n = n } x + n;
         print("closure-capture: {}\n", f(10));
 
         // capture by value is a snapshot
         m := 5;
-        g := |x: i32| x + m;
+        g := |x: i32|_{ m = m } x + m;
         m = 100;
         print("closure-snapshot: {}\n", g(10));
 
@@ -475,12 +475,12 @@ main :: () {
         // multiple captures
         a := 10;
         b := 20;
-        multi := |x: i32| x + a + b;
+        multi := |x: i32|_{ a = a, b = b } x + a + b;
         print("closure-multi: {}\n", multi(3));
 
         // block-body closure with return
         offset := 50;
-        clamp := |x: i64| -> i64 {
+        clamp := |x: i64|_{ offset = offset } -> i64 {
             if x < 0 { return 0; }
             if x > 100 { return 100; }
             return x + offset;
@@ -494,7 +494,7 @@ main :: () {
 
         // void closure
         tag := "LOG";
-        logger := |msg: string| {
+        logger := |msg: string|_{ tag = tag } {
             print("[{}] {}\n", tag, msg);
         };
         logger("hello");
@@ -509,31 +509,31 @@ main :: () {
         print("closure-hof-bare: {}\n", apply_cl(dbl, 10));
 
         scale := 2.5;
-        f_f32 := |x: f32| -> f32 x * scale;
+        f_f32 := |x: f32|_{ scale = scale } -> f32 x * scale;
         print("closure-f32: {}\n", f_f32(4.0));
 
         verbose := true;
-        f_bool := |msg: string| {
+        f_bool := |msg: string|_{ verbose = verbose } {
             if verbose { print("closure-bool: {}\n", msg); }
         };
         f_bool("hello");
 
         base : i32 = 100;
-        f_2p := |x: i32, y: i32| -> i32 x + y + base;
+        f_2p := |x: i32, y: i32|_{ base = base } -> i32 x + y + base;
         print("closure-2p: {}\n", f_2p(3, 4));
 
         bias : i32 = 1;
-        f_3p := |a: i32, b: i32, c2: i32| -> i32 a + b + c2 + bias;
+        f_3p := |a: i32, b: i32, c2: i32|_{ bias = bias } -> i32 a + b + c2 + bias;
         print("closure-3p: {}\n", f_3p(10, 20, 30));
 
         extra : i32 = 5;
-        f_mix := |name: string, age: i32| {
+        f_mix := |name: string, age: i32|_{ extra = extra } {
             print("closure-mix: {} is {}\n", name, age + extra);
         };
         f_mix("Alice", 30);
 
         threshold : i32 = 100;
-        f_rbool := |x: i32| -> bool { return x > threshold; };
+        f_rbool := |x: i32|_{ threshold = threshold } -> bool { return x > threshold; };
         print("closure-rbool: {} {}\n", f_rbool(50), f_rbool(200));
 
         reduce :: (arr: []i32, f3: Closure(i32, i32) -> i32, init: i32) -> i32 {
@@ -555,19 +555,19 @@ main :: () {
         print("closure-factory: {} {}\n", add5(100), add10(100));
 
         origin := Point{ x = 10, y = 20 };
-        f_st := || {
+        f_st := ||_{ origin = origin } {
             print("closure-struct: {} {}\n", origin.x, origin.y);
         };
         f_st();
 
         inner_n := 10;
-        inner_cl := |x: i64| -> i64 x + inner_n;
-        outer_cl := |x: i64| -> i64 inner_cl(x) * 2;
+        inner_cl := |x: i64|_{ inner_n = inner_n } -> i64 x + inner_n;
+        outer_cl := |x: i64|_{ inner_cl = inner_cl } -> i64 inner_cl(x) * 2;
         print("closure-compose: {}\n", outer_cl(5));
 
         shared : i32 = 10;
-        cl_a := |x: i32| -> i32 x + shared;
-        cl_b := |x: i32| -> i32 x * shared;
+        cl_a := |x: i32|_{ shared = shared } -> i32 x + shared;
+        cl_b := |x: i32|_{ shared = shared } -> i32 x * shared;
         print("closure-indep: {} {}\n", cl_a(5), cl_b(5));
 
         f_none : ?Closure(i64) -> i64 = null;
@@ -588,7 +588,7 @@ main :: () {
         // Struct with optional closure callback
         Btn :: struct { label: string; on_click: ?Closure(i64) -> void; }
         btn_x := 99;
-        btn_cl := |id: i64| {
+        btn_cl : ?Closure(i64) -> void = |id: i64| {
             print("opt-closure-btn: {} {}\n", id, btn_x);
         };
         btn1 := Btn{ label = "OK", on_click = btn_cl };
@@ -598,20 +598,20 @@ main :: () {
 
         count_a6 : i32 = 0;
         p_a6 := *count_a6;
-        inc_fn := || { p_a6.* += 1; };
+        inc_fn := ||_{ p_a6 = p_a6 } { p_a6.* += 1; };
         inc_fn(); inc_fn(); inc_fn();
         print("closure-ptr: {}\n", count_a6);
 
         c_a9 : i32 = 2;  // simulate enum tag
-        f_a9 := || -> i32 c_a9;
+        f_a9 := ||_{ c_a9 = c_a9 } -> i32 c_a9;
         print("closure-enum: {}\n", f_a9());
 
         tag_c4 := "INFO";
-        f_c4 := |msg: string| -> string format("[{}] {}", tag_c4, msg);
+        f_c4 := |msg: string|_{ tag_c4 = tag_c4 } -> string format("[{}] {}", tag_c4, msg);
         print("closure-rstr: {}\n", f_c4("ok"));
 
         off_c5 := Point{ x = 10, y = 20 };
-        f_c5 := |p: Point| -> Point Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
+        f_c5 := |p: Point|_{ off_c5 = off_c5 } -> Point Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
         res_c5 := f_c5(Point{ x = 1, y = 2 });
         print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 
@@ -639,17 +639,17 @@ main :: () {
         }
         one_h2 : i32 = 1;
         two_h2 : i32 = 2;
-        add1_h2 := |x: i32| -> i32 x + one_h2;
-        mul2_h2 := |x: i32| -> i32 x * two_h2;
+        add1_h2 : Closure(i32) -> i32 = |x: i32| -> i32 x + one_h2;
+        mul2_h2 : Closure(i32) -> i32 = |x: i32| -> i32 x * two_h2;
         composed := compose(mul2_h2, add1_h2);
         print("closure-compose2: {}\n", composed(5));
 
         ch_k1 : i32 = 1;
         ch_k2 : i32 = 2;
         ch_k10 : i32 = 10;
-        ch_a := |x: i32| -> i32 x + ch_k1;
-        ch_b := |x: i32| -> i32 ch_a(x) * ch_k2;
-        ch_c := |x: i32| -> i32 ch_b(x) + ch_k10;
+        ch_a := |x: i32|_{ ch_k1 = ch_k1 } -> i32 x + ch_k1;
+        ch_b := |x: i32|_{ ch_a = ch_a, ch_k2 = ch_k2 } -> i32 ch_a(x) * ch_k2;
+        ch_c := |x: i32|_{ ch_b = ch_b, ch_k10 = ch_k10 } -> i32 ch_b(x) + ch_k10;
         print("closure-chain: {}\n", ch_c(5));
 
         map_cl :: (arr: [*]i32, cnt: i64, f_map: Closure(i32) -> i32, result: [*]i32) {
@@ -743,7 +743,7 @@ main :: () {
             on_press: Closure(i32) -> void;
         }
         btn_x2 := 99;
-        btn_cb := |id: i32| {
+        btn_cb : Closure(i32) -> void = |id: i32| {
             print("closure-btn: {} {}\n", id, btn_x2);
         };
         btn3 := Button{ label = "OK", on_press = btn_cb };
@@ -751,16 +751,16 @@ main :: () {
 
         state_j1 : i32 = 0;
         p_j1 := *state_j1;
-        inc_j1 := || -> i32 { p_j1.* += 1; return p_j1.*; };
+        inc_j1 := ||_{ p_j1 = p_j1 } -> i32 { p_j1.* += 1; return p_j1.*; };
         print("closure-counter: {} {} {}\n", inc_j1(), inc_j1(), inc_j1());
 
         state_j2 : i32 = 100;
         p_j2 := *state_j2;
-        acc_j2 := |x: i32| -> i32 { p_j2.* += x; return p_j2.*; };
+        acc_j2 := |x: i32|_{ p_j2 = p_j2 } -> i32 { p_j2.* += x; return p_j2.*; };
         print("closure-acc: {} {}\n", acc_j2(5), acc_j2(10));
 
         base_k2 : i32 = 100;
-        sum_fn := |items: [*]i32, cnt: i64| -> i32 {
+        sum_fn := |items: [*]i32, cnt: i64|_{ base_k2 = base_k2 } -> i32 {
             total : i32 = 0;
             i : i64 = 0;
             while i < cnt {
@@ -773,7 +773,7 @@ main :: () {
         print("closure-loop: {}\n", sum_fn(xx *k2_arr, 5));
 
         n_m3 : i32 = 1;
-        f_m3 := |x: i32| -> i32 x + n_m3;
+        f_m3 : Closure(i32) -> i32 = |x: i32| -> i32 x + n_m3;
         print("closure-reassign: {}\n", f_m3(10));
         m_m3 : i32 = 2;
         f_m3 = |x: i32| -> i32 x * m_m3;
@@ -781,18 +781,18 @@ main :: () {
 
         // the capture is a copy: reassigning pt_m6 leaves f_m6 on the old values
         pt_m6 := Point{ x = 5, y = 10 };
-        f_m6 := || -> i32 pt_m6.x + pt_m6.y;
+        f_m6 := ||_{ pt_m6 = pt_m6 } -> i32 pt_m6.x + pt_m6.y;
         pt_m6 = Point{ x = 99, y = 99 };
         print("closure-snapstruct: {}\n", f_m6());
 
         double_m2 :: (x: i32) -> i32 { return x * 2; }
         base_m2 : Closure(i32) -> i32 = double_m2;
         n_m2 : i32 = 1;
-        f_m2 := |x: i32| -> i32 base_m2(x) + n_m2;
+        f_m2 := |x: i32|_{ base_m2 = base_m2, n_m2 = n_m2 } -> i32 base_m2(x) + n_m2;
         print("closure-cap-promoted: {}\n", f_m2(5));
 
         n_m5 : i32 = 5;
-        iife := |x: i32| -> i32 x + n_m5;
+        iife := |x: i32|_{ n_m5 = n_m5 } -> i32 x + n_m5;
         result_m5 := iife(10);
         print("closure-iife: {}\n", result_m5);
 
@@ -838,8 +838,8 @@ main :: () {
         use_fast := true;
         k_fast : i32 = 2;
         k_slow : i32 = 10;
-        f_fast := |x: i32| -> i32 x * k_fast;
-        f_slow := |x: i32| -> i32 x + k_slow;
+        f_fast : Closure(i32) -> i32 = |x: i32| -> i32 x * k_fast;
+        f_slow : Closure(i32) -> i32 = |x: i32| -> i32 x + k_slow;
         f_cond : Closure(i32) -> i32 = if use_fast then f_fast else f_slow;
         print("closure-cond: {}\n", f_cond(5));
 
@@ -848,7 +848,7 @@ main :: () {
             on_cancel: ?Closure() -> void;
         }
         msg_f4 := "submitted";
-        sub_cb := || { print("closure-form: {}\n", msg_f4); };
+        sub_cb : ?Closure() -> void = || { print("closure-form: {}\n", msg_f4); };
         form_f4 := Form{ on_submit = sub_cb, on_cancel = null };
         if h := form_f4.on_submit { h(); }
         if h := form_f4.on_cancel { h(); } else { print("closure-form: no cancel\n"); }
@@ -859,14 +859,14 @@ main :: () {
 
         sl_a7 : [3]i32 = .[10, 20, 30];
         ptr_a7 : [*]i32 = xx *sl_a7;
-        f_a7 := |i: i64| -> i32 ptr_a7[i];
+        f_a7 := |i: i64|_{ ptr_a7 = ptr_a7 } -> i32 ptr_a7[i];
         print("closure-slice: {} {} {}\n", f_a7(0), f_a7(1), f_a7(2));
 
         gpa_l1 := GPA.init();
         arena_l1 := Arena.init(gpa_l1, 4096);
         push .{ allocator = arena_l1 } {
             n_l1 : i32 = 5;
-            f_l1 := |x: i32| -> i32 x + n_l1;
+            f_l1 := |x: i32|_{ n_l1 = n_l1 } -> i32 x + n_l1;
             print("closure-arena: {}\n", f_l1(10));
         }
         arena_l1.deinit();
@@ -876,21 +876,21 @@ main :: () {
         n_l2 : i32 = 7;
         result_l2 : i32 = 0;
         push .{ allocator = a_l2 } {
-            f_l2 := |x: i32| -> i32 x + n_l2;
+            f_l2 : Closure(i32) -> i32 = |x: i32| -> i32 x + n_l2;
             result_l2 = f_l2(10);
             a_l2.dealloc_bytes(f_l2.env);
         }
         print("closure-gpa: {} allocs={}\n", result_l2, gpa_l2.alloc_count);
 
         val_a10 : ?i32 = 42;
-        f_a10 := || -> i32 {
+        f_a10 := ||_{ val_a10 = val_a10 } -> i32 {
             if v := val_a10 { return v; }
             return 0;
         };
         print("closure-opt: {}\n", f_a10());
 
         limit_c6 : i32 = 100;
-        f_c6 := |x: i32| -> ?i32 {
+        f_c6 := |x: i32|_{ limit_c6 = limit_c6 } -> ?i32 {
             if x > limit_c6 { return null; }
             return x;
         };
@@ -920,9 +920,9 @@ main :: () {
         v_e2 : i32 = 1;
         k2_e2 : i32 = 2;
         k100_e2 : i32 = 100;
-        f0_e2 := |x: i32| -> i32 x + v_e2;
-        f1_e2 := |x: i32| -> i32 f0_e2(x) * k2_e2;
-        f2_e2 := |x: i32| -> i32 f1_e2(x) + k100_e2;
+        f0_e2 := |x: i32|_{ v_e2 = v_e2 } -> i32 x + v_e2;
+        f1_e2 := |x: i32|_{ f0_e2 = f0_e2, k2_e2 = k2_e2 } -> i32 f0_e2(x) * k2_e2;
+        f2_e2 := |x: i32|_{ f1_e2 = f1_e2, k100_e2 = k100_e2 } -> i32 f1_e2(x) + k100_e2;
         print("closure-deep-chain: {}\n", f2_e2(10));
 
         c1_e3 : i32 = 1;
@@ -933,7 +933,7 @@ main :: () {
         c6_e3 : i32 = 6;
         c7_e3 : i32 = 7;
         c8_e3 : i32 = 8;
-        big_env := || -> i32 c1_e3 + c2_e3 + c3_e3 + c4_e3 + c5_e3 + c6_e3 + c7_e3 + c8_e3;
+        big_env := ||_{ c1_e3 = c1_e3, c2_e3 = c2_e3, c3_e3 = c3_e3, c4_e3 = c4_e3, c5_e3 = c5_e3, c6_e3 = c6_e3, c7_e3 = c7_e3, c8_e3 = c8_e3 } -> i32 c1_e3 + c2_e3 + c3_e3 + c4_e3 + c5_e3 + c6_e3 + c7_e3 + c8_e3;
         print("closure-8cap: {}\n", big_env());
 
         multi_param := |a: i32, b: i32, c: i32, d: i32| -> i32 a + b + c + d;
@@ -942,15 +942,15 @@ main :: () {
 
         shared : i32 = 0;
         shared_p := *shared;
-        inc_shared := || { shared_p.* += 1; };
-        add5_shared := || { shared_p.* += 5; };
+        inc_shared := ||_{ shared_p = shared_p } { shared_p.* += 1; };
+        add5_shared := ||_{ shared_p = shared_p } { shared_p.* += 5; };
         inc_shared();
         add5_shared();
         inc_shared();
         print("closure-shared-ptr: {}\n", shared);
 
         pi_e8 : f64 = 3.14159;
-        area_fn := |r: f64| -> f64 pi_e8 * r * r;
+        area_fn := |r: f64|_{ pi_e8 = pi_e8 } -> f64 pi_e8 * r * r;
         a_e8 := area_fn(10.0);
         print("closure-f64: {}\n", a_e8 > 314.0);
 
@@ -959,7 +959,7 @@ main :: () {
 
         pt_e10 := Point{ x = 3, y = 4 };
         p_e10 := *pt_e10;
-        get_xy := || -> i32 p_e10.x + p_e10.y;
+        get_xy := ||_{ p_e10 = p_e10 } -> i32 p_e10.x + p_e10.y;
         print("closure-struct-method: {}\n", get_xy());
 
         fns_e11 : [3]Closure(i32) -> i32 = ---;
@@ -974,7 +974,7 @@ main :: () {
         t_e11 = fns_e11[2]; print("closure-multi-factory: {}\n", t_e11(10));
 
         flag_e12 := true;
-        check_fn := |x: i32| -> bool {
+        check_fn := |x: i32|_{ flag_e12 = flag_e12 } -> bool {
             if flag_e12 { return x > 0; }
             return x < 0;
         };
@@ -984,28 +984,28 @@ main :: () {
 
         apply_fn := |f_app: Closure(i32) -> i32, val: i32| -> i32 f_app(val);
         k_e13 : i32 = 100;
-        inner_fn := |x: i32| -> i32 x + k_e13;
+        inner_fn : Closure(i32) -> i32 = |x: i32| -> i32 x + k_e13;
         print("closure-as-arg: {}\n", apply_fn(inner_fn, 42));
 
         prefix_e14 := "hello";
-        greet_fn := |name: string| -> string format("{} {}", prefix_e14, name);
+        greet_fn := |name: string|_{ prefix_e14 = prefix_e14 } -> string format("{} {}", prefix_e14, name);
         print("closure-strfmt: {}\n", greet_fn("world"));
 
         val_e15 : i32 = 10;
         p_e15 := *val_e15;
-        read_fn := || -> i32 p_e15.*;
+        read_fn := ||_{ p_e15 = p_e15 } -> i32 p_e15.*;
         print("closure-ptr-before: {}\n", read_fn());
         val_e15 = 42;
         print("closure-ptr-after: {}\n", read_fn());
 
         off_e16 : i32 = 100;
-        neg_fn := |x: i32| -> i32 x - off_e16;
+        neg_fn := |x: i32|_{ off_e16 = off_e16 } -> i32 x - off_e16;
         val_e16 : i32 = 30;
         print("closure-neg: {}\n", neg_fn(val_e16));
 
         gpa_e17 := GPA.init();
         a_e17 : Allocator = gpa_e17;
-        alloc_fn := |size: i64| -> *void a_e17.alloc_bytes(size);
+        alloc_fn := |size: i64|_{ a_e17 = a_e17 } -> *void a_e17.alloc_bytes(size);
         ptr_e17 := alloc_fn(32);
         print("closure-proto-cap: {}\n", ptr_e17 != null);
         a_e17.dealloc_bytes(ptr_e17);
@@ -1022,7 +1022,7 @@ main :: () {
         print("closure-chain-factory: {}\n", o_fn(s_fn(10)));
 
         threshold : i32 = 50;
-        above_fn := |x: i32| -> bool x >= threshold;
+        above_fn := |x: i32|_{ threshold = threshold } -> bool x >= threshold;
         vals_e19 : [5]i32 = .[10, 30, 50, 70, 90];
         count_above : i32 = 0;
         idx_e19 : i64 = 0;

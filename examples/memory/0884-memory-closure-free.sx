@@ -17,7 +17,7 @@ main :: () {
     r := 0;
     push .{ allocator = ta } {
         n := 40;
-        cl := |x: i64| -> i64 { x + n };
+        cl : Closure(i64) -> i64 = |x: i64| -> i64 { x + n };
         r = cl(2);
         free(cl);
     }

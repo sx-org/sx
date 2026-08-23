@@ -34,7 +34,7 @@ main :: () {
 
     // closure with a capture
     base := 100;
-    addc := |a: i64, b: i64| -> i64 a + b + base;
+    addc := |a: i64, b: i64|_{ base = base } -> i64 a + b + base;
     print("capture direct: {}\n", addc(1, 2));
     print("capture spread: {}\n", addc(..pair));
 

@@ -30,13 +30,13 @@ Widget :: struct {
 main :: () {
     // 1. Basic closure with capture
     offset := 100;
-    add_offset := |x: i64| -> i64 x + offset;
+    add_offset := |x: i64|_{ offset = offset } -> i64 x + offset;
      
     print("basic: {}\n", add_offset(42));
 
     // 2. Capture by value (snapshot semantics)
     n := 10;
-    snap := |x: i64| -> i64 x + n;
+    snap := |x: i64|_{ n = n } -> i64 x + n;
     n = 999;
     print("snapshot: {}\n", snap(5));
 
@@ -50,7 +50,7 @@ main :: () {
 
     // 4. Void closure with string capture
     tag := "INFO";
-    logger := |msg: string| {
+    logger := |msg: string|_{ tag = tag } {
         print("[{}] {}\n", tag, msg);
     };
     logger("system ready");
@@ -74,13 +74,13 @@ main :: () {
 
     // 9. Closure captures closure
     inner := |x: i64| -> i64 x + 10;
-    outer := |x: i64| -> i64 inner(x) * 2;
+    outer := |x: i64|_{ inner = inner } -> i64 inner(x) * 2;
     print("compose: {}\n", outer(5));
 
     // 10. Multiple closures from same scope
     base := 100;
-    cl_add := |x: i64| -> i64 x + base;
-    cl_mul := |x: i64| -> i64 x * base;
+    cl_add := |x: i64|_{ base = base } -> i64 x + base;
+    cl_mul := |x: i64|_{ base = base } -> i64 x * base;
     print("multi: {} {}\n", cl_add(5), cl_mul(5));
 
     // 11. Optional closures
