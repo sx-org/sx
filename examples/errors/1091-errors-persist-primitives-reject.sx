@@ -2,8 +2,11 @@
 // `Closure` carries one instead, so it has no env type, no env value and no
 // static trampoline to name — `closure` returns it unchanged rather than
 // persisting it again. A type that is not callable at all has none of the three.
+// Each takes exactly one argument, in a value slot and in a type slot alike.
 
 @import "modules/std.sx";
+
+double :: (x: i64) -> i64 { return x * 2; }
 
 main :: () -> i32 {
     cl : Closure(i64) -> i64 = |x: i64| x + 1;
@@ -13,5 +16,9 @@ main :: () -> i32 {
     _ := @call_ptr(type_of(cl));
     _ := @env_of(cl);
     _ := @call_ptr(i64);
+
+    _ := @call_ptr(type_of(double), i64);
+    _ := @env_of();
+    _ := size_of(@env_type(type_of(double), i64));
     return 0;
 }
