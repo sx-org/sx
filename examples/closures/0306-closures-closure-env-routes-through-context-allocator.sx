@@ -1,7 +1,6 @@
-// `closure(f)` funds the env copy through `context.allocator`, not
-// `.heap_alloc` directly. So when a `push .{ allocator = tracer }` block is
-// active, persisting a capturing literal inside it allocates through the
-// tracker.
+// `closure(f)` funds the env copy through `context.allocator`. So when a
+// `push .{ allocator = tracer }` block is active, persisting a capturing
+// literal inside it allocates through the tracker.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
