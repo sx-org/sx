@@ -457,6 +457,9 @@ pub const Lowering = struct {
     /// holds at most one, so the map is the coherence check as well as the
     /// dispatch table.
     callable_nominals: std.AutoHashMap(TypeId, lower_protocol.CallableNominal),
+    /// The `@call_ptr` trampoline synthesized for a callable type, so one type
+    /// persists through one trampoline however many times `closure` erases it.
+    persist_trampolines: std.AutoHashMap(TypeId, inst_mod.FuncId),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
     /// the registry: there is no enrollment API, and which set a name means is a
     /// question about which declaration it reaches.
@@ -1314,6 +1317,7 @@ pub const Lowering = struct {
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
             .callable_nominals = std.AutoHashMap(TypeId, lower_protocol.CallableNominal).init(module.alloc),
+            .persist_trampolines = std.AutoHashMap(TypeId, inst_mod.FuncId).init(module.alloc),
             .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
@@ -3739,6 +3743,8 @@ pub const Lowering = struct {
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
+    pub const persistArity = lower_call.persistArity;
+    pub const persistEnvType = lower_call.persistEnvType;
     pub const appendDefaultArgs = lower_call.appendDefaultArgs;
     pub const lowerDefaultArg = lower_call.lowerDefaultArg;
     pub const checkCallArity = lower_call.checkCallArity;

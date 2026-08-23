@@ -5042,7 +5042,7 @@ error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
 ```
 
 #### Persisting — `closure`
-`closure` is an ordinary `core.sx` function over a callable-bound binder:
+`closure` is an ordinary `std/mem.sx` function over a callable-bound binder:
 ```sx
 closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure(..A) -> R {
     inline match F {
@@ -5056,7 +5056,11 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 ```
 
 - `@env_type(F)` is the env type, `@env_of(f)` the `@Init` `make` writes, and
-  `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`.
+  `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`. A callable value
+  IS its env — a unique lambda is its env struct, an `impl (sig) for T` nominal
+  its own state, a bare function its pointer word — so `@env_type(F)` is `F` and
+  a nominal and a bare function get a trampoline synthesized around it. All
+  three refuse a `Closure`, which carries an env rather than being one.
 - A `Closure` argument is returned unchanged, so `closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
   `make` does not write a null dest; `alloc_bytes(0)` returns null and

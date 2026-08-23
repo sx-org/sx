@@ -2878,6 +2878,9 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -3172,6 +3175,9 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3414,6 +3420,9 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         .size_of,
         .align_of,
         .type_of,
@@ -3787,6 +3796,9 @@ fn isReflectionCall(name: []const u8) bool {
         .type_info,
         .@"@is_comptime",
         .@"@error",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
@@ -3959,6 +3971,27 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const type_ref = self.builder.constType(t);
         const args_owned = self.alloc.dupe(Ref, &.{type_ref}) catch return Ref.none;
         return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+    }
+    if (std.mem.eql(u8, name, "@env_type")) {
+        if (self.persistArity(name, c)) |sentinel| return sentinel;
+        const env_ty = self.persistEnvType(name, self.resolveTypeArg(c.args[0]), c.args[0].span);
+        return self.builder.constType(env_ty orelse .unresolved);
+    }
+    if (std.mem.eql(u8, name, "@call_ptr")) {
+        const ptr_void = self.module.types.ptrTo(.void);
+        if (self.persistArity(name, c)) |_| return self.builder.constNull(ptr_void);
+        const ty = self.resolveTypeArg(c.args[0]);
+        _ = self.persistEnvType(name, ty, c.args[0].span) orelse return self.builder.constNull(ptr_void);
+        const fid = lower_closure.callTrampolineOf(self, ty) orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@call_ptr: '{s}' has no trampoline", .{self.formatTypeName(ty)});
+            return self.builder.constNull(ptr_void);
+        };
+        return self.builder.emit(.{ .func_ref = fid }, ptr_void);
+    }
+    if (std.mem.eql(u8, name, "@env_of")) {
+        if (self.persistArity(name, c)) |sentinel| return sentinel;
+        _ = self.persistEnvType(name, self.inferExprType(c.args[0]), c.args[0].span) orelse return Ref.none;
+        return self.lowerExpr(c.args[0]);
     }
     if (std.mem.eql(u8, name, "size_of")) {
         // size_of(T) → const_int(sizeof(T)); runtime Type arg → tag-indexed
@@ -4604,6 +4637,33 @@ pub fn reflectFamilyOk(self: *Lowering, name: []const u8, ty: TypeId, span: ?ast
         },
         else => return true,
     }
+}
+
+/// Each persist primitive takes exactly one argument. Returns null when the
+/// call has it, else a `Ref.none` sentinel after diagnosing — the argument
+/// handlers index `args[0]` unconditionally.
+pub fn persistArity(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
+    if (c.args.len == 1) return null;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, c.callee.span, "{s} takes one argument, got {d}", .{ name, c.args.len });
+    return Ref.none;
+}
+
+/// The environment `@env_type` / `@env_of` / `@call_ptr` answer for `ty`, or
+/// null after diagnosing why it has none. An erased `Closure` is refused by
+/// design: it carries an environment instead of being one, which is why
+/// `closure` returns it unchanged rather than persisting it again.
+pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.Span) ?TypeId {
+    if (lower_closure.envTypeOf(self, ty)) |env| return env;
+    if (self.diagnostics) |d| {
+        const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
+        if (is_closure) {
+            d.addFmt(.err, span, "{s}: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged", .{name});
+        } else {
+            d.addFmt(.err, span, "{s} expects a callable value's type; '{s}' is not one", .{ name, self.formatTypeName(ty) });
+        }
+    }
+    return null;
 }
 
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {

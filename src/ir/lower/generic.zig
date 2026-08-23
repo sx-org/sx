@@ -2045,6 +2045,19 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             },
         };
     }
+    // @env_type($F) -> Type — the environment a callable value IS. Folds here
+    // like `pointee_type` so it answers in a type-argument slot, which is where
+    // `closure`'s `make` reads it.
+    if (std.mem.eql(u8, callee_name, "@env_type")) {
+        if (cl.args.len != 1) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, cl.callee.span, "@env_type takes one type: @env_type($F)", .{});
+            return .unresolved;
+        }
+        const t = self.resolveTypeArg(cl.args[0]);
+        if (t == .unresolved) return .unresolved;
+        return self.persistEnvType("@env_type", t, cl.callee.span) orelse .unresolved;
+    }
     // Built-in: @Vector(N, T)
     if (std.mem.eql(u8, callee_name, contracts.vector_head) and cl.args.len == 2) {
         const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
@@ -2132,6 +2145,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // `.call` resolver owns these folds — delegate with the same arg nodes.
     if (!pt.is_raw and (std.mem.eql(u8, base_name, "struct_field_type") or
         std.mem.eql(u8, base_name, "variant_type") or
+        std.mem.eql(u8, base_name, "@env_type") or
         std.mem.eql(u8, base_name, "pointee_type")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);

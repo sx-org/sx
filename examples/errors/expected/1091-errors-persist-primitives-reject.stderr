@@ -1,0 +1,23 @@
+error: @env_type: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged
+  --> examples/errors/1091-errors-persist-primitives-reject.sx:12:18
+   |
+12 |     _ := size_of(@env_type(type_of(cl)));
+   |                  ^^^^^^^^^
+
+error: @call_ptr: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged
+  --> examples/errors/1091-errors-persist-primitives-reject.sx:13:20
+   |
+13 |     _ := @call_ptr(type_of(cl));
+   |                    ^^^^^^^^^^^
+
+error: @env_of: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged
+  --> examples/errors/1091-errors-persist-primitives-reject.sx:14:18
+   |
+14 |     _ := @env_of(cl);
+   |                  ^^
+
+error: @call_ptr expects a callable value's type; 'i64' is not one
+  --> examples/errors/1091-errors-persist-primitives-reject.sx:15:20
+   |
+15 |     _ := @call_ptr(i64);
+   |                    ^^^

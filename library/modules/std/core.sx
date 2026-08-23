@@ -100,6 +100,23 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 @volatile_load  :: ($T: Type, address: *T) -> T;
 @volatile_store :: ($T: Type, address: *T, value: T);
 
+// The persist primitives `closure` (std/mem.sx) is written over.
+//
+// `@env_type(F)` is the environment a value of callable type `F` IS: the env
+// struct of a `|…|_{ … }` literal, the state of an `impl (sig) for T` nominal,
+// the pointer word of a bare function. `@env_of(f)` is that environment as an
+// initializer, so `make` writes it straight into the storage it funds.
+// `@call_ptr(F)` is the trampoline `(env: *void, params…) -> R` an erased
+// value dispatches through; a nominal and a bare function get one synthesized.
+//
+// A callable value IS its environment, so `@env_of(f)` has type `F` and
+// `@env_type(F)` is `F`. All three refuse a `Closure`: it carries an
+// environment rather than being one, which is the arm where `closure` returns
+// its argument unchanged.
+@env_type :: ($F: Type) -> Type;
+@env_of :: (f: $F) -> F;
+@call_ptr :: ($F: Type) -> *void;
+
 // Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
 // same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
 // and `}}` write a brace — and the compiler expands the call into one write per
@@ -353,6 +370,11 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // An allocator IS its state object, so a handle only ever borrows a named
 // allocator (`gpa`, `gpa.(Allocator)`); `free` of a handle refuses at compile
 // time, and a handle over a temporary cannot be returned.
+//
+// Zero is the empty request, and null is the empty answer: `alloc_bytes(0)`
+// returns null and allocates nothing, and `dealloc_bytes(null)` does nothing.
+// A zero-sized type — the environment of a capture-free lambda — therefore
+// reaches `make` and `create` as a null pointer that funds no storage.
 Allocator :: interface {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);

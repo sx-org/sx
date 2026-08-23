@@ -1,0 +1,8 @@
+env-type 8 8
+lambda 6
+fn-ptr 12
+nominal 107
+identity 7 true
+empty 42 true
+arena 42
+tap 3 9
