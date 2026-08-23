@@ -2297,6 +2297,18 @@ fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor, name: []const
     return .not_a_global;
 }
 
+/// `resolveGlobalRef` without its diagnostics — the global a bare name reads,
+/// or null when no single author answers. Typing consumes this so it can never
+/// name a global the call path refuses, and never double-reports the refusal.
+pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
+    const gi = self.program_index.global_names.get(name) orelse return null;
+    return switch (self.selectGlobalAuthor(name)) {
+        .resolved => |g| g,
+        .untracked => gi,
+        .not_a_global, .ambiguous, .not_visible => null,
+    };
+}
+
 /// The source-aware global for a bare reference to `name`, or null when the
 /// reference does not (visibly) resolve to a global — the ambiguous /
 /// not-visible outcomes diagnose here and return null so the caller's

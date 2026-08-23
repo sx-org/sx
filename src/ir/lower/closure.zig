@@ -11,6 +11,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_protocol = @import("protocol.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
@@ -50,15 +51,46 @@ pub fn uniqueLambdaThrough(self: *Lowering, ty: TypeId) ?UniqueLambda {
 /// The signature a value is callable at.
 pub const CallableSig = struct { params: []const TypeId, ret: TypeId };
 
-/// The signature `ty` is callable at — a unique lambda's env struct, a
-/// `Closure`, or a function pointer — or null when nothing calls it.
-pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
-    if (uniqueLambdaThrough(self, ty)) |u| return .{ .params = u.params, .ret = u.ret };
+/// The `impl (sig) for T` a value of type `ty` calls through, reaching through
+/// one level of `*T` — a pointer to a callable nominal calls the same `call`.
+pub fn callableNominalThrough(self: *Lowering, ty: TypeId) ?lower_protocol.CallableNominal {
+    if (self.callable_nominals.get(ty)) |cn| return cn;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return self.callable_nominals.get(info.pointer.pointee);
+}
+
+/// The four shapes a VALUE is callable at.
+pub const ValueCallee = union(enum) {
+    unique: UniqueLambda,
+    nominal: lower_protocol.CallableNominal,
+    closure: types.TypeInfo.ClosureInfo,
+    fn_ptr: types.TypeInfo.FunctionInfo,
+};
+
+/// The one ordered classification of a callable value. A unique lambda and a
+/// callable nominal are reached through one level of `*T`; a `Closure` and a
+/// function pointer are matched on `ty` itself, so `*Closure(…)` and
+/// `*(i64) -> i64` are not callable.
+pub fn callableShapeOf(self: *Lowering, ty: TypeId) ?ValueCallee {
+    if (uniqueLambdaThrough(self, ty)) |u| return .{ .unique = u };
+    if (callableNominalThrough(self, ty)) |cn| return .{ .nominal = cn };
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
-        .closure => |c| .{ .params = c.params, .ret = c.ret },
-        .function => |f| .{ .params = f.params, .ret = f.ret },
+        .closure => |c| .{ .closure = c },
+        .function => |f| .{ .fn_ptr = f },
         else => null,
+    };
+}
+
+/// The signature `ty` is callable at, or null when nothing calls it.
+pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
+    return switch (callableShapeOf(self, ty) orelse return null) {
+        .unique => |u| .{ .params = u.params, .ret = u.ret },
+        .nominal => |cn| .{ .params = cn.params, .ret = cn.ret },
+        .closure => |c| .{ .params = c.params, .ret = c.ret },
+        .fn_ptr => |f| .{ .params = f.params, .ret = f.ret },
     };
 }
 

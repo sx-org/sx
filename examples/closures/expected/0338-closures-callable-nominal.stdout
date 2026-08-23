@@ -1,0 +1,21 @@
+acc 5
+acc 12
+ptr 15
+total 15
+bound 16
+bound 16
+bound 2
+after 16
+field 4
+field total 4
+ptr-field 18
+total 18
+enum 11
+method 20
+method 40
+static 40
+steal 6
+once 3
+made 1
+named field 5
+named steal 7

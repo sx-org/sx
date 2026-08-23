@@ -1,0 +1,19 @@
+// A callable nominal is not a function pointer and does not erase to a
+// `Closure`. `impl (i64) -> i64 for Accumulator` says what calls it and what
+// bound it answers; it says nothing about what it converts to.
+
+@import "modules/std.sx";
+
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; return self.total; }
+}
+
+main :: () -> i32 {
+    acc := Accumulator{ total = 0 };
+    f : (i64) -> i64 = acc;
+    c : Closure(i64) -> i64 = acc;
+    print("{} {}\n", f(1), c(1));
+    return 0;
+}

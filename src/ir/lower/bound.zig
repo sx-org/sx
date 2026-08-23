@@ -16,7 +16,8 @@
 //!     argument, and the check is that it did.
 //!   - a FUNCTION TYPE (`$F/(i64) -> i64`). The bound asks that the binding be
 //!     CALLABLE at that signature. A unique lambda, a `Closure`, and a function
-//!     pointer each answer it out of their own shape, so no impl is consulted.
+//!     pointer each answer it out of their own shape; a nominal answers it with
+//!     the `impl (i64) -> i64 for T` it carries.
 //!   - an OPEN SET. The deliberate narrow exception to the scheme above: a set is
 //!     not a protocol and carries no impls, so `$V/View` asks a different
 //!     question — is the binding a MEMBER of that set? Membership is the member's
@@ -282,8 +283,8 @@ fn checkMember(
 
 /// A FUNCTION-TYPE bound: the binding must be CALLABLE at the signature the
 /// head spells. A unique lambda, a `Closure`, and a function pointer each carry
-/// their own signature, so the answer is read off the shape and no impl is
-/// consulted. Anything else is not a callable at all.
+/// their own signature; a nominal carries the signature its `impl (sig) for T`
+/// declares. Anything else is not a callable at all.
 pub fn checkCallable(
     self: *Lowering,
     bound: *const Node,
@@ -293,7 +294,7 @@ pub fn checkCallable(
     const fte = bound.data.function_type_expr;
     const spelled = self.formatTypeName(self.resolveTypeWithBindings(bound));
     const sig = self.callableSigOf(bound_ty) orelse
-        return reportUncallable(self, bound, spelled, param, bound_ty, "a unique lambda, a 'Closure', or a function pointer answers this bound", .{});
+        return reportUncallable(self, bound, spelled, param, bound_ty, "a unique lambda, a 'Closure', a function pointer, or a nominal with a function-type impl answers this bound", .{});
     var got_i: usize = 0;
     for (fte.param_types) |want_node| {
         if (want_node.data == .spread_expr) {

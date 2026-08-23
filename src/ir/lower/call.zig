@@ -17,6 +17,7 @@ const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
 const lower_closure = @import("closure.zig");
+const lower_protocol = @import("protocol.zig");
 const lower_bound = @import("bound.zig");
 const generics_mod = @import("../generics.zig");
 
@@ -189,10 +190,7 @@ fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     // type has no arm at all, so declining to it would leave the call to the very
     // dispatch this gate exists to avoid.
     switch (self.lookupField(ty, name)) {
-        .hit, .private => |h| if (!h.ty.isBuiltin()) {
-            const fti = self.module.types.get(h.ty);
-            if (fti == .closure or fti == .function) return true;
-        },
+        .hit, .private => |h| if (self.callableSigOf(h.ty) != null) return true,
         .missing => {},
     }
 
@@ -393,7 +391,7 @@ fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
 /// NEARER level owns the name — `lookupNearest` walks the chain once,
 /// consulting BOTH per-level namespaces, so an outer callable var never
 /// beats an inner nested fn (and vice versa).
-fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
+pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
     const scope = self.scope orelse return false;
     const near = scope.lookupNearest(name) orelse return false;
     const binding = switch (near) {
@@ -403,10 +401,7 @@ fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
         .binding => |b| b,
     };
     if (binding.pack_elem != null) return false;
-    if (binding.ty.isBuiltin()) return false;
-    if (self.uniqueLambdaThrough(binding.ty) != null) return true;
-    const ti = self.module.types.get(binding.ty);
-    return ti == .function or ti == .closure;
+    return self.callableSigOf(binding.ty) != null;
 }
 
 /// Call the function a unique lambda's env `env_addr` belongs to. The value IS
@@ -422,6 +417,178 @@ fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Re
     call_args.appendSlice(self.alloc, args) catch unreachable;
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
     return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+}
+
+/// Call the `call` that `impl (sig) for T` declares. The callee expression IS
+/// the receiver, so the receiver fixup a method call uses decides whether `call`
+/// gets it by value or by address; `recv_addr` is the receiver's storage when
+/// the cell already produced it, so an lvalue callee is evaluated once.
+///
+/// The dispatch key is the declaration itself: `cn.qualified` is a spelled
+/// `Type.call` that two same-display-name conformers share.
+fn callNominal(
+    self: *Lowering,
+    cn: lower_protocol.CallableNominal,
+    recv_node: *const Node,
+    recv: Ref,
+    recv_addr: ?Ref,
+    recv_ty: TypeId,
+    args: []const Ref,
+    c: *const ast.Call,
+    span: ast.Span,
+) Ref {
+    if (self.checkCallArity(cn.fd, cn.qualified, args.len + 1, true, span)) return Ref.none;
+    const fid = self.fn_decl_fids.get(cn.fd) orelse return Ref.none;
+    if (!self.lowered_fids.contains(fid)) {
+        self.lowered_fids.put(fid, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(cn.fd, fid, cn.qualified);
+    }
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    call_args.append(self.alloc, recv) catch unreachable;
+    call_args.appendSlice(self.alloc, args) catch unreachable;
+    self.appendDefaultArgs(cn.fd, &call_args, c.callee);
+    const func = &self.module.functions.items[@intFromEnum(fid)];
+    const ret_ty = func.ret;
+    const params = func.params;
+    self.fixupMethodReceiver(&call_args, func, recv_node, recv_ty, recv_addr);
+    // `coerceCallArgs` can add a function to the module and invalidate `func`,
+    // so its fields are read above.
+    const final_args = self.prependCtxIfNeeded(func, call_args.items);
+    self.coerceCallArgs(final_args, params);
+    return self.builder.call(fid, final_args, ret_ty);
+}
+
+/// The callee VALUE a call dispatches through: the value itself, the address of
+/// the storage holding it when the cell produced one, and where it came from —
+/// which selects the arity checker that shape's diagnostics come from.
+const CalleeValue = struct {
+    ty: TypeId,
+    /// `Ref.none` when only `addr` is known; the shape loads it on demand.
+    ref: Ref,
+    addr: ?Ref = null,
+    node: *const Node,
+    name: ?[]const u8 = null,
+    origin: Origin,
+
+    /// Which arity checker and argument coercion the value's shape uses.
+    const Origin = union(enum) {
+        /// A local binding: a fn pointer dispatches through its own checker.
+        local: lower.Binding,
+        /// A module global read by bare name, whose `*T` params take the
+        /// address of a `T` argument.
+        bare_global,
+        /// A selected namespace member, a field, or any other expression.
+        value,
+    };
+};
+
+fn calleeValueRef(self: *Lowering, cv: CalleeValue) Ref {
+    return if (cv.ref.isNone()) self.builder.load(cv.addr.?, cv.ty) else cv.ref;
+}
+
+/// Call a callable VALUE through the one classification `callableShapeOf`
+/// makes. Null when the value is not callable at all, so a cell can fall
+/// through to its remaining dispatch.
+fn callValue(self: *Lowering, cv: CalleeValue, c: *const ast.Call, args: []Ref, span: ast.Span) ?Ref {
+    switch (self.callableShapeOf(cv.ty) orelse return null) {
+        .unique => |u| {
+            if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = u.params.len, .pack_start = null }, c, span)) return Ref.none;
+            const env_addr = if (cv.addr) |a|
+                uniqueEnvAddress(self, cv.ty, a, true).?
+            else
+                uniqueEnvAddress(self, cv.ty, cv.ref, false).?;
+            return callUniqueLambda(self, u, env_addr, args);
+        },
+        .nominal => |cn| return callNominal(self, cn, cv.node, calleeValueRef(self, cv), cv.addr, cv.ty, args, c, span),
+        .closure => |ci| {
+            if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = ci.params.len, .pack_start = ci.pack_start }, c, span)) return Ref.none;
+            const callee_ref = calleeValueRef(self, cv);
+            coerceClosureCallArgs(self, args, ci.params);
+            // Closure trampolines carry `__sx_ctx` at slot 0; emit_llvm builds
+            // the call as [ctx, env, user_args].
+            const owned = if (self.implicit_ctx_enabled) blk: {
+                const arr = self.alloc.alloc(Ref, args.len + 1) catch unreachable;
+                arr[0] = self.current_ctx_ref;
+                @memcpy(arr[1..], args);
+                break :blk arr;
+            } else self.alloc.dupe(Ref, args) catch unreachable;
+            return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, ci.ret);
+        },
+        .fn_ptr => |fi| {
+            if (cv.origin == .local) {
+                if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args, c, span)) return Ref.none;
+                return indirectCallThroughLocal(self, cv.name orelse "", cv.origin.local, args, span);
+            }
+            if (checkCallableValueArgs(self, "function pointer", cv.name, args, fnPointerShape(fi), c, span)) return Ref.none;
+            const callee_ref = calleeValueRef(self, cv);
+            if (cv.origin == .bare_global) {
+                coerceGlobalFnPointerArgs(self, args, fi, c);
+            } else {
+                coerceFnPointerCallArgs(self, args, fi);
+            }
+            var final_args = std.ArrayList(Ref).empty;
+            defer final_args.deinit(self.alloc);
+            if (self.fnPtrTypeWantsCtx(cv.ty)) final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+            final_args.appendSlice(self.alloc, args) catch unreachable;
+            const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
+            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, fi.ret);
+        },
+    }
+}
+
+/// The callee a module global names, or null when the global is not callable.
+/// A MUTABLE global carries its live storage, so a `call` taking `self: *T`
+/// writes through the global itself; a `::` const lives in `.rodata` and is
+/// called through a copy.
+fn globalCallee(self: *Lowering, gi: GlobalInfo, name: []const u8, node: *const Node, origin: CalleeValue.Origin) ?CalleeValue {
+    const addressed = switch (self.callableShapeOf(gi.ty) orelse return null) {
+        .unique, .nominal => !self.module.globals.items[gi.id.index()].is_const,
+        .closure, .fn_ptr => false,
+    };
+    return .{
+        .ty = gi.ty,
+        .ref = if (addressed) Ref.none else self.builder.emit(.{ .global_get = gi.id }, gi.ty),
+        .addr = if (addressed) self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty)) else null,
+        .node = node,
+        .name = name,
+        .origin = origin,
+    };
+}
+
+/// Argument coercion for a call through a module-global function pointer. A
+/// `*T` param takes the ADDRESS of a `T` argument: an identifier naming an
+/// alloca passes that storage, every other expression a copy.
+fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.FunctionInfo, c: *const ast.Call) void {
+    // A tuple/pack spread expands one AST arg to N lowered args, so `c.args[ai]`
+    // only aligns while `ai` is in range — a spliced element falls back to its
+    // lowered ref's type.
+    for (args, 0..) |*arg, ai| {
+        if (ai >= info.params.len) break;
+        const dst_ty = info.params[ai];
+        const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
+        if (!dst_ty.isBuiltin()) {
+            const dti = self.module.types.get(dst_ty);
+            if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
+                if (ai < c.args.len and c.args[ai].data == .identifier) {
+                    if (self.scope) |scope| {
+                        if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
+                            if (binding.is_alloca) {
+                                arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
+                                continue;
+                            }
+                        }
+                    }
+                }
+                const slot = self.builder.alloca(src_ty);
+                self.builder.store(slot, arg.*);
+                arg.* = slot;
+                continue;
+            }
+        }
+        arg.* = self.coerceToType(arg.*, src_ty, dst_ty);
+    }
+    if (info.is_c_variadic) self.promoteCVariadicArgs(args, info.params.len);
 }
 
 /// The env address behind a value of unique type `ty`: a `*$F` names one
@@ -493,8 +660,8 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
 }
 
 /// Call an exactly-selected namespace global without round-tripping through
-/// the process-wide name map.  Closure and function-pointer globals keep the
-/// same ABI, arity and coercion behavior as their bare callable-value forms.
+/// the process-wide name map. Every callable shape keeps the same ABI, arity
+/// and coercion behavior as its bare callable-value form.
 fn callThroughSelectedGlobal(
     self: *Lowering,
     selected: CallResolver.CallableValue,
@@ -502,33 +669,9 @@ fn callThroughSelectedGlobal(
     c: *const ast.Call,
     span: ast.Span,
 ) Ref {
-    const ty = selected.global.ty;
-    if (ty.isBuiltin()) return self.emitError(selected.member, span);
-    const info = self.module.types.get(ty);
-    const callee_ref = self.builder.emit(.{ .global_get = selected.global.id }, ty);
-    if (info == .closure) {
-        if (checkCallableValueArgs(self, "closure", selected.member, args, .{ .fixed = info.closure.params.len, .pack_start = info.closure.pack_start }, c, span)) return Ref.none;
-        coerceClosureCallArgs(self, args, info.closure.params);
-        const owned = if (self.implicit_ctx_enabled) blk: {
-            const with_ctx = self.alloc.alloc(Ref, args.len + 1) catch @panic("out of memory while preparing qualified closure call");
-            with_ctx[0] = self.current_ctx_ref;
-            @memcpy(with_ctx[1..], args);
-            break :blk with_ctx;
-        } else self.alloc.dupe(Ref, args) catch @panic("out of memory while preparing qualified closure call");
-        return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, info.closure.ret);
-    }
-    if (info == .function) {
-        if (checkCallableValueArgs(self, "function pointer", selected.member, args, fnPointerShape(info.function), c, span)) return Ref.none;
-        coerceFnPointerCallArgs(self, args, info.function);
-        var final_args = std.ArrayList(Ref).empty;
-        defer final_args.deinit(self.alloc);
-        if (self.fnPtrTypeWantsCtx(ty))
-            final_args.append(self.alloc, self.current_ctx_ref) catch @panic("out of memory while preparing qualified function-pointer call");
-        final_args.appendSlice(self.alloc, args) catch @panic("out of memory while preparing qualified function-pointer call");
-        const owned = self.alloc.dupe(Ref, final_args.items) catch @panic("out of memory while preparing qualified function-pointer call");
-        return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, info.function.ret);
-    }
-    return self.emitError(selected.member, span);
+    const cv = globalCallee(self, selected.global, selected.member, c.callee, .value) orelse
+        return self.emitError(selected.member, span);
+    return callValue(self, cv, c, args, span) orelse self.emitError(selected.member, span);
 }
 
 /// Whether the callee MAY declare a slice-variadic param (`..xs: []T`).
@@ -699,8 +842,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // The bare name's visible author is a VALUE: this spelling denotes that
     // declaration here, so no name-keyed function lookup may answer for it.
     const author_not_callable = bare_author_verdict == .not_callable;
-    // Either verdict forbids reading a signature off the name-keyed winner:
-    // there is no single author to take named-arg names or defaults from.
+    // Either verdict forbids reading a signature off the name-keyed winner
+    // (`sel_author` / `fn_ast_map`).
     const author_declines = author_ambiguous or author_not_callable;
 
     // A proved namespace path that fails at one edge/member is terminal. Emit
@@ -733,7 +876,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // `f(a, name = v)` into declaration order with defaults filled, BEFORE
     // positional default expansion (a named call never reaches it: mapping
     // fills every default itself, middle holes included).
-    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_declines)) |mapped| c = mapped;
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines)) |mapped| c = mapped;
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
@@ -1065,7 +1208,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     var args = std.ArrayList(Ref).empty;
     defer args.deinit(self.alloc);
     // Try to resolve param types for target_type context
-    const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null);
+    const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines);
     // For enum_literal callees (.Variant(payload)), resolve the payload target type
     // from the union field type so struct literal fields get proper coercion.
     // Resolve through optional layers — a `?E` destination constructs the E
@@ -1391,47 +1534,29 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // through unused: the enclosing local is invisible
                             // to a static nested fn, so the name correctly
                             // resolves to the module-scope callable below.
-                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or self.uniqueLambdaThrough(binding.ty) != null)) {
+                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or
+                                self.uniqueLambdaThrough(binding.ty) != null or self.callableNominalThrough(binding.ty) != null))
+                            {
                                 _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
                                 return Ref.none;
                             }
-                            if (self.uniqueLambdaThrough(binding.ty)) |u| {
-                                if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
-                                const env_addr = uniqueEnvAddress(self, binding.ty, binding.ref, binding.is_alloca).?;
-                                return callUniqueLambda(self, u, env_addr, args.items);
-                            }
-                            if (ty_info == .closure) {
-                                // Exact-arity + spread-placeholder validation
-                                // against the closure TYPE.
-                                if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = ty_info.closure.params.len, .pack_start = ty_info.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                                const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
-                                // Coerce user args to the closure's param types —
-                                // a `?T` param must wrap the arg.
-                                coerceClosureCallArgs(self, args.items, ty_info.closure.params);
-                                // Closure trampolines carry `__sx_ctx` at
-                                // slot 0; emit_llvm's `call_closure` builds
-                                // the call as [ctx, env, user_args], so we
-                                // prepend ctx here. args[0] becomes ctx.
-                                const owned = if (self.implicit_ctx_enabled) blk: {
-                                    const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                                    arr[0] = self.current_ctx_ref;
-                                    @memcpy(arr[1..], args.items);
-                                    break :blk arr;
-                                } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                                const ret_ty = ty_info.closure.ret;
-                                return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, ret_ty);
-                            }
-                            // A local fn-POINTER binding shadows any same-named
-                            // top-level fn: dispatch indirect through
-                            // the LOCAL before the author / name-based program-fn
-                            // paths below, otherwise an importer's unrelated
-                            // module-scope fn hijacks the call. A fn-pointer type
-                            // has no variadic slot — reject a leftover slice/array
-                            // spread placeholder before the arity check counts it
-                            // as one arg.
-                            if (binding.pack_elem == null and ty_info == .function) {
-                                if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args.items, c, c.callee.span)) return Ref.none;
-                                return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
+                            // A callable local shadows any same-named top-level
+                            // fn: dispatch through the LOCAL before the author /
+                            // name-based program-fn paths below, otherwise an
+                            // importer's unrelated module-scope fn hijacks the
+                            // call. A fn-pointer-typed pack-element alias is
+                            // excluded — the substitution path owns it.
+                            if (self.callableShapeOf(binding.ty)) |shape| {
+                                if (shape != .fn_ptr or binding.pack_elem == null) {
+                                    if (callValue(self, .{
+                                        .ty = binding.ty,
+                                        .ref = if (binding.is_alloca) Ref.none else binding.ref,
+                                        .addr = if (binding.is_alloca) binding.ref else null,
+                                        .node = c.callee,
+                                        .name = id.name,
+                                        .origin = .{ .local = binding },
+                                    }, c, args.items, c.callee.span)) |r| return r;
+                                }
                             }
                         }
                     },
@@ -1544,59 +1669,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
                 }
             }
-            // May be a global variable holding a function pointer
+            // May be a module global holding a callable value.
             if (self.resolveGlobalRef(id.name, c.callee.span)) |gi| {
-                if (!gi.ty.isBuiltin()) {
-                    const gti = self.module.types.get(gi.ty);
-                    if (gti == .function) {
-                        // Arity + spread-placeholder validation against
-                        // the fn-pointer TYPE.
-                        if (checkCallableValueArgs(self, "function pointer", id.name, args.items, fnPointerShape(gti.function), c, c.callee.span)) return Ref.none;
-                        const callee_ref = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
-                        // Coerce args to match fn-ptr param types (including
-                        // implicit address-of). A tuple/pack spread expands one
-                        // AST arg to N lowered args, so `c.args[ai]` only
-                        // aligns while `ai` is in range — a spliced element
-                        // falls back to its lowered ref's type.
-                        for (args.items, 0..) |*arg, ai| {
-                            if (ai < gti.function.params.len) {
-                                const dst_ty = gti.function.params[ai];
-                                const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
-                                // Implicit address-of: passing T where *T expected
-                                if (!dst_ty.isBuiltin()) {
-                                    const dti = self.module.types.get(dst_ty);
-                                    if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
-                                        // For identifier args, pass the alloca directly (reference semantics)
-                                        if (ai < c.args.len and c.args[ai].data == .identifier) {
-                                            if (self.scope) |scope| {
-                                                if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
-                                                    if (binding.is_alloca) {
-                                                        arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
-                                                        continue;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // For other expressions, copy semantics
-                                        const slot = self.builder.alloca(src_ty);
-                                        self.builder.store(slot, arg.*);
-                                        arg.* = slot;
-                                        continue;
-                                    }
-                                }
-                                arg.* = self.coerceToType(arg.*, src_ty, dst_ty);
-                            }
-                        }
-                        if (gti.function.is_c_variadic) self.promoteCVariadicArgs(args.items, gti.function.params.len);
-                        var final_args = std.ArrayList(Ref).empty;
-                        defer final_args.deinit(self.alloc);
-                        if (self.fnPtrTypeWantsCtx(gi.ty)) {
-                            final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
-                        }
-                        final_args.appendSlice(self.alloc, args.items) catch unreachable;
-                        const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-                        return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, gti.function.ret);
-                    }
+                if (globalCallee(self, gi, id.name, c.callee, .bare_global)) |cv| {
+                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
                 }
             }
             // A generic type-CONSTRUCTOR head (`List(i64)`, `ModBox(V)`)
@@ -1980,83 +2056,44 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
 
-            // Check if field is a closure type — call as closure, not method
+            // A CALLABLE field is called as a value, not dispatched as a method.
             switch (self.lookupField(obj_ty, fa.field)) {
-                .hit, .private => |h| {
-                    if (self.uniqueLambdaThrough(h.ty)) |u| {
-                        if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                        if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
-                        // The field is the env; GEP its slot so the call writes the field.
-                        const env_ptr: Ref = blk: {
+                .hit, .private => |h| if (self.callableShapeOf(h.ty)) |shape| {
+                    if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
+                    var cv: CalleeValue = .{ .ty = h.ty, .ref = Ref.none, .node = c.callee, .name = fa.field, .origin = .value };
+                    switch (shape) {
+                        // The field IS the receiver storage: GEP its slot from a
+                        // base lowered ONCE, so the call writes the field and a
+                        // side-effecting receiver is evaluated a single time.
+                        .unique, .nominal => cv.addr = blk: {
+                            const slot_ty = self.module.types.ptrTo(h.ty);
                             if (!obj_ty.isBuiltin()) {
                                 const oi = self.module.types.get(obj_ty);
-                                if (oi == .pointer) {
-                                    break :blk self.builder.structGepTyped(obj, h.index, self.module.types.ptrTo(h.ty), oi.pointer.pointee);
-                                }
+                                if (oi == .pointer)
+                                    break :blk self.builder.structGepTyped(obj, h.index, slot_ty, oi.pointer.pointee);
                             }
                             const base = if (self.isLvalueExpr(c.callee))
                                 self.lowerExprAsPtr(effective_obj_node)
                             else b2: {
-                                const slot = self.builder.alloca(obj_ty);
-                                self.builder.store(slot, obj);
-                                break :b2 slot;
+                                const b = self.builder.alloca(obj_ty);
+                                self.builder.store(b, obj);
+                                break :b2 b;
                             };
-                            break :blk self.builder.structGepTyped(base, h.index, self.module.types.ptrTo(h.ty), obj_ty);
-                        };
-                        const env_addr = uniqueEnvAddress(self, h.ty, env_ptr, true).?;
-                        return callUniqueLambda(self, u, env_addr, args.items);
-                    }
-                    if (!h.ty.isBuiltin()) {
-                        const fti = self.module.types.get(h.ty);
-                        if (fti == .closure) {
-                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                            // Exact-arity + spread-placeholder validation
-                            // against the field's closure TYPE.
-                            if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = fti.closure.params.len, .pack_start = fti.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                            // structGet requires an aggregate value; if obj is *T, load through it first.
+                            break :blk self.builder.structGepTyped(base, h.index, slot_ty, obj_ty);
+                        },
+                        // A `Closure` / fn-pointer field is a plain value read.
+                        // `structGet` requires an aggregate, so a `*T` receiver
+                        // loads through the pointer first.
+                        .closure, .fn_ptr => {
                             var agg = obj;
-                            const oi = self.module.types.get(obj_ty);
-                            if (oi == .pointer) {
-                                agg = self.builder.load(obj, oi.pointer.pointee);
+                            if (!obj_ty.isBuiltin()) {
+                                const oi = self.module.types.get(obj_ty);
+                                if (oi == .pointer) agg = self.builder.load(obj, oi.pointer.pointee);
                             }
-                            const closure_val = self.builder.structGet(agg, h.index, h.ty);
-                            // Coerce user args to the closure's param types.
-                            coerceClosureCallArgs(self, args.items, fti.closure.params);
-                            // Prepend ctx for sx-side closure call ABI.
-                            const owned = if (self.implicit_ctx_enabled) blk: {
-                                const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                                arr[0] = self.current_ctx_ref;
-                                @memcpy(arr[1..], args.items);
-                                break :blk arr;
-                            } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                            return self.builder.emit(.{ .call_closure = .{ .callee = closure_val, .args = owned } }, fti.closure.ret);
-                        }
-                        // Bare function-pointer field (`fp: (T) -> R`, no env) —
-                        // load the field value and call it via `call_indirect`,
-                        // mirroring the bare-identifier / global fn-pointer paths
-                        // (ctx prepend gated on the fn-ptr's own ABI).
-                        if (fti == .function) {
-                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                            // Arity + spread-placeholder validation
-                            // against the field's fn-pointer TYPE.
-                            if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fnPointerShape(fti.function), c, c.callee.span)) return Ref.none;
-                            var agg = obj;
-                            const oi = self.module.types.get(obj_ty);
-                            if (oi == .pointer) {
-                                agg = self.builder.load(obj, oi.pointer.pointee);
-                            }
-                            const fp_val = self.builder.structGet(agg, h.index, h.ty);
-                            coerceFnPointerCallArgs(self, args.items, fti.function);
-                            var final_args = std.ArrayList(Ref).empty;
-                            defer final_args.deinit(self.alloc);
-                            if (self.fnPtrTypeWantsCtx(h.ty)) {
-                                final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
-                            }
-                            final_args.appendSlice(self.alloc, args.items) catch unreachable;
-                            const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-                            return self.builder.emit(.{ .call_indirect = .{ .callee = fp_val, .args = owned } }, fti.function.ret);
-                        }
+                            cv.ref = self.builder.structGet(agg, h.index, h.ty);
+                        },
                     }
+                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
                 },
                 .missing => {},
             }
@@ -2193,7 +2230,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         }
                         if (self.resolveFuncByName(gmangled)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
-                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                             self.appendDefaultArgs(gm.fd, &method_args, c.callee);
                             const final_args = self.prependCtxIfNeeded(func, method_args.items);
                             self.coerceCallArgs(final_args, func.params);
@@ -2204,7 +2241,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const func = &self.module.functions.items[@intFromEnum(fid)];
                         const ret_ty = func.ret;
                         const params = func.params;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                         self.appendDefaultArgs(gm.fd, &method_args, c.callee);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
@@ -2262,7 +2299,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2283,7 +2320,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const ret_ty = func.ret;
                     const params = func.params;
                     const has_ctx = func.has_implicit_ctx;
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                     self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = blk: {
                         if (!has_ctx) break :blk method_args.items;
@@ -2310,7 +2347,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         const has_ctx = func.has_implicit_ctx;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                         if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
                         // coerceCallArgs can trigger protocol thunk creation
                         // (module.addFunction), invalidating func pointer.
@@ -2448,7 +2485,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2481,7 +2518,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // Same implicit address-of as a struct-defined method: if the
                     // free function's first param is `*T` and the receiver is a
                     // value `T`, pass its address instead of a by-value copy
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                     if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = self.prependCtxIfNeeded(func, method_args.items);
                     self.coerceCallArgs(final_args, params);
@@ -2607,56 +2644,33 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // lowered ref. Closure values use `call_closure`; fn pointers
             // use `call_indirect`.
             const inferred = self.inferExprType(c.callee);
-            if (self.uniqueLambdaThrough(inferred)) |u| {
-                if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
-                const env_addr = if (self.isLvalueExpr(c.callee))
-                    uniqueEnvAddress(self, inferred, self.lowerExprAsPtr(c.callee), true).?
-                else
-                    uniqueEnvAddress(self, inferred, self.lowerExpr(c.callee), false).?;
-                return callUniqueLambda(self, u, env_addr, args.items);
-            }
+            if (self.callableShapeOf(inferred)) |shape| switch (shape) {
+                // Unique-typed and nominal storage is written through its
+                // address, so an lvalue callee is lowered as a place — ONCE.
+                .unique, .nominal => {
+                    const addr: ?Ref = if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else null;
+                    if (callValue(self, .{
+                        .ty = inferred,
+                        .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                        .addr = addr,
+                        .node = c.callee,
+                        .origin = .value,
+                    }, c, args.items, c.callee.span)) |r| return r;
+                },
+                // A `_{ … }` IIFE infers as Closure and lowers as its env, so a
+                // Closure / fn-pointer callee is classified on the LOWERED ref.
+                .closure, .fn_ptr => {},
+            };
             const callee_ref = self.lowerExpr(c.callee);
             const callee_ty = self.builder.getRefType(callee_ref);
-            if (self.uniqueLambdaThrough(callee_ty)) |u| {
-                if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
-                const env_addr = uniqueEnvAddress(self, callee_ty, callee_ref, false).?;
-                return callUniqueLambda(self, u, env_addr, args.items);
-            }
-            if (!callee_ty.isBuiltin()) {
-                const cti = self.module.types.get(callee_ty);
-                if (cti == .closure) {
-                    // Exact-arity + spread-placeholder validation against
-                    // the callee expression's closure TYPE.
-                    if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = cti.closure.params.len, .pack_start = cti.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                    // Coerce user args to the closure's param types.
-                    coerceClosureCallArgs(self, args.items, cti.closure.params);
-                    // Prepend implicit ctx for the sx-side closure call ABI
-                    // (emit_llvm builds the call as [ctx, env, user_args]).
-                    const owned = if (self.implicit_ctx_enabled) blk: {
-                        const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                        arr[0] = self.current_ctx_ref;
-                        @memcpy(arr[1..], args.items);
-                        break :blk arr;
-                    } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                    return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, cti.closure.ret);
-                }
-            }
-            // Plain function-pointer indirect call. Use the callee's static
-            // return type when known instead of a hardcoded `.i64` default.
-            const fn_info: ?types.TypeInfo.FunctionInfo = if (!callee_ty.isBuiltin()) blk: {
-                const cti = self.module.types.get(callee_ty);
-                break :blk if (cti == .function) cti.function else null;
-            } else null;
-            if (fn_info) |fi| {
-                // Arity + spread-placeholder validation against the
-                // callee expression's fn-pointer TYPE.
-                if (checkCallableValueArgs(self, "function pointer", null, args.items, fnPointerShape(fi), c, c.callee.span)) return Ref.none;
-                coerceFnPointerCallArgs(self, args.items, fi);
-            }
-            const ret_ty: TypeId = if (fn_info) |fi| fi.ret else .i64;
-            // An expression callee dispatches with the SAME ABI as a
-            // fn-pointer local / global / field: the implicit ctx is
-            // prepended when the pointee's convention wants it.
+            if (callValue(self, .{
+                .ty = callee_ty,
+                .ref = callee_ref,
+                .node = c.callee,
+                .origin = .value,
+            }, c, args.items, c.callee.span)) |r| return r;
+            // An unknown callee still dispatches with the fn-pointer ABI: the
+            // implicit ctx is prepended when the pointee's convention wants it.
             var final_args = std.ArrayList(Ref).empty;
             defer final_args.deinit(self.alloc);
             if (self.fnPtrTypeWantsCtx(callee_ty)) {
@@ -2664,7 +2678,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             final_args.appendSlice(self.alloc, args.items) catch unreachable;
             const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, ret_ty);
+            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, .i64);
         },
     }
 }
@@ -4884,18 +4898,25 @@ fn fnDeclHasVariadicParam(fd: *const ast.FnDecl) bool {
 /// needed (callee unknown, all args provided, or no defaults available).
 /// The callee declaration a named-argument call maps against, plus how many
 /// leading params the call shape binds implicitly (1 for a value-receiver
-/// method/ufcs dot-call, else 0).
+/// method/ufcs dot-call and for a callable-nominal value, else 0).
 const NamedCallee = struct {
     fd: *const ast.FnDecl,
     source: ?[]const u8,
     receiver_params: usize,
 };
 
+/// The callee expression is the receiver, so mapping starts past `call`'s first param.
+fn namedNominalCallee(self: *Lowering, ty: TypeId) ?NamedCallee {
+    const cn = self.callableNominalThrough(ty) orelse return null;
+    return .{ .fd = cn.fd, .source = cn.fd.body.source_file, .receiver_params = 1 };
+}
+
 /// Resolve the declaration whose parameter NAMES a named-argument call binds
 /// against. Mirrors `expandCallDefaults`' author resolution (bare/qualified/
 /// static-struct/enum-literal callees) and adds the value-receiver dot-call
 /// shapes (plain-struct method, ufcs fn — an alias resolves names against the
-/// TARGET's declared params). Null when no declaration is known (closure /
+/// TARGET's declared params) and a callable-nominal VALUE (maps against its
+/// `call`, past the receiver). Null when no declaration is known (closure /
 /// fn-pointer values, builtins, interface methods) — those bind positionally
 /// only.
 fn namedCalleeDecl(
@@ -4903,24 +4924,40 @@ fn namedCalleeDecl(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?NamedCallee {
     switch (c.callee.data) {
         .identifier => |id| {
-            if (author_declines) return null;
-            if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
-            if (callableLocalShadow(self, id.name)) return null;
-            const eff_name = blk: {
-                const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                if (self.ufcsAliasTarget(id.name)) |target| {
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+            if (self.scope) |scope| {
+                if (scope.lookupNearest(id.name)) |near| switch (near) {
+                    .binding => |b| {
+                        if (namedNominalCallee(self, b.ty)) |nc| return nc;
+                        if (callableLocalShadow(self, id.name)) return null;
+                    },
+                    .local_fn => {},
+                };
+            }
+            if (!author_declines) {
+                if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
+                const eff_name = blk: {
+                    const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
+                    if (self.ufcsAliasTarget(id.name)) |target| {
+                        break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+                    }
+                    break :blk scoped;
+                };
+                if (self.program_index.fn_ast_map.get(eff_name)) |fd| {
+                    return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                 }
-                break :blk scoped;
-            };
-            const fd = self.program_index.fn_ast_map.get(eff_name) orelse return null;
-            return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
+            }
+            if (self.globalValueRef(id.name)) |gi| return namedNominalCallee(self, gi.ty);
+            return null;
         },
         .field_access => |fa| {
+            // A namespace-selected callable value maps against its `call`. A
+            // qualified Closure has no names.
+            if (qualified_callable) |gi| return namedNominalCallee(self, gi.ty);
             if (qualified_selected) return .{ .fd = sel_author.?.decl, .source = sel_author.?.source, .receiver_params = 0 };
             if (!self.callResolver().objectIsValue(fa.object)) {
                 switch (self.staticStructHead(fa.object)) {
@@ -4948,8 +4985,15 @@ fn namedCalleeDecl(
                     }
                 }
             }
+            // A callable field maps against its own declaration. A Closure /
+            // fn-pointer / unique field has no names.
+            const recv_ty = self.inferExprType(fa.object);
+            switch (self.lookupField(recv_ty, fa.field)) {
+                .hit, .private => |h| if (self.callableShapeOf(h.ty) != null) return namedNominalCallee(self, h.ty),
+                .missing => {},
+            }
             // Value receiver: `obj.m(args)` binds the first param to `obj`.
-            var obj_ty = self.inferExprType(fa.object);
+            var obj_ty = recv_ty;
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) obj_ty = oi.pointer.pointee;
@@ -4975,7 +5019,7 @@ fn namedCalleeDecl(
             const method = self.plainStructMethod(tgt, el.name) orelse return null;
             return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 0 };
         },
-        else => return null,
+        else => return namedNominalCallee(self, self.inferExprType(c.callee)),
     }
 }
 
@@ -5049,6 +5093,7 @@ pub fn mapNamedArgs(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?*ast.Call {
     var any_named = false;
@@ -5065,7 +5110,7 @@ pub fn mapNamedArgs(
         .enum_literal => |el| el.name,
         else => "callee",
     };
-    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_declines) orelse {
+    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, qualified_callable, author_declines) orelse {
         if (self.diagnostics) |d| {
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
@@ -5593,6 +5638,7 @@ pub fn resolveCallParamTypes(
     sel_author: ?*SelectedFunc,
     qualified_selected: bool,
     qualified_callable: ?GlobalInfo,
+    author_declines: bool,
 ) []const ParamDemand {
     // Target-typed static method shorthand (`.make(args)` where the expected
     // type is a struct) has no receiver: every declared param is supplied by
@@ -5610,11 +5656,7 @@ pub fn resolveCallParamTypes(
         // An exactly-selected namespace global keeps its callable type and
         // source identity; no same-name bare/global lookup participates.
         if (qualified_callable) |global| {
-            if (!global.ty.isBuiltin()) {
-                const ti = self.module.types.get(global.ty);
-                if (ti == .closure) return coerceDemands(self, ti.closure.params);
-                if (ti == .function) return coerceDemands(self, ti.function.params);
-            }
+            if (self.callableSigOf(global.ty)) |sig| return coerceDemands(self, sig.params);
             return &.{};
         }
 
@@ -5738,15 +5780,11 @@ pub fn resolveCallParamTypes(
                 }
             }
         }
-        // Closure-typed struct field: `c.on(args)` lowers to call_closure on
-        // the field value. Pick up the callee's param types from the closure
-        // type so each arg gets the right target_type during lowering.
+        // A callable struct field is called as a value: pick up the callee's
+        // param types from the field so each arg gets the right target_type
+        // during lowering.
         switch (self.lookupField(obj_ty, fa.field)) {
-            .hit, .private => |h| if (!h.ty.isBuiltin()) {
-                const fti = self.module.types.get(h.ty);
-                if (fti == .closure) return coerceDemands(self, fti.closure.params);
-                if (fti == .function) return coerceDemands(self, fti.function.params);
-            },
+            .hit, .private => |h| if (self.callableSigOf(h.ty)) |sig| return coerceDemands(self, sig.params),
             .missing => {},
         }
         if (self.getStructTypeName(obj_ty)) |sname| {
@@ -5858,7 +5896,7 @@ pub fn resolveCallParamTypes(
         // name is shared program-wide, so the author is picked by RECEIVER, the
         // way dispatch picks it, and a declaration whose own receiver parameter
         // does not take this one names a different call.
-        if (namedCalleeDecl(self, c, sel_author, qualified_selected, false)) |callee| {
+        if (namedCalleeDecl(self, c, sel_author, qualified_selected, null, false)) |callee| {
             if (callee.receiver_params == 1) {
                 var eff_args = std.ArrayList(*const Node).empty;
                 defer eff_args.deinit(self.alloc);
@@ -5875,22 +5913,23 @@ pub fn resolveCallParamTypes(
         }
         return &.{};
     }
-    if (c.callee.data != .identifier) return &.{};
+    // Every other callee shape lowers as an expression, and a callable value
+    // there wants the same argument demand a named one gets.
+    if (c.callee.data != .identifier) {
+        if (self.callableSigOf(self.inferExprType(c.callee))) |sig| return coerceDemands(self, sig.params);
+        return &.{};
+    }
     const bare_name = c.callee.data.identifier.name;
-    // Closure / fn-pointer VALUE bound in scope (`g := || …; g(args)`):
-    // type each arg against the callee value's declared parameter types so a
-    // `?T` param wraps the argument — without this the args lower
-    // with no target type and reach `call_closure` unconverted (a concrete arg
-    // arrives as a bare payload that reads ABSENT; `null` reaches a `{T,i1}`
-    // slot as a bare pointer → LLVM verifier failure). A local value shadows a
-    // same-named function, so this precedes the function-name resolution below.
+    // Callable VALUE bound in scope (`g := || …; g(args)`): type each arg
+    // against the callee value's declared parameter types so a `?T` param wraps
+    // the argument — without this the args lower with no target type and reach
+    // `call_closure` unconverted (a concrete arg arrives as a bare payload that
+    // reads ABSENT; `null` reaches a `{T,i1}` slot as a bare pointer → LLVM
+    // verifier failure). A local value shadows a same-named function, so this
+    // precedes the function-name resolution below.
     if (self.scope) |scope| {
         if (scope.lookup(bare_name)) |binding| {
-            if (!binding.ty.isBuiltin()) {
-                const bti = self.module.types.get(binding.ty);
-                if (bti == .closure) return coerceDemands(self, bti.closure.params);
-                if (bti == .function) return coerceDemands(self, bti.function.params);
-            }
+            if (self.callableSigOf(binding.ty)) |sig| return coerceDemands(self, sig.params);
         }
     }
     const name = blk: {
@@ -5917,45 +5956,26 @@ pub fn resolveCallParamTypes(
         return coerceDemands(self, self.userParamTypes(func));
     }
 
-    // Check declared functions
-    if (self.resolveFuncByName(name)) |fid| {
-        const func = &self.module.functions.items[@intFromEnum(fid)];
-        return coerceDemands(self, self.userParamTypes(func));
-    }
+    // A value-authored or ambiguous name has no callable declaration here, so
+    // the name-keyed maps must not type its arguments — the same gate dispatch
+    // applies, or the args coerce to a function the call never reaches.
+    if (!author_declines) {
+        // Check declared functions
+        if (self.resolveFuncByName(name)) |fid| {
+            const func = &self.module.functions.items[@intFromEnum(fid)];
+            return coerceDemands(self, self.userParamTypes(func));
+        }
 
-    // Check AST map for function signatures
-    if (self.program_index.fn_ast_map.get(name)) |fd| {
-        return astCalleeParamTypes(self, fd, c.args);
-    }
-
-    // Check global function pointer variables (quiet author-aware lookup —
-    // param typing only; the call site diagnoses ambiguity / visibility)
-    if (self.program_index.global_names.get(bare_name)) |gi_global| {
-        const gi: ?GlobalInfo = switch (self.selectGlobalAuthor(bare_name)) {
-            .resolved => |g| g,
-            .untracked => gi_global,
-            else => null,
-        };
-        if (gi) |g| {
-            if (!g.ty.isBuiltin()) {
-                const ti = self.module.types.get(g.ty);
-                if (ti == .function) {
-                    return coerceDemands(self, ti.function.params);
-                }
-            }
+        // Check AST map for function signatures
+        if (self.program_index.fn_ast_map.get(name)) |fd| {
+            return astCalleeParamTypes(self, fd, c.args);
         }
     }
 
-    // Check local scope for function pointer variables
-    if (self.scope) |scope| {
-        if (scope.lookup(bare_name)) |binding| {
-            if (!binding.ty.isBuiltin()) {
-                const ti = self.module.types.get(binding.ty);
-                if (ti == .function) {
-                    return coerceDemands(self, ti.function.params);
-                }
-            }
-        }
+    // A module global holding a callable value (quiet author-aware lookup —
+    // param typing only; the call site diagnoses ambiguity / visibility).
+    if (self.globalValueRef(bare_name)) |gi| {
+        if (self.callableSigOf(gi.ty)) |sig| return coerceDemands(self, sig.params);
     }
 
     return &.{};

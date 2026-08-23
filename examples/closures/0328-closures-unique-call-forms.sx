@@ -3,6 +3,9 @@
 
 @import "modules/std.sx";
 
+// A callable field takes the call, so a same-named free ufcs never steals it.
+g :: ufcs (self: $T, x: i64) -> i64 { return -1; }
+
 main :: () -> (i64, !) {
     n := 5;
     print("iife {}\n", (|x: i64|_{ n = n } -> i64 x + n)(1));
@@ -14,8 +17,9 @@ main :: () -> (i64, !) {
     w := f(1) catch { return 1; };
     print("catch {}\n", w);
 
-    s := .{ f = |x: i64|_{ n = n } x + n };
+    s := .{ f = |x: i64|_{ n = n } x + n, g = |x: i64|_{ n = n } x * n };
     print("field {}\n", s.f(1));
+    print("field-ufcs {}\n", s.g(2));
 
     counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
     arr := .[counter];

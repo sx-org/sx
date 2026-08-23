@@ -453,6 +453,10 @@ pub const Lowering = struct {
     /// The env struct a `|…|_{ … }` literal IS, mapped to the function it calls.
     /// A type answers here exactly when it is some literal's own unique type.
     unique_lambdas: std.AutoHashMap(TypeId, lower_closure.UniqueLambda),
+    /// The `impl (sig) for T` a nominal carries, by conformer TypeId. A nominal
+    /// holds at most one, so the map is the coherence check as well as the
+    /// dispatch table.
+    callable_nominals: std.AutoHashMap(TypeId, lower_protocol.CallableNominal),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
     /// the registry: there is no enrollment API, and which set a name means is a
     /// question about which declaration it reaches.
@@ -1309,6 +1313,7 @@ pub const Lowering = struct {
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
+            .callable_nominals = std.AutoHashMap(TypeId, lower_protocol.CallableNominal).init(module.alloc),
             .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
@@ -3350,6 +3355,7 @@ pub const Lowering = struct {
     pub const foldConstArrayElem = lower_comptime.foldConstArrayElem;
     pub const foldConstStructField = lower_comptime.foldConstStructField;
     pub const resolveGlobalRef = lower_comptime.resolveGlobalRef;
+    pub const globalValueRef = lower_comptime.globalValueRef;
     pub const sourceModuleConst = lower_comptime.sourceModuleConst;
     pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
@@ -3739,6 +3745,7 @@ pub const Lowering = struct {
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
+    pub const callableLocalShadow = lower_call.callableLocalShadow;
 
     // --- lower/cvariadic.zig (lower_cvariadic) ---
     pub const tryLowerCursorIntrinsic = lower_cvariadic.tryLowerIntrinsic;
@@ -3920,6 +3927,8 @@ pub const Lowering = struct {
     pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
     pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
     pub const callableSigOf = lower_closure.callableSigOf;
+    pub const callableShapeOf = lower_closure.callableShapeOf;
+    pub const callableNominalThrough = lower_closure.callableNominalThrough;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
     pub const initTargetOf = lower_init_plan.initTargetOf;

@@ -1,0 +1,23 @@
+error: parameter 'self' is already bound by the receiver of this call
+  --> examples/diagnostics/1274-diagnostics-named-arguments-value-callee.sx:21:11
+   |
+21 |     _ = g(self = 1, x = 3);
+   |           ^^^^^^^^
+
+error: 'g' has no parameter named 'y' — did you mean 'x'?
+  --> examples/diagnostics/1274-diagnostics-named-arguments-value-callee.sx:22:11
+   |
+22 |     _ = g(y = 1);
+   |           ^^^^^
+
+error: call to 'g' is missing required parameter 'x'
+  --> examples/diagnostics/1274-diagnostics-named-arguments-value-callee.sx:23:9
+   |
+23 |     _ = g(step = 2);
+   |         ^
+
+error: cannot use named arguments here — 'cb' has no known parameter names (closure and function-pointer values, builtins, and interface methods bind positionally)
+  --> examples/diagnostics/1274-diagnostics-named-arguments-value-callee.sx:25:9
+   |
+25 |     _ = box.cb(a = 1);
+   |         ^^^^^^

@@ -1,0 +1,26 @@
+// Named arguments on a callable-nominal VALUE bind against `call` past the
+// receiver. A Closure field has no parameter names.
+
+@import "modules/std.sx";
+
+Accumulator :: struct { total: i64; }
+impl (i64, i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64, step: i64 = 1) -> i64 {
+        self.total += x * step;
+        return self.total;
+    }
+}
+
+g := Accumulator{ total = 0 };
+
+Box2 :: struct { cb: Closure(i64) -> i64; }
+cb :: ufcs (b: Box2, a: i64) -> i64 { return a; }
+inc :: (n: i64) -> i64 { return n + 1; }
+
+main :: () {
+    _ = g(self = 1, x = 3);
+    _ = g(y = 1);
+    _ = g(step = 2);
+    box := Box2{ cb = inc };
+    _ = box.cb(a = 1);
+}

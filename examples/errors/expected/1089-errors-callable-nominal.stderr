@@ -1,0 +1,106 @@
+error: 'Accumulator' already carries a function-type impl
+  --> examples/errors/1089-errors-callable-nominal.sx:11:23
+   |
+11 | impl (i64) -> i64 for Accumulator {
+   |                       ^^^^^^^^^^^
+
+note: also implemented here
+  --> examples/errors/1089-errors-callable-nominal.sx:15:24
+   |
+15 | impl (i64) -> void for Accumulator {
+   |                        ^^^^^^^^^^^
+
+error: 'i64' cannot carry a function-type impl
+  --> examples/errors/1089-errors-callable-nominal.sx:19:23
+   |
+19 | impl (i64) -> i64 for i64 { call :: (self: *i64, x: i64) -> i64 { return x; } }
+   |                       ^^^
+
+help: a conformer is a struct, an untagged union, or an enum
+   |
+19 | impl (i64) -> i64 for i64 { call :: (self: *i64, x: i64) -> i64 { return x; } }
+   |                       ^^^
+
+error: 'Show' cannot carry a function-type impl
+  --> examples/errors/1089-errors-callable-nominal.sx:21:23
+   |
+21 | impl (i64) -> i64 for Show { call :: (self: *Show, x: i64) -> i64 { return x; } }
+   |                       ^^^^
+
+help: an interface handle is not a concrete conformer
+   |
+21 | impl (i64) -> i64 for Show { call :: (self: *Show, x: i64) -> i64 { return x; } }
+   |                       ^^^^
+
+error: '$T' cannot carry a function-type impl
+  --> examples/errors/1089-errors-callable-nominal.sx:23:23
+   |
+23 | impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
+   |                       ^^
+
+help: a conformer is one named type — a struct, an untagged union, or an enum
+   |
+23 | impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
+   |                       ^^
+
+error: a function-type impl for 'Silent' declares no 'call'
+  --> examples/errors/1089-errors-callable-nominal.sx:26:23
+   |
+26 | impl (i64) -> i64 for Silent { run :: (self: *Silent, x: i64) -> i64 { return x; } }
+   |                       ^^^^^^
+
+help: 'call' is the method the conformer is called through
+   |
+26 | impl (i64) -> i64 for Silent { run :: (self: *Silent, x: i64) -> i64 { return x; } }
+   |                       ^^^^^^
+
+error: 'call' is '(string) -> i64', and the impl head is '(i64) -> i64'
+  --> examples/errors/1089-errors-callable-nominal.sx:29:30
+   |
+29 | impl (i64) -> i64 for Wide { call :: (self: *Wide, x: string) -> i64 { return 1; } }
+   |                              ^^^^
+
+help: the head is the signature the conformer is callable at, so 'call' carries it past its receiver
+   |
+29 | impl (i64) -> i64 for Wide { call :: (self: *Wide, x: string) -> i64 { return 1; } }
+   |                              ^^^^
+
+error: 'call' takes the conformer as its receiver
+  --> examples/errors/1089-errors-callable-nominal.sx:32:31
+   |
+32 | impl (i64) -> i64 for Loose { call :: (seed: i64, x: i64) -> i64 { return x; } }
+   |                               ^^^^
+
+help: write 'call :: (self: *Loose, …)'
+   |
+32 | impl (i64) -> i64 for Loose { call :: (seed: i64, x: i64) -> i64 { return x; } }
+   |                               ^^^^
+
+error: 'call' collides with an existing member of 'HasCall'
+  --> examples/errors/1089-errors-callable-nominal.sx:39:5
+   |
+39 |     call :: (self: *HasCall, x: i64) -> i64 { return x; }
+   |     ^^^^
+
+note: declared here
+  --> examples/errors/1089-errors-callable-nominal.sx:36:5
+   |
+36 |     call :: (self: *HasCall, x: i64) -> i64 { return self.n + x; }
+   |     ^^^^
+
+error: 'call' collides with an existing member of 'Slot'
+  --> examples/errors/1089-errors-callable-nominal.sx:43:30
+   |
+43 | impl (i64) -> i64 for Slot { call :: (self: *Slot, x: i64) -> i64 { return x; } }
+   |                              ^^^^
+
+help: 'Slot' declares a field named 'call'
+   |
+43 | impl (i64) -> i64 for Slot { call :: (self: *Slot, x: i64) -> i64 { return x; } }
+   |                              ^^^^
+
+error: unknown type 'T'
+  --> examples/errors/1089-errors-callable-nominal.sx:23:44
+   |
+23 | impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
+   |                                            ^
