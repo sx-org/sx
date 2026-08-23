@@ -1,0 +1,27 @@
+error: 'i64' does not satisfy the bound '(i64) -> i64' on '$F'
+  --> examples/errors/1084-errors-callable-bound.sx:8:17
+   |
+ 8 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+   |                 ^^^^^^^^^^^^
+
+help: a unique lambda, a 'Closure', or a function pointer answers this bound
+   |
+ 8 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+   |                 ^^^^^^^^^^^^
+
+error: 'Closure(i64) -> i64' does not satisfy the bound '(i64, i64) -> i64' on '$F'
+  --> examples/errors/1084-errors-callable-bound.sx:9:16
+   |
+ 9 | pair :: (f: $F/(i64, i64) -> i64) -> i64 { return 0; }
+   |                ^^^^^^^^^^^^^^^^^
+
+help: it takes 1 argument, and the bound calls it with 2
+   |
+ 9 | pair :: (f: $F/(i64, i64) -> i64) -> i64 { return 0; }
+   |                ^^^^^^^^^^^^^^^^^
+
+error: '$F' is the callable this body hands back, and this body hands back none
+  --> examples/errors/1084-errors-callable-bound.sx:10:42
+   |
+10 | nothing :: (n: i64) -> $F/(i64) -> i64 { print("n {}\n", n); }
+   |                                          ^^^^^^^^^^^^^^^^^^

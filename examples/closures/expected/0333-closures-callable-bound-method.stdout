@@ -1,0 +1,8 @@
+instance lambda 15
+instance unique 12
+instance fnptr 10
+instance closure 10
+plain lambda 15
+plain unique 12
+plain fnptr 10
+plain closure 10

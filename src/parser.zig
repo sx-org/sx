@@ -2529,21 +2529,6 @@ pub const Parser = struct {
         };
     }
 
-    /// The type arguments of the `@Init` bound on `node`, empty when it carries
-    /// none. That bound's argument is inferred from the argument an initializer
-    /// is formed from, so a binder written there belongs to the declaration
-    /// exactly as one written in the annotation does.
-    fn initBoundArgs(node: *const Node) []const *Node {
-        if (node.data != .type_expr) return &.{};
-        for (node.data.type_expr.protocol_constraints) |bound| {
-            if (bound.data != .parameterized_type_expr) continue;
-            const pte = bound.data.parameterized_type_expr;
-            if (!std.mem.eql(u8, pte.name, contracts.init_bound)) continue;
-            return pte.args;
-        }
-        return &.{};
-    }
-
     /// Recursively find all generic type names ($T) in a type expression tree.
     /// Every bound the `$name` binder carries inside `node`, searching each
     /// element position a type constructor can nest one in — `*$S/@BuildSink(P)`
@@ -2555,9 +2540,7 @@ pub const Parser = struct {
             .type_expr => |te| {
                 if (te.is_generic and std.mem.eql(u8, te.name, name))
                     out.appendSlice(self.allocator, te.protocol_constraints) catch {};
-                // A binder introduced INSIDE an `@Init` bound (`$I/@Init($V/P)`)
-                // carries its own bounds, which belong to it and not to `$I`.
-                for (initBoundArgs(node)) |a| collectBinderBounds(self, a, name, out);
+                for (te.protocol_constraints) |c| collectBinderBounds(self, c, name, out);
             },
             .pointer_type_expr => |p| collectBinderBounds(self, p.pointee_type, name, out),
             .many_pointer_type_expr => |m| collectBinderBounds(self, m.element_type, name, out),
@@ -2574,42 +2557,57 @@ pub const Parser = struct {
                 for (f.param_types) |p| collectBinderBounds(self, p, name, out);
                 if (f.return_type) |r| collectBinderBounds(self, r, name, out);
             },
+            .spread_expr => |s| collectBinderBounds(self, s.operand, name, out),
             else => {},
         }
     }
 
-    fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
+    fn collectGenericNames(
+        node: *Node,
+        list: *std.ArrayList([]const u8),
+        allocator: std.mem.Allocator,
+        variadic: *std.StringHashMap(void),
+        in_spread: bool,
+    ) void {
         switch (node.data) {
             .type_expr => |te| {
-                if (te.is_generic) list.append(allocator, te.name) catch {};
-                // A binder written inside an `@Init` bound (`$I/@Init($T)`,
-                // `$I/@Init($V/View)`) is one of this declaration's type
-                // parameters.
-                for (initBoundArgs(node)) |a| collectGenericNames(a, list, allocator);
+                if (te.is_generic) {
+                    var already = false;
+                    for (list.items) |n| {
+                        if (std.mem.eql(u8, n, te.name)) {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already and in_spread) variadic.put(te.name, {}) catch {};
+                    list.append(allocator, te.name) catch {};
+                }
+                for (te.protocol_constraints) |c| collectGenericNames(c, list, allocator, variadic, false);
             },
-            .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator),
-            .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator),
-            .slice_type_expr => |ste| collectGenericNames(ste.element_type, list, allocator),
-            .array_type_expr => |ate| collectGenericNames(ate.element_type, list, allocator),
-            .optional_type_expr => |ote| collectGenericNames(ote.inner_type, list, allocator),
+            .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator, variadic, false),
+            .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator, variadic, false),
+            .slice_type_expr => |ste| collectGenericNames(ste.element_type, list, allocator, variadic, false),
+            .array_type_expr => |ate| collectGenericNames(ate.element_type, list, allocator, variadic, false),
+            .optional_type_expr => |ote| collectGenericNames(ote.inner_type, list, allocator, variadic, false),
             .parameterized_type_expr => |pte| {
-                for (pte.args) |arg| collectGenericNames(arg, list, allocator);
+                for (pte.args) |arg| collectGenericNames(arg, list, allocator, variadic, false);
             },
             .tuple_type_expr => |tte| {
                 // A failable closure return `Closure() -> $R !E` folds to a
                 // `(T, !)` tuple_type_expr (parseFnReturnType), so the `$R`
                 // binding site lives inside the tuple's field_types — descend so
                 // the value type's generic is still inferred from the call site.
-                for (tte.field_types) |ft| collectGenericNames(ft, list, allocator);
+                for (tte.field_types) |ft| collectGenericNames(ft, list, allocator, variadic, false);
             },
             .closure_type_expr => |cte| {
-                for (cte.param_types) |pt| collectGenericNames(pt, list, allocator);
-                if (cte.return_type) |rt| collectGenericNames(rt, list, allocator);
+                for (cte.param_types) |pt| collectGenericNames(pt, list, allocator, variadic, false);
+                if (cte.return_type) |rt| collectGenericNames(rt, list, allocator, variadic, false);
             },
             .function_type_expr => |fte| {
-                for (fte.param_types) |pt| collectGenericNames(pt, list, allocator);
-                if (fte.return_type) |rt| collectGenericNames(rt, list, allocator);
+                for (fte.param_types) |pt| collectGenericNames(pt, list, allocator, variadic, false);
+                if (fte.return_type) |rt| collectGenericNames(rt, list, allocator, variadic, false);
             },
+            .spread_expr => |s| collectGenericNames(s.operand, list, allocator, variadic, true),
             else => {},
         }
     }
@@ -2627,12 +2625,17 @@ pub const Parser = struct {
             } else {
                 // Collect all generic type params found anywhere in the type expression
                 var generic_names = std.ArrayList([]const u8).empty;
-                collectGenericNames(param.type_expr, &generic_names, self.allocator);
+                var variadic_names = std.StringHashMap(void).init(self.allocator);
+                collectGenericNames(param.type_expr, &generic_names, self.allocator, &variadic_names, false);
                 for (generic_names.items) |gen_name| {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
-                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint }) catch {};
+                        type_params.append(self.allocator, .{
+                            .name = gen_name,
+                            .constraint = type_constraint,
+                            .is_variadic = variadic_names.contains(gen_name),
+                        }) catch {};
                     }
                 }
             }
@@ -4858,7 +4861,10 @@ pub const Parser = struct {
                 // brace, so the decl is classified as a fn DEF and the
                 // return-position refusal lands on the return type.
                 self.tokens.tag(self.tok) == .at_identifier or
-                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
+                // `..` spells a pack in a return type (`-> Closure(..A) -> R`),
+                // so it is one more type token the scan reads through.
+                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dot_dot or
+                self.tokens.tag(self.tok) == .dollar or
                 self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
                 self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
                 self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
@@ -6325,6 +6331,36 @@ test "a function-type bound head carries its return" {
         "the '->' belongs to a function-type head — write '(i64) -> void' for a callable that returns nothing",
         12,
     );
+}
+
+test "$ introduces type parameters inside a function-type bound" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (g: $F/($A) -> $R, a: A) -> R { return g(a); }");
+    const root = try parser.parse();
+    const tps = root.data.root.decls[0].data.fn_decl.type_params;
+    try std.testing.expectEqual(@as(usize, 3), tps.len);
+    try std.testing.expectEqualStrings("F", tps[0].name);
+    try std.testing.expectEqualStrings("A", tps[1].name);
+    try std.testing.expectEqualStrings("R", tps[2].name);
+    try std.testing.expect(!tps[0].is_variadic);
+    try std.testing.expect(!tps[1].is_variadic);
+    try std.testing.expect(!tps[2].is_variadic);
+}
+
+test "..$Name inside a function-type bound is a pack type parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (g: $F/(..$A) -> $R) { }");
+    const root = try parser.parse();
+    const tps = root.data.root.decls[0].data.fn_decl.type_params;
+    try std.testing.expectEqual(@as(usize, 3), tps.len);
+    try std.testing.expectEqualStrings("F", tps[0].name);
+    try std.testing.expectEqualStrings("A", tps[1].name);
+    try std.testing.expectEqualStrings("R", tps[2].name);
+    try std.testing.expect(!tps[0].is_variadic);
+    try std.testing.expect(tps[1].is_variadic);
+    try std.testing.expect(!tps[2].is_variadic);
 }
 
 test "an impl head is a function type" {

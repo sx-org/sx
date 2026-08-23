@@ -1,0 +1,5 @@
+error: cannot infer type of lambda parameter 'x'; annotate it or use the lambda where a closure type is expected
+  --> examples/errors/1087-errors-closure-unannotated-unbound.sx:9:17
+   |
+ 9 |     _ := apply(|x| x, 5);
+   |                 ^

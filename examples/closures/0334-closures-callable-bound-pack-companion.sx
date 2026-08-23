@@ -1,0 +1,36 @@
+// `$F/(..$A) -> $R` binds A to the pack of the callable's parameters, and the
+// callee spells that pack again: `Closure(..A) -> R` in its own return type and
+// in its body is the erased form of the very signature the argument was callable
+// at. One declaration answers a nullary, a one- and a two-parameter callable,
+// and each instance carries that arity through the call.
+
+@import "modules/std.sx";
+
+wrap :: (f: $F/(..$A) -> $R) -> Closure(..A) -> R {
+    c : Closure(..A) -> R = f;
+    return c;
+}
+
+run :: (f: $F/(..$A) -> $R, x: i64) -> R { return f(x); }
+
+double :: (x: i64) -> i64 { return x * 2; }
+add :: (x: i64, y: i64) -> i64 { return x + y; }
+seven :: () -> i64 { return 7; }
+
+main :: () {
+    n := 7;
+
+    c1 : Closure(i64) -> i64 = double;
+    w1 := wrap(c1);
+    print("one {} size {}\n", w1(5), size_of(type_of(w1)));
+
+    c2 : Closure(i64, i64) -> i64 = add;
+    print("two {}\n", wrap(c2)(3, 4));
+
+    c0 : Closure() -> i64 = seven;
+    print("none {}\n", wrap(c0)());
+
+    print("fnptr {}\n", run(double, 5));
+    print("unique {}\n", run(|x: i64|_{ n = n } x + n, 5));
+    print("closure {}\n", run(c1, 5));
+}

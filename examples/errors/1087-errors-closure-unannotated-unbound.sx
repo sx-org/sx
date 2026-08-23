@@ -1,0 +1,11 @@
+// The same rule through the erased spelling: `Closure($A) -> $R` introduces A,
+// and an unannotated `|x|` written against it has no parameter type to read.
+
+@import "modules/std.sx";
+
+apply :: (g: Closure($A) -> $R, a: A) -> R { return g(a); }
+
+main :: () -> i32 {
+    _ := apply(|x| x, 5);
+    return 0;
+}

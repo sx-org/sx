@@ -1,0 +1,17 @@
+// A return-position binder names ONE callable. Two exits handing back different
+// shapes name two, and the second is neither adapted to the first nor allowed to
+// rewrite the return type behind the exit already emitted.
+
+@import "modules/std.sx";
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+pick :: (b: bool) -> $F/(i64) -> i64 {
+    if b { return double; }
+    return |x| x * 3;
+}
+
+main :: () -> i32 {
+    _ := pick(true);
+    return 0;
+}

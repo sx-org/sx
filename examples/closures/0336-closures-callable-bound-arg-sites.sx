@@ -1,0 +1,34 @@
+// A callable binder is answered wherever an argument meets a declared
+// parameter, not only in the ordinary argument loop: a `= |x| …` DEFAULT, a
+// comptime function's runtime parameter, a pack function's fixed prefix, and a
+// displaced NAMED argument each type their value from the bound's signature.
+
+@import "modules/std.sx";
+
+defaulted :: (v: i64, f: $F/(i64) -> i64 = |x| x * 3) -> i64 { return f(v); }
+
+tagged :: ($label: string, f: $F/(i64) -> i64, v: i64) -> i64 {
+    print("{} ", label);
+    return f(v);
+}
+
+prefixed :: (f: $F/(i64) -> i64, ..$xs) -> i64 {
+    total := 0;
+    total = total + f(xs[0]);
+    total = total + f(xs[1]);
+    return total;
+}
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    print("default {}\n", defaulted(5));
+    print("written {}\n", defaulted(5, |x| x * 4));
+    print("named {}\n", defaulted(f = |x| x * 5, v = 5));
+
+    print("comptime {}\n", tagged("lambda", |x| x * 3, 5));
+    print("comptime {}\n", tagged("fnptr", double, 5));
+
+    print("prefix {}\n", prefixed(|x| x * 3, 1, 2));
+    print("prefix {}\n", prefixed(double, 1, 2));
+}

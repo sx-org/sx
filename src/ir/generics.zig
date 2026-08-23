@@ -298,6 +298,13 @@ pub const GenericResolver = struct {
                         const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
                             self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
                             self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
+                        // The binder a function-type bound is written on is
+                        // answered by the argument's own SHAPE, which an
+                        // unlowered `|x|` does not have yet. Committing what
+                        // the annotation guessed would key the instance on
+                        // slots nothing has decided.
+                        if (extracted != null and Lowering.boundOnBinder(param.type_expr, tp.name) and
+                            carriesUnresolved(self.l, extracted.?)) continue;
                         if (extracted) |ety| {
                             if (inferred_ty) |prev| {
                                 if (ety == .f64 and prev != .f64) {
@@ -364,20 +371,76 @@ pub const GenericResolver = struct {
     }
 };
 
+/// Whether `ty` leaves a signature slot undecided.
+fn carriesUnresolved(l: *Lowering, ty: TypeId) bool {
+    if (ty == .unresolved) return true;
+    const sig = l.callableSigOf(ty) orelse return false;
+    for (sig.params) |p| if (p == .unresolved) return true;
+    return sig.ret == .unresolved;
+}
+
+/// The per-element types of a `.pack` binding, or null for any other type.
+fn packElements(l: *Lowering, ty: TypeId) ?[]const TypeId {
+    if (ty == .unresolved or ty.isBuiltin()) return null;
+    const info = l.module.types.get(ty);
+    return if (info == .pack) info.pack.elements else null;
+}
+
 /// Scoped override of `Lowering.type_bindings`: install a binding set for the
-/// duration of a substitution, restoring the prior set on `exit`. Replaces the
-/// manual save/restore the generic-return resolution would otherwise need.
-const TypeBindingScope = struct {
+/// duration of a substitution, restoring the prior set on `exit`.
+///
+/// Installing the map INSTALLS PACK EXPANSION with it. A `.pack` binding — what
+/// `$F/(..$A)` binds A to — is read off the pack maps, not off `type_bindings`,
+/// so a `Closure(..A)` resolved without them collapses to a 0-arity shape that
+/// reaches codegen.
+pub const TypeBindingScope = struct {
     l: *Lowering,
     saved: ?std.StringHashMap(TypeId),
+    saved_pack_arg_types: ?std.StringHashMap([]const TypeId),
+    saved_pack_bindings: ?std.StringHashMap([]const TypeId),
+    packs: ?std.StringHashMap([]const TypeId),
 
-    fn enter(l: *Lowering, bindings: std.StringHashMap(TypeId)) TypeBindingScope {
-        const saved = l.type_bindings;
+    pub fn enter(l: *Lowering, bindings: std.StringHashMap(TypeId)) TypeBindingScope {
+        var scope = TypeBindingScope{
+            .l = l,
+            .saved = l.type_bindings,
+            .saved_pack_arg_types = l.pack_arg_types,
+            .saved_pack_bindings = l.pack_bindings,
+            .packs = null,
+        };
         l.type_bindings = bindings;
-        return .{ .l = l, .saved = saved };
+
+        var probe = bindings.valueIterator();
+        const has_pack = while (probe.next()) |v| {
+            if (packElements(l, v.*) != null) break true;
+        } else false;
+        if (!has_pack) return scope;
+
+        var packs = std.StringHashMap([]const TypeId).init(l.alloc);
+        if (l.pack_arg_types) |current| {
+            var it = current.iterator();
+            while (it.next()) |e| packs.put(e.key_ptr.*, e.value_ptr.*) catch {};
+        }
+        var it = bindings.iterator();
+        while (it.next()) |e| {
+            if (packElements(l, e.value_ptr.*)) |elems| packs.put(e.key_ptr.*, elems) catch {};
+        }
+        scope.packs = packs;
+        l.pack_arg_types = packs;
+        l.pack_bindings = packs;
+        return scope;
     }
 
-    fn exit(self: *TypeBindingScope) void {
+    pub fn exit(self: *TypeBindingScope) void {
         self.l.type_bindings = self.saved;
+        self.l.pack_arg_types = self.saved_pack_arg_types;
+        self.l.pack_bindings = self.saved_pack_bindings;
+        if (self.packs) |*p| p.deinit();
     }
 };
+
+/// Install `bindings` as the substitution in force, pack expansion included,
+/// until the returned scope exits.
+pub fn installTypeBindings(l: *Lowering, bindings: std.StringHashMap(TypeId)) TypeBindingScope {
+    return TypeBindingScope.enter(l, bindings);
+}

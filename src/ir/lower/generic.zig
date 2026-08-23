@@ -9,7 +9,8 @@ const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
-const GenericResolver = @import("../generics.zig").GenericResolver;
+const generics_mod = @import("../generics.zig");
+const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 
@@ -43,7 +44,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
     const saved_scope = self.scope;
-    const saved_bindings = self.type_bindings;
     const saved_defer_base = self.func_defer_base;
     const saved_block_terminated = self.block_terminated;
     const saved_target = self.target_type;
@@ -70,8 +70,10 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
 
-    // Install type bindings
-    self.type_bindings = bindings.*;
+    // Install this instance's substitution — AFTER the isolation above, whose
+    // nulls are the caller's pack state and not this instance's.
+    var binding_scope = generics_mod.installTypeBindings(self, bindings.*);
+    defer binding_scope.exit();
 
     // Pin to the template's defining module for the whole monomorphization
     // (return type, param types, body), so a library-internal bare TYPE ref
@@ -215,7 +217,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     }
 
     // Restore builder state
-    self.type_bindings = saved_bindings;
     self.scope = saved_scope;
     self.func_defer_base = saved_defer_base;
     self.block_terminated = saved_block_terminated;
@@ -800,7 +801,11 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
 /// Check if a param type expression references a type param name (possibly nested).
 pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
+        .type_expr => |te| blk: {
+            if (std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name)) break :blk true;
+            for (te.protocol_constraints) |b| if (matchTypeParamStatic(b, tp_name)) break :blk true;
+            break :blk false;
+        },
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -812,6 +817,12 @@ pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8)
             if (ct.return_type) |rt| if (matchTypeParamStatic(rt, tp_name)) break :blk true;
             break :blk false;
         },
+        .function_type_expr => |ft| blk: {
+            for (ft.param_types) |pt| if (matchTypeParamStatic(pt, tp_name)) break :blk true;
+            if (ft.return_type) |rt| if (matchTypeParamStatic(rt, tp_name)) break :blk true;
+            break :blk false;
+        },
+        .spread_expr => |s| matchTypeParamStatic(s.operand, tp_name),
         // A failable closure return `Closure() -> $R !E` folds to a `(T, !)`
         // tuple_type_expr, so a `$R` in the value slot lives inside the tuple's
         // field_types — descend so the param is still seen as generic-bearing.
@@ -837,7 +848,11 @@ fn initBoundMatches(type_node: *const Node, tp_name: []const u8) bool {
 
 pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
+        .type_expr => |te| blk: {
+            if (std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name)) break :blk true;
+            for (te.protocol_constraints) |b| if (matchTypeParamStatic(b, tp_name)) break :blk true;
+            break :blk false;
+        },
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -849,6 +864,12 @@ pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
             if (ct.return_type) |rt| if (matchTypeParamStatic(rt, tp_name)) break :blk true;
             break :blk false;
         },
+        .function_type_expr => |ft| blk: {
+            for (ft.param_types) |pt| if (matchTypeParamStatic(pt, tp_name)) break :blk true;
+            if (ft.return_type) |rt| if (matchTypeParamStatic(rt, tp_name)) break :blk true;
+            break :blk false;
+        },
+        .spread_expr => |s| matchTypeParamStatic(s.operand, tp_name),
         // See the `matchTypeParam` tuple arm — a failable closure return folds
         // to a `(T, !)` tuple_type_expr; descend into its value field(s).
         .tuple_type_expr => |tt| blk: {
@@ -883,6 +904,9 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
                 // the parameter resolve to the formation request.
                 if (init_target != null) break :blk if (init_plan.conforms(self, null, arg_ty)) arg_ty else null;
                 break :blk arg_ty;
+            }
+            for (te.protocol_constraints) |b| {
+                if (self.extractTypeParam(b, arg_ty, tp_name)) |ety| break :blk ety;
             }
             // The init's own type argument, inferred from the argument's
             // ordinary type — or, for a forwarded initializer, from its target.
@@ -958,6 +982,33 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             }
             break :blk null;
         },
+        .function_type_expr => |fte| blk: {
+            const sig = self.callableSigOf(arg_ty) orelse break :blk null;
+            var i: usize = 0;
+            for (fte.param_types) |pt| {
+                if (pt.data == .spread_expr) {
+                    const op = pt.data.spread_expr.operand;
+                    const pack_name: ?[]const u8 = switch (op.data) {
+                        .type_expr => |te| te.name,
+                        .identifier => |id| id.name,
+                        else => null,
+                    };
+                    // `..$A` binds A as the remaining callable parameters.
+                    if (pack_name) |n| if (std.mem.eql(u8, n, tp_name))
+                        break :blk self.module.types.packType(sig.params[i..]);
+                    i = sig.params.len;
+                    continue;
+                }
+                if (i >= sig.params.len) break;
+                if (self.extractTypeParam(pt, sig.params[i], tp_name)) |ety| break :blk ety;
+                i += 1;
+            }
+            if (fte.return_type) |rt| {
+                if (self.extractTypeParam(rt, sig.ret, tp_name)) |ety| break :blk ety;
+            }
+            break :blk null;
+        },
+        .spread_expr => |s| self.extractTypeParam(s.operand, arg_ty, tp_name),
         .tuple_type_expr => |tt| blk: {
             // A failable closure return `Closure() -> $R !E` folds to a `(T, !)`
             // tuple_type_expr, so this arm is reached when inferring `$R` from a
@@ -1364,9 +1415,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
-        "int",       "signed",  "unsigned", "float",     "struct",  "interface",
-        "enum",      "union",   "slice",    "array",     "pointer", "vector",
-        "optional",  "error_set", "closure", "type",     "Type",
+        "int",      "signed",    "unsigned", "float", "struct",  "interface",
+        "enum",     "union",     "slice",    "array", "pointer", "vector",
+        "optional", "error_set", "closure",  "type",  "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1385,9 +1436,9 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
                 else => continue,
             };
             const categories = [_][]const u8{
-                "int",      "signed",    "unsigned",  "float",  "bool",  "string",  "void",
-                "type",     "Type",      "struct",    "interface", "enum", "union", "slice",
-                "array",    "pointer",   "vector",    "closure", "optional", "error_set",
+                "int",   "signed",  "unsigned", "float",     "bool",     "string",    "void",
+                "type",  "Type",    "struct",   "interface", "enum",     "union",     "slice",
+                "array", "pointer", "vector",   "closure",   "optional", "error_set",
             };
             for (categories) |cat| {
                 if (std.mem.eql(u8, name, cat)) return true;

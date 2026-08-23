@@ -1,0 +1,16 @@
+error: '$F' is the callable this body hands back, and this body hands back two: '(i64) -> i64' and 'Closure(i64) -> i64'
+  --> examples/errors/1088-errors-callable-bound-second-return-mismatch.sx:9:22
+   |
+ 9 | pick :: (b: bool) -> $F/(i64) -> i64 {
+   |                      ^^^^^^^^^^^^^^^
+
+help: one literal on two paths is one type; two literals are two types — erase both with 'closure(...)' to hand back one
+   |
+ 9 | pick :: (b: bool) -> $F/(i64) -> i64 {
+   |                      ^^^^^^^^^^^^^^^
+
+error: a closure value cannot be passed as a bare function-pointer `(...) -> ...` — its environment can't be carried across the bare ABI; pass the closure literal directly at the call site, or declare the parameter type as `Closure(...)`
+  --> examples/errors/1088-errors-callable-bound-second-return-mismatch.sx:11:5
+   |
+11 |     return |x| x * 3;
+   |     ^^^^^^^^^^^^^^^^^

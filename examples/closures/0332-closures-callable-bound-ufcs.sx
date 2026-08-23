@@ -1,0 +1,23 @@
+// A `ufcs` callee is keyed on the bare method name, and the receiver says which
+// declaration a dot-call names. Its callable-bound parameter is typed from the
+// bound like any other, and the instance it monomorphizes is keyed on what the
+// argument LOWERED to — a unique literal's own env, a function pointer, a
+// `Closure` — not on what the annotation guessed.
+
+@import "modules/std.sx";
+
+apply :: ufcs (self: i64, f: $F/(i64) -> i64) -> i64 { return f(self); }
+twice :: ufcs (self: i64, f: $F/(i64) -> i64) -> i64 { return f(f(self)); }
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    n := 7;
+    c : Closure(i64) -> i64 = double;
+
+    print("lambda {}\n", 5.apply(|x| x * 3));
+    print("unique {}\n", 5.apply(|x: i64|_{ n = n } x + n));
+    print("fnptr {}\n", 5.apply(double));
+    print("closure {}\n", 5.apply(c));
+    print("twice {}\n", 5.twice(|x| x * 3));
+}

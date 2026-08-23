@@ -1,0 +1,37 @@
+// A callable binder is answered wherever the callee is NAMED, not only through a
+// bare identifier: a qualified author, a static `Type.method`, and the
+// target-typed `.method` shorthand each type their argument from the bound's
+// signature, and each takes a lambda, a unique literal, a named function and a
+// `Closure` out of that value's own shape.
+
+@import "modules/std.sx";
+m :: @import "0331-closures-callable-bound-qualified/m.sx";
+
+Ops :: struct {
+    apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+}
+
+Holder :: struct {
+    v: i64;
+    of :: (f: $F/(i64) -> i64, v: i64) -> Holder { return .{ v = f(v) }; }
+}
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    n := 7;
+    c : Closure(i64) -> i64 = double;
+
+    print("qualified lambda {}\n", m.apply(|x| x * 3, 5));
+    print("qualified unique {}\n", m.apply(|x: i64|_{ n = n } x + n, 5));
+    print("qualified fnptr {}\n", m.apply(double, 5));
+    print("qualified closure {}\n", m.apply(c, 5));
+
+    print("static lambda {}\n", Ops.apply(|x| x * 3, 5));
+    print("static unique {}\n", Ops.apply(|x: i64|_{ n = n } x + n, 5));
+    print("static fnptr {}\n", Ops.apply(double, 5));
+    print("static closure {}\n", Ops.apply(c, 5));
+
+    h : Holder = .of(|x| x * 3, 5);
+    print("target-typed {}\n", h.v);
+}
