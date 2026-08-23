@@ -41,3 +41,14 @@ help: to iterate at comptime use `inline for x in xs` (or `inline for i in 0..xs
    |
 17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
    |                                            ^^
+
+error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
+  --> examples/packs/0536-packs-pack-as-value.sx:18:50
+   |
+18 | env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
+   |                                                  ^^
+
+help: materialize a tuple `(..xs)` to store it, or `xx xs` to convert it to an expected `[]any`/`[]P` slice
+   |
+18 | env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
+   |                                                  ^^

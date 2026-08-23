@@ -44,6 +44,9 @@ pub const CallPlan = struct {
         direct_fn,
         closure,
         fn_pointer,
+        /// A nominal carrying `impl (sig) for T`: the call is its `call`, with
+        /// the callee expression as the receiver.
+        callable_nominal,
         protocol_dispatch,
         struct_method,
         /// Free-function UFCS: `recv.fn(args)` → `fn(recv, args)`, where `fn`
@@ -133,6 +136,44 @@ pub const CallResolver = struct {
         return self.plan(c).return_type;
     }
 
+    /// The plan twin of lowering's `callValue`: how a call through a callable
+    /// VALUE of type `ty` types. `target` names the value; a callable nominal
+    /// names its own `call` instead, because that is what lowering dispatches.
+    fn callableValuePlan(self: CallResolver, ty: TypeId, target: CallPlan.Target) ?CallPlan {
+        return switch (self.l.callableShapeOf(ty) orelse return null) {
+            .unique => |u| .{
+                .kind = .closure,
+                .return_type = u.ret,
+                .target = target,
+                .prepends_ctx = self.l.implicit_ctx_enabled,
+            },
+            .nominal => |cn| .{
+                .kind = .callable_nominal,
+                .return_type = cn.ret,
+                .target = .{ .named = cn.qualified },
+                .prepends_receiver = true,
+            },
+            .closure => |ci| .{
+                .kind = .closure,
+                .return_type = ci.ret,
+                .target = target,
+                .prepends_ctx = self.l.implicit_ctx_enabled,
+            },
+            .fn_ptr => |fi| .{
+                .kind = .fn_pointer,
+                .return_type = fi.ret,
+                .target = target,
+                .prepends_ctx = self.l.implicit_ctx_enabled and fi.call_conv != .c,
+            },
+        };
+    }
+
+    fn localCallablePlan(self: CallResolver, name: []const u8) ?CallPlan {
+        const scope = self.l.scope orelse return null;
+        const binding = scope.lookup(name) orelse return null;
+        return self.callableValuePlan(binding.ty, .{ .named = name });
+    }
+
     /// Classify a call: pick the dispatch kind / target / variant and derive
     /// the result type and prepend / default-expansion properties. The single
     /// source of truth for "what kind of call is this?".
@@ -186,6 +227,7 @@ pub const CallResolver = struct {
             // path below, byte-for-byte; `.not_callable` means the visible
             // author is a value, so the name-keyed function arms below must not
             // answer for it.
+            var author_declines = false;
             switch (self.selectedFreeAuthor(c)) {
                 .func => |sf| {
                     if (sf.decl.type_params.len > 0) return .{
@@ -201,64 +243,58 @@ pub const CallResolver = struct {
                         .expands_defaults = defaultsFor(sf.decl, c.args.len),
                     };
                 },
-                .not_callable => return .{ .kind = .unresolved, .return_type = .unresolved },
+                .not_callable => author_declines = true,
                 .ambiguous, .none => {},
             }
-            // Generic function — infer return type via type bindings.
-            if (self.l.program_index.fn_ast_map.get(name)) |fd| {
-                if (fd.type_params.len > 0) {
+            // A callable local shadows any same-named module fn: lowering
+            // dispatches through the LOCAL, so typing binds it before the
+            // name-keyed arms or the two disagree on the callee.
+            if (self.l.callableLocalShadow(bare_name)) {
+                if (self.localCallablePlan(bare_name)) |p| return p;
+            }
+            if (!author_declines) {
+                // Generic function — infer return type via type bindings.
+                if (self.l.program_index.fn_ast_map.get(name)) |fd| {
+                    if (fd.type_params.len > 0) {
+                        return .{
+                            .kind = .generic_fn,
+                            .return_type = self.l.genericResolver().inferGenericReturnType(fd, c),
+                            .target = .{ .named = name },
+                            .expands_defaults = defaultsFor(fd, c.args.len),
+                        };
+                    }
+                }
+                // Declared (lowered) function — return type from its signature.
+                if (self.l.resolveFuncByName(name)) |fid| {
+                    const func = &self.l.module.functions.items[@intFromEnum(fid)];
                     return .{
-                        .kind = .generic_fn,
-                        .return_type = self.l.genericResolver().inferGenericReturnType(fd, c),
+                        .kind = .direct_fn,
+                        .return_type = func.ret,
+                        .target = .{ .func = fid },
+                        .prepends_ctx = func.has_implicit_ctx,
+                        .expands_defaults = if (self.l.program_index.fn_ast_map.get(name)) |fd| defaultsFor(fd, c.args.len) else false,
+                    };
+                }
+                // Not lowered yet (lazy lowering): take the return type from the
+                // declared AST. A void/return-less fn is void — not an
+                // `.unresolved` guess.
+                if (self.l.program_index.fn_ast_map.get(name)) |fd| {
+                    return .{
+                        .kind = .direct_fn,
+                        .return_type = if (fd.return_type) |rt| self.l.resolveType(rt) else .void,
                         .target = .{ .named = name },
                         .expands_defaults = defaultsFor(fd, c.args.len),
                     };
                 }
             }
-            // Declared (lowered) function — return type from its signature.
-            if (self.l.resolveFuncByName(name)) |fid| {
-                const func = &self.l.module.functions.items[@intFromEnum(fid)];
-                return .{
-                    .kind = .direct_fn,
-                    .return_type = func.ret,
-                    .target = .{ .func = fid },
-                    .prepends_ctx = func.has_implicit_ctx,
-                    .expands_defaults = if (self.l.program_index.fn_ast_map.get(name)) |fd| defaultsFor(fd, c.args.len) else false,
-                };
-            }
-            // Not lowered yet (lazy lowering): take the return type from the
-            // declared AST. A void/return-less fn is void — not an
-            // `.unresolved` guess.
-            if (self.l.program_index.fn_ast_map.get(name)) |fd| {
-                return .{
-                    .kind = .direct_fn,
-                    .return_type = if (fd.return_type) |rt| self.l.resolveType(rt) else .void,
-                    .target = .{ .named = name },
-                    .expands_defaults = defaultsFor(fd, c.args.len),
-                };
-            }
-            // Local closure- / function-typed binding (e.g. a `cb: Closure(...)
-            // -> R` or bare `cb: (T) -> R` parameter) — extract its declared
-            // return type so `try` / `catch` on the call see the (possibly
-            // failable) result.
-            if (self.l.scope) |scope| {
-                if (scope.lookup(bare_name)) |binding| {
-                    if (!binding.ty.isBuiltin()) {
-                        const ti = self.l.module.types.get(binding.ty);
-                        if (ti == .closure) return .{
-                            .kind = .closure,
-                            .return_type = ti.closure.ret,
-                            .target = .{ .named = bare_name },
-                            .prepends_ctx = self.l.implicit_ctx_enabled,
-                        };
-                        if (ti == .function) return .{
-                            .kind = .fn_pointer,
-                            .return_type = ti.function.ret,
-                            .target = .{ .named = bare_name },
-                            .prepends_ctx = self.l.implicit_ctx_enabled and ti.function.call_conv != .c,
-                        };
-                    }
-                }
+            // Local callable binding — extract its return type so `try` /
+            // `catch` on the call see the (possibly failable) result.
+            if (self.localCallablePlan(bare_name)) |p| return p;
+            // A module global holding a callable value. `globalValueRef` is the
+            // producer lowering's `resolveGlobalRef` reads, so a global typing
+            // answers for is one the call path can dispatch through.
+            if (self.l.globalValueRef(bare_name)) |gi| {
+                if (self.callableValuePlan(gi.ty, .{ .callable_global = gi })) |p| return p;
             }
         } else if (c.callee.data == .field_access) {
             const cfa = c.callee.data.field_access;
@@ -285,24 +321,8 @@ pub const CallResolver = struct {
             // return `.none`, leaving method/static dispatch below untouched.
             switch (qualified_call) {
                 .func => |sf| return self.selectedNamespacePlan(sf, c),
-                .callable_value => |cv| {
-                    if (!cv.global.ty.isBuiltin()) {
-                        const ti = self.l.module.types.get(cv.global.ty);
-                        if (ti == .closure) return .{
-                            .kind = .closure,
-                            .return_type = ti.closure.ret,
-                            .target = .{ .callable_global = cv.global },
-                            .prepends_ctx = self.l.implicit_ctx_enabled,
-                        };
-                        if (ti == .function) return .{
-                            .kind = .fn_pointer,
-                            .return_type = ti.function.ret,
-                            .target = .{ .callable_global = cv.global },
-                            .prepends_ctx = self.l.implicit_ctx_enabled and ti.function.call_conv != .c,
-                        };
-                    }
-                    return .{ .kind = .unresolved, .return_type = .unresolved };
-                },
+                .callable_value => |cv| return self.callableValuePlan(cv.global.ty, .{ .callable_global = cv.global }) orelse
+                    .{ .kind = .unresolved, .return_type = .unresolved },
                 .non_callable, .missing, .not_visible, .ambiguous => return .{ .kind = .unresolved, .return_type = .unresolved },
                 .never_qualified, .value_receiver, .type_prefix => {},
             }
@@ -366,33 +386,17 @@ pub const CallResolver = struct {
                     }
                 }
             }
-            // Struct field holding a CLOSURE value, called directly
+            // Struct field holding a CALLABLE value, called directly
             // (`box.run(args)` where `run: Closure(..) -> R`). Mirrors the
-            // lowering dispatch (call.zig closure-field arm) which runs in the
+            // lowering dispatch (call.zig callable-field arm) which runs in the
             // value-receiver path BEFORE instance-method dispatch — so a
-            // closure-typed field shadows a same-named method, exactly as
-            // lowering binds it. Without this the call typed as `.unresolved`:
-            // value returns marshalled as garbage, failable
-            // returns couldn't be `try`/`catch`-ed. Lowering owns the dispatch;
-            // plan only needs the field's `.ret` so typing matches.
+            // callable field shadows a same-named method, exactly as lowering
+            // binds it. Without this the call typed as `.unresolved`: value
+            // returns marshalled as garbage, failable returns couldn't be
+            // `try`/`catch`-ed. Lowering owns the dispatch; plan only needs the
+            // field's `.ret` so typing matches.
             switch (self.l.lookupField(recv_ty, cfa.field)) {
-                .hit, .private => |h| if (!h.ty.isBuiltin()) {
-                    const fti = self.l.module.types.get(h.ty);
-                    if (fti == .closure) return .{
-                        .kind = .closure,
-                        .return_type = fti.closure.ret,
-                        .target = .{ .named = cfa.field },
-                    };
-                    // Bare function-pointer field (`fp: (T) -> R`),
-                    // symmetric with the bare-identifier fn-pointer
-                    // path above — call via `call_indirect`.
-                    if (fti == .function) return .{
-                        .kind = .fn_pointer,
-                        .return_type = fti.function.ret,
-                        .target = .{ .named = cfa.field },
-                        .prepends_ctx = self.l.implicit_ctx_enabled and fti.function.call_conv != .c,
-                    };
-                },
+                .hit, .private => |h| if (self.callableValuePlan(h.ty, .{ .named = cfa.field })) |p| return p,
                 .missing => {},
             }
             // Instance method call: obj.method(args) → StructName.method.
@@ -690,6 +694,12 @@ pub const CallResolver = struct {
                 .variant = variant,
             };
         }
+        // Every other callee shape lowers as an expression, where any callable
+        // value — including a nominal carrying `impl (sig) for T` — is called.
+        switch (c.callee.data) {
+            .identifier, .field_access, .enum_literal => {},
+            else => if (self.callableValuePlan(self.l.inferExprType(c.callee), .none)) |p| return p,
+        }
         return .{ .kind = .unresolved, .return_type = .unresolved };
     }
 
@@ -838,12 +848,9 @@ pub const CallResolver = struct {
                     } };
                 }
                 if (self.selectedGlobal(sel)) |global| {
-                    if (!global.ty.isBuiltin()) {
-                        const ti = self.l.module.types.get(global.ty);
-                        if (ti == .closure or ti == .function) {
-                            self.l.alloc.free(path);
-                            return .{ .callable_value = .{ .global = global, .member = fa.field } };
-                        }
+                    if (self.l.callableSigOf(global.ty) != null) {
+                        self.l.alloc.free(path);
+                        return .{ .callable_value = .{ .global = global, .member = fa.field } };
                     }
                 }
                 self.l.alloc.free(path);

@@ -14,6 +14,10 @@
 //!   - a COMPILER-FORMED contract (`@Init`, `@BuildBlock`). There is no
 //!     declaration to check: the binder holds what formation produced at the
 //!     argument, and the check is that it did.
+//!   - a FUNCTION TYPE (`$F/(i64) -> i64`). The bound asks that the binding be
+//!     CALLABLE at that signature. A unique lambda, a `Closure`, and a function
+//!     pointer each answer it out of their own shape; a nominal answers it with
+//!     the `impl (i64) -> i64 for T` it carries.
 //!   - an OPEN SET. The deliberate narrow exception to the scheme above: a set is
 //!     not a protocol and carries no impls, so `$V/View` asks a different
 //!     question — is the binding a MEMBER of that set? Membership is the member's
@@ -29,6 +33,7 @@ const ast = @import("../../ast.zig");
 const contracts = @import("../../contracts.zig");
 const types = @import("../types.zig");
 const lower_protocol = @import("protocol.zig");
+const lower_closure = @import("closure.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -51,6 +56,9 @@ pub const Head = union(enum) {
     /// declaration to check against — satisfaction is decided by formation at
     /// the argument, not by an impl.
     formed: []const u8,
+    /// A function type. The bound asks the binding to be CALLABLE at this
+    /// signature, which its shape answers directly.
+    fn_type: *const Node,
     /// A declared open set. The bound asks for MEMBERSHIP, not conformance.
     open_set: struct { ty: TypeId, name: []const u8 },
     /// Several sets of that name are visible here, or none this file can see.
@@ -60,6 +68,49 @@ pub const Head = union(enum) {
     /// Names nothing in scope.
     unknown: []const u8,
 };
+
+/// The function-type bound `node` carries as a binder, or null. `$F/(i64) -> i64`
+/// is a CALLABLE binder wherever it is written: what binds to it must be callable
+/// at that signature.
+pub fn callableBound(node: *const Node) ?*const Node {
+    if (node.data != .type_expr) return null;
+    const te = node.data.type_expr;
+    if (!te.is_generic) return null;
+    for (te.protocol_constraints) |b| {
+        if (b.data == .function_type_expr) return b;
+    }
+    return null;
+}
+
+/// The signature a callable binder's bound SPELLS. It is what an unannotated
+/// `|x|` reads its parameter from, and never the type of the value written
+/// there: that value answers the bound out of its own shape.
+pub fn boundCallableSig(self: *Lowering, binder: *const Node) ?lower_closure.CallableSig {
+    const bound = callableBound(binder) orelse return null;
+    const fte = bound.data.function_type_expr;
+    var params = std.ArrayList(TypeId).empty;
+    for (fte.param_types) |p| params.append(self.alloc, self.resolveTypeWithBindings(p)) catch return null;
+    const ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
+    return .{ .params = params.toOwnedSlice(self.alloc) catch return null, .ret = ret };
+}
+
+/// Whether `name` is the binder a parameter's own function-type bound is written
+/// on: `$F/($A) -> $R` is that bound on F, and A and R are names it introduces.
+/// What F is, is the argument's own shape — known once the argument lowers.
+pub fn boundOnBinder(node: *const Node, name: []const u8) bool {
+    if (callableBound(node) == null) return false;
+    return std.mem.eql(u8, node.data.type_expr.name, name);
+}
+
+/// What `fd`'s parameter at `index` asks of its argument. THE producer: every
+/// site that lowers a value against a declared parameter installs this, so a
+/// callable binder contributes its signature everywhere and its bound's
+/// `Closure` shape nowhere.
+pub fn paramDemand(self: *Lowering, fd: *const ast.FnDecl, index: usize) Lowering.ParamDemand {
+    if (index >= fd.params.len) return .none;
+    if (boundCallableSig(self, fd.params[index].type_expr)) |sig| return .{ .callable = sig };
+    return .{ .coerce = self.resolveDeclParamType(fd, index) };
+}
 
 /// The head's written name, whatever it resolved to.
 pub fn headName(node: *const Node) ?[]const u8 {
@@ -78,6 +129,7 @@ pub fn resolveHead(
     source: ?[]const u8,
     in_scope: []const []const u8,
 ) Head {
+    if (node.data == .function_type_expr) return .{ .fn_type = node };
     const name = headName(node) orelse return .{ .unknown = "" };
     for (in_scope) |tp| {
         if (std.mem.eql(u8, tp, name)) return .{ .type_param = name };
@@ -155,6 +207,7 @@ pub fn checkBindings(
                     const id = d0.addFmtId(.err, bound.span, "'{s}' is an open set, but not one this module can see", .{name});
                     d0.addHelpFmt(id, bound.span, null, "import the module that declares it, or name it through one ('${s}/pkg.{s}')", .{ tp.name, name });
                 },
+                .fn_type => |fty| checkCallable(self, fty, tp.name, bound_ty),
                 .open_set => |set| checkMember(self, bound, set, tp.name, bound_ty),
                 .protocol => |p| checkOne(self, bound, p, tp.name, bound_ty),
             }
@@ -226,6 +279,80 @@ fn checkMember(
     } else {
         d.addHelpFmt(id, bound.span, null, "a type joins '{s}' by declaring itself into it: '{s} :: @OpenVariant({s}) {{ … }}'", .{ set_name, self.formatTypeName(bound_ty), set_name });
     }
+}
+
+/// A FUNCTION-TYPE bound: the binding must be CALLABLE at the signature the
+/// head spells. A unique lambda, a `Closure`, and a function pointer each carry
+/// their own signature; a nominal carries the signature its `impl (sig) for T`
+/// declares. Anything else is not a callable at all.
+pub fn checkCallable(
+    self: *Lowering,
+    bound: *const Node,
+    param: []const u8,
+    bound_ty: TypeId,
+) void {
+    const fte = bound.data.function_type_expr;
+    const spelled = self.formatTypeName(self.resolveTypeWithBindings(bound));
+    const sig = self.callableSigOf(bound_ty) orelse
+        return reportUncallable(self, bound, spelled, param, bound_ty, "a unique lambda, a 'Closure', a function pointer, or a nominal with a function-type impl answers this bound", .{});
+    var got_i: usize = 0;
+    for (fte.param_types) |want_node| {
+        if (want_node.data == .spread_expr) {
+            const want = self.resolveTypeWithBindings(want_node.data.spread_expr.operand);
+            if (want != .unresolved and !want.isBuiltin() and self.module.types.get(want) == .pack) {
+                const rest = sig.params[got_i..];
+                const elems = self.module.types.get(want).pack.elements;
+                if (elems.len != rest.len) {
+                    return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
+                        sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
+                    });
+                }
+                for (elems, rest, 0..) |w, g, j| {
+                    if (w == .unresolved or w == g) continue;
+                    return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i + j + 1, self.formatTypeName(g), self.formatTypeName(w) });
+                }
+            }
+            got_i = sig.params.len;
+            continue;
+        }
+        if (got_i >= sig.params.len) {
+            return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
+                sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
+            });
+        }
+        const want = self.resolveTypeWithBindings(want_node);
+        const got = sig.params[got_i];
+        got_i += 1;
+        if (want == .unresolved or want == got) continue;
+        return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i, self.formatTypeName(got), self.formatTypeName(want) });
+    }
+    if (got_i != sig.params.len) {
+        return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
+            sig.params.len, if (sig.params.len == 1) "" else "s", fte.param_types.len,
+        });
+    }
+    const want_ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
+    if (want_ret == .unresolved or want_ret == sig.ret) return;
+    reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(sig.ret), self.formatTypeName(want_ret) });
+}
+
+/// The violation report for a callable, naming the binding by the signature it
+/// is written with: the mangling name a closure or an env struct carries says
+/// nothing about the call that failed.
+fn reportUncallable(
+    self: *Lowering,
+    bound: *const Node,
+    spelled: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+    comptime help_fmt: []const u8,
+    help_args: anytype,
+) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+        self.module.types.formatTypeName(self.alloc, bound_ty), spelled, param,
+    });
+    d.addHelpFmt(id, bound.span, null, help_fmt, help_args);
 }
 
 fn checkOne(

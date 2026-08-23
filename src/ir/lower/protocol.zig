@@ -553,6 +553,20 @@ pub const ImplSite = struct {
     source: ?[]const u8,
 };
 
+/// The `impl (sig) for T` that makes a nominal callable: the `call` it declares,
+/// under the name dispatch reaches it by, plus the signature the call site sees.
+/// `params` and `ret` exclude the receiver, so they are what `$F/(sig)` is
+/// answered with and what an argument list is checked against.
+pub const CallableNominal = struct {
+    fd: *const ast.FnDecl,
+    qualified: []const u8,
+    params: []const TypeId,
+    ret: TypeId,
+    /// Where the impl spells its conformer, so a second impl on the same nominal
+    /// is reported at the one that already claimed it.
+    span: ast.Span,
+};
+
 /// The concrete `Type` word of a protocol value: the stamped slot 1 (§7.2,
 /// §7.3). Everything that reads a protocol value's RTTI — `type_of`, the
 /// downcast, the type switch, `@Protocol`, the `any` bridge — goes through

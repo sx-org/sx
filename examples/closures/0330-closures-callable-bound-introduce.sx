@@ -1,0 +1,27 @@
+// `$` introduces binders inside a function-type bound: `$F/($A) -> $R` declares
+// A and R, and a call binds them from the callable's own shape — a unique
+// lambda, a function pointer, and a Closure. `$F/(..$A) -> $R` binds A as the
+// pack of remaining parameters. An unannotated `|x|` still reads a concrete
+// bound's signature, including through grouping parens.
+
+@import "modules/std.sx";
+
+apply :: (g: $F/($A) -> $R, a: A) -> R { return g(a); }
+fixed :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+call1 :: (g: $F/(..$A) -> $R, x: i64) -> R { return g(x); }
+call2 :: (g: $F/(..$A) -> $R, x: i64, y: i64) -> R { return g(x, y); }
+
+double :: (x: i64) -> i64 { return x * 2; }
+add :: (x: i64, y: i64) -> i64 { return x + y; }
+
+main :: () {
+    n := 7;
+    print("unique {}\n", apply(|x: i64|_{ n = n } x + n, 5));
+    print("lambda {}\n", apply(|x: i64| x * 3, 5));
+    print("grouped {}\n", fixed((|x| x * 3), 5));
+    print("fnptr {}\n", apply(double, 5));
+    c : Closure(i64) -> i64 = double;
+    print("closure {}\n", apply(c, 5));
+    print("call1 {}\n", call1(double, 5));
+    print("call2 {}\n", call2(add, 3, 4));
+}

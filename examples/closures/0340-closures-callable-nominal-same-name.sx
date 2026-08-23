@@ -1,0 +1,13 @@
+// Two modules each declare `Accumulator` + `impl (sig)`. Each `call` multiplies
+// by a different constant and spells a different parameter name.
+
+@import "modules/std.sx";
+a :: @import "0340-closures-callable-nominal-same-name/a.sx";
+b :: @import "0340-closures-callable-nominal-same-name/b.sx";
+
+main :: () {
+    print("a {}\n", a.ga(3));
+    print("b {}\n", b.gb(3));
+    print("named a {}\n", a.ga(x = 3));
+    print("named b {}\n", b.gb(by = 3));
+}

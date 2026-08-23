@@ -46,7 +46,7 @@ main :: () -> i64 {
     // Three DIFFERENT fiber bodies (distinct captured ids), interleaving via
     // yield_now. Each appends its id once per round for 3 rounds.
     spawn_worker :: (ps: *sched.Scheduler, psh: *Shared, my_id: i64) {
-        ps.spawn(|| {
+        ps.spawn(||_{ ps, psh, my_id } {
             r := 0;
             while r < 3 {
                 append(psh, my_id);

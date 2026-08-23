@@ -88,7 +88,7 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
         }
         try depths.append(allocator, depth);
         switch (tok.tag) {
-            .l_paren, .l_bracket, .l_brace => depth += 1,
+            .l_paren, .l_bracket, .l_brace, .underscore_l_brace => depth += 1,
             else => {},
         }
         if (tok.tag == .eof) break;
@@ -165,6 +165,13 @@ pub const Lexer = struct {
         // Integer / float literals
         if (isDigit(c)) {
             return self.lexNumber(start);
+        }
+
+        // The env `_{` is one token, so it wins over the identifier `_`; any
+        // other `_`-led spelling — including `_ {` — lexes as an identifier.
+        if (c == '_' and self.peekAt(1) == '{') {
+            self.index += 2;
+            return self.makeToken(.underscore_l_brace, start, self.index);
         }
 
         // Identifiers and keywords

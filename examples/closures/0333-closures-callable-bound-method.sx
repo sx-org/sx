@@ -1,0 +1,36 @@
+// A method carries its own binders: one on a generic-struct INSTANCE (bound
+// alongside the instance's own `T`) and one on a plain struct (which the method
+// alone makes generic). Both monomorphize on what the argument lowered to, so
+// one receiver answers a lambda, a unique literal, a function pointer and a
+// `Closure` at four different instances.
+
+@import "modules/std.sx";
+
+Box :: struct ($T: Type) {
+    v: T;
+    map :: (self: *Box($T), f: $F/(T) -> T) -> T { return f(self.v); }
+}
+
+Plain :: struct {
+    v: i64;
+    map :: (self: *Plain, f: $F/(i64) -> i64) -> i64 { return f(self.v); }
+}
+
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    n := 7;
+    c : Closure(i64) -> i64 = double;
+
+    b : Box(i64) = ---; b.v = 5;
+    print("instance lambda {}\n", b.map(|x| x * 3));
+    print("instance unique {}\n", b.map(|x: i64|_{ n = n } x + n));
+    print("instance fnptr {}\n", b.map(double));
+    print("instance closure {}\n", b.map(c));
+
+    p : Plain = ---; p.v = 5;
+    print("plain lambda {}\n", p.map(|x| x * 3));
+    print("plain unique {}\n", p.map(|x: i64|_{ n = n } x + n));
+    print("plain fnptr {}\n", p.map(double));
+    print("plain closure {}\n", p.map(c));
+}

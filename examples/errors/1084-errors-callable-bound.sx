@@ -1,0 +1,17 @@
+// A `$F/(…) -> R` bound is answered by the binding's SHAPE: a value nothing
+// calls fails it, and so does a callable whose arity does not line up with the
+// signature the head spells. In return position the binder names the callable
+// the body hands back, so a body that hands back none names nothing.
+
+@import "modules/std.sx";
+
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+pair :: (f: $F/(i64, i64) -> i64) -> i64 { return 0; }
+nothing :: (n: i64) -> $F/(i64) -> i64 { print("n {}\n", n); }
+
+main :: () -> i32 {
+    _ := apply(5, 1);                   // reject: an i64 is not callable
+    _ := pair(|x: i64| x);              // reject: one parameter, two in the bound
+    _ := nothing(1);                    // reject: the body hands back no callable
+    return 0;
+}

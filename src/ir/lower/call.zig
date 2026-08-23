@@ -16,6 +16,10 @@ const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
+const lower_closure = @import("closure.zig");
+const lower_protocol = @import("protocol.zig");
+const lower_bound = @import("bound.zig");
+const generics_mod = @import("../generics.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -25,6 +29,7 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
+const ParamDemand = Lowering.ParamDemand;
 const SelectedFunc = Lowering.SelectedFunc;
 const isTypeParamDecl = Lowering.isTypeParamDecl;
 const isPackFn = Lowering.isPackFn;
@@ -185,10 +190,7 @@ fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     // type has no arm at all, so declining to it would leave the call to the very
     // dispatch this gate exists to avoid.
     switch (self.lookupField(ty, name)) {
-        .hit, .private => |h| if (!h.ty.isBuiltin()) {
-            const fti = self.module.types.get(h.ty);
-            if (fti == .closure or fti == .function) return true;
-        },
+        .hit, .private => |h| if (self.callableSigOf(h.ty) != null) return true,
         .missing => {},
     }
 
@@ -221,9 +223,21 @@ pub fn ufcsGenericBindsAll(self: *Lowering, fd: *const ast.FnDecl, args_ast: []c
     var b = self.genericResolver().buildTypeBindings(fd, args_ast);
     defer b.deinit();
     for (fd.type_params) |tp| {
-        if (!b.contains(tp.name)) return false;
+        if (b.contains(tp.name)) continue;
+        // A callable binder is decided by what its argument LOWERS to, so it
+        // discriminates no overload here.
+        if (callableBinderOf(fd, tp.name) != null) continue;
+        return false;
     }
     return true;
+}
+
+/// The parameter whose own function-type bound is written on `name`.
+fn callableBinderOf(fd: *const ast.FnDecl, name: []const u8) ?*const ast.Param {
+    for (fd.params) |*p| {
+        if (Lowering.boundOnBinder(p.type_expr, name)) return p;
+    }
+    return null;
 }
 
 /// True if `fd`'s receiver param (`params[0]`) is a CONCRETE/structured type
@@ -377,7 +391,7 @@ fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
 /// NEARER level owns the name — `lookupNearest` walks the chain once,
 /// consulting BOTH per-level namespaces, so an outer callable var never
 /// beats an inner nested fn (and vice versa).
-fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
+pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
     const scope = self.scope orelse return false;
     const near = scope.lookupNearest(name) orelse return false;
     const binding = switch (near) {
@@ -387,9 +401,209 @@ fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
         .binding => |b| b,
     };
     if (binding.pack_elem != null) return false;
-    if (binding.ty.isBuiltin()) return false;
-    const ti = self.module.types.get(binding.ty);
-    return ti == .function or ti == .closure;
+    return self.callableSigOf(binding.ty) != null;
+}
+
+/// Call the function a unique lambda's env `env_addr` belongs to. The value IS
+/// the env, so the address stands in for the fat pointer a `Closure` carries.
+fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Ref, args: []Ref) Ref {
+    coerceClosureCallArgs(self, args, u.params);
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    if (self.module.functions.items[u.func.index()].has_implicit_ctx) {
+        call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+    }
+    call_args.append(self.alloc, env_addr) catch unreachable;
+    call_args.appendSlice(self.alloc, args) catch unreachable;
+    const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
+    return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+}
+
+/// Call the `call` that `impl (sig) for T` declares. The callee expression IS
+/// the receiver, so the receiver fixup a method call uses decides whether `call`
+/// gets it by value or by address; `recv_addr` is the receiver's storage when
+/// the cell already produced it, so an lvalue callee is evaluated once.
+///
+/// The dispatch key is the declaration itself: `cn.qualified` is a spelled
+/// `Type.call` that two same-display-name conformers share.
+fn callNominal(
+    self: *Lowering,
+    cn: lower_protocol.CallableNominal,
+    recv_node: *const Node,
+    recv: Ref,
+    recv_addr: ?Ref,
+    recv_ty: TypeId,
+    args: []const Ref,
+    c: *const ast.Call,
+    span: ast.Span,
+) Ref {
+    if (self.checkCallArity(cn.fd, cn.qualified, args.len + 1, true, span)) return Ref.none;
+    const fid = self.fn_decl_fids.get(cn.fd) orelse return Ref.none;
+    if (!self.lowered_fids.contains(fid)) {
+        self.lowered_fids.put(fid, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(cn.fd, fid, cn.qualified);
+    }
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    call_args.append(self.alloc, recv) catch unreachable;
+    call_args.appendSlice(self.alloc, args) catch unreachable;
+    self.appendDefaultArgs(cn.fd, &call_args, c.callee);
+    const func = &self.module.functions.items[@intFromEnum(fid)];
+    const ret_ty = func.ret;
+    const params = func.params;
+    self.fixupMethodReceiver(&call_args, func, recv_node, recv_ty, recv_addr);
+    // `coerceCallArgs` can add a function to the module and invalidate `func`,
+    // so its fields are read above.
+    const final_args = self.prependCtxIfNeeded(func, call_args.items);
+    self.coerceCallArgs(final_args, params);
+    return self.builder.call(fid, final_args, ret_ty);
+}
+
+/// The callee VALUE a call dispatches through: the value itself, the address of
+/// the storage holding it when the cell produced one, and where it came from —
+/// which selects the arity checker that shape's diagnostics come from.
+const CalleeValue = struct {
+    ty: TypeId,
+    /// `Ref.none` when only `addr` is known; the shape loads it on demand.
+    ref: Ref,
+    addr: ?Ref = null,
+    node: *const Node,
+    name: ?[]const u8 = null,
+    origin: Origin,
+
+    /// Which arity checker and argument coercion the value's shape uses.
+    const Origin = union(enum) {
+        /// A local binding: a fn pointer dispatches through its own checker.
+        local: lower.Binding,
+        /// A module global read by bare name, whose `*T` params take the
+        /// address of a `T` argument.
+        bare_global,
+        /// A selected namespace member, a field, or any other expression.
+        value,
+    };
+};
+
+fn calleeValueRef(self: *Lowering, cv: CalleeValue) Ref {
+    return if (cv.ref.isNone()) self.builder.load(cv.addr.?, cv.ty) else cv.ref;
+}
+
+/// Call a callable VALUE through the one classification `callableShapeOf`
+/// makes. Null when the value is not callable at all, so a cell can fall
+/// through to its remaining dispatch.
+fn callValue(self: *Lowering, cv: CalleeValue, c: *const ast.Call, args: []Ref, span: ast.Span) ?Ref {
+    switch (self.callableShapeOf(cv.ty) orelse return null) {
+        .unique => |u| {
+            if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = u.params.len, .pack_start = null }, c, span)) return Ref.none;
+            const env_addr = if (cv.addr) |a|
+                uniqueEnvAddress(self, cv.ty, a, true).?
+            else
+                uniqueEnvAddress(self, cv.ty, cv.ref, false).?;
+            return callUniqueLambda(self, u, env_addr, args);
+        },
+        .nominal => |cn| return callNominal(self, cn, cv.node, calleeValueRef(self, cv), cv.addr, cv.ty, args, c, span),
+        .closure => |ci| {
+            if (checkCallableValueArgs(self, "closure", cv.name, args, .{ .fixed = ci.params.len, .pack_start = ci.pack_start }, c, span)) return Ref.none;
+            const callee_ref = calleeValueRef(self, cv);
+            coerceClosureCallArgs(self, args, ci.params);
+            // Closure trampolines carry `__sx_ctx` at slot 0; emit_llvm builds
+            // the call as [ctx, env, user_args].
+            const owned = if (self.implicit_ctx_enabled) blk: {
+                const arr = self.alloc.alloc(Ref, args.len + 1) catch unreachable;
+                arr[0] = self.current_ctx_ref;
+                @memcpy(arr[1..], args);
+                break :blk arr;
+            } else self.alloc.dupe(Ref, args) catch unreachable;
+            return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, ci.ret);
+        },
+        .fn_ptr => |fi| {
+            if (cv.origin == .local) {
+                if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args, c, span)) return Ref.none;
+                return indirectCallThroughLocal(self, cv.name orelse "", cv.origin.local, args, span);
+            }
+            if (checkCallableValueArgs(self, "function pointer", cv.name, args, fnPointerShape(fi), c, span)) return Ref.none;
+            const callee_ref = calleeValueRef(self, cv);
+            if (cv.origin == .bare_global) {
+                coerceGlobalFnPointerArgs(self, args, fi, c);
+            } else {
+                coerceFnPointerCallArgs(self, args, fi);
+            }
+            var final_args = std.ArrayList(Ref).empty;
+            defer final_args.deinit(self.alloc);
+            if (self.fnPtrTypeWantsCtx(cv.ty)) final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+            final_args.appendSlice(self.alloc, args) catch unreachable;
+            const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
+            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, fi.ret);
+        },
+    }
+}
+
+/// The callee a module global names, or null when the global is not callable.
+/// A MUTABLE global carries its live storage, so a `call` taking `self: *T`
+/// writes through the global itself; a `::` const lives in `.rodata` and is
+/// called through a copy.
+fn globalCallee(self: *Lowering, gi: GlobalInfo, name: []const u8, node: *const Node, origin: CalleeValue.Origin) ?CalleeValue {
+    const addressed = switch (self.callableShapeOf(gi.ty) orelse return null) {
+        .unique, .nominal => !self.module.globals.items[gi.id.index()].is_const,
+        .closure, .fn_ptr => false,
+    };
+    return .{
+        .ty = gi.ty,
+        .ref = if (addressed) Ref.none else self.builder.emit(.{ .global_get = gi.id }, gi.ty),
+        .addr = if (addressed) self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty)) else null,
+        .node = node,
+        .name = name,
+        .origin = origin,
+    };
+}
+
+/// Argument coercion for a call through a module-global function pointer. A
+/// `*T` param takes the ADDRESS of a `T` argument: an identifier naming an
+/// alloca passes that storage, every other expression a copy.
+fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.FunctionInfo, c: *const ast.Call) void {
+    // A tuple/pack spread expands one AST arg to N lowered args, so `c.args[ai]`
+    // only aligns while `ai` is in range — a spliced element falls back to its
+    // lowered ref's type.
+    for (args, 0..) |*arg, ai| {
+        if (ai >= info.params.len) break;
+        const dst_ty = info.params[ai];
+        const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
+        if (!dst_ty.isBuiltin()) {
+            const dti = self.module.types.get(dst_ty);
+            if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
+                if (ai < c.args.len and c.args[ai].data == .identifier) {
+                    if (self.scope) |scope| {
+                        if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
+                            if (binding.is_alloca) {
+                                arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
+                                continue;
+                            }
+                        }
+                    }
+                }
+                const slot = self.builder.alloca(src_ty);
+                self.builder.store(slot, arg.*);
+                arg.* = slot;
+                continue;
+            }
+        }
+        arg.* = self.coerceToType(arg.*, src_ty, dst_ty);
+    }
+    if (info.is_c_variadic) self.promoteCVariadicArgs(args, info.params.len);
+}
+
+/// The env address behind a value of unique type `ty`: a `*$F` names one
+/// directly, a binding names its own storage.
+fn uniqueEnvAddress(self: *Lowering, ty: TypeId, ref: Ref, is_alloca: bool) ?Ref {
+    if (self.uniqueLambdaOf(ty) != null) {
+        if (is_alloca) return ref;
+        const slot = self.builder.alloca(ty);
+        self.builder.store(slot, ref);
+        return slot;
+    }
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer or self.uniqueLambdaOf(info.pointer.pointee) == null) return null;
+    return if (is_alloca) self.builder.load(ref, ty) else ref;
 }
 
 /// Indirect call through a local VALUE binding (fn-pointer local, or the
@@ -446,8 +660,8 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
 }
 
 /// Call an exactly-selected namespace global without round-tripping through
-/// the process-wide name map.  Closure and function-pointer globals keep the
-/// same ABI, arity and coercion behavior as their bare callable-value forms.
+/// the process-wide name map. Every callable shape keeps the same ABI, arity
+/// and coercion behavior as its bare callable-value form.
 fn callThroughSelectedGlobal(
     self: *Lowering,
     selected: CallResolver.CallableValue,
@@ -455,33 +669,9 @@ fn callThroughSelectedGlobal(
     c: *const ast.Call,
     span: ast.Span,
 ) Ref {
-    const ty = selected.global.ty;
-    if (ty.isBuiltin()) return self.emitError(selected.member, span);
-    const info = self.module.types.get(ty);
-    const callee_ref = self.builder.emit(.{ .global_get = selected.global.id }, ty);
-    if (info == .closure) {
-        if (checkCallableValueArgs(self, "closure", selected.member, args, .{ .fixed = info.closure.params.len, .pack_start = info.closure.pack_start }, c, span)) return Ref.none;
-        coerceClosureCallArgs(self, args, info.closure.params);
-        const owned = if (self.implicit_ctx_enabled) blk: {
-            const with_ctx = self.alloc.alloc(Ref, args.len + 1) catch @panic("out of memory while preparing qualified closure call");
-            with_ctx[0] = self.current_ctx_ref;
-            @memcpy(with_ctx[1..], args);
-            break :blk with_ctx;
-        } else self.alloc.dupe(Ref, args) catch @panic("out of memory while preparing qualified closure call");
-        return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, info.closure.ret);
-    }
-    if (info == .function) {
-        if (checkCallableValueArgs(self, "function pointer", selected.member, args, fnPointerShape(info.function), c, span)) return Ref.none;
-        coerceFnPointerCallArgs(self, args, info.function);
-        var final_args = std.ArrayList(Ref).empty;
-        defer final_args.deinit(self.alloc);
-        if (self.fnPtrTypeWantsCtx(ty))
-            final_args.append(self.alloc, self.current_ctx_ref) catch @panic("out of memory while preparing qualified function-pointer call");
-        final_args.appendSlice(self.alloc, args) catch @panic("out of memory while preparing qualified function-pointer call");
-        const owned = self.alloc.dupe(Ref, final_args.items) catch @panic("out of memory while preparing qualified function-pointer call");
-        return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, info.function.ret);
-    }
-    return self.emitError(selected.member, span);
+    const cv = globalCallee(self, selected.global, selected.member, c.callee, .value) orelse
+        return self.emitError(selected.member, span);
+    return callValue(self, cv, c, args, span) orelse self.emitError(selected.member, span);
 }
 
 /// Whether the callee MAY declare a slice-variadic param (`..xs: []T`).
@@ -579,16 +769,16 @@ fn lowerComptimePlainStructMethod(
     if (recv_node) |receiver| effective_args.append(self.alloc, @constCast(receiver)) catch unreachable;
     effective_args.appendSlice(self.alloc, call_args) catch unreachable;
 
-    const saved_bindings = self.type_bindings;
     var method_bindings: ?std.StringHashMap(TypeId) = null;
+    var binding_scope: ?generics_mod.TypeBindingScope = null;
     defer {
-        self.type_bindings = saved_bindings;
+        if (binding_scope) |*bs| bs.exit();
         if (method_bindings) |*bindings| bindings.deinit();
     }
     if (fd.type_params.len > 0) {
         method_bindings = self.genericResolver().buildTypeBindings(fd, effective_args.items);
         if (!comptimeMethodBindingsComplete(self, fd, &method_bindings.?, call_span)) return Ref.none;
-        self.type_bindings = method_bindings.?;
+        binding_scope = generics_mod.installTypeBindings(self, method_bindings.?);
     }
 
     return self.lowerComptimeMethodCallArgs(fd, effective_args.items, recv_node != null, call_span);
@@ -652,8 +842,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // The bare name's visible author is a VALUE: this spelling denotes that
     // declaration here, so no name-keyed function lookup may answer for it.
     const author_not_callable = bare_author_verdict == .not_callable;
-    // Either verdict forbids reading a signature off the name-keyed winner:
-    // there is no single author to take named-arg names or defaults from.
+    // Either verdict forbids reading a signature off the name-keyed winner
+    // (`sel_author` / `fn_ast_map`).
     const author_declines = author_ambiguous or author_not_callable;
 
     // A proved namespace path that fails at one edge/member is terminal. Emit
@@ -686,7 +876,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // `f(a, name = v)` into declaration order with defaults filled, BEFORE
     // positional default expansion (a named call never reaches it: mapping
     // fills every default itself, middle holes included).
-    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_declines)) |mapped| c = mapped;
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines)) |mapped| c = mapped;
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
@@ -819,7 +1009,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // arity check the main dispatch runs is downstream of this arm.
                 if (self.checkCallArity(fd, c.callee.data.identifier.name, c.args.len, false, c.callee.span)) return Ref.none;
                 const types_explicit = self.genericResolver().typesPassedExplicitly(fd, c.args);
-                // Resolve the DECLARED param types up front — in the callee's
+                // Resolve the DECLARED param demands up front — in the callee's
                 // source, with $T bindings inferred from the arg nodes — and
                 // align them to the ARG positions (inference calls omit the
                 // type-param slots). Each resolvable param supplies its arg's
@@ -830,16 +1020,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // unresolvable param slot keeps a null target (the ambient
                 // target must still not leak into the arg).
                 const early_param_types = astCalleeParamTypes(self, fd, c.args);
-                var arg_targets = std.ArrayList(?TypeId).empty;
-                defer arg_targets.deinit(self.alloc);
+                var arg_demands = std.ArrayList(ParamDemand).empty;
+                defer arg_demands.deinit(self.alloc);
                 for (fd.params, 0..) |*p, pi| {
                     if (!types_explicit and isTypeParamDecl(p, fd.type_params)) continue;
-                    const pt: ?TypeId = if (pi < early_param_types.len and
-                        early_param_types[pi] != .unresolved and early_param_types[pi] != .void)
-                        early_param_types[pi]
-                    else
-                        null;
-                    arg_targets.append(self.alloc, pt) catch unreachable;
+                    arg_demands.append(self.alloc, if (pi < early_param_types.len) early_param_types[pi] else .none) catch unreachable;
                 }
                 var lowered_args = std.ArrayList(Ref).empty;
                 defer lowered_args.deinit(self.alloc);
@@ -848,9 +1033,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (types_explicit and ai < fd.params.len and isTypeParamDecl(&fd.params[ai], fd.type_params)) {
                         lowered_args.append(self.alloc, Ref.none) catch unreachable;
                     } else {
-                        const saved_target = self.target_type;
-                        const tgt: ?TypeId = if (ai < arg_targets.items.len) arg_targets.items[ai] else null;
-                        self.target_type = tgt;
+                        var dem = self.enterDemand(if (ai < arg_demands.items.len) arg_demands.items[ai] else .none);
+                        defer dem.restore();
+                        const tgt: ?TypeId = self.target_type;
                         const r = blk: {
                             // A `$I/@Init(T)` param forms its recipe instead of
                             // evaluating the argument (same arm as the direct
@@ -876,7 +1061,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             break :blk self.lowerExpr(arg);
                         };
                         lowered_args.append(self.alloc, r) catch unreachable;
-                        self.target_type = saved_target;
                     }
                 }
                 return self.lowerGenericCall(fd, early_name, c, lowered_args.items);
@@ -1024,7 +1208,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     var args = std.ArrayList(Ref).empty;
     defer args.deinit(self.alloc);
     // Try to resolve param types for target_type context
-    const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null);
+    const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines);
     // For enum_literal callees (.Variant(payload)), resolve the payload target type
     // from the union field type so struct literal fields get proper coercion.
     // Resolve through optional layers — a `?E` destination constructs the E
@@ -1095,10 +1279,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // exit from this iteration (all the `continue`s below included).
         defer param_idx += 1;
         const ai = param_idx;
-        const saved_target = self.target_type;
-        if (ai < param_types.len) {
-            self.target_type = param_types[ai];
-        }
+        // Beyond the declared parameters the ambient target stands — a
+        // C-variadic tail types from it — and no signature rides with it.
+        var dem = self.enterDemand(if (ai < param_types.len) param_types[ai] else null);
+        defer dem.restore();
+        const pt: ?TypeId = if (ai < param_types.len) param_types[ai].coerceType() else null;
         // `cast(T) X` — lower an integer-literal operand against the cast's
         // target type T: otherwise the literal folds against the
         // ambient default `i64` and a value above i64.max but within a wider
@@ -1114,26 +1299,23 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // argument is NOT evaluated at the call boundary. Form the recipe and
         // pass it; the callee decides when — and whether — the expression runs.
         // This precedes every value-shaped arm below, all of which would evaluate.
-        if (ai < param_types.len) {
-            if (self.initTargetOf(param_types[ai])) |target| {
+        if (pt) |ptv| {
+            if (self.initTargetOf(ptv)) |target| {
                 args.append(self.alloc, self.formInitPlan(arg, target)) catch unreachable;
-                self.target_type = saved_target;
                 continue;
             }
             // A `$B/@BuildBlock(P)` parameter takes the trailing block's body
             // (§6.2 rule 1) or a block already formed (rule 2). Neither is an
             // ordinary value, so this precedes every value-shaped arm below.
-            if (self.blockProtocolOf(param_types[ai])) |protocol| {
+            if (self.blockProtocolOf(ptv)) |protocol| {
                 args.append(self.alloc, self.formBuildBlock(arg, protocol)) catch unreachable;
-                self.target_type = saved_target;
                 continue;
             }
             // A `@VaList` parameter is the C boundary: the argument names a
             // live list and its PLACE crosses. Precedes every value-shaped arm
             // below — a cursor has no value form for them to read.
-            if (self.boundaryCursorArg(arg, param_types[ai])) |r| {
+            if (self.boundaryCursorArg(arg, ptv)) |r| {
                 args.append(self.alloc, r) catch unreachable;
-                self.target_type = saved_target;
                 continue;
             }
         }
@@ -1141,20 +1323,19 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // (incl. an expanded `param: T = expr` default) follows the unified
         // rule: an integral comptime float folds, a non-integral one errors.
         // A runtime float / `xx` cast is unaffected and coerces as before.
-        if (ai < param_types.len) {
-            if (self.foldComptimeFloatInit(arg, param_types[ai])) |folded| {
+        if (pt) |ptv| {
+            if (self.foldComptimeFloatInit(arg, ptv)) |folded| {
                 args.append(self.alloc, folded) catch unreachable;
-                self.target_type = saved_target;
                 continue;
             }
         }
         // Implicit address-of: when param expects *T and arg is an identifier
         // with an alloca of type T, pass the alloca pointer directly (reference
         // semantics, so mutations through the pointer are visible to the caller).
-        if (ai < param_types.len and arg.data == .identifier) {
-            const pt = param_types[ai];
-            if (!pt.isBuiltin()) {
-                const pti = self.module.types.get(pt);
+        if (pt != null and arg.data == .identifier) {
+            const ptv = pt.?;
+            if (!ptv.isBuiltin()) {
+                const pti = self.module.types.get(ptv);
                 if (pti == .pointer) {
                     const nm = arg.data.identifier.name;
                     const local = if (self.scope) |scope| scope.lookup(nm) else null;
@@ -1163,7 +1344,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (binding.is_alloca and binding.ty == pti.pointer.pointee) {
                             const ptr_ty = self.module.types.ptrTo(binding.ty);
                             args.append(self.alloc, self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, ptr_ty)) catch unreachable;
-                            self.target_type = saved_target;
                             continue;
                         }
                     } else if (self.resolveGlobalRef(nm, null)) |gi| {
@@ -1183,7 +1363,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             else
                                 self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
                             args.append(self.alloc, r) catch unreachable;
-                            self.target_type = saved_target;
                             continue;
                         }
                     }
@@ -1196,10 +1375,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // reference semantics as the identifier case above. Without this the
         // arg would be loaded into a temporary and the callee would mutate a
         // throwaway copy (silent data loss — e.g. `make_move(self.board, m)`).
-        if (ai < param_types.len and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr)) {
-            const pt = param_types[ai];
-            if (!pt.isBuiltin()) {
-                const pti = self.module.types.get(pt);
+        if (pt != null and (arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr)) {
+            const ptv = pt.?;
+            if (!ptv.isBuiltin()) {
+                const pti = self.module.types.get(ptv);
                 if (pti == .pointer and self.inferExprType(arg) == pti.pointer.pointee) {
                     // `lowerExprAsPtr` yields the lvalue's address, typed
                     // either as `*T` already (index/deref) or as the pointee
@@ -1207,15 +1386,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // what `@field_access` does.
                     const place = self.lowerExprAsPtr(arg);
                     const place_ty = self.builder.getRefType(place);
-                    const ref: ?Ref = if (place_ty == pt)
+                    const ref: ?Ref = if (place_ty == ptv)
                         place
                     else if (place_ty == pti.pointer.pointee)
-                        self.builder.emit(.{ .addr_of = .{ .operand = place } }, pt)
+                        self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptv)
                     else
                         null;
                     if (ref) |r| {
                         args.append(self.alloc, r) catch unreachable;
-                        self.target_type = saved_target;
                         continue;
                     }
                 }
@@ -1224,10 +1402,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
         // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
         // layer would misread the lvalue as an rvalue and refuse.
-        if (ai < param_types.len) {
-            if (protocolArgErasure(self, arg, param_types[ai])) |r| {
+        if (pt) |ptv| {
+            if (protocolArgErasure(self, arg, ptv)) |r| {
                 args.append(self.alloc, r) catch unreachable;
-                self.target_type = saved_target;
                 continue;
             }
         }
@@ -1238,12 +1415,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // to a frame slot and pass the slot's address. Mirrors the implicit
         // address-of arms above; rvalue args never reach here (no lvalue
         // shape) and are refused at the node-less layer (coerceCallArgs).
-        if (ai < param_types.len and (arg.data == .identifier or arg.data == .field_access or
+        if (pt != null and (arg.data == .identifier or arg.data == .field_access or
             arg.data == .index_expr or arg.data == .deref_expr))
         {
-            const pt = param_types[ai];
-            if (!pt.isBuiltin()) {
-                const pti = self.module.types.get(pt);
+            const ptv = pt.?;
+            if (!ptv.isBuiltin()) {
+                const pti = self.module.types.get(ptv);
                 if (pti == .pointer and self.getProtocolInfo(pti.pointer.pointee) != null) {
                     const cty = self.inferExprType(arg);
                     if (cty != .unresolved and !cty.isBuiltin() and cty != pti.pointer.pointee and
@@ -1255,9 +1432,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             self.builder.emit(.{ .addr_of = .{ .operand = place } }, self.module.types.ptrTo(cty))
                         else
                             place;
-                        if (self.viewOfConcreteAddr(addr, cty, pt)) |v| {
+                        if (self.viewOfConcreteAddr(addr, cty, ptv)) |v| {
                             args.append(self.alloc, v) catch unreachable;
-                            self.target_type = saved_target;
                             continue;
                         }
                     }
@@ -1275,18 +1451,17 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         self.force_block_value = true;
         const val = self.lowerExpr(arg);
         self.force_block_value = saved_fbv;
-        self.target_type = saved_target;
         // Passing a `*T` where a `T` value is expected — a by-reference loop
         // capture (`for *m in xs`), a `*T` parameter, or any pointer local —
         // otherwise slips through to LLVM as an opaque "call parameter type
         // does not match function signature" verifier error. Flag it at the
         // call site with a `.*` fix-it.
-        if (ai < param_types.len) {
+        if (pt) |ptv| {
             const vt = self.builder.getRefType(val);
             const vti = self.module.types.get(vt);
-            if (vti == .pointer and vti.pointer.pointee == param_types[ai]) {
+            if (vti == .pointer and vti.pointer.pointee == ptv) {
                 if (self.diagnostics) |d| {
-                    const tn = self.formatTypeName(param_types[ai]);
+                    const tn = self.formatTypeName(ptv);
                     if (arg.data == .identifier) {
                         const nm = arg.data.identifier.name;
                         const lead: []const u8 = if (self.refCapturePointee(arg) != null) "by-reference loop capture" else "argument";
@@ -1359,42 +1534,29 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // through unused: the enclosing local is invisible
                             // to a static nested fn, so the name correctly
                             // resolves to the module-scope callable below.
-                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function)) {
-                                _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
+                            if (nb.crossed != .none and (ty_info == .closure or ty_info == .function or
+                                self.uniqueLambdaThrough(binding.ty) != null or self.callableNominalThrough(binding.ty) != null))
+                            {
+                                _ = self.diagEnclosingLocalRef(id.name, c.callee.span, nb.crossed);
                                 return Ref.none;
                             }
-                            if (ty_info == .closure) {
-                                // Exact-arity + spread-placeholder validation
-                                // against the closure TYPE.
-                                if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = ty_info.closure.params.len, .pack_start = ty_info.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                                const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
-                                // Coerce user args to the closure's param types —
-                                // a `?T` param must wrap the arg.
-                                coerceClosureCallArgs(self, args.items, ty_info.closure.params);
-                                // Closure trampolines carry `__sx_ctx` at
-                                // slot 0; emit_llvm's `call_closure` builds
-                                // the call as [ctx, env, user_args], so we
-                                // prepend ctx here. args[0] becomes ctx.
-                                const owned = if (self.implicit_ctx_enabled) blk: {
-                                    const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                                    arr[0] = self.current_ctx_ref;
-                                    @memcpy(arr[1..], args.items);
-                                    break :blk arr;
-                                } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                                const ret_ty = ty_info.closure.ret;
-                                return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, ret_ty);
-                            }
-                            // A local fn-POINTER binding shadows any same-named
-                            // top-level fn: dispatch indirect through
-                            // the LOCAL before the author / name-based program-fn
-                            // paths below, otherwise an importer's unrelated
-                            // module-scope fn hijacks the call. A fn-pointer type
-                            // has no variadic slot — reject a leftover slice/array
-                            // spread placeholder before the arity check counts it
-                            // as one arg.
-                            if (binding.pack_elem == null and ty_info == .function) {
-                                if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args.items, c, c.callee.span)) return Ref.none;
-                                return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
+                            // A callable local shadows any same-named top-level
+                            // fn: dispatch through the LOCAL before the author /
+                            // name-based program-fn paths below, otherwise an
+                            // importer's unrelated module-scope fn hijacks the
+                            // call. A fn-pointer-typed pack-element alias is
+                            // excluded — the substitution path owns it.
+                            if (self.callableShapeOf(binding.ty)) |shape| {
+                                if (shape != .fn_ptr or binding.pack_elem == null) {
+                                    if (callValue(self, .{
+                                        .ty = binding.ty,
+                                        .ref = if (binding.is_alloca) Ref.none else binding.ref,
+                                        .addr = if (binding.is_alloca) binding.ref else null,
+                                        .node = c.callee,
+                                        .name = id.name,
+                                        .origin = .{ .local = binding },
+                                    }, c, args.items, c.callee.span)) |r| return r;
+                                }
                             }
                         }
                     },
@@ -1495,8 +1657,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // A binding reachable only across a nested-fn boundary is an
                 // enclosing local — never a valid indirect-call target here
                 // (mirrors the callable-binding gate above).
-                if (scope.lookupBoundary(id.name).crossed_fn_boundary) {
-                    _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
+                const crossed = scope.lookupBoundary(id.name).crossed;
+                if (crossed != .none) {
+                    _ = self.diagEnclosingLocalRef(id.name, c.callee.span, crossed);
                     return Ref.none;
                 }
                 if (scope.lookup(id.name)) |binding| {
@@ -1507,59 +1670,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
                 }
             }
-            // May be a global variable holding a function pointer
+            // May be a module global holding a callable value.
             if (self.resolveGlobalRef(id.name, c.callee.span)) |gi| {
-                if (!gi.ty.isBuiltin()) {
-                    const gti = self.module.types.get(gi.ty);
-                    if (gti == .function) {
-                        // Arity + spread-placeholder validation against
-                        // the fn-pointer TYPE.
-                        if (checkCallableValueArgs(self, "function pointer", id.name, args.items, fnPointerShape(gti.function), c, c.callee.span)) return Ref.none;
-                        const callee_ref = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
-                        // Coerce args to match fn-ptr param types (including
-                        // implicit address-of). A tuple/pack spread expands one
-                        // AST arg to N lowered args, so `c.args[ai]` only
-                        // aligns while `ai` is in range — a spliced element
-                        // falls back to its lowered ref's type.
-                        for (args.items, 0..) |*arg, ai| {
-                            if (ai < gti.function.params.len) {
-                                const dst_ty = gti.function.params[ai];
-                                const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
-                                // Implicit address-of: passing T where *T expected
-                                if (!dst_ty.isBuiltin()) {
-                                    const dti = self.module.types.get(dst_ty);
-                                    if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
-                                        // For identifier args, pass the alloca directly (reference semantics)
-                                        if (ai < c.args.len and c.args[ai].data == .identifier) {
-                                            if (self.scope) |scope| {
-                                                if (scope.lookup(c.args[ai].data.identifier.name)) |binding| {
-                                                    if (binding.is_alloca) {
-                                                        arg.* = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, dst_ty);
-                                                        continue;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // For other expressions, copy semantics
-                                        const slot = self.builder.alloca(src_ty);
-                                        self.builder.store(slot, arg.*);
-                                        arg.* = slot;
-                                        continue;
-                                    }
-                                }
-                                arg.* = self.coerceToType(arg.*, src_ty, dst_ty);
-                            }
-                        }
-                        if (gti.function.is_c_variadic) self.promoteCVariadicArgs(args.items, gti.function.params.len);
-                        var final_args = std.ArrayList(Ref).empty;
-                        defer final_args.deinit(self.alloc);
-                        if (self.fnPtrTypeWantsCtx(gi.ty)) {
-                            final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
-                        }
-                        final_args.appendSlice(self.alloc, args.items) catch unreachable;
-                        const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-                        return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, gti.function.ret);
-                    }
+                if (globalCallee(self, gi, id.name, c.callee, .bare_global)) |cv| {
+                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
                 }
             }
             // A generic type-CONSTRUCTOR head (`List(i64)`, `ModBox(V)`)
@@ -1943,60 +2057,44 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
 
-            // Check if field is a closure type — call as closure, not method
+            // A CALLABLE field is called as a value, not dispatched as a method.
             switch (self.lookupField(obj_ty, fa.field)) {
-                .hit, .private => |h| {
-                    if (!h.ty.isBuiltin()) {
-                        const fti = self.module.types.get(h.ty);
-                        if (fti == .closure) {
-                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                            // Exact-arity + spread-placeholder validation
-                            // against the field's closure TYPE.
-                            if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = fti.closure.params.len, .pack_start = fti.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                            // structGet requires an aggregate value; if obj is *T, load through it first.
+                .hit, .private => |h| if (self.callableShapeOf(h.ty)) |shape| {
+                    if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
+                    var cv: CalleeValue = .{ .ty = h.ty, .ref = Ref.none, .node = c.callee, .name = fa.field, .origin = .value };
+                    switch (shape) {
+                        // The field IS the receiver storage: GEP its slot from a
+                        // base lowered ONCE, so the call writes the field and a
+                        // side-effecting receiver is evaluated a single time.
+                        .unique, .nominal => cv.addr = blk: {
+                            const slot_ty = self.module.types.ptrTo(h.ty);
+                            if (!obj_ty.isBuiltin()) {
+                                const oi = self.module.types.get(obj_ty);
+                                if (oi == .pointer)
+                                    break :blk self.builder.structGepTyped(obj, h.index, slot_ty, oi.pointer.pointee);
+                            }
+                            const base = if (self.isLvalueExpr(c.callee))
+                                self.lowerExprAsPtr(effective_obj_node)
+                            else b2: {
+                                const b = self.builder.alloca(obj_ty);
+                                self.builder.store(b, obj);
+                                break :b2 b;
+                            };
+                            break :blk self.builder.structGepTyped(base, h.index, slot_ty, obj_ty);
+                        },
+                        // A `Closure` / fn-pointer field is a plain value read.
+                        // `structGet` requires an aggregate, so a `*T` receiver
+                        // loads through the pointer first.
+                        .closure, .fn_ptr => {
                             var agg = obj;
-                            const oi = self.module.types.get(obj_ty);
-                            if (oi == .pointer) {
-                                agg = self.builder.load(obj, oi.pointer.pointee);
+                            if (!obj_ty.isBuiltin()) {
+                                const oi = self.module.types.get(obj_ty);
+                                if (oi == .pointer) agg = self.builder.load(obj, oi.pointer.pointee);
                             }
-                            const closure_val = self.builder.structGet(agg, h.index, h.ty);
-                            // Coerce user args to the closure's param types.
-                            coerceClosureCallArgs(self, args.items, fti.closure.params);
-                            // Prepend ctx for sx-side closure call ABI.
-                            const owned = if (self.implicit_ctx_enabled) blk: {
-                                const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                                arr[0] = self.current_ctx_ref;
-                                @memcpy(arr[1..], args.items);
-                                break :blk arr;
-                            } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                            return self.builder.emit(.{ .call_closure = .{ .callee = closure_val, .args = owned } }, fti.closure.ret);
-                        }
-                        // Bare function-pointer field (`fp: (T) -> R`, no env) —
-                        // load the field value and call it via `call_indirect`,
-                        // mirroring the bare-identifier / global fn-pointer paths
-                        // (ctx prepend gated on the fn-ptr's own ABI).
-                        if (fti == .function) {
-                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
-                            // Arity + spread-placeholder validation
-                            // against the field's fn-pointer TYPE.
-                            if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fnPointerShape(fti.function), c, c.callee.span)) return Ref.none;
-                            var agg = obj;
-                            const oi = self.module.types.get(obj_ty);
-                            if (oi == .pointer) {
-                                agg = self.builder.load(obj, oi.pointer.pointee);
-                            }
-                            const fp_val = self.builder.structGet(agg, h.index, h.ty);
-                            coerceFnPointerCallArgs(self, args.items, fti.function);
-                            var final_args = std.ArrayList(Ref).empty;
-                            defer final_args.deinit(self.alloc);
-                            if (self.fnPtrTypeWantsCtx(h.ty)) {
-                                final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
-                            }
-                            final_args.appendSlice(self.alloc, args.items) catch unreachable;
-                            const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-                            return self.builder.emit(.{ .call_indirect = .{ .callee = fp_val, .args = owned } }, fti.function.ret);
-                        }
+                            cv.ref = self.builder.structGet(agg, h.index, h.ty);
+                        },
                     }
+                    if (callValue(self, cv, c, args.items, c.callee.span)) |r| return r;
                 },
                 .missing => {},
             }
@@ -2124,7 +2222,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
-                        var gbindings = self.genericResolver().buildTypeBindings(gm.fd, eff_args.items);
+                        var gbindings = callBindings(self, gm.fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
                         const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
                         const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
@@ -2133,7 +2231,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         }
                         if (self.resolveFuncByName(gmangled)) |fid| {
                             const func = &self.module.functions.items[@intFromEnum(fid)];
-                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                             self.appendDefaultArgs(gm.fd, &method_args, c.callee);
                             const final_args = self.prependCtxIfNeeded(func, method_args.items);
                             self.coerceCallArgs(final_args, func.params);
@@ -2144,7 +2242,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const func = &self.module.functions.items[@intFromEnum(fid)];
                         const ret_ty = func.ret;
                         const params = func.params;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                         self.appendDefaultArgs(gm.fd, &method_args, c.callee);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
@@ -2169,10 +2267,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
 
-                        var gbindings = self.genericResolver().buildTypeBindings(gen_fd, eff_args.items);
+                        var gbindings = callBindings(self, gen_fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
 
-                        const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
+                        const generic_base =if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
                         const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
                         if (!self.lowered_functions.contains(gmangled)) {
                             self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
@@ -2202,7 +2300,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2223,7 +2321,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const ret_ty = func.ret;
                     const params = func.params;
                     const has_ctx = func.has_implicit_ctx;
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                     self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = blk: {
                         if (!has_ctx) break :blk method_args.items;
@@ -2250,7 +2348,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const ret_ty = func.ret;
                         const params = func.params;
                         const has_ctx = func.has_implicit_ctx;
-                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                         if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
                         // coerceCallArgs can trigger protocol thunk creation
                         // (module.addFunction), invalidating func pointer.
@@ -2356,7 +2454,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // Nothing more specific applies now: a receiver already
                         // lowered cannot reach a destination-first parameter.
                         if (refuseDestinationFirstDispatch(self, fd, fa.field, obj_ty, c.callee.span)) return Ref.none;
-                        var gbindings = self.genericResolver().buildTypeBindings(fd, eff_args.items);
+                        var gbindings = callBindings(self, fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
                         if (!self.lowered_functions.contains(gmangled)) {
@@ -2388,7 +2486,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                                 arg_idx += 1;
                             }
-                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty);
+                            self.fixupMethodReceiver(&gvalue_args, gfunc, effective_obj_node, obj_ty, null);
                             const final_args = self.prependCtxIfNeeded(gfunc, gvalue_args.items);
                             self.coerceCallArgs(final_args, gparams);
                             return self.builder.call(gfid, final_args, gret_ty);
@@ -2421,7 +2519,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // Same implicit address-of as a struct-defined method: if the
                     // free function's first param is `*T` and the receiver is a
                     // value `T`, pass its address instead of a by-value copy
-                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                    self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty, null);
                     if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = self.prependCtxIfNeeded(func, method_args.items);
                     self.coerceCallArgs(final_args, params);
@@ -2541,51 +2639,39 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.builder.enumInit(tag, payload, target);
         },
         else => {
-            // Indirect call through expression. The callee can be a plain
-            // function pointer OR a closure value (e.g. `g?!()` where
-            // `g : ?Closure(...)` — the force-unwrap yields the closure
-            // struct). Inspect the callee's static type so we emit the
-            // right op: `call_closure` splits `{fn_ptr, env}` and threads
-            // env (and implicit ctx), whereas `call_indirect` would treat
-            // the whole struct as a bare fn pointer and miscompile.
-            const callee_ty = self.inferExprType(c.callee);
-            if (!callee_ty.isBuiltin()) {
-                const cti = self.module.types.get(callee_ty);
-                if (cti == .closure) {
-                    // Exact-arity + spread-placeholder validation against
-                    // the callee expression's closure TYPE.
-                    if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = cti.closure.params.len, .pack_start = cti.closure.pack_start }, c, c.callee.span)) return Ref.none;
-                    const callee_ref = self.lowerExpr(c.callee);
-                    // Coerce user args to the closure's param types.
-                    coerceClosureCallArgs(self, args.items, cti.closure.params);
-                    // Prepend implicit ctx for the sx-side closure call ABI
-                    // (emit_llvm builds the call as [ctx, env, user_args]).
-                    const owned = if (self.implicit_ctx_enabled) blk: {
-                        const arr = self.alloc.alloc(Ref, args.items.len + 1) catch unreachable;
-                        arr[0] = self.current_ctx_ref;
-                        @memcpy(arr[1..], args.items);
-                        break :blk arr;
-                    } else self.alloc.dupe(Ref, args.items) catch unreachable;
-                    return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, cti.closure.ret);
-                }
-            }
-            // Plain function-pointer indirect call. Use the callee's static
-            // return type when known instead of a hardcoded `.i64` default.
-            const fn_info: ?types.TypeInfo.FunctionInfo = if (!callee_ty.isBuiltin()) blk: {
-                const cti = self.module.types.get(callee_ty);
-                break :blk if (cti == .function) cti.function else null;
-            } else null;
-            if (fn_info) |fi| {
-                // Arity + spread-placeholder validation against the
-                // callee expression's fn-pointer TYPE.
-                if (checkCallableValueArgs(self, "function pointer", null, args.items, fnPointerShape(fi), c, c.callee.span)) return Ref.none;
-                coerceFnPointerCallArgs(self, args.items, fi);
-            }
-            const ret_ty: TypeId = if (fn_info) |fi| fi.ret else .i64;
+            // Indirect call through an expression. Unique-typed storage
+            // writes through its env address; a `_{ … }` IIFE infers as
+            // Closure and lowers as the env, so uniqueness follows the
+            // lowered ref. Closure values use `call_closure`; fn pointers
+            // use `call_indirect`.
+            const inferred = self.inferExprType(c.callee);
+            if (self.callableShapeOf(inferred)) |shape| switch (shape) {
+                // Unique-typed and nominal storage is written through its
+                // address, so an lvalue callee is lowered as a place — ONCE.
+                .unique, .nominal => {
+                    const addr: ?Ref = if (self.isLvalueExpr(c.callee)) self.lowerExprAsPtr(c.callee) else null;
+                    if (callValue(self, .{
+                        .ty = inferred,
+                        .ref = if (addr == null) self.lowerExpr(c.callee) else Ref.none,
+                        .addr = addr,
+                        .node = c.callee,
+                        .origin = .value,
+                    }, c, args.items, c.callee.span)) |r| return r;
+                },
+                // A `_{ … }` IIFE infers as Closure and lowers as its env, so a
+                // Closure / fn-pointer callee is classified on the LOWERED ref.
+                .closure, .fn_ptr => {},
+            };
             const callee_ref = self.lowerExpr(c.callee);
-            // An expression callee dispatches with the SAME ABI as a
-            // fn-pointer local / global / field: the implicit ctx is
-            // prepended when the pointee's convention wants it.
+            const callee_ty = self.builder.getRefType(callee_ref);
+            if (callValue(self, .{
+                .ty = callee_ty,
+                .ref = callee_ref,
+                .node = c.callee,
+                .origin = .value,
+            }, c, args.items, c.callee.span)) |r| return r;
+            // An unknown callee still dispatches with the fn-pointer ABI: the
+            // implicit ctx is prepended when the pointee's convention wants it.
             var final_args = std.ArrayList(Ref).empty;
             defer final_args.deinit(self.alloc);
             if (self.fnPtrTypeWantsCtx(callee_ty)) {
@@ -2593,7 +2679,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             final_args.appendSlice(self.alloc, args.items) catch unreachable;
             const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
-            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, ret_ty);
+            return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, .i64);
         },
     }
 }
@@ -2615,16 +2701,6 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     return self.emitPlaceholder("missing-context");
 }
 
-/// Emit `context.allocator.alloc(size)` dispatch — used by internal
-/// compiler-driven allocations (the closure env buffer in `lowerLambda`).
-/// Routes through whatever allocator is currently installed in `context`,
-/// so a surrounding `push Context{ allocator = my_alloc, ... })` actually
-/// backs every allocation including the ones the compiler inserts.
-///
-/// If `Context` isn't registered (the program doesn't import std.sx),
-/// emits a diagnostic and returns a placeholder. It deliberately does
-/// NOT fall back to a direct libc malloc: that silently escapes the
-/// allocator the program installed.
 /// The `Allocator` value currently installed as `context.allocator`.
 pub fn ambientAllocator(self: *Lowering) ?Ref {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return null;
@@ -2632,47 +2708,6 @@ pub fn ambientAllocator(self: *Lowering) ?Ref {
     const af = self.contextFieldByName("allocator") orelse return null;
     const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
     return self.builder.structGet(ctx, af.index, af.ty);
-}
-
-pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
-    if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
-        return self.diagnoseMissingContext("heap allocation");
-    }
-    const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    // Resolve `allocator` by name against the ASSEMBLED layout — never by
-    // index (the field set and order are program-assembled).
-    const af = self.contextFieldByName("allocator") orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    const pd = self.getProtocolInfo(af.ty) orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
-    const allocator = self.builder.structGet(ctx, af.index, af.ty);
-    // Through the same dispatch every `a.alloc_bytes(n)` in sx goes through,
-    // so the allocator protocol's KIND is a property of its declaration and
-    // not something the compiler-driven allocations re-encode.
-    const cs = self.builder.current_span;
-    const dispatched = self.emitProtocolDispatch(
-        allocator,
-        pd,
-        "alloc_bytes",
-        &.{size_ref},
-        .{ .start = cs.start, .end = cs.end },
-    );
-    if (dispatched == Ref.none) return self.emitPlaceholder("allocator-dispatch");
-    return dispatched;
-}
-
-/// Emit a call to a extern-declared function looked up by name.
-/// Used for the compiler-internal byte-copy in the protocol-erasure
-/// heap path and the closure env-copy path, both of which reach libc
-/// `memcpy` by name.
-pub fn callExtern(self: *Lowering, name: []const u8, args: []const Ref, ret_ty: TypeId) Ref {
-    const fid = self.resolveFuncByName(name) orelse @panic("extern symbol missing — std.sx not imported?");
-    return self.builder.call(fid, args, ret_ty);
 }
 
 /// Prepend the caller's current `__sx_ctx` to `args` when the callee
@@ -2793,6 +2828,9 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -2863,7 +2901,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
 /// Caller owns the returned map and must call `.deinit()`.
 /// Lower a call to a generic function by monomorphizing it with inferred type arguments.
 pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []const u8, call_node: *const ast.Call, lowered_args: []Ref) Ref {
-    var bindings = self.genericResolver().buildTypeBindings(fd, call_node.args);
+    var bindings = callBindings(self, fd, call_node.args, lowered_args);
     defer bindings.deinit();
 
     // An uninferrable TYPE param must diagnose here: monomorphizing with
@@ -2937,6 +2975,59 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     }
 
     return self.emitError(base_name, call_node.callee.span);
+}
+
+/// The bindings a call mangles and monomorphizes on: what the argument NODES
+/// say, then what the lowered callable arguments ARE. `args_ast` and `lowered`
+/// are parallel to `fd.params`; a dot-call prepends its receiver to both.
+fn callBindings(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    args_ast: []const *const Node,
+    lowered: []Ref,
+) std.StringHashMap(TypeId) {
+    var bindings = self.genericResolver().buildTypeBindings(fd, args_ast);
+    bindCallableBinders(self, fd, args_ast, lowered, &bindings);
+    return bindings;
+}
+
+/// Rebind each type parameter a callable-binder argument speaks for from the
+/// value that argument lowered to. A callable's type is its shape, not its
+/// annotation: a `_{ … }` literal IS its env struct, and a lambda with no `-> R`
+/// takes its return from its body — neither is known until the argument is
+/// lowered. Binders the function-type bound introduces extract from that
+/// signature. An argument that lowered to something uncallable keeps the
+/// annotation's binding, so the bound diagnoses it.
+fn bindCallableBinders(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    args_ast: []const *const Node,
+    lowered_args: []Ref,
+    bindings: *std.StringHashMap(TypeId),
+) void {
+    const types_explicit = self.genericResolver().typesPassedExplicitly(fd, args_ast);
+    for (fd.type_params) |tp| {
+        var arg_idx: usize = 0;
+        for (fd.params) |param| {
+            const is_type_decl = isTypeParamDecl(&param, fd.type_params);
+            defer if (!is_type_decl) {
+                arg_idx += 1;
+            };
+            if (is_type_decl) {
+                if (types_explicit) arg_idx += 1;
+                continue;
+            }
+            if (arg_idx >= lowered_args.len) continue;
+            if (Lowering.callableBound(param.type_expr) == null) continue;
+            if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
+            const arg_ref = lowered_args[arg_idx];
+            const arg_ty = self.valueTypeOfRef(arg_ref, self.builder.getRefType(arg_ref));
+            if (self.callableSigOf(arg_ty) == null) continue;
+            if (self.extractTypeParam(param.type_expr, arg_ty, tp.name)) |ty| {
+                bindings.put(tp.name, ty) catch {};
+            }
+        }
+    }
 }
 
 /// The five `Ordering` variants by declaration-order tag. INVARIANT: the sx
@@ -3034,6 +3125,9 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3276,6 +3370,9 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@va_arg",
         .@"@va_copy",
         .@"@va_end",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         .size_of,
         .align_of,
         .type_of,
@@ -3649,6 +3746,9 @@ fn isReflectionCall(name: []const u8) bool {
         .type_info,
         .@"@is_comptime",
         .@"@error",
+        .@"@env_type",
+        .@"@env_of",
+        .@"@call_ptr",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
@@ -3821,6 +3921,27 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const type_ref = self.builder.constType(t);
         const args_owned = self.alloc.dupe(Ref, &.{type_ref}) catch return Ref.none;
         return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+    }
+    if (std.mem.eql(u8, name, "@env_type")) {
+        if (self.persistArity(name, c)) |sentinel| return sentinel;
+        const env_ty = self.persistEnvType(name, self.resolveTypeArg(c.args[0]), c.args[0].span);
+        return self.builder.constType(env_ty orelse .unresolved);
+    }
+    if (std.mem.eql(u8, name, "@call_ptr")) {
+        const ptr_void = self.module.types.ptrTo(.void);
+        if (self.persistArity(name, c)) |_| return self.builder.constNull(ptr_void);
+        const ty = self.resolveTypeArg(c.args[0]);
+        _ = self.persistEnvType(name, ty, c.args[0].span) orelse return self.builder.constNull(ptr_void);
+        const fid = lower_closure.callTrampolineOf(self, ty) orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@call_ptr: '{s}' has no trampoline", .{self.formatTypeName(ty)});
+            return self.builder.constNull(ptr_void);
+        };
+        return self.builder.emit(.{ .func_ref = fid }, ptr_void);
+    }
+    if (std.mem.eql(u8, name, "@env_of")) {
+        if (self.persistArity(name, c)) |sentinel| return sentinel;
+        _ = self.persistEnvType(name, self.inferExprType(c.args[0]), c.args[0].span) orelse return Ref.none;
+        return self.lowerExpr(c.args[0]);
     }
     if (std.mem.eql(u8, name, "size_of")) {
         // size_of(T) → const_int(sizeof(T)); runtime Type arg → tag-indexed
@@ -4468,6 +4589,33 @@ pub fn reflectFamilyOk(self: *Lowering, name: []const u8, ty: TypeId, span: ?ast
     }
 }
 
+/// Each persist primitive takes exactly one argument. Returns null when the
+/// call has it, else a `Ref.none` sentinel after diagnosing — the argument
+/// handlers index `args[0]` unconditionally.
+pub fn persistArity(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
+    if (c.args.len == 1) return null;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, c.callee.span, "{s} takes one argument, got {d}", .{ name, c.args.len });
+    return Ref.none;
+}
+
+/// The environment `@env_type` / `@env_of` / `@call_ptr` answer for `ty`, or
+/// null after diagnosing why it has none. An erased `Closure` is refused by
+/// design: it carries an environment instead of being one, which is why
+/// `closure` returns it unchanged.
+pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.Span) ?TypeId {
+    if (lower_closure.envTypeOf(self, ty)) |env| return env;
+    if (self.diagnostics) |d| {
+        const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
+        if (is_closure) {
+            d.addFmt(.err, span, "{s}: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged", .{name});
+        } else {
+            d.addFmt(.err, span, "{s} expects a callable value's type; '{s}' is not one", .{ name, self.formatTypeName(ty) });
+        }
+    }
+    return null;
+}
+
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     const arity: usize = if (std.mem.eql(u8, name, "type_eq"))
         2
@@ -4583,10 +4731,8 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
     // function author's source (resolveDeclParamType owns that pin). The
     // default cannot capture caller locals; contextual values such as
     // `context.allocator` resolve through the implicit context channel.
-    const saved_target = self.target_type;
-    defer self.target_type = saved_target;
-    const param_ty = self.resolveDeclParamType(fd, idx);
-    self.target_type = if (param_ty == .unresolved or param_ty == .void) null else param_ty;
+    var dem = self.enterDemand(lower_bound.paramDemand(self, fd, idx));
+    defer dem.restore();
     const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse return null;
     return self.lowerExpr(authored);
 }
@@ -4763,18 +4909,25 @@ fn fnDeclHasVariadicParam(fd: *const ast.FnDecl) bool {
 /// needed (callee unknown, all args provided, or no defaults available).
 /// The callee declaration a named-argument call maps against, plus how many
 /// leading params the call shape binds implicitly (1 for a value-receiver
-/// method/ufcs dot-call, else 0).
+/// method/ufcs dot-call and for a callable-nominal value, else 0).
 const NamedCallee = struct {
     fd: *const ast.FnDecl,
     source: ?[]const u8,
     receiver_params: usize,
 };
 
+/// The callee expression is the receiver, so mapping starts past `call`'s first param.
+fn namedNominalCallee(self: *Lowering, ty: TypeId) ?NamedCallee {
+    const cn = self.callableNominalThrough(ty) orelse return null;
+    return .{ .fd = cn.fd, .source = cn.fd.body.source_file, .receiver_params = 1 };
+}
+
 /// Resolve the declaration whose parameter NAMES a named-argument call binds
 /// against. Mirrors `expandCallDefaults`' author resolution (bare/qualified/
 /// static-struct/enum-literal callees) and adds the value-receiver dot-call
 /// shapes (plain-struct method, ufcs fn — an alias resolves names against the
-/// TARGET's declared params). Null when no declaration is known (closure /
+/// TARGET's declared params) and a callable-nominal VALUE (maps against its
+/// `call`, past the receiver). Null when no declaration is known (closure /
 /// fn-pointer values, builtins, interface methods) — those bind positionally
 /// only.
 fn namedCalleeDecl(
@@ -4782,24 +4935,40 @@ fn namedCalleeDecl(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?NamedCallee {
     switch (c.callee.data) {
         .identifier => |id| {
-            if (author_declines) return null;
-            if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
-            if (callableLocalShadow(self, id.name)) return null;
-            const eff_name = blk: {
-                const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                if (self.ufcsAliasTarget(id.name)) |target| {
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+            if (self.scope) |scope| {
+                if (scope.lookupNearest(id.name)) |near| switch (near) {
+                    .binding => |b| {
+                        if (namedNominalCallee(self, b.ty)) |nc| return nc;
+                        if (callableLocalShadow(self, id.name)) return null;
+                    },
+                    .local_fn => {},
+                };
+            }
+            if (!author_declines) {
+                if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
+                const eff_name = blk: {
+                    const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
+                    if (self.ufcsAliasTarget(id.name)) |target| {
+                        break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+                    }
+                    break :blk scoped;
+                };
+                if (self.program_index.fn_ast_map.get(eff_name)) |fd| {
+                    return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                 }
-                break :blk scoped;
-            };
-            const fd = self.program_index.fn_ast_map.get(eff_name) orelse return null;
-            return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
+            }
+            if (self.globalValueRef(id.name)) |gi| return namedNominalCallee(self, gi.ty);
+            return null;
         },
         .field_access => |fa| {
+            // A namespace-selected callable value maps against its `call`. A
+            // qualified Closure has no names.
+            if (qualified_callable) |gi| return namedNominalCallee(self, gi.ty);
             if (qualified_selected) return .{ .fd = sel_author.?.decl, .source = sel_author.?.source, .receiver_params = 0 };
             if (!self.callResolver().objectIsValue(fa.object)) {
                 switch (self.staticStructHead(fa.object)) {
@@ -4827,8 +4996,15 @@ fn namedCalleeDecl(
                     }
                 }
             }
+            // A callable field maps against its own declaration. A Closure /
+            // fn-pointer / unique field has no names.
+            const recv_ty = self.inferExprType(fa.object);
+            switch (self.lookupField(recv_ty, fa.field)) {
+                .hit, .private => |h| if (self.callableShapeOf(h.ty) != null) return namedNominalCallee(self, h.ty),
+                .missing => {},
+            }
             // Value receiver: `obj.m(args)` binds the first param to `obj`.
-            var obj_ty = self.inferExprType(fa.object);
+            var obj_ty = recv_ty;
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) obj_ty = oi.pointer.pointee;
@@ -4854,23 +5030,19 @@ fn namedCalleeDecl(
             const method = self.plainStructMethod(tgt, el.name) orelse return null;
             return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 0 };
         },
-        else => return null,
+        else => return namedNominalCallee(self, self.inferExprType(c.callee)),
     }
 }
 
-/// The closure a trailing block fills at a parameter of type `pty` — the
-/// closure itself, or the child of an optional closure slot. `.unresolved`
-/// when the parameter holds no closure.
-fn trailingClosureType(self: *Lowering, pty: TypeId) TypeId {
-    if (pty.isBuiltin()) return .unresolved;
+/// A parameter of type `pty` is an ERASED closure slot — `Closure(…)` itself or
+/// the child of an optional one. Such a slot takes no trailing block: erasing a
+/// block is an allocation, written where it is paid.
+fn isClosureSlot(self: *Lowering, pty: TypeId) bool {
+    if (pty.isBuiltin()) return false;
     const info = self.module.types.get(pty);
-    if (info == .closure) return pty;
-    if (info == .optional and !info.optional.child.isBuiltin() and
-        self.module.types.get(info.optional.child) == .closure)
-    {
-        return info.optional.child;
-    }
-    return .unresolved;
+    if (info == .closure) return true;
+    return info == .optional and !info.optional.child.isBuiltin() and
+        self.module.types.get(info.optional.child) == .closure;
 }
 
 /// Strip `named_arg` wrappers in place of a failed mapping: downstream
@@ -4928,6 +5100,7 @@ pub fn mapNamedArgs(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?*ast.Call {
     var any_named = false;
@@ -4944,7 +5117,7 @@ pub fn mapNamedArgs(
         .enum_literal => |el| el.name,
         else => "callee",
     };
-    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_declines) orelse {
+    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, qualified_callable, author_declines) orelse {
         if (self.diagnostics) |d| {
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
@@ -5095,16 +5268,24 @@ pub fn mapNamedArgs(
                     slots[last] = tb.lambda;
                     continue;
                 }
-                const closure_ty = trailingClosureType(self, pty);
-                if (closure_ty == .unresolved) {
+                // A `$F/(…) -> R` last parameter names the block's signature in
+                // its bound, not in a type: the binder takes the block's own
+                // unique type, so the arity comes from the bound's spelling.
+                // Nothing else binds a block — an erased `Closure` slot least of
+                // all, since erasing one is an allocation.
+                const want = if (lower_bound.boundCallableSig(self, fd.params[last].type_expr)) |sig|
+                    sig.params.len
+                else {
                     errored = true;
                     if (self.diagnostics) |d| {
-                        const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
-                        d.addHelpFmt(id, a.span, null, "declare '{s}' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
+                        const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
+                        if (isClosureSlot(self, pty))
+                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(closure(|…| …))`", .{callee_name})
+                        else
+                            d.addHelpFmt(id, a.span, null, "declare '{s}' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
                     }
                     continue;
-                }
-                const want = self.module.types.get(closure_ty).closure.params.len;
+                };
                 if (want != block_params.len) {
                     errored = true;
                     if (self.diagnostics) |d|
@@ -5180,11 +5361,9 @@ pub fn mapNamedArgs(
                     break :blk .{ .i = hoist_pos, .v = a };
                 },
             };
-            const saved_target = self.target_type;
-            const pty = self.resolveDeclParamType(fd, bind.i);
-            self.target_type = if (pty == .unresolved or pty == .void) null else pty;
+            var dem = self.enterDemand(lower_bound.paramDemand(self, fd, bind.i));
             const ref = self.lowerExpr(bind.v);
-            self.target_type = saved_target;
+            dem.restore();
             self.precomputed_args.put(bind.v, ref) catch {};
         }
     }
@@ -5423,20 +5602,49 @@ fn instanceMethodNeedsArgBinding(gm: lower_generic.GenericStructMethod) bool {
     return false;
 }
 
-fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *const Node) []const TypeId {
-    const saved_bindings = self.type_bindings;
-    defer self.type_bindings = saved_bindings;
+fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *const Node) []const ParamDemand {
     var gbindings: ?std.StringHashMap(TypeId) = null;
     defer if (gbindings) |*gb| gb.deinit();
+    var binding_scope: ?generics_mod.TypeBindingScope = null;
+    defer if (binding_scope) |*bs| bs.exit();
     if (fd.type_params.len > 0) {
         gbindings = self.genericResolver().buildTypeBindings(fd, args);
-        self.type_bindings = gbindings.?;
+        binding_scope = generics_mod.installTypeBindings(self, gbindings.?);
     }
-    var types_list = std.ArrayList(TypeId).empty;
+    var demands = std.ArrayList(ParamDemand).empty;
     for (fd.params, 0..) |_, param_idx| {
-        types_list.append(self.alloc, self.resolveDeclParamType(fd, param_idx)) catch unreachable;
+        demands.append(self.alloc, lower_bound.paramDemand(self, fd, param_idx)) catch unreachable;
     }
-    return types_list.items;
+    return demands.items;
+}
+
+/// Whether a ufcs declaration's FIRST parameter takes this receiver. The bare
+/// field name is shared with every same-named ufcs in the program, so the
+/// receiver is what says which declaration a dot-call names. A binder receiver
+/// (`self: $T`) takes any.
+fn receiverFits(self: *Lowering, obj_ty: TypeId, receiver: ParamDemand) bool {
+    const want = receiver.coerceType() orelse return false;
+    if (want == .unresolved) return true;
+    return peelPointers(self, want) == peelPointers(self, obj_ty);
+}
+
+/// The type under any `*` layers — a receiver's identity is its core type.
+fn peelPointers(self: *Lowering, ty: TypeId) TypeId {
+    var t = ty;
+    while (!t.isBuiltin()) {
+        const info = self.module.types.get(t);
+        if (info != .pointer) break;
+        t = info.pointer.pointee;
+    }
+    return t;
+}
+
+/// A slot list that carries no declaration — an already-lowered signature, a
+/// closure value, a protocol method — demands a plain coercion at every slot.
+fn coerceDemands(self: *Lowering, tys: []const TypeId) []const ParamDemand {
+    const out = self.alloc.alloc(ParamDemand, tys.len) catch return &.{};
+    for (tys, 0..) |t, i| out[i] = .{ .coerce = t };
+    return out;
 }
 
 pub fn resolveCallParamTypes(
@@ -5445,7 +5653,8 @@ pub fn resolveCallParamTypes(
     sel_author: ?*SelectedFunc,
     qualified_selected: bool,
     qualified_callable: ?GlobalInfo,
-) []const TypeId {
+    author_declines: bool,
+) []const ParamDemand {
     // Target-typed static method shorthand (`.make(args)` where the expected
     // type is a struct) has no receiver: every declared param is supplied by
     // the written args, exactly like `Type.make(args)`.
@@ -5462,11 +5671,7 @@ pub fn resolveCallParamTypes(
         // An exactly-selected namespace global keeps its callable type and
         // source identity; no same-name bare/global lookup participates.
         if (qualified_callable) |global| {
-            if (!global.ty.isBuiltin()) {
-                const ti = self.module.types.get(global.ty);
-                if (ti == .closure) return ti.closure.params;
-                if (ti == .function) return ti.function.params;
-            }
+            if (self.callableSigOf(global.ty)) |sig| return coerceDemands(self, sig.params);
             return &.{};
         }
 
@@ -5523,7 +5728,7 @@ pub fn resolveCallParamTypes(
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ obj_name, fa.field }) catch return &.{};
                 if (self.resolveFuncByName(qualified)) |fid| {
                     const func = &self.module.functions.items[@intFromEnum(fid)];
-                    return self.userParamTypes(func);
+                    return coerceDemands(self, self.userParamTypes(func));
                 }
                 if (self.program_index.fn_ast_map.get(qualified)) |fd| {
                     return astCalleeParamTypes(self, fd, c.args);
@@ -5563,7 +5768,7 @@ pub fn resolveCallParamTypes(
         };
         if (self.getProtocolInfo(proto_recv)) |proto_info| {
             for (proto_info.methods) |m| {
-                if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                if (std.mem.eql(u8, m.name, fa.field)) return coerceDemands(self, m.param_types);
             }
         }
         // `*Protocol` receiver (borrowed view): same lookup through the
@@ -5573,7 +5778,7 @@ pub fn resolveCallParamTypes(
             if (oi == .pointer) {
                 if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return coerceDemands(self, m.param_types);
                     }
                 }
             }
@@ -5585,20 +5790,16 @@ pub fn resolveCallParamTypes(
             if (opt_info == .optional) {
                 if (self.getProtocolInfo(opt_info.optional.child)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return coerceDemands(self, m.param_types);
                     }
                 }
             }
         }
-        // Closure-typed struct field: `c.on(args)` lowers to call_closure on
-        // the field value. Pick up the callee's param types from the closure
-        // type so each arg gets the right target_type during lowering.
+        // A callable struct field is called as a value: pick up the callee's
+        // param types from the field so each arg gets the right target_type
+        // during lowering.
         switch (self.lookupField(obj_ty, fa.field)) {
-            .hit, .private => |h| if (!h.ty.isBuiltin()) {
-                const fti = self.module.types.get(h.ty);
-                if (fti == .closure) return fti.closure.params;
-                if (fti == .function) return fti.function.params;
-            },
+            .hit, .private => |h| if (self.callableSigOf(h.ty)) |sig| return coerceDemands(self, sig.params),
             .missing => {},
         }
         if (self.getStructTypeName(obj_ty)) |sname| {
@@ -5616,11 +5817,11 @@ pub fn resolveCallParamTypes(
                     self.current_runtime_class = found.fcd;
                     const user_param_start: usize = if (md.is_static) 0 else 1;
                     if (md.params.len > user_param_start) {
-                        var types_list = std.ArrayList(TypeId).empty;
+                        var demands = std.ArrayList(ParamDemand).empty;
                         for (md.params[user_param_start..]) |p_node| {
-                            types_list.append(self.alloc, self.resolveType(p_node)) catch unreachable;
+                            demands.append(self.alloc, .{ .coerce = self.resolveType(p_node) }) catch unreachable;
                         }
-                        return types_list.items;
+                        return demands.items;
                     }
                     return &.{};
                 }
@@ -5652,89 +5853,98 @@ pub fn resolveCallParamTypes(
                 const all = astCalleeParamTypes(self, method.fd, eff_args);
                 return if (all.len > 0) all[1..] else &.{};
             }
-            if (self.hasPlainStructAuthor(obj_ty)) return &.{};
-
-            const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch return &.{};
-            // Try already-lowered functions first
-            if (self.resolveFuncByName(qualified)) |fid| {
-                const func = &self.module.functions.items[@intFromEnum(fid)];
-                // Skip both `__sx_ctx` (if present) AND `self` param;
-                // caller args include neither.
-                const skip: usize = (if (func.has_implicit_ctx) @as(usize, 1) else 0) + 1;
-                if (func.params.len > skip) {
-                    var types_list = std.ArrayList(TypeId).empty;
-                    for (func.params[skip..]) |p| {
-                        types_list.append(self.alloc, p.ty) catch unreachable;
+            if (!self.hasPlainStructAuthor(obj_ty)) {
+                const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch return &.{};
+                // Try already-lowered functions first
+                if (self.resolveFuncByName(qualified)) |fid| {
+                    const func = &self.module.functions.items[@intFromEnum(fid)];
+                    // Skip both `__sx_ctx` (if present) AND `self` param;
+                    // caller args include neither.
+                    const skip: usize = (if (func.has_implicit_ctx) @as(usize, 1) else 0) + 1;
+                    if (func.params.len > skip) {
+                        var demands = std.ArrayList(ParamDemand).empty;
+                        for (func.params[skip..]) |p| {
+                            demands.append(self.alloc, .{ .coerce = p.ty }) catch unreachable;
+                        }
+                        return demands.items;
                     }
-                    return types_list.items;
                 }
-            }
-            // Try AST map (not yet lowered)
-            if (self.program_index.fn_ast_map.get(qualified)) |fd| {
-                if (fd.params.len > 0) {
-                    // A generic method's params (`xs: []$T`) only have a
-                    // meaning under this call site's bindings. Resolving them
-                    // unbound INTERNS the poison (`[]unresolved`) into the
-                    // TypeTable, where `resolveTypeCategoryTags`'s category
-                    // scan later hands it to `any_to_string`'s `case slice`
-                    // arm and monomorphizes an uncompilable
-                    // `slice_to_string__unresolved`. Bind first,
-                    // receiver prepended so positions line up with
-                    // `fd.params[0] = self`.
-                    const saved_bindings = self.type_bindings;
-                    defer self.type_bindings = saved_bindings;
-                    var gbindings: ?std.StringHashMap(TypeId) = null;
-                    defer if (gbindings) |*gb| gb.deinit();
-                    if (fd.type_params.len > 0) {
+                // Try AST map (not yet lowered)
+                if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+                    if (fd.params.len > 0) {
+                        // A generic method's params (`xs: []$T`) only have a
+                        // meaning under this call site's bindings. Resolving them
+                        // unbound INTERNS the poison (`[]unresolved`) into the
+                        // TypeTable, where `resolveTypeCategoryTags`'s category
+                        // scan later hands it to `any_to_string`'s `case slice`
+                        // arm and monomorphizes an uncompilable
+                        // `slice_to_string__unresolved`. Bind first,
+                        // receiver prepended so positions line up with
+                        // `fd.params[0] = self`.
                         var eff_args = std.ArrayList(*const Node).empty;
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, fa.object) catch unreachable;
                         for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
-                        gbindings = self.genericResolver().buildTypeBindings(fd, eff_args.items);
-                        self.type_bindings = gbindings.?;
+                        const all = astCalleeParamTypes(self, fd, eff_args.items);
+                        return if (all.len > 1) all[1..] else &.{};
                     }
-                    var types_list = std.ArrayList(TypeId).empty;
-                    for (fd.params[1..]) |p| {
-                        types_list.append(self.alloc, self.resolveParamTypeInSource(fd.body.source_file, &p)) catch unreachable;
+                }
+                // Generic-struct instance method param types: select the method
+                // body via the instance's STAMPED author (CP-4), substituting the
+                // instance's bindings so `T → concrete`. The param source-pin
+                // follows the selected `fd` (its own `body.source_file`).
+                if (self.genericInstanceMethod(sname, fa.field)) |gm| {
+                    if (gm.fd.params.len > 0) {
+                        var scope = generics_mod.installTypeBindings(self, gm.bindings.*);
+                        defer scope.exit();
+                        var demands = std.ArrayList(ParamDemand).empty;
+                        for (1..gm.fd.params.len) |i| {
+                            demands.append(self.alloc, lower_bound.paramDemand(self, gm.fd, i)) catch unreachable;
+                        }
+                        return demands.items;
                     }
-                    return types_list.items;
                 }
             }
-            // Generic-struct instance method param types: select the method
-            // body via the instance's STAMPED author (CP-4), substituting the
-            // instance's bindings so `T → concrete`. The param source-pin
-            // follows the selected `fd` (its own `body.source_file`).
-            if (self.genericInstanceMethod(sname, fa.field)) |gm| {
-                if (gm.fd.params.len > 0) {
-                    const saved_bindings = self.type_bindings;
-                    self.type_bindings = gm.bindings.*;
-                    var types_list = std.ArrayList(TypeId).empty;
-                    for (gm.fd.params[1..]) |p| {
-                        types_list.append(self.alloc, self.resolveParamTypeInSource(gm.fd.body.source_file, &p)) catch unreachable;
-                    }
-                    self.type_bindings = saved_bindings;
-                    return types_list.items;
-                }
+        }
+        // A ufcs target is keyed on the BARE field name, which no arm above
+        // consults — the same declaration named-argument binding resolves. The
+        // name is shared program-wide, so the author is picked by RECEIVER, the
+        // way dispatch picks it, and a declaration whose own receiver parameter
+        // does not take this one names a different call.
+        if (namedCalleeDecl(self, c, sel_author, qualified_selected, null, false)) |callee| {
+            if (callee.receiver_params == 1) {
+                var eff_args = std.ArrayList(*const Node).empty;
+                defer eff_args.deinit(self.alloc);
+                eff_args.append(self.alloc, fa.object) catch unreachable;
+                for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
+                var amb = false;
+                const fd = if (callee.fd.type_params.len > 0 and callee.fd.is_ufcs)
+                    self.selectUfcsGenericByReceiver(fa.field, eff_args.items, &amb, callee.fd) orelse callee.fd
+                else
+                    callee.fd;
+                const all = astCalleeParamTypes(self, fd, eff_args.items);
+                if (!amb and all.len > 1 and receiverFits(self, obj_ty, all[0])) return all[1..];
             }
         }
         return &.{};
     }
-    if (c.callee.data != .identifier) return &.{};
+    // Every other callee shape lowers as an expression, and a callable value
+    // there wants the same argument demand a named one gets.
+    if (c.callee.data != .identifier) {
+        if (self.callableSigOf(self.inferExprType(c.callee))) |sig| return coerceDemands(self, sig.params);
+        return &.{};
+    }
     const bare_name = c.callee.data.identifier.name;
-    // Closure / fn-pointer VALUE bound in scope (`g := || …; g(args)`):
-    // type each arg against the callee value's declared parameter types so a
-    // `?T` param wraps the argument — without this the args lower
-    // with no target type and reach `call_closure` unconverted (a concrete arg
-    // arrives as a bare payload that reads ABSENT; `null` reaches a `{T,i1}`
-    // slot as a bare pointer → LLVM verifier failure). A local value shadows a
-    // same-named function, so this precedes the function-name resolution below.
+    // Callable VALUE bound in scope (`g := || …; g(args)`): type each arg
+    // against the callee value's declared parameter types so a `?T` param wraps
+    // the argument — without this the args lower with no target type and reach
+    // `call_closure` unconverted (a concrete arg arrives as a bare payload that
+    // reads ABSENT; `null` reaches a `{T,i1}` slot as a bare pointer → LLVM
+    // verifier failure). A local value shadows a same-named function, so this
+    // precedes the function-name resolution below.
     if (self.scope) |scope| {
         if (scope.lookup(bare_name)) |binding| {
-            if (!binding.ty.isBuiltin()) {
-                const bti = self.module.types.get(binding.ty);
-                if (bti == .closure) return bti.closure.params;
-                if (bti == .function) return bti.function.params;
-            }
+            if (self.callableSigOf(binding.ty)) |sig| return coerceDemands(self, sig.params);
         }
     }
     const name = blk: {
@@ -5758,48 +5968,29 @@ pub fn resolveCallParamTypes(
     if (sel_author) |sf| {
         const fid = self.selectedFuncId(sf);
         const func = &self.module.functions.items[@intFromEnum(fid)];
-        return self.userParamTypes(func);
+        return coerceDemands(self, self.userParamTypes(func));
     }
 
-    // Check declared functions
-    if (self.resolveFuncByName(name)) |fid| {
-        const func = &self.module.functions.items[@intFromEnum(fid)];
-        return self.userParamTypes(func);
-    }
+    // A value-authored or ambiguous name has no callable declaration here, so
+    // the name-keyed maps must not type its arguments — the same gate dispatch
+    // applies, or the args coerce to a function the call never reaches.
+    if (!author_declines) {
+        // Check declared functions
+        if (self.resolveFuncByName(name)) |fid| {
+            const func = &self.module.functions.items[@intFromEnum(fid)];
+            return coerceDemands(self, self.userParamTypes(func));
+        }
 
-    // Check AST map for function signatures
-    if (self.program_index.fn_ast_map.get(name)) |fd| {
-        return astCalleeParamTypes(self, fd, c.args);
-    }
-
-    // Check global function pointer variables (quiet author-aware lookup —
-    // param typing only; the call site diagnoses ambiguity / visibility)
-    if (self.program_index.global_names.get(bare_name)) |gi_global| {
-        const gi: ?GlobalInfo = switch (self.selectGlobalAuthor(bare_name)) {
-            .resolved => |g| g,
-            .untracked => gi_global,
-            else => null,
-        };
-        if (gi) |g| {
-            if (!g.ty.isBuiltin()) {
-                const ti = self.module.types.get(g.ty);
-                if (ti == .function) {
-                    return ti.function.params;
-                }
-            }
+        // Check AST map for function signatures
+        if (self.program_index.fn_ast_map.get(name)) |fd| {
+            return astCalleeParamTypes(self, fd, c.args);
         }
     }
 
-    // Check local scope for function pointer variables
-    if (self.scope) |scope| {
-        if (scope.lookup(bare_name)) |binding| {
-            if (!binding.ty.isBuiltin()) {
-                const ti = self.module.types.get(binding.ty);
-                if (ti == .function) {
-                    return ti.function.params;
-                }
-            }
-        }
+    // A module global holding a callable value (quiet author-aware lookup —
+    // param typing only; the call site diagnoses ambiguity / visibility).
+    if (self.globalValueRef(bare_name)) |gi| {
+        if (self.callableSigOf(gi.ty)) |sig| return coerceDemands(self, sig.params);
     }
 
     return &.{};

@@ -1,10 +1,10 @@
-error: 'tally' cannot take a trailing block — its last parameter 'n' is 'i32', which is neither a `Closure` nor a `@BuildBlock(P)`
+error: 'tally' cannot take a trailing block — its last parameter 'n' is 'i32', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
   --> examples/diagnostics/2133-diagnostics-empty-brace-no-reading.sx:10:21
    |
 10 |     return tally(2) {};
    |                     ^^
 
-help: declare 'n' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
+help: declare 'n' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
 10 |     return tally(2) {};
    |                     ^^

@@ -125,9 +125,9 @@ main :: () -> i32 {
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
-                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |ev: *KeyEvent| {
+                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, closure(|ev: *KeyEvent|_{ hit } {
                     hit.* += 1;
-                })
+                }))
             };
             made := home.alloc_count;
             push .{ allocator = away } {
@@ -181,25 +181,25 @@ main :: () -> i32 {
         untouched, retargeted, hits, home.leak_count(), away.leak_count());
 
     // UiRoot and FrameLoop: the root's carriers and arenas are the root
-    // allocator's, and the builder environment is the allocator's that wrote
-    // the literal — here the ambient one, which is the other tracker.
+    // allocator's, and the builder environment comes from the allocator
+    // ambient at `closure` — here the other tracker.
     built := 0;
     taken := 0;
     push .{ allocator = away } {
         app := UiRoot.init(Size{ width = 60.0, height = 40.0 }, home);
         builds := *built;
         seen := *taken;
-        spin := FrameLoop.init(*app, || -> View {
+        spin := FrameLoop.init(*app, closure(||_{ builds, seen } -> View {
             builds.* += 1;
             n := use_state(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ seen } {
                     seen.* += 1;
-                })
+                }))
             };
             v
-        }, away);
+        }), away);
         spin.frame();
         app.queue.push(down(30.0, 10.0));
         app.queue.push(up(30.0, 10.0));

@@ -15,7 +15,7 @@ Box :: struct {
     doubled :: (self: Box) -> Box { Box{ n = self.n * 2 } }
 }
 
-vstack :: (spacing: f32, content: Closure()) -> Box {
+vstack :: (spacing: f32, content: $F/() -> void) -> Box {
     content();
     Box{ n = 7 }
 }

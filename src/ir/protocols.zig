@@ -705,9 +705,186 @@ pub const ProtocolResolver = struct {
         return false;
     }
 
+    /// `(i64) -> i64` as a reader sees it, for a diagnostic that quotes the head.
+    fn spelledFnType(self: ProtocolResolver, params: []const TypeId, ret: TypeId) []const u8 {
+        var out = std.ArrayList(u8).empty;
+        out.append(self.l.alloc, '(') catch return "";
+        for (params, 0..) |p, i| {
+            if (i > 0) out.appendSlice(self.l.alloc, ", ") catch return "";
+            out.appendSlice(self.l.alloc, self.l.formatTypeName(p)) catch return "";
+        }
+        out.appendSlice(self.l.alloc, ") -> ") catch return "";
+        out.appendSlice(self.l.alloc, self.l.formatTypeName(ret)) catch return "";
+        return out.items;
+    }
+
+    /// A type that can carry a function-type impl: a struct that is not a
+    /// protocol handle, an untagged union, or an enum in either of its shapes.
+    fn isNominalConformer(self: ProtocolResolver, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        return switch (self.l.module.types.get(ty)) {
+            .@"struct" => |s| !s.is_protocol,
+            .@"union", .@"enum", .tagged_union => true,
+            else => false,
+        };
+    }
+
+    /// The protocol-key stand-in a function-type impl records its methods
+    /// under. A leading NUL is unspellable in source, so it collides with no
+    /// protocol; `protocol_impl_decls` never carries it, which keeps
+    /// `hasConcreteImplDecl` false for a merely callable nominal.
+    const callable_impl_key = "\x00callable";
+
+    /// `impl (sig) for T` — the head is a function TYPE, so the impl names no
+    /// protocol and registers into `callable_nominals` instead. `call` is its one
+    /// required method and its signature is the head; the map holds at most one
+    /// entry per conformer, which is the coherence rule.
+    fn registerFnTypeImpl(
+        self: ProtocolResolver,
+        ib: *const ast.ImplBlock,
+        is_imported: bool,
+        fn_ty: *const Node,
+        source: ?[]const u8,
+    ) void {
+        const target_node = ib.target_type_expr orelse return;
+        const diags = self.l.diagnostics;
+        // The conformer may be declared after the impl, so an impl whose target
+        // does not resolve YET stays unregistered and a later pass retries it
+        // against a settled type table. Every other exit is final.
+        var retry = false;
+        defer if (!retry) self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+
+        const at = target_node.span;
+        if (target_node.data == .type_expr and target_node.data.type_expr.is_generic) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, at, "'${s}' cannot carry a function-type impl", .{target_node.data.type_expr.name});
+                d.addHelpFmt(id, at, null, "a conformer is one named type — a struct, an untagged union, or an enum", .{});
+            }
+            return;
+        }
+        if (!self.l.typeNodeLeavesReady(target_node, source)) {
+            retry = true;
+            return;
+        }
+        const cty = self.l.resolveTypeInSource(source, target_node);
+        if (cty == .unresolved) {
+            retry = true;
+            return;
+        }
+        if (!self.isNominalConformer(cty)) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, at, "'{s}' cannot carry a function-type impl", .{self.l.formatTypeName(cty)});
+                if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct")
+                    d.addHelpFmt(id, at, null, "an interface handle is not a concrete conformer", .{})
+                else
+                    d.addHelpFmt(id, at, null, "a conformer is a struct, an untagged union, or an enum", .{});
+            }
+            return;
+        }
+        if (self.l.callable_nominals.get(cty)) |first| {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, first.span, "'{s}' already carries a function-type impl", .{self.l.formatTypeName(cty)});
+                d.addNoteFmt(id, at, "also implemented here", .{});
+            }
+            return;
+        }
+
+        var call_fd: ?*const ast.FnDecl = null;
+        for (ib.methods) |method_node| {
+            if (method_node.data != .fn_decl) continue;
+            const fd = &method_node.data.fn_decl;
+            const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ ib.target_type, fd.name }) catch continue;
+            if (!self.l.program_index.fn_ast_map.contains(qualified)) {
+                self.l.program_index.fn_ast_map.put(qualified, fd) catch {};
+                self.l.program_index.import_flags.put(qualified, is_imported) catch {};
+            }
+            self.l.declareFunction(fd, qualified);
+            if (std.mem.eql(u8, fd.name, "call")) call_fd = fd;
+        }
+        // The member rule is keyed on the conformer's TypeId: the block's own
+        // `call`, against any `call` the conformer already declares. Both is a
+        // duplicate definition; neither is the missing-call diagnostic; one
+        // alone is the method the impl registers, written or adopted.
+        const inherent = self.l.plainStructAdoptableMethod(cty, "call");
+        const call_field = self.l.lookupField(cty, "call") != .missing;
+        if (call_fd != null and (inherent != null or call_field)) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, call_fd.?.name_span, "'call' collides with an existing member of '{s}'", .{self.l.formatTypeName(cty)});
+                if (inherent) |m|
+                    d.addNoteFmt(id, m.fd.name_span, "declared here", .{})
+                else
+                    d.addHelpFmt(id, call_fd.?.name_span, null, "'{s}' declares a field named 'call'", .{self.l.formatTypeName(cty)});
+            }
+            return;
+        }
+        const fd = call_fd orelse (if (inherent) |m| m.fd else null) orelse {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, at, "a function-type impl for '{s}' declares no 'call'", .{self.l.formatTypeName(cty)});
+                d.addHelpFmt(id, at, null, "'call' is the method the conformer is called through", .{});
+            }
+            return;
+        };
+        // An adopted method's signature resolves in the file that declares it.
+        const sig_source = if (call_fd != null) source else fd.body.source_file orelse source;
+
+        const ptr_cty = self.l.module.types.ptrTo(cty);
+        const recv_ty = if (fd.params.len > 0) self.l.resolveTypeInSource(sig_source, fd.params[0].type_expr) else TypeId.void;
+        if (fd.params.len == 0 or (recv_ty != cty and recv_ty != ptr_cty)) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, fd.name_span, "'call' takes the conformer as its receiver", .{});
+                d.addHelpFmt(id, fd.name_span, null, "write 'call :: (self: *{s}, …)'", .{self.l.formatTypeName(cty)});
+            }
+            return;
+        }
+
+        var params = std.ArrayList(TypeId).empty;
+        for (fd.params[1..]) |p| params.append(self.l.alloc, self.l.resolveTypeInSource(sig_source, p.type_expr)) catch return;
+        const ret = if (fd.return_type) |rt| self.l.resolveTypeInSource(sig_source, rt) else TypeId.void;
+
+        const fte = fn_ty.data.function_type_expr;
+        var head_params = std.ArrayList(TypeId).empty;
+        for (fte.param_types) |p| head_params.append(self.l.alloc, self.l.resolveTypeInSource(source, p)) catch return;
+        const head_ret = if (fte.return_type) |rt| self.l.resolveTypeInSource(source, rt) else TypeId.void;
+        const agrees = head_ret == ret and head_params.items.len == params.items.len and
+            std.mem.eql(TypeId, head_params.items, params.items);
+        if (!agrees) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, fd.name_span, "'call' is '{s}', and the impl head is '{s}'", .{
+                    self.spelledFnType(params.items, ret), self.spelledFnType(head_params.items, head_ret),
+                });
+                d.addHelpFmt(id, fd.name_span, null, "the head is the signature the conformer is callable at, so 'call' carries it past its receiver", .{});
+            }
+            return;
+        }
+
+        self.l.callable_nominals.put(cty, .{
+            .fd = fd,
+            .qualified = std.fmt.allocPrint(self.l.alloc, "{s}.call", .{ib.target_type}) catch return,
+            .params = params.toOwnedSlice(self.l.alloc) catch return,
+            .ret = ret,
+            .span = at,
+        }) catch @panic("out of memory");
+
+        // The block's methods are ordinary members of the conformer, selected
+        // by TypeId. Recorded only once the impl is ACCEPTED, so a refused one
+        // contributes no member.
+        for (ib.methods) |method_node| {
+            if (method_node.data != .fn_decl) continue;
+            const mfd = &method_node.data.fn_decl;
+            self.recordProtocolImplMethod(null, callable_impl_key, cty, mfd, source, false);
+            const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ ib.target_type, mfd.name }) catch continue;
+            // A `!` on an impl method is part of the contract, so the
+            // "declared `!` but never errors" warning skips it.
+            self.l.impl_method_names.put(qualified, {}) catch {};
+        }
+    }
+
     pub fn registerImplBlock(self: ProtocolResolver, ib: *const ast.ImplBlock, is_imported: bool, decl: *const Node) void {
         if (self.l.registered_protocol_impls.contains(ib)) return;
         const source = decl.source_file orelse self.l.current_source_file;
+        // A function-type head names no protocol: it makes the conformer
+        // callable and answers to its own registry.
+        if (ib.protocol_fn_type) |fn_ty| return self.registerFnTypeImpl(ib, is_imported, fn_ty, source);
         // Parameterised-protocol impl (e.g. `impl Into(Block) for Closure() -> void`):
         // record into `param_impl_map` for compile-time resolution by `lowerXX`.
         // Methods are NOT registered in fn_ast_map — they're monomorphised lazily
@@ -821,7 +998,9 @@ pub const ProtocolResolver = struct {
                     const saved = diags.current_source_file;
                     if (source) |src| diags.current_source_file = src;
                     defer diags.current_source_file = saved;
-                    if (self.resolveProtocol(ib.protocol_name, source) == null) {
+                    if (ib.protocol_fn_type != null) {
+                        diags.addFmt(.err, decl.span, "a function-type impl cannot register: its conformer '{s}' does not resolve in this module", .{ib.target_type});
+                    } else if (self.resolveProtocol(ib.protocol_name, source) == null) {
                         diags.addFmt(.err, decl.span, "unknown constraint or interface '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
                     } else if (ib.protocol_type_args.len > 0) {
                         diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a type argument or the source type does not resolve in this module", .{ib.protocol_name});

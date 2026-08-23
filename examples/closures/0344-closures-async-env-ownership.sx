@@ -1,0 +1,47 @@
+// A capturing worker IS its env, so `async(worker, alloc)` funds the whole task
+// from `alloc` — the persisted worker env, the completion env, the `ThunkBox`
+// and the `Future`. The `context.allocator` in force at the call funds none of
+// it, and after `await` the task allocator is level.
+
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+main :: () {
+    gpa := GPA.init();
+    base := gpa.(Allocator);
+    ctx := TrackingAllocator.init(base);
+    a := TrackingAllocator.init(base);
+
+    answer := 0;
+    ctx_held := 0;
+    push .{ allocator = ctx } {
+        n := 41;
+        f := context.io.async(||_{ n } -> (i64, !) n, a);
+        answer = await(f) catch { 0 };
+        ctx_held = ctx.leak_count();
+    }
+    print("read {} level {} ctx holds {}\n",
+          answer, a.alloc_count == a.dealloc_count, ctx_held);
+
+    // A worker that WRITES its env writes the persisted copy — the binding the
+    // literal read keeps the value it had.
+    hits := 0;
+    wrote := 0;
+    push .{ allocator = ctx } {
+        g := context.io.async(||_{ hits } -> (i64, !) { hits = hits + 1; hits }, a);
+        wrote = await(g) catch { 0 };
+    }
+    print("wrote {} outer {} level {} ctx holds {}\n",
+          wrote, hits, a.alloc_count == a.dealloc_count, ctx.leak_count());
+
+    // An arena is a valid task allocator: the task's allocations land in the
+    // chunk it already holds, so the GPA behind it sees no growth.
+    arena := Arena.init(base, 4096);
+    before := gpa.alloc_count;
+    k := 6;
+    h := context.io.async(||_{ k } -> (i64, !) k * 7, arena);
+    product := await(h) catch { 0 };
+    print("arena {} gpa growth {}\n", product, gpa.alloc_count - before);
+    arena.deinit();
+    print("gpa outstanding {}\n", gpa.alloc_count);
+}

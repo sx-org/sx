@@ -276,14 +276,23 @@ pub const Scope = struct {
     map: std.StringHashMap(Binding),
     fn_names: std.StringHashMap([]const u8), // bare name → mangled name for local functions
     parent: ?*Scope,
-    /// True on the ROOT scope of a NESTED `::` static function's body (a
-    /// `f :: () {…}` declared inside another function). Such a scope keeps its
-    /// `parent` chain so SIBLING nested fns (`fn_names`) and comptime constants
-    /// still resolve, but a plain VALUE binding reached by crossing this
-    /// boundary is an enclosing local/param/const — which a static nested fn has
-    /// no env to reach — and must be diagnosed, not silently read as a dead
-    /// Ref. Closures capture explicitly and do NOT set this.
-    is_fn_boundary: bool = false,
+    /// What a value binding reached by crossing this scope is.
+    boundary: Boundary = .none,
+
+    pub const Boundary = enum {
+        /// Ordinary nesting — a binding above is in scope.
+        none,
+        /// The ROOT scope of a NESTED `::` static function's body (a
+        /// `f :: () {…}` declared inside another function). It keeps its
+        /// `parent` chain so SIBLING nested fns (`fn_names`) and comptime
+        /// constants still resolve, but a plain VALUE binding above it is an
+        /// enclosing local/param/const the static fn has no env to reach.
+        nested_fn,
+        /// The ROOT scope of a lambda body. The body reads its parameters, its
+        /// own locals, and its `_{ … }` fields; the chain above is walked only
+        /// by the boundary lookups, which name the env field to write.
+        lambda,
+    };
 
     pub fn init(alloc: Allocator, parent: ?*Scope) Scope {
         return .{
@@ -304,32 +313,33 @@ pub const Scope = struct {
 
     pub fn lookup(self: *const Scope, name: []const u8) ?Binding {
         if (self.map.get(name)) |b| return b;
+        if (self.boundary == .lambda) return null;
         if (self.parent) |p| return p.lookup(name);
         return null;
     }
 
-    /// A value-binding lookup that also reports whether the binding was reached
-    /// only by crossing a nested-fn boundary (`is_fn_boundary`). A static nested
-    /// `::` fn has no environment, so such a binding is an enclosing
-    /// local/param/const it cannot legitimately read — the identifier site turns
-    /// `crossed_fn_boundary = true` into the tailored "use a closure to capture"
-    /// diagnostic instead of silently emitting the dead Ref.
+    /// A value-binding lookup that also reports the boundary the binding was
+    /// reached ACROSS. A static nested `::` fn has no environment and a lambda
+    /// body has only its env, so such a binding is one neither can legitimately
+    /// read — the identifier site turns a non-`.none` `crossed` into the
+    /// tailored diagnostic instead of silently emitting the dead Ref.
     /// `binding` is null when the name is absent entirely (the ordinary
-    /// unresolved path); non-null with `crossed_fn_boundary = false` is a normal
-    /// in-scope hit.
-    pub const ScopedBinding = struct { binding: ?Binding, crossed_fn_boundary: bool };
+    /// unresolved path); non-null with `crossed == .none` is a normal in-scope
+    /// hit.
+    pub const ScopedBinding = struct { binding: ?Binding, crossed: Boundary };
     pub fn lookupBoundary(self: *const Scope, name: []const u8) ScopedBinding {
         var s: ?*const Scope = self;
-        var crossed = false;
+        var crossed: Boundary = .none;
         while (s) |sc| : (s = sc.parent) {
-            if (sc.map.get(name)) |b| return .{ .binding = b, .crossed_fn_boundary = crossed };
-            if (sc.is_fn_boundary) crossed = true;
+            if (sc.map.get(name)) |b| return .{ .binding = b, .crossed = crossed };
+            if (crossed == .none) crossed = sc.boundary;
         }
-        return .{ .binding = null, .crossed_fn_boundary = false };
+        return .{ .binding = null, .crossed = .none };
     }
 
     pub fn lookupFn(self: *const Scope, name: []const u8) ?[]const u8 {
         if (self.fn_names.get(name)) |mangled| return mangled;
+        if (self.boundary == .lambda) return null;
         if (self.parent) |p| return p.lookupFn(name);
         return null;
     }
@@ -355,25 +365,25 @@ pub const Scope = struct {
         while (s) |sc| : (s = sc.parent) {
             if (sc.map.get(name)) |b| return .{ .binding = b };
             if (sc.fn_names.get(name)) |m| return .{ .local_fn = m };
+            if (sc.boundary == .lambda) return null;
         }
         return null;
     }
 
-    /// `lookupNearest` + the fn-boundary report: call-site
-    /// dispatch needs BOTH the nearest-declaration verdict and whether that
-    /// declaration lives across a nested-fn boundary. A `.local_fn` found
-    /// across the boundary is a SIBLING nested fn — static, legally callable.
-    /// A `.binding` found across it is an enclosing local (closure value, fn
-    /// pointer, anything) the static nested fn cannot reach — the call site
-    /// diagnoses instead of dispatching through the dead Ref (Bus error).
-    pub const NearestBoundary = struct { near: NearestName, crossed_fn_boundary: bool };
+    /// `lookupNearest` + the boundary report: call-site dispatch needs BOTH the
+    /// nearest-declaration verdict and which boundary that declaration lives
+    /// across. A `.local_fn` found across one is a SIBLING nested fn — static,
+    /// legally callable. A `.binding` found across it is an enclosing local
+    /// (closure value, fn pointer, anything) the body cannot reach — the call
+    /// site diagnoses instead of dispatching through the dead Ref (Bus error).
+    pub const NearestBoundary = struct { near: NearestName, crossed: Boundary };
     pub fn lookupNearestBoundary(self: *const Scope, name: []const u8) ?NearestBoundary {
         var s: ?*const Scope = self;
-        var crossed = false;
+        var crossed: Boundary = .none;
         while (s) |sc| : (s = sc.parent) {
-            if (sc.map.get(name)) |b| return .{ .near = .{ .binding = b }, .crossed_fn_boundary = crossed };
-            if (sc.fn_names.get(name)) |m| return .{ .near = .{ .local_fn = m }, .crossed_fn_boundary = crossed };
-            if (sc.is_fn_boundary) crossed = true;
+            if (sc.map.get(name)) |b| return .{ .near = .{ .binding = b }, .crossed = crossed };
+            if (sc.fn_names.get(name)) |m| return .{ .near = .{ .local_fn = m }, .crossed = crossed };
+            if (crossed == .none) crossed = sc.boundary;
         }
         return null;
     }
@@ -450,6 +460,16 @@ pub const Lowering = struct {
     /// instantiation can say what they are. Set around a dispatch to such a
     /// method; null everywhere else.
     impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
+    /// The env struct a `|…|_{ … }` literal IS, mapped to the function it calls.
+    /// A type answers here exactly when it is some literal's own unique type.
+    unique_lambdas: std.AutoHashMap(TypeId, lower_closure.UniqueLambda),
+    /// The `impl (sig) for T` a nominal carries, by conformer TypeId. A nominal
+    /// holds at most one, so the map is the coherence check as well as the
+    /// dispatch table.
+    callable_nominals: std.AutoHashMap(TypeId, lower_protocol.CallableNominal),
+    /// The `@call_ptr` trampoline synthesized for a callable type, so one type
+    /// persists through one trampoline however many times `closure` erases it.
+    persist_trampolines: std.AutoHashMap(TypeId, inst_mod.FuncId),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
     /// the registry: there is no enrollment API, and which set a name means is a
     /// question about which declaration it reaches.
@@ -664,6 +684,17 @@ pub const Lowering = struct {
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
+    /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
+    /// it names is still unknown. Nothing at a call decides that binder, so the
+    /// value the body hands back fixes the function's return type.
+    pending_callable_return: ?*const ast.Node = null,
+    /// The type a return-position callable binder is fixed to, once an exit has
+    /// handed one back. Every later exit answers to it: a body returns one type.
+    fixed_callable_ret: ?TypeId = null,
+    /// Parameter and return types an unannotated `|x|` reads when the expected
+    /// type is a callable binder. The argument's type is its own shape; this is
+    /// only the bound's signature.
+    lambda_sig_target: ?lower_closure.CallableSig = null,
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
     /// Flow-sensitive narrowing. The set of local variable names
@@ -1158,10 +1189,16 @@ pub const Lowering = struct {
         build_scopes: std.ArrayList(lower_build_block.Scope),
         inline_return_target: ?InlineExit,
         current_fn_decl: ?*const ast.FnDecl,
+        pending_callable_return: ?*const ast.Node,
+        fixed_callable_ret: ?TypeId,
+        lambda_sig_target: ?lower_closure.CallableSig,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
                 .l = l,
+                .pending_callable_return = l.pending_callable_return,
+                .fixed_callable_ret = l.fixed_callable_ret,
+                .lambda_sig_target = l.lambda_sig_target,
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
@@ -1181,6 +1218,9 @@ pub const Lowering = struct {
             l.build_scopes = .empty;
             l.inline_return_target = null;
             l.current_fn_decl = null;
+            l.pending_callable_return = null;
+            l.fixed_callable_ret = null;
+            l.lambda_sig_target = null;
             return g;
         }
 
@@ -1198,8 +1238,61 @@ pub const Lowering = struct {
             g.l.build_scopes = g.build_scopes;
             g.l.inline_return_target = g.inline_return_target;
             g.l.current_fn_decl = g.current_fn_decl;
+            g.l.pending_callable_return = g.pending_callable_return;
+            g.l.fixed_callable_ret = g.fixed_callable_ret;
+            g.l.lambda_sig_target = g.lambda_sig_target;
         }
     };
+
+    /// What a declared parameter or return asks of the value written at it. A
+    /// callable binder asks for a SIGNATURE and never for a TypeId: the value
+    /// keeps its own shape, and the bound only says what it must be callable at.
+    pub const ParamDemand = union(enum) {
+        none,
+        coerce: TypeId,
+        callable: lower_closure.CallableSig,
+
+        /// The type the demand coerces to. A callable binder has none.
+        pub fn coerceType(d: ParamDemand) ?TypeId {
+            return switch (d) {
+                .coerce => |t| t,
+                .none, .callable => null,
+            };
+        }
+    };
+
+    /// The two typing channels a demand installs, restored together.
+    pub const DemandScope = struct {
+        l: *Lowering,
+        target_type: ?TypeId,
+        lambda_sig_target: ?lower_closure.CallableSig,
+
+        pub fn restore(s: DemandScope) void {
+            s.l.target_type = s.target_type;
+            s.l.lambda_sig_target = s.lambda_sig_target;
+        }
+    };
+
+    /// Install `d` on both typing channels for the value about to be lowered.
+    /// `null` is the slot no parameter declares — a C-variadic tail — where the
+    /// ambient target stands and no signature rides with it.
+    pub fn enterDemand(self: *Lowering, d: ?ParamDemand) DemandScope {
+        const scope = DemandScope{
+            .l = self,
+            .target_type = self.target_type,
+            .lambda_sig_target = self.lambda_sig_target,
+        };
+        self.lambda_sig_target = null;
+        switch (d orelse return scope) {
+            .callable => |sig| {
+                self.lambda_sig_target = sig;
+                self.target_type = null;
+            },
+            .coerce => |t| self.target_type = if (t == .unresolved or t == .void) null else t,
+            .none => self.target_type = null,
+        }
+        return scope;
+    }
 
     pub fn init(module: *Module) Lowering {
         return .{
@@ -1232,6 +1325,9 @@ pub const Lowering = struct {
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
+            .unique_lambdas = std.AutoHashMap(TypeId, lower_closure.UniqueLambda).init(module.alloc),
+            .callable_nominals = std.AutoHashMap(TypeId, lower_protocol.CallableNominal).init(module.alloc),
+            .persist_trampolines = std.AutoHashMap(TypeId, inst_mod.FuncId).init(module.alloc),
             .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
@@ -2161,23 +2257,28 @@ pub const Lowering = struct {
         return self.emitPlaceholder(name);
     }
 
-    /// A static nested `::` function referenced an ENCLOSING function's local /
-    /// param / local-const `name`. It has no environment to reach it — the only
-    /// spelling that captures is a closure. Diagnose loudly and emit a
+    /// A body referenced an ENCLOSING function's local / param / local-const
+    /// `name` across a boundary that cannot reach it: a static nested `::`
+    /// function, which has no environment at all, or a lambda, whose
+    /// environment is exactly the `_{ … }` it wrote. Diagnose loudly and emit a
     /// placeholder; `hasErrors()` aborts before codegen so the placeholder
     /// never runs. Deduped per
     /// (function, name): the guard sits at every resolution layer and a
     /// speculative fast path's diagnostic would otherwise repeat when its
     /// null-fallback re-lowers the same identifier through another guard.
-    pub fn diagEnclosingLocalRef(self: *Lowering, name: []const u8, span: ?ast.Span) Ref {
+    pub fn diagEnclosingLocalRef(self: *Lowering, name: []const u8, span: ?ast.Span, crossed: Scope.Boundary) Ref {
         if (self.diagnostics) |diags| {
             const fn_idx: u32 = if (self.builder.func) |fid| @intFromEnum(fid) else std.math.maxInt(u32);
             const key = std.fmt.allocPrint(self.alloc, "{d}:{s}", .{ fn_idx, name }) catch name;
             const gop = self.diag_enclosing_seen.getOrPut(key) catch null;
             const first = if (gop) |g| !g.found_existing else true;
-            if (first) {
-                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := || ...') to capture it", .{ name, name });
-            }
+            if (first) switch (crossed) {
+                .lambda => {
+                    const id = diags.addFmtId(.err, span, "'{s}' is not in scope in this lambda body — it reads its parameters and its env, nothing else", .{name});
+                    diags.addHelpFmt(id, span, null, "name it in the env: `|…|_{{ {s} }} …`, which is the copy `{s} = {s}`", .{ name, name, name });
+                },
+                .none, .nested_fn => diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — only a closure reaches it, by naming it in its env (`|…|_{{ {s} = {s} }} ...`)", .{ name, name, name }),
+            };
         }
         return self.emitPlaceholder(name);
     }
@@ -2227,8 +2328,8 @@ pub const Lowering = struct {
         };
         if (self.scope) |scope| {
             const sb = scope.lookupBoundary(name);
-            if (sb.crossed_fn_boundary) {
-                _ = self.diagEnclosingLocalRef(name, node.span);
+            if (sb.crossed != .none) {
+                _ = self.diagEnclosingLocalRef(name, node.span, sb.crossed);
                 return null;
             }
             if (sb.binding) |binding| {
@@ -2251,7 +2352,7 @@ pub const Lowering = struct {
             .identifier => |id| {
                 if (self.scope) |scope| {
                     const sb = scope.lookupBoundary(id.name);
-                    if (sb.crossed_fn_boundary) return false;
+                    if (sb.crossed != .none) return false;
                     if (sb.binding) |binding| return binding.is_alloca;
                 }
                 // Global check mirrors `resolveGlobalRef` minus its
@@ -3273,6 +3374,7 @@ pub const Lowering = struct {
     pub const foldConstArrayElem = lower_comptime.foldConstArrayElem;
     pub const foldConstStructField = lower_comptime.foldConstStructField;
     pub const resolveGlobalRef = lower_comptime.resolveGlobalRef;
+    pub const globalValueRef = lower_comptime.globalValueRef;
     pub const sourceModuleConst = lower_comptime.sourceModuleConst;
     pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
@@ -3532,6 +3634,11 @@ pub const Lowering = struct {
     pub const boundNonConformance = lower_protocol.boundNonConformance;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const checkBoundBindings = lower_bound.checkBindings;
+    pub const callableBound = lower_bound.callableBound;
+    pub const checkCallableBound = lower_bound.checkCallable;
+    pub const boundCallableSig = lower_bound.boundCallableSig;
+    pub const boundOnBinder = lower_bound.boundOnBinder;
+    pub const paramDemand = lower_bound.paramDemand;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
 
     // --- lower/coerce.zig (lower_coerce) ---
@@ -3637,9 +3744,7 @@ pub const Lowering = struct {
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
     pub const selectUfcsGenericByReceiver = lower_call.selectUfcsGenericByReceiver;
     pub const diagnoseMissingContext = lower_call.diagnoseMissingContext;
-    pub const allocViaContext = lower_call.allocViaContext;
     pub const ambientAllocator = lower_call.ambientAllocator;
-    pub const callExtern = lower_call.callExtern;
     pub const prependCtxIfNeeded = lower_call.prependCtxIfNeeded;
     pub const resolveFuncByName = lower_call.resolveFuncByName;
     pub const resolveBuiltin = lower_call.resolveBuiltin;
@@ -3651,12 +3756,15 @@ pub const Lowering = struct {
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
+    pub const persistArity = lower_call.persistArity;
+    pub const persistEnvType = lower_call.persistEnvType;
     pub const appendDefaultArgs = lower_call.appendDefaultArgs;
     pub const lowerDefaultArg = lower_call.lowerDefaultArg;
     pub const checkCallArity = lower_call.checkCallArity;
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
+    pub const callableLocalShadow = lower_call.callableLocalShadow;
 
     // --- lower/cvariadic.zig (lower_cvariadic) ---
     pub const tryLowerCursorIntrinsic = lower_cvariadic.tryLowerIntrinsic;
@@ -3834,7 +3942,11 @@ pub const Lowering = struct {
     pub const createBareFnTrampoline = lower_closure.createBareFnTrampoline;
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;
     pub const collectCaptures = lower_closure.collectCaptures;
-    pub const computeEnvSize = lower_closure.computeEnvSize;
+    pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
+    pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
+    pub const callableSigOf = lower_closure.callableSigOf;
+    pub const callableShapeOf = lower_closure.callableShapeOf;
+    pub const callableNominalThrough = lower_closure.callableNominalThrough;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
     pub const initTargetOf = lower_init_plan.initTargetOf;

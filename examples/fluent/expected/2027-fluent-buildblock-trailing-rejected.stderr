@@ -1,10 +1,10 @@
-error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
+error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
   --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:28:21
    |
 28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^
 
-help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
+help: declare 'b' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
 28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^

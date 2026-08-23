@@ -582,6 +582,37 @@ test "a delimiter carries the depth OUTSIDE its group; contents sit one deeper" 
     try std.testing.expectEqualSlices(u32, &.{ 0, 0, 1, 1, 2, 1, 1, 2, 1, 0, 0 }, tl.depths);
 }
 
+test "`_{` is one token and `_ {` is an identifier and a brace" {
+    var glued = try lexT("|x|_{ n = n } x");
+    defer deinitT(&glued);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .pipe,       .identifier, .pipe,  .underscore_l_brace, .identifier,
+        .equal,      .identifier, .r_brace, .identifier,       .eof,
+    }, glued.tags);
+
+    var spaced = try lexT("|x| _ { n = n } x");
+    defer deinitT(&spaced);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .pipe,       .identifier, .pipe,  .identifier, .l_brace, .identifier,
+        .equal,      .identifier, .r_brace, .identifier, .eof,
+    }, spaced.tags);
+}
+
+test "only a bare `_` takes the env spelling" {
+    var tl = try lexT("_x{ Name_{");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .identifier, .l_brace, .identifier, .l_brace, .eof,
+    }, tl.tags);
+}
+
+test "`_{` opens a group for the depth column" {
+    var tl = try lexT("_{n}");
+    defer deinitT(&tl);
+    //              _{ n  }  eof
+    try std.testing.expectEqualSlices(u32, &.{ 0, 1, 0, 0 }, tl.depths);
+}
+
 test "an unbalanced closer saturates rather than underflowing" {
     var tl = try lexT("}}a{");
     defer deinitT(&tl);

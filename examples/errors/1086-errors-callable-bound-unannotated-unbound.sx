@@ -1,0 +1,13 @@
+// An unannotated `|x|` reads its parameter from the bound's signature, so a
+// bound whose own parameter is a binder the call has not decided leaves nothing
+// to read. That is a source error at the lambda, not a slot nothing decided
+// travelling on into codegen.
+
+@import "modules/std.sx";
+
+apply :: (g: $F/($A) -> $R, a: A) -> R { return g(a); }
+
+main :: () -> i32 {
+    _ := apply(|x| x, 5);
+    return 0;
+}

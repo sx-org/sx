@@ -6,26 +6,31 @@
 // branch, a closure literal as a default, and the `|` that is bitwise OR.
 // Every default here is parse coverage — each call passes the argument.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
-apply :: (f: Closure(i64) -> i64, v: i64) -> i64 { f(v) }
-run :: (f: Closure()) { f(); }
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { f(v) }
+run :: (f: $F/() -> void) { f(); }
 mask :: (v: i64) -> i64 { v }
 
 main :: () {
     n := 5;
 
     // Params typed from the annotated target.
-    inc : Closure(i64) -> i64 = |x| x + n;
+    twice : Closure(i64) -> i64 = |x| x * 2;
+    print("twice {}\n", twice(3));
+
+    // A capturing literal reaches a `Closure` slot through `closure`.
+    inc : Closure(i64) -> i64 = closure(|x: i64|_{ n } x + n);
     print("inc {}\n", inc(3));
 
     // Annotated params and return type.
-    scale := |x: i64, k: i64| -> i64 x * k + n;
+    scale := |x: i64, k: i64|_{ n = n } -> i64 x * k + n;
     print("scale {}\n", scale(4, 2));
 
     // `||` is an empty parameter list; the block is the body.
     total := 0;
     counter := *total;
-    pump := || { counter.* = counter.* + 1; };
+    pump := ||_{ counter = counter } { counter.* = counter.* + 1; };
     pump();
     pump();
     print("pump {}\n", total);
@@ -39,7 +44,7 @@ main :: () {
     print("variadic {}\n", sum(.[1, 2, 3]));
 
     // A closure body is an ordinary expression, so literals nest.
-    print("nested {}\n", apply(|x: i64| -> i64 apply(|y: i64| -> i64 y + n, x), 1));
+    print("nested {}\n", apply(|x: i64|_{ n = n } -> i64 apply(|y: i64|_{ n = n } -> i64 y + n, x), 1));
 
     // After a completed operand `|` is bitwise OR.
     a := 5;
@@ -58,4 +63,5 @@ main :: () {
     // A closure literal is a default; the `|` after it closes the outer list.
     nest := |f: Closure(i64) -> i64 = |y: i64| y| f(4);
     print("closure-default {}\n", nest(inc));
+    free(inc);
 }

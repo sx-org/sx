@@ -34,11 +34,9 @@ impl Hashable for Probe {
 }
 
 // ── 3. Closure body invoking @ObjcCall ─────────────────────────────
-// The closure captures `recv` from its enclosing function and
-// references it inside the `@ObjcCall` arg list. Locked in by
-// `examples/103-ffi-closure-capture.sx`.
-make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
-    return |dummy: i32| -> i64 @ObjcCall(i64, recv, "hash");
+// An env field reaches the `@ObjcCall` arg list.
+make_hasher :: (recv: *void) -> $F/(i32) -> i64 {
+    return |dummy: i32|_{ recv = recv } -> i64 @ObjcCall(i64, recv, "hash");
 }
 
 // ── 4. Generic function body — instantiated per call site ───────────
@@ -62,9 +60,8 @@ main :: () -> i32 {
         h2 := p.sx_hash();
         print("protocol h2 = {}\n", h2 == h1 * 2);
 
-        // 3. closure (receives a dummy arg to keep the `Closure(T) -> R`
-        //    arity matching 35-closures.sx; `recv` is captured from
-        //    `make_hasher`'s arg list and used inside the `@ObjcCall`).
+        // 3. closure (`recv` is `make_hasher`'s parameter, in the env and
+        //    used inside the `@ObjcCall` arg list).
         hasher := make_hasher(ns_object);
         h3 := hasher(0);
         print("closure h3  = {}\n", h3 == h1);

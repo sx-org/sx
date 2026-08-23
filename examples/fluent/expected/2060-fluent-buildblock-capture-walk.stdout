@@ -1,0 +1,20 @@
+sh=6
+lit=7
+bb=5
+block inner=3
+block outer=1
+free inner=8
+if inner=9
+if outer=11
+while inner=9
+while outer=12
+for inner=0
+for outer=13
+arrow inner=0
+arrow outer=14
+match inner=9
+match outer=15
+mono a
+mono val=5
+mono 7
+mono val=7

@@ -3,6 +3,8 @@ const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
+const generics_mod = @import("../generics.zig");
+const lower_bound = @import("bound.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -1067,9 +1069,9 @@ pub fn lowerPackFnCallNamed(
                 // a fixed-prefix type bare-visible only in the defining
                 // module must resolve there, not the caller's. The arg itself
                 // is lowered AFTER, in the caller's context.
-                const saved_tt = self.target_type;
-                const pty = self.resolveDeclParamType(fd, param_idx);
-                if (pty != .unresolved) self.target_type = pty;
+                const demand = lower_bound.paramDemand(self, fd, param_idx);
+                var dem = self.enterDemand(demand);
+                const pty = demand.coerceType() orelse .unresolved;
                 // Prefix arg is a value position (see the pack-arg
                 // loop above): force block-form if/match to yield its value.
                 const saved_prefix_fbv = self.force_block_value;
@@ -1078,7 +1080,7 @@ pub fn lowerPackFnCallNamed(
                 const arg_ref = lowerPackPrefixArg(self, arg_node, pty, receiver_node != null and param_idx == 0);
                 args.append(self.alloc, arg_ref) catch return self.builder.constInt(0, .void);
                 self.force_block_value = saved_prefix_fbv;
-                self.target_type = saved_tt;
+                dem.restore();
             }
             ri += 1;
         }
@@ -1228,15 +1230,9 @@ pub fn monomorphizePackFn(
     const saved_pat = self.pack_arg_types;
     const saved_pcon = self.pack_constraint;
     const saved_ctx_ref = self.current_ctx_ref;
-    const saved_type_bindings = self.type_bindings;
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
-    // Generic type-params inferred at the call site (e.g. `$R` from the
-    // mapper's closure return). Installed for the whole mono so
-    // return-type resolution and body lowering substitute them.
-    self.type_bindings = type_bindings.*;
     defer {
-        self.type_bindings = saved_type_bindings;
         self.scope = saved_scope;
         self.func_defer_base = saved_defer_base;
         self.block_terminated = saved_block_terminated;
@@ -1250,6 +1246,12 @@ pub fn monomorphizePackFn(
         self.builder.current_block = saved_block;
         self.builder.inst_counter = saved_counter;
     }
+
+    // Generic type-params inferred at the call site (e.g. `$R` from the
+    // mapper's closure return). Installed for the whole mono so
+    // return-type resolution and body lowering substitute them.
+    var binding_scope = generics_mod.installTypeBindings(self, type_bindings.*);
+    defer binding_scope.exit();
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
 
@@ -1286,6 +1288,12 @@ pub fn monomorphizePackFn(
     pre_ppc.put(pack_name, @intCast(arg_types.len)) catch return;
     var pre_pat = std.StringHashMap([]const TypeId).init(self.alloc);
     defer pre_pat.deinit();
+    // This call's pack param joins the packs the instance's own bindings carry
+    // (`$F/(..$A)`); the map is replaced wholesale below.
+    if (self.pack_arg_types) |installed| {
+        var it = installed.iterator();
+        while (it.next()) |e| pre_pat.put(e.key_ptr.*, e.value_ptr.*) catch return;
+    }
     pre_pat.put(pack_name, arg_types) catch return;
     var pre_pcon = std.StringHashMap([]const u8).init(self.alloc);
     defer pre_pcon.deinit();

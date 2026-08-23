@@ -9,7 +9,7 @@ main :: () -> i32 {
     x := 41;
     arr : [3]i64 = .[10, 20, 30];
     pt := Pt{ v = 1 };
-    g := || x + 5;
+    g := ||_{ x = x } x + 5;
     a := 0; b := 0;
 
     f1 :: () -> i64 { return x + 1; }     // bare read of enclosing local

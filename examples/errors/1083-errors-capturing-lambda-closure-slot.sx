@@ -1,0 +1,19 @@
+// A CAPTURING literal does not erase to `Closure`. Its env is the value, and a
+// `Closure` slot says nothing about where that env would live — so the store is
+// refused and the message names `closure(f)`, which is where the storage is
+// chosen. An EMPTY env erases freely: the pair is {fn, null} and funds
+// nothing.
+
+@import "modules/std.sx";
+
+apply :: (f: Closure(i64) -> i64, x: i64) -> i64 { return f(x); }
+
+main :: () -> i32 {
+    n := 7;
+    h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
+    g := |x: i64|_{ n = n } x + n;
+    _ := apply(g, 1);                                     // reject: parameter slot
+
+    print("empty {}\n", apply(|x: i64|_{ } x + 1, 1));    // fine: null env
+    return 0;
+}

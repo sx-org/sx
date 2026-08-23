@@ -142,6 +142,8 @@ fn trailingCall(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.
         .return_type = null,
         .body = jx.block,
         .type_params = jx.type_params,
+        .env = jx.env,
+        .has_env = jx.has_env,
     } } };
     if (self.site_index) |idx| idx.adopt(lambda, jx.block);
     const marker = self.alloc.create(Node) catch unreachable;
@@ -159,7 +161,7 @@ fn trailingCall(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.
 fn diagnoseNoBlock(self: *Lowering, node: *const Node) void {
     const d = self.diagnostics orelse return;
     const id = d.addId(.err, "this expression does not take a block", node.span);
-    d.addHelp(id, null, "a block follows a type to construct it, or a call whose last parameter is a `Closure()` / `@BuildBlock(P)`", null);
+    d.addHelp(id, null, "a block follows a type to construct it, or a call whose last parameter is a `$F/(…) -> R` / `@BuildBlock(P)`", null);
 }
 
 /// Pre-order walk over every AST position a MODULE-LEVEL initializer can

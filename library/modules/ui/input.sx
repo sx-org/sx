@@ -188,7 +188,7 @@ InputQueue :: struct {
 
     // Deliver every queued event in order — payloads are borrowed for
     // the call — then clear, releasing owned text.
-    drain :: (self: *InputQueue, f: Closure(*InputEvent)) {
+    drain :: (self: *InputQueue, f: $F/(*InputEvent) -> void) {
         for *e in self.events { f(e); }
         self.clear();
     }

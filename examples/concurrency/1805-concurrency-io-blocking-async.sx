@@ -22,7 +22,7 @@ main :: () {
 
     // A worker that closes over a local.
     base := 42;
-    n := context.io.async(|| -> (i64, !) base);
+    n := context.io.async(||_{ base } -> (i64, !) base);
     print("nullary: {}\n", n.await() ?? { -1 });
 
     // The Io capability also carries a clock.

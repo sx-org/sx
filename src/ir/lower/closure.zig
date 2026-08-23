@@ -11,33 +11,135 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_protocol = @import("protocol.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
-/// Where a capturing closure's environment lives.
-///   `.heap` — the ordinary closure: the value may outlive the forming frame,
-///             so the env is copied to `context.allocator` storage.
-///   `.stack` — a NONESCAPING closure (`@Init(T)`): the env stays in the
-///             forming frame's alloca. Valid only when the value provably
-///             cannot outlive that frame; the compiler never allocates for it
-///             (spec §12.1).
-pub const EnvStorage = enum { heap, stack };
+/// What a lowered lambda IS — which decides both where its environment lives
+/// and where the environment's fields come from.
+///   `.literal` — a written `|…|`: its env is exactly the `_{ … }` it wrote and
+///                its body is SEALED against the enclosing scope. The value IS
+///                that env, living wherever the binding, parameter, or
+///                temporary does; `closure(f, alloc)` is the only thing that
+///                copies it anywhere else.
+///   `.init_recipe` — the NONESCAPING recipe `@Init(T)` forms: the body is the
+///                argument expression as written, so its free names are
+///                collected where they are still live, and the value is an
+///                erased pair whose env stays in the forming frame's alloca
+///                (spec §12.1 forbids choosing heap storage for it).
+pub const LambdaKind = enum { literal, init_recipe };
 
-pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
-    return lowerLambdaTyped(self, lam, .heap, null);
+/// A `|…|_{ … }` literal's own type: the env struct the literal IS, together
+/// with the function that reads it. The value carries no pointer, so a call
+/// hands the function the ADDRESS of whatever storage holds the value.
+pub const UniqueLambda = struct {
+    func: FuncId,
+    params: []const TypeId,
+    ret: TypeId,
+};
+
+/// The unique lambda `ty` IS, or null when `ty` is any other type.
+pub fn uniqueLambdaOf(self: *Lowering, ty: TypeId) ?UniqueLambda {
+    return self.unique_lambdas.get(ty);
 }
 
-/// `lowerLambda` with the two knobs a compiler-formed recipe needs: where the
-/// environment lives, and which type the resulting `{fn_ptr, env}` value
+/// `uniqueLambdaOf` reaching through one level of `*T`, so `*$F` calls the
+/// same function against the env the pointer names.
+pub fn uniqueLambdaThrough(self: *Lowering, ty: TypeId) ?UniqueLambda {
+    if (uniqueLambdaOf(self, ty)) |u| return u;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return uniqueLambdaOf(self, info.pointer.pointee);
+}
+
+/// The signature a value is callable at.
+pub const CallableSig = struct { params: []const TypeId, ret: TypeId };
+
+/// The `impl (sig) for T` a value of type `ty` calls through, reaching through
+/// one level of `*T` — a pointer to a callable nominal calls the same `call`.
+pub fn callableNominalThrough(self: *Lowering, ty: TypeId) ?lower_protocol.CallableNominal {
+    if (self.callable_nominals.get(ty)) |cn| return cn;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return self.callable_nominals.get(info.pointer.pointee);
+}
+
+/// The four shapes a VALUE is callable at.
+pub const ValueCallee = union(enum) {
+    unique: UniqueLambda,
+    nominal: lower_protocol.CallableNominal,
+    closure: types.TypeInfo.ClosureInfo,
+    fn_ptr: types.TypeInfo.FunctionInfo,
+};
+
+/// The one ordered classification of a callable value. A unique lambda and a
+/// callable nominal are reached through one level of `*T`; a `Closure` and a
+/// function pointer are matched on `ty` itself, so `*Closure(…)` and
+/// `*(i64) -> i64` are not callable.
+pub fn callableShapeOf(self: *Lowering, ty: TypeId) ?ValueCallee {
+    if (uniqueLambdaThrough(self, ty)) |u| return .{ .unique = u };
+    if (callableNominalThrough(self, ty)) |cn| return .{ .nominal = cn };
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .closure => |c| .{ .closure = c },
+        .function => |f| .{ .fn_ptr = f },
+        else => null,
+    };
+}
+
+/// The signature `ty` is callable at, or null when nothing calls it.
+pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
+    return switch (callableShapeOf(self, ty) orelse return null) {
+        .unique => |u| .{ .params = u.params, .ret = u.ret },
+        .nominal => |cn| .{ .params = cn.params, .ret = cn.ret },
+        .closure => |c| .{ .params = c.params, .ret = c.ret },
+        .fn_ptr => |f| .{ .params = f.params, .ret = f.ret },
+    };
+}
+
+pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
+    return lowerLambdaTyped(self, lam, .literal, null);
+}
+
+/// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
+/// `LambdaKind` it is, and which type the resulting `{fn_ptr, env}` value
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
-pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
+pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
+    // A written `_{ … }` makes the literal's value its own env struct. Every
+    // field is evaluated HERE, in the forming frame, before the guard below
+    // retires the enclosing flow state.
+    var written_env = std.ArrayList(CaptureInfo).empty;
+    defer written_env.deinit(self.alloc);
+    {
+        const saved_env_target = self.target_type;
+        self.target_type = null;
+        defer self.target_type = saved_env_target;
+        for (lam.env) |f| {
+            const ref = self.lowerExpr(f.value);
+            const ty = self.builder.getRefType(ref);
+            // A build block's environment points at the frame that formed it,
+            // and a literal may outlive that frame. Refused, but still bound:
+            // the diagnostic halts before codegen, and binding it keeps the
+            // body from cascading.
+            self.rejectBlockCapture(ty, f.name, f.value.span);
+            written_env.append(self.alloc, .{
+                .name = f.name,
+                .ty = ty,
+                .ref = ref,
+                .is_alloca = false,
+            }) catch {};
+        }
+    }
     // Flow narrowing does NOT cross into the lambda body: the
     // body is a separate function whose `Ref` space overlaps the enclosing
     // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
     // (unsound unwrap of a captured-but-not-proven-present optional). The body
     // builds its own narrowing from scratch; the outer state is restored on
     // return (re-arming narrowing for the rest of the enclosing expression).
+    const sig_target = self.lambda_sig_target;
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
     defer nested_guard.restore();
 
@@ -46,17 +148,19 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
     self.block_counter += 1;
 
-    // Collect lambda param names for exclusion from captures
-    var param_names = std.StringHashMap(void).init(self.alloc);
-    defer param_names.deinit();
-    for (lam.params) |p| {
-        param_names.put(p.name, {}) catch {};
-    }
-
-    // Pre-scan lambda body AST for free variables (captures)
+    // A recipe's body is an expression the compiler moved, so its free names
+    // are collected from the frame that still holds them. A written literal is
+    // sealed: `written_env` IS the whole environment.
     var captures = std.ArrayList(CaptureInfo).empty;
     defer captures.deinit(self.alloc);
-    self.collectCaptures(lam.body, &param_names, &captures);
+    captures.appendSlice(self.alloc, written_env.items) catch {};
+    if (kind == .init_recipe) {
+        var param_names = std.StringHashMap(void).init(self.alloc);
+        defer param_names.deinit();
+        for (lam.params) |p| param_names.put(p.name, {}) catch {};
+        for (lam.env) |f| param_names.put(f.name, {}) catch {};
+        self.collectCaptures(lam.body, &param_names, &captures);
+    }
 
     // Deduplicate captures
     var seen = std.StringHashMap(void).init(self.alloc);
@@ -71,19 +175,20 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     }
     const capture_list = deduped.items;
 
-    // Build env struct type if there are captures
+    // The env struct. A unique literal always has one — an empty env is a
+    // zero-field struct, which is the whole value.
+    const is_unique = lam.has_env or capture_list.len > 0;
     var env_struct_ty: TypeId = .void;
-    if (capture_list.len > 0) {
+    if (is_unique) {
         const env_field_data = self.alloc.alloc(types.TypeInfo.StructInfo.Field, capture_list.len) catch unreachable;
         for (capture_list, 0..) |cap, i| {
-            var nbuf: [32]u8 = undefined;
-            const fname = std.fmt.bufPrint(&nbuf, "cap_{d}", .{i}) catch "cap";
             env_field_data[i] = .{
-                .name = self.module.types.internString(fname),
+                .name = self.module.types.internString(cap.name),
                 .ty = cap.ty,
             };
         }
-        const env_name = std.fmt.bufPrint(&buf, "__env_{d}", .{self.block_counter}) catch "__env";
+        var env_buf: [64]u8 = undefined;
+        const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
         const env_name_id = self.module.types.internString(env_name);
         env_struct_ty = self.module.types.intern(.{ .@"struct" = .{
             .name = env_name_id,
@@ -116,21 +221,24 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         .ty = env_ptr_ty,
     }) catch unreachable;
     // Get target closure param types for inference (from Closure(T1, T2) -> R annotations)
-    const target_closure_params: ?[]const TypeId = if (self.target_type) |tt| blk: {
-        if (!tt.isBuiltin()) {
-            const tti = self.module.types.get(tt);
-            if (tti == .closure) break :blk tti.closure.params;
-            // Unwrap ?Closure(...) → Closure(...)
-            if (tti == .optional) {
-                const inner = tti.optional.child;
-                if (!inner.isBuiltin()) {
-                    const inner_info = self.module.types.get(inner);
-                    if (inner_info == .closure) break :blk inner_info.closure.params;
+    const target_closure_params: ?[]const TypeId = blk: {
+        if (self.target_type) |tt| {
+            if (!tt.isBuiltin()) {
+                const tti = self.module.types.get(tt);
+                if (tti == .closure) break :blk tti.closure.params;
+                // Unwrap ?Closure(...) → Closure(...)
+                if (tti == .optional) {
+                    const inner = tti.optional.child;
+                    if (!inner.isBuiltin()) {
+                        const inner_info = self.module.types.get(inner);
+                        if (inner_info == .closure) break :blk inner_info.closure.params;
+                    }
                 }
             }
         }
+        if (sig_target) |s| break :blk s.params;
         break :blk null;
-    } else null;
+    };
     // User params follow the ctx (optional) + env slots in `params`.
     const user_param_base: usize = (if (lambda_wants_ctx) @as(usize, 1) else 0) + 1;
     for (lam.params, 0..) |p, pi| {
@@ -138,9 +246,13 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
             // Unannotated lambda params take their type positionally from
             // the target `Closure(T0, …)` signature. Resolve them here so
             // `resolveParamType` (which would diagnose a missing annotation)
-            // is only called for params that carry one.
+            // is only called for params that carry one. A slot nothing has
+            // decided is no answer — stamping it onto the IR function reaches
+            // codegen — so it falls to the diagnostic, as the ret arm does.
             if (p.type_expr.data == .inferred_type) {
-                if (target_closure_params != null and pi < target_closure_params.?.len) {
+                if (target_closure_params != null and pi < target_closure_params.?.len and
+                    target_closure_params.?[pi] != .unresolved)
+                {
                     break :blk target_closure_params.?[pi];
                 }
                 if (self.diagnostics) |d| {
@@ -178,6 +290,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
                 }
             }
         }
+        if (sig_target) |s| if (s.ret != .unresolved) break :blk s.ret;
         // Lambda without explicit return type — infer from the body.
         // Temporarily bind params in scope so inference can resolve param types.
         var temp_scope = Scope.init(self.alloc, self.scope);
@@ -241,8 +354,12 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     const entry = self.builder.appendBlock(entry_name, &.{});
     self.builder.switchToBlock(entry);
 
-    // Create scope WITHOUT parent — captures are bound from env, not parent scope
-    var lambda_scope = Scope.init(self.alloc, null);
+    // The body's scope. It carries the enclosing chain so the boundary lookups
+    // can NAME an enclosing local the body reached for; `.lambda` is what makes
+    // every plain lookup stop here, so the body binds its params and its env
+    // fields and nothing else.
+    var lambda_scope = Scope.init(self.alloc, saved_scope);
+    lambda_scope.boundary = .lambda;
     self.scope = &lambda_scope;
 
     // The enclosing pack-fn mono's pack state must NOT leak into the lambda
@@ -262,25 +379,14 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     self.pack_arg_types = null;
     self.pack_constraint = null;
 
-    // Bind captures from env struct (at env_param_idx)
+    // A unique value IS its env, so the body binds each field straight through
+    // the caller's storage: a write reaches the value the caller holds, and
+    // nothing is snapshotted per call.
     if (capture_list.len > 0) {
         const env_param_ref = Ref.fromIndex(env_param_idx);
-        // Alloca env struct locally so struct_gep can resolve the type
-        const env_local = self.builder.alloca(env_struct_ty);
-        // Compute env size
-        const env_byte_size_inner = self.computeEnvSize(capture_list);
-        const env_size_val = self.builder.constInt(@intCast(env_byte_size_inner), .i64);
-        // memcpy(local_alloca, env_param, size)
-        _ = self.callExtern("memcpy", &.{ env_local, env_param_ref, env_size_val }, self.module.types.ptrTo(.void));
-
         for (capture_list, 0..) |cap, i| {
-            // GEP into env struct to get field pointer
-            const field_ptr = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            // Load the captured value into a local alloca
-            const loaded = self.builder.load(field_ptr, cap.ty);
-            const slot = self.builder.alloca(cap.ty);
-            self.builder.store(slot, loaded);
-            lambda_scope.put(cap.name, .{ .ref = slot, .ty = cap.ty, .is_alloca = true });
+            const field_ptr = self.builder.structGepTyped(env_param_ref, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
+            lambda_scope.put(cap.name, .{ .ref = field_ptr, .ty = cap.ty, .is_alloca = true });
         }
     }
 
@@ -347,14 +453,6 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     self.builder.func = saved_func;
     self.builder.current_block = saved_block;
     self.builder.inst_counter = saved_counter;
-    // Restore the caller's `current_ctx_ref` BEFORE we emit the env
-    // alloc/memcpy below — those run in the caller's scope, and
-    // `allocViaContext` reads `current_ctx_ref` to find the
-    // installed allocator. Without this, the env_heap dispatch
-    // would still see `Ref.fromIndex(0)` (the lambda's own ctx
-    // param), which doesn't exist in the caller's frame and
-    // silently routes through the default context instead of any
-    // surrounding `push Context{ allocator = ... }`.
     self.current_ctx_ref = saved_ctx_ref_lam;
 
     // Closure flowing into a BARE function-pointer slot (`(T) -> U`, no env):
@@ -391,41 +489,170 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     }
     const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
 
-    // Build env and closure in the caller's scope
-    if (capture_list.len > 0) {
-        // Alloca env struct on stack (so struct_gep can resolve the type)
+    // A nonescaping `@Init(T)` recipe is the erased pair its site names, and
+    // §12.1 forbids the compiler from choosing heap storage for it: the env
+    // stays in the alloca of the frame that formed it.
+    if (kind == .init_recipe) {
+        if (capture_list.len == 0) return self.builder.closureCreate(func_id, Ref.none, closure_ty);
         const env_local = self.builder.alloca(env_struct_ty);
-
-        // Store captured values into env struct fields
         for (capture_list, 0..) |cap, i| {
             const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            const val = if (cap.is_alloca)
-                self.builder.load(cap.ref, cap.ty)
-            else
-                cap.ref;
+            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
             self.builder.store(gep, val);
         }
-
-        // A nonescaping closure keeps its env where it was built — no copy, no
-        // allocation. Everything else copies the env to heap so the value can
-        // outlive this frame. Route that through `context.allocator.alloc`
-        // rather than libc malloc, so closures respect a surrounding
-        // `push Context{ allocator = ... }` and a tracker / arena counts the
-        // env allocation alongside everything else.
-        if (env_storage == .stack) {
-            return self.builder.closureCreate(func_id, env_local, closure_ty);
-        }
-        const env_byte_size = self.computeEnvSize(capture_list);
-        const env_size = self.builder.constInt(@intCast(env_byte_size), .i64);
-        const ptr_void = self.module.types.ptrTo(.void);
-        const env_heap = self.allocViaContext(env_size);
-        // memcpy(heap, stack_alloca, size)
-        _ = self.callExtern("memcpy", &.{ env_heap, env_local, env_size }, ptr_void);
-
-        return self.builder.closureCreate(func_id, env_heap, closure_ty);
-    } else {
-        return self.builder.closureCreate(func_id, Ref.none, closure_ty);
+        return self.builder.closureCreate(func_id, env_local, closure_ty);
     }
+
+    // The unique value: the env struct itself, filled where it was written.
+    if (is_unique) {
+        self.unique_lambdas.put(env_struct_ty, .{
+            .func = func_id,
+            .params = self.alloc.dupe(TypeId, param_types_list.items) catch unreachable,
+            .ret = ret_ty,
+        }) catch {};
+        const env_local = self.builder.alloca(env_struct_ty);
+        for (capture_list, 0..) |cap, i| {
+            const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
+            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
+            self.builder.store(gep, val);
+        }
+        return self.builder.load(env_local, env_struct_ty);
+    }
+
+    return self.builder.closureCreate(func_id, Ref.none, closure_ty);
+}
+
+/// The environment a value of callable type `ty` IS — what `closure` copies
+/// into the storage the erased value points at. A unique lambda is its env
+/// struct, a callable nominal is its own state, a bare function is its pointer
+/// word. Null for anything else, an erased `Closure` included: a `Closure`
+/// carries an env instead of being one, and a `*$F` names storage someone else
+/// owns.
+pub fn envTypeOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (uniqueLambdaOf(self, ty) != null) return ty;
+    if (self.callable_nominals.get(ty) != null) return ty;
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .function => ty,
+        else => null,
+    };
+}
+
+/// The trampoline `([ctx?], env: *void, params…) -> R` an erased value of
+/// callable type `ty` dispatches through. A unique lambda's own function
+/// already carries that shape; a callable nominal and a bare function get one
+/// synthesized around the env `envTypeOf` names.
+pub fn callTrampolineOf(self: *Lowering, ty: TypeId) ?FuncId {
+    if (uniqueLambdaOf(self, ty)) |u| return u.func;
+    if (self.persist_trampolines.get(ty)) |fid| return fid;
+    const fid = blk: {
+        if (self.callable_nominals.get(ty)) |cn| break :blk nominalTrampoline(self, cn) orelse return null;
+        if (ty.isBuiltin()) return null;
+        const info = self.module.types.get(ty);
+        if (info != .function) return null;
+        break :blk fnPtrTrampoline(self, ty, info.function);
+    };
+    self.persist_trampolines.put(ty, fid) catch {};
+    return fid;
+}
+
+/// Builder state around a synthesized function body, so emitting one from the
+/// middle of another body leaves the outer builder where it was.
+const BuilderState = struct {
+    func: ?FuncId,
+    block: ?inst_mod.BlockId,
+    counter: u32,
+
+    fn save(self: *Lowering) BuilderState {
+        return .{ .func = self.builder.func, .block = self.builder.current_block, .counter = self.builder.inst_counter };
+    }
+
+    fn restore(state: BuilderState, self: *Lowering) void {
+        self.builder.func = state.func;
+        self.builder.current_block = state.block;
+        self.builder.inst_counter = state.counter;
+    }
+};
+
+/// Open a synthesized `([ctx?], env: *void, params…) -> ret` body and switch
+/// the builder into it. Returns the new function together with the ref index
+/// the first user parameter occupies.
+fn beginTrampoline(
+    self: *Lowering,
+    name: []const u8,
+    params: []const TypeId,
+    ret: TypeId,
+) struct { id: FuncId, first_arg: u32 } {
+    var list = std.ArrayList(inst_mod.Function.Param).empty;
+    defer list.deinit(self.alloc);
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const wants_ctx = self.implicit_ctx_enabled;
+    if (wants_ctx) list.append(self.alloc, .{ .name = self.module.types.internString("__sx_ctx"), .ty = void_ptr_ty }) catch unreachable;
+    list.append(self.alloc, .{ .name = self.module.types.internString("env"), .ty = void_ptr_ty }) catch unreachable;
+    for (params, 0..) |pty, i| {
+        var buf: [32]u8 = undefined;
+        const pname = std.fmt.bufPrint(&buf, "a{d}", .{i}) catch "arg";
+        list.append(self.alloc, .{ .name = self.module.types.internString(pname), .ty = pty }) catch unreachable;
+    }
+    const owned = self.alloc.dupe(inst_mod.Function.Param, list.items) catch unreachable;
+    var func = inst_mod.Function.init(self.module.types.internString(name), owned, ret);
+    func.has_implicit_ctx = wants_ctx;
+    const func_id = self.module.addFunction(func);
+    self.builder.func = func_id;
+    self.builder.inst_counter = @intCast(owned.len);
+    self.builder.switchToBlock(self.builder.appendBlock(self.module.types.internString("entry"), &.{}));
+    return .{ .id = func_id, .first_arg = @intCast(owned.len - params.len) };
+}
+
+/// The `env` parameter a synthesized trampoline received.
+fn trampolineEnv(self: *Lowering) Ref {
+    return Ref.fromIndex(if (self.implicit_ctx_enabled) 1 else 0);
+}
+
+fn endTrampoline(self: *Lowering, result: Ref, ret: TypeId) void {
+    if (ret != .void) self.builder.ret(result, ret) else self.builder.retVoid();
+    self.builder.finalize();
+}
+
+/// `@call_ptr` for a bare function type: the env holds the pointer, and the
+/// trampoline loads it and calls through.
+fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInfo) FuncId {
+    const saved = BuilderState.save(self);
+    const t = beginTrampoline(self, "__persist_fnptr", info.params, info.ret);
+    const callee = self.builder.load(trampolineEnv(self), ty);
+    var args = std.ArrayList(Ref).empty;
+    defer args.deinit(self.alloc);
+    if (self.fnPtrTypeWantsCtx(ty)) args.append(self.alloc, Ref.fromIndex(0)) catch unreachable;
+    for (info.params, 0..) |_, i| args.append(self.alloc, Ref.fromIndex(t.first_arg + @as(u32, @intCast(i)))) catch unreachable;
+    const owned = self.alloc.dupe(Ref, args.items) catch unreachable;
+    const result = self.builder.emit(.{ .call_indirect = .{ .callee = callee, .args = owned } }, info.ret);
+    endTrampoline(self, result, info.ret);
+    BuilderState.restore(saved, self);
+    return t.id;
+}
+
+/// `@call_ptr` for an `impl (sig) for T`: the env IS the receiver, so the
+/// trampoline hands it to `call` as `self`.
+fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
+    const target = self.fn_decl_fids.get(cn.fd) orelse return null;
+    if (!self.lowered_fids.contains(target)) {
+        self.lowered_fids.put(target, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(cn.fd, target, cn.qualified);
+    }
+    const ret_ty = self.module.functions.items[@intFromEnum(target)].ret;
+    const target_wants_ctx = self.module.functions.items[@intFromEnum(target)].has_implicit_ctx;
+    const saved = BuilderState.save(self);
+    const t = beginTrampoline(self, "__persist_call", cn.params, ret_ty);
+    var args = std.ArrayList(Ref).empty;
+    defer args.deinit(self.alloc);
+    if (target_wants_ctx) args.append(self.alloc, Ref.fromIndex(0)) catch unreachable;
+    args.append(self.alloc, trampolineEnv(self)) catch unreachable;
+    for (cn.params, 0..) |_, i| args.append(self.alloc, Ref.fromIndex(t.first_arg + @as(u32, @intCast(i)))) catch unreachable;
+    const owned = self.alloc.dupe(Ref, args.items) catch unreachable;
+    const result = self.builder.call(target, owned, ret_ty);
+    endTrampoline(self, result, ret_ty);
+    BuilderState.restore(saved, self);
+    return t.id;
 }
 
 /// Create a trampoline function that wraps a bare function for closure auto-promotion.
@@ -582,8 +809,50 @@ pub fn createClosureToBareFnAdapter(self: *Lowering, closure_func_id: FuncId, fn
     return func_id;
 }
 
+/// A nested region walks with a copy of the enclosing bound names: what it
+/// declares stays inside it, and `extra` — the binders it introduces — is
+/// visible only within it.
+fn collectCapturesNested(
+    self: *Lowering,
+    node: *const Node,
+    outer: *std.StringHashMap(void),
+    captures: *std.ArrayList(CaptureInfo),
+    extra: []const []const u8,
+) void {
+    var inner = outer.clone() catch unreachable;
+    defer inner.deinit();
+    for (extra) |name| inner.put(name, {}) catch {};
+    switch (node.data) {
+        .block => |blk| for (blk.stmts) |stmt| self.collectCaptures(stmt, &inner, captures),
+        else => self.collectCaptures(node, &inner, captures),
+    }
+}
+
+/// A brace body written at a call. Its `_{ … }` fields evaluate where the body
+/// is written, so they are collected here. A `|…|` header makes the body a user
+/// lambda — sealed, reading its params and its env and nothing from here.
+/// Without a header the body may still be a nested `@BuildBlock`, replayed in
+/// the frame that receives it, so its free names reach this environment.
+fn collectBraceBody(
+    self: *Lowering,
+    body: *const Node,
+    env: []const ast.EnvField,
+    has_header: bool,
+    param_names: *std.StringHashMap(void),
+    captures: *std.ArrayList(CaptureInfo),
+) void {
+    for (env) |f| self.collectCaptures(f.value, param_names, captures);
+    if (!has_header) collectCapturesNested(self, body, param_names, captures, &.{});
+}
+
 /// Walk an AST node and collect free variable references (identifiers that are
-/// in the current scope but not in lambda params).
+/// in the current scope but not in `param_names`).
+///
+/// This serves the two COMPILER-FORMED bodies — `@Init(T)`'s recipe and a
+/// `@BuildBlock(P)`'s replayed block — whose source is an expression the
+/// compiler moved out of the frame that still holds those names. A written
+/// `|…|` literal is sealed and never asks: its environment is the `_{ … }` it
+/// wrote, so the walk stops at every nested one.
 pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.StringHashMap(void), captures: *std.ArrayList(CaptureInfo)) void {
     switch (node.data) {
         .identifier => |id| {
@@ -666,19 +935,19 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 self.collectCaptures(arg, param_names, captures);
             }
         },
-        .block => |blk| {
-            for (blk.stmts) |stmt| {
-                self.collectCaptures(stmt, param_names, captures);
-            }
+        .block => {
+            collectCapturesNested(self, node, param_names, captures, &.{});
         },
         .if_expr => |ie| {
             self.collectCaptures(ie.condition, param_names, captures);
-            self.collectCaptures(ie.then_branch, param_names, captures);
+            const bound: []const []const u8 = if (ie.binding_name) |n| &.{n} else &.{};
+            collectCapturesNested(self, ie.then_branch, param_names, captures, bound);
             if (ie.else_branch) |eb| self.collectCaptures(eb, param_names, captures);
         },
         .while_expr => |we| {
             self.collectCaptures(we.condition, param_names, captures);
-            self.collectCaptures(we.body, param_names, captures);
+            const bound: []const []const u8 = if (we.binding_name) |n| &.{n} else &.{};
+            collectCapturesNested(self, we.body, param_names, captures, bound);
         },
         .return_stmt => |rs| {
             if (rs.value) |v| self.collectCaptures(v, param_names, captures);
@@ -713,6 +982,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             for (sl.field_inits) |fi| {
                 self.collectCaptures(fi.value, param_names, captures);
             }
+            if (sl.init_block) |ib| {
+                const bound: []const []const u8 = if (sl.init_block_self) |s| &.{s} else &.{};
+                collectCapturesNested(self, ib, param_names, captures, bound);
+            }
         },
         .array_literal => |al| {
             for (al.elements) |elem| {
@@ -720,24 +993,16 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             }
         },
         .lambda => |inner_lam| {
-            // For nested lambdas, the inner lambda captures from our scope too
-            // But its own params should be excluded
-            var inner_params = std.StringHashMap(void).init(self.alloc);
-            defer inner_params.deinit();
-            // Copy current param_names
-            var it = param_names.iterator();
-            while (it.next()) |e| {
-                inner_params.put(e.key_ptr.*, {}) catch {};
-            }
-            for (inner_lam.params) |p| {
-                inner_params.put(p.name, {}) catch {};
-            }
-            self.collectCaptures(inner_lam.body, &inner_params, captures);
+            // A nested literal is sealed, so its body names nothing from here.
+            // Its `_{ … }` field expressions do: they evaluate where the
+            // literal is written, which is inside this walk.
+            for (inner_lam.env) |f| self.collectCaptures(f.value, param_names, captures);
         },
         .match_expr => |me| {
             self.collectCaptures(me.subject, param_names, captures);
             for (me.arms) |arm| {
-                self.collectCaptures(arm.body, param_names, captures);
+                const bound: []const []const u8 = if (arm.capture) |c| &.{c} else &.{};
+                collectCapturesNested(self, arm.body, param_names, captures, bound);
             }
         },
         .null_coalesce => |nc| {
@@ -752,9 +1017,9 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 self.collectCaptures(it.expr, param_names, captures);
                 if (it.range_end) |re| self.collectCaptures(re, param_names, captures);
             }
-            // Register capture names as locals so they're not captured
-            for (fe.captures) |cap| param_names.put(cap.name, {}) catch {};
-            self.collectCaptures(fe.body, param_names, captures);
+            const bound = self.alloc.alloc([]const u8, fe.captures.len) catch unreachable;
+            for (fe.captures, bound) |cap, *name| name.* = cap.name;
+            collectCapturesNested(self, fe.body, param_names, captures, bound);
         },
         .slice_expr => |se| {
             self.collectCaptures(se.object, param_names, captures);
@@ -793,10 +1058,12 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         },
         .catch_expr => |ce| {
             self.collectCaptures(ce.operand, param_names, captures);
-            self.collectCaptures(ce.body, param_names, captures);
+            const bound: []const []const u8 = if (ce.binding) |b| &.{b} else &.{};
+            collectCapturesNested(self, ce.body, param_names, captures, bound);
         },
         .onfail_stmt => |os| {
-            self.collectCaptures(os.body, param_names, captures);
+            const bound: []const []const u8 = if (os.binding) |b| &.{b} else &.{};
+            collectCapturesNested(self, os.body, param_names, captures, bound);
         },
         .raise_stmt => |rs| {
             self.collectCaptures(rs.tag, param_names, captures);
@@ -840,23 +1107,17 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .named_arg => |na| {
             self.collectCaptures(na.value, param_names, captures);
         },
-        // `f(a) { body }` — the block is a lambda sitting in the call's arg
-        // list; its body captures from here exactly like a written lambda
-        // literal.
         .trailing_block => |tb| {
-            self.collectCaptures(tb.lambda, param_names, captures);
+            const lam = tb.lambda.data.lambda;
+            collectBraceBody(self, lam.body, lam.env, tb.has_header, param_names, captures);
         },
-        // `expr { … }` before settling: the block's own header names shadow, so
-        // it captures exactly as the closure it may yet become.
         .juxtaposition => |jx| {
             self.collectCaptures(jx.expr, param_names, captures);
-            var block_params = std.StringHashMap(void).init(self.alloc);
-            defer block_params.deinit();
-            var it = param_names.iterator();
-            while (it.next()) |e| block_params.put(e.key_ptr.*, {}) catch {};
-            for (jx.params) |p| block_params.put(p.name, {}) catch {};
-            self.collectCaptures(jx.block, &block_params, captures);
-            if (jx.init_block) |ib| self.collectCaptures(ib, param_names, captures);
+            collectBraceBody(self, jx.block, jx.env, jx.has_header, param_names, captures);
+            if (jx.init_block) |ib| {
+                const bound: []const []const u8 = if (jx.init_block_self) |s| &.{s} else &.{};
+                collectCapturesNested(self, ib, param_names, captures, bound);
+            }
         },
         .asm_expr => |ae| {
             self.collectCaptures(ae.template, param_names, captures);
@@ -866,23 +1127,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         },
         else => {},
     }
-}
-
-/// Compute the byte size of the env struct based on captured value types.
-pub fn computeEnvSize(self: *Lowering, capture_list: []const CaptureInfo) usize {
-    // Must match LLVM's struct layout: fields are aligned to their natural alignment
-    var offset: usize = 0;
-    var max_align: usize = 1;
-    for (capture_list) |cap| {
-        const field_size = self.typeSizeBytes(cap.ty);
-        const field_align = self.typeAlignBytes(cap.ty);
-        if (field_align > max_align) max_align = field_align;
-        // Align offset to field alignment
-        offset = (offset + field_align - 1) & ~(field_align - 1);
-        offset += field_size;
-    }
-    // Align total to max field alignment (matches LLVM's struct alignment)
-    return (offset + max_align - 1) & ~(max_align - 1);
 }
 
 pub const CaptureInfo = struct {

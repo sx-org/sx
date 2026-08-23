@@ -1,0 +1,34 @@
+// A lambda body is SEALED: it reads its parameters, its own locals, and
+// module-level names, and reaches an enclosing local ONLY through the `_{ … }`
+// it writes. Every reach without one is refused where it is written, and the
+// message names the field. Sealing goes all the way down — a literal nested in
+// an argument, in a struct literal, or in a trailing block is sealed against
+// the frame around it just the same.
+
+@import "modules/std.sx";
+
+Button :: struct { on_tap: ?Closure(i64) -> i64 = null; }
+
+Maker :: struct {
+    make :: (self: *Maker, b: Button) -> i64 { return 0; }
+}
+
+each :: (n: i64, body: $F/(i64) -> void) { body(n); }
+
+main :: () -> i32 {
+    n := 5;
+
+    bare := |x: i64| x + n;                       // reject: `n` needs `_{ n }`
+
+    a : Maker = .{};
+    _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
+
+    each(1) { |x| print("{}\n", x + n); };         // reject: a block is a literal
+
+    outer := |x: i64|_{ n } -> i64 {
+        step := |y: i64| y * n;                    // reject: the inner needs its own
+        return step(x);
+    };
+    _ = outer(1);
+    return 0;
+}

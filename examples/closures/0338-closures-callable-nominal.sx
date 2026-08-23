@@ -1,0 +1,78 @@
+// `impl (sig) for T` makes a nominal CALLABLE. `call` is the impl's one
+// required method and the value is its receiver, so any expression of type `T`
+// or `*T` calls it — and the nominal answers a `$F/(sig)` bound out of the
+// signature the impl declares, beside a lambda, a function pointer and a
+// `Closure`.
+
+@import "modules/std.sx";
+
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; return self.total; }
+    aux :: (self: *Accumulator) -> i64 { return self.total * 2; }
+}
+
+Box :: struct { acc: Accumulator; p: *Accumulator; }
+
+Cell :: struct { bump: Accumulator; }
+
+// A callable field takes the call, so a same-named free ufcs never steals it.
+bump :: ufcs (c: Cell, n: i64) -> i64 { return -1; }
+
+made := 0;
+mk :: () -> Cell { made += 1; return .{ bump = Accumulator{ total = 0 } }; }
+
+Step :: enum { one; two; }
+
+impl (i64) -> i64 for Step {
+    call :: (self: *Step, x: i64) -> i64 { return x + 1; }
+}
+
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+double :: (x: i64) -> i64 { return x * 2; }
+
+main :: () {
+    acc := Accumulator{ total = 0 };
+    print("acc {}\n", acc(5));
+    print("acc {}\n", acc(7));
+
+    // A pointer to a callable nominal calls the same `call`, and the impl's
+    // `*Accumulator` receiver means it accumulates into the one value.
+    p := *acc;
+    print("ptr {}\n", p(3));
+    print("total {}\n", acc.total);
+
+    // The bound is answered by the impl, so one call site takes the nominal,
+    // the pointer, and the plain function alike.
+    print("bound {}\n", apply(acc, 1));
+    print("bound {}\n", apply(p, 1));
+    print("bound {}\n", apply(double, 1));
+    // `F` binds to the argument's own type: an `Accumulator` argument is a
+    // copy, a `*Accumulator` argument names the one value.
+    print("after {}\n", acc.total);
+
+    b := Box{ acc = Accumulator{ total = 0 }, p = p };
+    print("field {}\n", b.acc(4));
+    print("field total {}\n", b.acc.total);
+    print("ptr-field {}\n", b.p(2));
+    print("total {}\n", acc.total);
+
+    s :Step = .two;
+    print("enum {}\n", s(10));
+
+    // The impl's methods are ordinary members of the conformer.
+    print("method {}\n", acc.call(2));
+    print("method {}\n", acc.aux());
+    print("static {}\n", Accumulator.aux(acc));
+
+    cell := Cell{ bump = Accumulator{ total = 0 } };
+    print("steal {}\n", cell.bump(6));
+
+    // The receiver expression is evaluated ONCE.
+    print("once {}\n", mk().bump(3));
+    print("made {}\n", made);
+
+    print("named field {}\n", b.acc(x = 1));
+    print("named steal {}\n", cell.bump(x = 1));
+}

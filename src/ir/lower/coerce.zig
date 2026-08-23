@@ -1807,6 +1807,21 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return val;
         },
+        // An empty-env unique erases like a bare function does: the lowered
+        // function already takes the env slot, so the pair is {fn, null}.
+        .unique_to_closure => {
+            const u = self.uniqueLambdaOf(src_ty).?;
+            return self.builder.closureCreate(u.func, Ref.none, dst_ty);
+        },
+        .unique_to_closure_reject => {
+            if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                const id = d.addFmtId(.err, span, "a capturing lambda does not erase to '{s}' — its environment has no home here", .{self.module.types.formatTypeName(self.alloc, dst_ty)});
+                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator", .{});
+            }
+            return val;
+        },
         .struct_elementwise => {
             const si = self.module.types.get(src_ty);
             const di = self.module.types.get(dst_ty);

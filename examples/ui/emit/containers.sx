@@ -51,7 +51,7 @@ VStack :: @OpenVariant(View) {
 
 // Builds a stack by running `body` with the ambient sink pointed at the stack's
 // own children.
-vstack :: (spacing: f32, body: Closure()) -> VStack {
+vstack :: (spacing: f32, body: $F/() -> void) -> VStack {
     stack := VStack{ spacing = spacing };
     sink := EmitSink{ children = *stack.children };
     push .{ emit_ui = *sink } {

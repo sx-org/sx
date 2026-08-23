@@ -756,9 +756,22 @@ pub fn getStructFields(self: *Lowering, ty: TypeId) []const types.TypeInfo.Struc
     };
 }
 
+/// A receiver slot for a `*T` param, from the receiver's address. `lowerExprAsPtr`
+/// and a struct GEP yield either `*T` already or the pointee `T` as a "place"
+/// ref; wrapping the latter with `addr_of` (a no-op in LLVM) sets the IR type to
+/// `*T`, which keeps `coerceCallArgs` from doing a spurious alloca+store.
+fn receiverPointer(self: *Lowering, place: Ref, obj_ty: TypeId) Ref {
+    const ptr_ty = self.module.types.ptrTo(obj_ty);
+    if (self.builder.getRefType(place) == ptr_ty) return place;
+    return self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
+}
+
 /// If a method's first param expects a pointer (*T) but we're passing T by value,
-/// swap the first arg with the alloca address (implicit address-of).
-pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), func: *const Function, obj_node: *const Node, obj_ty: TypeId) void {
+/// swap the first arg with the alloca address (implicit address-of). `place` is
+/// the receiver's storage when the caller already produced it — the node
+/// branches below re-lower `obj_node`, so a side-effecting receiver expression
+/// must arrive with its address instead.
+pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), func: *const Function, obj_node: *const Node, obj_ty: TypeId, place: ?Ref) void {
     // Skip the implicit __sx_ctx param when inspecting the receiver slot.
     const skip: usize = if (func.has_implicit_ctx) 1 else 0;
     if (func.params.len <= skip) return;
@@ -771,6 +784,10 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) return; // already a pointer
+            }
+            if (place) |p| {
+                method_args.items[0] = receiverPointer(self, p, obj_ty);
+                return;
             }
             // Method expects *T — pass the address of the receiver (value type in alloca)
             if (obj_node.data == .identifier) {
@@ -799,13 +816,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     // copy below: a read-only `*Self` method
                     // still sees the right value via the copy; a mutating one
                     // harmlessly scribbles the throwaway, never the `.rodata`.
-                    const ptr_ty = self.module.types.ptrTo(obj_ty);
-                    const place = self.lowerExprAsPtr(obj_node);
-                    const place_ty = self.builder.getRefType(place);
-                    method_args.items[0] = if (place_ty == ptr_ty)
-                        place
-                    else
-                        self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
+                    method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
                     return;
                 }
             }
@@ -822,20 +833,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 obj_node.data.index_expr.object.data == .identifier and
                 self.isPackName(obj_node.data.index_expr.object.data.identifier.name);
             if (!is_pack_index and (obj_node.data == .field_access or obj_node.data == .index_expr or obj_node.data == .deref_expr)) {
-                // `lowerExprAsPtr` yields the lvalue's address, typed either as
-                // `*T` already (index/deref) or as the pointee `T` (a field
-                // "place" ref). Normalize to `*T`: if it's already the pointer
-                // type, pass it directly; if it's the pointee value type, wrap
-                // with addr_of (a no-op in LLVM) to set the IR type to *T,
-                // preventing coerceCallArgs from doing a spurious alloca+store.
-                const ptr_ty = self.module.types.ptrTo(obj_ty);
-                const place = self.lowerExprAsPtr(obj_node);
-                const place_ty = self.builder.getRefType(place);
-                if (place_ty == ptr_ty) {
-                    method_args.items[0] = place;
-                } else {
-                    method_args.items[0] = self.builder.emit(.{ .addr_of = .{ .operand = place } }, ptr_ty);
-                }
+                method_args.items[0] = receiverPointer(self, self.lowerExprAsPtr(obj_node), obj_ty);
                 return;
             }
             // General case: alloca+store the value and pass the alloca pointer
@@ -3388,7 +3386,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             if (self.scope) |scope| {
                 const sb = scope.lookupBoundary(id.name);
-                if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id.name, node.span);
+                if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id.name, node.span, sb.crossed);
                 if (sb.binding) |binding| {
                     // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
@@ -3632,6 +3630,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // sx-side use from the cast alone.
                         }
                     }
+                    // A callable binder takes the value's OWN shape, and a bare
+                    // function's shape is its signature — the integer-shaped
+                    // word below answers no bound and calls through nothing.
+                    if (self.lambda_sig_target != null) {
+                        if (self.bareFnNameSignature(node)) |sig_ty|
+                            break :blk self.builder.emit(.{ .func_ref = fid }, sig_ty);
+                    }
                     // A bare function value keeps the integer-shaped IR
                     // used by the async/fiber lowering paths, but
                     // that word must match the target pointer width. Hard-coded
@@ -3754,7 +3759,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const id_name = uop.operand.data.identifier.name;
                 if (self.scope) |scope| {
                     const sb = scope.lookupBoundary(id_name);
-                    if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id_name, node.span);
+                    if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id_name, node.span, sb.crossed);
                     if (sb.binding) |binding| {
                         if (binding.is_alloca) {
                             const ptr_ty = self.module.types.ptrTo(binding.ty);

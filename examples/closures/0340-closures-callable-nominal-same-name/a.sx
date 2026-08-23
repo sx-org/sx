@@ -1,0 +1,8 @@
+// Callable nominal whose `call` binds `x` and multiplies by 1.
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64) -> i64 { self.total += x * 1; return self.total; }
+}
+
+ga := Accumulator{ total = 0 };

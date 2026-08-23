@@ -1,0 +1,18 @@
+// A named function with the wrong arity, argument types, or return fails the
+// `$F/(sig)` bound. The binding is the function's own type.
+
+@import "modules/std.sx";
+
+flag :: (f: $F/(i64) -> bool, v: i64) -> bool { return f(v); }
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+pair :: (f: $F/(i64, i64) -> i64, x: i64, y: i64) -> i64 { return f(x, y); }
+
+inc :: (x: i64) -> i64 { return x + 1; }
+takes_f64 :: (x: f64) -> i64 { return 0; }
+
+main :: () -> i32 {
+    _ := flag(inc, 5);
+    _ := apply(takes_f64, 5);
+    _ := pair(inc, 5, 9);
+    return 0;
+}

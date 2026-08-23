@@ -558,12 +558,14 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
                 try walk(b, p.type_expr);
                 if (p.default_expr) |d| try walk(b, d);
             }
+            for (l.env) |f| try walk(b, f.value);
             if (l.return_type) |rt| try walk(b, rt);
             try walk(b, l.body);
         },
         .trailing_block => |tb| try walk(b, tb.lambda),
         .juxtaposition => |jx| {
             try walk(b, jx.expr);
+            for (jx.env) |f| try walk(b, f.value);
             try walk(b, jx.block);
             if (jx.init_block) |ib| try walk(b, ib);
         },

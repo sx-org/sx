@@ -11,6 +11,7 @@
 //   tuple, never the spawner's frame.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 add2 :: (a: i64, b: i64) -> i64 => a + b;
 join :: (s: string, n: i64) -> string { return format("{}-{}", s, n); }
@@ -24,16 +25,16 @@ respread :: (..xs: any) -> i64 {
 
 // pack captured into a closure that OUTLIVES the spawner's frame
 make_thunk :: (..args: any) -> Closure() -> i64 {
-    return || -> i64 add2(..args);
+    return closure(||_{ args = .{..args} } -> i64 add2(..args));
 }
 
 // pack captured into a closure: spread AND comptime-indexed
 capture_both :: (dst: *string, ..args: any) {
-    captured := || { dst.* = join(..args); };
+    captured := ||_{ dst = dst, args = .{..args} } { dst.* = join(..args); };
     captured();
 }
 capture_index :: (po: *i64, ..args: any) {
-    captured := || { po.* = args[0] + args[1]; };
+    captured := ||_{ po = po, args = .{..args} } { po.* = args[0] + args[1]; };
     captured();
 }
 

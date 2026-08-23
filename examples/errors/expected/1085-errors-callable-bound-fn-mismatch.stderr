@@ -1,0 +1,38 @@
+error: '(i64) -> i64' does not satisfy the bound '(i64) -> bool' on '$F'
+  --> examples/errors/1085-errors-callable-bound-fn-mismatch.sx:6:16
+   |
+ 6 | flag :: (f: $F/(i64) -> bool, v: i64) -> bool { return f(v); }
+   |                ^^^^^^^^^^^^^
+
+help: it returns 'i64', and the bound asks for 'bool'
+   |
+ 6 | flag :: (f: $F/(i64) -> bool, v: i64) -> bool { return f(v); }
+   |                ^^^^^^^^^^^^^
+
+error: '(f64) -> i64' does not satisfy the bound '(i64) -> i64' on '$F'
+  --> examples/errors/1085-errors-callable-bound-fn-mismatch.sx:7:17
+   |
+ 7 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+   |                 ^^^^^^^^^^^^
+
+help: argument 1 is 'f64', and the bound passes 'i64'
+   |
+ 7 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
+   |                 ^^^^^^^^^^^^
+
+error: '(i64) -> i64' does not satisfy the bound '(i64, i64) -> i64' on '$F'
+  --> examples/errors/1085-errors-callable-bound-fn-mismatch.sx:8:16
+   |
+ 8 | pair :: (f: $F/(i64, i64) -> i64, x: i64, y: i64) -> i64 { return f(x, y); }
+   |                ^^^^^^^^^^^^^^^^^
+
+help: it takes 1 argument, and the bound calls it with 2
+   |
+ 8 | pair :: (f: $F/(i64, i64) -> i64, x: i64, y: i64) -> i64 { return f(x, y); }
+   |                ^^^^^^^^^^^^^^^^^
+
+error: 'f' expects 1 argument, but 2 were given
+  --> examples/errors/1085-errors-callable-bound-fn-mismatch.sx:8:67
+   |
+ 8 | pair :: (f: $F/(i64, i64) -> i64, x: i64, y: i64) -> i64 { return f(x, y); }
+   |                                                                   ^

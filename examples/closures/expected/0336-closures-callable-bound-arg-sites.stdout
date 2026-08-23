@@ -1,0 +1,7 @@
+default 15
+written 20
+named 25
+lambda comptime 15
+fnptr comptime 10
+prefix 9
+prefix 6

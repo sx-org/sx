@@ -70,11 +70,11 @@ main :: () -> i64 {
         ps := *s; pst := *st;
 
         // SLEEPER — arms a virtual-time timer, then parks.
-        ps.spawn(|| { ps.sleep(5); });
+        ps.spawn(||_{ ps } { ps.sleep(5); });
 
         // READER — blocks on the empty pipe until kqueue reports it readable.
         mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
-            ps.spawn(|| {
+            ps.spawn(||_{ ps, pst, rfd } {
                 ps.block_on_fd(rfd, true);
                 n := read(rfd, *pst.bytes[0], 3);
                 pst.read_n = xx n;
@@ -83,7 +83,7 @@ main :: () -> i64 {
         }
         // WRITER — writes 'a' 'b' 'c', making the pipe readable.
         mk_writer :: (ps: *sched.Scheduler, wfd: i32) {
-            ps.spawn(|| {
+            ps.spawn(||_{ wfd } {
                 buf : [3]u8 = ---;
                 buf[0] = 97; buf[1] = 98; buf[2] = 99;
                 write(wfd, *buf[0], 3);

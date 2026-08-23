@@ -39,7 +39,7 @@ SchedRunner :: struct {
 
 impl FiberRunner for SchedRunner {
     spawn :: (self: *SchedRunner, entry: *void, arg: *void) -> usize {
-        f := self.s.spawn(|| {
+        f := self.s.spawn(||_{ entry, arg } {
             entry_fn := entry.((*void) -> void);
             entry_fn(arg);
         });

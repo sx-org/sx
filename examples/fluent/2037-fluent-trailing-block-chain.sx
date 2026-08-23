@@ -8,13 +8,13 @@ Box :: struct {
     show :: (self: Box) -> i64 { self.n }
     doubled :: (self: Box) -> Box { Box{ n = self.n * 2 } }
 
-    with :: (self: Box, content: Closure()) -> Box {
+    with :: (self: Box, content: $F/() -> void) -> Box {
         content();
         Box{ n = self.n + 1 }
     }
 }
 
-vstack :: (spacing: f32, content: Closure()) -> Box {
+vstack :: (spacing: f32, content: $F/() -> void) -> Box {
     content();
     Box{ n = 7 }
 }

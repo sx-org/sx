@@ -1000,6 +1000,13 @@ pub const Parser = struct {
     /// (`@Init($V/P)`).
     fn parseBoundExpr(self: *Parser) anyerror!*Node {
         const start = self.tokens.start(self.tok);
+        // A function-type head asks that the binder be CALLABLE at that
+        // signature. The `->` belongs to the head, and the head takes no
+        // argument list of its own — a later `/` opens the binder's next bound.
+        if (self.tokens.tag(self.tok) == .l_paren) {
+            if (self.tagAfterParenGroup() != .arrow) return self.failFnBoundWithoutArrow();
+            return self.parseTypeExpr();
+        }
         if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected a bound name after '/'");
         }
@@ -1042,6 +1049,19 @@ pub const Parser = struct {
             .name = head,
             .args = try args.toOwnedSlice(self.allocator),
         } });
+    }
+
+    /// A parenthesized head with no `->` — the cursor is on its `(`.
+    fn failFnBoundWithoutArrow(self: *Parser) anyerror {
+        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse
+            return self.fail("a function-type head is '(params) -> R'");
+        const span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(close) };
+        const spelling = self.tokens.source[span.start..span.end];
+        return self.failAt(span, try std.fmt.allocPrint(
+            self.allocator,
+            "the '->' belongs to a function-type head — write '{s} -> void' for a callable that returns nothing",
+            .{spelling},
+        ));
     }
 
     fn unknownCompilerFormedTypeMsg(self: *Parser, name: []const u8) ![]const u8 {
@@ -2183,17 +2203,25 @@ pub const Parser = struct {
     fn parseImplBlock(self: *Parser, start_pos: u32) anyerror!*Node {
         self.advance(); // skip 'impl'
 
+        // A function-type head — `impl (i64) -> i64 for Accumulator` — makes
+        // the conformer callable and names no protocol.
+        var protocol_fn_type: ?*Node = null;
+        if (self.tokens.tag(self.tok) == .l_paren) {
+            if (self.tagAfterParenGroup() != .arrow) return self.failFnBoundWithoutArrow();
+            protocol_fn_type = try self.parseTypeExpr();
+        }
+
         // Protocol name. A contract protocol (`impl @BuildSink(P) for …`) is an
         // ordinary protocol here — the `@` is part of its name.
-        if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
-            return self.fail("expected a constraint or interface name after 'impl'");
+        if (protocol_fn_type == null and self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
+            return self.fail("expected a constraint, interface, or function-type head after 'impl'");
         }
-        const protocol_name = self.tokens.slice(self.tok);
-        self.advance();
+        const protocol_name = if (protocol_fn_type != null) "" else self.tokens.slice(self.tok);
+        if (protocol_fn_type == null) self.advance();
 
         // Optional protocol type args: impl Into(Block) for ...
         var protocol_type_args = std.ArrayList(*Node).empty;
-        if (self.tokens.tag(self.tok) == .l_paren) {
+        if (protocol_fn_type == null and self.tokens.tag(self.tok) == .l_paren) {
             self.advance(); // skip '('
             while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (protocol_type_args.items.len > 0) {
@@ -2218,8 +2246,9 @@ pub const Parser = struct {
         var target_type_expr: ?*Node = null;
         var target_type_params = std.ArrayList(ast.StructTypeParam).empty;
 
-        if (protocol_type_args.items.len > 0) {
-            // Parameterised protocol — source is a general TypeExpr.
+        if (protocol_type_args.items.len > 0 or protocol_fn_type != null) {
+            // Parameterised protocol or function-type head — source is a
+            // general TypeExpr.
             target_type_expr = try self.parseTypeExpr();
             // Synthesize a string view of the source for name-only consumers
             // (LSP hover, etc.). The semantic key for the impl map uses
@@ -2296,6 +2325,7 @@ pub const Parser = struct {
             .methods = try methods.toOwnedSlice(self.allocator),
             .protocol_type_args = try protocol_type_args.toOwnedSlice(self.allocator),
             .target_type_expr = target_type_expr,
+            .protocol_fn_type = protocol_fn_type,
         } });
     }
 
@@ -2499,21 +2529,6 @@ pub const Parser = struct {
         };
     }
 
-    /// The type arguments of the `@Init` bound on `node`, empty when it carries
-    /// none. That bound's argument is inferred from the argument an initializer
-    /// is formed from, so a binder written there belongs to the declaration
-    /// exactly as one written in the annotation does.
-    fn initBoundArgs(node: *const Node) []const *Node {
-        if (node.data != .type_expr) return &.{};
-        for (node.data.type_expr.protocol_constraints) |bound| {
-            if (bound.data != .parameterized_type_expr) continue;
-            const pte = bound.data.parameterized_type_expr;
-            if (!std.mem.eql(u8, pte.name, contracts.init_bound)) continue;
-            return pte.args;
-        }
-        return &.{};
-    }
-
     /// Recursively find all generic type names ($T) in a type expression tree.
     /// Every bound the `$name` binder carries inside `node`, searching each
     /// element position a type constructor can nest one in — `*$S/@BuildSink(P)`
@@ -2525,9 +2540,7 @@ pub const Parser = struct {
             .type_expr => |te| {
                 if (te.is_generic and std.mem.eql(u8, te.name, name))
                     out.appendSlice(self.allocator, te.protocol_constraints) catch {};
-                // A binder introduced INSIDE an `@Init` bound (`$I/@Init($V/P)`)
-                // carries its own bounds, which belong to it and not to `$I`.
-                for (initBoundArgs(node)) |a| collectBinderBounds(self, a, name, out);
+                for (te.protocol_constraints) |c| collectBinderBounds(self, c, name, out);
             },
             .pointer_type_expr => |p| collectBinderBounds(self, p.pointee_type, name, out),
             .many_pointer_type_expr => |m| collectBinderBounds(self, m.element_type, name, out),
@@ -2544,42 +2557,57 @@ pub const Parser = struct {
                 for (f.param_types) |p| collectBinderBounds(self, p, name, out);
                 if (f.return_type) |r| collectBinderBounds(self, r, name, out);
             },
+            .spread_expr => |s| collectBinderBounds(self, s.operand, name, out),
             else => {},
         }
     }
 
-    fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
+    fn collectGenericNames(
+        node: *Node,
+        list: *std.ArrayList([]const u8),
+        allocator: std.mem.Allocator,
+        variadic: *std.StringHashMap(void),
+        in_spread: bool,
+    ) void {
         switch (node.data) {
             .type_expr => |te| {
-                if (te.is_generic) list.append(allocator, te.name) catch {};
-                // A binder written inside an `@Init` bound (`$I/@Init($T)`,
-                // `$I/@Init($V/View)`) is one of this declaration's type
-                // parameters.
-                for (initBoundArgs(node)) |a| collectGenericNames(a, list, allocator);
+                if (te.is_generic) {
+                    var already = false;
+                    for (list.items) |n| {
+                        if (std.mem.eql(u8, n, te.name)) {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already and in_spread) variadic.put(te.name, {}) catch {};
+                    list.append(allocator, te.name) catch {};
+                }
+                for (te.protocol_constraints) |c| collectGenericNames(c, list, allocator, variadic, false);
             },
-            .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator),
-            .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator),
-            .slice_type_expr => |ste| collectGenericNames(ste.element_type, list, allocator),
-            .array_type_expr => |ate| collectGenericNames(ate.element_type, list, allocator),
-            .optional_type_expr => |ote| collectGenericNames(ote.inner_type, list, allocator),
+            .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator, variadic, false),
+            .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator, variadic, false),
+            .slice_type_expr => |ste| collectGenericNames(ste.element_type, list, allocator, variadic, false),
+            .array_type_expr => |ate| collectGenericNames(ate.element_type, list, allocator, variadic, false),
+            .optional_type_expr => |ote| collectGenericNames(ote.inner_type, list, allocator, variadic, false),
             .parameterized_type_expr => |pte| {
-                for (pte.args) |arg| collectGenericNames(arg, list, allocator);
+                for (pte.args) |arg| collectGenericNames(arg, list, allocator, variadic, false);
             },
             .tuple_type_expr => |tte| {
                 // A failable closure return `Closure() -> $R !E` folds to a
                 // `(T, !)` tuple_type_expr (parseFnReturnType), so the `$R`
                 // binding site lives inside the tuple's field_types — descend so
                 // the value type's generic is still inferred from the call site.
-                for (tte.field_types) |ft| collectGenericNames(ft, list, allocator);
+                for (tte.field_types) |ft| collectGenericNames(ft, list, allocator, variadic, false);
             },
             .closure_type_expr => |cte| {
-                for (cte.param_types) |pt| collectGenericNames(pt, list, allocator);
-                if (cte.return_type) |rt| collectGenericNames(rt, list, allocator);
+                for (cte.param_types) |pt| collectGenericNames(pt, list, allocator, variadic, false);
+                if (cte.return_type) |rt| collectGenericNames(rt, list, allocator, variadic, false);
             },
             .function_type_expr => |fte| {
-                for (fte.param_types) |pt| collectGenericNames(pt, list, allocator);
-                if (fte.return_type) |rt| collectGenericNames(rt, list, allocator);
+                for (fte.param_types) |pt| collectGenericNames(pt, list, allocator, variadic, false);
+                if (fte.return_type) |rt| collectGenericNames(rt, list, allocator, variadic, false);
             },
+            .spread_expr => |s| collectGenericNames(s.operand, list, allocator, variadic, true),
             else => {},
         }
     }
@@ -2597,12 +2625,17 @@ pub const Parser = struct {
             } else {
                 // Collect all generic type params found anywhere in the type expression
                 var generic_names = std.ArrayList([]const u8).empty;
-                collectGenericNames(param.type_expr, &generic_names, self.allocator);
+                var variadic_names = std.StringHashMap(void).init(self.allocator);
+                collectGenericNames(param.type_expr, &generic_names, self.allocator, &variadic_names, false);
                 for (generic_names.items) |gen_name| {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
-                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint }) catch {};
+                        type_params.append(self.allocator, .{
+                            .name = gen_name,
+                            .constraint = type_constraint,
+                            .is_variadic = variadic_names.contains(gen_name),
+                        }) catch {};
                     }
                 }
             }
@@ -2853,6 +2886,7 @@ pub const Parser = struct {
         const start = self.tokens.start(self.tok);
         try self.expect(.l_brace);
         var params: []const ast.Param = &.{};
+        var env: ?[]const ast.EnvField = null;
         var has_header = false;
         if (self.tokens.tag(self.tok) == .pipe) {
             has_header = true;
@@ -2862,6 +2896,7 @@ pub const Parser = struct {
                 return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
             }
             params = param_list.params;
+            env = try self.parseEnv();
         }
         const block = blk: {
             const boundary = self.beginFunctionBoundary();
@@ -2872,6 +2907,8 @@ pub const Parser = struct {
             .expr = head,
             .block = block,
             .params = params,
+            .env = env orelse &.{},
+            .has_env = env != null,
             .type_params = try self.collectTypeParams(params),
             .has_header = has_header,
         } });
@@ -4124,6 +4161,7 @@ pub const Parser = struct {
             },
             .kw_raise => return self.fail("`raise` is a statement and cannot appear in expression position"),
             .kw_onfail => return self.fail("`onfail` is a statement and cannot appear in expression position"),
+            .underscore_l_brace => return self.fail("`_{ … }` is a closure literal's env and follows its `|params|`; `.{ … }` is a struct literal"),
             else => {
                 return self.fail("unexpected token in expression");
             },
@@ -4664,6 +4702,7 @@ pub const Parser = struct {
             return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
         }
         const params = param_list.params;
+        const env = try self.parseEnv();
 
         var return_type: ?*Node = null;
         if (self.tokens.tag(self.tok) == .arrow) {
@@ -4684,8 +4723,45 @@ pub const Parser = struct {
             .return_type = return_type,
             .body = body,
             .type_params = type_params,
+            .env = env orelse &.{},
+            .has_env = env != null,
         } });
     }
+
+    /// The `_{ n, name = expr, … }` env, when the cursor is on its `_{`; null
+    /// otherwise. Every field is named — the name the body reads, bound to the
+    /// expression as it stands where the literal is written; bare `n` is
+    /// `n = n`.
+    fn parseEnv(self: *Parser) anyerror!?[]const ast.EnvField {
+        if (self.tokens.tag(self.tok) != .underscore_l_brace) return null;
+        self.advance(); // skip '_{'
+        var fields = std.ArrayList(ast.EnvField).empty;
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
+            if (fields.items.len > 0) {
+                try self.expect(.comma);
+                if (self.tokens.tag(self.tok) == .r_brace) break;
+            }
+            if (!self.isIdentLike()) return self.fail(env_field_shape);
+            const name = self.tokens.slice(self.tok);
+            const name_start = self.tokens.start(self.tok);
+            self.advance(); // name
+            switch (self.tokens.tag(self.tok)) {
+                .equal => {
+                    self.advance(); // '='
+                    try fields.append(self.allocator, .{ .name = name, .value = try self.parseExpr() });
+                },
+                .comma, .r_brace => {
+                    const copy = try self.createNode(name_start, .{ .identifier = .{ .name = name } });
+                    try fields.append(self.allocator, .{ .name = name, .value = copy });
+                },
+                else => return self.failAt(.{ .start = name_start, .end = name_start + @as(u32, @intCast(name.len)) }, env_field_shape),
+            }
+        }
+        try self.expect(.r_brace);
+        return try fields.toOwnedSlice(self.allocator);
+    }
+
+    const env_field_shape = "an env field is `n` or `n = expr`";
 
     const FunctionBoundary = struct {
         onfail: bool,
@@ -4796,7 +4872,10 @@ pub const Parser = struct {
                 // brace, so the decl is classified as a fn DEF and the
                 // return-position refusal lands on the return type.
                 self.tokens.tag(self.tok) == .at_identifier or
-                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
+                // `..` spells a pack in a return type (`-> Closure(..A) -> R`),
+                // so it is one more type token the scan reads through.
+                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dot_dot or
+                self.tokens.tag(self.tok) == .dollar or
                 self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
                 self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
                 self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
@@ -4990,6 +5069,7 @@ pub const Parser = struct {
             .r_brace,
             .l_bracket,
             .r_bracket,
+            .underscore_l_brace,
             .arrow,
             .fat_arrow,
             .at_run,
@@ -5201,6 +5281,7 @@ pub const Parser = struct {
             .r_brace,
             .l_bracket,
             .r_bracket,
+            .underscore_l_brace,
             .arrow,
             .fat_arrow,
             .at_run,
@@ -6156,6 +6237,184 @@ test "a closure literal cannot open a statement" {
         "a closure literal cannot open a statement — bind it (`f := |x| …`) or pass it as an argument",
         10,
     );
+}
+
+test "`_{ … }` between the parameter list and the body is the env" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ n = n } x + n");
+    try std.testing.expectEqual(@as(usize, 1), lam.env.len);
+    try std.testing.expectEqualStrings("n", lam.env[0].name);
+    try std.testing.expectEqualStrings("n", lam.env[0].value.data.identifier.name);
+    try std.testing.expect(lam.return_type == null);
+    try std.testing.expect(lam.body.data == .binary_op);
+}
+
+test "the env precedes the return type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ k = n * 2, j = 1 } -> i64 x * k");
+    try std.testing.expectEqual(@as(usize, 2), lam.env.len);
+    try std.testing.expectEqualStrings("k", lam.env[0].name);
+    try std.testing.expect(lam.env[0].value.data == .binary_op);
+    try std.testing.expectEqualStrings("j", lam.env[1].name);
+    try std.testing.expectEqualStrings("i64", lam.return_type.?.data.type_expr.name);
+}
+
+test "an empty `_{ }` is a written env, and no `_{` at all is not" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const empty = try pipeLambda(arena.allocator(), "|x: i64|_{ } x + 1");
+    try std.testing.expect(empty.has_env);
+    try std.testing.expectEqual(@as(usize, 0), empty.env.len);
+    const absent = try pipeLambda(arena.allocator(), "|x: i64| x + 1");
+    try std.testing.expect(!absent.has_env);
+}
+
+test "`_ {` with a space is an identifier and a brace" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64| _ { n = n }");
+    try std.testing.expectEqual(@as(usize, 0), lam.env.len);
+    try std.testing.expect(lam.body.data == .juxtaposition);
+    try std.testing.expectEqualStrings("_", lam.body.data.juxtaposition.expr.data.identifier.name);
+}
+
+test "a bare env field is a copy of the enclosing name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ n } x + n");
+    try std.testing.expectEqual(@as(usize, 1), lam.env.len);
+    try std.testing.expectEqualStrings("n", lam.env[0].name);
+    try std.testing.expectEqualStrings("n", lam.env[0].value.data.identifier.name);
+}
+
+test "bare and written env fields mix" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ bias, k = n * 2 } x + bias + k");
+    try std.testing.expectEqual(@as(usize, 2), lam.env.len);
+    try std.testing.expectEqualStrings("bias", lam.env[0].name);
+    try std.testing.expect(lam.env[0].value.data == .identifier);
+    try std.testing.expectEqualStrings("k", lam.env[1].name);
+    try std.testing.expect(lam.env[1].value.data == .binary_op);
+}
+
+test "an env field is a name or a named expression" {
+    try expectParseErrorAt(
+        "f :: () { g := |x: i64|_{ 1 } x; }",
+        "an env field is `n` or `n = expr`",
+        26,
+    );
+    try expectParseErrorAt(
+        "f :: () { g := |x: i64|_{ x + 1 } x; }",
+        "an env field is `n` or `n = expr`",
+        26,
+    );
+}
+
+test "`_{` outside a closure header is refused" {
+    try expectParseErrorAt(
+        "f :: () { v := _{ n = 1 }; }",
+        "`_{ … }` is a closure literal's env and follows its `|params|`; `.{ … }` is a struct literal",
+        15,
+    );
+}
+
+test "a trailing block's header takes an env" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { each(xs) { |x|_{ n = n } g(x + n); }; }");
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const jx = stmt.data.juxtaposition;
+    try std.testing.expect(jx.has_header);
+    try std.testing.expectEqual(@as(usize, 1), jx.env.len);
+    try std.testing.expectEqualStrings("n", jx.env[0].name);
+}
+
+/// The bounds on the first parameter's binder in `f :: (a: <binder>) { }`.
+fn binderBounds(arena: std.mem.Allocator, binder: []const u8) ![]const *Node {
+    const src = try std.fmt.allocPrintSentinel(arena, "f :: (a: {s}) {{ }}", .{binder}, 0);
+    var parser = try Parser.init(arena, src);
+    const root = try parser.parse();
+    return root.data.root.decls[0].data.fn_decl.params[0].type_expr.data.type_expr.protocol_constraints;
+}
+
+test "a function-type bound head is `/` plus a function type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const bounds = try binderBounds(arena.allocator(), "$F/(i64) -> i64");
+    try std.testing.expectEqual(@as(usize, 1), bounds.len);
+    const fty = bounds[0].data.function_type_expr;
+    try std.testing.expectEqual(@as(usize, 1), fty.param_types.len);
+    try std.testing.expectEqualStrings("i64", fty.param_types[0].data.type_expr.name);
+    try std.testing.expectEqualStrings("i64", fty.return_type.?.data.type_expr.name);
+}
+
+test "a `/` after a function-type head's return opens the next bound" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const bounds = try binderBounds(arena.allocator(), "$F/(i64) -> i64/Ord");
+    try std.testing.expectEqual(@as(usize, 2), bounds.len);
+    try std.testing.expect(bounds[0].data == .function_type_expr);
+    try std.testing.expectEqualStrings("Ord", bounds[1].data.type_expr.name);
+}
+
+test "a function-type bound head carries its return" {
+    try expectParseErrorAt(
+        "f :: (a: $F/(i64)) { }",
+        "the '->' belongs to a function-type head — write '(i64) -> void' for a callable that returns nothing",
+        12,
+    );
+}
+
+test "$ introduces type parameters inside a function-type bound" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (g: $F/($A) -> $R, a: A) -> R { return g(a); }");
+    const root = try parser.parse();
+    const tps = root.data.root.decls[0].data.fn_decl.type_params;
+    try std.testing.expectEqual(@as(usize, 3), tps.len);
+    try std.testing.expectEqualStrings("F", tps[0].name);
+    try std.testing.expectEqualStrings("A", tps[1].name);
+    try std.testing.expectEqualStrings("R", tps[2].name);
+    try std.testing.expect(!tps[0].is_variadic);
+    try std.testing.expect(!tps[1].is_variadic);
+    try std.testing.expect(!tps[2].is_variadic);
+}
+
+test "..$Name inside a function-type bound is a pack type parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (g: $F/(..$A) -> $R) { }");
+    const root = try parser.parse();
+    const tps = root.data.root.decls[0].data.fn_decl.type_params;
+    try std.testing.expectEqual(@as(usize, 3), tps.len);
+    try std.testing.expectEqualStrings("F", tps[0].name);
+    try std.testing.expectEqualStrings("A", tps[1].name);
+    try std.testing.expectEqualStrings("R", tps[2].name);
+    try std.testing.expect(!tps[0].is_variadic);
+    try std.testing.expect(tps[1].is_variadic);
+    try std.testing.expect(!tps[2].is_variadic);
+}
+
+test "an impl head is a function type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(
+        arena.allocator(),
+        "impl (i64) -> i64 for Accumulator { call :: (self: *Accumulator, x: i64) -> i64 { x } }",
+    );
+    const root = try parser.parse();
+    const ib = root.data.root.decls[0].data.impl_block;
+    try std.testing.expectEqualStrings("", ib.protocol_name);
+    try std.testing.expectEqual(@as(usize, 0), ib.protocol_type_args.len);
+    const fty = ib.protocol_fn_type.?.data.function_type_expr;
+    try std.testing.expectEqualStrings("i64", fty.param_types[0].data.type_expr.name);
+    try std.testing.expectEqualStrings("i64", fty.return_type.?.data.type_expr.name);
+    try std.testing.expectEqualStrings("Accumulator", ib.target_type);
+    try std.testing.expectEqualStrings("call", ib.methods[0].data.fn_decl.name);
 }
 
 test "parse match with else arm" {

@@ -1,10 +1,8 @@
-// A capture is reached through every expression WRAPPER a closure body can
-// put it behind: a postfix cast's operand (`box.(Shape)`), a
-// named argument's value (`f(b = side)`), and a trailing block's lambda
-// (`f(1.0) { … side … }`).
-// `collectCaptures` carries an arm for `postfix_cast`, `named_arg` and
-// `trailing_block`, so names under them enter the env exactly as they do
-// from a bare struct literal or a positional argument.
+// An env field is reached through every expression WRAPPER a closure body can
+// put it behind: a postfix cast's operand (`box.(Shape)`), a named argument's
+// value (`f(b = side)`), and a trailing block's lambda (`f(1.0) { … side … }`).
+// A nested lambda names in its own `_{ … }` what it takes from the enclosing
+// env, including a local the loop rebinds each turn.
 @import "modules/std.sx";
 
 Shape :: interface { area :: (self: *Self) -> f32; }
@@ -12,29 +10,31 @@ Shape :: interface { area :: (self: *Self) -> f32; }
 Box :: struct { w: f32; }
 impl Shape for Box { area :: (self: *Box) -> f32 { self.w } }
 
-run   :: (f: Closure()) { f(); }
+run   :: (f: $F/() -> void) { f(); }
 put   :: (s: Shape) { print("area {}\n", s.area()); }
 named :: (a: f32 = 0.0, b: f32 = 0.0) { print("named {} {}\n", a, b); }
-block :: (x: f32, body: Closure()) { print("block {}\n", x); body(); }
+block :: (x: f32, body: $F/() -> void) { print("block {}\n", x); body(); }
 
 erase_in_closure :: (side: f32) {
-    run(|| { box := Box{ w = side }; put(box.(Shape)); });
+    run(||_{ side = side } { box := Box{ w = side }; put(box.(Shape)); });
 }
 
 named_arg_in_closure :: (side: f32) {
-    run(|| { named(b = side); });
+    run(||_{ side = side } { named(b = side); });
 }
 
 trailing_block_in_closure :: (side: f32) {
-    run(|| { block(1.0) { print("inner {}\n", side); }; });
+    run(||_{ side = side } { block(1.0) { ||_{ side = side } print("inner {}\n", side); }; });
 }
 
-// The wrappers nest, and a loop variable between them stays the loop's own.
 all_at_once :: (side: f32) {
-    run(|| {
+    run(||_{ side = side } {
         for i in 0..2 {
             n := i;
-            block(side) { bx := Box{ w = side + n.(f32) }; put(bx.(Shape)); };
+            block(side) { ||_{ side = side, n = n }
+                bx := Box{ w = side + n.(f32) };
+                put(bx.(Shape));
+            };
         }
     });
 }

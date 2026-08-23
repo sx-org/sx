@@ -1,6 +1,6 @@
 // The closure free arm: `free` (std/mem.sx, ONE kind-dispatched function)
-// releases a closure's heap `env` — the captured environment allocated at
-// the literal via the then-current `context.allocator`. A capture-free
+// releases a closure's heap `env` — the environment `closure(f)` copied out
+// through the then-current `context.allocator`. A capture-free
 // closure carries a null env, so freeing it is a no-op (nothing was
 // allocated, nothing crashes). Both pairing forms work: `free(cl)` uses
 // the context allocator current AT THE FREE, `free(cl, a)` pairs the
@@ -12,12 +12,12 @@ main :: () {
     gpa := GPA.init();
     ta := TrackingAllocator.init(gpa);
 
-    // Capturing closure, context form: the literal allocates its env via
-    // the pushed tracker; free(cl) releases it through the same context.
+    // Capturing closure, context form: `closure` funds the env from the
+    // pushed tracker; free(cl) releases it through the same context.
     r := 0;
     push .{ allocator = ta } {
         n := 40;
-        cl := |x: i64| -> i64 { x + n };
+        cl : Closure(i64) -> i64 = closure(|x: i64|_{ n } -> i64 { x + n });
         r = cl(2);
         free(cl);
     }
@@ -30,7 +30,7 @@ main :: () {
     cl2 := |x: i64| -> i64 { x };
     push .{ allocator = ta } {
         m := 7;
-        cl2 = |x: i64| -> i64 { x * m };
+        cl2 = closure(|x: i64|_{ m } -> i64 { x * m });
     }
     r2 := cl2(6);
     free(cl2, ta);

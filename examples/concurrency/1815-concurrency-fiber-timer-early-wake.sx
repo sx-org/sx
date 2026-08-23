@@ -28,11 +28,11 @@ main :: () -> i64 {
 
     // Sleeper: arm sleep(100), park; when woken (early), record 1 and finish.
     mk_sleeper :: (ps: *sched.Scheduler, pst: *S) {
-        pst.sleeper = ps.spawn(|| { ps.sleep(100); rec(pst, 1); });
+        pst.sleeper = ps.spawn(||_{ ps, pst } { ps.sleep(100); rec(pst, 1); });
     }
     // Waker: record 2, then wake the sleeper BEFORE its 100ms timer fires.
     mk_waker :: (ps: *sched.Scheduler, pst: *S) {
-        ps.spawn(|| { rec(pst, 2); ps.wake(pst.sleeper); });
+        ps.spawn(||_{ ps, pst } { rec(pst, 2); ps.wake(pst.sleeper); });
     }
     mk_sleeper(ps, pst);
     mk_waker(ps, pst);

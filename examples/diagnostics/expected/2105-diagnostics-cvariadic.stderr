@@ -262,23 +262,23 @@ error: '@VaList' is opaque — its storage is the target's and has no published 
 114 |     word := ap.w0;                // no published fields
     |             ^^^^^
 
-error: cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:47
+error: cannot read '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:19
     |
-115 |     later := || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
-    |                                               ^^
-
-error: cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:117:32
-    |
-117 |     kept := || -> i64 { return rows.len; }; // a wrapper carries the same tail
-    |                                ^^^^
+115 |     later := ||_{ ap } -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    |                   ^^
 
 error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value form
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:117:32
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:117:25
     |
-117 |     kept := || -> i64 { return rows.len; }; // a wrapper carries the same tail
-    |                                ^^^^
+117 |     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
+    |                         ^^^^
+
+error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value form
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:117:48
+    |
+117 |     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
+    |                                                ^^^^
 
 error: no conversion from 'unresolved' to 'i64'
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:119:12

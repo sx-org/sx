@@ -1,0 +1,8 @@
+// Callable nominal whose `call` binds `by` and multiplies by 10.
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, by: i64) -> i64 { self.total += by * 10; return self.total; }
+}
+
+gb := Accumulator{ total = 0 };
