@@ -809,6 +809,42 @@ pub fn createClosureToBareFnAdapter(self: *Lowering, closure_func_id: FuncId, fn
     return func_id;
 }
 
+/// A nested region walks with a copy of the enclosing bound names: what it
+/// declares stays inside it, and `extra` — the binders it introduces — is
+/// visible only within it.
+fn collectCapturesNested(
+    self: *Lowering,
+    node: *const Node,
+    outer: *std.StringHashMap(void),
+    captures: *std.ArrayList(CaptureInfo),
+    extra: []const []const u8,
+) void {
+    var inner = outer.clone() catch unreachable;
+    defer inner.deinit();
+    for (extra) |name| inner.put(name, {}) catch {};
+    switch (node.data) {
+        .block => |blk| for (blk.stmts) |stmt| self.collectCaptures(stmt, &inner, captures),
+        else => self.collectCaptures(node, &inner, captures),
+    }
+}
+
+/// A brace body written at a call. Its `_{ … }` fields evaluate where the body
+/// is written, so they are collected here. A `|…|` header makes the body a user
+/// lambda — sealed, reading its params and its env and nothing from here.
+/// Without a header the body may still be a nested `@BuildBlock`, replayed in
+/// the frame that receives it, so its free names reach this environment.
+fn collectBraceBody(
+    self: *Lowering,
+    body: *const Node,
+    env: []const ast.EnvField,
+    has_header: bool,
+    param_names: *std.StringHashMap(void),
+    captures: *std.ArrayList(CaptureInfo),
+) void {
+    for (env) |f| self.collectCaptures(f.value, param_names, captures);
+    if (!has_header) collectCapturesNested(self, body, param_names, captures, &.{});
+}
+
 /// Walk an AST node and collect free variable references (identifiers that are
 /// in the current scope but not in `param_names`).
 ///
@@ -899,19 +935,19 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 self.collectCaptures(arg, param_names, captures);
             }
         },
-        .block => |blk| {
-            for (blk.stmts) |stmt| {
-                self.collectCaptures(stmt, param_names, captures);
-            }
+        .block => {
+            collectCapturesNested(self, node, param_names, captures, &.{});
         },
         .if_expr => |ie| {
             self.collectCaptures(ie.condition, param_names, captures);
-            self.collectCaptures(ie.then_branch, param_names, captures);
+            const bound: []const []const u8 = if (ie.binding_name) |n| &.{n} else &.{};
+            collectCapturesNested(self, ie.then_branch, param_names, captures, bound);
             if (ie.else_branch) |eb| self.collectCaptures(eb, param_names, captures);
         },
         .while_expr => |we| {
             self.collectCaptures(we.condition, param_names, captures);
-            self.collectCaptures(we.body, param_names, captures);
+            const bound: []const []const u8 = if (we.binding_name) |n| &.{n} else &.{};
+            collectCapturesNested(self, we.body, param_names, captures, bound);
         },
         .return_stmt => |rs| {
             if (rs.value) |v| self.collectCaptures(v, param_names, captures);
@@ -946,6 +982,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             for (sl.field_inits) |fi| {
                 self.collectCaptures(fi.value, param_names, captures);
             }
+            if (sl.init_block) |ib| {
+                const bound: []const []const u8 = if (sl.init_block_self) |s| &.{s} else &.{};
+                collectCapturesNested(self, ib, param_names, captures, bound);
+            }
         },
         .array_literal => |al| {
             for (al.elements) |elem| {
@@ -961,7 +1001,8 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .match_expr => |me| {
             self.collectCaptures(me.subject, param_names, captures);
             for (me.arms) |arm| {
-                self.collectCaptures(arm.body, param_names, captures);
+                const bound: []const []const u8 = if (arm.capture) |c| &.{c} else &.{};
+                collectCapturesNested(self, arm.body, param_names, captures, bound);
             }
         },
         .null_coalesce => |nc| {
@@ -976,9 +1017,9 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 self.collectCaptures(it.expr, param_names, captures);
                 if (it.range_end) |re| self.collectCaptures(re, param_names, captures);
             }
-            // Register capture names as locals so they're not captured
-            for (fe.captures) |cap| param_names.put(cap.name, {}) catch {};
-            self.collectCaptures(fe.body, param_names, captures);
+            const bound = self.alloc.alloc([]const u8, fe.captures.len) catch unreachable;
+            for (fe.captures, bound) |cap, *name| name.* = cap.name;
+            collectCapturesNested(self, fe.body, param_names, captures, bound);
         },
         .slice_expr => |se| {
             self.collectCaptures(se.object, param_names, captures);
@@ -1017,10 +1058,12 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         },
         .catch_expr => |ce| {
             self.collectCaptures(ce.operand, param_names, captures);
-            self.collectCaptures(ce.body, param_names, captures);
+            const bound: []const []const u8 = if (ce.binding) |b| &.{b} else &.{};
+            collectCapturesNested(self, ce.body, param_names, captures, bound);
         },
         .onfail_stmt => |os| {
-            self.collectCaptures(os.body, param_names, captures);
+            const bound: []const []const u8 = if (os.binding) |b| &.{b} else &.{};
+            collectCapturesNested(self, os.body, param_names, captures, bound);
         },
         .raise_stmt => |rs| {
             self.collectCaptures(rs.tag, param_names, captures);
@@ -1064,19 +1107,17 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .named_arg => |na| {
             self.collectCaptures(na.value, param_names, captures);
         },
-        // `f(a) { body }` — the block is the lambda sitting in the call's arg
-        // list, and the `.lambda` arm seals it.
         .trailing_block => |tb| {
-            self.collectCaptures(tb.lambda, param_names, captures);
+            const lam = tb.lambda.data.lambda;
+            collectBraceBody(self, lam.body, lam.env, tb.has_header, param_names, captures);
         },
-        // Env field values evaluate where the juxtaposition is written. A
-        // `|…|` header is a nested user lambda, so its body does not contribute;
-        // a headerless block does — it may still be a nested `@BuildBlock`.
         .juxtaposition => |jx| {
             self.collectCaptures(jx.expr, param_names, captures);
-            for (jx.env) |f| self.collectCaptures(f.value, param_names, captures);
-            if (!jx.has_header) self.collectCaptures(jx.block, param_names, captures);
-            if (jx.init_block) |ib| self.collectCaptures(ib, param_names, captures);
+            collectBraceBody(self, jx.block, jx.env, jx.has_header, param_names, captures);
+            if (jx.init_block) |ib| {
+                const bound: []const []const u8 = if (jx.init_block_self) |s| &.{s} else &.{};
+                collectCapturesNested(self, ib, param_names, captures, bound);
+            }
         },
         .asm_expr => |ae| {
             self.collectCaptures(ae.template, param_names, captures);

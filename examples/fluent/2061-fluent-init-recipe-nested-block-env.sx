@@ -1,0 +1,50 @@
+// An `@Init(T)` recipe is the argument expression as written, so its free names
+// come from the frame that still holds them. The two brace bodies that ride an
+// argument reach that frame the same way: a headerless block on a call is a
+// nested `@BuildBlock` replayed there, and a construction's `.{ |s| … }` runs
+// there. Both read the enclosing local; neither leaks the name it binds.
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+
+Drawable :: constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; n: i64 = 0; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Tally :: struct {
+    count: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.count += 1; }
+}
+
+boxed :: (content: $B/@BuildBlock(Drawable)) -> Label {
+    sink := Tally{};
+    content.run(*sink);
+    .{ text = "box", n = sink.count }
+}
+
+fill :: (slot: $I/@Init(Label)) -> i64 {
+    v: Label = ---;
+    slot.write(*v);
+    v.n
+}
+
+main :: () -> i32 {
+    n := 5;
+    s := 2;
+
+    print("block={}\n", fill(boxed() {
+        print("block reads {}\n", n);
+        Label{ text = "leaf" };
+    }));
+
+    print("self={}\n", fill(Label{ text = "made" }.{ |s|
+        s.n = n * 2;
+    }));
+
+    print("outer s={}\n", s);
+    0
+}

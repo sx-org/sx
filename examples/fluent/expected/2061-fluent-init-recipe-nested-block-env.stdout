@@ -1,0 +1,4 @@
+block reads 5
+block=1
+self=10
+outer s=2
