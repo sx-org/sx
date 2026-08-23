@@ -1,13 +1,13 @@
 // A MEMBER or ELEMENT write through a by-value capture is refused exactly as
 // the bare `x = v` spelling is: the capture is a read-only copy, so `e.n = ...`
 // reaches no container storage. Auto-deref through a pointer field of the copy
-// (`h.p.n`) is the same refusal — the copy has no address to GEP; the allowed
-// spelling is an explicit deref (`h.p.*.n`) or a pointer-typed root. Taking the
-// address of a field (`*e.n`) and a pack-element member write are the same
-// class. Every write form is covered — plain, compound, element index,
-// multi-assign, pre-decrement, address-of — and each carries the shape-aware
-// message of the binding it roots at. Only the for-loop ELEMENT form suggests
-// the `*e` by-ref spelling, since its container storage exists.
+// (`h.p.n`) is the same refusal — the copy has no address to GEP; the recovery
+// is the by-ref capture `*h`. Taking the address of a field (`*e.n`) and a
+// pack-element member write are the same class. Every write form is covered —
+// plain, compound, element index, multi-assign, pre-decrement, address-of — and
+// each carries the shape-aware message of the binding it roots at. Only the
+// for-loop ELEMENT form suggests the `*e` by-ref spelling, since its container
+// storage exists.
 //
 // A chain that addresses pointee memory writes shared storage, not the copy,
 // and stays allowed — see 2237-basic-capture-member-writes.

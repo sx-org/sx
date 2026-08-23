@@ -3328,8 +3328,12 @@ pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []con
 
 /// Get the pointer (alloca ref) for an lvalue expression, without loading.
 /// A field/index chain rooted at a storage-less binding has no slot to GEP.
+/// A chain that itself types `.unresolved` already carries the diagnostic for
+/// why; naming its root would bury that one.
 pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
-    if (node.data == .field_access or node.data == .index_expr) {
+    if ((node.data == .field_access or node.data == .index_expr) and
+        self.inferExprType(node) != .unresolved)
+    {
         if (nonstoreRootOf(self, node)) |root| {
             diagNonstoreBindingAssign(self, node.span, root.name, root.binding, .address);
             return self.emitPlaceholder("addr_of_nonstore");
