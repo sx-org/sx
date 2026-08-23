@@ -263,10 +263,10 @@ error: '@VaList' is opaque — its storage is the target's and has no published 
     |             ^^^^^
 
 error: cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:65
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:47
     |
-115 |     later : Closure() -> i64 = || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
-    |                                                                 ^^
+115 |     later := || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    |                                               ^^
 
 error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:117:25

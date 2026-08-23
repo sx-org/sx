@@ -11,6 +11,7 @@
 // expression's static type is a closure, and uses the real return type.
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 take :: (g: ?Closure() -> void) {
   if g { g?!(); } else { print("param-absent\n"); }
@@ -23,7 +24,7 @@ give :: () -> ?Closure() -> void {
 main :: () {
   // With captures.
   n := 7;
-  a : ?Closure() -> void = || print("a n={}\n", n);
+  a : ?Closure() -> void = closure(||_{ n } print("a n={}\n", n));
   if a { print("a-present\n"); } else { print("a-absent\n"); }
   a?!();
 

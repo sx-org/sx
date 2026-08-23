@@ -1,0 +1,4 @@
+read 41 level true ctx holds 0
+wrote 1 outer 0
+arena 42 gpa growth 0
+task level true gpa outstanding 0

@@ -6,6 +6,7 @@
 // carries. Between them the element reads as pressed, which is what a build
 // styles on.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "examples/ui/compose.sx";
 @import "modules/ui/input.sx";
 ui :: @import "modules/ui/types.sx";
@@ -41,13 +42,13 @@ main :: () -> i32 {
         // Two rows, each its own hit region; the second carries a policy that
         // is transparent on its left half.
         root : View = vstack(0.0) {
-            tappable(Rect{ fill = ui.COLOR_BLUE, height = 40.0 }, || {
+            tappable(Rect{ fill = ui.COLOR_BLUE, height = 40.0 }, closure(||_{ count } {
                 count.top += 1;
-            });
+            }));
             tappable(Rect{ fill = ui.COLOR_GREEN, height = 40.0 },
-                || {
+                closure(||_{ count } {
                     count.bottom += 1;
-                },
+                }),
                 |p: Point| -> HitPolicy if p.x < 50.0 then .fail else .tap)
         };
 

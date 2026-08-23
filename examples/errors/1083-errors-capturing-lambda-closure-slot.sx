@@ -1,8 +1,9 @@
-// A CAPTURING `|…|_{ … }` literal does not erase to `Closure`. Its env is the
-// value, and a `Closure` slot says nothing about where that env would live —
-// so the store is refused and the message names `closure(f)`, which is where
-// the storage is chosen. An EMPTY env erases freely: the pair is {fn, null}
-// and funds nothing.
+// A CAPTURING literal does not erase to `Closure`. Its env is the value, and a
+// `Closure` slot says nothing about where that env would live — so the store is
+// refused and the message names `closure(f)`, which is where the storage is
+// chosen. A written `_{ … }` and a bare enclosing name reach the same env, so
+// both spellings are refused. An EMPTY env erases freely: the pair is
+// {fn, null} and funds nothing.
 
 @import "modules/std.sx";
 
@@ -13,6 +14,7 @@ main :: () -> i32 {
     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
     g := |x: i64|_{ n = n } x + n;
     _ := apply(g, 1);                                     // reject: parameter slot
+    k : Closure(i64) -> i64 = |x: i64| x + n;             // reject: no `_{ }`, same env
 
     print("empty {}\n", apply(|x: i64|_{ } x + 1, 1));    // fine: null env
     return 0;
