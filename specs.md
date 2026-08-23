@@ -1979,6 +1979,14 @@ items.len          // length (i64)
 items.ptr          // raw pointer
 ```
 
+A `.{ … }` literal against a slice target reads its field names: `ptr` and
+`len` write the fat pointer's own slots, and any other field list is a list of
+ELEMENTS, coerced to `T` over a backing array exactly as `.[ … ]` is.
+```sx
+row  : []any = .{ a, t };                    // two elements, each boxed into `any`
+view : []i64 = .{ ptr = nums.ptr, len = 2 }; // the header itself
+```
+
 Slices support generic type parameters: `[]$T` introduces type parameter `T` inferred from the element type of the argument (array or slice).
 
 `@Slice(T, Len)` names the same shape with the length word spelled out: `Len`
