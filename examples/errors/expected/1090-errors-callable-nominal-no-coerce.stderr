@@ -1,0 +1,11 @@
+error: cannot initialize 'f' of type '(i64) -> i64' with a value of type 'Accumulator'
+  --> examples/errors/1090-errors-callable-nominal-no-coerce.sx:15:24
+   |
+15 |     f : (i64) -> i64 = acc;
+   |                        ^^^
+
+error: cannot initialize 'c' of type 'closure' with a value of type 'Accumulator'
+  --> examples/errors/1090-errors-callable-nominal-no-coerce.sx:16:31
+   |
+16 |     c : Closure(i64) -> i64 = acc;
+   |                               ^^^

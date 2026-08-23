@@ -11,6 +11,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_protocol = @import("protocol.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
@@ -50,10 +51,22 @@ pub fn uniqueLambdaThrough(self: *Lowering, ty: TypeId) ?UniqueLambda {
 /// The signature a value is callable at.
 pub const CallableSig = struct { params: []const TypeId, ret: TypeId };
 
+/// The `impl (sig) for T` a value of type `ty` calls through, reaching through
+/// one level of `*T` — a pointer to a callable nominal calls the same `call`.
+pub fn callableNominalThrough(self: *Lowering, ty: TypeId) ?lower_protocol.CallableNominal {
+    if (self.callable_nominals.get(ty)) |cn| return cn;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return self.callable_nominals.get(info.pointer.pointee);
+}
+
 /// The signature `ty` is callable at — a unique lambda's env struct, a
-/// `Closure`, or a function pointer — or null when nothing calls it.
+/// `Closure`, a function pointer, or a nominal carrying `impl (sig) for T` —
+/// or null when nothing calls it.
 pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
     if (uniqueLambdaThrough(self, ty)) |u| return .{ .params = u.params, .ret = u.ret };
+    if (callableNominalThrough(self, ty)) |cn| return .{ .params = cn.params, .ret = cn.ret };
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
         .closure => |c| .{ .params = c.params, .ret = c.ret },

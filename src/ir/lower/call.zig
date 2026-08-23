@@ -17,6 +17,7 @@ const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
 const lower_closure = @import("closure.zig");
+const lower_protocol = @import("protocol.zig");
 const lower_bound = @import("bound.zig");
 const generics_mod = @import("../generics.zig");
 
@@ -405,6 +406,7 @@ fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
     if (binding.pack_elem != null) return false;
     if (binding.ty.isBuiltin()) return false;
     if (self.uniqueLambdaThrough(binding.ty) != null) return true;
+    if (self.callableNominalThrough(binding.ty) != null) return true;
     const ti = self.module.types.get(binding.ty);
     return ti == .function or ti == .closure;
 }
@@ -422,6 +424,36 @@ fn callUniqueLambda(self: *Lowering, u: lower_closure.UniqueLambda, env_addr: Re
     call_args.appendSlice(self.alloc, args) catch unreachable;
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
     return self.builder.emit(.{ .call = .{ .callee = u.func, .args = owned } }, u.ret);
+}
+
+/// Call the `call` that `impl (sig) for T` declares. The callee expression IS
+/// the receiver, so the receiver fixup a method call uses decides whether `call`
+/// gets it by value or by address.
+fn callNominal(
+    self: *Lowering,
+    cn: lower_protocol.CallableNominal,
+    recv_node: *const Node,
+    recv: Ref,
+    recv_ty: TypeId,
+    args: []const Ref,
+    span: ast.Span,
+) Ref {
+    if (self.checkCallArity(cn.fd, cn.qualified, args.len + 1, true, span)) return Ref.none;
+    if (!self.lowered_functions.contains(cn.qualified)) self.lazyLowerFunction(cn.qualified);
+    const fid = self.resolveFuncByName(cn.qualified) orelse return Ref.none;
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    call_args.append(self.alloc, recv) catch unreachable;
+    call_args.appendSlice(self.alloc, args) catch unreachable;
+    const func = &self.module.functions.items[@intFromEnum(fid)];
+    const ret_ty = func.ret;
+    const params = func.params;
+    self.fixupMethodReceiver(&call_args, func, recv_node, recv_ty);
+    // `coerceCallArgs` can add a function to the module and invalidate `func`,
+    // so its fields are read above.
+    const final_args = self.prependCtxIfNeeded(func, call_args.items);
+    self.coerceCallArgs(final_args, params);
+    return self.builder.call(fid, final_args, ret_ty);
 }
 
 /// The env address behind a value of unique type `ty`: a `*$F` names one
@@ -1391,7 +1423,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // through unused: the enclosing local is invisible
                             // to a static nested fn, so the name correctly
                             // resolves to the module-scope callable below.
-                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or self.uniqueLambdaThrough(binding.ty) != null)) {
+                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or
+                                self.uniqueLambdaThrough(binding.ty) != null or self.callableNominalThrough(binding.ty) != null))
+                            {
                                 _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
                                 return Ref.none;
                             }
@@ -1399,6 +1433,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = u.params.len, .pack_start = null }, c, c.callee.span)) return Ref.none;
                                 const env_addr = uniqueEnvAddress(self, binding.ty, binding.ref, binding.is_alloca).?;
                                 return callUniqueLambda(self, u, env_addr, args.items);
+                            }
+                            if (self.callableNominalThrough(binding.ty)) |cn| {
+                                const recv = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
+                                return callNominal(self, cn, c.callee, recv, binding.ty, args.items, c.callee.span);
                             }
                             if (ty_info == .closure) {
                                 // Exact-arity + spread-placeholder validation
@@ -2614,6 +2652,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 else
                     uniqueEnvAddress(self, inferred, self.lowerExpr(c.callee), false).?;
                 return callUniqueLambda(self, u, env_addr, args.items);
+            }
+            if (self.callableNominalThrough(inferred)) |cn| {
+                return callNominal(self, cn, c.callee, self.lowerExpr(c.callee), inferred, args.items, c.callee.span);
             }
             const callee_ref = self.lowerExpr(c.callee);
             const callee_ty = self.builder.getRefType(callee_ref);

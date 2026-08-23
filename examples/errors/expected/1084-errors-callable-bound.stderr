@@ -4,7 +4,7 @@ error: 'i64' does not satisfy the bound '(i64) -> i64' on '$F'
  8 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
    |                 ^^^^^^^^^^^^
 
-help: a unique lambda, a 'Closure', or a function pointer answers this bound
+help: a unique lambda, a 'Closure', a function pointer, or a nominal with a function-type impl answers this bound
    |
  8 | apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
    |                 ^^^^^^^^^^^^

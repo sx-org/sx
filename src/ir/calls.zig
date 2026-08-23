@@ -44,6 +44,9 @@ pub const CallPlan = struct {
         direct_fn,
         closure,
         fn_pointer,
+        /// A nominal carrying `impl (sig) for T`: the call is its `call`, with
+        /// the callee expression as the receiver.
+        callable_nominal,
         protocol_dispatch,
         struct_method,
         /// Free-function UFCS: `recv.fn(args)` → `fn(recv, args)`, where `fn`
@@ -247,6 +250,12 @@ pub const CallResolver = struct {
                         .return_type = u.ret,
                         .target = .{ .named = bare_name },
                         .prepends_ctx = self.l.implicit_ctx_enabled,
+                    };
+                    if (self.l.callableNominalThrough(binding.ty)) |cn| return .{
+                        .kind = .callable_nominal,
+                        .return_type = cn.ret,
+                        .target = .{ .named = cn.qualified },
+                        .prepends_receiver = true,
                     };
                     if (!binding.ty.isBuiltin()) {
                         const ti = self.l.module.types.get(binding.ty);
@@ -699,6 +708,17 @@ pub const CallResolver = struct {
                 .target = if (variant != null) .{ .constructed = rt } else .none,
                 .variant = variant,
             };
+        }
+        // Every other callee shape lowers as an expression, where a nominal
+        // carrying `impl (sig) for T` is callable through its `call`.
+        switch (c.callee.data) {
+            .identifier, .field_access, .enum_literal => {},
+            else => if (self.l.callableNominalThrough(self.l.inferExprType(c.callee))) |cn| return .{
+                .kind = .callable_nominal,
+                .return_type = cn.ret,
+                .target = .{ .named = cn.qualified },
+                .prepends_receiver = true,
+            },
         }
         return .{ .kind = .unresolved, .return_type = .unresolved };
     }

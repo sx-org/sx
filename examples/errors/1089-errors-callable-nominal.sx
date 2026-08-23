@@ -1,0 +1,34 @@
+// A function-type impl takes ONE nominal conformer and declares `call` on that
+// conformer at the head's signature. A builtin, an interface handle and a type
+// parameter are not conformers, and a nominal carries at most one such impl.
+
+@import "modules/std.sx";
+
+Show :: interface { fmt :: (self: Self) -> string; }
+
+Accumulator :: struct { total: i64; }
+
+impl (i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; return self.total; }
+}
+
+impl (i64) -> void for Accumulator {
+    call :: (self: *Accumulator, x: i64) { self.total += x; }
+}
+
+impl (i64) -> i64 for i64 { call :: (self: *i64, x: i64) -> i64 { return x; } }
+
+impl (i64) -> i64 for Show { call :: (self: *Show, x: i64) -> i64 { return x; } }
+
+impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
+
+Silent :: struct { n: i64; }
+impl (i64) -> i64 for Silent { run :: (self: *Silent, x: i64) -> i64 { return x; } }
+
+Wide :: struct { n: i64; }
+impl (i64) -> i64 for Wide { call :: (self: *Wide, x: string) -> i64 { return 1; } }
+
+Loose :: struct { n: i64; }
+impl (i64) -> i64 for Loose { call :: (seed: i64, x: i64) -> i64 { return x; } }
+
+main :: () -> i32 { return 0; }
