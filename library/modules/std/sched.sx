@@ -102,10 +102,10 @@ Fiber :: struct {
     // default context (the capture just re-pushes that same default).
     //
     // The snapshot includes `context.allocator`, and a fiber outlives the scope
-    // that spawned it: its body reaches that allocator arbitrarily later, possibly
-    // after the spawn scope has
-    // ended. Spawning under a frame-local or resettable allocator (a frame arena)
-    // therefore hands the fiber memory that may be reused before or while it runs.
+    // that spawned it: its body reaches that allocator arbitrarily later,
+    // possibly after the spawn scope has ended. Spawning under a frame-local or
+    // resettable allocator (a frame arena) therefore hands the fiber memory that
+    // may be reused before or while it runs.
     // The SPAWNING CONTAINER owns this: when the ambient allocator does not
     // outlive the fiber, push a fiber-safe one (the scheduler's `own_allocator`,
     // or any allocator living at least as long as the scheduler) around `spawn`.

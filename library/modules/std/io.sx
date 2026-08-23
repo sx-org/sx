@@ -176,13 +176,13 @@ sx_run_boxed_closure :: (arg: *void) {
 // scope.
 //
 // ALLOCATOR-LIFETIME CONTRACT: the `Future`, the `ThunkBox`, the completion
-// closure's env, and the env of a worker that was not already erased all come from
-// `alloc` (defaulting to the `context.allocator` in force at the `async` CALL), and
-// that allocator MUST outlive the future —
-// i.e. survive until the worker has run and the result is consumed. This is the
-// long-lived-container rule: calling `async` inside a transient `push
-// Context{ allocator = arena }` that is torn down before `run()`/`await`
-// drives the worker frees the Future while it is still live (use-after-free).
+// closure's env, and the env of a worker that was not already erased all come
+// from `alloc` (defaulting to the `context.allocator` in force at the `async`
+// CALL), and that allocator MUST outlive the future — i.e. survive until the
+// worker has run and the result is consumed. This is the long-lived-container
+// rule: calling `async` inside a transient `push Context{ allocator = arena }`
+// that is torn down before `run()`/`await` drives the worker frees the Future
+// while it is still live (use-after-free).
 // The common case (the program-stable default GPA, or a scheduler set up under a
 // long-lived allocator) is safe.
 // Release one owner's hold on a Future and free it once BOTH the worker and the
