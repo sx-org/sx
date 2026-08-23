@@ -578,7 +578,7 @@ main :: () {
         }
 
         opt_n := 10;
-        f_some : ?Closure(i64) -> i64 = |x: i64| -> i64 x + opt_n;
+        f_some : ?Closure(i64) -> i64 = closure(|x: i64|_{ opt_n } -> i64 x + opt_n);
         if h := f_some {
             print("opt-closure: {}\n", h(5));
         } else {
@@ -588,9 +588,9 @@ main :: () {
         // Struct with optional closure callback
         Btn :: struct { label: string; on_click: ?Closure(i64) -> void; }
         btn_x := 99;
-        btn_cl : ?Closure(i64) -> void = |id: i64| {
+        btn_cl : ?Closure(i64) -> void = closure(|id: i64|_{ btn_x } {
             print("opt-closure-btn: {} {}\n", id, btn_x);
-        };
+        });
         btn1 := Btn{ label = "OK", on_click = btn_cl };
         btn2 := Btn{ label = "Cancel", on_click = null };
         if h := btn1.on_click { h(1); }
@@ -639,8 +639,8 @@ main :: () {
         }
         one_h2 : i32 = 1;
         two_h2 : i32 = 2;
-        add1_h2 : Closure(i32) -> i32 = |x: i32| -> i32 x + one_h2;
-        mul2_h2 : Closure(i32) -> i32 = |x: i32| -> i32 x * two_h2;
+        add1_h2 : Closure(i32) -> i32 = closure(|x: i32|_{ one_h2 } -> i32 x + one_h2);
+        mul2_h2 : Closure(i32) -> i32 = closure(|x: i32|_{ two_h2 } -> i32 x * two_h2);
         composed := compose(mul2_h2, add1_h2);
         print("closure-compose2: {}\n", composed(5));
 
@@ -743,9 +743,9 @@ main :: () {
             on_press: Closure(i32) -> void;
         }
         btn_x2 := 99;
-        btn_cb : Closure(i32) -> void = |id: i32| {
+        btn_cb : Closure(i32) -> void = closure(|id: i32|_{ btn_x2 } {
             print("closure-btn: {} {}\n", id, btn_x2);
-        };
+        });
         btn3 := Button{ label = "OK", on_press = btn_cb };
         btn3.on_press(1);
 
@@ -773,10 +773,10 @@ main :: () {
         print("closure-loop: {}\n", sum_fn(xx *k2_arr, 5));
 
         n_m3 : i32 = 1;
-        f_m3 : Closure(i32) -> i32 = |x: i32| -> i32 x + n_m3;
+        f_m3 : Closure(i32) -> i32 = closure(|x: i32|_{ n_m3 } -> i32 x + n_m3);
         print("closure-reassign: {}\n", f_m3(10));
         m_m3 : i32 = 2;
-        f_m3 = |x: i32| -> i32 x * m_m3;
+        f_m3 = closure(|x: i32|_{ m_m3 } -> i32 x * m_m3);
         print("closure-reassign: {}\n", f_m3(10));
 
         // the capture is a copy: reassigning pt_m6 leaves f_m6 on the old values
@@ -838,8 +838,8 @@ main :: () {
         use_fast := true;
         k_fast : i32 = 2;
         k_slow : i32 = 10;
-        f_fast : Closure(i32) -> i32 = |x: i32| -> i32 x * k_fast;
-        f_slow : Closure(i32) -> i32 = |x: i32| -> i32 x + k_slow;
+        f_fast : Closure(i32) -> i32 = closure(|x: i32|_{ k_fast } -> i32 x * k_fast);
+        f_slow : Closure(i32) -> i32 = closure(|x: i32|_{ k_slow } -> i32 x + k_slow);
         f_cond : Closure(i32) -> i32 = if use_fast then f_fast else f_slow;
         print("closure-cond: {}\n", f_cond(5));
 
@@ -848,7 +848,7 @@ main :: () {
             on_cancel: ?Closure() -> void;
         }
         msg_f4 := "submitted";
-        sub_cb : ?Closure() -> void = || { print("closure-form: {}\n", msg_f4); };
+        sub_cb : ?Closure() -> void = closure(||_{ msg_f4 } { print("closure-form: {}\n", msg_f4); });
         form_f4 := Form{ on_submit = sub_cb, on_cancel = null };
         if h := form_f4.on_submit { h(); }
         if h := form_f4.on_cancel { h(); } else { print("closure-form: no cancel\n"); }
@@ -876,7 +876,7 @@ main :: () {
         n_l2 : i32 = 7;
         result_l2 : i32 = 0;
         push .{ allocator = a_l2 } {
-            f_l2 : Closure(i32) -> i32 = |x: i32| -> i32 x + n_l2;
+            f_l2 : Closure(i32) -> i32 = closure(|x: i32|_{ n_l2 } -> i32 x + n_l2);
             result_l2 = f_l2(10);
             a_l2.dealloc_bytes(f_l2.env);
         }
@@ -903,7 +903,7 @@ main :: () {
         n_m8 : i32 = 10;
         fns_m8 : [3]Closure(i32) -> i32 = ---;
         fns_m8[0] = double_m8;                                // auto-promoted
-        fns_m8[1] = |x: i32| -> i32 x + n_m8;    // captured
+        fns_m8[1] = closure(|x: i32|_{ n_m8 } -> i32 x + n_m8);  // captured
         fns_m8[2] = |x: i32| -> i32 x * x;       // no capture
         tmp_m8 := fns_m8[0]; print("closure-mixed: {}\n", tmp_m8(5));
         tmp_m8 = fns_m8[1]; print("closure-mixed: {}\n", tmp_m8(5));
@@ -966,7 +966,7 @@ main :: () {
         i_e11 := 0;
         while i_e11 < 3 {
             multiplier : i32 = xx (i_e11 + 1);
-            fns_e11[i_e11] = |x: i32| -> i32 x * multiplier;
+            fns_e11[i_e11] = closure(|x: i32|_{ multiplier } -> i32 x * multiplier);
             i_e11 += 1;
         }
         t_e11 := fns_e11[0]; print("closure-multi-factory: {}\n", t_e11(10));
@@ -984,7 +984,7 @@ main :: () {
 
         apply_fn := |f_app: Closure(i32) -> i32, val: i32| -> i32 f_app(val);
         k_e13 : i32 = 100;
-        inner_fn : Closure(i32) -> i32 = |x: i32| -> i32 x + k_e13;
+        inner_fn : Closure(i32) -> i32 = closure(|x: i32|_{ k_e13 } -> i32 x + k_e13);
         print("closure-as-arg: {}\n", apply_fn(inner_fn, 42));
 
         prefix_e14 := "hello";
@@ -1052,8 +1052,7 @@ main :: () {
 
         // CI.4: inferred with captures
         cap_ci : i32 = 100;
-        f_ci4 : Closure(i32) -> i32 = |x| x + cap_ci;
-        print("closure-infer-cap: {}\n", f_ci4(v_ci));
+        print("closure-infer-cap: {}\n", apply_ci(|x|_{ cap_ci } x + cap_ci, v_ci));
 
         // CI.5: inferred in factory return
         mk_ci :: (n: i32) -> $F/(i32) -> i32 { return |x|_{ n = n } x * n; }
@@ -1070,8 +1069,7 @@ main :: () {
         print("closure-infer-compose: {}\n", c_ci(v_ci));
 
         // CI.7: inferred void return
-        msg_ci := "infer-void";
-        cb_ci : Closure(i32) -> void = |x| { print("closure-{}: {}\n", msg_ci, x); };
+        cb_ci : Closure(i32) -> void = |x| { print("closure-infer-void: {}\n", x); };
         cb_ci(42);
     }
 }

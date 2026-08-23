@@ -2700,16 +2700,6 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     return self.emitPlaceholder("missing-context");
 }
 
-/// Emit `context.allocator.alloc(size)` dispatch — used by internal
-/// compiler-driven allocations (the closure env buffer in `lowerLambda`).
-/// Routes through whatever allocator is currently installed in `context`,
-/// so a surrounding `push Context{ allocator = my_alloc, ... })` actually
-/// backs every allocation including the ones the compiler inserts.
-///
-/// If `Context` isn't registered (the program doesn't import std.sx),
-/// emits a diagnostic and returns a placeholder. It deliberately does
-/// NOT fall back to a direct libc malloc: that silently escapes the
-/// allocator the program installed.
 /// The `Allocator` value currently installed as `context.allocator`.
 pub fn ambientAllocator(self: *Lowering) ?Ref {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return null;
@@ -2717,47 +2707,6 @@ pub fn ambientAllocator(self: *Lowering) ?Ref {
     const af = self.contextFieldByName("allocator") orelse return null;
     const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
     return self.builder.structGet(ctx, af.index, af.ty);
-}
-
-pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
-    if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
-        return self.diagnoseMissingContext("heap allocation");
-    }
-    const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    // Resolve `allocator` by name against the ASSEMBLED layout — never by
-    // index (the field set and order are program-assembled).
-    const af = self.contextFieldByName("allocator") orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    const pd = self.getProtocolInfo(af.ty) orelse {
-        return self.diagnoseMissingContext("heap allocation");
-    };
-    const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
-    const allocator = self.builder.structGet(ctx, af.index, af.ty);
-    // Through the same dispatch every `a.alloc_bytes(n)` in sx goes through,
-    // so the allocator protocol's KIND is a property of its declaration and
-    // not something the compiler-driven allocations re-encode.
-    const cs = self.builder.current_span;
-    const dispatched = self.emitProtocolDispatch(
-        allocator,
-        pd,
-        "alloc_bytes",
-        &.{size_ref},
-        .{ .start = cs.start, .end = cs.end },
-    );
-    if (dispatched == Ref.none) return self.emitPlaceholder("allocator-dispatch");
-    return dispatched;
-}
-
-/// Emit a call to a extern-declared function looked up by name.
-/// Used for the compiler-internal byte-copy in the protocol-erasure
-/// heap path and the closure env-copy path, both of which reach libc
-/// `memcpy` by name.
-pub fn callExtern(self: *Lowering, name: []const u8, args: []const Ref, ret_ty: TypeId) Ref {
-    const fid = self.resolveFuncByName(name) orelse @panic("extern symbol missing — std.sx not imported?");
-    return self.builder.call(fid, args, ret_ty);
 }
 
 /// Prepend the caller's current `__sx_ctx` to `args` when the callee

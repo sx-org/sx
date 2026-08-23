@@ -9,6 +9,7 @@
 // `Closure(...)` so the environment is carried (the idiomatic form).
 
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 E :: error { Z }
 
@@ -18,7 +19,7 @@ baref :: (cb: (i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch |e| -1; }
 main :: () -> i32 {
     inc := |x: i64| -> i64 x + 1;          // capture-free closure var
     base := 100;
-    add : Closure(i64) -> i64 = |x: i64| -> i64 x + base;   // CAPTURING closure var
+    add : Closure(i64) -> i64 = closure(|x: i64|_{ base } -> i64 x + base);  // CAPTURING closure var
 
     _ := bare(inc, 9);          // reject: closure value → bare slot
     _ := baref(inc, 9);         // reject: also the ∅-widening crossing

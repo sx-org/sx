@@ -15,13 +15,13 @@ const lower_protocol = @import("protocol.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
-/// Where a capturing closure's environment lives.
-///   `.heap` — the ordinary closure: the value may outlive the forming frame,
-///             so the env is copied to `context.allocator` storage.
-///   `.stack` — a NONESCAPING closure (`@Init(T)`): the env stays in the
-///             forming frame's alloca. Valid only when the value provably
-///             cannot outlive that frame; the compiler never allocates for it
-///             (spec §12.1).
+/// Where a capturing literal's environment lives.
+///   `.heap` — the ordinary literal: the value IS the env, so it lives wherever
+///             the binding, parameter, or temporary does. `closure(f, alloc)`
+///             is the only thing that copies it anywhere else.
+///   `.stack` — a NONESCAPING recipe (`@Init(T)`): the value is an erased pair
+///             whose env stays in the forming frame's alloca. Valid only when
+///             the value provably cannot outlive that frame (spec §12.1).
 pub const EnvStorage = enum { heap, stack };
 
 /// A `|…|_{ … }` literal's own type: the env struct the literal IS, together
@@ -168,9 +168,9 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
 
     // The env struct. A unique literal always has one — an empty env is a
     // zero-field struct, which is the whole value.
-    const is_unique = lam.has_env;
+    const is_unique = lam.has_env or capture_list.len > 0;
     var env_struct_ty: TypeId = .void;
-    if (capture_list.len > 0 or is_unique) {
+    if (is_unique) {
         const env_field_data = self.alloc.alloc(types.TypeInfo.StructInfo.Field, capture_list.len) catch unreachable;
         for (capture_list, 0..) |cap, i| {
             env_field_data[i] = .{
@@ -369,30 +369,11 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // A unique value IS its env, so the body binds each field straight through
     // the caller's storage: a write reaches the value the caller holds, and
     // nothing is snapshotted per call.
-    if (is_unique and capture_list.len > 0) {
+    if (capture_list.len > 0) {
         const env_param_ref = Ref.fromIndex(env_param_idx);
         for (capture_list, 0..) |cap, i| {
             const field_ptr = self.builder.structGepTyped(env_param_ref, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
             lambda_scope.put(cap.name, .{ .ref = field_ptr, .ty = cap.ty, .is_alloca = true });
-        }
-    } else if (capture_list.len > 0) {
-        const env_param_ref = Ref.fromIndex(env_param_idx);
-        // Alloca env struct locally so struct_gep can resolve the type
-        const env_local = self.builder.alloca(env_struct_ty);
-        // Compute env size
-        const env_byte_size_inner = self.computeEnvSize(capture_list);
-        const env_size_val = self.builder.constInt(@intCast(env_byte_size_inner), .i64);
-        // memcpy(local_alloca, env_param, size)
-        _ = self.callExtern("memcpy", &.{ env_local, env_param_ref, env_size_val }, self.module.types.ptrTo(.void));
-
-        for (capture_list, 0..) |cap, i| {
-            // GEP into env struct to get field pointer
-            const field_ptr = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            // Load the captured value into a local alloca
-            const loaded = self.builder.load(field_ptr, cap.ty);
-            const slot = self.builder.alloca(cap.ty);
-            self.builder.store(slot, loaded);
-            lambda_scope.put(cap.name, .{ .ref = slot, .ty = cap.ty, .is_alloca = true });
         }
     }
 
@@ -459,14 +440,6 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     self.builder.func = saved_func;
     self.builder.current_block = saved_block;
     self.builder.inst_counter = saved_counter;
-    // Restore the caller's `current_ctx_ref` BEFORE we emit the env
-    // alloc/memcpy below — those run in the caller's scope, and
-    // `allocViaContext` reads `current_ctx_ref` to find the
-    // installed allocator. Without this, the env_heap dispatch
-    // would still see `Ref.fromIndex(0)` (the lambda's own ctx
-    // param), which doesn't exist in the caller's frame and
-    // silently routes through the default context instead of any
-    // surrounding `push Context{ allocator = ... }`.
     self.current_ctx_ref = saved_ctx_ref_lam;
 
     // Closure flowing into a BARE function-pointer slot (`(T) -> U`, no env):
@@ -503,6 +476,20 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     }
     const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
 
+    // A nonescaping `@Init(T)` recipe is the erased pair its site names, and
+    // §12.1 forbids the compiler from choosing heap storage for it: the env
+    // stays in the alloca of the frame that formed it.
+    if (env_storage == .stack) {
+        if (capture_list.len == 0) return self.builder.closureCreate(func_id, Ref.none, closure_ty);
+        const env_local = self.builder.alloca(env_struct_ty);
+        for (capture_list, 0..) |cap, i| {
+            const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
+            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
+            self.builder.store(gep, val);
+        }
+        return self.builder.closureCreate(func_id, env_local, closure_ty);
+    }
+
     // The unique value: the env struct itself, filled where it was written.
     if (is_unique) {
         self.unique_lambdas.put(env_struct_ty, .{
@@ -519,41 +506,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         return self.builder.load(env_local, env_struct_ty);
     }
 
-    // Build env and closure in the caller's scope
-    if (capture_list.len > 0) {
-        // Alloca env struct on stack (so struct_gep can resolve the type)
-        const env_local = self.builder.alloca(env_struct_ty);
-
-        // Store captured values into env struct fields
-        for (capture_list, 0..) |cap, i| {
-            const gep = self.builder.structGepTyped(env_local, @intCast(i), self.module.types.ptrTo(cap.ty), env_struct_ty);
-            const val = if (cap.is_alloca)
-                self.builder.load(cap.ref, cap.ty)
-            else
-                cap.ref;
-            self.builder.store(gep, val);
-        }
-
-        // A nonescaping closure keeps its env where it was built — no copy, no
-        // allocation. Everything else copies the env to heap so the value can
-        // outlive this frame. Route that through `context.allocator.alloc`
-        // rather than libc malloc, so closures respect a surrounding
-        // `push Context{ allocator = ... }` and a tracker / arena counts the
-        // env allocation alongside everything else.
-        if (env_storage == .stack) {
-            return self.builder.closureCreate(func_id, env_local, closure_ty);
-        }
-        const env_byte_size = self.computeEnvSize(capture_list);
-        const env_size = self.builder.constInt(@intCast(env_byte_size), .i64);
-        const ptr_void = self.module.types.ptrTo(.void);
-        const env_heap = self.allocViaContext(env_size);
-        // memcpy(heap, stack_alloca, size)
-        _ = self.callExtern("memcpy", &.{ env_heap, env_local, env_size }, ptr_void);
-
-        return self.builder.closureCreate(func_id, env_heap, closure_ty);
-    } else {
-        return self.builder.closureCreate(func_id, Ref.none, closure_ty);
-    }
+    return self.builder.closureCreate(func_id, Ref.none, closure_ty);
 }
 
 /// The environment a value of callable type `ty` IS — what `closure` copies
@@ -1127,23 +1080,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         },
         else => {},
     }
-}
-
-/// Compute the byte size of the env struct based on captured value types.
-pub fn computeEnvSize(self: *Lowering, capture_list: []const CaptureInfo) usize {
-    // Must match LLVM's struct layout: fields are aligned to their natural alignment
-    var offset: usize = 0;
-    var max_align: usize = 1;
-    for (capture_list) |cap| {
-        const field_size = self.typeSizeBytes(cap.ty);
-        const field_align = self.typeAlignBytes(cap.ty);
-        if (field_align > max_align) max_align = field_align;
-        // Align offset to field alignment
-        offset = (offset + field_align - 1) & ~(field_align - 1);
-        offset += field_size;
-    }
-    // Align total to max field alignment (matches LLVM's struct alignment)
-    return (offset + max_align - 1) & ~(max_align - 1);
 }
 
 pub const CaptureInfo = struct {

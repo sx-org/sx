@@ -7,6 +7,7 @@
 // first when nothing is focused. What the committed frame stops declaring stops
 // being focused.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "examples/ui/compose.sx";
 @import "modules/ui/input.sx";
 ui :: @import "modules/ui/types.sx";
@@ -41,22 +42,22 @@ main :: () -> i32 {
         // Three focusable rows; the last one asks for the soft keyboard and
         // takes text as well as keys.
         root : View = vstack(0.0) {
-            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, |e: *KeyEvent| {
+            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(|e: *KeyEvent|_{ tally } {
                 tally.a += 1;
                 tally.last = e.logical;
-            });
-            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
+            }));
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, closure(|e: *KeyEvent|_{ tally } {
                 tally.b += 1;
                 tally.last = e.logical;
-            });
+            }));
             focusable(Rect{ fill = ui.COLOR_RED, height = 20.0 },
-                |e: *KeyEvent| {
+                closure(|e: *KeyEvent|_{ tally } {
                     tally.c += 1;
                     tally.last = e.logical;
-                },
-                |s: string| {
+                }),
+                closure(|s: string|_{ tally } {
                     tally.typed += s.len;
-                },
+                }),
                 true)
         };
 

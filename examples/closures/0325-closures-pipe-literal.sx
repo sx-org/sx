@@ -6,6 +6,7 @@
 // branch, a closure literal as a default, and the `|` that is bitwise OR.
 // Every default here is parse coverage — each call passes the argument.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { f(v) }
 run :: (f: $F/() -> void) { f(); }
@@ -15,7 +16,11 @@ main :: () {
     n := 5;
 
     // Params typed from the annotated target.
-    inc : Closure(i64) -> i64 = |x| x + n;
+    twice : Closure(i64) -> i64 = |x| x * 2;
+    print("twice {}\n", twice(3));
+
+    // A capturing literal reaches a `Closure` slot through `closure`.
+    inc : Closure(i64) -> i64 = closure(|x: i64|_{ n } x + n);
     print("inc {}\n", inc(3));
 
     // Annotated params and return type.
@@ -58,4 +63,5 @@ main :: () {
     // A closure literal is a default; the `|` after it closes the outer list.
     nest := |f: Closure(i64) -> i64 = |y: i64| y| f(4);
     print("closure-default {}\n", nest(inc));
+    free(inc);
 }

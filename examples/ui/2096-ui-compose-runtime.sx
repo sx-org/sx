@@ -26,7 +26,7 @@ main :: () -> i32 {
     root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 });
     app := *root;
 
-    loop := FrameLoop.init(*root, || -> View {
+    loop := FrameLoop.init(*root, closure(||_{ app } -> View {
         // Three entries this root keeps. The handlers below write into two of
         // them long after the build that claimed them returned.
         frame := use_state(i64, 0);
@@ -46,15 +46,15 @@ main :: () -> i32 {
             frame.get(), taps.get(), keys.get(), pressed, focused);
 
         v : View = vstack(0.0) {
-            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
+            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ taps } {
                 taps.set(taps.get() + 1)
-            });
-            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
+            }));
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, closure(|e: *KeyEvent|_{ keys } {
                 keys.set(keys.get() + 1)
-            })
+            }))
         };
         v
-    }, context.allocator);
+    }), context.allocator);
 
     // Nothing is queued, so the first frame only builds and commits.
     loop.frame();
@@ -98,17 +98,17 @@ main :: () -> i32 {
         quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker);
         seen := 0;
         counter := *seen;
-        spin := FrameLoop.init(*quiet, || -> View {
+        spin := FrameLoop.init(*quiet, closure(||_{ counter } -> View {
             n := use_state(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ counter } {
                     counter.* += 1;
-                });
+                }));
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
             };
             v
-        }, context.allocator);
+        }), context.allocator);
 
         for 0..4 {
             quiet.queue.push(down(50.0, 10.0));
@@ -141,13 +141,13 @@ main :: () -> i32 {
     push .{ allocator = owner } {
         far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner);
         counted := *built;
-        build : Closure() -> View = || -> View {
+        build : Closure() -> View = closure(||_{ counted } -> View {
             counted.* += 1;
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             };
             v
-        };
+        });
         push .{ allocator = elsewhere } {
             far_loop := FrameLoop.init(*far, build, owner);
             far_loop.run(2);

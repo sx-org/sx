@@ -5,6 +5,7 @@
 // arm. The same category classifies in the type-category match on a
 // runtime `Type` value. Category arms are tag SETS and bind no `|v|`.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 describe :: (av: any) -> string {
     match av {
@@ -17,7 +18,7 @@ describe :: (av: any) -> string {
 
 main :: () {
     n := 10;
-    cap : Closure(i64) -> i64 = |x: i64| -> i64 { x + n };
+    cap : Closure(i64) -> i64 = closure(|x: i64|_{ n } -> i64 { x + n });
     bare := |x: i64| -> i64 { x * 2 };   // capture-free — still a closure
 
     print("{}\n", describe(cap));

@@ -1,35 +1,35 @@
-// A captured FAILABLE closure stays failable when CALLED inside a nested
-// closure body. The free-variable capture analysis descends into the
-// error-handling expressions (`catch`, `try`) that the nested closure uses to
-// consume the captured worker's error channel, so the worker enters the env
-// and the call keeps its type.
+// A FAILABLE closure held in a nested closure's environment stays failable when
+// CALLED in that body: the error-handling expressions (`catch`, `try`) that
+// consume the env field's error channel see the call at its own type.
 //
 // The async completion closure
-// `() { f.value = worker() catch {…} }` captures a `Closure() -> ($R, !)`
+// `() { f.value = worker() catch {…} }` holds a `Closure() -> ($R, !)`
 // worker and consumes its error channel — exactly this shape.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Box :: struct { run: Closure() -> void; }
 
 // `catch` path: the nested closure absorbs the worker's error.
 run_catch :: (worker: Closure() -> (i64, !)) {
     b : Box = ---;
-    b.run = || {
+    b.run = closure(||_{ worker } {
         v := worker() catch {
             print("caught\n");
             return;
         };
         print("ok {}\n", v);
-    };
+    });
     b.run();
+    free(b.run);
 }
 
 // `try` path: the nested closure is itself failable and propagates.
 mk_trier :: (worker: Closure() -> (i64, !)) -> Closure() -> (i64, !) {
-    return || -> (i64, !) {
+    return closure(||_{ worker } -> (i64, !) {
         v := try worker();
         v + 100
-    };
+    });
 }
 
 main :: () -> i64 {
@@ -39,5 +39,6 @@ main :: () -> i64 {
     t := mk_trier(|| -> (i64, !) { 5 });
     r := t() catch { return 1; };
     print("try {}\n", r);                          // try 105
+    free(t);
     return 0;
 }

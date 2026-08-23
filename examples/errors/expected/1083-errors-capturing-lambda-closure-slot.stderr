@@ -1,11 +1,17 @@
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here; persist it with 'closure(f)' (help: 'closure(f, alloc)' to choose the allocator)
-  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:13:5
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:14:5
    |
-13 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
+14 |     h : Closure(i64) -> i64 = |x: i64|_{ n = n } x + n;   // reject: annotated slot
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here; persist it with 'closure(f)' (help: 'closure(f, alloc)' to choose the allocator)
-  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:15:10
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:16:10
    |
-15 |     _ := apply(g, 1);                                     // reject: parameter slot
+16 |     _ := apply(g, 1);                                     // reject: parameter slot
    |          ^^^^^^^^^^^
+
+error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its environment has no home here; persist it with 'closure(f)' (help: 'closure(f, alloc)' to choose the allocator)
+  --> examples/errors/1083-errors-capturing-lambda-closure-slot.sx:17:5
+   |
+17 |     k : Closure(i64) -> i64 = |x: i64| x + n;             // reject: no `_{ }`, same env
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
