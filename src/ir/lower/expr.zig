@@ -3836,6 +3836,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.diagConstRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagContextRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagEnclosingRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
+                if (self.diagNonstoreRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 const place = self.resolveMutablePlace(uop.operand) orelse
                     break :blk self.diagDecrementTarget(node.span);
                 const ty = Lowering.placeType(place);

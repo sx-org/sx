@@ -1,0 +1,37 @@
+// A by-value `for` capture is a read-only copy, but a write that crosses into
+// POINTEE memory through it reaches the shared storage behind the copy and is
+// allowed: a pointer element, an explicit deref of a pointer field, and an
+// element of a slice the copy views. A by-ref capture writes its members
+// directly.
+@import "modules/std.sx";
+
+Cell :: struct { n: i64 = 0; }
+Holder :: struct { p: *Cell; }
+Item :: struct { n: i64 = 0; }
+
+main :: () -> i32 {
+    // Pointer element capture — the copy IS the address.
+    a : Cell = .{ n = 1 };
+    b : Cell = .{ n = 2 };
+    cells : [2]*Cell = .[*a, *b];
+    for c in cells { c.n = 50; }
+    print("{} {}\n", a.n, b.n);
+
+    // Explicit deref of a pointer field held by the copy.
+    holders : [1]Holder = .[.{ p = *a }];
+    for h in holders { h.p.*.n = 7; }
+    print("{}\n", a.n);
+
+    // Element of a slice the copy views — the backing array is shared.
+    buf : [3]i64 = .[1, 2, 3];
+    rows : [1][]i64 = .[buf[0..3]];
+    for r in rows { r[0] = 99; }
+    print("{}\n", buf[0]);
+
+    // By-ref capture — members write back into the container.
+    items : [2]Item = .[.{ n = 1 }, .{ n = 2 }];
+    for *it in items { it.n += 10; }
+    print("{} {}\n", items[0].n, items[1].n);
+
+    0
+}
