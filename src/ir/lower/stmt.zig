@@ -1612,6 +1612,48 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
     }
 }
 
+/// Nonstore-root write guard, shared by lowerAssignment, lowerMultiAssign and
+/// the pre-decrement path: a member/element target whose chain roots at a
+/// scope binding with NO storage — a by-value `for` capture, a match payload,
+/// a catch binding, a local `::` const — writes into a read-only copy. The
+/// ident arms reject the bare `x = v` spelling; this rejects `x.f = v` /
+/// `x[i] = v`, which would otherwise reach emission as a struct_gep over a
+/// value base with no aggregate to address. A chain that crosses into pointee
+/// memory writes shared storage rather than the copy and stays allowed: an
+/// explicit deref, a pointer-typed hop (the root included), or indexing a
+/// slice/string. A binding reached ACROSS a nested-fn/lambda boundary belongs
+/// to diagEnclosingRootWrite.
+pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
+    const scope = self.scope orelse return false;
+    var node = target;
+    while (true) {
+        const obj = switch (node.data) {
+            .field_access => |fa| fa.object,
+            .index_expr => |ie| ie.object,
+            else => return false,
+        };
+        if (obj.data == .deref_expr) return false;
+        const ty = self.inferExprType(obj);
+        if (!ty.isBuiltin()) {
+            const info = self.module.types.get(ty);
+            if (info == .pointer) return false;
+            if (info == .slice and node.data == .index_expr) return false;
+        } else if (ty == .string and node.data == .index_expr) {
+            return false;
+        }
+        if (obj.data == .identifier) {
+            const name = obj.data.identifier.name;
+            const scoped = scope.lookupBoundary(name);
+            if (scoped.crossed != .none) return false;
+            const b = scoped.binding orelse return false;
+            if (b.is_alloca or b.is_ref_capture or b.pack_elem != null) return false;
+            diagNonstoreBindingAssign(self, target.span, name, b, .member);
+            return true;
+        }
+        node = obj;
+    }
+}
+
 /// `--x` on a target that names no slot: a literal, an accessor property, a
 /// slice header word, a comptime tuple index — everything `resolveMutablePlace`
 /// answers null for.
@@ -1633,9 +1675,16 @@ pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref 
     return self.emitPlaceholder("pre-decrement");
 }
 
+/// Which spelling of a write reached a non-storable binding: the binding
+/// itself (`x = v`) or a member/element of it (`x.f = v`, `x[i] = v`). Only
+/// the write-back hints differ — a by-ref capture writes its member directly,
+/// so the `.*` spelling belongs to `.whole` alone.
+const WriteForm = enum { whole, member };
+
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
-/// lowerAssignment's ident arm and lowerMultiAssign's ident arm. A store that
+/// lowerAssignment's ident arm, lowerMultiAssign's ident arm, and the
+/// root-write guard for member/element targets. A store that
 /// lands here reaches neither a container nor the binding's own copy, so it
 /// must not be dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
@@ -1649,21 +1698,28 @@ pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref 
 /// A `.unresolved`-typed binding is an error PLACEHOLDER from an earlier
 /// diagnostic (e.g. `y := xs` where `xs` is a pack — diagPackAsValue already
 /// fired); stay silent rather than cascade a second error off one root cause.
-fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, b: Binding) void {
+fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, b: Binding, form: WriteForm) void {
     const d = self.diagnostics orelse return;
     if (b.ty == .unresolved) return;
     if (b.is_ref_capture) {
         d.addFmt(.err, span, "cannot assign to by-ref capture '{s}' directly — write through it with '{s}.* = ...'", .{ name, name });
         return;
     }
+    const verb = switch (form) {
+        .whole => "assign to",
+        .member => "assign through",
+    };
     switch (b.origin) {
-        .local_const => d.addFmt(.err, span, "cannot assign to constant '{s}' — a '::' declaration is immutable; use ':=' to declare a mutable local", .{name}),
-        .for_element => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
-        .range_index => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{name}),
-        .match_payload => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{name}),
-        .catch_err => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate", .{name}),
-        .pack_elem_alias => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a pack-element alias is read-only; copy it into a `:=` local to mutate", .{name}),
-        .other => d.addFmt(.err, span, "cannot assign to '{s}' — it names a binding with no storable location; copy it into a `:=` local to mutate", .{name}),
+        .local_const => d.addFmt(.err, span, "cannot {s} constant '{s}' — a '::' declaration is immutable; use ':=' to declare a mutable local", .{ verb, name }),
+        .for_element => switch (form) {
+            .whole => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
+            .member => d.addFmt(.err, span, "cannot assign through immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' to write into the container, or copy it into a `:=` local to mutate", .{ name, name }),
+        },
+        .range_index => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{ verb, name }),
+        .match_payload => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{ verb, name }),
+        .catch_err => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
+        .pack_elem_alias => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a pack-element alias is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
+        .other => d.addFmt(.err, span, "cannot {s} '{s}' — it names a binding with no storable location; copy it into a `:=` local to mutate", .{ verb, name }),
     }
 }
 
@@ -2312,6 +2368,10 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // Context-root write guard: the context is immutable within
     // its scope — only pointer-hop chains (pointee writes) may proceed.
     if (diagContextRootWrite(self, asgn.target)) return;
+    // Nonstore-root write guard: a member/element write rooted at a storage-
+    // less binding (by-value capture, match payload, local `::` const) lands
+    // in a read-only copy.
+    if (diagNonstoreRootWrite(self, asgn.target)) return;
     // `@set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
     // setter as `obj.prop$set(rhs)`. Must run before the RHS is lowered below
     // (the synthesized call lowers it itself). Falls through for ordinary fields.
@@ -2494,7 +2554,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // diagNonstoreBindingAssign picks the shape-correct
                     // rejection (by-ref write-through hint / immutable
                     // capture / local `::` const).
-                    diagNonstoreBindingAssign(self, asgn.target.span, id.name, b);
+                    diagNonstoreBindingAssign(self, asgn.target.span, id.name, b, .whole);
                 } else if (self.resolveGlobalRef(id.name, asgn.target.span)) |gi| {
                     if (asgn.op == .assign) {
                         const val_ty = self.builder.getRefType(val);
@@ -3884,6 +3944,9 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         // Context-root write guard — same helper single-assign
         // runs, per target: only pointer-hop chains (pointee writes) proceed.
         if (diagContextRootWrite(self, target)) continue;
+        // Nonstore-root write guard — same helper single-assign runs, per
+        // target: a member/element write into a storage-less binding's copy.
+        if (diagNonstoreRootWrite(self, target)) continue;
         // Enclosing-local write guard — same helper single-
         // assign runs, per target: a nested static fn's multi-assign to an
         // enclosing local would store into the dead alloca (silent no-op).
@@ -3933,7 +3996,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         // exactly as single-assign does:
                         // diagNonstoreBindingAssign picks the shape-correct
                         // message.
-                        diagNonstoreBindingAssign(self, target.span, id.name, b);
+                        diagNonstoreBindingAssign(self, target.span, id.name, b, .whole);
                     } else if (std.mem.eql(u8, id.name, "_")) {
                         // `_` discards this position's value — the multi-assign
                         // spelling of the discard idiom (`a, _ = x, y`).

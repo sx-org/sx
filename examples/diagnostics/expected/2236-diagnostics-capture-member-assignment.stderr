@@ -1,0 +1,41 @@
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:27:22
+   |
+27 |     for e in items { e.n = e.n + 10; }
+   |                      ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:30:30
+   |
+30 |     for e, i in items, 0.. { e.n += 10; }
+   |                              ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:33:22
+   |
+33 |     for e in items { e.tags[0] = 7; }
+   |                      ^^^^^^^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:37:25
+   |
+37 |     for e in items { a, e.n = 5, 6; }
+   |                         ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:40:24
+   |
+40 |     for e in items { --e.n; }
+   |                        ^^^
+
+error: cannot assign through immutable capture 'b' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:45:26
+   |
+45 |         case .box: |b| { b.n = 4; }
+   |                          ^^^
+
+error: cannot assign through constant 'c' — a '::' declaration is immutable; use ':=' to declare a mutable local
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:51:5
+   |
+51 |     c.n = 9;
+   |     ^^^

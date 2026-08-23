@@ -1,0 +1,54 @@
+// A MEMBER or ELEMENT write through a by-value capture is refused exactly as
+// the bare `x = v` spelling is: the capture is a read-only copy, so `e.n = ...`
+// reaches no container storage. Every write form is covered — plain, compound,
+// element index, multi-assign, pre-decrement — and each carries the shape-aware
+// message of the binding it roots at. Only the for-loop ELEMENT form suggests
+// the `*e` by-ref spelling, since its container storage exists.
+//
+// A chain that crosses into pointee memory writes shared storage, not the copy,
+// and stays allowed — see 2237-basic-capture-member-writes.
+
+@import "modules/std.sx";
+
+Item :: struct {
+    n: i64 = 0;
+    tags: [2]i64;
+}
+
+Shape :: enum { box: Item; none; }
+
+main :: () -> i32 {
+    items : [2]Item = .[
+        .{ n = 1, tags = .[0, 0] },
+        .{ n = 2, tags = .[0, 0] },
+    ];
+
+    // 1. for-loop element capture — field write
+    for e in items { e.n = e.n + 10; }
+
+    // 2. compound field write, paired index capture
+    for e, i in items, 0.. { e.n += 10; }
+
+    // 3. element write into an array field of the copy
+    for e in items { e.tags[0] = 7; }
+
+    // 4. multi-assign spelling — member target
+    a := 0;
+    for e in items { a, e.n = 5, 6; }
+
+    // 5. pre-decrement of a member
+    for e in items { --e.n; }
+
+    // 6. match-arm payload capture — field write
+    s : Shape = .box(.{ n = 3, tags = .[0, 0] });
+    match s {
+        case .box: |b| { b.n = 4; }
+        case .none: {}
+    }
+
+    // 7. function-local '::' const — constant-family message
+    c :: Item{ n = 8, tags = .[0, 0] };
+    c.n = 9;
+
+    0
+}
