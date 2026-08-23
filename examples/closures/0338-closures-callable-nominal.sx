@@ -18,7 +18,7 @@ Box :: struct { acc: Accumulator; p: *Accumulator; }
 Cell :: struct { bump: Accumulator; }
 
 // A callable field takes the call, so a same-named free ufcs never steals it.
-bump :: ufcs (c: Cell, x: i64) -> i64 { return -1; }
+bump :: ufcs (c: Cell, n: i64) -> i64 { return -1; }
 
 made := 0;
 mk :: () -> Cell { made += 1; return .{ bump = Accumulator{ total = 0 } }; }
@@ -72,4 +72,7 @@ main :: () {
     // The receiver expression is evaluated ONCE.
     print("once {}\n", mk().bump(3));
     print("made {}\n", made);
+
+    print("named field {}\n", b.acc(x = 1));
+    print("named steal {}\n", cell.bump(x = 1));
 }

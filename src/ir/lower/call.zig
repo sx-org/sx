@@ -401,11 +401,7 @@ pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
         .binding => |b| b,
     };
     if (binding.pack_elem != null) return false;
-    if (binding.ty.isBuiltin()) return false;
-    if (self.uniqueLambdaThrough(binding.ty) != null) return true;
-    if (self.callableNominalThrough(binding.ty) != null) return true;
-    const ti = self.module.types.get(binding.ty);
-    return ti == .function or ti == .closure;
+    return self.callableSigOf(binding.ty) != null;
 }
 
 /// Call the function a unique lambda's env `env_addr` belongs to. The value IS
@@ -846,8 +842,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // The bare name's visible author is a VALUE: this spelling denotes that
     // declaration here, so no name-keyed function lookup may answer for it.
     const author_not_callable = bare_author_verdict == .not_callable;
-    // Either verdict forbids reading a signature off the name-keyed winner:
-    // there is no single author to take named-arg names or defaults from.
+    // Either verdict forbids reading a signature off the name-keyed winner
+    // (`sel_author` / `fn_ast_map`).
     const author_declines = author_ambiguous or author_not_callable;
 
     // A proved namespace path that fails at one edge/member is terminal. Emit
@@ -880,7 +876,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // `f(a, name = v)` into declaration order with defaults filled, BEFORE
     // positional default expansion (a named call never reaches it: mapping
     // fills every default itself, middle holes included).
-    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_declines)) |mapped| c = mapped;
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null, author_declines)) |mapped| c = mapped;
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
@@ -4902,18 +4898,25 @@ fn fnDeclHasVariadicParam(fd: *const ast.FnDecl) bool {
 /// needed (callee unknown, all args provided, or no defaults available).
 /// The callee declaration a named-argument call maps against, plus how many
 /// leading params the call shape binds implicitly (1 for a value-receiver
-/// method/ufcs dot-call, else 0).
+/// method/ufcs dot-call and for a callable-nominal value, else 0).
 const NamedCallee = struct {
     fd: *const ast.FnDecl,
     source: ?[]const u8,
     receiver_params: usize,
 };
 
+/// The callee expression is the receiver, so mapping starts past `call`'s first param.
+fn namedNominalCallee(self: *Lowering, ty: TypeId) ?NamedCallee {
+    const cn = self.callableNominalThrough(ty) orelse return null;
+    return .{ .fd = cn.fd, .source = cn.fd.body.source_file, .receiver_params = 1 };
+}
+
 /// Resolve the declaration whose parameter NAMES a named-argument call binds
 /// against. Mirrors `expandCallDefaults`' author resolution (bare/qualified/
 /// static-struct/enum-literal callees) and adds the value-receiver dot-call
 /// shapes (plain-struct method, ufcs fn — an alias resolves names against the
-/// TARGET's declared params). Null when no declaration is known (closure /
+/// TARGET's declared params) and a callable-nominal VALUE (maps against its
+/// `call`, past the receiver). Null when no declaration is known (closure /
 /// fn-pointer values, builtins, interface methods) — those bind positionally
 /// only.
 fn namedCalleeDecl(
@@ -4921,33 +4924,40 @@ fn namedCalleeDecl(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?NamedCallee {
     switch (c.callee.data) {
         .identifier => |id| {
-            if (author_declines) return null;
-            if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
             if (self.scope) |scope| {
-                if (scope.lookup(id.name)) |binding| {
-                    // A callable nominal binds named arguments against its own
-                    // `call`, whose first param is the receiver the call form
-                    // supplies. Every other callable value binds positionally.
-                    if (self.callableNominalThrough(binding.ty)) |cn|
-                        return .{ .fd = cn.fd, .source = cn.fd.body.source_file, .receiver_params = 1 };
+                if (scope.lookupNearest(id.name)) |near| switch (near) {
+                    .binding => |b| {
+                        if (namedNominalCallee(self, b.ty)) |nc| return nc;
+                        if (callableLocalShadow(self, id.name)) return null;
+                    },
+                    .local_fn => {},
+                };
+            }
+            if (!author_declines) {
+                if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
+                const eff_name = blk: {
+                    const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
+                    if (self.ufcsAliasTarget(id.name)) |target| {
+                        break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+                    }
+                    break :blk scoped;
+                };
+                if (self.program_index.fn_ast_map.get(eff_name)) |fd| {
+                    return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                 }
             }
-            if (callableLocalShadow(self, id.name)) return null;
-            const eff_name = blk: {
-                const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                if (self.ufcsAliasTarget(id.name)) |target| {
-                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
-                }
-                break :blk scoped;
-            };
-            const fd = self.program_index.fn_ast_map.get(eff_name) orelse return null;
-            return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
+            if (self.globalValueRef(id.name)) |gi| return namedNominalCallee(self, gi.ty);
+            return null;
         },
         .field_access => |fa| {
+            // A namespace-selected callable value maps against its `call`. A
+            // qualified Closure has no names.
+            if (qualified_callable) |gi| return namedNominalCallee(self, gi.ty);
             if (qualified_selected) return .{ .fd = sel_author.?.decl, .source = sel_author.?.source, .receiver_params = 0 };
             if (!self.callResolver().objectIsValue(fa.object)) {
                 switch (self.staticStructHead(fa.object)) {
@@ -4975,8 +4985,15 @@ fn namedCalleeDecl(
                     }
                 }
             }
+            // A callable field maps against its own declaration. A Closure /
+            // fn-pointer / unique field has no names.
+            const recv_ty = self.inferExprType(fa.object);
+            switch (self.lookupField(recv_ty, fa.field)) {
+                .hit, .private => |h| if (self.callableShapeOf(h.ty) != null) return namedNominalCallee(self, h.ty),
+                .missing => {},
+            }
             // Value receiver: `obj.m(args)` binds the first param to `obj`.
-            var obj_ty = self.inferExprType(fa.object);
+            var obj_ty = recv_ty;
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer) obj_ty = oi.pointer.pointee;
@@ -5002,7 +5019,7 @@ fn namedCalleeDecl(
             const method = self.plainStructMethod(tgt, el.name) orelse return null;
             return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 0 };
         },
-        else => return null,
+        else => return namedNominalCallee(self, self.inferExprType(c.callee)),
     }
 }
 
@@ -5076,6 +5093,7 @@ pub fn mapNamedArgs(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
     author_declines: bool,
 ) ?*ast.Call {
     var any_named = false;
@@ -5092,7 +5110,7 @@ pub fn mapNamedArgs(
         .enum_literal => |el| el.name,
         else => "callee",
     };
-    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_declines) orelse {
+    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, qualified_callable, author_declines) orelse {
         if (self.diagnostics) |d| {
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
@@ -5878,7 +5896,7 @@ pub fn resolveCallParamTypes(
         // name is shared program-wide, so the author is picked by RECEIVER, the
         // way dispatch picks it, and a declaration whose own receiver parameter
         // does not take this one names a different call.
-        if (namedCalleeDecl(self, c, sel_author, qualified_selected, false)) |callee| {
+        if (namedCalleeDecl(self, c, sel_author, qualified_selected, null, false)) |callee| {
             if (callee.receiver_params == 1) {
                 var eff_args = std.ArrayList(*const Node).empty;
                 defer eff_args.deinit(self.alloc);

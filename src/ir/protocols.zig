@@ -803,7 +803,7 @@ pub const ProtocolResolver = struct {
         }
         // The member rule is keyed on the conformer's TypeId: the block's own
         // `call`, against any `call` the conformer already declares. Both is a
-        // duplicate definition; neither leaves the conformer uncallable; one
+        // duplicate definition; neither is the missing-call diagnostic; one
         // alone is the method the impl registers, written or adopted.
         const inherent = self.l.plainStructAdoptableMethod(cty, "call");
         const call_field = self.l.lookupField(cty, "call") != .missing;

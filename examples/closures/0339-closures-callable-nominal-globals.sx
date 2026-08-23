@@ -39,4 +39,10 @@ main :: () {
 
     xs := .[Accumulator{ total = 0 }];
     print("index {}\n", xs[0](4));
+
+    print("named global {}\n", g(x = 1, step = 2));
+    print("named qualified {}\n", m.counter(x = 1));
+    print("named const {}\n", k(x = 5));
+    print("named const total {}\n", k.total);
+    print("named index {}\n", xs[0](x = 4));
 }
