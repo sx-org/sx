@@ -803,6 +803,20 @@ pub const ProtocolResolver = struct {
             return;
         };
 
+        const call_key = std.fmt.allocPrint(self.l.alloc, "{s}.call", .{ib.target_type}) catch return;
+        const mapped = self.l.program_index.fn_ast_map.get(call_key);
+        const inherent = self.l.plainStructMethod(cty, "call");
+        const mapped_other = mapped != null and mapped.? != fd;
+        const inherent_other = inherent != null and inherent.?.fd != fd;
+        if (mapped_other or inherent_other) {
+            if (diags) |d| {
+                const id = d.addFmtId(.err, fd.name_span, "'call' collides with an existing member of '{s}'", .{self.l.formatTypeName(cty)});
+                const other = if (inherent_other) inherent.?.fd else mapped.?;
+                d.addNoteFmt(id, other.name_span, "declared here", .{});
+            }
+            return;
+        }
+
         const ptr_cty = self.l.module.types.ptrTo(cty);
         const recv_ty = if (fd.params.len > 0) self.l.resolveTypeInSource(source, fd.params[0].type_expr) else TypeId.void;
         if (fd.params.len == 0 or (recv_ty != cty and recv_ty != ptr_cty)) {

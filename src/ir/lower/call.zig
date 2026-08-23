@@ -2044,6 +2044,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const env_addr = uniqueEnvAddress(self, h.ty, env_ptr, true).?;
                         return callUniqueLambda(self, u, env_addr, args.items);
                     }
+                    if (self.callableNominalThrough(h.ty)) |cn| {
+                        if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
+                        // The callee is the field; `fixupMethodReceiver` addresses that slot for a `*T` receiver.
+                        return callNominal(self, cn, c.callee, self.lowerExpr(c.callee), h.ty, args.items, c.callee.span);
+                    }
                     if (!h.ty.isBuiltin()) {
                         const fti = self.module.types.get(h.ty);
                         if (fti == .closure) {

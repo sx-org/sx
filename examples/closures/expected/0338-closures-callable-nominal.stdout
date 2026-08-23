@@ -6,4 +6,8 @@ bound 16
 bound 16
 bound 2
 after 16
+field 4
+field total 4
+ptr-field 18
+total 18
 enum 11

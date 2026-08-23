@@ -76,6 +76,18 @@ help: write 'call :: (self: *Loose, …)'
 32 | impl (i64) -> i64 for Loose { call :: (seed: i64, x: i64) -> i64 { return x; } }
    |                               ^^^^
 
+error: 'call' collides with an existing member of 'HasCall'
+  --> examples/errors/1089-errors-callable-nominal.sx:39:5
+   |
+39 |     call :: (self: *HasCall, x: i64) -> i64 { return x; }
+   |     ^^^^
+
+note: declared here
+  --> examples/errors/1089-errors-callable-nominal.sx:36:5
+   |
+36 |     call :: (self: *HasCall, x: i64) -> i64 { return self.n + x; }
+   |     ^^^^
+
 error: unknown type 'T'
   --> examples/errors/1089-errors-callable-nominal.sx:23:44
    |

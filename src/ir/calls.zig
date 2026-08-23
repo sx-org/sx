@@ -396,6 +396,12 @@ pub const CallResolver = struct {
                         .return_type = u.ret,
                         .target = .{ .named = cfa.field },
                     };
+                    if (self.l.callableNominalThrough(h.ty)) |cn| return .{
+                        .kind = .callable_nominal,
+                        .return_type = cn.ret,
+                        .target = .{ .named = cn.qualified },
+                        .prepends_receiver = true,
+                    };
                     const fti = self.l.module.types.get(h.ty);
                     if (fti == .closure) return .{
                         .kind = .closure,

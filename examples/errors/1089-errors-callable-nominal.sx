@@ -31,4 +31,12 @@ impl (i64) -> i64 for Wide { call :: (self: *Wide, x: string) -> i64 { return 1;
 Loose :: struct { n: i64; }
 impl (i64) -> i64 for Loose { call :: (seed: i64, x: i64) -> i64 { return x; } }
 
+HasCall :: struct {
+    n: i64;
+    call :: (self: *HasCall, x: i64) -> i64 { return self.n + x; }
+}
+impl (i64) -> i64 for HasCall {
+    call :: (self: *HasCall, x: i64) -> i64 { return x; }
+}
+
 main :: () -> i32 { return 0; }

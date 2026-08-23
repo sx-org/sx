@@ -12,6 +12,8 @@ impl (i64) -> i64 for Accumulator {
     call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; return self.total; }
 }
 
+Box :: struct { acc: Accumulator; p: *Accumulator; }
+
 Step :: enum { one; two; }
 
 impl (i64) -> i64 for Step {
@@ -40,6 +42,12 @@ main :: () {
     // `F` binds to the argument's own type: an `Accumulator` argument is a
     // copy, a `*Accumulator` argument names the one value.
     print("after {}\n", acc.total);
+
+    b := Box{ acc = Accumulator{ total = 0 }, p = p };
+    print("field {}\n", b.acc(4));
+    print("field total {}\n", b.acc.total);
+    print("ptr-field {}\n", b.p(2));
+    print("total {}\n", acc.total);
 
     s :Step = .two;
     print("enum {}\n", s(10));
