@@ -1,0 +1,21 @@
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1093-errors-buildblock-nested-sealed-body.sx:28:30
+   |
+28 |         bare := |x: i64| x + n;        // reject: the literal needs `_{ n }`
+   |                              ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+28 |         bare := |x: i64| x + n;        // reject: the literal needs `_{ n }`
+   |                              ^
+
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1093-errors-buildblock-nested-sealed-body.sx:30:32
+   |
+30 |         once() { print("{}\n", n); };  // reject: a headerless `$F` block is one too
+   |                                ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+30 |         once() { print("{}\n", n); };  // reject: a headerless `$F` block is one too
+   |                                ^

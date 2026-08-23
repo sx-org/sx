@@ -1,0 +1,84 @@
+// The capture walk over a `@BuildBlock` body sorts every child three ways. An
+// env field value evaluates where the body is written, so it is collected in
+// the enclosing frame. A `|…|` header makes the body a user lambda, sealed
+// against that frame. A headerless brace, a branch, a loop, and a match arm are
+// regions: what they declare and the names they bind stay inside them, so a
+// later statement still reaches the enclosing local of the same name.
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+
+Drawable :: constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
+}
+
+column :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Tally{};
+    content.run(*sink);
+}
+
+row :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Tally{};
+    content.run(*sink);
+}
+
+each :: (n: i64, body: $F/(i64) -> void) { body(n); }
+
+// One block site, two monomorphizations: each reads the `n` of its own frame.
+twice :: (tag: $K, n: i64) {
+    print("mono {}\n", tag);
+    column() {
+        each(1) { |x|_{ k = n } print("mono val={}\n", x + k); };
+    };
+}
+
+main :: () -> i32 {
+    n := 5;
+    m := 1;
+    a9 := 11;
+    b9 := 12;
+    c9 := 13;
+    d9 := 14;
+    e9 := 15;
+
+    column() {
+        each(1) { |x|_{ n } print("sh={}\n", x + n); };
+
+        lit := |x: i64|_{ k = n + 1 } -> i64 x + k;
+        print("lit={}\n", lit(1));
+
+        row() { print("bb={}\n", n); };
+
+        row() { m := 3; print("block inner={}\n", m); };
+        print("block outer={}\n", m);
+
+        row() { q := 8; print("free inner={}\n", q); };
+
+        if m > 0 { a9 := 9; print("if inner={}\n", a9); }
+        print("if outer={}\n", a9);
+
+        w := 0;
+        while w < 1 { b9 := 9; print("while inner={}\n", b9); w += 1; }
+        print("while outer={}\n", b9);
+
+        for c9 in 0..1 { print("for inner={}\n", c9); }
+        print("for outer={}\n", c9);
+
+        for d9 in 0..1 => print("arrow inner={}\n", d9);
+        print("arrow outer={}\n", d9);
+
+        match m {
+            case 1: { e9 := 9; print("match inner={}\n", e9); }
+            else: {}
+        }
+        print("match outer={}\n", e9);
+    };
+
+    twice("a", 4);
+    twice(7, 6);
+    0
+}

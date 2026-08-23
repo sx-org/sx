@@ -38,7 +38,7 @@ main :: () -> i32 {
     };
     // A subscript is a group too, and so is the call inside it.
     run("subscript") {
-        slots[pair(0, 1)] = 9;
+        | |_{ slots } slots[pair(0, 1)] = 9;
         print("{}", slots[1])
     };
     // A bracketed literal's elements are the literal's.

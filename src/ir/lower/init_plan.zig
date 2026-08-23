@@ -137,10 +137,11 @@ fn siteFor(self: *Lowering, arg: *const Node) u32 {
 /// implementor.
 ///
 /// The closure lowerer does the work: capture collection, env layout, and body
-/// lowering are the ordinary lambda paths. Two things differ, both carried by
-/// `lowerLambdaTyped`: the environment stays on the caller's stack (§12.1
-/// forbids the compiler from choosing heap storage for it), and the result is
-/// typed as this site's implementor rather than the structurally identical
+/// lowering are the ordinary lambda paths, entered as an `.init_recipe` — the
+/// thunk body is the argument the caller wrote, so its free names are collected
+/// from the forming frame and the environment stays on that frame's stack
+/// (§12.1 forbids the compiler from choosing heap storage for it). The result
+/// is typed as this site's implementor rather than the structurally identical
 /// `Closure(*T)`.
 pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const arg_ty = self.inferExprType(arg);
@@ -174,7 +175,7 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const saved_target = self.target_type;
     self.target_type = impl_ty;
     defer self.target_type = saved_target;
-    return lower_closure.lowerLambdaTyped(self, &lam, .stack, impl_ty);
+    return lower_closure.lowerLambdaTyped(self, &lam, .init_recipe, impl_ty);
 }
 
 /// Where a modeled conversion ladder ENDS: the destination no built-in conversion

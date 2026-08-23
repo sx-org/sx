@@ -276,14 +276,23 @@ pub const Scope = struct {
     map: std.StringHashMap(Binding),
     fn_names: std.StringHashMap([]const u8), // bare name → mangled name for local functions
     parent: ?*Scope,
-    /// True on the ROOT scope of a NESTED `::` static function's body (a
-    /// `f :: () {…}` declared inside another function). Such a scope keeps its
-    /// `parent` chain so SIBLING nested fns (`fn_names`) and comptime constants
-    /// still resolve, but a plain VALUE binding reached by crossing this
-    /// boundary is an enclosing local/param/const — which a static nested fn has
-    /// no env to reach — and must be diagnosed, not silently read as a dead
-    /// Ref. Closures capture explicitly and do NOT set this.
-    is_fn_boundary: bool = false,
+    /// What a value binding reached by crossing this scope is.
+    boundary: Boundary = .none,
+
+    pub const Boundary = enum {
+        /// Ordinary nesting — a binding above is in scope.
+        none,
+        /// The ROOT scope of a NESTED `::` static function's body (a
+        /// `f :: () {…}` declared inside another function). It keeps its
+        /// `parent` chain so SIBLING nested fns (`fn_names`) and comptime
+        /// constants still resolve, but a plain VALUE binding above it is an
+        /// enclosing local/param/const the static fn has no env to reach.
+        nested_fn,
+        /// The ROOT scope of a lambda body. The body reads its parameters, its
+        /// own locals, and its `_{ … }` fields; the chain above is walked only
+        /// by the boundary lookups, which name the env field to write.
+        lambda,
+    };
 
     pub fn init(alloc: Allocator, parent: ?*Scope) Scope {
         return .{
@@ -304,32 +313,33 @@ pub const Scope = struct {
 
     pub fn lookup(self: *const Scope, name: []const u8) ?Binding {
         if (self.map.get(name)) |b| return b;
+        if (self.boundary == .lambda) return null;
         if (self.parent) |p| return p.lookup(name);
         return null;
     }
 
-    /// A value-binding lookup that also reports whether the binding was reached
-    /// only by crossing a nested-fn boundary (`is_fn_boundary`). A static nested
-    /// `::` fn has no environment, so such a binding is an enclosing
-    /// local/param/const it cannot legitimately read — the identifier site turns
-    /// `crossed_fn_boundary = true` into the tailored "use a closure to capture"
-    /// diagnostic instead of silently emitting the dead Ref.
+    /// A value-binding lookup that also reports the boundary the binding was
+    /// reached ACROSS. A static nested `::` fn has no environment and a lambda
+    /// body has only its env, so such a binding is one neither can legitimately
+    /// read — the identifier site turns a non-`.none` `crossed` into the
+    /// tailored diagnostic instead of silently emitting the dead Ref.
     /// `binding` is null when the name is absent entirely (the ordinary
-    /// unresolved path); non-null with `crossed_fn_boundary = false` is a normal
-    /// in-scope hit.
-    pub const ScopedBinding = struct { binding: ?Binding, crossed_fn_boundary: bool };
+    /// unresolved path); non-null with `crossed == .none` is a normal in-scope
+    /// hit.
+    pub const ScopedBinding = struct { binding: ?Binding, crossed: Boundary };
     pub fn lookupBoundary(self: *const Scope, name: []const u8) ScopedBinding {
         var s: ?*const Scope = self;
-        var crossed = false;
+        var crossed: Boundary = .none;
         while (s) |sc| : (s = sc.parent) {
-            if (sc.map.get(name)) |b| return .{ .binding = b, .crossed_fn_boundary = crossed };
-            if (sc.is_fn_boundary) crossed = true;
+            if (sc.map.get(name)) |b| return .{ .binding = b, .crossed = crossed };
+            if (crossed == .none) crossed = sc.boundary;
         }
-        return .{ .binding = null, .crossed_fn_boundary = false };
+        return .{ .binding = null, .crossed = .none };
     }
 
     pub fn lookupFn(self: *const Scope, name: []const u8) ?[]const u8 {
         if (self.fn_names.get(name)) |mangled| return mangled;
+        if (self.boundary == .lambda) return null;
         if (self.parent) |p| return p.lookupFn(name);
         return null;
     }
@@ -355,25 +365,25 @@ pub const Scope = struct {
         while (s) |sc| : (s = sc.parent) {
             if (sc.map.get(name)) |b| return .{ .binding = b };
             if (sc.fn_names.get(name)) |m| return .{ .local_fn = m };
+            if (sc.boundary == .lambda) return null;
         }
         return null;
     }
 
-    /// `lookupNearest` + the fn-boundary report: call-site
-    /// dispatch needs BOTH the nearest-declaration verdict and whether that
-    /// declaration lives across a nested-fn boundary. A `.local_fn` found
-    /// across the boundary is a SIBLING nested fn — static, legally callable.
-    /// A `.binding` found across it is an enclosing local (closure value, fn
-    /// pointer, anything) the static nested fn cannot reach — the call site
-    /// diagnoses instead of dispatching through the dead Ref (Bus error).
-    pub const NearestBoundary = struct { near: NearestName, crossed_fn_boundary: bool };
+    /// `lookupNearest` + the boundary report: call-site dispatch needs BOTH the
+    /// nearest-declaration verdict and which boundary that declaration lives
+    /// across. A `.local_fn` found across one is a SIBLING nested fn — static,
+    /// legally callable. A `.binding` found across it is an enclosing local
+    /// (closure value, fn pointer, anything) the body cannot reach — the call
+    /// site diagnoses instead of dispatching through the dead Ref (Bus error).
+    pub const NearestBoundary = struct { near: NearestName, crossed: Boundary };
     pub fn lookupNearestBoundary(self: *const Scope, name: []const u8) ?NearestBoundary {
         var s: ?*const Scope = self;
-        var crossed = false;
+        var crossed: Boundary = .none;
         while (s) |sc| : (s = sc.parent) {
-            if (sc.map.get(name)) |b| return .{ .near = .{ .binding = b }, .crossed_fn_boundary = crossed };
-            if (sc.fn_names.get(name)) |m| return .{ .near = .{ .local_fn = m }, .crossed_fn_boundary = crossed };
-            if (sc.is_fn_boundary) crossed = true;
+            if (sc.map.get(name)) |b| return .{ .near = .{ .binding = b }, .crossed = crossed };
+            if (sc.fn_names.get(name)) |m| return .{ .near = .{ .local_fn = m }, .crossed = crossed };
+            if (crossed == .none) crossed = sc.boundary;
         }
         return null;
     }
@@ -2247,23 +2257,28 @@ pub const Lowering = struct {
         return self.emitPlaceholder(name);
     }
 
-    /// A static nested `::` function referenced an ENCLOSING function's local /
-    /// param / local-const `name`. It has no environment to reach it — the only
-    /// spelling that captures is a closure. Diagnose loudly and emit a
+    /// A body referenced an ENCLOSING function's local / param / local-const
+    /// `name` across a boundary that cannot reach it: a static nested `::`
+    /// function, which has no environment at all, or a lambda, whose
+    /// environment is exactly the `_{ … }` it wrote. Diagnose loudly and emit a
     /// placeholder; `hasErrors()` aborts before codegen so the placeholder
     /// never runs. Deduped per
     /// (function, name): the guard sits at every resolution layer and a
     /// speculative fast path's diagnostic would otherwise repeat when its
     /// null-fallback re-lowers the same identifier through another guard.
-    pub fn diagEnclosingLocalRef(self: *Lowering, name: []const u8, span: ?ast.Span) Ref {
+    pub fn diagEnclosingLocalRef(self: *Lowering, name: []const u8, span: ?ast.Span, crossed: Scope.Boundary) Ref {
         if (self.diagnostics) |diags| {
             const fn_idx: u32 = if (self.builder.func) |fid| @intFromEnum(fid) else std.math.maxInt(u32);
             const key = std.fmt.allocPrint(self.alloc, "{d}:{s}", .{ fn_idx, name }) catch name;
             const gop = self.diag_enclosing_seen.getOrPut(key) catch null;
             const first = if (gop) |g| !g.found_existing else true;
-            if (first) {
-                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := || ...') to capture it", .{ name, name });
-            }
+            if (first) switch (crossed) {
+                .lambda => {
+                    const id = diags.addFmtId(.err, span, "'{s}' is not in scope in this lambda body — it reads its parameters and its env, nothing else", .{name});
+                    diags.addHelpFmt(id, span, null, "name it in the env: `|…|_{{ {s} }} …`, which is the copy `{s} = {s}`", .{ name, name, name });
+                },
+                .none, .nested_fn => diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — only a closure reaches it, by naming it in its env (`|…|_{{ {s} }} ...`)", .{ name, name }),
+            };
         }
         return self.emitPlaceholder(name);
     }
@@ -2313,8 +2328,8 @@ pub const Lowering = struct {
         };
         if (self.scope) |scope| {
             const sb = scope.lookupBoundary(name);
-            if (sb.crossed_fn_boundary) {
-                _ = self.diagEnclosingLocalRef(name, node.span);
+            if (sb.crossed != .none) {
+                _ = self.diagEnclosingLocalRef(name, node.span, sb.crossed);
                 return null;
             }
             if (sb.binding) |binding| {
@@ -2337,7 +2352,7 @@ pub const Lowering = struct {
             .identifier => |id| {
                 if (self.scope) |scope| {
                     const sb = scope.lookupBoundary(id.name);
-                    if (sb.crossed_fn_boundary) return false;
+                    if (sb.crossed != .none) return false;
                     if (sb.binding) |binding| return binding.is_alloca;
                 }
                 // Global check mirrors `resolveGlobalRef` minus its

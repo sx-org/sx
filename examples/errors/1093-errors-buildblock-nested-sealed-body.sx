@@ -1,0 +1,33 @@
+// A `@BuildBlock(P)` body is replayed in the frame that formed it, so its own
+// free names reach that frame. A `|…|` written INSIDE it is still a user
+// lambda, and so is a headerless brace at a `$F` slot — both are sealed against
+// the build body around them and reach an enclosing local only through `_{ … }`.
+
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+
+Drawable :: constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Tally :: struct {
+    count: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.count += 1; }
+}
+
+column :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Tally{};
+    content.run(*sink);
+}
+
+once :: (body: $F/() -> void) { body(); }
+
+main :: () -> i32 {
+    n := 5;
+    column() {
+        bare := |x: i64| x + n;        // reject: the literal needs `_{ n }`
+        print("{}\n", bare(1));
+        once() { print("{}\n", n); };  // reject: a headerless `$F` block is one too
+    };
+    return 0;
+}

@@ -4030,7 +4030,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     // local/param/const the static fn has no env to reach, and the identifier
     // site diagnoses it instead of emitting a dead Ref.
     var scope = Scope.init(self.alloc, self.scope);
-    scope.is_fn_boundary = self.scope != null;
+    scope.boundary = if (self.scope != null) .nested_fn else .none;
     defer scope.deinit();
     self.scope = &scope;
     defer self.scope = scope.parent;
