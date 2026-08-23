@@ -509,10 +509,16 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
         self.resolveTypeWithBindings(n)
     else
         expr_ty;
-    const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
+    // The global's type is the wrapper's ret after lowering, with the error
+    // channel stripped.
+    const settled = self.module.getFunction(func_id).ret;
+    const global_ty: TypeId = if (self.errorChannelOf(settled)) |ch|
+        (if (settled == ch) TypeId.void else self.failableSuccessType(settled))
+    else
+        settled;
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);
@@ -557,7 +563,7 @@ pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
         self.alloc.dupe(Ref, &.{self.current_ctx_ref}) catch &.{}
     else
         &.{};
-    return self.builder.call(func_id, final_args, ret_ty);
+    return self.builder.call(func_id, final_args, func.ret);
 }
 
 /// Lower a `@insert expr` statement. Evaluates `expr` at compile time to get
@@ -1883,12 +1889,16 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // single-expression case.
     for (prelude) |stmt| self.lowerStmt(stmt);
 
-    // Lower the expression and return it
+    // An `.unresolved` request is a question the AST could not answer — a block
+    // body binds the locals its tail reads only as it lowers — so the lowered
+    // result's own type settles the wrapper's return.
     const result = self.lowerExpr(expr);
-    if (ret_ty == .void) {
+    const settled_ret: TypeId = if (ret_ty == .unresolved) self.builder.getRefType(result) else ret_ty;
+    self.module.getFunctionMut(func_id).ret = settled_ret;
+    if (settled_ret == .void) {
         self.builder.retVoid();
     } else {
-        self.builder.ret(result, ret_ty);
+        self.builder.ret(result, settled_ret);
     }
 
     self.builder.finalize();
