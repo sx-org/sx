@@ -18,11 +18,11 @@
 // trivial no-ops/0 — they exist for the fiber scheduler.
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
-// Worker form: a nullary failable `Closure() -> ($R, !)`, written as a lambda
-// at the call site (`|| -> (i64, !) compute(a, b)`). A named fn does not
-// coerce to a closure, so it is not a worker.
+// Worker form: anything callable at the nullary failable `() -> ($R, !)`,
+// written as a lambda at the call site (`|| -> (i64, !) compute(a, b)`).
 @import "modules/std/core.sx";
 @import "modules/std/atomic.sx";
+@import "modules/std/mem.sx";    // closure (persist the worker)
 c    :: @import "modules/std/c.sx";
 time :: @import "modules/std/time.sx";
 
@@ -137,29 +137,32 @@ Future :: struct ($R: Type) {
 // the bridge a concrete `*ThunkBox` to `size_of`/cast/call through.
 // `run` is the completion closure (captures the Future + the worker); `worker_env`
 // records the WORKER closure's own heap env (captured by-value into `run`'s env, so
-// otherwise unreachable to free). Both the box and these two envs are dead the
-// instant `run()` returns — `sx_run_boxed_closure` reclaims them there.
-ThunkBox :: struct { run: Closure() -> void; worker_env: *void = null; }
+// otherwise unreachable to free); `alloc` funds the box, `run`'s env, and a worker
+// env `async` persisted — a worker that arrives already erased hands its env over
+// to be freed the same way. Both the box and these two envs are dead the instant
+// `run()` returns — `sx_run_boxed_closure` reclaims them there.
+ThunkBox :: struct { run: Closure() -> void; worker_env: *void = null; alloc: Allocator; }
 
 sx_run_boxed_closure :: (arg: *void) {
     b : *ThunkBox = arg.(*ThunkBox);
     b.run();
     // `b.run` has returned, so its env, the worker's env, and the box itself are
-    // all dead — free them (the per-`async` heap, minus the Future). This runs
-    // under the spawn-time context (fib_dispatch re-pushes `dctx`), so
-    // `context.allocator` is the same allocator `async` used. Read every field
-    // BEFORE freeing the box. A capture-free completion/worker has a null env →
-    // the dealloc is a no-op.
+    // all dead — free them (the per-`async` heap, minus the Future). All three came
+    // from `b.alloc`. Read every field BEFORE freeing the box. A capture-free
+    // completion/worker has a null env → the dealloc is a no-op.
+    a := b.alloc;
     run_env := b.run.env;
     worker_env := b.worker_env;
-    if run_env != null { context.allocator.dealloc_bytes(run_env); }
-    if worker_env != null { context.allocator.dealloc_bytes(worker_env); }
-    context.allocator.dealloc_bytes(b);
+    a.dealloc_bytes(run_env);
+    a.dealloc_bytes(worker_env);
+    a.dealloc_bytes(b);
 }
 
-// `async(io, worker)` — submit a NULLARY `worker: Closure() -> ($R, !)` and get
-// a `*Future($R)` handle. Inputs are captured at the CALL SITE in the lambda
-// (`context.io.async(|| -> (i64, !) compute(a, b))`).
+// `async(io, worker)` — submit a NULLARY worker callable at `() -> ($R, !)` and
+// get a `*Future($R)` handle. Inputs are captured at the CALL SITE in the
+// lambda (`context.io.async(|| -> (i64, !) compute(a, b))`). The worker is
+// persisted once through `closure(worker, alloc)`; one already erased passes
+// through unchanged.
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not
 // returned by value): under the fiber impl the worker fills the Future AFTER
@@ -172,8 +175,10 @@ sx_run_boxed_closure :: (arg: *void) {
 // its `Future` struct is kept; reclaiming that needs a structured-concurrency
 // scope.
 //
-// ALLOCATOR-LIFETIME CONTRACT: all are allocated from the `context.allocator`
-// in force at the `async` CALL, and that allocator MUST outlive the future —
+// ALLOCATOR-LIFETIME CONTRACT: the `Future`, the `ThunkBox`, the completion
+// closure's env, and the env of a worker that was not already erased all come from
+// `alloc` (defaulting to the `context.allocator` in force at the `async` CALL), and
+// that allocator MUST outlive the future —
 // i.e. survive until the worker has run and the result is consumed. This is the
 // long-lived-container rule: calling `async` inside a transient `push
 // Context{ allocator = arena }` that is torn down before `run()`/`await`
@@ -190,22 +195,24 @@ fut_release :: ufcs (f: *Future($R)) {
     }
 }
 
-async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
-    raw := context.allocator.alloc_bytes(size_of(Future($R)));
+async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allocator) -> *Future($R) {
+    w := closure(worker, alloc);
+    raw := alloc.alloc_bytes(size_of(Future($R)));
     f : *Future($R) = raw.(*Future($R));
     f.state = .pending;
     f.park = .{ handle = null };
     f.canceled = Atomic(bool).init(false);
     // Ownership bookkeeping: capture the allocating allocator + clear the two
     // release flags so `fut_release` can free the Future when both owners finish.
-    f.alloc = context.allocator;
+    f.alloc = alloc;
     f.worker_done = false;
     f.consumed = false;
     // The completion closure: run the worker, publish the result, wake any parked
-    // awaiter. Heap-boxed so it survives until the worker actually runs (deferred
-    // under the fiber impl). It captures `f` + `worker`; nothing variadic crosses.
+    // awaiter. Persisted on `alloc` and boxed so it survives until the worker
+    // actually runs (deferred under the fiber impl). A written env makes the literal
+    // a value, so `closure` funds its one heap copy from `alloc`.
     //
-    // True cancellation: the worker is FAILABLE (`Closure() -> ($R, !)`).
+    // True cancellation: the worker is FAILABLE (`() -> ($R, !)`).
     // A suspend that delivers cancellation (`suspend_raw` raising `Canceled` on a
     // cancelled worker), or any genuine `raise`, unwinds the worker's body right
     // here — so its post-suspend side effects never run. On success publish the
@@ -214,14 +221,15 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     // `suspend_raw` is a no-op, so the worker never raises Canceled inline — it
     // runs to completion (a post-hoc `cancel` still makes `await` raise via the
     // sticky `f.canceled`, the 1806 contract).
-    braw := context.allocator.alloc_bytes(size_of(ThunkBox));
+    braw := alloc.alloc_bytes(size_of(ThunkBox));
     b : *ThunkBox = braw.(*ThunkBox);
     // Record the worker's own heap env so `sx_run_boxed_closure` can free it (it is
     // captured by-value into `run`'s env below, otherwise unreachable). `null` for
     // a capture-free worker.
-    b.worker_env = worker.env;
-    b.run = || {
-        f.value = worker() catch {
+    b.worker_env = w.env;
+    b.alloc = alloc;
+    b.run = closure(||_{ f, w } {
+        f.value = w() catch {
             if f.canceled.load(.acquire) { f.state = .canceled; }
             else { f.state = .failed; }
             context.io.ready(f.park);
@@ -236,7 +244,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
         context.io.ready(f.park);   // no-op if no awaiter parked yet
         f.worker_done = true;
         fut_release(f);             // last touch of `f`
-    };
+    }, alloc);
     // Pass the cancel-flag address so the worker fiber's `suspend_raw` can consult it.
     f.task = io.spawn_raw(sx_run_boxed_closure.(*void), b, .{ cancel_flag = *f.canceled });
     return f;

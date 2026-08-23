@@ -556,6 +556,139 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     }
 }
 
+/// The environment a value of callable type `ty` IS — what `closure` copies
+/// into the storage the erased value points at. A unique lambda is its env
+/// struct, a callable nominal is its own state, a bare function is its pointer
+/// word. Null for anything else, an erased `Closure` included: a `Closure`
+/// carries an env instead of being one, and a `*$F` names storage someone else
+/// owns.
+pub fn envTypeOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (uniqueLambdaOf(self, ty) != null) return ty;
+    if (self.callable_nominals.get(ty) != null) return ty;
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .function => ty,
+        else => null,
+    };
+}
+
+/// The trampoline `([ctx?], env: *void, params…) -> R` an erased value of
+/// callable type `ty` dispatches through. A unique lambda's own function
+/// already carries that shape; a callable nominal and a bare function get one
+/// synthesized around the env `envTypeOf` names.
+pub fn callTrampolineOf(self: *Lowering, ty: TypeId) ?FuncId {
+    if (uniqueLambdaOf(self, ty)) |u| return u.func;
+    if (self.persist_trampolines.get(ty)) |fid| return fid;
+    const fid = blk: {
+        if (self.callable_nominals.get(ty)) |cn| break :blk nominalTrampoline(self, cn) orelse return null;
+        if (ty.isBuiltin()) return null;
+        const info = self.module.types.get(ty);
+        if (info != .function) return null;
+        break :blk fnPtrTrampoline(self, ty, info.function);
+    };
+    self.persist_trampolines.put(ty, fid) catch {};
+    return fid;
+}
+
+/// Builder state around a synthesized function body, so emitting one from the
+/// middle of another body leaves the outer builder where it was.
+const BuilderState = struct {
+    func: ?FuncId,
+    block: ?inst_mod.BlockId,
+    counter: u32,
+
+    fn save(self: *Lowering) BuilderState {
+        return .{ .func = self.builder.func, .block = self.builder.current_block, .counter = self.builder.inst_counter };
+    }
+
+    fn restore(state: BuilderState, self: *Lowering) void {
+        self.builder.func = state.func;
+        self.builder.current_block = state.block;
+        self.builder.inst_counter = state.counter;
+    }
+};
+
+/// Open a synthesized `([ctx?], env: *void, params…) -> ret` body and switch
+/// the builder into it. Returns the new function together with the ref index
+/// the first user parameter occupies.
+fn beginTrampoline(
+    self: *Lowering,
+    name: []const u8,
+    params: []const TypeId,
+    ret: TypeId,
+) struct { id: FuncId, first_arg: u32 } {
+    var list = std.ArrayList(inst_mod.Function.Param).empty;
+    defer list.deinit(self.alloc);
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const wants_ctx = self.implicit_ctx_enabled;
+    if (wants_ctx) list.append(self.alloc, .{ .name = self.module.types.internString("__sx_ctx"), .ty = void_ptr_ty }) catch unreachable;
+    list.append(self.alloc, .{ .name = self.module.types.internString("env"), .ty = void_ptr_ty }) catch unreachable;
+    for (params, 0..) |pty, i| {
+        var buf: [32]u8 = undefined;
+        const pname = std.fmt.bufPrint(&buf, "a{d}", .{i}) catch "arg";
+        list.append(self.alloc, .{ .name = self.module.types.internString(pname), .ty = pty }) catch unreachable;
+    }
+    const owned = self.alloc.dupe(inst_mod.Function.Param, list.items) catch unreachable;
+    var func = inst_mod.Function.init(self.module.types.internString(name), owned, ret);
+    func.has_implicit_ctx = wants_ctx;
+    const func_id = self.module.addFunction(func);
+    self.builder.func = func_id;
+    self.builder.inst_counter = @intCast(owned.len);
+    self.builder.switchToBlock(self.builder.appendBlock(self.module.types.internString("entry"), &.{}));
+    return .{ .id = func_id, .first_arg = @intCast(owned.len - params.len) };
+}
+
+/// The `env` parameter a synthesized trampoline received.
+fn trampolineEnv(self: *Lowering) Ref {
+    return Ref.fromIndex(if (self.implicit_ctx_enabled) 1 else 0);
+}
+
+fn endTrampoline(self: *Lowering, result: Ref, ret: TypeId) void {
+    if (ret != .void) self.builder.ret(result, ret) else self.builder.retVoid();
+    self.builder.finalize();
+}
+
+/// `@call_ptr` for a bare function type: the env holds the pointer, and the
+/// trampoline loads it and calls through.
+fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInfo) FuncId {
+    const saved = BuilderState.save(self);
+    const t = beginTrampoline(self, "__persist_fnptr", info.params, info.ret);
+    const callee = self.builder.load(trampolineEnv(self), ty);
+    var args = std.ArrayList(Ref).empty;
+    defer args.deinit(self.alloc);
+    if (self.fnPtrTypeWantsCtx(ty)) args.append(self.alloc, Ref.fromIndex(0)) catch unreachable;
+    for (info.params, 0..) |_, i| args.append(self.alloc, Ref.fromIndex(t.first_arg + @as(u32, @intCast(i)))) catch unreachable;
+    const owned = self.alloc.dupe(Ref, args.items) catch unreachable;
+    const result = self.builder.emit(.{ .call_indirect = .{ .callee = callee, .args = owned } }, info.ret);
+    endTrampoline(self, result, info.ret);
+    BuilderState.restore(saved, self);
+    return t.id;
+}
+
+/// `@call_ptr` for an `impl (sig) for T`: the env IS the receiver, so the
+/// trampoline hands it to `call` as `self`.
+fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
+    const target = self.fn_decl_fids.get(cn.fd) orelse return null;
+    if (!self.lowered_fids.contains(target)) {
+        self.lowered_fids.put(target, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(cn.fd, target, cn.qualified);
+    }
+    const ret_ty = self.module.functions.items[@intFromEnum(target)].ret;
+    const target_wants_ctx = self.module.functions.items[@intFromEnum(target)].has_implicit_ctx;
+    const saved = BuilderState.save(self);
+    const t = beginTrampoline(self, "__persist_call", cn.params, ret_ty);
+    var args = std.ArrayList(Ref).empty;
+    defer args.deinit(self.alloc);
+    if (target_wants_ctx) args.append(self.alloc, Ref.fromIndex(0)) catch unreachable;
+    args.append(self.alloc, trampolineEnv(self)) catch unreachable;
+    for (cn.params, 0..) |_, i| args.append(self.alloc, Ref.fromIndex(t.first_arg + @as(u32, @intCast(i)))) catch unreachable;
+    const owned = self.alloc.dupe(Ref, args.items) catch unreachable;
+    const result = self.builder.call(target, owned, ret_ty);
+    endTrampoline(self, result, ret_ty);
+    BuilderState.restore(saved, self);
+    return t.id;
+}
+
 /// Create a trampoline function that wraps a bare function for closure auto-promotion.
 /// The trampoline has signature `(env: *void, args...) -> ret` and simply calls the
 /// bare function with `(args...)`, ignoring the env parameter.

@@ -101,6 +101,10 @@ pub const entries = [_]Contract{
     .{ .name = "@va_arg", .module = "modules/std/core.sx" },
     .{ .name = "@va_copy", .module = "modules/std/core.sx" },
     .{ .name = "@va_end", .module = "modules/std/core.sx" },
+    // The persist primitives `closure` is written over.
+    .{ .name = "@env_type", .module = "modules/std/core.sx" },
+    .{ .name = "@env_of", .module = "modules/std/core.sx" },
+    .{ .name = "@call_ptr", .module = "modules/std/core.sx" },
     // An sx body, not an intrinsic: the registry entry is what gives stdlib
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },

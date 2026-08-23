@@ -82,6 +82,9 @@ FiberState :: enum { ready; running; suspended; done; }
 Fiber :: struct {
     ctx: FiberCtx;
     body: Closure() -> void;
+    // The allocator `spawn` persisted `body` through, so `reap_fiber` releases
+    // the environment from where it came.
+    body_alloc: Allocator;
     state: FiberState;
     sched: *Scheduler;
     stack_region: *void;   // mmap base — for munmap on reap
@@ -99,8 +102,8 @@ Fiber :: struct {
     // default context (the capture just re-pushes that same default).
     //
     // The snapshot includes `context.allocator`, and a fiber outlives the scope
-    // that spawned it: its body — and `reap_fiber`'s free of the closure env —
-    // reach that allocator arbitrarily later, possibly after the spawn scope has
+    // that spawned it: its body reaches that allocator arbitrarily later, possibly
+    // after the spawn scope has
     // ended. Spawning under a frame-local or resettable allocator (a frame arena)
     // therefore hands the fiber memory that may be reused before or while it runs.
     // The SPAWNING CONTAINER owns this: when the ambient allocator does not
@@ -191,21 +194,18 @@ Scheduler :: struct {
     // stack, bootstraps the saved context (x19 = *Fiber, fp = 0, lr =
     // trampoline, sp = stack top), enqueues it ready (FIFO), returns the
     // `*Fiber`.
-    // KNOWN LIMITATION (env leak): `body` is a fat `{fn_ptr, env}` whose env is
-    // heap-allocated at the closure-literal site. The reap path frees the Fiber
-    // struct + unmaps the stack, but sx exposes no way to free a closure's env
-    // (the scheduler can't name the env pointer), so ONE env per spawned fiber
-    // leaks until program exit. Bounded by the spawn count; under the default
-    // GPA (which frees at exit) it is invisible, but a long-running scheduler
-    // under an arena/tracking allocator accumulates one env per fiber. Freeing
-    // it needs a language affordance for closure-env ownership.
-    spawn :: (self: *Scheduler, body: Closure() -> void) -> *Fiber {
+    // `body` is persisted once through `closure(body, alloc)` — an already-erased
+    // body passes through unchanged — and `reap_fiber` releases that environment
+    // through the same `alloc`. The `Fiber` struct itself stays on
+    // `own_allocator`: it outlives the spawn scope.
+    spawn :: (self: *Scheduler, body: $F/() -> void, alloc: Allocator = context.allocator) -> *Fiber {
         f := self.own_allocator.create(Fiber);
         if f == null {
             print("sched: out of memory allocating a Fiber\n");
             c.abort();
         }
-        f.body = body;
+        f.body = closure(body, alloc);
+        f.body_alloc = alloc;
         f.sched = self;
         f.id = self.next_id;
         f.next = null;
@@ -556,13 +556,9 @@ Scheduler :: struct {
     //      `own_allocator`;
     //   3. the kqueue fd, if `block_on_fd` ever opened it (lazy `-1` otherwise).
     //
-    // NOT freed (documented language limitation, unchanged): one closure env per
-    // `spawn`. The env is heap-allocated at the closure-literal site and sx
-    // exposes no way to free it (the scheduler cannot name the env pointer), so
-    // it leaks until program exit — bounded by the spawn count, invisible under
-    // the default GPA. The unified `context.io.async` layer's heap `Future`s /
-    // `ThunkBox`es likewise leak (they are not scheduler-tracked) — freeing both
-    // needs join-point / closure-env ownership affordances.
+    // NOT freed: the `context.io.async` layer's heap `Future`s, which are not
+    // scheduler-tracked — a never-awaited future keeps its struct, and
+    // reclaiming that needs a join point.
     deinit :: (self: *Scheduler) {
         // (1) Reap leftover ready fibers: free the body env, unmap, free the Fiber.
         f := self.ready_head;
@@ -624,7 +620,9 @@ impl Io for Scheduler {
             print("sched: spawn_raw called with a null entry function\n");
             c.abort();
         }
-        f := self.spawn(|| {
+        // A written env makes the body a value, so `spawn`'s `closure` funds its
+        // one heap copy from the allocator `spawn` holds.
+        f := self.spawn(||_{ entry, arg } {
             entry_fn := entry.((*void) -> void);
             entry_fn(arg);
         });
@@ -890,18 +888,15 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
 // --- fiber reap -------------------------------------------------------------
 
 // Reclaim a finished (`.done`) or leftover fiber. Frees, in order: the body
-// closure's heap ENV (`body.env` — the captured environment, allocated at the
-// closure literal via the SPAWN-time `context.allocator`, which `dctx` snapshots;
-// `null` for a capture-free body, so the free is an unconditional no-op then),
-// then the guarded stack (munmap), then the `Fiber` struct itself. This closes
-// the per-spawn env leak. MUST be the LAST use of `f` — `f` is dangling after.
+// closure's ENV (`body.env` — the environment `spawn` persisted through
+// `body_alloc`; `null` for a capture-free body, so the free is a no-op then),
+// then the guarded stack (munmap), then the `Fiber` struct itself.
+// MUST be the LAST use of `f` — `f` is dangling after.
 // (The body's env outlives the body's execution but dies WITH the fiber: the
 // body has returned by the time a `.done` fiber is reaped, so nothing reads the
 // captures again.)
 reap_fiber :: (self: *Scheduler, f: *Fiber) {
-    if f.body.env != null {
-        f.dctx.allocator.dealloc_bytes(f.body.env);
-    }
+    f.body_alloc.dealloc_bytes(f.body.env);
     c.munmap(f.stack_region, f.stack_len);
     self.own_allocator.dealloc_bytes(f);
 }

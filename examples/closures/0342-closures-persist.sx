@@ -1,0 +1,61 @@
+// `closure(f, alloc)` gives a callable's environment a home that outlives the
+// forming frame, and erases the value to the `{fn_ptr, env}` pair a `Closure`
+// slot takes. Every callable shape persists: a unique lambda, a bare function,
+// an `impl (sig) for T` nominal. A `Closure` is returned unchanged — same
+// `fn_ptr`, same `env` — so `closure` composes. A capture-free environment is
+// zero-sized, so it funds nothing and carries a null env.
+
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+triple :: (x: i64) -> i64 { return x * 3; }
+
+Accum :: struct { total: i64; }
+impl (i64) -> i64 for Accum {
+    call :: (self: *Accum, x: i64) -> i64 { return self.total + x; }
+}
+
+Widget :: struct { on_tap: ?Closure(i64) -> void; }
+
+main :: () {
+    n := 5;
+    unique := |x: i64|_{ n } -> i64 x + n;
+    print("env-type {} {}\n", size_of(@env_type(type_of(unique))), size_of(i64));
+
+    lam := closure(unique);
+    print("lambda {}\n", lam(1));                              // 6
+
+    fp := closure(triple);
+    print("fn-ptr {}\n", fp(4));                               // 12
+
+    acc := Accum{ total = 100 };
+    nom := closure(acc);
+    print("nominal {}\n", nom(7));                             // 107
+
+    // Already erased: returned unchanged, environment shared not copied.
+    again := closure(lam);
+    print("identity {} {}\n", again(2), again.(@Closure).env == lam.(@Closure).env);
+
+    // A zero-sized environment funds nothing.
+    empty := closure(|x: i64|_{ } -> i64 x * 2);
+    print("empty {} {}\n", empty(21), empty.(@Closure).env == null);
+
+    // The allocator is chosen, or taken from the context.
+    arena := Arena.init(context.allocator, 4096);
+    m := 7;
+    on_arena := closure(|x: i64|_{ m } -> i64 x * m, arena);
+    print("arena {}\n", on_arena(6));                          // 42
+    arena.deinit();
+
+    // A capturing lambda reaches a `Closure` field through `closure`.
+    id := 3;
+    tap := closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
+    w := Widget{ on_tap = tap };
+    if h := w.on_tap { h(9); }
+
+    free(tap);
+    free(lam);
+    free(fp);
+    free(nom);
+    free(empty);
+}

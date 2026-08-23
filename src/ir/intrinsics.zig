@@ -164,6 +164,9 @@ pub const Id = enum(u16) {
     @"@va_arg",
     @"@va_copy",
     @"@va_end",
+    @"@env_type",
+    @"@env_of",
+    @"@call_ptr",
 };
 
 pub const Entry = struct {
@@ -329,6 +332,13 @@ pub const entries = [_]Entry{
     // intrinsics.
     .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
     .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
+
+    // The persist primitives. `@env_type` folds to a type, so it also answers
+    // in a type-argument slot; `@env_of` carries its argument's env through at
+    // that type, and `@call_ptr` resolves — or synthesizes — the trampoline.
+    .{ .id = .@"@env_type", .module = core, .name = "@env_type", .mode = .lower, .arity = 1, .ret = .type_value },
+    .{ .id = .@"@env_of", .module = core, .name = "@env_of", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@call_ptr", .module = core, .name = "@call_ptr", .mode = .lower, .arity = 1 },
 
     // Expanded at lowering into calls to the emission primitives core.sx
     // declares beside it — one per format segment, one per argument. The
