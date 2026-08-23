@@ -4728,9 +4728,10 @@ pub const Parser = struct {
         } });
     }
 
-    /// The `_{ name = expr, … }` env, when the cursor is on its `_{`; null
+    /// The `_{ n, name = expr, … }` env, when the cursor is on its `_{`; null
     /// otherwise. Every field is named — the name the body reads, bound to the
-    /// expression as it stands where the literal is written.
+    /// expression as it stands where the literal is written; bare `n` is
+    /// `n = n`.
     fn parseEnv(self: *Parser) anyerror!?[]const ast.EnvField {
         if (self.tokens.tag(self.tok) != .underscore_l_brace) return null;
         self.advance(); // skip '_{'
@@ -4740,17 +4741,27 @@ pub const Parser = struct {
                 try self.expect(.comma);
                 if (self.tokens.tag(self.tok) == .r_brace) break;
             }
-            if (!self.isIdentLike() or self.peekNext() != .equal) {
-                return self.fail("an env field is named: `_{ n = n }`");
-            }
+            if (!self.isIdentLike()) return self.fail(env_field_shape);
             const name = self.tokens.slice(self.tok);
+            const name_start = self.tokens.start(self.tok);
             self.advance(); // name
-            self.advance(); // '='
-            try fields.append(self.allocator, .{ .name = name, .value = try self.parseExpr() });
+            switch (self.tokens.tag(self.tok)) {
+                .equal => {
+                    self.advance(); // '='
+                    try fields.append(self.allocator, .{ .name = name, .value = try self.parseExpr() });
+                },
+                .comma, .r_brace => {
+                    const copy = try self.createNode(name_start, .{ .identifier = .{ .name = name } });
+                    try fields.append(self.allocator, .{ .name = name, .value = copy });
+                },
+                else => return self.failAt(.{ .start = name_start, .end = name_start + @as(u32, @intCast(name.len)) }, env_field_shape),
+            }
         }
         try self.expect(.r_brace);
         return try fields.toOwnedSlice(self.allocator);
     }
+
+    const env_field_shape = "an env field is `n` or `n = expr`";
 
     const FunctionBoundary = struct {
         onfail: bool,
@@ -6269,10 +6280,35 @@ test "`_ {` with a space is an identifier and a brace" {
     try std.testing.expectEqualStrings("_", lam.body.data.juxtaposition.expr.data.identifier.name);
 }
 
-test "an env field is named" {
+test "a bare env field is a copy of the enclosing name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ n } x + n");
+    try std.testing.expectEqual(@as(usize, 1), lam.env.len);
+    try std.testing.expectEqualStrings("n", lam.env[0].name);
+    try std.testing.expectEqualStrings("n", lam.env[0].value.data.identifier.name);
+}
+
+test "bare and written env fields mix" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64|_{ bias, k = n * 2 } x + bias + k");
+    try std.testing.expectEqual(@as(usize, 2), lam.env.len);
+    try std.testing.expectEqualStrings("bias", lam.env[0].name);
+    try std.testing.expect(lam.env[0].value.data == .identifier);
+    try std.testing.expectEqualStrings("k", lam.env[1].name);
+    try std.testing.expect(lam.env[1].value.data == .binary_op);
+}
+
+test "an env field is a name or a named expression" {
     try expectParseErrorAt(
-        "f :: () { g := |x: i64|_{ n } x; }",
-        "an env field is named: `_{ n = n }`",
+        "f :: () { g := |x: i64|_{ 1 } x; }",
+        "an env field is `n` or `n = expr`",
+        26,
+    );
+    try expectParseErrorAt(
+        "f :: () { g := |x: i64|_{ x + 1 } x; }",
+        "an env field is `n` or `n = expr`",
         26,
     );
 }

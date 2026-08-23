@@ -119,7 +119,7 @@ Positional first, then `name = value` in any order. A block after a call is the 
 scaffold(content = chat_list);
 scaffold(top_bar = toolbar) { chat_list(); };
 each(items) { |item| text(item.name); };
-each(items) { |item|_{ pad = pad } text(item.name, pad); };
+each(items) { |item|_{ pad } text(item.name, pad); };
 vstack(8.0) { text("hello"); }.padded();
 ```
 
@@ -172,10 +172,10 @@ List :: struct ($T: Type) {
 
 apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }
 
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
+make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
 add5 := make_adder(5);
 
-boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n = n } x + n); }
+boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n } x + n); }
 ```
 
 A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fn_ptr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
