@@ -4915,18 +4915,22 @@ block tail, an `if` branch, a `match` arm — it is parenthesized.
 **A body is sealed, and `_{ … }` is what it captures.** The body reads its own
 parameters, its own locals, and module-level names; an enclosing function's
 local, parameter, or local `::` const it reaches only through an **env** written
-directly after the parameter list — `_{ field = expr, … }`, before the optional
+directly after the parameter list — `_{ field, field = expr, … }`, before the optional
 `-> R` and before the body. `_{` is one token, legal in that position only:
 `_ {` with a space is an identifier and a brace, and `.{ … }` is a struct
-literal. Fields are named (`n = n` is not shortened), each holds a copy of the
-expression evaluated where the literal is written, and the body names the field.
-A pack is spread explicitly — `_{ args = .{..args} }` binds a tuple, while
-`_{ args = args }` is an error.
+literal. Every field is named — `n` alone is the copy `n = n`, exactly as a
+struct literal's shorthand field, and there are no positional fields. Each holds
+the expression evaluated where the literal is written, and the body names the
+field. A pack is spread explicitly — `_{ args = .{..args} }` binds a tuple,
+while `_{ args = args }` is an error.
 
 ```sx
 n := 5;
-inc := |x: i64|_{ n = n } x + n;              // env field `n`
+inc := |x: i64|_{ n } x + n;                  // env field `n`, a copy of `n`
 mul := |x: i64|_{ k = n * 2 } -> i64 x * k;   // env, then the return type
+mix := |x: i64|_{ n, k = n * 2 } x + n + k;   // both forms in one env
+ref := |x: i64|_{ n = *n } x + n.*;           // field `n` is `*i64`
+odd := |x: i64|_{ x + 1 } x;                  // error: a field is `n` or `n = expr`
 bad := |x: i64| x + n;                        // error: 'n' is not in scope
 ```
 
@@ -4934,8 +4938,8 @@ A nested literal is sealed against its enclosing literal the same way — the
 inner env reads the outer one's field, and each level names what it takes:
 
 ```sx
-outer := |x: i64|_{ n = n } {
-    step := |y: i64|_{ n = n } y + n;
+outer := |x: i64|_{ n } {
+    step := |y: i64|_{ n } y + n;
     step(x);
 };
 ```
@@ -4981,8 +4985,8 @@ position only.
 #### Unique Lambda Types
 ```sx
 offset := 50;
-f := |x: i32|_{ offset = offset } -> i32 x + offset;   // env field `offset`
-g := |x: i32|_{ offset = offset } -> i32 {
+f := |x: i32|_{ offset } -> i32 x + offset;   // env field `offset`
+g := |x: i32|_{ offset } -> i32 {
     if x < 0 { return 0; }
     return x + offset;
 };
@@ -5001,7 +5005,7 @@ where the literal is written; assigning the outer name afterwards changes
 nothing.
 ```sx
 n := 10;
-f := |x: i64|_{ n = n } -> i64 x + n;
+f := |x: i64|_{ n } -> i64 x + n;
 n = 999;
 print("{}\n", f(5));  // 15
 ```
@@ -5029,7 +5033,7 @@ apply(|x: i32| x * 3, 10);  // empty env — same thunk shape
 A **capturing** lambda does not promote. Its env has to live somewhere and a
 `Closure` slot does not say where, so the store is an error that names the fix:
 ```sx
-h : Closure(i64) -> i64 = |x|_{ n = n } x + n;
+h : Closure(i64) -> i64 = |x|_{ n } x + n;
 ```
 ```
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
@@ -5065,12 +5069,12 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 A factory either returns the unique lambda or erases it, and the return type says
 which:
 ```sx
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
+make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
 add5 := make_adder(5);                 // the env itself — no heap
 print("{}\n", add5(100));              // 105
 
 make_handler :: (n: i64) -> Closure(i64) -> i64 {
-    return closure(|x|_{ n = n } x + n);   // env on context.allocator
+    return closure(|x|_{ n } x + n);   // env on context.allocator
 }
 ```
 
@@ -5110,8 +5114,8 @@ has a null env and funds nothing.
 ```sx
 base  := 10;
 arena := Arena.init(context.allocator, 4096);
-f  := |x: i64|_{ base = base } -> i64 x + base;   // env in f's storage
-cb := closure(f, arena);                          // env copied into the arena
+f  := |x: i64|_{ base } -> i64 x + base;   // env in f's storage
+cb := closure(f, arena);                   // env copied into the arena
 ```
 
 ### Function Call
@@ -5217,8 +5221,8 @@ scaffold() { chat_list(); };                   // defaults skipped, block binds 
   sink, never called.
 - **Sealed like any literal**: the body reads an enclosing local only through its
   env, so capturing means writing the header —
-  `each(items) { |x|_{ n = n } print("{}\n", x + n); };`, and
-  `vstack(8.0) { | |_{ n = n } text(n); };` where there are no parameters.
+  `each(items) { |x|_{ n } print("{}\n", x + n); };`, and
+  `vstack(8.0) { | |_{ n } text(n); };` where there are no parameters.
 - **Juxtaposition**: `expr { … }` is two adjacent expressions, and one node
   carries both readings until **types** settle it. A head that names a type —
   a bare or qualified name, a type application, a generic type constructor, a
@@ -6721,8 +6725,9 @@ arm_body        = 'break' end
 else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | IDENT
 closure         = '|' params? '|' env? ('->' type)? (expr | block)
-env             = '_{' (IDENT '=' expr (',' IDENT '=' expr)* ','?)? '}'
+env             = '_{' (env_field (',' env_field)* ','?)? '}'
                   // one token '_{': `_ {` with a space is not it
+env_field       = IDENT ('=' expr)?           // bare IDENT is `n = n`
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
@@ -6747,7 +6752,7 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   may **not** reference an enclosing function's local, parameter, or local `::`
   const — a static fn has no captured frame to read it from, and doing so is a
   compile error ("a nested function cannot reference the enclosing local 'x' —
-  a lambda names what it captures: `|…|_{ x = x } …`"). Carrying enclosing
+  a lambda names what it captures: `|…|_{ x } …`"). Carrying enclosing
   locals is the LAMBDA's job — one env field per name, by value. (Enclosing
   local consts are rejected too rather than comptime-folded: a static nested fn's
   frame cannot carry them, and the env spelling carries them uniformly.)
