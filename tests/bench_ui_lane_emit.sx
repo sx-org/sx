@@ -6,7 +6,7 @@
 slot_bytes :: () -> i64 => size_of(View);
 
 build :: (n: i64) -> VStack {
-    vstack(0.0) {
+    vstack(0.0) { ||_{ n = n }
         for i in 0..n {
             Label{ text = "c" }.emit();
         }

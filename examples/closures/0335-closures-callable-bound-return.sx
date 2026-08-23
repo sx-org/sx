@@ -21,6 +21,10 @@ main :: () {
 
     print("same {} {}\n", twice(true)(5), twice(false)(5));
     print("both {} {}\n", either(true)(5), either(false)(5));
+
+    // A parameter binder alongside the return binder: the call fixes `G`, the
+    // body fixes `H`.
+    print("wrapped {}\n", wrap(double)(5));
 }
 
 factory :: () -> $F/(i64) -> i64 { return double; }
@@ -37,4 +41,8 @@ twice :: (b: bool) -> $F/(i64) -> i64 {
 either :: (b: bool) -> $F/(i64) -> i64 {
     if b { return |x| x * 2; }
     return |x| x * 3;
+}
+
+wrap :: (g: $G/(i64) -> i64) -> $H/(i64) -> i64 {
+    return |x|_{ g = g } g(x) + 1;
 }

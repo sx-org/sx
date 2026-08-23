@@ -13,6 +13,7 @@ const generics_mod = @import("../generics.zig");
 const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
+const lower_decl = @import("decl.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -209,6 +210,17 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
         }
         self.builder.finalize();
     } else {
+        // A `-> $H/(…) -> R` return binder is fixed by the value the body hands
+        // back, on this path as on the decl path — a function that also carries
+        // a parameter binder only ever reaches lowering through here.
+        const saved_pcr = self.pending_callable_return;
+        const saved_fcr = self.fixed_callable_ret;
+        defer {
+            self.pending_callable_return = saved_pcr;
+            self.fixed_callable_ret = saved_fcr;
+        }
+        self.pending_callable_return = lower_decl.callableReturnBinder(fd, ret_ty);
+        self.fixed_callable_ret = null;
         // Delegate to the shared body owner so the generic-instantiation path
         // can't drift from the decl path: it decides the demand from `ret_ty`
         // and owns every implicit exit.

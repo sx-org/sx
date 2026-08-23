@@ -4096,7 +4096,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
 
 /// The return-position callable binder this body has to fix, or null. A resolved
 /// return type is already the answer, so only an unresolved one is pending.
-fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node {
+pub fn callableReturnBinder(fd: *const ast.FnDecl, ret_ty: TypeId) ?*const Node {
     if (ret_ty != .unresolved) return null;
     const rtn = fd.return_type orelse return null;
     return if (Lowering.callableBound(rtn) != null) rtn else null;

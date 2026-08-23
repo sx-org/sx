@@ -7,8 +7,8 @@
 // Every default here is parse coverage — each call passes the argument.
 @import "modules/std.sx";
 
-apply :: (f: Closure(i64) -> i64, v: i64) -> i64 { f(v) }
-run :: (f: Closure()) { f(); }
+apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { f(v) }
+run :: (f: $F/() -> void) { f(); }
 mask :: (v: i64) -> i64 { v }
 
 main :: () {
@@ -39,7 +39,7 @@ main :: () {
     print("variadic {}\n", sum(.[1, 2, 3]));
 
     // A closure body is an ordinary expression, so literals nest.
-    print("nested {}\n", apply(|x: i64| -> i64 apply(|y: i64| -> i64 y + n, x), 1));
+    print("nested {}\n", apply(|x: i64|_{ n = n } -> i64 apply(|y: i64|_{ n = n } -> i64 y + n, x), 1));
 
     // After a completed operand `|` is bitwise OR.
     a := 5;

@@ -22,24 +22,24 @@ place :: (v: View) -> View {
 text :: (s: string) -> View { place(View{ tag = s }) }
 spacer :: () -> View { place(View{ tag = "spacer" }) }
 
-vstack :: (spacing: f32, content: Closure()) -> View {
+vstack :: (spacing: f32, content: $F/() -> void) -> View {
     s := Sink(View){};
     push .{ ui_sink = *s } { content(); }
     place(View{ tag = "vstack" })
 }
 
-hstack :: (spacing: f32, content: Closure()) -> View {
+hstack :: (spacing: f32, content: $F/() -> void) -> View {
     s := Sink(View){};
     push .{ ui_sink = *s } { content(); }
     place(View{ tag = "hstack" })
 }
 
-button :: (label: string, on_tap: Closure()) -> View {
+button :: (label: string, on_tap: $F/() -> void) -> View {
     place(View{ tag = label })
 }
 
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) -> View {
-    vstack(0.0) {
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) -> View {
+    vstack(0.0) { ||_{ top_bar = top_bar, fab = fab, content = content }
         if tb := top_bar { tb(); }
         content();
         if fb := fab { fb(); }

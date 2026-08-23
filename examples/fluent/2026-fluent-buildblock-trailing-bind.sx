@@ -3,7 +3,7 @@
 // One source form, two interpretations, chosen by the DECLARED type of the
 // callee's last parameter:
 //
-//   Closure()          ordinary closure — the block's statements are the
+//   $F/() -> void      ordinary closure — the block's statements are the
 //                      closure's statements, and nothing is intercepted
 //   @BuildBlock(P)     build block — a standalone expression whose type
 //                      conforms to `P` is offered to a sink instead
@@ -44,7 +44,7 @@ column :: (title: string, content: $B/@BuildBlock(Drawable)) -> i32 {
 }
 
 // Closure acceptor: the SAME trailing-block syntax, ordinary closure semantics.
-repeat :: (times: i32, body: Closure()) {
+repeat :: (times: i32, body: $F/() -> void) {
     for i in 0..times { body(); }
 }
 

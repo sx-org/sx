@@ -143,7 +143,7 @@ impl Into(*NSString) for string {
 objc_autoreleasePoolPush :: ()                  -> *void  extern objc;
 objc_autoreleasePoolPop  :: (pool: *void)                 extern objc;
 
-autoreleasepool :: (body: Closure()) {
+autoreleasepool :: (body: $F/() -> void) {
     pool := objc_autoreleasePoolPush();
     defer objc_autoreleasePoolPop(pool);
     body();

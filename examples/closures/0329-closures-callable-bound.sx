@@ -26,6 +26,10 @@ main :: () {
     print("literal {}\n", apply(|x| x * 3, 5));                 // 15
     print("twice {}\n", twice(double, 5));                      // 20
 
+    // A nested declaration is a function like any other.
+    triple :: (x: i64) -> i64 { return x * 3; }
+    print("nested-fn {}\n", apply(triple, 5));                  // 15
+
     // Each adder IS its own env, so `n` travels with the value and two adders
     // are independent.
     add3 := make_adder(3);
