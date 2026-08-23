@@ -326,6 +326,26 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
+    // A `[]T`-targeted `.{ … }` that does not name the fat pointer's own slots
+    // is an ELEMENT list, lowered exactly as `.[ … ]` is: each element coerces
+    // to `T` (a protocol element boxes into `any`) and the backing array
+    // becomes the view. Read as a `{ptr, len}` literal instead, an aggregate
+    // element lands in the `ptr` word and fails LLVM verification.
+    if (sl.struct_name == null and sl.type_expr == null and sl.init_block == null and
+        sl.field_inits.len > 0 and !ty.isBuiltin() and
+        self.module.types.get(ty) == .slice and !isSliceHeaderLiteral(sl))
+    {
+        var elems = std.ArrayList(*Node).empty;
+        defer elems.deinit(self.alloc);
+        for (sl.field_inits) |fi| elems.append(self.alloc, fi.value) catch unreachable;
+        const al = ast.ArrayLiteral{ .elements = elems.items };
+        const saved_tt = self.target_type;
+        self.target_type = ty;
+        const arr = self.lowerArrayLiteral(&al);
+        self.target_type = saved_tt;
+        return self.coerceToType(arr, self.builder.getRefType(arr), ty);
+    }
+
     const aggregate_ok = if (ty.isBuiltin())
         ty == .string
     else switch (self.module.types.get(ty)) {
@@ -707,6 +727,16 @@ pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: as
     if (!self.privateFieldHere(ty, field)) return false;
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
+    return true;
+}
+
+/// A slice literal that names only `ptr`/`len` writes the fat pointer's own
+/// slots; any other field list is a list of elements.
+fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
+    for (sl.field_inits) |fi| {
+        const name = fi.name orelse return false;
+        if (!std.mem.eql(u8, name, "ptr") and !std.mem.eql(u8, name, "len")) return false;
+    }
     return true;
 }
 
