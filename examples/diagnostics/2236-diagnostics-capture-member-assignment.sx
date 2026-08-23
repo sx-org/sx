@@ -7,7 +7,8 @@
 // plain, compound, element index, multi-assign, pre-decrement, address-of — and
 // each carries the shape-aware message of the binding it roots at. Only the
 // for-loop ELEMENT form suggests the `*e` by-ref spelling, since its container
-// storage exists.
+// storage exists. A type-switch capture over an `any` subject binds the unboxed
+// value itself, so it has no address to GEP either and refuses the same way.
 //
 // A chain that addresses pointee memory writes shared storage, not the copy,
 // and stays allowed — see 2237-basic-capture-member-writes.
@@ -67,11 +68,18 @@ main :: () -> i32 {
         case .none: {}
     }
 
-    // 9. function-local '::' const — constant-family message
+    // 9. type-switch capture over an `any` subject — field write
+    v : any = Item{ n = 5, tags = .[0, 0] };
+    match v {
+        case Item: |t| { t.n = 6; }
+        else: {}
+    }
+
+    // 10. function-local '::' const — constant-family message
     c :: Item{ n = 8, tags = .[0, 0] };
     c.n = 9;
 
-    // 10. inline-for pack-element alias — member write
+    // 11. inline-for pack-element alias — member write
     pack_mut(.{ n = 1, tags = .[0, 0] });
 
     0
