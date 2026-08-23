@@ -1069,19 +1069,13 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .trailing_block => |tb| {
             self.collectCaptures(tb.lambda, param_names, captures);
         },
-        // `expr { … }` before settling. The block may yet become a BUILD block,
-        // which is replayed in the receiving frame and reads its free names
-        // through this environment — so the walk descends, with the block's own
-        // header names shadowing. A closure reading is sealed and simply
-        // contributes names it never reads.
+        // Env field values evaluate where the juxtaposition is written. A
+        // `|…|` header is a nested user lambda, so its body does not contribute;
+        // a headerless block does — it may still be a nested `@BuildBlock`.
         .juxtaposition => |jx| {
             self.collectCaptures(jx.expr, param_names, captures);
-            var block_params = std.StringHashMap(void).init(self.alloc);
-            defer block_params.deinit();
-            var it = param_names.iterator();
-            while (it.next()) |e| block_params.put(e.key_ptr.*, {}) catch {};
-            for (jx.params) |p| block_params.put(p.name, {}) catch {};
-            self.collectCaptures(jx.block, &block_params, captures);
+            for (jx.env) |f| self.collectCaptures(f.value, param_names, captures);
+            if (!jx.has_header) self.collectCaptures(jx.block, param_names, captures);
             if (jx.init_block) |ib| self.collectCaptures(ib, param_names, captures);
         },
         .asm_expr => |ae| {

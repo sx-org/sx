@@ -1,0 +1,28 @@
+// A nested `|…|_{ k = n + 1 }` inside a `@BuildBlock` body. The env field
+// evaluates in the forming frame; the nested body reads `k`.
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+
+Drawable :: constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
+}
+
+column :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Tally{};
+    content.run(*sink);
+}
+
+each :: (n: i64, body: $F/(i64) -> void) { body(n); }
+
+main :: () -> i32 {
+    n := 5;
+    column() {
+        each(1) { |x|_{ k = n + 1 } print("k={}\n", x + k); };
+    };
+    0
+}
