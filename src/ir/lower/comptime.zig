@@ -512,12 +512,13 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
-    // The wrapper settles its return type as it lowers, so the global's type is
-    // read back off it rather than off the requested `func_ret`.
-    const global_ty: TypeId = if (is_failable)
-        self.failableSuccessType(expr_ty)
+    // The global's type is the wrapper's ret after lowering, with the error
+    // channel stripped.
+    const settled = self.module.getFunction(func_id).ret;
+    const global_ty: TypeId = if (self.errorChannelOf(settled)) |ch|
+        (if (settled == ch) TypeId.void else self.failableSuccessType(settled))
     else
-        self.module.getFunction(func_id).ret;
+        settled;
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);

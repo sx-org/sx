@@ -9,6 +9,10 @@ N :: @run { i := 0; s := 0; while i < 1000000 { s += i; i += 1; } s };
 P :: @run { a := 3; b := 4; Pt{ x = a, y = b } };
 S :: @run { t := "hi"; t };
 
+E :: error { Bad }
+parse :: (n: i32) -> (i32, !E) { if n < 0 { raise error.Bad; } return n * 2; }
+F :: @run { x := parse(5); x };
+
 main :: () {
     print("{}\n", N);
     print("{} {} {}\n", P.x, P.y, S);
@@ -16,4 +20,5 @@ main :: () {
     print("{}\n", L);
     inner := @run { q := 7; q * 6 };
     print("{}\n", inner);
+    print("{}\n", F);
 }
