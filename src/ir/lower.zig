@@ -3355,6 +3355,7 @@ pub const Lowering = struct {
     pub const foldConstArrayElem = lower_comptime.foldConstArrayElem;
     pub const foldConstStructField = lower_comptime.foldConstStructField;
     pub const resolveGlobalRef = lower_comptime.resolveGlobalRef;
+    pub const globalValueRef = lower_comptime.globalValueRef;
     pub const sourceModuleConst = lower_comptime.sourceModuleConst;
     pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
@@ -3744,6 +3745,7 @@ pub const Lowering = struct {
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
+    pub const callableLocalShadow = lower_call.callableLocalShadow;
 
     // --- lower/cvariadic.zig (lower_cvariadic) ---
     pub const tryLowerCursorIntrinsic = lower_cvariadic.tryLowerIntrinsic;
@@ -3925,6 +3927,7 @@ pub const Lowering = struct {
     pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
     pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
     pub const callableSigOf = lower_closure.callableSigOf;
+    pub const callableShapeOf = lower_closure.callableShapeOf;
     pub const callableNominalThrough = lower_closure.callableNominalThrough;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---

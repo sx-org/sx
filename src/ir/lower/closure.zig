@@ -61,17 +61,36 @@ pub fn callableNominalThrough(self: *Lowering, ty: TypeId) ?lower_protocol.Calla
     return self.callable_nominals.get(info.pointer.pointee);
 }
 
-/// The signature `ty` is callable at — a unique lambda's env struct, a
-/// `Closure`, a function pointer, or a nominal carrying `impl (sig) for T` —
-/// or null when nothing calls it.
-pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
-    if (uniqueLambdaThrough(self, ty)) |u| return .{ .params = u.params, .ret = u.ret };
-    if (callableNominalThrough(self, ty)) |cn| return .{ .params = cn.params, .ret = cn.ret };
+/// The four shapes a VALUE is callable at.
+pub const ValueCallee = union(enum) {
+    unique: UniqueLambda,
+    nominal: lower_protocol.CallableNominal,
+    closure: types.TypeInfo.ClosureInfo,
+    fn_ptr: types.TypeInfo.FunctionInfo,
+};
+
+/// The one ordered classification of a callable value. A unique lambda and a
+/// callable nominal are reached through one level of `*T`; a `Closure` and a
+/// function pointer are matched on `ty` itself, so `*Closure(…)` and
+/// `*(i64) -> i64` are not callable.
+pub fn callableShapeOf(self: *Lowering, ty: TypeId) ?ValueCallee {
+    if (uniqueLambdaThrough(self, ty)) |u| return .{ .unique = u };
+    if (callableNominalThrough(self, ty)) |cn| return .{ .nominal = cn };
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
-        .closure => |c| .{ .params = c.params, .ret = c.ret },
-        .function => |f| .{ .params = f.params, .ret = f.ret },
+        .closure => |c| .{ .closure = c },
+        .function => |f| .{ .fn_ptr = f },
         else => null,
+    };
+}
+
+/// The signature `ty` is callable at, or null when nothing calls it.
+pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
+    return switch (callableShapeOf(self, ty) orelse return null) {
+        .unique => |u| .{ .params = u.params, .ret = u.ret },
+        .nominal => |cn| .{ .params = cn.params, .ret = cn.ret },
+        .closure => |c| .{ .params = c.params, .ret = c.ret },
+        .fn_ptr => |f| .{ .params = f.params, .ret = f.ret },
     };
 }
 

@@ -88,6 +88,17 @@ note: declared here
 36 |     call :: (self: *HasCall, x: i64) -> i64 { return self.n + x; }
    |     ^^^^
 
+error: 'call' collides with an existing member of 'Slot'
+  --> examples/errors/1089-errors-callable-nominal.sx:43:30
+   |
+43 | impl (i64) -> i64 for Slot { call :: (self: *Slot, x: i64) -> i64 { return x; } }
+   |                              ^^^^
+
+help: 'Slot' declares a field named 'call'
+   |
+43 | impl (i64) -> i64 for Slot { call :: (self: *Slot, x: i64) -> i64 { return x; } }
+   |                              ^^^^
+
 error: unknown type 'T'
   --> examples/errors/1089-errors-callable-nominal.sx:23:44
    |

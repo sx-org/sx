@@ -10,9 +10,18 @@ Accumulator :: struct { total: i64; }
 
 impl (i64) -> i64 for Accumulator {
     call :: (self: *Accumulator, x: i64) -> i64 { self.total += x; return self.total; }
+    aux :: (self: *Accumulator) -> i64 { return self.total * 2; }
 }
 
 Box :: struct { acc: Accumulator; p: *Accumulator; }
+
+Cell :: struct { bump: Accumulator; }
+
+// A callable field takes the call, so a same-named free ufcs never steals it.
+bump :: ufcs (c: Cell, x: i64) -> i64 { return -1; }
+
+made := 0;
+mk :: () -> Cell { made += 1; return .{ bump = Accumulator{ total = 0 } }; }
 
 Step :: enum { one; two; }
 
@@ -51,4 +60,16 @@ main :: () {
 
     s :Step = .two;
     print("enum {}\n", s(10));
+
+    // The impl's methods are ordinary members of the conformer.
+    print("method {}\n", acc.call(2));
+    print("method {}\n", acc.aux());
+    print("static {}\n", Accumulator.aux(acc));
+
+    cell := Cell{ bump = Accumulator{ total = 0 } };
+    print("steal {}\n", cell.bump(6));
+
+    // The receiver expression is evaluated ONCE.
+    print("once {}\n", mk().bump(3));
+    print("made {}\n", made);
 }

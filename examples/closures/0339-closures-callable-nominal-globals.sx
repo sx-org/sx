@@ -1,0 +1,42 @@
+// A module global holding a callable nominal is called like any other value —
+// bare, qualified, parenthesised, or out of an array. A MUTABLE global is
+// called through its own storage, so a `*T` receiver accumulates into the
+// global itself; a `::` const lives in `.rodata` and is called through a copy,
+// so the call reads it and leaves it unchanged. `call` is an ordinary
+// declaration, so its trailing default fills a short call and its parameter
+// names bind named arguments.
+
+@import "modules/std.sx";
+m :: @import "0339-closures-callable-nominal-globals/m.sx";
+
+Accumulator :: struct { total: i64; }
+
+impl (i64, i64) -> i64 for Accumulator {
+    call :: (self: *Accumulator, x: i64, step: i64 = 1) -> i64 {
+        self.total += x * step;
+        return self.total;
+    }
+}
+
+g := Accumulator{ total = 0 };
+k :: Accumulator{ total = 0 };
+
+main :: () {
+    print("global {}\n", g(3));
+    print("global {}\n", g(4));
+    print("global total {}\n", g.total);
+
+    print("const {}\n", k(5));
+    print("const total {}\n", k.total);
+
+    print("qualified {}\n", m.counter(2));
+    print("qualified {}\n", m.counter(2));
+
+    local := Accumulator{ total = 0 };
+    print("default {}\n", local(2));
+    print("named {}\n", local(x = 2, step = 3));
+    print("parens {}\n", (local)(1));
+
+    xs := .[Accumulator{ total = 0 }];
+    print("index {}\n", xs[0](4));
+}

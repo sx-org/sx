@@ -39,4 +39,7 @@ impl (i64) -> i64 for HasCall {
     call :: (self: *HasCall, x: i64) -> i64 { return x; }
 }
 
+Slot :: struct { call: i64; }
+impl (i64) -> i64 for Slot { call :: (self: *Slot, x: i64) -> i64 { return x; } }
+
 main :: () -> i32 { return 0; }

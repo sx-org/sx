@@ -11,3 +11,9 @@ field total 4
 ptr-field 18
 total 18
 enum 11
+method 20
+method 40
+static 40
+steal 6
+once 3
+made 1

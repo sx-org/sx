@@ -1,0 +1,11 @@
+global 3
+global 7
+global total 7
+const 5
+const total 0
+qualified 2
+qualified 4
+default 2
+named 8
+parens 9
+index 4

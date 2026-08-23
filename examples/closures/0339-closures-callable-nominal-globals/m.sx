@@ -1,0 +1,8 @@
+// A callable nominal authored by another module, reached through its namespace.
+Counter :: struct { n: i64; }
+
+impl (i64) -> i64 for Counter {
+    call :: (self: *Counter, x: i64) -> i64 { self.n += x; return self.n; }
+}
+
+counter := Counter{ n = 0 };

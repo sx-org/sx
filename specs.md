@@ -1185,7 +1185,7 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
   both `Q` and `I` interfaces is refused — an interface handle is not a
   concrete type, and re-erasure (§6.4) is the conversion between them.
 - A **function-type** head — `impl (i64) -> i64 for Accumulator` — makes a
-  nominal callable, declares `call`, and is limited to one per conformer; see
+  nominal callable, requires `call`, and is limited to one per conformer; see
   [Generic bounds](#generic-bounds).
 - In a blanket impl, `$T` introduces the parameter at its first mention;
   later mentions are bare references.
