@@ -4844,11 +4844,16 @@ capture binding: the for-loop element and the paired range index
 (`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; a write into
 it — the binding itself (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`)
-or a member/element of it (`x.n = v`, `x.tags[0] = v`, `--x.n`) — is a
-compile error rather than a silent no-op. A write that crosses into
+or a member/element of it (`x.n = v`, `x.tags[0] = v`, `--x.n`,
+`h.p.n = v`) — is a compile error rather than a silent no-op. Auto-deref
+through a pointer field of the copy (`h.p.n`) is refused: the copy has
+no address to GEP, so the allowed spellings are an explicit deref
+(`h.p.*.n`) or a pointer-typed root (`p.n` where `p` is `*T`). An
+`inline for` pack-element alias member write is the pack-element-alias
+diagnostic. A write that crosses into
 pointee memory through the capture reaches the storage BEHIND the copy,
 not the copy, and stays allowed: a pointer element (`for p in ptrs
-{ p.n = v }`), a deref of a pointer field (`h.p.* = v`), an element of a
+{ p.n = v }`), a deref of a pointer field (`h.p.*.n`), an element of a
 slice the capture views (`r[0] = v`). To mutate, copy the capture into a
 `:=` local (`v := x; v += 100;`) — the copy is yours to change and
 cannot accidentally look like it writes back. To write *through* into

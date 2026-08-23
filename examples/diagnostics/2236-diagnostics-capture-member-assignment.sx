@@ -1,11 +1,15 @@
 // A MEMBER or ELEMENT write through a by-value capture is refused exactly as
 // the bare `x = v` spelling is: the capture is a read-only copy, so `e.n = ...`
-// reaches no container storage. Every write form is covered — plain, compound,
-// element index, multi-assign, pre-decrement — and each carries the shape-aware
+// reaches no container storage. Auto-deref through a pointer field of the copy
+// (`h.p.n`) is the same refusal — the copy has no address to GEP; the allowed
+// spelling is an explicit deref (`h.p.*.n`) or a pointer-typed root. Taking the
+// address of a field (`*e.n`) and a pack-element member write are the same
+// class. Every write form is covered — plain, compound, element index,
+// multi-assign, pre-decrement, address-of — and each carries the shape-aware
 // message of the binding it roots at. Only the for-loop ELEMENT form suggests
 // the `*e` by-ref spelling, since its container storage exists.
 //
-// A chain that crosses into pointee memory writes shared storage, not the copy,
+// A chain that addresses pointee memory writes shared storage, not the copy,
 // and stays allowed — see 2237-basic-capture-member-writes.
 
 @import "modules/std.sx";
@@ -15,7 +19,16 @@ Item :: struct {
     tags: [2]i64;
 }
 
+Cell :: struct { n: i64 = 0; }
+Holder :: struct { p: *Cell; }
+
 Shape :: enum { box: Item; none; }
+
+takes :: (p: *i64) {}
+
+pack_mut :: (..xs: Item) {
+    inline for x in xs { x.n = 1; }
+}
 
 main :: () -> i32 {
     items : [2]Item = .[
@@ -39,16 +52,27 @@ main :: () -> i32 {
     // 5. pre-decrement of a member
     for e in items { --e.n; }
 
-    // 6. match-arm payload capture — field write
+    // 6. auto-deref through a pointer field of the copy
+    cell : Cell = .{ n = 1 };
+    holders : [1]Holder = .[.{ p = *cell }];
+    for h in holders { h.p.n = 7; }
+
+    // 7. address of a field of the copy
+    for e in items { takes(*e.n); }
+
+    // 8. match-arm payload capture — field write
     s : Shape = .box(.{ n = 3, tags = .[0, 0] });
     match s {
         case .box: |b| { b.n = 4; }
         case .none: {}
     }
 
-    // 7. function-local '::' const — constant-family message
+    // 9. function-local '::' const — constant-family message
     c :: Item{ n = 8, tags = .[0, 0] };
     c.n = 9;
+
+    // 10. inline-for pack-element alias — member write
+    pack_mut(.{ n = 1, tags = .[0, 0] });
 
     0
 }

@@ -1612,46 +1612,65 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
     }
 }
 
-/// Nonstore-root write guard, shared by lowerAssignment, lowerMultiAssign and
-/// the pre-decrement path: a member/element target whose chain roots at a
-/// scope binding with NO storage — a by-value `for` capture, a match payload,
-/// a catch binding, a local `::` const — writes into a read-only copy. The
-/// ident arms reject the bare `x = v` spelling; this rejects `x.f = v` /
-/// `x[i] = v`, which would otherwise reach emission as a struct_gep over a
-/// value base with no aggregate to address. A chain that crosses into pointee
-/// memory writes shared storage rather than the copy and stays allowed: an
-/// explicit deref, a pointer-typed hop (the root included), or indexing a
-/// slice/string. A binding reached ACROSS a nested-fn/lambda boundary belongs
-/// to diagEnclosingRootWrite.
-pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
-    const scope = self.scope orelse return false;
+/// Storage-less root of a member/element chain. Null when the chain is not
+/// rooted at such a binding, or when a hop addresses pointee memory instead
+/// of the copy: an explicit deref, a pointer-typed identifier (the copy is
+/// the address), or indexing a pointer/slice/string. A pointer-typed field
+/// of the copy (`h.p` in `h.p.n`) is still the copy — GEP needs the root's
+/// address.
+const NonstoreRoot = struct {
+    name: []const u8,
+    binding: Binding,
+};
+
+fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
+    const scope = self.scope orelse return null;
     var node = target;
     while (true) {
         const obj = switch (node.data) {
             .field_access => |fa| fa.object,
             .index_expr => |ie| ie.object,
-            else => return false,
+            else => return null,
         };
-        if (obj.data == .deref_expr) return false;
+        if (obj.data == .deref_expr) return null;
         const ty = self.inferExprType(obj);
         if (!ty.isBuiltin()) {
             const info = self.module.types.get(ty);
-            if (info == .pointer) return false;
-            if (info == .slice and node.data == .index_expr) return false;
+            if (info == .pointer) {
+                if (obj.data == .identifier or node.data == .index_expr) return null;
+            } else if (info == .slice and node.data == .index_expr) {
+                return null;
+            }
         } else if (ty == .string and node.data == .index_expr) {
-            return false;
+            return null;
         }
         if (obj.data == .identifier) {
             const name = obj.data.identifier.name;
             const scoped = scope.lookupBoundary(name);
-            if (scoped.crossed != .none) return false;
-            const b = scoped.binding orelse return false;
-            if (b.is_alloca or b.is_ref_capture or b.pack_elem != null) return false;
-            diagNonstoreBindingAssign(self, target.span, name, b, .member);
-            return true;
+            if (scoped.crossed != .none) return null;
+            const b = scoped.binding orelse return null;
+            if (b.is_alloca or b.is_ref_capture) return null;
+            return .{ .name = name, .binding = b };
         }
         node = obj;
     }
+}
+
+/// Nonstore-root write guard, shared by lowerAssignment, lowerMultiAssign and
+/// the pre-decrement path: a member/element target whose chain roots at a
+/// scope binding with NO storage — a by-value `for` capture, a match payload,
+/// a catch binding, a pack-element alias, a local `::` const — writes into a
+/// read-only copy. The ident arms reject the bare `x = v` spelling; this
+/// rejects `x.f = v` / `x[i] = v` / `h.p.n = v`, which GEPs a value base with
+/// no aggregate to address. A chain that addresses pointee memory writes
+/// shared storage rather than the copy and stays allowed: an explicit deref,
+/// a pointer-typed root, or indexing a pointer/slice/string. A binding
+/// reached ACROSS a nested-fn/lambda boundary belongs to
+/// diagEnclosingRootWrite.
+pub fn diagNonstoreRootWrite(self: *Lowering, target: *const Node) bool {
+    const root = nonstoreRootOf(self, target) orelse return false;
+    diagNonstoreBindingAssign(self, target.span, root.name, root.binding, .member);
+    return true;
 }
 
 /// `--x` on a target that names no slot: a literal, an accessor property, a
@@ -1676,15 +1695,17 @@ pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref 
 }
 
 /// Which spelling of a write reached a non-storable binding: the binding
-/// itself (`x = v`) or a member/element of it (`x.f = v`, `x[i] = v`). Only
-/// the write-back hints differ — a by-ref capture writes its member directly,
-/// so the `.*` spelling belongs to `.whole` alone.
-const WriteForm = enum { whole, member };
+/// itself (`x = v`), a member/element of it (`x.f = v`, `x[i] = v`), or
+/// taking the address of a member (`*x.f`). Only the write-back hints
+/// differ — a by-ref capture writes its member directly, so the `.*`
+/// spelling belongs to `.whole` alone.
+const WriteForm = enum { whole, member, address };
 
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
-/// lowerAssignment's ident arm, lowerMultiAssign's ident arm, and the
-/// root-write guard for member/element targets. A store that
+/// lowerAssignment's ident arm, lowerMultiAssign's ident arm, the
+/// root-write guard for member/element targets, and lowerExprAsPtr for
+/// address-of of a member. A store that
 /// lands here reaches neither a container nor the binding's own copy, so it
 /// must not be dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
@@ -1708,12 +1729,13 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
     const verb = switch (form) {
         .whole => "assign to",
         .member => "assign through",
+        .address => "take the address through",
     };
     switch (b.origin) {
         .local_const => d.addFmt(.err, span, "cannot {s} constant '{s}' — a '::' declaration is immutable; use ':=' to declare a mutable local", .{ verb, name }),
         .for_element => switch (form) {
             .whole => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
-            .member => d.addFmt(.err, span, "cannot assign through immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' to write into the container, or copy it into a `:=` local to mutate", .{ name, name }),
+            .member, .address => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' to write into the container, or copy it into a `:=` local to mutate", .{ verb, name, name }),
         },
         .range_index => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{ verb, name }),
         .match_payload => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{ verb, name }),
@@ -2369,8 +2391,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // its scope — only pointer-hop chains (pointee writes) may proceed.
     if (diagContextRootWrite(self, asgn.target)) return;
     // Nonstore-root write guard: a member/element write rooted at a storage-
-    // less binding (by-value capture, match payload, local `::` const) lands
-    // in a read-only copy.
+    // less binding (by-value capture, match payload, pack-element alias,
+    // local `::` const) lands in a read-only copy.
     if (diagNonstoreRootWrite(self, asgn.target)) return;
     // `@set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
     // setter as `obj.prop$set(rhs)`. Must run before the RHS is lowered below
@@ -3305,7 +3327,14 @@ pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []con
 }
 
 /// Get the pointer (alloca ref) for an lvalue expression, without loading.
+/// A field/index chain rooted at a storage-less binding has no slot to GEP.
 pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
+    if (node.data == .field_access or node.data == .index_expr) {
+        if (nonstoreRootOf(self, node)) |root| {
+            diagNonstoreBindingAssign(self, node.span, root.name, root.binding, .address);
+            return self.emitPlaceholder("addr_of_nonstore");
+        }
+    }
     switch (node.data) {
         .identifier => |id| {
             // An lvalue reached only ACROSS a nested-fn boundary is the
@@ -3945,7 +3974,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         // runs, per target: only pointer-hop chains (pointee writes) proceed.
         if (diagContextRootWrite(self, target)) continue;
         // Nonstore-root write guard — same helper single-assign runs, per
-        // target: a member/element write into a storage-less binding's copy.
+        // target: a member/element write into a storage-less binding's copy
+        // (including auto-deref of a pointer field of the copy).
         if (diagNonstoreRootWrite(self, target)) continue;
         // Enclosing-local write guard — same helper single-
         // assign runs, per target: a nested static fn's multi-assign to an
