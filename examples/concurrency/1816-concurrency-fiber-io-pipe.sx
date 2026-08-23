@@ -55,7 +55,7 @@ main :: () -> i64 {
 
     // Reader: block on the (empty) pipe until it is readable, then read 3 bytes.
     mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
-        ps.spawn(|| {
+        ps.spawn(||_{ ps, pst, rfd } {
             ps.block_on_fd(rfd, true);   // parks until read_fd is readable
             n := read(rfd, *pst.bytes[0], 3);
             pst.read_n = xx n;
@@ -64,7 +64,7 @@ main :: () -> i64 {
     }
     // Writer: write 3 bytes ('a','b','c') to the write end.
     mk_writer :: (ps: *sched.Scheduler, pst: *S, wfd: i32) {
-        ps.spawn(|| {
+        ps.spawn(||_{ pst, wfd } {
             buf : [3]u8 = ---;
             buf[0] = 97; buf[1] = 98; buf[2] = 99;  // 'a' 'b' 'c'
             write(wfd, *buf[0], 3);

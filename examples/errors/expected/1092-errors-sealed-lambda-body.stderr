@@ -1,0 +1,43 @@
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1092-errors-sealed-lambda-body.sx:21:26
+   |
+21 |     bare := |x: i64| x + n;                       // reject: `n` needs `_{ n }`
+   |                          ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+21 |     bare := |x: i64| x + n;                       // reject: `n` needs `_{ n }`
+   |                          ^
+
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1092-errors-sealed-lambda-body.sx:24:46
+   |
+24 |     _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
+   |                                              ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+24 |     _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
+   |                                              ^
+
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1092-errors-sealed-lambda-body.sx:26:37
+   |
+26 |     each(1) { |x| print("{}\n", x + n); };         // reject: a block is a literal
+   |                                     ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+26 |     each(1) { |x| print("{}\n", x + n); };         // reject: a block is a literal
+   |                                     ^
+
+error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
+  --> examples/errors/1092-errors-sealed-lambda-body.sx:29:30
+   |
+29 |         step := |y: i64| y * n;                    // reject: the inner needs its own
+   |                              ^
+
+help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
+   |
+29 |         step := |y: i64| y * n;                    // reject: the inner needs its own
+   |                              ^

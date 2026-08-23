@@ -1539,8 +1539,9 @@ pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
     }
     if (root.data != .identifier) return false;
     const scope = self.scope orelse return false;
-    if (!scope.lookupBoundary(root.data.identifier.name).crossed_fn_boundary) return false;
-    _ = self.diagEnclosingLocalRef(root.data.identifier.name, target.span);
+    const crossed = scope.lookupBoundary(root.data.identifier.name).crossed;
+    if (crossed == .none) return false;
+    _ = self.diagEnclosingLocalRef(root.data.identifier.name, target.span, crossed);
     return true;
 }
 
@@ -3252,8 +3253,9 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // would Bus-error through it). Diagnose; the
             // placeholder Ref is never emitted (hasErrors() aborts).
             if (self.scope) |scope| {
-                if (scope.lookupBoundary(id.name).crossed_fn_boundary) {
-                    return self.diagEnclosingLocalRef(id.name, node.span);
+                const crossed = scope.lookupBoundary(id.name).crossed;
+                if (crossed != .none) {
+                    return self.diagEnclosingLocalRef(id.name, node.span, crossed);
                 }
             }
             const local = if (self.scope) |scope| scope.lookup(id.name) else null;

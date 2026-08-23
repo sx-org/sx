@@ -112,7 +112,7 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
     printf("%d\n", *ap);          // the cursor cannot leave this frame
     copied := ap;                 // no value form to copy
     word := ap.w0;                // no published fields
-    later := || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    later := ||_{ ap } -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
     rows: [1]@VaList = ---;
     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
     @va_end(*ap);

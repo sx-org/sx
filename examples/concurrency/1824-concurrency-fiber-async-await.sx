@@ -23,10 +23,10 @@ main :: () -> i64 {
     s := sched.Scheduler.init();
     ps := *s; pl := *lg;
     push .{ io = s } {
-        ps.spawn(|| {
+        ps.spawn(||_{ pl } {
             rec(pl, 1);                                              // coordinator starts
-            a := context.io.async(|| -> (i64, !) { rec(pl, 10); 100 }); // worker A — deferred
-            b := context.io.async(|| -> (i64, !) { rec(pl, 20); 23 });  // worker B — deferred
+            a := context.io.async(||_{ pl } -> (i64, !) { rec(pl, 10); 100 }); // worker A — deferred
+            b := context.io.async(||_{ pl } -> (i64, !) { rec(pl, 20); 23 });  // worker B — deferred
             rec(pl, 2);                                              // both spawned, neither has run
             va := a.await() ?? { -1 };                              // park; A runs, wakes us
             vb := b.await() ?? { -1 };

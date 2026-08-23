@@ -1,6 +1,6 @@
 // Pack-as-value diagnostics. A pack is comptime-only, so using the bare pack
 // name where a runtime value is required is an error, with a context-tailored
-// suggestion. All four categories below fire (the functions are monomorphized
+// suggestion. All five categories below fire (the functions are monomorphized
 // when called from main).
 
 @import "modules/std.sx";
@@ -15,11 +15,13 @@ storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
 call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
 ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
 iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+env     :: (..xs: Show) -> void { f := ||_{ xs = xs } {}; f(); }  // E: a closure env field
 
 main :: () -> i32 {
     storage(A{});
     call(A{});
     _ = ret(A{});
     iter(A{});
+    env(A{});
     0
 }

@@ -1,20 +1,24 @@
-// Trailing-block mapping diagnostics (specs: Trailing Blocks), each firing exactly
-// once with no arity cascade: a last param that is not a Closure; a variadic last
-// param; a header whose arity misses the parameter's `Closure(…)`, in both
-// directions; the block-bound param also named; and a callee without a known
-// declaration, where closure values bind explicitly.
+// Trailing-block mapping diagnostics (specs: Trailing Blocks), each firing
+// exactly once with no arity cascade: a last param that binds no block; an
+// erased `Closure` last param, which is an allocation written at the call; a
+// variadic last param; a header whose arity misses the parameter's bound, in
+// both directions; the block-bound param also named; and a callee without a
+// known declaration, where closure values bind explicitly. A refused block
+// binds nothing, so a `$F` binder it was to fix reports unbound after it.
 @import "modules/std.sx";
 
-vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
+vstack :: (spacing: f32, content: $F/() -> void) -> i64 { content(); 7 }
 plain :: (a: i64, b: i64) -> i64 { a + b }
 vari :: (n: i64, ..rest: []i64) {}
-rower :: (row: Closure(i64)) { row(1); }
-scaffold :: (top_bar: ?Closure() = null, content: Closure()) { content(); }
+rower :: (row: $R/(i64) -> void) { row(1); }
+erased :: (row: Closure(i64)) { row(1); }
+scaffold :: (top_bar: ?Closure() = null, content: $F/() -> void) { content(); }
 toolbar :: () { print("t\n"); }
 
 main :: () {
     _ = plain(1, 2) { print("x\n"); };
     vari(1) { print("x\n"); };
+    erased() { |a| print("x\n"); };
     rower() { print("x\n"); };
     rower() { |a, b| print("x\n"); };
     _ = vstack(1.0) { |x| print("x\n"); };

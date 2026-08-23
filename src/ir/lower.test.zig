@@ -2455,9 +2455,9 @@ test "scope: lookupNearest resolves by depth across both local namespaces" {
 
 test "scope: lookupBoundary flags a value binding reached across a nested-fn boundary" {
     // A static nested `::` fn's body scope keeps its parent chain (so sibling
-    // fns + comptime consts still resolve) but sets `is_fn_boundary`. A plain
-    // VALUE binding found by crossing that boundary is an enclosing local the
-    // static fn has no env to reach — `crossed_fn_boundary` reports it so the
+    // fns + comptime consts still resolve) and sets `boundary = .nested_fn`. A
+    // plain VALUE binding found by crossing that boundary is an enclosing local
+    // the static fn has no env to reach — `crossed` reports it so the
     // identifier site diagnoses instead of emitting the enclosing frame's dead
     // Ref (the miscompile: undef read, exit 0, no diagnostic).
     const lower_mod = @import("lower.zig");
@@ -2471,29 +2471,41 @@ test "scope: lookupBoundary flags a value binding reached across a nested-fn bou
 
     // the nested static fn's body scope — parent chain kept, boundary flagged.
     var nested = Scope.init(alloc, &enclosing);
-    nested.is_fn_boundary = true;
+    nested.boundary = .nested_fn;
     defer nested.deinit();
 
     // `x` is reachable only by crossing the boundary → reject.
     const crossed = nested.lookupBoundary("x");
     try std.testing.expect(crossed.binding != null);
-    try std.testing.expect(crossed.crossed_fn_boundary);
+    try std.testing.expectEqual(Scope.Boundary.nested_fn, crossed.crossed);
 
     // The nested fn's OWN local resolves without crossing → accept.
     nested.put("z", .{ .ref = Ref.none, .ty = .i64, .is_alloca = true });
     const own = nested.lookupBoundary("z");
     try std.testing.expect(own.binding != null);
-    try std.testing.expect(!own.crossed_fn_boundary);
+    try std.testing.expectEqual(Scope.Boundary.none, own.crossed);
 
     // From the enclosing scope itself (no boundary above `x`) → a normal hit.
     const direct = enclosing.lookupBoundary("x");
     try std.testing.expect(direct.binding != null);
-    try std.testing.expect(!direct.crossed_fn_boundary);
+    try std.testing.expectEqual(Scope.Boundary.none, direct.crossed);
 
     // An absent name is a plain miss, never a boundary error.
     const miss = nested.lookupBoundary("absent");
     try std.testing.expect(miss.binding == null);
-    try std.testing.expect(!miss.crossed_fn_boundary);
+    try std.testing.expectEqual(Scope.Boundary.none, miss.crossed);
+
+    // A lambda body's scope seals the plain lookups: `x` is invisible to
+    // `lookup`, and `lookupBoundary` names the boundary that hid it so the
+    // diagnostic can name the env field to write.
+    var lam = Scope.init(alloc, &enclosing);
+    lam.boundary = .lambda;
+    defer lam.deinit();
+    try std.testing.expect(lam.lookup("x") == null);
+    try std.testing.expect(lam.lookupNearest("x") == null);
+    const sealed = lam.lookupBoundary("x");
+    try std.testing.expect(sealed.binding != null);
+    try std.testing.expectEqual(Scope.Boundary.lambda, sealed.crossed);
 }
 
 test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary, resolves same-function allocas" {
@@ -2528,7 +2540,7 @@ test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary,
     const x_slot = lowering.builder.alloca(.i64);
     enclosing.put("x", .{ .ref = x_slot, .ty = .i64, .is_alloca = true });
     var nested = Scope.init(alloc, &enclosing);
-    nested.is_fn_boundary = true;
+    nested.boundary = .nested_fn;
     defer nested.deinit();
     lowering.scope = &nested;
 

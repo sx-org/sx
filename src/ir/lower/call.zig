@@ -1534,10 +1534,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // through unused: the enclosing local is invisible
                             // to a static nested fn, so the name correctly
                             // resolves to the module-scope callable below.
-                            if (nb.crossed_fn_boundary and (ty_info == .closure or ty_info == .function or
+                            if (nb.crossed != .none and (ty_info == .closure or ty_info == .function or
                                 self.uniqueLambdaThrough(binding.ty) != null or self.callableNominalThrough(binding.ty) != null))
                             {
-                                _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
+                                _ = self.diagEnclosingLocalRef(id.name, c.callee.span, nb.crossed);
                                 return Ref.none;
                             }
                             // A callable local shadows any same-named top-level
@@ -1657,8 +1657,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // A binding reachable only across a nested-fn boundary is an
                 // enclosing local — never a valid indirect-call target here
                 // (mirrors the callable-binding gate above).
-                if (scope.lookupBoundary(id.name).crossed_fn_boundary) {
-                    _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
+                const crossed = scope.lookupBoundary(id.name).crossed;
+                if (crossed != .none) {
+                    _ = self.diagEnclosingLocalRef(id.name, c.callee.span, crossed);
                     return Ref.none;
                 }
                 if (scope.lookup(id.name)) |binding| {
@@ -5033,19 +5034,15 @@ fn namedCalleeDecl(
     }
 }
 
-/// The closure a trailing block fills at a parameter of type `pty` — the
-/// closure itself, or the child of an optional closure slot. `.unresolved`
-/// when the parameter holds no closure.
-fn trailingClosureType(self: *Lowering, pty: TypeId) TypeId {
-    if (pty.isBuiltin()) return .unresolved;
+/// A parameter of type `pty` is an ERASED closure slot — `Closure(…)` itself or
+/// the child of an optional one. Such a slot takes no trailing block: erasing a
+/// block is an allocation, written where it is paid.
+fn isClosureSlot(self: *Lowering, pty: TypeId) bool {
+    if (pty.isBuiltin()) return false;
     const info = self.module.types.get(pty);
-    if (info == .closure) return pty;
-    if (info == .optional and !info.optional.child.isBuiltin() and
-        self.module.types.get(info.optional.child) == .closure)
-    {
-        return info.optional.child;
-    }
-    return .unresolved;
+    if (info == .closure) return true;
+    return info == .optional and !info.optional.child.isBuiltin() and
+        self.module.types.get(info.optional.child) == .closure;
 }
 
 /// Strip `named_arg` wrappers in place of a failed mapping: downstream
@@ -5274,19 +5271,20 @@ pub fn mapNamedArgs(
                 // A `$F/(…) -> R` last parameter names the block's signature in
                 // its bound, not in a type: the binder takes the block's own
                 // unique type, so the arity comes from the bound's spelling.
+                // Nothing else binds a block — an erased `Closure` slot least of
+                // all, since erasing one is an allocation.
                 const want = if (lower_bound.boundCallableSig(self, fd.params[last].type_expr)) |sig|
                     sig.params.len
-                else blk: {
-                    const closure_ty = trailingClosureType(self, pty);
-                    if (closure_ty == .unresolved) {
-                        errored = true;
-                        if (self.diagnostics) |d| {
-                            const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
-                            d.addHelpFmt(id, a.span, null, "declare '{s}' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
-                        }
-                        continue;
+                else {
+                    errored = true;
+                    if (self.diagnostics) |d| {
+                        const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
+                        if (isClosureSlot(self, pty))
+                            d.addHelpFmt(id, a.span, null, "erasing a block is an allocation, so it is written where it is paid: `{s}(closure(|…| …))`", .{callee_name})
+                        else
+                            d.addHelpFmt(id, a.span, null, "declare '{s}' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
                     }
-                    break :blk self.module.types.get(closure_ty).closure.params.len;
+                    continue;
                 };
                 if (want != block_params.len) {
                     errored = true;

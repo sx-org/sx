@@ -1,46 +1,75 @@
-error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:16:21
+error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:21
    |
-16 |     _ = plain(1, 2) { print("x\n"); };
+19 |     _ = plain(1, 2) { print("x\n"); };
    |                     ^^^^^^^^^^^^^^^^^
 
-help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
+help: declare 'b' as `$F/(…) -> R` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
-16 |     _ = plain(1, 2) { print("x\n"); };
+19 |     _ = plain(1, 2) { print("x\n"); };
    |                     ^^^^^^^^^^^^^^^^^
 
 error: 'vari' cannot take a trailing block — its last parameter '..rest' is variadic; a variadic tail binds positionally
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:17:13
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:20:13
    |
-17 |     vari(1) { print("x\n"); };
+20 |     vari(1) { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
+
+error: 'erased' cannot take a trailing block — its last parameter 'row' is 'closure', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:14
+   |
+21 |     erased() { |a| print("x\n"); };
+   |              ^^^^^^^^^^^^^^^^^^^^^
+
+help: erasing a block is an allocation, so it is written where it is paid: `erased(closure(|…| …))`
+   |
+21 |     erased() { |a| print("x\n"); };
+   |              ^^^^^^^^^^^^^^^^^^^^^
 
 error: 'rower' takes 1 parameter in the block for 'row' — its header binds 0
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:18:13
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:22:13
    |
-18 |     rower() { print("x\n"); };
+22 |     rower() { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
-error: 'rower' takes 1 parameter in the block for 'row' — its header binds 2
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:13
+error: cannot infer generic type parameter 'R' for 'rower' from this call's arguments
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:22:5
    |
-19 |     rower() { |a, b| print("x\n"); };
+22 |     rower() { print("x\n"); };
+   |     ^^^^^
+
+error: 'rower' takes 1 parameter in the block for 'row' — its header binds 2
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:23:13
+   |
+23 |     rower() { |a, b| print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: 'vstack' takes 0 parameters in the block for 'content' — its header binds 1
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:20:21
+error: cannot infer generic type parameter 'R' for 'rower' from this call's arguments
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:23:5
    |
-20 |     _ = vstack(1.0) { |x| print("x\n"); };
+23 |     rower() { |a, b| print("x\n"); };
+   |     ^^^^^
+
+error: 'vstack' takes 0 parameters in the block for 'content' — its header binds 1
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:24:21
+   |
+24 |     _ = vstack(1.0) { |x| print("x\n"); };
    |                     ^^^^^^^^^^^^^^^^^^^^^
 
-error: parameter 'content' is bound both by a named argument and by the trailing block
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:33
+error: cannot infer generic type parameter 'F' for 'vstack' from this call's arguments
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:24:9
    |
-21 |     scaffold(content = toolbar) { print("x\n"); };
+24 |     _ = vstack(1.0) { |x| print("x\n"); };
+   |         ^^^^^^
+
+error: parameter 'content' is bound both by a named argument and by the trailing block
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:25:33
+   |
+25 |     scaffold(content = toolbar) { print("x\n"); };
    |                                 ^^^^^^^^^^^^^^^^^
 
 error: cannot use a trailing block here — 'q' has no known declaration (closure and function-pointer values bind their arguments explicitly)
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:23:5
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:27:5
    |
-23 |     q() { print("x\n"); };
+27 |     q() { print("x\n"); };
    |     ^

@@ -15,14 +15,19 @@ const lower_protocol = @import("protocol.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
-/// Where a capturing literal's environment lives.
-///   `.heap` — the ordinary literal: the value IS the env, so it lives wherever
-///             the binding, parameter, or temporary does. `closure(f, alloc)`
-///             is the only thing that copies it anywhere else.
-///   `.stack` — a NONESCAPING recipe (`@Init(T)`): the value is an erased pair
-///             whose env stays in the forming frame's alloca. Valid only when
-///             the value provably cannot outlive that frame (spec §12.1).
-pub const EnvStorage = enum { heap, stack };
+/// What a lowered lambda IS — which decides both where its environment lives
+/// and where the environment's fields come from.
+///   `.literal` — a written `|…|`: its env is exactly the `_{ … }` it wrote and
+///                its body is SEALED against the enclosing scope. The value IS
+///                that env, living wherever the binding, parameter, or
+///                temporary does; `closure(f, alloc)` is the only thing that
+///                copies it anywhere else.
+///   `.init_recipe` — the NONESCAPING recipe `@Init(T)` forms: the body is the
+///                argument expression as written, so its free names are
+///                collected where they are still live, and the value is an
+///                erased pair whose env stays in the forming frame's alloca
+///                (spec §12.1 forbids choosing heap storage for it).
+pub const LambdaKind = enum { literal, init_recipe };
 
 /// A `|…|_{ … }` literal's own type: the env struct the literal IS, together
 /// with the function that reads it. The value carries no pointer, so a call
@@ -95,14 +100,14 @@ pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
 }
 
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
-    return lowerLambdaTyped(self, lam, .heap, null);
+    return lowerLambdaTyped(self, lam, .literal, null);
 }
 
-/// `lowerLambda` with the two knobs a compiler-formed recipe needs: where the
-/// environment lives, and which type the resulting `{fn_ptr, env}` value
+/// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
+/// `LambdaKind` it is, and which type the resulting `{fn_ptr, env}` value
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
-pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
+pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
     // A written `_{ … }` makes the literal's value its own env struct. Every
     // field is evaluated HERE, in the forming frame, before the guard below
     // retires the enclosing flow state.
@@ -114,9 +119,15 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         defer self.target_type = saved_env_target;
         for (lam.env) |f| {
             const ref = self.lowerExpr(f.value);
+            const ty = self.builder.getRefType(ref);
+            // A build block's environment points at the frame that formed it,
+            // and a literal may outlive that frame. Refused, but still bound:
+            // the diagnostic halts before codegen, and binding it keeps the
+            // body from cascading.
+            self.rejectBlockCapture(ty, f.name, f.value.span);
             written_env.append(self.alloc, .{
                 .name = f.name,
-                .ty = self.builder.getRefType(ref),
+                .ty = ty,
                 .ref = ref,
                 .is_alloca = false,
             }) catch {};
@@ -137,21 +148,19 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
     self.block_counter += 1;
 
-    // Collect lambda param names for exclusion from captures
-    var param_names = std.StringHashMap(void).init(self.alloc);
-    defer param_names.deinit();
-    for (lam.params) |p| {
-        param_names.put(p.name, {}) catch {};
-    }
-    // A written field IS the binding the body reads, so the name is no longer
-    // free — implicit capture then feeds whatever is left into the same env.
-    for (lam.env) |f| param_names.put(f.name, {}) catch {};
-
-    // Pre-scan lambda body AST for free variables (captures)
+    // A recipe's body is an expression the compiler moved, so its free names
+    // are collected from the frame that still holds them. A written literal is
+    // sealed: `written_env` IS the whole environment.
     var captures = std.ArrayList(CaptureInfo).empty;
     defer captures.deinit(self.alloc);
     captures.appendSlice(self.alloc, written_env.items) catch {};
-    self.collectCaptures(lam.body, &param_names, &captures);
+    if (kind == .init_recipe) {
+        var param_names = std.StringHashMap(void).init(self.alloc);
+        defer param_names.deinit();
+        for (lam.params) |p| param_names.put(p.name, {}) catch {};
+        for (lam.env) |f| param_names.put(f.name, {}) catch {};
+        self.collectCaptures(lam.body, &param_names, &captures);
+    }
 
     // Deduplicate captures
     var seen = std.StringHashMap(void).init(self.alloc);
@@ -345,8 +354,12 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     const entry = self.builder.appendBlock(entry_name, &.{});
     self.builder.switchToBlock(entry);
 
-    // Create scope WITHOUT parent — captures are bound from env, not parent scope
-    var lambda_scope = Scope.init(self.alloc, null);
+    // The body's scope. It carries the enclosing chain so the boundary lookups
+    // can NAME an enclosing local the body reached for; `.lambda` is what makes
+    // every plain lookup stop here, so the body binds its params and its env
+    // fields and nothing else.
+    var lambda_scope = Scope.init(self.alloc, saved_scope);
+    lambda_scope.boundary = .lambda;
     self.scope = &lambda_scope;
 
     // The enclosing pack-fn mono's pack state must NOT leak into the lambda
@@ -479,7 +492,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // A nonescaping `@Init(T)` recipe is the erased pair its site names, and
     // §12.1 forbids the compiler from choosing heap storage for it: the env
     // stays in the alloca of the frame that formed it.
-    if (env_storage == .stack) {
+    if (kind == .init_recipe) {
         if (capture_list.len == 0) return self.builder.closureCreate(func_id, Ref.none, closure_ty);
         const env_local = self.builder.alloca(env_struct_ty);
         for (capture_list, 0..) |cap, i| {
@@ -797,7 +810,13 @@ pub fn createClosureToBareFnAdapter(self: *Lowering, closure_func_id: FuncId, fn
 }
 
 /// Walk an AST node and collect free variable references (identifiers that are
-/// in the current scope but not in lambda params).
+/// in the current scope but not in `param_names`).
+///
+/// This serves the two COMPILER-FORMED bodies — `@Init(T)`'s recipe and a
+/// `@BuildBlock(P)`'s replayed block — whose source is an expression the
+/// compiler moved out of the frame that still holds those names. A written
+/// `|…|` literal is sealed and never asks: its environment is the `_{ … }` it
+/// wrote, so the walk stops at every nested one.
 pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.StringHashMap(void), captures: *std.ArrayList(CaptureInfo)) void {
     switch (node.data) {
         .identifier => |id| {
@@ -934,19 +953,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             }
         },
         .lambda => |inner_lam| {
-            // For nested lambdas, the inner lambda captures from our scope too
-            // But its own params should be excluded
-            var inner_params = std.StringHashMap(void).init(self.alloc);
-            defer inner_params.deinit();
-            // Copy current param_names
-            var it = param_names.iterator();
-            while (it.next()) |e| {
-                inner_params.put(e.key_ptr.*, {}) catch {};
-            }
-            for (inner_lam.params) |p| {
-                inner_params.put(p.name, {}) catch {};
-            }
-            self.collectCaptures(inner_lam.body, &inner_params, captures);
+            // A nested literal is sealed, so its body names nothing from here.
+            // Its `_{ … }` field expressions do: they evaluate where the
+            // literal is written, which is inside this walk.
+            for (inner_lam.env) |f| self.collectCaptures(f.value, param_names, captures);
         },
         .match_expr => |me| {
             self.collectCaptures(me.subject, param_names, captures);
@@ -1054,14 +1064,16 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .named_arg => |na| {
             self.collectCaptures(na.value, param_names, captures);
         },
-        // `f(a) { body }` — the block is a lambda sitting in the call's arg
-        // list; its body captures from here exactly like a written lambda
-        // literal.
+        // `f(a) { body }` — the block is the lambda sitting in the call's arg
+        // list, and the `.lambda` arm seals it.
         .trailing_block => |tb| {
             self.collectCaptures(tb.lambda, param_names, captures);
         },
-        // `expr { … }` before settling: the block's own header names shadow, so
-        // it captures exactly as the closure it may yet become.
+        // `expr { … }` before settling. The block may yet become a BUILD block,
+        // which is replayed in the receiving frame and reads its free names
+        // through this environment — so the walk descends, with the block's own
+        // header names shadowing. A closure reading is sealed and simply
+        // contributes names it never reads.
         .juxtaposition => |jx| {
             self.collectCaptures(jx.expr, param_names, captures);
             var block_params = std.StringHashMap(void).init(self.alloc);

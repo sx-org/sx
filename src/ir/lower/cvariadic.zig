@@ -368,7 +368,7 @@ fn boundaryPlace(self: *Lowering, node: *const Node) ?Ref {
 fn cursorBinding(self: *Lowering, name: []const u8) ?lower.Binding {
     const scope = self.scope orelse return null;
     const sb = scope.lookupBoundary(name);
-    if (sb.crossed_fn_boundary) return null;
+    if (sb.crossed != .none) return null;
     const binding = sb.binding orelse return null;
     if (!binding.is_alloca or !isCursorType(self, binding.ty)) return null;
     return binding;

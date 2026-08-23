@@ -3386,7 +3386,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             if (self.scope) |scope| {
                 const sb = scope.lookupBoundary(id.name);
-                if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id.name, node.span);
+                if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id.name, node.span, sb.crossed);
                 if (sb.binding) |binding| {
                     // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
@@ -3759,7 +3759,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const id_name = uop.operand.data.identifier.name;
                 if (self.scope) |scope| {
                     const sb = scope.lookupBoundary(id_name);
-                    if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id_name, node.span);
+                    if (sb.crossed != .none) break :blk self.diagEnclosingLocalRef(id_name, node.span, sb.crossed);
                     if (sb.binding) |binding| {
                         if (binding.is_alloca) {
                             const ptr_ty = self.module.types.ptrTo(binding.ty);

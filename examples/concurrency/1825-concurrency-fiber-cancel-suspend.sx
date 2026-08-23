@@ -27,8 +27,8 @@ main :: () -> i64 {
     s := sched.Scheduler.init();
     ps := *s; pl := *lg;
     push .{ io = s } {
-        ps.spawn(|| {
-            w := context.io.async(|| -> (i64, !) {
+        ps.spawn(||_{ ps, pl } {
+            w := context.io.async(||_{ pl } -> (i64, !) {
                 rec(pl, 1);                  // worker started
                 try context.io.sleep(10);    // park; cancel delivers Canceled HERE
                 rec(pl, 2);                  // POST-SUSPEND — must NEVER run
