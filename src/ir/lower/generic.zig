@@ -2046,8 +2046,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         };
     }
     // @env_type($F) -> Type — the environment a callable value IS. Folds here
-    // like `pointee_type` so it answers in a type-argument slot, which is where
-    // `closure`'s `make` reads it.
+    // like `pointee_type` so it answers in a type-argument slot.
     if (std.mem.eql(u8, callee_name, "@env_type")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|

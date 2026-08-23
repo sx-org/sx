@@ -4652,7 +4652,7 @@ pub fn persistArity(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref 
 /// The environment `@env_type` / `@env_of` / `@call_ptr` answer for `ty`, or
 /// null after diagnosing why it has none. An erased `Closure` is refused by
 /// design: it carries an environment instead of being one, which is why
-/// `closure` returns it unchanged rather than persisting it again.
+/// `closure` returns it unchanged.
 pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.Span) ?TypeId {
     if (lower_closure.envTypeOf(self, ty)) |env| return env;
     if (self.diagnostics) |d| {
