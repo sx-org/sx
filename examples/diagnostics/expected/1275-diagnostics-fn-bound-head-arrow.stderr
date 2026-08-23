@@ -1,0 +1,5 @@
+error: the '->' belongs to a function-type head — write '(i64) -> void' for a callable that returns nothing
+  --> examples/diagnostics/1275-diagnostics-fn-bound-head-arrow.sx:5:17
+   |
+ 5 | apply :: (f: $F/(i64), x: i64) -> i64 { return f(x); }
+   |                 ^^^^^

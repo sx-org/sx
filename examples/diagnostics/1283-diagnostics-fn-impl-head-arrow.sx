@@ -1,0 +1,9 @@
+// An impl head is the same function-type head a bound writes, so
+// `impl (i64) for A` misses the `->` the same way and names the same fix.
+@import "modules/std.sx";
+
+A :: struct { n: i64; }
+
+impl (i64) for A { call :: (self: *A, x: i64) -> i64 { return x; } }
+
+main :: () -> i32 { return 0; }

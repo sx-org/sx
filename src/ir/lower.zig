@@ -2277,7 +2277,7 @@ pub const Lowering = struct {
                     const id = diags.addFmtId(.err, span, "'{s}' is not in scope in this lambda body — it reads its parameters and its env, nothing else", .{name});
                     diags.addHelpFmt(id, span, null, "name it in the env: `|…|_{{ {s} }} …`, which is the copy `{s} = {s}`", .{ name, name, name });
                 },
-                .none, .nested_fn => diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — only a closure reaches it, by naming it in its env (`|…|_{{ {s} }} ...`)", .{ name, name }),
+                .none, .nested_fn => diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — only a closure reaches it, by naming it in its env (`|…|_{{ {s} = {s} }} ...`)", .{ name, name, name }),
             };
         }
         return self.emitPlaceholder(name);

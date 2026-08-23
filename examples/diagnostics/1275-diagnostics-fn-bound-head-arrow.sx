@@ -1,0 +1,7 @@
+// The `->` belongs to a function-type head: `$F/(i64)` is not a callable
+// returning nothing, and the error names the spelling that is.
+@import "modules/std.sx";
+
+apply :: (f: $F/(i64), x: i64) -> i64 { return f(x); }
+
+main :: () -> i32 { return 0; }

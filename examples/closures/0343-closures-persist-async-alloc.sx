@@ -2,7 +2,9 @@
 // the `ThunkBox`, the completion closure's environment, and the worker's, which
 // `closure(worker, alloc)` persisted. The `context.allocator` in force at the call
 // funds none of it, so a task submitted under one allocator still frees back to the
-// one it was handed, and `alloc` can be an arena the task never outlives.
+// one it was handed, and `alloc` can be an arena the task never outlives. A worker
+// handed over already persisted is taken as it is, and the task owns its env from
+// there.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -26,6 +28,18 @@ main :: () {
     print("task allocs {} deallocs {} outstanding {}\n",
           task.alloc_count, task.dealloc_count, task.leak_count());
     print("context allocs {}\n", ctx_allocs);
+
+    // A worker that is ALREADY a `Closure` is taken unchanged — `closure` is
+    // identity on one — so the task funds the other three and the env it was
+    // handed becomes the task's to free.
+    pre := TrackingAllocator.init(base);
+    m := 20;
+    w := closure(||_{ m } -> (i64, !) m + 1, pre);
+    persisted := pre.alloc_count;
+    h := context.io.async(w, pre);
+    print("pre-persisted {} task total {} value {}\n",
+          persisted, pre.alloc_count, await(h) catch { 0 });
+    print("pre outstanding {}\n", pre.leak_count());
 
     // An arena is a valid `alloc`: the task's allocations land in the chunk it
     // already holds, so the GPA behind it sees no growth.

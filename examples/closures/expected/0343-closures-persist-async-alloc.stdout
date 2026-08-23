@@ -1,5 +1,7 @@
 answer 42
 task allocs 4 deallocs 4 outstanding 0
 context allocs 0
+pre-persisted 1 task total 4 value 21
+pre outstanding 0
 arena 42 gpa growth 0
 gpa outstanding 0
