@@ -8,25 +8,25 @@
 // empty body, and a closure ELEMENT parenthesized inside a construction.
 @import "modules/std.sx";
 
-vstack :: (spacing: f32, content: Closure()) -> i64 {
+vstack :: (spacing: f32, content: $F/() -> void) -> i64 {
     print("begin {}\n", spacing);
     content();
     print("end\n");
     7
 }
 
-each :: (xs: []i64, body: Closure(i64)) { for v in xs { body(v); } }
-pair :: (f: Closure(i64, i64)) { f(3, 4); }
+each :: (xs: []i64, body: $F/(i64) -> void) { for v in xs { body(v); } }
+pair :: (f: $F/(i64, i64) -> void) { f(3, 4); }
 Sink :: struct($T: Type) { taken: Closure(i64); }
 
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) {
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) {
     if tb := top_bar { tb(); }
     content();
     if fb := fab { fb(); }
 }
 
 toolbar :: () { print("toolbar\n"); }
-check :: (f: Closure()) -> bool { f(); true }
+check :: (f: $F/() -> void) -> bool { f(); true }
 
 main :: () {
     _ = vstack(8.0) { print("a\n"); print("b\n"); };
@@ -34,9 +34,9 @@ main :: () {
     scaffold(top_bar = toolbar) { print("content2\n"); };
     r := vstack(2.0) { print("x\n"); };
     print("ret {}\n", r);
-    // Closures capture by value: the block mutates its env copy, not `n`.
+    // The env takes `n` by value, so the block mutates its own field.
     n := 0;
-    _ = vstack(1.0) { n += 9; };
+    _ = vstack(1.0) { ||_{ n = n } n += 9; };
     print("by-value {}\n", n);
     // The `;` cuts, so the brace group after it is an ordinary scope block.
     _ = vstack(3.0, || print("lam\n"));

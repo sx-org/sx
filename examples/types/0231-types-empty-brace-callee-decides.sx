@@ -1,5 +1,5 @@
 // A brace group after a call is settled by TYPES (specs: Trailing Blocks): a
-// generic type head constructs, a `Closure()` last parameter takes the block.
+// generic type head constructs, a `$F/() -> void` last parameter takes the block.
 // Body shape, the gap before the `{`, and names — the callee's case, an
 // argument's — decide nothing. A function-local head is settled the same way,
 // where its own scope is in hand.
@@ -11,8 +11,8 @@ Move :: struct { d: i64; }
 Box :: struct ($T: Type) { v: T = ---; }
 Buf :: struct ($N: i64) { xs: [N]i64 = ---; }
 
-run :: (n: i64, body: Closure()) { body(); }
-Group :: (n: i64, body: Closure()) { body(); }
+run :: (n: i64, body: $F/() -> void) { body(); }
+Group :: (n: i64, body: $F/() -> void) { body(); }
 
 main :: () -> i64 {
     b := Box(pair){};             // lowercase user type arg

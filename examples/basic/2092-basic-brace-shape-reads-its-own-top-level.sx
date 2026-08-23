@@ -15,7 +15,7 @@ Box :: struct ($T: Type) { v: T = 0; w: T = 0; }
 
 Holder :: struct { ctx: Context = .{}; }
 
-run :: (label: string, body: Closure()) {
+run :: (label: string, body: $F/() -> void) {
     print("{}: ", label);
     body();
     print("\n")

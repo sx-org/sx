@@ -10,13 +10,13 @@
 @import "modules/build.sx";
 @import "modules/ffi/objc.sx";
 
-passthrough_works :: (recv: *void) -> Closure(i32) -> *void {
-    return |d: i32| -> *void recv;  // captures `recv` — fine
+passthrough_works :: (recv: *void) -> $F/(i32) -> *void {
+    return |d: i32|_{ recv = recv } -> *void recv;
 }
 
-passthrough_via_objc_call :: (recv: *void) -> Closure(i32) -> i64 {
+passthrough_via_objc_call :: (recv: *void) -> $F/(i32) -> i64 {
     // Same `recv` capture, but inside `@ObjcCall(...)`'s arg list.
-    return |d: i32| -> i64 @ObjcCall(i64, recv, "hash");
+    return |d: i32|_{ recv = recv } -> i64 @ObjcCall(i64, recv, "hash");
 }
 
 main :: () -> i32 {

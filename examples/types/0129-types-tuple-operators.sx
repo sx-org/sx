@@ -501,11 +501,11 @@ main :: () {
 
         // pass closure to higher-order function
         dbl :: (x: i32) -> i32 { return x * 2; }
-        apply_cl :: (f2: Closure(i32) -> i32, x: i32) -> i32 { return f2(x); }
+        apply_cl :: (f2: $F/(i32) -> i32, x: i32) -> i32 { return f2(x); }
         factor : i32 = 3;
-        print("closure-hof: {}\n", apply_cl(|x: i32| -> i32 x * factor, 10));
+        print("closure-hof: {}\n", apply_cl(|x: i32|_{ factor = factor } -> i32 x * factor, 10));
 
-        // auto-promoted bare fn passed alongside closures
+        // a bare fn answers the same bound out of its own shape
         print("closure-hof-bare: {}\n", apply_cl(dbl, 10));
 
         scale := 2.5;
@@ -536,7 +536,7 @@ main :: () {
         f_rbool := |x: i32|_{ threshold = threshold } -> bool { return x > threshold; };
         print("closure-rbool: {} {}\n", f_rbool(50), f_rbool(200));
 
-        reduce :: (arr: []i32, f3: Closure(i32, i32) -> i32, init: i32) -> i32 {
+        reduce :: (arr: []i32, f3: $F/(i32, i32) -> i32, init: i32) -> i32 {
             acc := init;
             i : i64 = 0;
             while i < arr.len { acc = f3(acc, arr[i]); i += 1; }
@@ -547,8 +547,8 @@ main :: () {
         r_total := reduce(r_nums, |acc: i32, x: i32| -> i32 acc + x, r_bonus);
         print("closure-reduce: {}\n", r_total);
 
-        make_adder :: (n: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 x + n;
+        make_adder :: (n: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ n = n } -> i32 x + n;
         }
         add5 := make_adder(5);
         add10 := make_adder(10);
@@ -615,14 +615,14 @@ main :: () {
         res_c5 := f_c5(Point{ x = 1, y = 2 });
         print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 
-        make_linear :: (m: i32, b: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 m * x + b;
+        make_linear :: (m: i32, b: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ m = m, b = b } -> i32 m * x + b;
         }
         lin := make_linear(3, 7);
         print("closure-linear: {}\n", lin(10));
 
-        make_clamper :: (lo: i32, hi: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 {
+        make_clamper :: (lo: i32, hi: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ lo = lo, hi = hi } -> i32 {
                 if x < lo { return lo; }
                 if x > hi { return hi; }
                 return x;
@@ -634,8 +634,8 @@ main :: () {
         cv3 : i32 = 999;
         print("closure-clamp: {} {} {}\n", clamp_fn(cv1), clamp_fn(cv2), clamp_fn(cv3));
 
-        compose :: (f_h2: Closure(i32) -> i32, g_h2: Closure(i32) -> i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 f_h2(g_h2(x));
+        compose :: (f_h2: $F/(i32) -> i32, g_h2: $G/(i32) -> i32) -> $H/(i32) -> i32 {
+            return |x: i32|_{ f_h2 = f_h2, g_h2 = g_h2 } -> i32 f_h2(g_h2(x));
         }
         one_h2 : i32 = 1;
         two_h2 : i32 = 2;
@@ -652,17 +652,17 @@ main :: () {
         ch_c := |x: i32|_{ ch_b = ch_b, ch_k10 = ch_k10 } -> i32 ch_b(x) + ch_k10;
         print("closure-chain: {}\n", ch_c(5));
 
-        map_cl :: (arr: [*]i32, cnt: i64, f_map: Closure(i32) -> i32, result: [*]i32) {
+        map_cl :: (arr: [*]i32, cnt: i64, f_map: $F/(i32) -> i32, result: [*]i32) {
             i := 0;
             while i < cnt { result[i] = f_map(arr[i]); i += 1; }
         }
         map_src : [5]i32 = .[1, 2, 3, 4, 5];
         map_dst : [5]i32 = .[0, 0, 0, 0, 0];
         factor_d1 : i32 = 3;
-        map_cl(xx *map_src, 5, |x: i32| -> i32 x * factor_d1, xx *map_dst);
+        map_cl(xx *map_src, 5, |x: i32|_{ factor_d1 = factor_d1 } -> i32 x * factor_d1, xx *map_dst);
         print("closure-map: {} {} {} {} {}\n", map_dst[0], map_dst[1], map_dst[2], map_dst[3], map_dst[4]);
 
-        filter_cl :: (arr: [*]i32, cnt: i64, pred: Closure(i32) -> bool, result: [*]i32) -> i64 {
+        filter_cl :: (arr: [*]i32, cnt: i64, pred: $F/(i32) -> bool, result: [*]i32) -> i64 {
             j := 0;
             i := 0;
             while i < cnt {
@@ -673,10 +673,10 @@ main :: () {
         }
         min_val : i32 = 3;
         filt_dst : [5]i32 = .[0, 0, 0, 0, 0];
-        kept := filter_cl(xx *map_src, 5, |x: i32| -> bool x >= min_val, xx *filt_dst);
+        kept := filter_cl(xx *map_src, 5, |x: i32|_{ min_val = min_val } -> bool x >= min_val, xx *filt_dst);
         print("closure-filter: {} [{} {} {}]\n", kept, filt_dst[0], filt_dst[1], filt_dst[2]);
 
-        sort_cl :: (arr: [*]i32, cnt: i64, less: Closure(i32, i32) -> bool) {
+        sort_cl :: (arr: [*]i32, cnt: i64, less: $F/(i32, i32) -> bool) {
             i := 0;
             while i < cnt {
                 j := 0;
@@ -693,23 +693,23 @@ main :: () {
         }
         sort_arr : [5]i32 = .[5, 3, 1, 4, 2];
         descending := true;
-        sort_cl(xx *sort_arr, 5, |a: i32, b: i32| -> bool {
+        sort_cl(xx *sort_arr, 5, |a: i32, b: i32|_{ descending = descending } -> bool {
             if descending { return a > b; }
             return a < b;
         });
         print("closure-sort: {} {} {} {} {}\n", sort_arr[0], sort_arr[1], sort_arr[2], sort_arr[3], sort_arr[4]);
 
-        for_each_cl :: (arr: [*]i32, cnt: i64, f_fe: Closure(i32, i64) -> void) {
+        for_each_cl :: (arr: [*]i32, cnt: i64, f_fe: $F/(i32, i64) -> void) {
             i : i64 = 0;
             while i < cnt { f_fe(arr[i], i); i += 1; }
         }
         fe_label := "item";
         fe_arr : [3]i32 = .[10, 20, 30];
-        for_each_cl(xx *fe_arr, 3, |val: i32, idx: i64| {
+        for_each_cl(xx *fe_arr, 3, |val: i32, idx: i64|_{ fe_label = fe_label } {
             print("closure-fe: {} {}={}\n", fe_label, idx, val);
         });
 
-        find_cl :: (arr: [*]i32, cnt: i64, pred_f: Closure(i32) -> bool) -> i64 {
+        find_cl :: (arr: [*]i32, cnt: i64, pred_f: $F/(i32) -> bool) -> i64 {
             i : i64 = 0;
             while i < cnt {
                 if pred_f(arr[i]) { return i; }
@@ -718,10 +718,10 @@ main :: () {
             return -1;
         }
         target : i32 = 30;
-        found_idx := find_cl(xx *fe_arr, 3, |x: i32| -> bool x == target);
+        found_idx := find_cl(xx *fe_arr, 3, |x: i32|_{ target = target } -> bool x == target);
         print("closure-find: {}\n", found_idx);
 
-        any_cl :: (arr: [*]i32, cnt: i64, pred_a: Closure(i32) -> bool) -> bool {
+        any_cl :: (arr: [*]i32, cnt: i64, pred_a: $F/(i32) -> bool) -> bool {
             i : i64 = 0;
             while i < cnt {
                 if pred_a(arr[i]) { return true; }
@@ -909,8 +909,8 @@ main :: () {
         tmp_m8 = fns_m8[1]; print("closure-mixed: {}\n", tmp_m8(5));
         tmp_m8 = fns_m8[2]; print("closure-mixed: {}\n", tmp_m8(5));
 
-        mk_e1 :: (n: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 x * n;
+        mk_e1 :: (n: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ n = n } -> i32 x * n;
         }
         f1_e1 := mk_e1(2);
         f2_e1 := mk_e1(3);
@@ -1010,11 +1010,11 @@ main :: () {
         print("closure-proto-cap: {}\n", ptr_e17 != null);
         a_e17.dealloc_bytes(ptr_e17);
 
-        make_scaler :: (factor: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 x * factor;
+        make_scaler :: (factor: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ factor = factor } -> i32 x * factor;
         }
-        make_offset :: (off: i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 x + off;
+        make_offset :: (off: i32) -> $F/(i32) -> i32 {
+            return |x: i32|_{ off = off } -> i32 x + off;
         }
         s_fn := make_scaler(3);
         o_fn := make_offset(7);
@@ -1041,10 +1041,10 @@ main :: () {
         print("closure-infer: {}\n", f_ci1(a_ci1, b_ci1));
 
         // CI.2: inferred params from function argument
-        apply_ci :: (f: Closure(i32) -> i32, x: i32) -> i32 { return f(x); }
+        apply_ci :: (f: $F/(i32) -> i32, x: i32) -> i32 { return f(x); }
         k_ci : i32 = 10;
         v_ci : i32 = 5;
-        print("closure-infer-arg: {}\n", apply_ci(|x| x + k_ci, v_ci));
+        print("closure-infer-arg: {}\n", apply_ci(|x|_{ k_ci = k_ci } x + k_ci, v_ci));
 
         // CI.3: inferred with block body
         h_ci : Closure(i32, i32) -> i32 = |a, b| { return a * b; };
@@ -1056,17 +1056,17 @@ main :: () {
         print("closure-infer-cap: {}\n", f_ci4(v_ci));
 
         // CI.5: inferred in factory return
-        mk_ci :: (n: i32) -> Closure(i32) -> i32 { return |x| x * n; }
+        mk_ci :: (n: i32) -> $F/(i32) -> i32 { return |x|_{ n = n } x * n; }
         f_ci5 := mk_ci(7);
         print("closure-infer-factory: {}\n", f_ci5(v_ci));
 
         // CI.6: inferred with higher-order (closure taking closure)
-        compose_ci :: (f: Closure(i32) -> i32, g: Closure(i32) -> i32) -> Closure(i32) -> i32 {
-            return |x: i32| -> i32 f(g(x));
+        compose_ci :: (f: $F/(i32) -> i32, g: $G/(i32) -> i32) -> $H/(i32) -> i32 {
+            return |x: i32|_{ f = f, g = g } -> i32 f(g(x));
         }
         one_ci : i32 = 1;
         two_ci : i32 = 2;
-        c_ci := compose_ci(|x| x + one_ci, |x| x * two_ci);
+        c_ci := compose_ci(|x|_{ one_ci = one_ci } x + one_ci, |x|_{ two_ci = two_ci } x * two_ci);
         print("closure-infer-compose: {}\n", c_ci(v_ci));
 
         // CI.7: inferred void return

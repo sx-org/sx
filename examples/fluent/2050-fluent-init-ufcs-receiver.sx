@@ -86,7 +86,7 @@ dimmed :: ufcs (v: $V/View) -> V {
 }
 
 // A trailing-block call whose RESULT is then the receiver.
-column :: (label: string, body: Closure()) -> Stack {
+column :: (label: string, body: $F/() -> void) -> Stack {
     body();
     return Stack{ label = label };
 }

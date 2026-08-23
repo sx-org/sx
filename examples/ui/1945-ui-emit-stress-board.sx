@@ -36,7 +36,7 @@ main :: () -> i32 {
     st := BoardViewState{};
     for i in 0..81 { st.cell_eids[i] = xx (i + 1); }
 
-    screen := vstack(12.0) {
+    screen := vstack(12.0) { ||_{ st = st }
         Label{ text = "sudoku" }.emit();
 
         // A loop of terminal publishes into the nested container's own list.

@@ -3,15 +3,15 @@
 // --- Closure Basics ---
 
 // Factory: returns a new closure each time
-make_adder :: (n: i64) -> Closure(i64) -> i64 {
-    return |x: i64| -> i64 x + n;
+make_adder :: (n: i64) -> $F/(i64) -> i64 {
+    return |x: i64|_{ n = n } -> i64 x + n;
 }
 
-// Higher-order function: accepts any Closure(i64) -> i64
-apply :: (f: Closure(i64) -> i64, x: i64) -> i64 { return f(x); }
+// Higher-order function: accepts anything callable at `(i64) -> i64`
+apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { return f(x); }
 
 // Reduce: fold over a slice with a closure
-reduce :: (arr: []i64, f: Closure(i64, i64) -> i64, init: i64) -> i64 {
+reduce :: (arr: []i64, f: $F/(i64, i64) -> i64, init: i64) -> i64 {
     acc := init;
     i : i64 = 0;
     while i < arr.len { acc = f(acc, arr[i]); i += 1; }
@@ -60,12 +60,12 @@ main :: () {
     add10 := make_adder(10);
     print("factory: {} {}\n", add5(100), add10(100));
 
-    // 6. Auto-promotion: bare fn passed where Closure expected
+    // 6. A bare fn answers the callable bound out of its own shape
     print("auto-promote: {}\n", apply(triple, 7));
 
     // 7. Closure passed to higher-order function
     factor := 4;
-    print("hof: {}\n", apply(|x: i64| -> i64 x * factor, 10));
+    print("hof: {}\n", apply(|x: i64|_{ factor = factor } -> i64 x * factor, 10));
 
     // 8. Reduce with closure
     nums : []i64 = .[1, 2, 3, 4, 5];

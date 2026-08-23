@@ -7,7 +7,7 @@
 
 Label :: struct { text: string = ""; }
 
-vstack :: (gap: f64, content: Closure()) -> i64 { content(); xx gap }
+vstack :: (gap: f64, content: $F/() -> void) -> i64 { content(); xx gap }
 place :: (a: i64, m: Label) -> i64 => a + m.text.len;
 twice :: ufcs (n: i64) -> i64 => n * 2;
 begin_build :: () { print("begin\n"); }

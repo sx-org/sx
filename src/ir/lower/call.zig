@@ -3067,7 +3067,8 @@ fn bindCallableBinders(
             if (arg_idx >= lowered_args.len) continue;
             if (Lowering.callableBound(param.type_expr) == null) continue;
             if (!self.matchTypeParam(param.type_expr, tp.name)) continue;
-            const arg_ty = self.builder.getRefType(lowered_args[arg_idx]);
+            const arg_ref = lowered_args[arg_idx];
+            const arg_ty = self.valueTypeOfRef(arg_ref, self.builder.getRefType(arg_ref));
             if (self.callableSigOf(arg_ty) == null) continue;
             if (self.extractTypeParam(param.type_expr, arg_ty, tp.name)) |ty| {
                 bindings.put(tp.name, ty) catch {};
@@ -5261,16 +5262,23 @@ pub fn mapNamedArgs(
                     slots[last] = tb.lambda;
                     continue;
                 }
-                const closure_ty = trailingClosureType(self, pty);
-                if (closure_ty == .unresolved) {
-                    errored = true;
-                    if (self.diagnostics) |d| {
-                        const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
-                        d.addHelpFmt(id, a.span, null, "declare '{s}' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
+                // A `$F/(…) -> R` last parameter names the block's signature in
+                // its bound, not in a type: the binder takes the block's own
+                // unique type, so the arity comes from the bound's spelling.
+                const want = if (lower_bound.boundCallableSig(self, fd.params[last].type_expr)) |sig|
+                    sig.params.len
+                else blk: {
+                    const closure_ty = trailingClosureType(self, pty);
+                    if (closure_ty == .unresolved) {
+                        errored = true;
+                        if (self.diagnostics) |d| {
+                            const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
+                            d.addHelpFmt(id, a.span, null, "declare '{s}' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                const want = self.module.types.get(closure_ty).closure.params.len;
+                    break :blk self.module.types.get(closure_ty).closure.params.len;
+                };
                 if (want != block_params.len) {
                     errored = true;
                     if (self.diagnostics) |d|
