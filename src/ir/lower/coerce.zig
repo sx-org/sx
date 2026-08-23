@@ -1816,7 +1816,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .unique_to_closure_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a capturing lambda does not erase to '{s}' — its environment has no home here; persist it with 'closure(f)' (help: 'closure(f, alloc)' to choose the allocator)", .{self.module.types.formatTypeName(self.alloc, dst_ty)});
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                const id = d.addFmtId(.err, span, "a capturing lambda does not erase to '{s}' — its environment has no home here", .{self.module.types.formatTypeName(self.alloc, dst_ty)});
+                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator", .{});
             }
             return val;
         },

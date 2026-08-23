@@ -1,0 +1,5 @@
+error: the '->' belongs to a function-type head — write '(i64) -> void' for a callable that returns nothing
+  --> examples/diagnostics/1283-diagnostics-fn-impl-head-arrow.sx:7:6
+   |
+ 7 | impl (i64) for A { call :: (self: *A, x: i64) -> i64 { return x; } }
+   |      ^^^^^

@@ -5037,8 +5037,9 @@ h : Closure(i64) -> i64 = |x|_{ n } x + n;
 ```
 ```
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
-       environment has no home here; persist it with 'closure(f)' (help:
-       'closure(f, alloc)' to choose the allocator)
+       environment has no home here
+help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the
+      allocator
 ```
 
 #### Persisting — `closure`
