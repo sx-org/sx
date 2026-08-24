@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+Pair :: struct { a: i64; b: i64; }
+
+main :: () {
+    positional := Pair{ 1 };
+    named := Pair{ a = 2 };
+    print("{} {} {} {}\n", positional.a, positional.b, named.a, named.b);
+}
