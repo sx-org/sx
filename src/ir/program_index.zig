@@ -173,6 +173,20 @@ fn moduleConstFrameContains(frame: ?*const ModuleConstFrame, name: []const u8) b
     return false;
 }
 
+/// `<IntType>.min` / `.max` for a receiver that is a bare builtin type NAME —
+/// the answer a ctx with no type-resolution state can still give. A backtick
+/// raw receiver names a value, not a type.
+pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: []const u8) ?i64 {
+    if (!type_resolver.TypeResolver.isIntLimitField(field)) return null;
+    const name = switch (receiver.data) {
+        .identifier => |id| if (id.is_raw) return null else id.name,
+        .type_expr => |te| if (te.is_raw) return null else te.name,
+        else => return null,
+    };
+    const ty = type_resolver.TypeResolver.resolvePrimitive(name) orelse return null;
+    return table.integerLimit(ty, std.mem.eql(u8, field, "max"));
+}
+
 /// Folding context for a module-const EXPRESSION RHS (`N :: M + 1`): a leaf name
 /// resolves to another module const via `moduleConstInt`, recursively, so the
 /// SAME shared `evalConstIntExpr` that folds an inline dim expression (`[M + 1]`)
@@ -184,10 +198,17 @@ fn moduleConstFrameContains(frame: ?*const ModuleConstFrame, name: []const u8) b
 /// scope, so `lookupPackLen` is always null.
 const ModuleConstCtx = struct {
     consts: *const std.StringHashMap(ModuleConstInfo),
-    table: *const types.TypeTable,
+    table: *types.TypeTable,
     frame: ?*const ModuleConstFrame,
     pub fn lookupDimName(self: ModuleConstCtx, name: []const u8) ?i64 {
         return moduleConstIntFramed(self.consts, self.table, name, self.frame);
+    }
+    /// A module const's RHS reaches this ctx as a tree of SPELLINGS — no
+    /// generic bindings, so a constructor whose width is a bound `$N` cannot
+    /// resolve here. A builtin type name does, through the same
+    /// `TypeTable.integerLimit` every other ctx answers with.
+    pub fn typeLimitInt(self: ModuleConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+        return builtinNameLimit(self.table, receiver, field);
     }
     pub fn lookupConstAggLen(_: ModuleConstCtx, _: []const u8) ?i64 {
         return null;
@@ -263,7 +284,7 @@ pub fn isFloatConstType(ty: TypeId) bool {
 /// (`K / 3`, `ME / 3`). `frame` cycle-guards a const whose value references
 /// another const; a name already on the chain has no compile-time value → not
 /// float-valued.
-fn moduleConstFloatValuedFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) bool {
+fn moduleConstFloatValuedFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) bool {
     if (moduleConstFrameContains(parent, name)) return false;
     const ci = consts.get(name) orelse return false;
     if (isFloatConstType(ci.ty)) return true;
@@ -288,7 +309,7 @@ pub fn isCountableConstType(table: *const types.TypeTable, ty: TypeId) bool {
     };
 }
 
-fn moduleConstIntFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i64 {
+fn moduleConstIntFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i64 {
     if (moduleConstFrameContains(parent, name)) return null;
     const ci = consts.get(name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
@@ -309,7 +330,7 @@ fn moduleConstIntFramed(consts: *const std.StringHashMap(ModuleConstInfo), table
 /// RHS over other consts (`M :: 2; N :: M + 1` → 3) all resolve identically and
 /// everywhere a count is accepted. Cyclic consts fold to null (see
 /// `ModuleConstCtx`).
-pub fn moduleConstInt(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8) ?i64 {
+pub fn moduleConstInt(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) ?i64 {
     return moduleConstIntFramed(consts, table, name, null);
 }
 
@@ -323,7 +344,7 @@ pub fn moduleConstInt(consts: *const std.StringHashMap(ModuleConstInfo), table: 
 /// the int path inside `evalConstFloatExpr` and never reaches the leaf arm that
 /// calls this; this surfaces the genuinely non-integral float so `floatToIntExact`
 /// can reject it.
-fn moduleConstFloatFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?f64 {
+fn moduleConstFloatFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?f64 {
     if (moduleConstFrameContains(parent, name)) return null;
     const ci = consts.get(name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
@@ -331,7 +352,7 @@ fn moduleConstFloatFramed(consts: *const std.StringHashMap(ModuleConstInfo), tab
     return evalConstFloatExpr(ci.value, ModuleConstCtx{ .consts = consts, .table = table, .frame = &frame });
 }
 
-pub fn moduleConstFloat(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8) ?f64 {
+pub fn moduleConstFloat(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) ?f64 {
     return moduleConstFloatFramed(consts, table, name, null);
 }
 
@@ -341,7 +362,7 @@ pub fn moduleConstFloat(consts: *const std.StringHashMap(ModuleConstInfo), table
 /// const (`F : f64 : 2.5`). SINGLE source for the stateful (`Lowering`) and
 /// stateless (`type_bridge`) division-arm float checks, so they agree on which
 /// const-leaf divisions are float.
-pub fn moduleConstIsFloatTyped(consts: *const std.StringHashMap(ModuleConstInfo), table: *const types.TypeTable, name: []const u8) bool {
+pub fn moduleConstIsFloatTyped(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) bool {
     return moduleConstFloatValuedFramed(consts, table, name, null);
 }
 
@@ -443,6 +464,10 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 ///   - `ctx.lookupPackLen(name)` — a `<pack>.len` leaf → the pack's
 ///     monomorphised arity. Only the body-lowering ctx knows pack arities; the
 ///     stateless ctx returns null.
+///   - `ctx.typeLimitInt(receiver, field)` — a `<IntType>.min`/`.max` leaf →
+///     the queried type's limit. The receiver is a NODE, so a ctx that resolves
+///     type constructors answers for `@int(2, .unsigned).max` as well as for a
+///     spelling.
 ///
 /// Returns null when any operand is not a compile-time integer (a runtime value,
 /// a non-comptime call, an unbound name) or the arithmetic overflows / divides
@@ -478,11 +503,16 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                     if (ctx.lookupPackLen(on)) |n| break :blk n;
                     break :blk ctx.lookupConstAggLen(on);
                 }
-                // `<IntType>.min` / `.max` — the same fold the value path uses
-                // (type_resolver), so `[u8.max]T` agrees with `u8.max` in
-                // expression position. A `u64.max` (= -1 as i64) folds here too;
-                // `foldDimU32` then rejects it as a negative array dimension.
-                if (type_resolver.TypeResolver.integerLimitFor(on, fa.field)) |v| break :blk v;
+            }
+            // `<IntType>.min` / `.max` — the queried type's limit, read from the
+            // RECEIVER so a constructor spelling (`[@int(2, .unsigned).max]T`)
+            // folds wherever a name does. The ctx resolves the receiver and
+            // answers through `TypeTable.integerLimit`, so `[u8.max]T` agrees
+            // with `u8.max` in expression position. A `u64.max` (= -1 as i64)
+            // folds here too; `foldDimU32` then rejects it as a negative array
+            // dimension.
+            if (ctx.typeLimitInt(fa.object, fa.field)) |v| break :blk v;
+            if (obj_name) |on| {
                 // A struct const's integer field (`LIT.r`) folds to the
                 // SELECTED author's field value.
                 if (ctx.lookupConstStructField(on, fa.field, node.span)) |v| break :blk v;

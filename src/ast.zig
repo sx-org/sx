@@ -201,7 +201,7 @@ pub const FnDecl = struct {
     /// functions, lowering-time objc/protocol method synthesis) leave it zero.
     name_span: Span = .{ .start = 0, .end = 0 },
     /// True when the function NAME was written as a backtick raw identifier
-    /// (`` `i2 :: … ``) or synthesized by a `@import c` extern decl. A raw
+    /// (`` `i32 :: … ``) or synthesized by a `@import c` extern decl. A raw
     /// name is exempt from the reserved-type-name binding check.
     /// Every PARSER fn_decl is built through `parseFnDecl`, whose `name_is_raw`
     /// is a REQUIRED parameter, so a parser site cannot drop it; the default
@@ -263,7 +263,7 @@ pub const Param = struct {
     /// parameter, lowering substitutes this expression in its place.
     default_expr: ?*Node = null,
     /// True when the param name was written as a backtick raw identifier
-    /// (`` `i2 ``) or synthesized by a `@import c` extern decl. A raw name is
+    /// (`` `i32 ``) or synthesized by a `@import c` extern decl. A raw name is
     /// exempt from the reserved-type-name binding check.
     is_raw: bool = false,
 };
@@ -351,8 +351,8 @@ pub const AsmGlobal = struct {
 
 pub const Identifier = struct {
     name: []const u8,
-    /// True when written as a backtick raw identifier (`` `i2 ``). Carried so a
-    /// destructure target (`` `i2, b := … ``) can be recognised as raw and
+    /// True when written as a backtick raw identifier (`` `i32 ``). Carried so a
+    /// destructure target (`` `i32, b := … ``) can be recognised as raw and
     /// exempted from the reserved-type-name binding check.
     is_raw: bool = false,
 };
@@ -448,7 +448,7 @@ pub const IfExpr = struct {
     binding_name: ?[]const u8 = null, // for `if val := expr { ... }` optional binding
     binding_span: ?Span = null, // span of `binding_name` (set iff `binding_name` is)
     /// True when the optional binding was a backtick raw identifier
-    /// (`` if `i2 := … ``) — exempt from the reserved-type-name check.
+    /// (`` if `i32 := … ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
 };
 
@@ -465,7 +465,7 @@ pub const MatchArm = struct {
     capture: ?[]const u8 = null, // payload binding name: case .variant: |name| { ... }
     capture_span: ?Span = null, // span of `capture` (set iff `capture` is)
     /// True when the capture was a backtick raw identifier
-    /// (`` case .v: |`i2| ``) — exempt from the reserved-type-name check.
+    /// (`` case .v: |`i32| ``) — exempt from the reserved-type-name check.
     capture_is_raw: bool = false,
 };
 
@@ -479,7 +479,7 @@ pub const ConstDecl = struct {
     /// 1:1 caret (the finding-1 bug).
     name_span: Span,
     /// True when the constant NAME was written as a backtick raw identifier
-    /// (`` `i2 :: … ``). NO default: required at every site so the reserved-
+    /// (`` `i32 :: … ``). NO default: required at every site so the reserved-
     /// name exemption can't be dropped — mirrors `checkBindingName`'s required
     /// `is_raw` argument so the parser and the check can't desync.
     is_raw: bool,
@@ -498,7 +498,7 @@ pub const VarDecl = struct {
     extern_lib: ?[]const u8 = null,
     extern_name: ?[]const u8 = null,
     /// True when the binding name was written as a backtick raw identifier
-    /// (`` `i2 := … ``). A raw name is exempt from the reserved-type-name
+    /// (`` `i32 := … ``). A raw name is exempt from the reserved-type-name
     /// binding check.
     is_raw: bool = false,
 };
@@ -532,7 +532,7 @@ pub const DestructureDecl = struct {
     names: []const []const u8,
     name_spans: []const Span, // one per entry in `names`, same order
     /// One per entry in `names`, same order: true when that target was a
-    /// backtick raw identifier (`` `i2, b := … ``) — exempt from the
+    /// backtick raw identifier (`` `i32, b := … ``) — exempt from the
     /// reserved-type-name binding check.
     name_is_raw: []const bool,
     value: *Node,
@@ -549,7 +549,7 @@ pub const EnumDecl = struct {
     variant_values: []const ?*Node = &.{}, // explicit value per variant (null = auto), empty = all auto
     backing_type: ?*Node = null, // optional backing type: enum u8 { ... }
     /// True when the declared NAME was a backtick raw identifier
-    /// (`` `i2 :: enum { … } ``) — exempt from the reserved-type-name decl
+    /// (`` `i32 :: enum { … } ``) — exempt from the reserved-type-name decl
     /// check. A bare reserved-name decl still errors.
     is_raw: bool = false,
 };
@@ -618,7 +618,7 @@ pub const StructDecl = struct {
     /// (e.g. `compiler`); null for an ordinary struct.
     extern_lib: ?[]const u8 = null,
     /// True when the declared NAME was a backtick raw identifier
-    /// (`` `i2 :: struct { … } ``) — exempt from the reserved-type-name decl
+    /// (`` `i32 :: struct { … } ``) — exempt from the reserved-type-name decl
     /// check. A bare reserved-name decl still errors.
     is_raw: bool = false,
     /// The open set this declaration joins (`Button :: @OpenVariant(View) { … }`),
@@ -698,10 +698,10 @@ pub const TypeExpr = struct {
     /// type expressions and may introduce their own binders.
     protocol_constraints: []const *Node = &.{},
     /// True when written as a backtick raw identifier in type position
-    /// (`` `i2 ``). Such a reference is the LITERAL name `i2` used as a type —
+    /// (`` `i32 ``). Such a reference is the LITERAL name `i32` used as a type —
     /// resolution skips the builtin/reserved classifier and looks up a
-    /// `` `i2 ``-declared type (struct/enum/union/alias), else "unknown
-    /// type". A bare `i2` keeps `is_raw = false` and is the int type.
+    /// `` `i32 ``-declared type (struct/enum/union/alias), else "unknown
+    /// type". A bare `i32` keeps `is_raw = false` and is the int type.
     is_raw: bool = false,
 };
 
@@ -747,7 +747,7 @@ pub const CatchExpr = struct {
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` x catch |`i2| { … } ``) — exempt from the reserved-type-name check.
+    /// (`` x catch |`i32| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };
@@ -759,7 +759,7 @@ pub const OnFailStmt = struct {
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` onfail |`i2| { … } ``) — exempt from the reserved-type-name check.
+    /// (`` onfail |`i32| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };
@@ -810,7 +810,7 @@ pub const ImportDecl = struct {
     path: []const u8,
     name: ?[]const u8,
     /// True when the namespace NAME was a backtick raw identifier
-    /// (`` `i2 :: @import "…" ``) — exempt from the reserved-type-name decl
+    /// (`` `i32 :: @import "…" ``) — exempt from the reserved-type-name decl
     /// check. A flat `@import` (name == null) binds nothing.
     is_raw: bool = false,
 };
@@ -833,10 +833,10 @@ pub const ParameterizedTypeExpr = struct {
     name: []const u8, // e.g. "@Vector", or later generic struct names
     args: []const *Node, // e.g. [int_literal(3), type_expr("f32")]
     /// True when the base name was a backtick raw identifier in type position
-    /// (`` `i2(i64) ``). Such a reference is the LITERAL name `i2` used as a
+    /// (`` `i32(i64) ``). Such a reference is the LITERAL name `i32` used as a
     /// parameterized type — resolution skips the builtin parameterized
     /// classifier (e.g. the `@Vector` intrinsic) and instantiates a
-    /// `` `i2 ``-declared generic template.
+    /// `` `i32 ``-declared generic template.
     is_raw: bool = false,
 };
 
@@ -910,7 +910,7 @@ pub const WhileExpr = struct {
     binding_name: ?[]const u8 = null, // for `while val := expr { ... }` optional binding
     binding_span: ?Span = null, // span of `binding_name` (set iff `binding_name` is)
     /// True when the optional binding was a backtick raw identifier
-    /// (`` while `i2 := … ``) — exempt from the reserved-type-name check.
+    /// (`` while `i32 := … ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
 };
 
@@ -937,7 +937,7 @@ pub const ForIterable = struct {
 pub const ForCapture = struct {
     name: []const u8,
     span: ?Span = null,
-    /// True when the name was a backtick raw identifier (`` for `i2 in xs ``)
+    /// True when the name was a backtick raw identifier (`` for `i32 in xs ``)
     /// — exempt from the reserved-type-name check.
     is_raw: bool = false,
     /// `*x` — bind a pointer into the collection (no per-element copy).

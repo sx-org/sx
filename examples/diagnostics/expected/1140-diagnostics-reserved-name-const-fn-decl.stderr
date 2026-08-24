@@ -1,7 +1,7 @@
-error: 'i2' is a reserved type name and cannot be used as an identifier
+error: 'i8' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1140-diagnostics-reserved-name-const-fn-decl.sx:8:1
    |
- 8 | i2 :: 5;
+ 8 | i8 :: 5;
    | ^^
 
 error: 'u8' is a reserved type name and cannot be used as an identifier

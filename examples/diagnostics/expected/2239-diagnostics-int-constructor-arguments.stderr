@@ -1,0 +1,41 @@
+error: '@int' takes two arguments — write '@int(N, .signed)'
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:11:13
+   |
+11 |     none  : @int() = 0;
+   |             ^^^^^^
+
+error: '@int' takes two arguments — write '@int(N, .signed)'
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:12:13
+   |
+12 |     one   : @int(8) = 0;
+   |             ^^^^^^^
+
+error: @int width 0 is out of range — an integer is 1 to 64 bits wide
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:13:18
+   |
+13 |     zero  : @int(0, .signed) = 0;
+   |                  ^
+
+error: @int width 65 is out of range — an integer is 1 to 64 bits wide
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:14:18
+   |
+14 |     wide  : @int(65, .unsigned) = 0;
+   |                  ^^
+
+error: '.foo' is not an @int signedness — write '.signed' or '.unsigned'
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:15:21
+   |
+15 |     other : @int(8, .foo) = 0;
+   |                     ^^^^
+
+error: @int signedness is the choice '.signed' or '.unsigned'
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:16:21
+   |
+16 |     bare  : @int(8, signed) = 0;
+   |                     ^^^^^^
+
+error: '.foo' is a choice, not a type
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:17:17
+   |
+17 |     boxed : Box(.foo) = ---;
+   |                 ^^^^

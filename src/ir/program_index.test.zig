@@ -151,6 +151,12 @@ test "ProgramIndex source-keyed caches partition same-name authors by source" {
 /// shared `evalConstIntExpr`: `M`/`N` resolve to integers, everything else is
 /// genuinely non-comptime.
 const DimCtx = struct {
+    /// The stateless ctx's own numeric-limit answer: a receiver that spells a
+    /// builtin type, resolved through the shared `TypeTable.integerLimit`.
+    table: *types.TypeTable,
+    pub fn typeLimitInt(self: DimCtx, receiver: *const Node, field: []const u8) ?i64 {
+        return pi.builtinNameLimit(self.table, receiver, field);
+    }
     pub fn lookupDimName(_: DimCtx, name: []const u8) ?i64 {
         if (std.mem.eql(u8, name, "M")) return 4;
         if (std.mem.eql(u8, name, "N")) return 6;
@@ -241,7 +247,9 @@ fn nField(obj: *ast.Node, field: []const u8) ast.Node {
 
 test "evalConstIntExpr folds constant-expression array dimensions, halts on non-const" {
     const eval = pi.evalConstIntExpr;
-    const ctx = DimCtx{};
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table };
 
     var l5 = nLit(5);
     var one = nLit(1);
@@ -452,7 +460,9 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
 
 test "evalConstIntExpr folds an integral float literal, halts on a fractional one" {
     const eval = pi.evalConstIntExpr;
-    const ctx = DimCtx{};
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table };
 
     var f4 = nFloat(4.0);
     var f45 = nFloat(4.5);
@@ -472,7 +482,9 @@ test "evalConstIntExpr folds an integral float literal, halts on a fractional on
 
 test "evalConstFloatExpr folds comptime float expressions, halts on runtime leaves" {
     const eval = pi.evalConstFloatExpr;
-    const ctx = DimCtx{}; // M = 4, N = 6
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table }; // M = 4, N = 6
 
     var half = nFloat(0.5);
     var two_f = nFloat(2.0);
@@ -560,7 +572,9 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
 test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" {
     const evalf = pi.evalConstFloatExpr;
     const evali = pi.evalConstIntExpr;
-    const ctx = DimCtx{};
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table };
 
     // BARE type receiver (`is_raw = false`) → the numeric-limit accessor folds:
     // `f64.epsilon` is the builtin eps, `i8.max` is 127.
@@ -592,7 +606,9 @@ test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" 
 }
 
 test "foldCountI64 / foldDimU32 fold an integral float count, reject a non-integral one" {
-    const ctx = DimCtx{}; // M = 4, F = 2.5 (non-integral float const)
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table }; // M = 4, F = 2.5 (non-integral float const)
 
     var five = nLit(5);
     var f4 = nFloat(4.0);
@@ -629,7 +645,9 @@ test "foldCountI64 / foldDimU32 fold an integral float count, reject a non-integ
 
 test "the int folder refuses a FLOAT division" {
     const eval = pi.evalConstIntExpr;
-    const ctx = DimCtx{}; // K : f64 : 4.0 (integral float const), M = 4 (int const)
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const ctx = DimCtx{ .table = &table }; // K : f64 : 4.0 (integral float const), M = 4 (int const)
 
     var five = nLit(5);
     var two = nLit(2);

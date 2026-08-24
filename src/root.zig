@@ -10,6 +10,7 @@ pub const parser = @import("parser.zig");
 pub const parser_tests = @import("parser.test.zig");
 pub const print = @import("print.zig");
 pub const types = @import("types.zig");
+pub const types_tests = @import("types.test.zig");
 pub const target = @import("target.zig");
 pub const target_tests = @import("target.test.zig");
 pub const builtins = @import("builtins.zig");

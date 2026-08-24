@@ -1,0 +1,6 @@
+// The float types are `f32` and `f64`. A digit-suffixed `f` spelling is an
+// ordinary unknown name, not a width-parameterised float.
+main :: () -> i32 {
+    x : f16 = 0;
+    return x;
+}

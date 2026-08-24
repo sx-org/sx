@@ -53,13 +53,13 @@ help: '[]i64' is a structural type and can carry no 'impl'
 43 | structural :: (v: $T/Summable) -> i32 { 1 }
    |                      ^^^^^^^^
 
-error: 'closure' does not satisfy the bound 'Summable' on '$T'
+error: 'Closure() -> i64' does not satisfy the bound 'Summable' on '$T'
   --> examples/diagnostics/2027-diagnostics-bound-violated.sx:43:22
    |
 43 | structural :: (v: $T/Summable) -> i32 { 1 }
    |                      ^^^^^^^^
 
-help: 'closure' is a structural type and can carry no 'impl'
+help: 'Closure() -> i64' is a structural type and can carry no 'impl'
    |
 43 | structural :: (v: $T/Summable) -> i32 { 1 }
    |                      ^^^^^^^^

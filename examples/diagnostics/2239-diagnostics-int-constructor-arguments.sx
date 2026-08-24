@@ -1,0 +1,19 @@
+// `@int` takes a width and a signedness choice. A missing argument, a width
+// outside 1..=64, and a signedness that is not `.signed` / `.unsigned` each
+// refuse the type. An enum literal in a type-argument slot is a choice, not
+// a type.
+
+@import "modules/std.sx";
+
+Box :: struct($T: Type) { v: T; }
+
+main :: () -> i32 {
+    none  : @int() = 0;
+    one   : @int(8) = 0;
+    zero  : @int(0, .signed) = 0;
+    wide  : @int(65, .unsigned) = 0;
+    other : @int(8, .foo) = 0;
+    bare  : @int(8, signed) = 0;
+    boxed : Box(.foo) = ---;
+    0
+}

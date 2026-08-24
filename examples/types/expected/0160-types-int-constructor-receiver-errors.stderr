@@ -1,0 +1,11 @@
+error: @int width 0 is out of range — an integer is 1 to 64 bits wide
+  --> examples/types/0160-types-int-constructor-receiver-errors.sx:7:15
+   |
+ 7 |     a := @int(0, .signed).max;
+   |               ^
+
+error: @int width 0 is out of range — an integer is 1 to 64 bits wide
+  --> examples/types/0160-types-int-constructor-receiver-errors.sx:8:15
+   |
+ 8 |     d := @int(0, .signed) is int;
+   |               ^

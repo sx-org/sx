@@ -253,8 +253,8 @@ pub const UnknownTypeChecker = struct {
             },
             .fn_decl => |fd| {
                 // A function NAME is a binding site too: a bare reserved-name
-                // `i2 :: (…) {…}` (free fn or struct/impl method) is rejected,
-                // exactly like `i2 := …`. Backtick (`` `i2 :: … ``) and
+                // `i32 :: (…) {…}` (free fn or struct/impl method) is rejected,
+                // exactly like `i32 := …`. Backtick (`` `i32 :: … ``) and
                 // `@import c` extern fns set `is_raw` and are exempt.
                 self.checkBindingName(fd.name, fd.name_span, fd.is_raw);
                 self.checkParamNames(fd.params);
@@ -507,7 +507,7 @@ pub const UnknownTypeChecker = struct {
     /// (a lambda default), so recurse into it.
     fn checkParamNames(self: UnknownTypeChecker, params: []const ast.Param) void {
         for (params) |p| {
-            // A backtick raw param (`` (`i2: T) ``) or a `@import c` extern
+            // A backtick raw param (`` (`i32: T) ``) or a `@import c` extern
             // param is exempt from the reserved-type-name rule —
             // the exemption is honored inside `checkBindingName` via `p.is_raw`.
             self.checkBindingName(p.name, p.name_span, p.is_raw);
@@ -982,8 +982,8 @@ pub const UnknownTypeChecker = struct {
     /// parameter (a compile-time integer such as a `@Vector` lane count or a
     /// generic `$N: u32` arg), not a type. Such a position must be skipped by
     /// the unknown-type walk: a module-const arg (`@Vector(N, f32)`) is a value,
-    /// not a type name. A count-taking type constructor's arg 0 is its count; a
-    /// generic struct template's value-param positions come from its declared params; a
+    /// not a type name. A type constructor's value positions come from
+    /// `contracts.takesTypeArg`; a generic struct template's from its declared params; a
     /// type-RETURNING function (`Make :: ($K: u32, $T: Type) -> Type`) classifies
     /// each param from its constraint, mirroring `instantiateTypeFunction` — so
     /// `Make(N, i64)` (N a module const) is not walked as the type name "N".
@@ -996,7 +996,7 @@ pub const UnknownTypeChecker = struct {
     }
 
     fn isValueParamPosition(self: UnknownTypeChecker, base: []const u8, i: usize) bool {
-        if (contracts.takesCount(base)) return i == 0;
+        if (contracts.isTypeConstructor(base)) return !contracts.takesTypeArg(base, i);
         if (self.index.struct_template_map.get(base)) |tmpl| {
             if (i < tmpl.type_params.len) return !tmpl.type_params[i].is_type_param;
         }
@@ -1135,11 +1135,11 @@ pub const UnknownTypeChecker = struct {
         // Only bare identifiers are validated. Inline-spelled compound types
         // (`[:0]u8`, `mod.Type`, …) carry non-identifier characters — trust them.
         if (!isIdentLike(name)) return;
-        // A backtick raw reference (`` `i2 ``) is the LITERAL name used as a
+        // A backtick raw reference (`` `i32 ``) is the LITERAL name used as a
         // type — explicitly NOT the builtin/reserved spelling — so it must
-        // resolve to a `` `i2 ``-declared type, else a normal "unknown type"
+        // resolve to a `` `i32 ``-declared type, else a normal "unknown type"
         // error. Skip the builtin-name exemption that would otherwise wave a
-        // bare `i2` through.
+        // bare `i32` through.
         if (!is_raw and isBuiltinTypeName(name)) return;
         for (in_scope) |tp| {
             if (!std.mem.eql(u8, tp.name, name)) continue;
@@ -1295,28 +1295,17 @@ pub const UnknownTypeChecker = struct {
 /// is that classifier (`parser.zig` uses it to choose `.type_expr` over
 /// `.identifier`), so deferring to it ties the rejection to the parser's set and
 /// keeps the two from drifting: the named builtins (`bool`, `string`, `void`,
-/// `f32`, `f64`, `usize`, `isize`, `Any`) and the `[iu]N` arbitrary-width ints
-/// over sx's supported 1–64 range. A bare value name (`s`, `buf`, `index`,
-/// `self`) is not a type spelling and is left alone.
+/// `f32`, `f64`, `usize`, `isize`, `Any`) and the eight integer aliases. A bare
+/// value name (`s`, `buf`, `index`, `self`) is not a type spelling and is left
+/// alone.
 fn isReservedTypeName(name: []const u8) bool {
     return name_class.Type.fromName(name) != null;
 }
 
 fn isBuiltinTypeName(name: []const u8) bool {
     if (TypeResolver.resolvePrimitive(name) != null) return true;
-    // Arbitrary-width integers / floats: u1, i7, u128, f16, f80, …
-    if (name.len >= 2 and (name[0] == 'u' or name[0] == 'i' or name[0] == 'f')) {
-        var all_digits = true;
-        for (name[1..]) |c| {
-            if (!std.ascii.isDigit(c)) {
-                all_digits = false;
-                break;
-            }
-        }
-        if (all_digits) return true;
-    }
-    const extra = [_][]const u8{ "Type", "type", "int", "float", "Self", "self", "any", "noreturn", "usize", "isize", "comptime_int", "comptime_float" };
-    for (extra) |e| if (std.mem.eql(u8, name, e)) return true;
+    const category_words = [_][]const u8{ "type", "int", "float", "Self", "self" };
+    for (category_words) |w| if (std.mem.eql(u8, name, w)) return true;
     return false;
 }
 

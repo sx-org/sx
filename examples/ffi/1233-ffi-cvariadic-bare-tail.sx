@@ -119,8 +119,8 @@ main :: () -> i32 {
     printf("heterogeneous: %d %s %f\n", whole, text, 3.25);
     printf("promoted: %f %d %d\n", single, narrow, signed_narrow);
 
-    odd_signed: i24 = -1000;
-    odd_unsigned: u7 = 100;
+    odd_signed: @int(24, .signed) = -1000;
+    odd_unsigned: @int(7, .unsigned) = 100;
     printf("odd widths: %d %d\n", odd_signed, odd_unsigned);
 
     print("tally={}\n", tally(3, 1, 2, 3));

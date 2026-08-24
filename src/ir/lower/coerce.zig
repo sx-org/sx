@@ -634,8 +634,8 @@ pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
 /// - Anything else (rvalues, node-less coercion sites) spills to a frame
 ///   temp and points at it — the temp lives for the enclosing frame.
 /// Arbitrary-width ints are widened into their tag-normalized builtin
-/// (`anyTag` maps e.g. u24 → u32), so `data` ALWAYS points at exactly
-/// `size_of(tag)` valid bytes — the invariant every consumer (typed
+/// (`anyTag` maps e.g. `@int(24, .unsigned)` → `u32`), so `data` ALWAYS points
+/// at exactly `size_of(tag)` valid bytes — the invariant every consumer (typed
 /// unbox loads, the raw layer's shallow copies) relies on.
 pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) Ref {
     // A protocol source is never boxed as itself: the box of a protocol
@@ -1133,7 +1133,7 @@ pub fn lowerAnyToIntDispatch(self: *Lowering, any_val: Ref, dst_ty: TypeId, tags
 }
 
 /// The sub-8-byte int tags an int-category match can carry: the narrow
-/// builtins, plus arbitrary-width ints (a VIEW of a u2/i5/… struct field
+/// builtins, plus arbitrary-width ints (a VIEW of an `@int(N, …)` struct field
 /// carries its true tag) whose ABI size is under a word.
 fn isNarrowIntTag(self: *Lowering, tid: TypeId) bool {
     switch (tid) {
@@ -1198,7 +1198,7 @@ pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
     if (ty.isBuiltin()) return self.builder.constInt(0, ty);
     const info = self.module.types.get(ty);
     return switch (info) {
-        // Arbitrary-width integer types (u1, u2, i4, ...) interned as
+        // Arbitrary-width integer types (`@int(N, …)`) interned as
         // `.signed`/`.unsigned` variants — fall through `isBuiltin()`.
         .signed, .unsigned => self.builder.constInt(0, ty),
         .pointer, .optional => self.builder.constNull(ty),

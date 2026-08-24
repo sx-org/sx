@@ -1,0 +1,36 @@
+// `@int(N, .signed)` / `@int(N, .unsigned)` is the N-bit integer type, N in
+// 1..=64. `@int(8, .signed)` IS `i8`. The width is any compile-time integer.
+
+@import "modules/std.sx";
+
+W :: 3;
+
+MyInt :: @int(3, .signed);
+Flag  :: @int(1, .unsigned);
+
+Holder :: struct { small: @int(5, .unsigned); }
+
+widen :: (v: @int(12, .signed)) -> i32 { v }
+
+main :: () -> i32 {
+    print("alias={} spaced={} const={}\n",
+        type_eq(i8, @int(8, .signed)),
+        type_eq(u64, @int (64, .unsigned)),
+        type_eq(MyInt, @int(W, .signed)));
+
+    x : @int(3, .signed) = -4;
+    y : Flag = 1;
+    print("x={} y={} flag_is_bool={}\n", x, y, type_eq(Flag, bool));
+
+    h : Holder = ---;
+    h.small = 31;
+    print("small={} name={}\n", h.small, type_name(Holder));
+
+    print("widen={} name={}\n", widen(-2048), type_name(@int(12, .signed)));
+    print("sizes={} {}\n", size_of(@int(64, .unsigned)), size_of(MyInt));
+
+    f := || -> @int(8, .signed) { 0 };
+    print("lambda={}\n", type_eq(type_of(f()), i8));
+
+    0
+}

@@ -98,6 +98,13 @@ const StatelessInner = struct {
     pub fn lookupPackLen(_: StatelessInner, _: []const u8) ?i64 {
         return null;
     }
+    /// Registration time holds no generic bindings, so a constructor whose
+    /// width is a bound `$N` cannot resolve here; a builtin type name does,
+    /// through the same `TypeTable.integerLimit` the body-lowering ctx answers
+    /// with.
+    pub fn typeLimitInt(self: StatelessInner, receiver: *const Node, field: []const u8) ?i64 {
+        return program_index_mod.builtinNameLimit(self.table, receiver, field);
+    }
     // A type-query builtin call (`field_count`/`size_of`/`align_of`) needs to
     // resolve a type-expr arg (and, for `field_count`, type-param bindings),
     // which the registration-time path lacks. Folded on the body-lowering path
@@ -433,6 +440,24 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             if (!table.isIntegerType(len_ty)) return .unresolved;
             return table.sliceOfLen(elem, len_ty);
         }
+    }
+    if (std.mem.eql(u8, base_name, contracts.int_head)) {
+        if (pt.args.len != 2) return .unresolved;
+        const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+        const width_u32 = switch (program_index_mod.foldDimU32(pt.args[0], si, 1)) {
+            .ok => |n| n,
+            else => return .unresolved,
+        };
+        if (width_u32 > ir_types.max_int_width) return .unresolved;
+        const signed: bool = switch (pt.args[1].data) {
+            .enum_literal => |el| blk: {
+                if (std.mem.eql(u8, el.name, "signed")) break :blk true;
+                if (std.mem.eql(u8, el.name, "unsigned")) break :blk false;
+                return .unresolved;
+            },
+            else => return .unresolved,
+        };
+        return table.internInteger(@intCast(width_u32), signed);
     }
     // Generic struct instantiation — register as named type
     const name_id = table.internString(pt.name);

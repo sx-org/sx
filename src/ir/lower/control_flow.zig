@@ -4,6 +4,7 @@ const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const errors = @import("../../errors.zig");
+const contracts = @import("../../contracts.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -612,17 +613,25 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
 pub fn staticIsCondition(self: *Lowering, lhs: *const Node, rhs: *const Node) ?bool {
     if (!isStaticTypeRef(self, lhs)) return null;
     const subject = self.resolveTypeArg(lhs);
-    if (subject == .unresolved) return null;
+    if (subject == .unresolved) {
+        // A constructor call that does not form a type is not a value subject.
+        if (lhs.data == .call) return false;
+        return null;
+    }
     return self.staticIsAnswer(subject, rhs);
 }
 
-/// Does this node name a type STATICALLY — a spelling or a bound generic
-/// parameter, as opposed to a runtime `Type` value?
+/// Does this node name a type STATICALLY — a spelling, a compiler-formed
+/// constructor, or a bound generic parameter, as opposed to a runtime `Type`
+/// value? A general call is a runtime value, so only a constructor head admits
+/// the call grammar (`@int(4, .unsigned) is unsigned`).
 fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .identifier, .type_expr, .field_access, .parameterized_type_expr,
         .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr,
         .optional_type_expr, .array_type_expr => {},
+        .call => |cl| return cl.callee.data == .identifier and
+            contracts.isTypeConstructor(cl.callee.data.identifier.name),
         else => return false,
     }
     return self.isStaticTypeArg(node);

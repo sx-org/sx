@@ -1,0 +1,7 @@
+// A type argument is a type or a compile-time integer. A float literal is
+// neither, so an `@int` width written as one never reaches the width check.
+
+main :: () -> i32 {
+    x : @int(1.5, .signed) = 0;
+    0
+}

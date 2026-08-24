@@ -700,9 +700,9 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
 
 // The count the fat pointer `av` views carries: little-endian byte assembly
 // of the length word `__sx_slice_len_info(t)` places, narrowed to its BIT
-// width. A sub-byte `Len` (`@Slice(T, u4)`) shares its byte with padding, so
-// the mask must come from the bit width, not the bytes loaded; a signed `Len`
-// sign-extends from its own top bit.
+// width. A sub-byte `Len` (`@Slice(T, @int(4, .unsigned))`) shares its byte
+// with padding, so the mask must come from the bit width, not the bytes
+// loaded; a signed `Len` sign-extends from its own top bit.
 __sx_any_len_word :: (t: Type, av: any) -> i64 {
     row := __sx_slice_len_info(t);
     bits := row & 0xFF;

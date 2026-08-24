@@ -76,8 +76,11 @@ pub const GenericResolver = struct {
                 const inner = self.mangleTypeName(a.element);
                 break :blk std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
             },
-            .signed => |w| std.fmt.allocPrint(self.l.alloc, "i{d}", .{w}) catch @panic("out of memory while mangling type"),
-            .unsigned => |w| std.fmt.allocPrint(self.l.alloc, "u{d}", .{w}) catch @panic("out of memory while mangling type"),
+            // A width the aliases do not name is an ordinary identifier, so a
+            // formed int takes a shape fragment like every other formed type —
+            // never the bare `u7` a struct of that spelling mangles to.
+            .signed => |w| std.fmt.allocPrint(self.l.alloc, "int_{d}_s", .{w}) catch @panic("out of memory while mangling type"),
+            .unsigned => |w| std.fmt.allocPrint(self.l.alloc, "int_{d}_u", .{w}) catch @panic("out of memory while mangling type"),
             .optional => |o| blk: {
                 const inner = self.mangleTypeName(o.child);
                 break :blk std.fmt.allocPrint(self.l.alloc, "opt_{s}", .{inner}) catch @panic("out of memory while mangling type");

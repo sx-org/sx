@@ -1,26 +1,26 @@
 // Backtick raw identifier in PARAMETERIZED type position. A raw type reference
-// (`` `i2 ``) flows through the SAME type-expression continuations as a bare
+// (`` `i32 ``) flows through the SAME type-expression continuations as a bare
 // name, so a reserved-spelled GENERIC template can be instantiated
-// (`` `i2(i64) ``) and the result composes under pointer/field wrappers
-// (`` *`i2(i64) ``, a struct field typed `` `i2(i64) ``). A bare `i2` in type
-// position is still the 2-bit signed int. Complements examples/0154 (nullary
+// (`` `i32(i64) ``) and the result composes under pointer/field wrappers
+// (`` *`i32(i64) ``, a struct field typed `` `i32(i64) ``). A bare `i32` in type
+// position is still the 32-bit signed int. Complements examples/0154 (nullary
 // raw type references).
 // The raw type atom is not a terminal `type_expr` —
 // it reaches the parameterized + wrapper continuations.
 @import "modules/std.sx";
 
-`i2 :: struct($T: Type) {
+`i32 :: struct($T: Type) {
     x: $T;
 }
 
 Wrapper :: struct {
-    inner: `i2(i64);     // raw parameterized type as a struct field
+    inner: `i32(i64);     // raw parameterized type as a struct field
 }
 
 main :: () -> i32 {
-    v : `i2(i64);
+    v : `i32(i64);
     v.x = 7;
-    p : *`i2(i64) = *v;  // pointer to a raw parameterized type
+    p : *`i32(i64) = *v;  // pointer to a raw parameterized type
     w : Wrapper = ---;
     w.inner.x = 12;
     print("val = {}\n", v.x);

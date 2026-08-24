@@ -5,8 +5,9 @@
 // a silent value, never the `.unresolved` sentinel reaching codegen.
 //
 //   - float-only accessor on an integer (`i32.epsilon`, `u8.inf`,
-//     `i64.true_min`) → a dedicated "applies only to float types" diagnostic
-//     from the accessor intercept, located at the access;
+//     `i64.true_min`, `@int(3, .signed).epsilon`) → a dedicated "applies only to
+//     float types" diagnostic from the accessor intercept, located at the
+//     access and naming the receiver's type;
 //   - any accessor on a non-numeric builtin (`bool.nan`, `string.max`) → the
 //     "numeric limits apply only to integer and float types" diagnostic;
 //   - a user struct (`MyStruct.epsilon`) → the type name is not a builtin, so the
@@ -23,5 +24,6 @@ main :: () -> i32 {
     d := bool.nan;
     e := string.max;
     f := MyStruct.epsilon;
+    g := @int(3, .signed).epsilon;
     return 0;
 }

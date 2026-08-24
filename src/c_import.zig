@@ -274,7 +274,7 @@ pub fn processCImport(
                     .name = pname,
                     .name_span = .{ .start = 0, .end = 0 },
                     .type_expr = ptype_node,
-                    // Extern C param names (`i1`, `i2`, …) are RAW — exempt from
+                    // Extern C param names (`i16`, `i8`, …) are RAW — exempt from
                     // the reserved-type-name binding check; generated bindings
                     // must import without hand-edits.
                     .is_raw = true,
@@ -308,7 +308,7 @@ pub fn processCImport(
                     .extern_export = .extern_,
                     .is_c_variadic = fi.is_variadic != 0,
                     // A C function whose own NAME collides with a reserved type
-                    // spelling (`int i2(int);`) is RAW — exempt from the
+                    // spelling (`int i8(int);`) is RAW — exempt from the
                     // reserved-type-name decl check so generated bindings import
                     // without hand-edits.
                     .is_raw = true,

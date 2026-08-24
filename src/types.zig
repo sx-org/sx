@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const ir_types = @import("ir/types.zig");
 const Node = ast.Node;
 
 /// Editor-indexing and parse-time name metadata — used by `src/sema.zig` (the
@@ -44,12 +45,11 @@ pub const Type = union(enum) {
     unresolved,
 
     /// `is_raw` records whether the inner type-name came from a backtick raw
-    /// reference (`` `i2 ``) or an already-resolved user type. It is the
+    /// reference (`` `i32 ``) or an already-resolved user type. It is the
     /// `skip_builtin` the resolver MUST pass when re-resolving the stored inner
-    /// name — without it `resolveTypeNameStr` would reclassify a
-    /// user type named `i2` as the builtin int, diverging from codegen. The
-    /// field is REQUIRED (no default) so a future construction site cannot
-    /// silently drop the bit, the way the LSP index did for compound shapes.
+    /// name — without it `resolveTypeNameStr` would reclassify a user type
+    /// named `i32` as the builtin int, diverging from codegen. The field is
+    /// REQUIRED (no default) so a construction site cannot silently drop it.
     pub const SliceTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
@@ -122,25 +122,14 @@ pub const Type = union(enum) {
 
     pub fn fromName(name: []const u8) ?Type {
         if (name.len == 0) return null;
+        if (ir_types.lookupIntAlias(name)) |layout| {
+            return if (layout.signed) Type.s(layout.width) else Type.u(layout.width);
+        }
         return switch (name[0]) {
             's' => if (std.mem.eql(u8, name, "string")) .string_type else null,
             'c' => if (std.mem.eql(u8, name, "cstring")) .cstring_type else null,
-            'u' => {
-                if (std.mem.eql(u8, name, "usize")) return .usize_type;
-                if (name.len >= 2) {
-                    const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-                    if (width >= 1 and width <= 64) return Type.u(width);
-                }
-                return null;
-            },
-            'i' => {
-                if (std.mem.eql(u8, name, "isize")) return .isize_type;
-                if (name.len >= 2) {
-                    const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-                    if (width >= 1 and width <= 64) return Type.s(width);
-                }
-                return null;
-            },
+            'u' => if (std.mem.eql(u8, name, "usize")) .usize_type else null,
+            'i' => if (std.mem.eql(u8, name, "isize")) .isize_type else null,
             'b' => if (std.mem.eql(u8, name, "bool")) .boolean else null,
             'f' => {
                 if (std.mem.eql(u8, name, "f32")) return .f32;
@@ -221,7 +210,7 @@ pub const Type = union(enum) {
 
     pub fn fromTypeExpr(node: *Node) ?Type {
         if (node.data != .type_expr) return null;
-        // A backtick raw type reference (`` `i2 ``) is the LITERAL name used as
+        // A backtick raw type reference (`` `i32 ``) is the LITERAL name used as
         // a type — it must skip this builtin/reserved classifier and resolve
         // through user-defined types only, mirroring the codegen-
         // side `resolveNamed`'s `skip_builtin`. Returning null lets the sema

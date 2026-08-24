@@ -21,9 +21,9 @@
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
 //!     `bound_only`: they are written as a generic bound on the parameter
 //!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector`,
-//!     `@Array` is a type constructor, written wherever a type is. `@Slice`
-//!     is both: the declared ABI view (nullary) and the type constructor
-//!     `@Slice(T, Len)`.
+//!     `@Array` and `@int` are type constructors, written wherever a type is.
+//!     `@Slice` is both: the declared ABI view (nullary) and the type
+//!     constructor `@Slice(T, Len)`.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -41,8 +41,9 @@ pub const Contract = struct {
     /// The shape the compiler depends on, in declaration order. Empty for a
     /// contract that is not a struct.
     fields: []const Field = &.{},
-    /// How a compiler-formed name is SPELLED in a diagnostic — the bare name
-    /// would read as an incomplete type.
+    /// How a formed name or type constructor is SPELLED in a diagnostic — the
+    /// bare name would read as an incomplete type. Empty for a contract whose
+    /// bare name IS its whole spelling.
     spelling: []const u8 = "",
     /// A contract that is only ever a generic BOUND head: it names a
     /// constraint, so no position — parameter annotation included — may write
@@ -118,6 +119,7 @@ pub const entries = [_]Contract{
     .{
         .name = "@Slice",
         .module = "modules/std/core.sx",
+        .spelling = "@Slice(T, Len)",
         .fields = &.{
             .{ .name = "ptr", .type_name = "[*]u8" },
             .{ .name = "len", .type_name = "i64" },
@@ -172,6 +174,11 @@ pub const entries = [_]Contract{
         .kind = .compiler_formed,
         .spelling = "@Array(N, T)",
     },
+    .{
+        .name = "@int",
+        .kind = .compiler_formed,
+        .spelling = "@int(N, .signed)",
+    },
 };
 
 /// The bound whose type argument the compiler INFERS from the argument an
@@ -192,17 +199,26 @@ pub const array_head = "@Array";
 /// `@Slice(T, i64)` is `[]T`.
 pub const slice_head = "@Slice";
 
+/// The integer type constructor: `@int(N, .signed)` / `@int(N, .unsigned)` is
+/// an N-bit integer, N in 1..=64. `@int(8, .signed)` IS `i8`.
+pub const int_head = "@int";
+
 /// True for a compiler-formed head that CONSTRUCTS a type from its arguments.
 pub fn isTypeConstructor(name: []const u8) bool {
     return std.mem.eql(u8, name, vector_head) or
         std.mem.eql(u8, name, array_head) or
-        std.mem.eql(u8, name, slice_head);
+        std.mem.eql(u8, name, slice_head) or
+        std.mem.eql(u8, name, int_head);
 }
 
-/// True for a type constructor whose argument 0 is a compile-time count rather
-/// than a type. `@Slice` takes types in both positions.
-pub fn takesCount(name: []const u8) bool {
-    return std.mem.eql(u8, name, vector_head) or std.mem.eql(u8, name, array_head);
+/// True when argument `i` of the type constructor `name` is a TYPE rather than
+/// a compile-time value. `@Slice(T, Len)` takes types in both positions,
+/// `@Vector(N, T)` / `@Array(N, T)` a count then a type, and `@int(N, .signed)`
+/// a width then a signedness choice — no type at all.
+pub fn takesTypeArg(name: []const u8, i: usize) bool {
+    if (std.mem.eql(u8, name, int_head)) return false;
+    if (std.mem.eql(u8, name, slice_head)) return true;
+    return i == 1;
 }
 
 /// The two open-set DECLARATION heads. A third class of `@` name: neither a
@@ -327,6 +343,18 @@ test "the @SourceSite shape is the one lowering builds" {
         try std.testing.expectEqualStrings(a.name, b.name);
         try std.testing.expectEqualStrings(a.type_name, b.type_name);
     }
+}
+
+test "a type constructor's arguments are classified per head" {
+    try std.testing.expect(isTypeConstructor(int_head));
+    try std.testing.expect(!takesTypeArg(int_head, 0));
+    try std.testing.expect(!takesTypeArg(int_head, 1));
+    try std.testing.expect(!takesTypeArg(vector_head, 0));
+    try std.testing.expect(takesTypeArg(vector_head, 1));
+    try std.testing.expect(!takesTypeArg(array_head, 0));
+    try std.testing.expect(takesTypeArg(array_head, 1));
+    try std.testing.expect(takesTypeArg(slice_head, 0));
+    try std.testing.expect(takesTypeArg(slice_head, 1));
 }
 
 test "candidatePath joins a root to the owning module" {

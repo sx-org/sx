@@ -912,14 +912,14 @@ pub const Parser = struct {
         }
 
         if (self.tokens.tag(self.tok).isTypeKeyword() or self.isIdentLike()) {
-            // A backtick raw identifier (`` `i2 ``) in type position is the
-            // LITERAL name `i2` used as a type reference — never the builtin /
+            // A backtick raw identifier (`` `i32 ``) in type position is the
+            // LITERAL name `i32` used as a type reference — never the builtin /
             // reserved keyword. The raw flag rides the type ATOM through the
             // SAME qualified-path / `Closure` / parameterized continuations as a
-            // bare name (so `` `i2(i64) ``, `` `i2.Inner ``, `` *`i2 `` all
+            // bare name (so `` `i32(i64) ``, `` `i32.Inner ``, `` *`i32 `` all
             // parse); it is threaded onto the final `type_expr` /
             // `parameterized_type_expr` so resolution skips the builtin
-            // classifier and looks up a `` `i2 ``-declared type.
+            // classifier and looks up a `` `i32 ``-declared type.
             const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             var name = self.tokens.slice(self.tok);
             self.advance();
@@ -1112,7 +1112,16 @@ pub const Parser = struct {
             // `+ - * / %`. The shared evaluator folds the expression; a
             // non-const value position is diagnosed during lowering.
             var arg: *Node = undefined;
-            if (self.tokens.tag(self.tok) == .int_literal) {
+            if (self.tokens.tag(self.tok) == .dot and self.peekTag(1) == .identifier) {
+                // An enum literal is a CHOICE argument — the signedness of
+                // `@int(N, .signed)`. Which heads admit one, and which names
+                // they admit, is resolution's; the grammar only carries it.
+                const arg_start = self.tokens.start(self.tok);
+                self.advance(); // skip '.'
+                const choice = self.tokens.slice(self.tok);
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .enum_literal = .{ .name = choice } });
+            } else if (self.tokens.tag(self.tok) == .int_literal) {
                 const arg_start = self.tokens.start(self.tok);
                 const text = self.tokens.slice(self.tok);
                 // Parse the full u64 range and store the bit pattern,
@@ -1151,9 +1160,8 @@ pub const Parser = struct {
         const name = self.tokens.slice(name_idx);
         self.advance();
         const contract = contracts.find(name);
-        const spelling = if (contracts.isTypeConstructor(name))
-            if (std.mem.eql(u8, name, contracts.slice_head)) "@Slice(T, Len)" else if (contract) |c| c.spelling else name
-        else if (contract != null and contract.?.kind == .compiler_formed)
+        const spelling = if (contracts.isTypeConstructor(name) or
+            (contract != null and contract.?.kind == .compiler_formed))
             contract.?.spelling
         else
             return self.failAt(self.tokens.token(name_idx).loc, try self.unknownCompilerFormedTypeMsg(name));
@@ -4001,10 +4009,10 @@ pub const Parser = struct {
             .identifier => {
                 const name = self.tokens.slice(self.tok);
                 const is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
+                // A backtick raw identifier (`` `i32 ``) is NEVER type-classified —
                 // it is always a value identifier, bypassing the reserved-type-name
                 // rule. Only a bare spelling is checked for a type name
-                // (e.g. i32, u8, s128).
+                // (e.g. i32, u8).
                 if (!is_raw and Type.fromName(name) != null) {
                     self.advance();
                     return try self.createNode(start, .{ .type_expr = .{ .name = name } });

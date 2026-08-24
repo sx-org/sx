@@ -6,7 +6,7 @@ resolve :: (x: u8) -> i32 {
 }
 
 Foo :: struct {
-    a : u2; // this will have 0 as default
+    a : @int(2, .unsigned); // this will have 0 as default
     b : u8 = SPECIAL_VALUE; 
     c : u8 = ---; // default for c is undefined
     d : u8 = @run xx resolve(5); // converts i32 to u8
@@ -39,8 +39,8 @@ main :: () {
 }
 
 Pack :: struct {
-    a: u1;
-    b: u2;
+    a: @int(1, .unsigned);
+    b: @int(2, .unsigned);
     c: u8;    
     d: u32;
     f: u64;

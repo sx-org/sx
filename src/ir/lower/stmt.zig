@@ -1078,7 +1078,7 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
 }
 
 pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
-    // Handle local function declarations: fx :: (s:i3) -> i3 { ... }
+    // Handle local function declarations: fx :: (s: i64) -> i64 { ... }
     if (cd.value.data == .fn_decl) {
         const fd = &cd.value.data.fn_decl;
         // Use mangled name for local functions to support block-scoped shadowing

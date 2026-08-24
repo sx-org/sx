@@ -1,11 +1,11 @@
 // A reserved/builtin type-name spelling is rejected as the NAME of a `::`
-// declaration — both a constant (`i2 :: 5`) and a function (`u8 :: (…) {…}`) —
+// declaration — both a constant (`i8 :: 5`) and a function (`u8 :: (…) {…}`) —
 // with the caret on the declared name. The backtick escape
-// (`` `i2 :: … ``, examples/0153) is the only way to spell these names;
+// (`` `i8 :: … ``, examples/0153) is the only way to spell these names;
 // `@import c` extern decls remain exempt (examples/1220).
 @import "modules/std.sx";
 
-i2 :: 5;
+i8 :: 5;
 u8 :: (n: i64) -> i64 { return n + 7; }
 
 main :: () -> i32 {

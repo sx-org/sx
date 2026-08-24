@@ -796,7 +796,7 @@ pub const CallResolver = struct {
             // invalid value binding with that spelling exists. The semantic
             // pass owns the reserved-name diagnostic, but call planning must
             // still honor the lexical value long enough to avoid a bogus
-            // namespace/static arity cascade (`i2.update(7)`).
+            // namespace/static arity cascade (`i8.update(7)`).
             if (self.l.scope) |scope| {
                 if (scope.lookup(fa.object.data.type_expr.name) != null) return .value_receiver;
             }

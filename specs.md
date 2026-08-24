@@ -15,8 +15,9 @@ Line comments start with `//` and extend to end of line.
 
 #### Reserved type names
 
-A spelling that names a builtin type — the arbitrary-width integers `i1`..`i64` /
-`u1`..`u64`, plus `bool`, `string`, `cstring`, `void`, `f32`, `f64`, `usize`, `isize`, `any` —
+A spelling that names a builtin type — the eight integer aliases `i8` / `i16` /
+`i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `cstring`,
+`void`, `f32`, `f64`, `usize`, `isize`, `any` —
 is reserved. A bare reserved spelling is rejected at **value-binding and
 declaration-name sites**: a value binding (`:=` / typed local / parameter), a
 `::` **constant** or **function** declaration, an `impl` method **definition**,
@@ -34,11 +35,11 @@ name, and a **method-signature** name in a `constraint` or `interface` body may
 be a bare reserved spelling.
 These sit in a member slot (`name: T` / `name :: (…)`) and are reached only via
 `obj.name` (or dispatched by string), so they are never type-classified and never
-mis-lower. The backtick form is optional there and names the same member — `obj.i2`
-and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: an
+mis-lower. The backtick form is optional there and names the same member — `obj.i32`
+and `` obj.`i32 `` both resolve. The exemption covers member *signatures* only: an
 `impl` method **definition** is a real function (a declaration site, not a member
 slot), so a reserved-spelled impl method still needs the backtick
-(`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
+(`` `i32 :: (self) ``), exactly like a free function. See `examples/0158`.
 
 **Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
@@ -71,18 +72,22 @@ identifier: a function named `Closure` is called as `Closure(5)` with no
 escape. `Tuple` is an ordinary identifier in every position.
 
 Every reserved spelling except `inline` bare-names member slots — the
-identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
+identifier-classified spellings (the eight integer aliases, `bool`, `string`,
 `cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
 `f64` alike: `` struct { f32: i64; } `` and
 `` interface { f32 :: (self: *Self) -> i64; } `` are legal as written; the
 backtick forms remain available but are never required for them.
 
 ```sx
-i2 := 2.5;                          // ERROR: 'i2' is a reserved type name and cannot be used as an identifier
-i2 :: 5;                            // ERROR — a `::` constant name is a binding site too
-i2 :: (n: i64) -> i64 { n }         // ERROR — so is a function name
-i2 :: struct { x: i64; }            // ERROR — and a type-declaration name
+i32 := 2.5;                         // ERROR: 'i32' is a reserved type name and cannot be used as an identifier
+i32 :: 5;                           // ERROR — a `::` constant name is a binding site too
+i32 :: (n: i64) -> i64 { n }        // ERROR — so is a function name
+i32 :: struct { x: i64; }           // ERROR — and a type-declaration name
 ```
+
+A width the aliases do not name is an ordinary identifier: `i2 := 42;` binds a
+value and `i2 :: struct { x: i64; }` declares a type, while `x : i7 = 0` is
+`unknown type 'i7'` — that width is spelled `@int(7, .signed)`.
 
 (There is no exception for the stdlib: a reserved type name is reserved
 everywhere. `string` is a language primitive — the compiler resolves it by
@@ -139,7 +144,8 @@ choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
 Separately, a few `@` names are **compiler-formed** — `@run`, `@insert`, `@Init(T)`,
-`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. There is
+`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)`, `@Slice(T, Len)` and
+`@int(N, .signed)`. There is
 no stdlib declaration to read, and declaring the name is an error. `@run` is
 the compile-time evaluation prefix (`@run expr`); `@insert` splices a
 compile-time string as sx (`@insert expr`); see
@@ -147,8 +153,9 @@ compile-time string as sx (`@insert expr`); see
 written only as a bound on the parameter (`value: $I/@Init(T)`,
 `content: $B/@BuildBlock(P)`) and never as its type — see [`@Init(T)`](#initt)
 and [`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)` (§Vector Types),
-`@Array(N, T)` (§Array Types) and `@Slice(T, Len)` (§Slice Types) are type
-constructors, written wherever a type is.
+`@Array(N, T)` (§Array Types), `@Slice(T, Len)` (§Slice Types) and
+`@int(N, .signed)` (§Primitive Types) are type constructors, written wherever a
+type is.
 
 #### Backtick raw-identifier escape
 
@@ -159,26 +166,26 @@ is `name`), and the escape is usable in **every position**: value, declaration,
 **and type**. It is the only way handwritten sx can spell a reserved name.
 
 ```sx
-`i2 := 2.5;            // OK — identifier "i2", distinct from the i2 type
-print("{}\n", `i2);    // 2.5  (backtick reference)
-print("{}\n", i2);     // 2.5  (bare reference in value position → the binding)
-x : i2 = 3;            // bare `i2` in TYPE position is still the i2 int type
+`i32 := 2.5;            // OK — identifier "i32", distinct from the i32 type
+print("{}\n", `i32);    // 2.5  (backtick reference)
+print("{}\n", i32);     // 2.5  (bare reference in value position → the binding)
+x : i32 = 3;            // bare `i32` in TYPE position is still the i32 int type
 ```
 
 **Type position.** A backtick in type position is the literal name used as a type
-reference: it resolves to a `` `i2 ``-declared type (struct / enum / union / type
-alias / …), and never the builtin. A bare `i2` in type position stays the builtin
-int; a backtick name with no matching declaration is a normal `unknown type 'i2'`
+reference: it resolves to a `` `i32 ``-declared type (struct / enum / union / type
+alias / …), and never the builtin. A bare `i32` in type position stays the builtin
+int; a backtick name with no matching declaration is a normal `unknown type 'i32'`
 error. A raw type reference flows through the **same continuations** as a bare type
-name, so it parameterizes a reserved-spelled generic template (`` `i2(i64) ``) and
-composes under the pointer / optional / slice wrappers (`` *`i2 ``, `` ?`i2 ``).
+name, so it parameterizes a reserved-spelled generic template (`` `i32(i64) ``) and
+composes under the pointer / optional / slice wrappers (`` *`i32 ``, `` ?`i32 ``).
 
 ```sx
-`i2 :: struct($T: Type) { x: $T; }   // generic template with a reserved-spelled name
-v : `i2(i64) = ---;                  // parameterized raw type reference
+`i32 :: struct($T: Type) { x: $T; }   // generic template with a reserved-spelled name
+v : `i32(i64) = ---;                  // parameterized raw type reference
 v.x = 7;
-p : *`i2(i64) = *v;                  // wrappers compose over a raw type
-x : i2 = 3;                          // bare `i2` is still the 2-bit signed int
+p : *`i32(i64) = *v;                  // wrappers compose over a raw type
+x : i32 = 3;                          // bare `i32` is still the 32-bit signed int
 ```
 
 **Declaration position.** A *bare* reserved-name declaration of every kind still
@@ -193,17 +200,17 @@ reference, and every control-flow / capture / binding form (destructure name,
 
 ```sx
 `u8 := 100;                       // global
-`i2 :: 2.5;                       // constant declaration
-`i2 : i64 : 5;                    // typed constant declaration
-`u8 :: (`i1: i64) -> i64 { `i1 }  // function name + parameter
-P :: struct { `i2: f64; }         // struct field
-H :: struct { `i2 :: 5; }         // struct-body constant (untyped + `: T :` typed)
-M :: union { `i1: i32; }          // union tag
+`i32 :: 2.5;                      // constant declaration
+`i32 : i64 : 5;                   // typed constant declaration
+`u8 :: (`i8: i64) -> i64 { `i8 }  // function name + parameter
+P :: struct { `i32: f64; }        // struct field
+H :: struct { `i32 :: 5; }        // struct-body constant (untyped + `: T :` typed)
+M :: union { `i8: i32; }          // union tag
 `u16 :: enum { A; B; }            // type-declaration name
 `u8, rest := pair();              // destructure name
 if `i16 := maybe() { }            // optional binding
 for `bool, `u16 in xs, 0.. { }    // for captures
-x catch |`i2| { }                   // catch tag binding
+x catch |`i32| { }                // catch tag binding
 ```
 
 In the **member-name positions** among these — struct field, union tag, and
@@ -213,8 +220,8 @@ spelling is already legal there (see "Member-name positions are exempt" above).
 Everywhere else (value bindings and declaration names, including an `impl` method
 definition) the backtick is *required* to spell a reserved name.
 
-A reserved-spelled **function** is bare-callable: `` `i2 :: (n: i64) -> i64 { … } ``
-can be invoked as `i2(10)` (the bare callee spelling parses as a type but resolves
+A reserved-spelled **function** is bare-callable: `` `i32 :: (n: i64) -> i64 { … } ``
+can be invoked as `i32(10)` (the bare callee spelling parses as a type but resolves
 to the function when one of that name is in scope; `TypeName(val)` is not a cast).
 
 A backtick may also escape a keyword spelling (`` `for ``, `` `struct ``), yielding
@@ -222,10 +229,10 @@ an identifier with that text.
 
 **`@import c` exemption.** Extern declarations synthesized by an `@import c { … }`
 block are treated as raw automatically: a generated C parameter or function name
-that collides with a reserved type name (e.g. `i1`, `i2`) imports unedited, with no
+that collides with a reserved type name (e.g. `i8`, `i16`) imports unedited, with no
 backticks and no reserved-name error, and an extern reserved-name function is
 bare-callable by its C name. The exemption is scoped to the extern decls — it does
-not make an extern `i2` usable as the sx `i2` type, nor relax the rule for
+not make an extern `i8` usable as the sx `i8` type, nor relax the rule for
 hand-written sx code.
 
 ### Literals
@@ -597,8 +604,11 @@ c := vstack(1.0) {
 ## 2. Type System
 
 ### Primitive Types
-- `i1`..`i64` — signed integers (1 to 64 bits). `i64` is the default for integer literals.
-- `u1`..`u64` — unsigned integers (1 to 64 bits).
+- `i8` / `i16` / `i32` / `i64` — signed integers. `i64` is the default for integer literals.
+- `u8` / `u16` / `u32` / `u64` — unsigned integers.
+- `@int(N, .signed)` / `@int(N, .unsigned)` — the integer type of width `N`, for
+  `N` in 1..=64. `N` is any compile-time integer. The constructor and the
+  spelling name one type: `@int(8, .signed)` IS `i8`.
 - `f32` — 32-bit floating point
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
@@ -635,31 +645,31 @@ as an array dimension (`['A']u8`), and in `match` / `inline if` const comparison
 
 ### Numeric Limits
 
-A field-like access on a builtin **integer** type name folds, at compile time, to
+A field-like access on a builtin **integer** type folds, at compile time, to
 that type's smallest/largest representable value:
 
 ```sx
-maxS64 := i64.max;   // 9223372036854775807
-minS32 := i32.min;   // -2147483648
-maxU8  := u8.max;    // 255
-minU8  := u8.min;    // 0
-m3     := i3.max;    // 3   (arbitrary width)
-n      := u64.max;   // 18446744073709551615 (all-ones)
+maxS64 := i64.max;                // 9223372036854775807
+minS32 := i32.min;                // -2147483648
+maxU8  := u8.max;                 // 255
+minU8  := u8.min;                 // 0
+m3     := @int(3, .signed).max;   // 3   (arbitrary width)
+n      := u64.max;                // 18446744073709551615 (all-ones)
 ```
 
-- **Receiver.** Any builtin integer type: every signed width `i1`..`i64`, every
-  unsigned width `u1`..`u64` (arbitrary 1–64 bit widths, not only the
-  power-of-two ones), plus `usize`/`isize` (target-width — `u64`/`i64` on a
-  64-bit host).
+- **Receiver.** Any builtin integer type: one of the eight aliases, the
+  constructor `@int(N, .signed)` / `@int(N, .unsigned)`, plus `usize`/`isize`
+  (target-width — `u64`/`i64` on a 64-bit host).
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
-  - `sN`: `min = -(2^(N-1))`, `max = 2^(N-1) - 1`
-  - `uN`: `min = 0`, `max = 2^N - 1`
-- **Result type.** The constant has the **queried** type: `i3.max` is an `i3`,
-  `u64.max` is a `u64`. So it is usable anywhere a constant of that type is
-  legal — initializers, `::` / `:=` bindings, and larger expressions — and in
-  array-dimension / count position via the compile-time integer path
-  (`[u8.max]T` is a 255-element array; `[i16.max]T` a 32767-element one). A
-  count that does not fit (`[u64.max]T`) is rejected as an oversized dimension.
+  - signed `N`: `min = -(2^(N-1))`, `max = 2^(N-1) - 1`
+  - unsigned `N`: `min = 0`, `max = 2^N - 1`
+- **Result type.** The constant has the **queried** type: `@int(3, .signed).max`
+  is an `@int(3, .signed)`, `u64.max` is a `u64`. So it is usable anywhere a
+  constant of that type is legal — initializers, `:=` bindings, and larger
+  expressions — and in array-dimension / count position via the compile-time
+  integer path (`[u8.max]T` is a 255-element array;
+  `[@int(2, .unsigned).max]T` a 3-element one). A count that does not fit
+  (`[u64.max]T`) is rejected as an oversized dimension.
 - **Representation note.** `u64.max` / `usize.max` is the all-ones 64-bit value
   (`18446744073709551615`), which exceeds the signed `i64` range used for
   integer constants; it is stored as that exact bit pattern carrying the `u64`
@@ -720,8 +730,8 @@ qn  := f64.nan;           // a quiet NaN
     (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose only
-  `.min` / `.max`.
+  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose
+  only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
@@ -732,20 +742,21 @@ qn  := f64.nan;           // a quiet NaN
   `0x7F7FFFFF` / `0xFF7FFFFF` / `0x34000000` / `0x00800000` / `0x00000001` /
   `0x7F800000`.
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
-  only when the receiver is a builtin numeric **type name** (`f64.epsilon`,
-  `i32.max`, `u8.max`). A backtick raw identifier that binds a *value* whose
-  spelling shadows a type name is an ordinary value: `` `f64.epsilon ``
-  reads that value's `epsilon` field — it does **not** fold to the limit. This
-  holds for **every** value-binding kind — a `` `f64 := … `` local, a module-scope
-  global, or a `` `f64 :: … `` module constant — so the fold can never silently
-  hijack a raw value, whatever its scope. The two never collide: a bare builtin
-  name in expression position is always a type, and only the raw `` `…` `` spelling
-  can bind a value under it. The same rule governs the compile-time **narrowing
-  and count** contexts: a raw value-shadow field read is an ordinary *runtime*
-  read there too — never a compile-time numeric-limit leaf — so `` `f64.epsilon ``
-  narrowing into an integer binding truncates like any runtime float (its field
-  value, not the limit), and `` `i8.max `` used as an array dimension is rejected
-  as a non-constant count rather than folding to the builtin `127`.
+  only when the receiver is a builtin numeric **type** — a name (`f64.epsilon`,
+  `i32.max`, `u8.max`) or the `@int` constructor. A backtick raw identifier
+  that binds a *value* whose spelling shadows a type name is an ordinary value:
+  `` `f64.epsilon `` reads that value's `epsilon` field — it does **not** fold
+  to the limit. This holds for **every** value-binding kind — a `` `f64 := … ``
+  local, a module-scope global, or a `` `f64 :: … `` module constant — so the
+  fold can never silently hijack a raw value, whatever its scope. The two never
+  collide: a bare builtin name in expression position is always a type, and only
+  the raw `` `…` `` spelling can bind a value under it. The same rule governs the
+  compile-time **narrowing and count** contexts: a raw value-shadow field read
+  is an ordinary *runtime* read there too — never a compile-time numeric-limit
+  leaf — so `` `f64.epsilon `` narrowing into an integer binding truncates like
+  any runtime float (its field value, not the limit), and `` `i8.max `` used as
+  an array dimension is rejected as a non-constant count rather than folding to
+  the builtin `127`.
 
 ### Enum Types
 User-defined sum types with named variants. Variants may optionally carry typed data (tagged unions). Internally, payload-less enums are represented as `i64` (variant index). Enums with payloads are represented as `{ i64, [max_payload_size x i8] }` (tag + data).
@@ -878,7 +889,7 @@ Fields are declared as `name1, name2: type` (comma-separated names sharing a typ
 Fields may have default values. Fields without an explicit default have a zero-value default. `---` marks a field as explicitly undefined.
 ```sx
 Foo :: struct {
-  a : u2;          // default is 0
+  a : u32;         // default is 0
   b : u8 = 42;     // default is 42
   c : u8 = ---;    // default is undefined
 }
@@ -5645,6 +5656,9 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 
 ### Slices
 - `@Slice($T: Type, $Len: Type) -> Type` — returns the fat-pointer type `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
+
+### Integers
+- `@int($N: int, .signed | .unsigned) -> Type` — returns the integer type of width `N` (1 to 64); `@int(8, .signed)` is `i8`
 
 ---
 

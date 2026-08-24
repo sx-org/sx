@@ -15,7 +15,7 @@ error: 'vari' cannot take a trailing block — its last parameter '..rest' is va
 20 |     vari(1) { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
-error: 'erased' cannot take a trailing block — its last parameter 'row' is 'closure', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
+error: 'erased' cannot take a trailing block — its last parameter 'row' is 'Closure(i64)', which is neither `$F/(…) -> R` nor `@BuildBlock(P)`
   --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:14
    |
 21 |     erased() { |a| print("x\n"); };

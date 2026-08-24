@@ -1,7 +1,7 @@
-// A value binding spelled as a reserved type name (`i2`, the `sN` arbitrary-width
-// int syntax) is rejected at its declaration site inside an IMPORTED module too:
-// the reserved-name binding diagnostic covers every compiled module, and the
-// caret lands on that module's `i2 := ...`.
+// A value binding spelled as a reserved integer alias (`i8`) is rejected at its
+// declaration site inside an IMPORTED module too: the reserved-name binding
+// diagnostic covers every compiled module, and the caret lands on that module's
+// `i8 := ...`.
 @import "modules/std.sx";
 mod :: @import "1120-diagnostics-imported-reserved-type-name/mod.sx";
 

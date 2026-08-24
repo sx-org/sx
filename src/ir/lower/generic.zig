@@ -676,90 +676,7 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
 
 /// Format a type name for display (e.g. "*Point", "[]i32", "[3]f64").
 pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
-    // Builtin types: use their canonical name
-    if (ty == .i8) return "i8";
-    if (ty == .i16) return "i16";
-    if (ty == .i32) return "i32";
-    if (ty == .i64) return "i64";
-    if (ty == .u8) return "u8";
-    if (ty == .u16) return "u16";
-    if (ty == .u32) return "u32";
-    if (ty == .u64) return "u64";
-    if (ty == .f32) return "f32";
-    if (ty == .f64) return "f64";
-    if (ty == .bool) return "bool";
-    if (ty == .void) return "void";
-    if (ty == .string) return "string";
-    if (ty == .any) return "any";
-    if (ty == .type_value) return "Type";
-    if (ty == .usize) return "usize";
-    if (ty == .isize) return "isize";
-
-    const info = self.module.types.get(ty);
-    return switch (info) {
-        .@"struct" => |s| self.module.types.getString(s.name),
-        .@"union" => |u| self.module.types.getString(u.name),
-        .tagged_union => |u| self.module.types.getString(u.name),
-        .@"enum" => |e| self.module.types.getString(e.name),
-        .pointer => |p| blk: {
-            const inner = self.formatTypeName(p.pointee);
-            break :blk std.fmt.allocPrint(self.alloc, "*{s}", .{inner}) catch "pointer";
-        },
-        .many_pointer => |p| blk: {
-            const inner = self.formatTypeName(p.element);
-            break :blk std.fmt.allocPrint(self.alloc, "[*]{s}", .{inner}) catch "many_pointer";
-        },
-        .slice => |s| blk: {
-            const inner = self.formatTypeName(s.element);
-            if (s.len_type == .i64)
-                break :blk std.fmt.allocPrint(self.alloc, "[]{s}", .{inner}) catch "slice";
-            const len_name = self.formatTypeName(s.len_type);
-            break :blk std.fmt.allocPrint(self.alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "slice";
-        },
-        .array => |a| blk: {
-            const inner = self.formatTypeName(a.element);
-            break :blk std.fmt.allocPrint(self.alloc, "[{d}]{s}", .{ a.length, inner }) catch "array";
-        },
-        .signed => |w| std.fmt.allocPrint(self.alloc, "i{d}", .{w}) catch "signed",
-        .unsigned => |w| std.fmt.allocPrint(self.alloc, "u{d}", .{w}) catch "unsigned",
-        .optional => |o| blk: {
-            const inner = self.formatTypeName(o.child);
-            break :blk std.fmt.allocPrint(self.alloc, "?{s}", .{inner}) catch "optional";
-        },
-        .vector => |v| blk: {
-            const inner = self.formatTypeName(v.element);
-            break :blk std.fmt.allocPrint(self.alloc, "@Vector({d},{s})", .{ v.length, inner }) catch "vector";
-        },
-        // A function TYPE renders as its signature (same spelling as the
-        // TypeTable formatter: `-> void` omitted) — a diagnostic naming a
-        // bare-fn value must show the signature, never the `function` tag.
-        .function => |f| blk: {
-            var buf = std.ArrayList(u8).empty;
-            buf.append(self.alloc, '(') catch break :blk "function";
-            for (f.params, 0..) |p, i| {
-                if (i > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
-                buf.appendSlice(self.alloc, self.formatTypeName(p)) catch break :blk "function";
-            }
-            if (f.is_c_variadic) {
-                if (f.params.len > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
-                buf.appendSlice(self.alloc, "..") catch break :blk "function";
-            }
-            buf.append(self.alloc, ')') catch break :blk "function";
-            if (f.ret != .void) {
-                buf.appendSlice(self.alloc, " -> ") catch break :blk "function";
-                buf.appendSlice(self.alloc, self.formatTypeName(f.ret)) catch break :blk "function";
-            }
-            if (f.call_conv == .c) buf.appendSlice(self.alloc, " abi(.c)") catch break :blk "function";
-            break :blk buf.toOwnedSlice(self.alloc) catch "function";
-        },
-        // A compiler-formed `@` type renders through the type table's canonical
-        // spelling; a plain closure renders as the bare `closure` tag.
-        .closure => |co| if (co.init_target != null or co.build_protocol != null)
-            self.module.types.formatTypeName(self.alloc, ty)
-        else
-            @tagName(info),
-        else => @tagName(info),
-    };
+    return self.module.types.formatTypeName(self.alloc, ty);
 }
 
 /// A type's SOURCE spelling, for diagnostics: a generic instance is rendered as
@@ -1133,7 +1050,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         tags.append(self.alloc, TypeId.u64.index()) catch {};
         tags.append(self.alloc, TypeId.usize.index()) catch {};
         tags.append(self.alloc, TypeId.isize.index()) catch {};
-        // Arbitrary-width ints (u2/i5/…) match `case int:` too. Boxing
+        // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
         // normalizes them into a builtin tag (`boxAnyOf`), but an interior
         // VIEW (`struct_field_value` on an `any` receiver) carries the
         // field's TRUE tag — normalization can't reach a view, so the
@@ -1992,6 +1909,63 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
     };
 }
 
+/// THE lowering of a compiler-formed type constructor. `head` is the `@` name
+/// and `args` its argument nodes, however they were spelled: a type position
+/// parses `@int(3, .signed)` as a parameterized type, an argument slot parses
+/// it as a call, and both arrive here so the two spellings cannot form
+/// different types. Null when `head` constructs nothing — the caller then
+/// continues with generic-struct / type-fn / named-type resolution.
+pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node, span: ?ast.Span) ?TypeId {
+    if (!contracts.isTypeConstructor(head)) return null;
+    const table = &self.module.types;
+    if (args.len != 2) {
+        if (self.diagnostics) |d| {
+            const spelling = contracts.find(head).?.spelling;
+            d.addFmt(.err, span, "'{s}' takes two arguments — write '{s}'", .{ head, spelling });
+        }
+        return .unresolved;
+    }
+    if (std.mem.eql(u8, head, contracts.vector_head)) {
+        const length = self.resolveVectorLane(args[0]) orelse return .unresolved;
+        return table.vectorOf(self.resolveTypeWithBindings(args[1]), length);
+    }
+    if (std.mem.eql(u8, head, contracts.array_head)) {
+        const length = self.resolveArrayLen(args[0]) orelse return .unresolved;
+        return table.arrayOf(self.resolveTypeWithBindings(args[1]), length);
+    }
+    if (std.mem.eql(u8, head, contracts.slice_head)) {
+        const elem = self.resolveTypeWithBindings(args[0]);
+        const len_ty = self.resolveSliceLenType(args[1]) orelse return .unresolved;
+        return table.sliceOfLen(elem, len_ty);
+    }
+    const width = self.resolveIntWidth(args[0]) orelse return .unresolved;
+    const signed = self.resolveIntSignedness(args[1]) orelse return .unresolved;
+    return table.internInteger(width, signed);
+}
+
+/// The type a node forms when it spells a compiler-formed constructor, in a
+/// position that is not itself a type position (`@int(3, .signed).max`,
+/// `@int(4, .unsigned) is unsigned`). Both grammars arrive: a call in the value
+/// grammar, a parameterized type expr in the type grammar. Null only when the
+/// node is not a constructor spelling; a constructor returns its TypeId as-is,
+/// including `.unresolved` when the arguments do not form a type.
+pub fn probeFormedType(self: *Lowering, node: *const Node) ?TypeId {
+    const Spelling = struct { head: []const u8, args: []const *Node };
+    const spelled: Spelling = switch (node.data) {
+        .call => |cl| .{
+            .head = switch (cl.callee.data) {
+                .identifier => |id| id.name,
+                else => return null,
+            },
+            .args = cl.args,
+        },
+        .parameterized_type_expr => |pt| if (pt.is_raw) return null else .{ .head = pt.name, .args = pt.args },
+        else => return null,
+    };
+    if (!contracts.isTypeConstructor(spelled.head)) return null;
+    return resolveFormedType(self, spelled.head, spelled.args, node.span);
+}
+
 pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId {
     // A namespaced callee (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a plain identifier head
@@ -2057,24 +2031,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         if (t == .unresolved) return .unresolved;
         return self.persistEnvType("@env_type", t, cl.callee.span) orelse .unresolved;
     }
-    // Built-in: @Vector(N, T)
-    if (std.mem.eql(u8, callee_name, contracts.vector_head) and cl.args.len == 2) {
-        const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
-        const elem = self.resolveTypeWithBindings(cl.args[1]);
-        return self.module.types.vectorOf(elem, length);
-    }
-    // Built-in: @Array(N, T)
-    if (std.mem.eql(u8, callee_name, contracts.array_head) and cl.args.len == 2) {
-        const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
-        const elem = self.resolveTypeWithBindings(cl.args[1]);
-        return self.module.types.arrayOf(elem, length);
-    }
-    // Built-in: @Slice(T, Len)
-    if (std.mem.eql(u8, callee_name, contracts.slice_head) and cl.args.len == 2) {
-        const elem = self.resolveTypeWithBindings(cl.args[0]);
-        const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
-        return self.module.types.sliceOfLen(elem, len_ty);
-    }
+    if (resolveFormedType(self, callee_name, cl.args, cl.callee.span)) |ty| return ty;
     // Generic-struct head: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
@@ -2132,7 +2089,6 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
 /// `span` locates the reference for the unresolved-base diagnostic.
 pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.ParameterizedTypeExpr, span: ?ast.Span) TypeId {
     const base_name = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
-    const table = &self.module.types;
     // A namespaced base (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a dotless head is
     // policed.
@@ -2153,32 +2109,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         return self.resolveTypeCallWithBindings(&syn);
     }
 
-    // @Vector(N, T) — built-in parameterized type.
-    if (std.mem.eql(u8, base_name, contracts.vector_head)) {
-        if (pt.args.len == 2) {
-            const length = self.resolveVectorLane(pt.args[0]) orelse return .unresolved;
-            const elem = self.resolveTypeWithBindings(pt.args[1]);
-            return table.vectorOf(elem, length);
-        }
-    }
-
-    // @Array(N, T) — the named form of `[N]T`.
-    if (std.mem.eql(u8, base_name, contracts.array_head)) {
-        if (pt.args.len == 2) {
-            const length = self.resolveArrayLen(pt.args[0]) orelse return .unresolved;
-            const elem = self.resolveTypeWithBindings(pt.args[1]);
-            return table.arrayOf(elem, length);
-        }
-    }
-
-    // @Slice(T, Len) — a fat pointer whose length word is `Len`.
-    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
-        if (pt.args.len == 2) {
-            const elem = self.resolveTypeWithBindings(pt.args[0]);
-            const len_ty = self.resolveSliceLenType(pt.args[1]) orelse return .unresolved;
-            return table.sliceOfLen(elem, len_ty);
-        }
-    }
+    if (resolveFormedType(self, base_name, pt.args, span)) |ty| return ty;
 
     // Generic-struct base: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;

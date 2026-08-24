@@ -1,0 +1,21 @@
+// A width spelling outside the eight aliases is an ordinary name: a declared
+// `i2` is that declaration's type, distinct from `@int(2, .signed)` — two
+// generic instances, not one.
+@import "modules/std.sx";
+
+i2 :: struct { x: i64; }
+
+Box :: struct($T: Type) { v: T; }
+
+main :: () -> i32 {
+    v : i2 = .{ x = 7 };
+    print("v={} name={} same={}\n", v.x, type_name(i2), type_eq(i2, @int(2, .signed)));
+
+    u7 := 42;
+    print("u7={}\n", u7);
+
+    b : Box(i2) = .{ v = .{ x = 3 } };
+    n : Box(@int(2, .signed)) = .{ v = -2 };
+    print("box={} formed={} same={}\n", b.v.x, n.v, type_eq(Box(i2), Box(@int(2, .signed))));
+    0
+}

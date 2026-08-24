@@ -183,6 +183,9 @@ pub const SourceConstCtx = struct {
     pub fn lookupPackLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.lookupPackLen(name);
     }
+    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+        return self.lowering.typeLimitInt(receiver, field);
+    }
     pub fn lookupFloatName(self: SourceConstCtx, name: []const u8) ?f64 {
         return self.lowering.foldSourceConstFloat(name, self.frame);
     }
@@ -1662,6 +1665,46 @@ pub const Lowering = struct {
         return null;
     }
 
+    /// Resolve the `N` argument of `@int(N, .signed)`: the bit width, folded
+    /// through the shared const evaluator. An out-of-range or non-const width
+    /// is a hard error and yields null; the caller poisons rather than
+    /// fabricating a width.
+    pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
+        const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
+            .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
+            .below_min, .too_large => |v| v,
+            .non_integral_float => |v| {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, width_node.span, "@int width must be an integer, but '{d}' is a non-integral float", .{v});
+                return null;
+            },
+            .not_const => {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, width_node.span, "@int width must be a compile-time integer constant from 1 to 64", .{});
+                return null;
+            },
+        };
+        if (self.diagnostics) |d|
+            d.addFmt(.err, width_node.span, "@int width {d} is out of range — an integer is 1 to 64 bits wide", .{out_of_range});
+        return null;
+    }
+
+    /// Resolve the signedness argument of `@int(N, .signed)`. The choice is an
+    /// enum literal, so no name in scope can shadow it.
+    pub fn resolveIntSignedness(self: *Lowering, sign_node: *const Node) ?bool {
+        if (sign_node.data == .enum_literal) {
+            const choice = sign_node.data.enum_literal.name;
+            if (std.mem.eql(u8, choice, "signed")) return true;
+            if (std.mem.eql(u8, choice, "unsigned")) return false;
+            if (self.diagnostics) |d|
+                d.addFmt(.err, sign_node.span, "'.{s}' is not an @int signedness — write '.signed' or '.unsigned'", .{choice});
+            return null;
+        }
+        if (self.diagnostics) |d|
+            d.addFmt(.err, sign_node.span, "@int signedness is the choice '.signed' or '.unsigned'", .{});
+        return null;
+    }
+
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
     pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
@@ -1916,6 +1959,15 @@ pub const Lowering = struct {
                     else => {},
                 }
             }
+        }
+        // An enum literal is a CHOICE a compiler-formed constructor reads
+        // (`@int(N, .signed)`), never a type. Every other type position that
+        // receives one would fall through to `type_bridge`'s silent
+        // `.unresolved` and panic at LLVM emission.
+        if (node.data == .enum_literal) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, node.span, "'.{s}' is a choice, not a type", .{node.data.enum_literal.name});
+            return .unresolved;
         }
         // Structural type shapes — `*T`, `[*]T`, `[]T`, `?T`, `[N]T`, functions,
         // PLAIN closures, and parenthesized type lists — are owned by
@@ -2948,43 +3000,9 @@ pub const Lowering = struct {
     /// hex literal wraps negative through the lexer's i64 value, so a
     /// min/max check would false-positive) — and for non-integers.
     pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i64, max: i64 } {
-        var width: u8 = 0;
-        var is_signed = false;
-        switch (ty) {
-            .i8 => {
-                width = 8;
-                is_signed = true;
-            },
-            .i16 => {
-                width = 16;
-                is_signed = true;
-            },
-            .i32 => {
-                width = 32;
-                is_signed = true;
-            },
-            .u8 => width = 8,
-            .u16 => width = 16,
-            .u32 => width = 32,
-            else => {
-                if (ty.isBuiltin()) return null; // i64/u64/isize/usize/non-int
-                switch (self.module.types.get(ty)) {
-                    .signed => |w| {
-                        width = w;
-                        is_signed = true;
-                    },
-                    .unsigned => |w| width = w,
-                    else => return null,
-                }
-                if (width >= 64) return null;
-            },
-        }
-        if (is_signed) {
-            const max = (@as(i64, 1) << @intCast(width - 1)) - 1;
-            return .{ .min = -max - 1, .max = max };
-        }
-        const max = (@as(i64, 1) << @intCast(width)) - 1;
-        return .{ .min = 0, .max = max };
+        const layout = self.module.types.integerLayout(ty) orelse return null;
+        if (layout.width >= 64) return null;
+        return .{ .min = layout.limit(false), .max = layout.limit(true) };
     }
 
     /// Max NON-NEGATIVE magnitude a bare integer literal may hold in `ty`. A
@@ -2994,48 +3012,8 @@ pub const Lowering = struct {
     /// u64.max), unlike `intLiteralRange` which returns null there because a
     /// >i64.max value can't be an i64 range bound. Null for non-integers.
     pub fn intLiteralMaxMagnitude(self: *Lowering, ty: TypeId) ?u64 {
-        var width: u8 = 0;
-        var is_signed = false;
-        switch (ty) {
-            .i8 => {
-                width = 8;
-                is_signed = true;
-            },
-            .i16 => {
-                width = 16;
-                is_signed = true;
-            },
-            .i32 => {
-                width = 32;
-                is_signed = true;
-            },
-            .i64, .isize => {
-                width = 64;
-                is_signed = true;
-            },
-            .u8 => width = 8,
-            .u16 => width = 16,
-            .u32 => width = 32,
-            .u64, .usize => width = 64,
-            else => {
-                if (ty.isBuiltin()) return null;
-                switch (self.module.types.get(ty)) {
-                    .signed => |w| {
-                        width = w;
-                        is_signed = true;
-                    },
-                    .unsigned => |w| width = w,
-                    else => return null,
-                }
-            },
-        }
-        if (is_signed) {
-            // 2^(width-1) - 1 (width 64 → i64.max; no overflow: 1<<63 fits u64)
-            return (@as(u64, 1) << @intCast(width - 1)) - 1;
-        }
-        // 2^width - 1 (width 64 → u64.max; 1<<64 would overflow, special-case)
-        if (width >= 64) return std.math.maxInt(u64);
-        return (@as(u64, 1) << @intCast(width)) - 1;
+        const layout = self.module.types.integerLayout(ty) orelse return null;
+        return @bitCast(layout.limit(true));
     }
 
     /// Fits-check for a BARE integer literal, magnitude-based (see
@@ -3059,15 +3037,7 @@ pub const Lowering = struct {
             }
         }
         const d = self.diagnostics orelse return;
-        var name_buf: [8]u8 = undefined;
-        const tn = blk: {
-            if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-            break :blk switch (self.module.types.get(ty)) {
-                .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                else => self.module.types.typeName(ty),
-            };
-        };
+        const tn = self.formatTypeName(ty);
         // Sub-64-bit types have an i64-expressible range — keep the exact
         // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
         // bound overflows i64), so report the max magnitude instead.
@@ -3086,17 +3056,7 @@ pub const Lowering = struct {
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
-                // Custom-width ints are structural (unnamed in the type
-                // table) — render them as s{N}/u{N}.
-                var name_buf: [8]u8 = undefined;
-                const tn = blk: {
-                    if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-                    break :blk switch (self.module.types.get(ty)) {
-                        .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                        .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                        else => self.module.types.typeName(ty),
-                    };
-                };
+                const tn = self.formatTypeName(ty);
                 d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `xx` / `.(T)` to truncate", .{ value, tn, r.min, r.max });
             }
         }
@@ -3113,15 +3073,7 @@ pub const Lowering = struct {
         const r = self.intLiteralRange(ty) orelse return;
         if (cl.value < r.min or cl.value > r.max) {
             if (self.diagnostics) |d| {
-                var name_buf: [8]u8 = undefined;
-                const tn = blk: {
-                    if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-                    break :blk switch (self.module.types.get(ty)) {
-                        .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                        .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                        else => self.module.types.typeName(ty),
-                    };
-                };
+                const tn = self.formatTypeName(ty);
                 d.addFmt(.err, span, "char literal '{s}' (value {}) does not fit in {s} (range {}..{}) — use a wider type such as u32 to hold this code point", .{ cl.raw, cl.value, tn, r.min, r.max });
             }
         }
@@ -3829,6 +3781,7 @@ pub const Lowering = struct {
     pub const isGenericTypeConstructorCallNode = lower_generic.isGenericTypeConstructorCallNode;
     pub const isGenericTypeConstructorHead = lower_generic.isGenericTypeConstructorHead;
     pub const isStaticTypeRef = lower_generic.isStaticTypeRef;
+    pub const probeFormedType = lower_generic.probeFormedType;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
@@ -3886,7 +3839,9 @@ pub const Lowering = struct {
     pub const resolveFieldType = lower_expr.resolveFieldType;
     pub const lowerFieldAccess = lower_expr.lowerFieldAccess;
     pub const identifierBindsValue = lower_expr.identifierBindsValue;
+    pub const limitReceiverType = lower_expr.limitReceiverType;
     pub const lowerNumericLimit = lower_expr.lowerNumericLimit;
+    pub const typeLimitInt = lower_expr.typeLimitInt;
     pub const lowerStructConstant = lower_expr.lowerStructConstant;
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;

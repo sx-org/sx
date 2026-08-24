@@ -153,101 +153,37 @@ test "TypeResolver.resolveName resolves aliases via ProgramIndex (not the TypeTa
     try std.testing.expectEqual(@as(TypeId, .i64), tr.resolveName("i64", false));
 }
 
-test "TypeResolver.resolveNamed: width-int, string-prefix, unknown→stub" {
+test "TypeResolver.resolveNamed: alias, string-prefix, unknown→stub" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
-    try std.testing.expectEqual(table.intern(.{ .signed = 7 }), TypeResolver.resolveNamed("i7", &table, null, false));
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
     try std.testing.expectEqual(table.ptrTo(.i64), TypeResolver.resolveNamed("*i64", &table, null, false));
     // Unknown name, no alias map → empty-struct stub (preserved behavior;
     // never `.unresolved`, which is reserved for failed *generic* resolution).
     try std.testing.expect(TypeResolver.resolveNamed("Unknown", &table, null, false) != .unresolved);
+    // A width no alias names is an ordinary unknown name, not the 7-bit int.
+    const stub = table.intern(.{ .@"struct" = .{ .name = table.internString("i7"), .fields = &.{} } });
+    try std.testing.expectEqual(stub, TypeResolver.resolveNamed("i7", &table, null, false));
 }
 
 test "TypeResolver.resolveNamed: skip_builtin resolves a raw reserved-name type, not the builtin" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
-    // A registered user type named "i2" (a reserved int spelling).
-    const name_id = table.internString("i2");
-    const user_i2 = table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
-    // Bare lookup → the builtin 2-bit signed int; raw lookup → the user type.
-    try std.testing.expectEqual(table.intern(.{ .signed = 2 }), TypeResolver.resolveNamed("i2", &table, null, false));
-    try std.testing.expectEqual(user_i2, TypeResolver.resolveNamed("i2", &table, null, true));
+    // A registered user type named "i8" (a reserved int spelling).
+    const name_id = table.internString("i8");
+    const user_i8 = table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
+    // Bare lookup → the builtin 8-bit signed int; raw lookup → the user type.
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
+    try std.testing.expectEqual(user_i8, TypeResolver.resolveNamed("i8", &table, null, true));
 }
 
-test "TypeResolver.parseWidthInt: every width 1..64, both signs; rejects out-of-range / non-int" {
-    // The single width parser — covers the named primitives (i8/u64/…) too.
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 1, .signed = true }), TypeResolver.parseWidthInt("i1"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 3, .signed = true }), TypeResolver.parseWidthInt("i3"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = true }), TypeResolver.parseWidthInt("i64"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 1, .signed = false }), TypeResolver.parseWidthInt("u1"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = false }), TypeResolver.parseWidthInt("u64"));
-    // Width 0 and >64, and non-`s`/`u` names, are not width-ints.
-    try std.testing.expect(TypeResolver.parseWidthInt("i0") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("u65") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("usize") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("f32") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("sx") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("s") == null);
-}
-
-test "TypeResolver.integerWidthSign: width-ints plus usize/isize, null for non-integers" {
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = false }), TypeResolver.integerWidthSign("usize"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = true }), TypeResolver.integerWidthSign("isize"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 8, .signed = false }), TypeResolver.integerWidthSign("u8"));
-    // Non-integer builtins and user names are not integer types.
-    try std.testing.expect(TypeResolver.integerWidthSign("f64") == null);
-    try std.testing.expect(TypeResolver.integerWidthSign("bool") == null);
-    try std.testing.expect(TypeResolver.integerWidthSign("void") == null);
-    try std.testing.expect(TypeResolver.integerWidthSign("MyStruct") == null);
-}
-
-test "TypeResolver.integerLimitFor: pinned min/max across widths and extremes" {
-    const L = struct {
-        fn v(name: []const u8, field: []const u8) i64 {
-            return TypeResolver.integerLimitFor(name, field).?;
-        }
-    };
-    // Sub-byte widths (arbitrary bit-width arithmetic, not a per-name table).
-    try std.testing.expectEqual(@as(i64, -1), L.v("i1", "min"));
-    try std.testing.expectEqual(@as(i64, 0), L.v("i1", "max"));
-    try std.testing.expectEqual(@as(i64, -2), L.v("i2", "min"));
-    try std.testing.expectEqual(@as(i64, 1), L.v("i2", "max"));
-    try std.testing.expectEqual(@as(i64, 3), L.v("i3", "max"));
-    try std.testing.expectEqual(@as(i64, 0), L.v("u1", "min"));
-    try std.testing.expectEqual(@as(i64, 1), L.v("u1", "max"));
-    try std.testing.expectEqual(@as(i64, 3), L.v("u2", "max"));
-    // Byte / word.
-    try std.testing.expectEqual(@as(i64, -128), L.v("i8", "min"));
-    try std.testing.expectEqual(@as(i64, 127), L.v("i8", "max"));
-    try std.testing.expectEqual(@as(i64, 255), L.v("u8", "max"));
-    try std.testing.expectEqual(@as(i64, -2147483648), L.v("i32", "min"));
-    try std.testing.expectEqual(@as(i64, 2147483647), L.v("i32", "max"));
-    // i64 extremes = i64 extremes.
-    try std.testing.expectEqual(std.math.minInt(i64), L.v("i64", "min"));
-    try std.testing.expectEqual(std.math.maxInt(i64), L.v("i64", "max"));
-    // u63.max fits i64; u64.max is all-ones (= -1 as i64, maxInt(u64) as u64).
-    try std.testing.expectEqual(std.math.maxInt(i64), L.v("u63", "max"));
-    try std.testing.expectEqual(@as(i64, -1), L.v("u64", "max"));
-    try std.testing.expectEqual(std.math.maxInt(u64), @as(u64, @bitCast(L.v("u64", "max"))));
-    try std.testing.expectEqual(@as(i64, 0), L.v("u64", "min"));
-    // usize/isize track u64/i64 on the host.
-    try std.testing.expectEqual(L.v("u64", "max"), L.v("usize", "max"));
-    try std.testing.expectEqual(@as(i64, 0), L.v("usize", "min"));
-    try std.testing.expectEqual(L.v("i64", "min"), L.v("isize", "min"));
-    try std.testing.expectEqual(L.v("i64", "max"), L.v("isize", "max"));
-}
-
-test "TypeResolver.integerLimitFor: null for non-integer receivers and non-limit fields" {
-    // Float / non-numeric / user names are not integer-limit folds.
-    try std.testing.expect(TypeResolver.integerLimitFor("f64", "max") == null);
-    try std.testing.expect(TypeResolver.integerLimitFor("bool", "max") == null);
-    try std.testing.expect(TypeResolver.integerLimitFor("void", "min") == null);
-    try std.testing.expect(TypeResolver.integerLimitFor("MyStruct", "min") == null);
-    // A builtin int with a non-limit field is not a fold here.
-    try std.testing.expect(TypeResolver.integerLimitFor("i64", "len") == null);
-    try std.testing.expect(TypeResolver.integerLimitFor("u8", "epsilon") == null);
+test "TypeResolver.isIntLimitField: the two limits an integer carries" {
+    try std.testing.expect(TypeResolver.isIntLimitField("min"));
+    try std.testing.expect(TypeResolver.isIntLimitField("max"));
+    try std.testing.expect(!TypeResolver.isIntLimitField("epsilon"));
+    try std.testing.expect(!TypeResolver.isIntLimitField("len"));
 }
 
 test "TypeResolver.isLimitField: the accessor set, nothing else" {
@@ -319,4 +255,12 @@ test "TypeResolver.floatLimitFor: null for non-float receivers and non-limit fie
     // A builtin float with a non-limit field is not a fold here.
     try std.testing.expect(TypeResolver.floatLimitFor("f64", "len") == null);
     try std.testing.expect(TypeResolver.floatLimitFor("f32", "ptr") == null);
+}
+
+test "TypeResolver.floatLimitOf: the TypeId key answers what the spelling does" {
+    try std.testing.expectEqual(TypeResolver.floatLimitFor("f64", "max"), TypeResolver.floatLimitOf(.f64, "max"));
+    try std.testing.expectEqual(TypeResolver.floatLimitFor("f32", "epsilon"), TypeResolver.floatLimitOf(.f32, "epsilon"));
+    try std.testing.expect(TypeResolver.floatLimitOf(.i32, "epsilon") == null);
+    try std.testing.expect(TypeResolver.floatLimitOf(.bool, "nan") == null);
+    try std.testing.expect(TypeResolver.floatLimitOf(.f64, "len") == null);
 }
