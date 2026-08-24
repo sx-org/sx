@@ -1,0 +1,20 @@
+// `@int` takes a width and a signedness choice. A missing argument, a width
+// outside 1..=64, and a signedness that is not `.signed` / `.unsigned` each
+// refuse the type. A choice reaching any other type-argument slot is refused
+// there too.
+
+@import "modules/std.sx";
+
+Box :: struct($T: Type) { v: T; }
+
+main :: () -> i32 {
+    none  : @int() = 0;
+    one   : @int(8) = 0;
+    zero  : @int(0, .signed) = 0;
+    wide  : @int(65, .unsigned) = 0;
+    other : @int(8, .foo) = 0;
+    bare  : @int(8, signed) = 0;
+    lane  : @Vector(.a, f32) = ---;
+    boxed : Box(.foo) = ---;
+    0
+}

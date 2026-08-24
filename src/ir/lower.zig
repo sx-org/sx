@@ -1662,6 +1662,47 @@ pub const Lowering = struct {
         return null;
     }
 
+    /// Resolve the `N` argument of `@int(N, .signed)`: the bit width, folded
+    /// through the same shared const evaluator a `@Vector` lane and an array
+    /// dimension use, so a literal, a module const, and a const expression all
+    /// answer alike. An out-of-range or non-const width is a hard error and
+    /// yields null; the caller poisons rather than fabricating a width.
+    pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
+        const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
+            .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
+            .below_min, .too_large => |v| v,
+            .non_integral_float => |v| {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, width_node.span, "@int width must be an integer, but '{d}' is a non-integral float", .{v});
+                return null;
+            },
+            .not_const => {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, width_node.span, "@int width must be a compile-time integer constant from 1 to 64", .{});
+                return null;
+            },
+        };
+        if (self.diagnostics) |d|
+            d.addFmt(.err, width_node.span, "@int width {d} is out of range — an integer is 1 to 64 bits wide", .{out_of_range});
+        return null;
+    }
+
+    /// Resolve the signedness argument of `@int(N, .signed)`. The choice is an
+    /// enum literal, so no name in scope can shadow it.
+    pub fn resolveIntSignedness(self: *Lowering, sign_node: *const Node) ?bool {
+        if (sign_node.data == .enum_literal) {
+            const choice = sign_node.data.enum_literal.name;
+            if (std.mem.eql(u8, choice, "signed")) return true;
+            if (std.mem.eql(u8, choice, "unsigned")) return false;
+            if (self.diagnostics) |d|
+                d.addFmt(.err, sign_node.span, "'.{s}' is not an @int signedness — write '.signed' or '.unsigned'", .{choice});
+            return null;
+        }
+        if (self.diagnostics) |d|
+            d.addFmt(.err, sign_node.span, "@int signedness is the choice '.signed' or '.unsigned'", .{});
+        return null;
+    }
+
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
     pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
@@ -1916,6 +1957,15 @@ pub const Lowering = struct {
                     else => {},
                 }
             }
+        }
+        // An enum literal is a CHOICE a compiler-formed constructor reads
+        // (`@int(N, .signed)`), never a type. Every other type position that
+        // receives one would fall through to `type_bridge`'s silent
+        // `.unresolved` and panic at LLVM emission.
+        if (node.data == .enum_literal) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, node.span, "'.{s}' is a choice, not a type", .{node.data.enum_literal.name});
+            return .unresolved;
         }
         // Structural type shapes — `*T`, `[*]T`, `[]T`, `?T`, `[N]T`, functions,
         // PLAIN closures, and parenthesized type lists — are owned by

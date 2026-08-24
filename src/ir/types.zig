@@ -70,6 +70,9 @@ pub const TypeId = enum(u32) {
 
 // ── Integer layout ──────────────────────────────────────────────────────
 
+/// The widest integer the language forms.
+pub const max_int_width: u8 = 64;
+
 /// Bit width in 1–64 and signedness of an integer type. `usize`/`isize` report
 /// the target pointer width and remain distinct TypeIds from the matching `uN`/`iN`.
 pub const IntLayout = struct {
