@@ -183,6 +183,9 @@ pub const SourceConstCtx = struct {
     pub fn lookupPackLen(self: SourceConstCtx, name: []const u8) ?i64 {
         return self.lowering.lookupPackLen(name);
     }
+    pub fn typeLimitInt(self: SourceConstCtx, receiver: *const Node, field: []const u8) ?i64 {
+        return self.lowering.typeLimitInt(receiver, field);
+    }
     pub fn lookupFloatName(self: SourceConstCtx, name: []const u8) ?f64 {
         return self.lowering.foldSourceConstFloat(name, self.frame);
     }
@@ -3805,6 +3808,7 @@ pub const Lowering = struct {
     pub const isGenericTypeConstructorCallNode = lower_generic.isGenericTypeConstructorCallNode;
     pub const isGenericTypeConstructorHead = lower_generic.isGenericTypeConstructorHead;
     pub const isStaticTypeRef = lower_generic.isStaticTypeRef;
+    pub const probeFormedType = lower_generic.probeFormedType;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
@@ -3862,7 +3866,9 @@ pub const Lowering = struct {
     pub const resolveFieldType = lower_expr.resolveFieldType;
     pub const lowerFieldAccess = lower_expr.lowerFieldAccess;
     pub const identifierBindsValue = lower_expr.identifierBindsValue;
+    pub const limitReceiverType = lower_expr.limitReceiverType;
     pub const lowerNumericLimit = lower_expr.lowerNumericLimit;
+    pub const typeLimitInt = lower_expr.typeLimitInt;
     pub const lowerStructConstant = lower_expr.lowerStructConstant;
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;

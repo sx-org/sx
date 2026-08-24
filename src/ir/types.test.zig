@@ -824,19 +824,42 @@ test "integerLimit: min/max across widths and extremes" {
     defer table.deinit();
 
     const u1_ty = table.internInteger(1, false);
+    const i1_ty = table.internInteger(1, true);
+    const i2_ty = table.internInteger(2, true);
+    const u2_ty = table.internInteger(2, false);
     const i3_ty = table.internInteger(3, true);
+    const u63_ty = table.internInteger(63, false);
     try std.testing.expectEqual(@as(i64, 0), table.integerLimit(u1_ty, false).?);
     try std.testing.expectEqual(@as(i64, 1), table.integerLimit(u1_ty, true).?);
+    try std.testing.expectEqual(@as(i64, -1), table.integerLimit(i1_ty, false).?);
+    try std.testing.expectEqual(@as(i64, 0), table.integerLimit(i1_ty, true).?);
+    try std.testing.expectEqual(@as(i64, -2), table.integerLimit(i2_ty, false).?);
+    try std.testing.expectEqual(@as(i64, 1), table.integerLimit(i2_ty, true).?);
+    try std.testing.expectEqual(@as(i64, 3), table.integerLimit(u2_ty, true).?);
     try std.testing.expectEqual(@as(i64, -4), table.integerLimit(i3_ty, false).?);
     try std.testing.expectEqual(@as(i64, 3), table.integerLimit(i3_ty, true).?);
+    // u63.max is the largest count an i64 can still carry.
+    try std.testing.expectEqual(std.math.maxInt(i64), table.integerLimit(u63_ty, true).?);
 
     try std.testing.expectEqual(@as(i64, -128), table.integerLimit(.i8, false).?);
+    try std.testing.expectEqual(@as(i64, 127), table.integerLimit(.i8, true).?);
     try std.testing.expectEqual(@as(i64, 255), table.integerLimit(.u8, true).?);
+    try std.testing.expectEqual(@as(i64, -2147483648), table.integerLimit(.i32, false).?);
+    try std.testing.expectEqual(@as(i64, 2147483647), table.integerLimit(.i32, true).?);
     try std.testing.expectEqual(std.math.minInt(i64), table.integerLimit(.i64, false).?);
     try std.testing.expectEqual(std.math.maxInt(i64), table.integerLimit(.i64, true).?);
     // u64.max is all-ones — `-1` read back as i64, maxInt(u64) as u64.
     try std.testing.expectEqual(@as(i64, -1), table.integerLimit(.u64, true).?);
+    try std.testing.expectEqual(@as(i64, 0), table.integerLimit(.u64, false).?);
+    // usize/isize carry the target pointer width.
     try std.testing.expectEqual(std.math.maxInt(u64), @as(u64, @bitCast(table.integerLimit(.usize, true).?)));
+    try std.testing.expectEqual(@as(i64, 0), table.integerLimit(.usize, false).?);
+    try std.testing.expectEqual(std.math.minInt(i64), table.integerLimit(.isize, false).?);
+    try std.testing.expectEqual(std.math.maxInt(i64), table.integerLimit(.isize, true).?);
+    table.pointer_size = 4;
+    try std.testing.expectEqual(@as(i64, 4294967295), table.integerLimit(.usize, true).?);
+    try std.testing.expectEqual(@as(i64, 2147483647), table.integerLimit(.isize, true).?);
+    table.pointer_size = 8;
 
     try std.testing.expect(table.integerLimit(.f64, true) == null);
     try std.testing.expect(table.integerLimit(.bool, false) == null);

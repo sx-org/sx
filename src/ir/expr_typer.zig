@@ -179,31 +179,20 @@ pub const ExprTyper = struct {
                 // is a comptime const of the queried type — mirrors the
                 // lowerFieldAccess intercept so inference reports the same type
                 // (without it the const would be mistyped, e.g. boxed into an Any
-                // slot). Only valid folds carry a type here; the cross-type error
-                // cases fall through (lowerNumericLimit emits the diagnostic).
+                // slot). A constructor that does not form a type is `.unresolved`
+                // and is not a numeric fold. Cross-type error cases fall through
+                // (lowerNumericLimit emits the diagnostic).
                 {
-                    const type_name: ?[]const u8 = switch (fa.object.data) {
-                        .identifier => |id| id.name,
-                        .type_expr => |te| te.name,
-                        else => null,
-                    };
-                    if (type_name) |tn| {
-                        // Skip the fold when a raw value binding shadows the
-                        // builtin type name (`` `f64 := … ``) — mirrors the
-                        // lowerNumericLimit guard so inference matches
-                        // lowering. The shared helper consults all
-                        // three value sources (scope / globals / module consts);
-                        // a `.type_expr` receiver is never shadowed.
-                        const shadowed = fa.object.data == .identifier and
-                            self.l.identifierBindsValue(tn);
-                        if (!shadowed) {
-                            if (TypeResolver.resolveBuiltinName(tn, &self.l.module.types)) |t| {
-                                const folds = (TypeResolver.isIntLimitField(fa.field) and
-                                    self.l.module.types.isIntegerType(t)) or
-                                    TypeResolver.floatLimitFor(tn, fa.field) != null;
-                                if (folds) return t;
-                            }
-                        }
+                    // The receiver classifier is `lowerNumericLimit`'s own, so
+                    // inference and lowering recognize the same receivers —
+                    // spellings and constructors alike, and neither folds
+                    // through a raw value binding that shadows a type name.
+                    if (self.l.limitReceiverType(fa.object)) |t| {
+                        if (t == .unresolved) return .unresolved;
+                        const folds = (TypeResolver.isIntLimitField(fa.field) and
+                            self.l.module.types.isIntegerType(t)) or
+                            TypeResolver.floatLimitOf(t, fa.field) != null;
+                        if (folds) return t;
                     }
                 }
                 // `obj.class` on an Obj-C-class pointer returns Class (*void).

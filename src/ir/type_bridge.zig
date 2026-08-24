@@ -98,6 +98,13 @@ const StatelessInner = struct {
     pub fn lookupPackLen(_: StatelessInner, _: []const u8) ?i64 {
         return null;
     }
+    /// Registration time holds no generic bindings, so a constructor whose
+    /// width is a bound `$N` cannot resolve here; a builtin type name does,
+    /// through the same `TypeTable.integerLimit` the body-lowering ctx answers
+    /// with.
+    pub fn typeLimitInt(self: StatelessInner, receiver: *const Node, field: []const u8) ?i64 {
+        return program_index_mod.builtinNameLimit(self.table, receiver, field);
+    }
     // A type-query builtin call (`field_count`/`size_of`/`align_of`) needs to
     // resolve a type-expr arg (and, for `field_count`, type-param bindings),
     // which the registration-time path lacks. Folded on the body-lowering path

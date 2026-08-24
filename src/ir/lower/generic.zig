@@ -2026,6 +2026,29 @@ pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node,
     return table.internInteger(width, signed);
 }
 
+/// The type a node forms when it spells a compiler-formed constructor, in a
+/// position that is not itself a type position (`@int(3, .signed).max`,
+/// `@int(4, .unsigned) is unsigned`). Both grammars arrive: a call in the value
+/// grammar, a parameterized type expr in the type grammar. Null only when the
+/// node is not a constructor spelling; a constructor returns its TypeId as-is,
+/// including `.unresolved` when the arguments do not form a type.
+pub fn probeFormedType(self: *Lowering, node: *const Node) ?TypeId {
+    const Spelling = struct { head: []const u8, args: []const *Node };
+    const spelled: Spelling = switch (node.data) {
+        .call => |cl| .{
+            .head = switch (cl.callee.data) {
+                .identifier => |id| id.name,
+                else => return null,
+            },
+            .args = cl.args,
+        },
+        .parameterized_type_expr => |pt| if (pt.is_raw) return null else .{ .head = pt.name, .args = pt.args },
+        else => return null,
+    };
+    if (!contracts.isTypeConstructor(spelled.head)) return null;
+    return resolveFormedType(self, spelled.head, spelled.args, node.span);
+}
+
 pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId {
     // A namespaced callee (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a plain identifier head
