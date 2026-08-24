@@ -751,8 +751,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const g = staticInterfaceGlobal(self, operand) orelse return null;
     const concrete_name = self.formatTypeName(g.ty);
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
-    const want = dispatchableCount(pd.methods);
-    if (want == 0 or thunks.len != want) return null;
+    if (thunks.len != dispatchableCount(pd.methods)) return null;
     const vt = getOrCreateVtableGlobal(self, proto_ty, pd.name, concrete_name, g.ty, thunks) orelse return null;
     const fields = self.alloc.alloc(inst_mod.ConstantValue, 3) catch return null;
     fields[0] = .{ .global_ref = g.id };

@@ -1,0 +1,5 @@
+ctx type   true
+std type   true
+ctx id     true
+ctx borrow 7
+std borrow 7
