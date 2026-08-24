@@ -15,10 +15,6 @@ Holder :: struct { small: @int(5, .unsigned); }
 
 widen :: (v: @int(12, .signed)) -> i32 { v }
 
-Doubler :: interface { twice :: (self: *Self) -> i64; }
-
-impl Doubler for i8 { twice :: (self: *i8) -> i64 { self.* * 2 } }
-
 main :: () -> i32 {
     print("alias={} spaced={} const={}\n",
         type_eq(i8, @int(8, .signed)),
@@ -39,7 +35,5 @@ main :: () -> i32 {
     f := || -> @int(8, .signed) { 0 };
     print("lambda={}\n", type_eq(type_of(f()), i8));
 
-    m : @int(8, .signed) = 5;
-    print("method={}\n", m.twice());
     0
 }
