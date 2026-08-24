@@ -1992,6 +1992,40 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
     };
 }
 
+/// THE lowering of a compiler-formed type constructor. `head` is the `@` name
+/// and `args` its argument nodes, however they were spelled: a type position
+/// parses `@int(3, .signed)` as a parameterized type, an argument slot parses
+/// it as a call, and both arrive here so the two spellings cannot form
+/// different types. Null when `head` constructs nothing — the caller then
+/// continues with generic-struct / type-fn / named-type resolution.
+pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node, span: ?ast.Span) ?TypeId {
+    if (!contracts.isTypeConstructor(head)) return null;
+    const table = &self.module.types;
+    if (args.len != 2) {
+        if (self.diagnostics) |d| {
+            const spelling = contracts.find(head).?.spelling;
+            d.addFmt(.err, span, "'{s}' takes two arguments — write '{s}'", .{ head, spelling });
+        }
+        return .unresolved;
+    }
+    if (std.mem.eql(u8, head, contracts.vector_head)) {
+        const length = self.resolveVectorLane(args[0]) orelse return .unresolved;
+        return table.vectorOf(self.resolveTypeWithBindings(args[1]), length);
+    }
+    if (std.mem.eql(u8, head, contracts.array_head)) {
+        const length = self.resolveArrayLen(args[0]) orelse return .unresolved;
+        return table.arrayOf(self.resolveTypeWithBindings(args[1]), length);
+    }
+    if (std.mem.eql(u8, head, contracts.slice_head)) {
+        const elem = self.resolveTypeWithBindings(args[0]);
+        const len_ty = self.resolveSliceLenType(args[1]) orelse return .unresolved;
+        return table.sliceOfLen(elem, len_ty);
+    }
+    const width = self.resolveIntWidth(args[0]) orelse return .unresolved;
+    const signed = self.resolveIntSignedness(args[1]) orelse return .unresolved;
+    return table.internInteger(width, signed);
+}
+
 pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId {
     // A namespaced callee (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a plain identifier head
@@ -2057,24 +2091,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         if (t == .unresolved) return .unresolved;
         return self.persistEnvType("@env_type", t, cl.callee.span) orelse .unresolved;
     }
-    // Built-in: @Vector(N, T)
-    if (std.mem.eql(u8, callee_name, contracts.vector_head) and cl.args.len == 2) {
-        const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
-        const elem = self.resolveTypeWithBindings(cl.args[1]);
-        return self.module.types.vectorOf(elem, length);
-    }
-    // Built-in: @Array(N, T)
-    if (std.mem.eql(u8, callee_name, contracts.array_head) and cl.args.len == 2) {
-        const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
-        const elem = self.resolveTypeWithBindings(cl.args[1]);
-        return self.module.types.arrayOf(elem, length);
-    }
-    // Built-in: @Slice(T, Len)
-    if (std.mem.eql(u8, callee_name, contracts.slice_head) and cl.args.len == 2) {
-        const elem = self.resolveTypeWithBindings(cl.args[0]);
-        const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
-        return self.module.types.sliceOfLen(elem, len_ty);
-    }
+    if (resolveFormedType(self, callee_name, cl.args, cl.callee.span)) |ty| return ty;
     // Generic-struct head: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
@@ -2132,7 +2149,6 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
 /// `span` locates the reference for the unresolved-base diagnostic.
 pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.ParameterizedTypeExpr, span: ?ast.Span) TypeId {
     const base_name = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
-    const table = &self.module.types;
     // A namespaced base (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a dotless head is
     // policed.
@@ -2153,32 +2169,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         return self.resolveTypeCallWithBindings(&syn);
     }
 
-    // @Vector(N, T) — built-in parameterized type.
-    if (std.mem.eql(u8, base_name, contracts.vector_head)) {
-        if (pt.args.len == 2) {
-            const length = self.resolveVectorLane(pt.args[0]) orelse return .unresolved;
-            const elem = self.resolveTypeWithBindings(pt.args[1]);
-            return table.vectorOf(elem, length);
-        }
-    }
-
-    // @Array(N, T) — the named form of `[N]T`.
-    if (std.mem.eql(u8, base_name, contracts.array_head)) {
-        if (pt.args.len == 2) {
-            const length = self.resolveArrayLen(pt.args[0]) orelse return .unresolved;
-            const elem = self.resolveTypeWithBindings(pt.args[1]);
-            return table.arrayOf(elem, length);
-        }
-    }
-
-    // @Slice(T, Len) — a fat pointer whose length word is `Len`.
-    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
-        if (pt.args.len == 2) {
-            const elem = self.resolveTypeWithBindings(pt.args[0]);
-            const len_ty = self.resolveSliceLenType(pt.args[1]) orelse return .unresolved;
-            return table.sliceOfLen(elem, len_ty);
-        }
-    }
+    if (resolveFormedType(self, base_name, pt.args, span)) |ty| return ty;
 
     // Generic-struct base: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;

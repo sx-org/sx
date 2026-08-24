@@ -139,7 +139,8 @@ choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
 Separately, a few `@` names are **compiler-formed** — `@run`, `@insert`, `@Init(T)`,
-`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. There is
+`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)`, `@Slice(T, Len)` and
+`@int(N, .signed)`. There is
 no stdlib declaration to read, and declaring the name is an error. `@run` is
 the compile-time evaluation prefix (`@run expr`); `@insert` splices a
 compile-time string as sx (`@insert expr`); see
@@ -147,8 +148,9 @@ compile-time string as sx (`@insert expr`); see
 written only as a bound on the parameter (`value: $I/@Init(T)`,
 `content: $B/@BuildBlock(P)`) and never as its type — see [`@Init(T)`](#initt)
 and [`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)` (§Vector Types),
-`@Array(N, T)` (§Array Types) and `@Slice(T, Len)` (§Slice Types) are type
-constructors, written wherever a type is.
+`@Array(N, T)` (§Array Types), `@Slice(T, Len)` (§Slice Types) and
+`@int(N, .signed)` (§Primitive Types) are type constructors, written wherever a
+type is.
 
 #### Backtick raw-identifier escape
 
@@ -599,6 +601,9 @@ c := vstack(1.0) {
 ### Primitive Types
 - `i1`..`i64` — signed integers (1 to 64 bits). `i64` is the default for integer literals.
 - `u1`..`u64` — unsigned integers (1 to 64 bits).
+- `@int(N, .signed)` / `@int(N, .unsigned)` — the integer type of width `N`, for
+  `N` in 1..=64. `N` is any compile-time integer. The constructor and the
+  spelling name one type: `@int(8, .signed)` IS `i8`.
 - `f32` — 32-bit floating point
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
@@ -5645,6 +5650,9 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 
 ### Slices
 - `@Slice($T: Type, $Len: Type) -> Type` — returns the fat-pointer type `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
+
+### Integers
+- `@int($N: int, .signed | .unsigned) -> Type` — returns the integer type of width `N` (1 to 64); `@int(8, .signed)` is `i8`
 
 ---
 

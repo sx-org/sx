@@ -1,0 +1,7 @@
+// `@int` is formed by the compiler, so no source declares it.
+
+@int :: struct { width: i32; }
+
+main :: () -> i32 {
+    0
+}

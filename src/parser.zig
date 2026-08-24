@@ -1112,7 +1112,16 @@ pub const Parser = struct {
             // `+ - * / %`. The shared evaluator folds the expression; a
             // non-const value position is diagnosed during lowering.
             var arg: *Node = undefined;
-            if (self.tokens.tag(self.tok) == .int_literal) {
+            if (self.tokens.tag(self.tok) == .dot and self.peekTag(1) == .identifier) {
+                // An enum literal is a CHOICE argument — the signedness of
+                // `@int(N, .signed)`. Which heads admit one, and which names
+                // they admit, is resolution's; the grammar only carries it.
+                const arg_start = self.tokens.start(self.tok);
+                self.advance(); // skip '.'
+                const choice = self.tokens.slice(self.tok);
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .enum_literal = .{ .name = choice } });
+            } else if (self.tokens.tag(self.tok) == .int_literal) {
                 const arg_start = self.tokens.start(self.tok);
                 const text = self.tokens.slice(self.tok);
                 // Parse the full u64 range and store the bit pattern,
@@ -1151,9 +1160,8 @@ pub const Parser = struct {
         const name = self.tokens.slice(name_idx);
         self.advance();
         const contract = contracts.find(name);
-        const spelling = if (contracts.isTypeConstructor(name))
-            if (std.mem.eql(u8, name, contracts.slice_head)) "@Slice(T, Len)" else if (contract) |c| c.spelling else name
-        else if (contract != null and contract.?.kind == .compiler_formed)
+        const spelling = if (contracts.isTypeConstructor(name) or
+            (contract != null and contract.?.kind == .compiler_formed))
             contract.?.spelling
         else
             return self.failAt(self.tokens.token(name_idx).loc, try self.unknownCompilerFormedTypeMsg(name));

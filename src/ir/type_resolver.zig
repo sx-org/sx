@@ -78,7 +78,7 @@ pub const TypeResolver = struct {
         if (name.len < 2) return null;
         if (name[0] != 'i' and name[0] != 'u') return null;
         const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-        if (width < 1 or width > 64) return null;
+        if (width < 1 or width > types.max_int_width) return null;
         return .{ .width = width, .signed = name[0] == 'i' };
     }
 
