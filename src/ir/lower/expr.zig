@@ -1384,7 +1384,8 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
 
 /// The type a numeric-limit receiver denotes: a builtin type spelling (`i64`,
 /// `usize`) or a compiler-formed constructor (`@int(3, .signed)`). Null when
-/// the receiver denotes no builtin type.
+/// the receiver is not a type spelling. A constructor that does not form a
+/// type is `.unresolved`.
 ///
 /// A backtick raw identifier can bind a value whose spelling shadows a builtin
 /// type name (`` `f64 := … ``); field access on that value is an ordinary field
@@ -1420,8 +1421,9 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
 ///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
 ///     `.nan` → `constFloat` (via `floatLimitOf`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
-/// a builtin type (a user struct → ordinary field lowering reports
-/// field-not-found). Two clean diagnostics (then a placeholder, so lowering
+/// a type spelling (a user struct → ordinary field lowering reports
+/// field-not-found). A constructor that does not form a type yields a
+/// placeholder. Two clean diagnostics (then a placeholder, so lowering
 /// finishes and `hasErrors()` aborts the build):
 ///   - a FLOAT-only accessor on an integer type (`i32.epsilon`, `u8.inf`);
 ///   - any accessor on a builtin NON-numeric receiver
@@ -1429,6 +1431,7 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
 pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) ?Ref {
     if (!TypeResolver.isLimitField(fa.field)) return null;
     const ty = self.limitReceiverType(fa.object) orelse return null;
+    if (ty == .unresolved) return self.emitPlaceholder(fa.field);
 
     if (TypeResolver.isIntLimitField(fa.field)) {
         if (self.module.types.integerLimit(ty, std.mem.eql(u8, fa.field, "max"))) |value| {

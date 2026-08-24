@@ -179,14 +179,16 @@ pub const ExprTyper = struct {
                 // is a comptime const of the queried type — mirrors the
                 // lowerFieldAccess intercept so inference reports the same type
                 // (without it the const would be mistyped, e.g. boxed into an Any
-                // slot). Only valid folds carry a type here; the cross-type error
-                // cases fall through (lowerNumericLimit emits the diagnostic).
+                // slot). A constructor that does not form a type is `.unresolved`
+                // and is not a numeric fold. Cross-type error cases fall through
+                // (lowerNumericLimit emits the diagnostic).
                 {
                     // The receiver classifier is `lowerNumericLimit`'s own, so
                     // inference and lowering recognize the same receivers —
                     // spellings and constructors alike, and neither folds
                     // through a raw value binding that shadows a type name.
                     if (self.l.limitReceiverType(fa.object)) |t| {
+                        if (t == .unresolved) return .unresolved;
                         const folds = (TypeResolver.isIntLimitField(fa.field) and
                             self.l.module.types.isIntegerType(t)) or
                             TypeResolver.floatLimitOf(t, fa.field) != null;
