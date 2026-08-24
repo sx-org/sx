@@ -607,9 +607,8 @@ c := vstack(1.0) {
 - `i8` / `i16` / `i32` / `i64` — signed integers. `i64` is the default for integer literals.
 - `u8` / `u16` / `u32` / `u64` — unsigned integers.
 - `@int(N, .signed)` / `@int(N, .unsigned)` — the integer type of width `N`, for
-  `N` in 1..=64. `N` is any compile-time integer. The eight aliases above are the
-  only reserved integer spellings, and each names what the constructor forms:
-  `@int(8, .signed)` IS `i8`. Every other width has only the constructor spelling.
+  `N` in 1..=64. `N` is any compile-time integer. The constructor and the
+  spelling name one type: `@int(8, .signed)` IS `i8`.
 - `f32` — 32-bit floating point
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
