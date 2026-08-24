@@ -3865,6 +3865,7 @@ pub const Lowering = struct {
 
     // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
+    pub const refuseVoidElement = lower_expr.refuseVoidElement;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const getStructFields = lower_expr.getStructFields;

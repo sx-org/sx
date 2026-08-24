@@ -1,43 +1,98 @@
 error: field 'a' cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:8:25
+  --> issues/aggregate-element-refuses-a-void-value.sx:15:25
    |
- 8 |     positional := Pair{ g(), 2 };
+15 |     positional := Pair{ g(), 2 };
    |                         ^^^
 
 help: call it as a statement instead of using its result
    |
- 8 |     positional := Pair{ g(), 2 };
+15 |     positional := Pair{ g(), 2 };
    |                         ^^^
 
 error: field 'a' cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:9:24
+  --> issues/aggregate-element-refuses-a-void-value.sx:16:24
    |
- 9 |     named := Pair{ a = g(), b = 2 };
+16 |     named := Pair{ a = g(), b = 2 };
    |                        ^^^
 
 help: call it as a statement instead of using its result
    |
- 9 |     named := Pair{ a = g(), b = 2 };
+16 |     named := Pair{ a = g(), b = 2 };
    |                        ^^^
 
 error: field 'a' cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:10:28
+  --> issues/aggregate-element-refuses-a-void-value.sx:17:28
    |
-10 |     contextual : Pair = .{ g(), 2 };
+17 |     contextual : Pair = .{ g(), 2 };
    |                            ^^^
 
 help: call it as a statement instead of using its result
    |
-10 |     contextual : Pair = .{ g(), 2 };
+17 |     contextual : Pair = .{ g(), 2 };
    |                            ^^^
 
 error: element 1 cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:11:28
+  --> issues/aggregate-element-refuses-a-void-value.sx:18:28
    |
-11 |     array : [2]i64 = .{ 1, g() };
+18 |     array : [2]i64 = .{ 1, g() };
    |                            ^^^
 
 help: call it as a statement instead of using its result
    |
-11 |     array : [2]i64 = .{ 1, g() };
+18 |     array : [2]i64 = .{ 1, g() };
    |                            ^^^
+
+error: element 1 cannot take 'void' — this expression produces no value
+  --> issues/aggregate-element-refuses-a-void-value.sx:19:32
+   |
+19 |     array_dot : [2]i64 = .[ 1, g() ];
+   |                                ^^^
+
+help: call it as a statement instead of using its result
+   |
+19 |     array_dot : [2]i64 = .[ 1, g() ];
+   |                                ^^^
+
+error: element 0 cannot take 'void' — this expression produces no value
+  --> issues/aggregate-element-refuses-a-void-value.sx:20:24
+   |
+20 |     slice : []i64 = .{ g(), 2 };
+   |                        ^^^
+
+help: call it as a statement instead of using its result
+   |
+20 |     slice : []i64 = .{ g(), 2 };
+   |                        ^^^
+
+error: field 'w' cannot take 'void' — this expression produces no value
+  --> issues/aggregate-element-refuses-a-void-value.sx:21:27
+   |
+21 |     tagged := Shape.rect{ g(), 2 };
+   |                           ^^^
+
+help: call it as a statement instead of using its result
+   |
+21 |     tagged := Shape.rect{ g(), 2 };
+   |                           ^^^
+
+error: element 0 cannot take 'void' — this expression produces no value
+  --> issues/aggregate-element-refuses-a-void-value.sx:22:36
+   |
+22 |     tagged_scalar := Shape.circle{ g() };
+   |                                    ^^^
+
+help: call it as a statement instead of using its result
+   |
+22 |     tagged_scalar := Shape.circle{ g() };
+   |                                    ^^^
+
+error: field 'a' cannot take 'void' — this expression produces no value
+  --> issues/aggregate-element-refuses-a-void-value.sx:23:23
+   |
+23 |     u := Overlay{ a = g() };
+   |                       ^^^
+
+help: call it as a statement instead of using its result
+   |
+23 |     u := Overlay{ a = g() };
+   |                       ^^^
