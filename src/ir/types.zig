@@ -70,8 +70,8 @@ pub const TypeId = enum(u32) {
 
 // ── Integer layout ──────────────────────────────────────────────────────
 
-/// What an integer type IS: a bit width in 1–64 and a signedness. The whole
-/// identity — two integer types with the same layout are the same type.
+/// Bit width in 1–64 and signedness of an integer type. `usize`/`isize` report
+/// the target pointer width and remain distinct TypeIds from the matching `uN`/`iN`.
 pub const IntLayout = struct {
     width: u8,
     signed: bool,
@@ -512,9 +512,7 @@ pub const TypeTable = struct {
             .cstring, // 18: thin null-terminated char*
             .type_value, // 19: comptime `Type` value (8-byte handle, distinct from any)
         };
-        // Every builtin is its layout's ONE type: seeding the intern map is what
-        // makes `intern(.{ .signed = 8 })` answer `.i8` rather than minting a
-        // second, structurally identical user slot.
+        // Seed intern_map so `intern(.{ .signed = 8 })` answers `.i8`.
         for (&builtins, 0..) |info, i| {
             table.infos.append(alloc, info) catch unreachable;
             table.intern_map.putNoClobber(.{ .info = info }, TypeId.fromIndex(@intCast(i))) catch unreachable;
@@ -1139,9 +1137,7 @@ pub const TypeTable = struct {
 
     /// The integer type of `width` bits and `signed`ness. The eight reserved
     /// widths are their builtin slots; every other width interns into a user
-    /// slot. THE integer constructor — no caller mints an integer `TypeInfo`
-    /// directly, so `i8` can never end up a different type from an 8-bit signed
-    /// integer built any other way.
+    /// slot.
     pub fn internInteger(self: *TypeTable, width: u8, signed: bool) TypeId {
         if (canonicalInt(width, signed)) |id| return id;
         return self.intern(if (signed) .{ .signed = width } else .{ .unsigned = width });
