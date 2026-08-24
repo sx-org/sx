@@ -3421,6 +3421,7 @@ pub const Lowering = struct {
     pub const diagEnclosingRootWrite = lower_stmt.diagEnclosingRootWrite;
     pub const diagConstRootWrite = lower_stmt.diagConstRootWrite;
     pub const diagContextRootWrite = lower_stmt.diagContextRootWrite;
+    pub const diagNonstoreRootWrite = lower_stmt.diagNonstoreRootWrite;
     pub const diagDecrementTarget = lower_stmt.diagDecrementTarget;
     pub const diagDecrementPointer = lower_stmt.diagDecrementPointer;
     pub const diagDecrementNonInteger = lower_stmt.diagDecrementNonInteger;
@@ -3864,6 +3865,7 @@ pub const Lowering = struct {
 
     // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
+    pub const refuseVoidElement = lower_expr.refuseVoidElement;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const getStructFields = lower_expr.getStructFields;

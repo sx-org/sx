@@ -1979,6 +1979,14 @@ items.len          // length (i64)
 items.ptr          // raw pointer
 ```
 
+A `.{ … }` literal against a slice target reads its field names: `ptr` and
+`len` write the fat pointer's own slots, and any other field list is a list of
+ELEMENTS, coerced to `T` over a backing array exactly as `.[ … ]` is.
+```sx
+row  : []any = .{ a, t };                    // two elements, each boxed into `any`
+view : []i64 = .{ ptr = nums.ptr, len = 2 }; // the header itself
+```
+
 Slices support generic type parameters: `[]$T` introduces type parameter `T` inferred from the element type of the argument (array or slice).
 
 `@Slice(T, Len)` names the same shape with the length word spelled out: `Len`
@@ -4556,7 +4564,7 @@ category, and there is no `constraint` category word. Flags-ness is
 as the right operand.
 
 ### Logical Operators
-`and` and `or` are short-circuit boolean operators. The right operand is not evaluated if the left operand determines the result.
+`and` and `or` are short-circuit boolean operators. The right operand is not evaluated if the left operand determines the result. Each operand is a condition — a bool, an integer or integer-backed value (`!= 0`), a pointer (`!= null`), or an optional (present) — and the result is always a `bool`.
 ```sx
 if 0 <= x <= 100 and 0 <= y <= 100 {
     print("contained");
@@ -4842,9 +4850,18 @@ capture binding: the for-loop element and the paired range index
 (`case .circle: |r|`), a `catch` / `onfail` error binding
 (`f() catch |e|`), and an `inline for` pack-element alias
 (`inline for x in xs`). A capture is a read-only alias into storage the
-loop/match/error machinery owns, not a fresh mutable local; assigning to
-it bare (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`) is a compile
-error rather than a silent no-op. To mutate, copy the capture into a
+loop/match/error machinery owns, not a fresh mutable local; a write into
+it — the binding itself (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`)
+or a member/element of it (`x.n = v`, `x.tags[0] = v`, `--x.n`,
+`h.p.n = v`) — is a compile error rather than a silent no-op.
+Auto-deref through a pointer field of the copy (`h.p.n`) is refused
+with them: the copy has no address to GEP, so it is a member write
+through the capture like any other and the recovery is the by-ref
+capture (`for *h in holders`). A write that crosses into
+pointee memory through the capture reaches the storage BEHIND the copy,
+not the copy, and stays allowed: a pointer element (`for p in ptrs
+{ p.n = v }`), a deref of a pointer field (`h.p.*.n`), an element of a
+slice the capture views (`r[0] = v`). To mutate, copy the capture into a
 `:=` local (`v := x; v += 100;`) — the copy is yours to change and
 cannot accidentally look like it writes back. To write *through* into
 the container, use a for-loop **by-reference** capture (`for *x in xs`,

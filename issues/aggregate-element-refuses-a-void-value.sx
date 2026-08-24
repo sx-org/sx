@@ -1,0 +1,33 @@
+@import "modules/std.sx";
+
+Pair :: struct { a: i64; b: i64; }
+
+Shape :: enum {
+    circle: i64;
+    rect: struct { w: i64; h: i64; };
+}
+
+Overlay :: union { a: i64; b: f64; }
+
+g :: () {}
+
+main :: () {
+    positional := Pair{ g(), 2 };
+    named := Pair{ a = g(), b = 2 };
+    contextual : Pair = .{ g(), 2 };
+    array : [2]i64 = .{ 1, g() };
+    array_dot : [2]i64 = .[ 1, g() ];
+    slice : []i64 = .{ g(), 2 };
+    tagged := Shape.rect{ g(), 2 };
+    tagged_scalar := Shape.circle{ g() };
+    u := Overlay{ a = g() };
+    _ = positional;
+    _ = named;
+    _ = contextual;
+    _ = array;
+    _ = array_dot;
+    _ = slice;
+    _ = tagged;
+    _ = tagged_scalar;
+    _ = u;
+}

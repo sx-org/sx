@@ -794,11 +794,22 @@ fn freshDecls(self: *Lowering, decls: []const *const Node) []const *const Node {
             out.append(self.alloc, decl) catch {};
             continue;
         }
-        const gop = self.scanned_decls.getOrPut(decl) catch continue;
-        if (gop.found_existing) continue;
+        if (self.scanned_decls.contains(decl)) continue;
         out.append(self.alloc, decl) catch {};
     }
     return out.toOwnedSlice(self.alloc) catch decls;
+}
+
+/// Claim `decl` for the registration loop; false once any scan has registered
+/// it. The claim is taken where the loop REACHES a declaration, not where the
+/// list is filtered: the loop recurses into a namespaced module holding the
+/// same declarations, so a claim taken up front hides the ones the loop has
+/// not reached yet and the recursion registers a struct ahead of the generic
+/// template its field head names.
+fn claimDecl(self: *Lowering, decl: *const Node) bool {
+    if (!self.incremental_scan or decl.data == .namespace_decl) return true;
+    const gop = self.scanned_decls.getOrPut(decl) catch return true;
+    return !gop.found_existing;
 }
 
 /// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
@@ -870,6 +881,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.reserveShadowSlot(td);
     }
     for (decls) |decl| {
+        if (!claimDecl(self, decl)) continue;
         self.setCurrentSourceFile(decl.source_file);
         const is_imported = if (self.main_file) |mf|
             (if (decl.source_file) |sf| !std.mem.eql(u8, sf, mf) else false)

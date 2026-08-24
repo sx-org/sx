@@ -1,0 +1,31 @@
+@import "modules/std.sx";
+
+Box :: struct ($V: Type) { v: V; }
+Node :: struct { v: i64; next: ?*Node; }
+
+Holder :: struct ($T: Type) {
+    v: T;
+    unwrap :: (self: *Holder) -> i64 {
+        take := |b: Box($T)| b.v;
+        take(.{ v = self.v })
+    }
+}
+
+apply :: (v: $T, boxed: Box($T)) -> i64 {
+    bare := |x: $T| x;
+    wrapped := |b: Box($T)| b.v;
+    bare(v) + wrapped(boxed)
+}
+
+pf :: (..args: $Ts) -> i64 {
+    ignore := |f: Closure(..$args) -> i64| 40;
+    ignore(|| -> i64 0)
+}
+
+main :: () {
+    recipe := |v: $I/@Init(i64)| 1;
+    chained := |n: *Node| n.v;
+    concrete := |b: Box(i64)| b.v;
+    tail := Node{ v = 2, next = null };
+    print("{} {} {} {} {} {}\n", apply(3, .{ v = 4 }), Holder(i64){ v = 5 }.unwrap(), pf(6, 7), recipe(7), chained(*tail), concrete(.{ v = 8 }));
+}

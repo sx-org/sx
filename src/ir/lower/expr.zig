@@ -28,6 +28,22 @@ const exprIsFailable = Lowering.exprIsFailable;
 const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
+/// Refuse a `void` element in an aggregate slot that holds a value. `{}` is the
+/// void value, so a `void` slot legitimately takes one (`.{ {}, 9 }` for a
+/// `Tuple(void, i32)`); every other slot would insert `void` into the aggregate
+/// and fail LLVM verification. The caller substitutes a zero of the slot type.
+pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field: ?StringId, index: usize, span: ast.Span) bool {
+    if (src_ty != .void or slot_ty == .void or slot_ty == .unresolved) return false;
+    if (self.diagnostics) |d| {
+        const id = if (field) |f|
+            d.addFmtId(.err, span, "field '{s}' cannot take 'void' — this expression produces no value", .{self.module.types.getString(f)})
+        else
+            d.addFmtId(.err, span, "element {d} cannot take 'void' — this expression produces no value", .{index});
+        d.addHelpFmt(id, span, null, "call it as a statement instead of using its result", .{});
+    }
+    return true;
+}
+
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
     // `.{ }` is a struct literal. It is not a handle and not `?I` absence.
     if (sl.type_expr == null and sl.field_inits.len == 0) {
@@ -326,6 +342,26 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
+    // A `[]T`-targeted `.{ … }` that does not name the fat pointer's own slots
+    // is an ELEMENT list, lowered exactly as `.[ … ]` is: each element coerces
+    // to `T` (a protocol element boxes into `any`) and the backing array
+    // becomes the view. Read as a `{ptr, len}` literal instead, an aggregate
+    // element lands in the `ptr` word and fails LLVM verification.
+    if (sl.struct_name == null and sl.type_expr == null and sl.init_block == null and
+        sl.field_inits.len > 0 and !ty.isBuiltin() and
+        self.module.types.get(ty) == .slice and !isSliceHeaderLiteral(sl))
+    {
+        var elems = std.ArrayList(*Node).empty;
+        defer elems.deinit(self.alloc);
+        for (sl.field_inits) |fi| elems.append(self.alloc, fi.value) catch unreachable;
+        const al = ast.ArrayLiteral{ .elements = elems.items };
+        const saved_tt = self.target_type;
+        self.target_type = ty;
+        const arr = self.lowerArrayLiteral(&al);
+        self.target_type = saved_tt;
+        return self.coerceToType(arr, self.builder.getRefType(arr), ty);
+    }
+
     const aggregate_ok = if (ty.isBuiltin())
         ty == .string
     else switch (self.module.types.get(ty)) {
@@ -460,7 +496,9 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     // initializer BORROWS (`.{ allocator = gpa }` aliases
                     // `gpa`); the node-less path cannot tell the lvalue from
                     // an rvalue.
-                    val = if (self.getProtocolInfo(sf.ty) != null)
+                    val = if (refuseVoidElement(self, src_ty, sf.ty, sf.name, fi, l.node.span))
+                        self.zeroValue(sf.ty)
+                    else if (self.getProtocolInfo(sf.ty) != null)
                         self.coerceOrErase(val, src_ty, sf.ty, l.node)
                     else
                         self.coerceToType(val, src_ty, sf.ty);
@@ -550,7 +588,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // is authoritative.
         if (elem_target != .unresolved) {
             const src_ty = self.builder.getRefType(val);
-            if (src_ty != elem_target) {
+            const slot_name: ?StringId = if (i < struct_fields.len) struct_fields[i].name else null;
+            if (refuseVoidElement(self, src_ty, elem_target, slot_name, i, fi.value.span)) {
+                val = self.zeroValue(elem_target);
+            } else if (src_ty != elem_target) {
                 val = self.coerceToType(val, src_ty, elem_target);
             }
         }
@@ -707,6 +748,16 @@ pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: as
     if (!self.privateFieldHere(ty, field)) return false;
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
+    return true;
+}
+
+/// A slice literal that names only `ptr`/`len` writes the fat pointer's own
+/// slots; any other field list is a list of elements.
+fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
+    for (sl.field_inits) |fi| {
+        const name = fi.name orelse return false;
+        if (!std.mem.eql(u8, name, "ptr") and !std.mem.eql(u8, name, "len")) return false;
+    }
     return true;
 }
 
@@ -2132,8 +2183,12 @@ pub fn lowerTaggedEnumLiteral(
         }
         self.target_type = payload_ty;
         var val = self.lowerExpr(sl.field_inits[0].value);
-        const src_ty = self.inferExprType(sl.field_inits[0].value);
-        val = self.coerceToType(val, src_ty, payload_ty);
+        const src_ty = self.builder.getRefType(val);
+        if (refuseVoidElement(self, src_ty, payload_ty, null, 0, sl.field_inits[0].value.span)) {
+            val = self.zeroValue(payload_ty);
+        } else {
+            val = self.coerceToType(val, src_ty, payload_ty);
+        }
         self.target_type = saved_tt;
         return self.builder.enumInit(tag, val, union_ty);
     }
@@ -2160,8 +2215,12 @@ pub fn lowerTaggedEnumLiteral(
             self.target_type = payload_fields[i].ty;
             var val = self.lowerExpr(fi.value);
             self.target_type = saved_inner;
-            const src_ty = self.inferExprType(fi.value);
-            val = self.coerceToType(val, src_ty, payload_fields[i].ty);
+            const src_ty = self.builder.getRefType(val);
+            if (refuseVoidElement(self, src_ty, payload_fields[i].ty, payload_fields[i].name, i, fi.value.span)) {
+                val = self.zeroValue(payload_fields[i].ty);
+            } else {
+                val = self.coerceToType(val, src_ty, payload_fields[i].ty);
+            }
             fields.append(self.alloc, val) catch unreachable;
         } else {
             fields.append(self.alloc, self.lowerExpr(fi.value)) catch unreachable;
@@ -2382,7 +2441,9 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         // at `elem_ty` (the common `[N]i64`/`[N]Struct` case).
         if (elem_ty != .unresolved) {
             const val_ty = self.builder.getRefType(val);
-            if (val_ty != elem_ty) {
+            if (refuseVoidElement(self, val_ty, elem_ty, null, elems.items.len, elem.span)) {
+                val = self.zeroValue(elem_ty);
+            } else if (val_ty != elem_ty) {
                 val = self.coerceToType(val, val_ty, elem_ty);
             }
         }
@@ -3061,13 +3122,16 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
         var val = self.lowerExpr(elem.value);
         self.target_type = saved_target;
         const val_ty = self.builder.getRefType(val);
-        if (val_ty != field_ty and val_ty != .void) {
+        const name_id: ?StringId = if (elem.name) |name| self.module.types.internString(name) else null;
+        if (refuseVoidElement(self, val_ty, field_ty, name_id, out_idx, elem.value.span)) {
+            val = self.zeroValue(field_ty);
+        } else if (val_ty != field_ty) {
             val = self.coerceToType(val, val_ty, field_ty);
         }
         elems.append(self.alloc, val) catch unreachable;
         field_type_ids.append(self.alloc, field_ty) catch unreachable;
-        if (elem.name) |name| {
-            name_ids.append(self.alloc, self.module.types.internString(name)) catch unreachable;
+        if (name_id) |nid| {
+            name_ids.append(self.alloc, nid) catch unreachable;
             has_names = true;
         } else {
             name_ids.append(self.alloc, self.module.types.internString("")) catch unreachable;
@@ -3836,6 +3900,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.diagConstRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagContextRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 if (self.diagEnclosingRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
+                if (self.diagNonstoreRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
                 const place = self.resolveMutablePlace(uop.operand) orelse
                     break :blk self.diagDecrementTarget(node.span);
                 const ty = Lowering.placeType(place);
@@ -4659,10 +4724,13 @@ pub fn checkConditionType(self: *Lowering, ty: TypeId, span: ast.Span) bool {
     return false;
 }
 
-/// Lower `node` as a boolean condition. If its type is an optional, reduce
-/// it to its has_value flag (presence-as-truth) — same rule as `if opt`/
-/// `while opt`. Without this, a bare optional operand reaches a condBr/phi as
-/// a `{T,i1}` aggregate and folds truthy. Returns an i1/bool Ref.
+/// Lower `node` as a boolean condition, narrowing every truthy shape
+/// `isValidConditionType` admits down to an i1: an integer-backed value against
+/// zero, a pointer against null, an optional to its has_value flag
+/// (presence-as-truth, the same rule as `if opt`/`while opt`). The narrowing is
+/// mandatory here rather than deferred to the branch, because `and`/`or` join
+/// both operands in ONE `bool` merge parameter — a wider operand reaching that
+/// merge is an ill-typed phi.
 /// A non-condition-typed operand (struct/float/...) is rejected with a located
 /// type error via `checkConditionType`; on rejection a placeholder `false` is
 /// returned so lowering can continue to surface the diagnostic.
@@ -4673,10 +4741,19 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
         return self.builder.constBool(false);
     }
     const v = self.lowerExpr(node);
-    if (!ty.isBuiltin() and self.module.types.get(ty) == .optional) {
-        return self.builder.emit(.{ .optional_has_value = .{ .operand = v } }, .bool);
-    }
-    return v;
+    if (ty == .unresolved) return v;
+    return switch (self.module.types.get(ty)) {
+        .signed, .unsigned, .usize, .isize, .@"enum", .error_set => self.builder.emit(.{ .cmp_ne = .{
+            .lhs = v,
+            .rhs = self.builder.constInt(0, ty),
+        } }, .bool),
+        .pointer, .many_pointer, .cstring => self.builder.emit(.{ .cmp_ne = .{
+            .lhs = v,
+            .rhs = self.builder.constNull(ty),
+        } }, .bool),
+        .optional => self.builder.emit(.{ .optional_has_value = .{ .operand = v } }, .bool),
+        else => v,
+    };
 }
 
 /// `subject is target`. The target is a TYPE, so the answer is a

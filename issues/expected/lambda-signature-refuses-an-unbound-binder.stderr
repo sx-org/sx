@@ -1,0 +1,107 @@
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:7:20
+   |
+ 7 |     wrapped := |x: Box($T)| 1;
+   |                    ^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:8:20
+   |
+ 8 |     through := |x: *Box($T)| 2;
+   |                    ^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:9:19
+   |
+ 9 |     sliced := |x: []$T| 21;
+   |                   ^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:10:18
+   |
+10 |     sized := |x: [3]$T| 22;
+   |                  ^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:11:20
+   |
+11 |     unsized := |x: [*]$T| 23;
+   |                    ^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:12:26
+   |
+12 |     inline_struct := |x: struct { v: $T; }| 3;
+   |                          ^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:13:25
+   |
+13 |     inline_union := |x: union { a: $T; b: i64; }| 31;
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:14:24
+   |
+14 |     inline_enum := |x: enum { a: $T; b; }| 32;
+   |                        ^^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:15:23
+   |
+15 |     fn_pointer := |x: ($T) -> i64| 33;
+   |                       ^^^^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:16:21
+   |
+16 |     failable := |x: (Box($T), !)| 34;
+   |                     ^^^^^^^^^^^^
+
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:17:20
+   |
+17 |     phantom := |x: Holder($T)| 4;
+   |                    ^^^^^^^^^^
+
+error: lambda parameter 'v' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:18:19
+   |
+18 |     formed := |v: $I/@Init(Box($T))| 5;
+   |                   ^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'v' cannot be generic; a lambda is a value, so give '$I' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:19:29
+   |
+19 |     nested_formation := |v: Box($I/@Init(i64))| 6;
+   |                             ^^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'f' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:20:22
+   |
+20 |     signature := |f: Closure(i64) -> Box($T)| 7;
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: lambda parameter 'f' cannot be generic; a lambda is a value, so give '$Ts' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:21:17
+   |
+21 |     pack := |f: Closure(..$Ts) -> i64| 8;
+   |                 ^^^^^^^^^^^^^^^^^^^^^
+
+error: lambda return type cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:22:28
+   |
+22 |     returns := |x: i64| -> Box($T) .{ v = x };
+   |                            ^^^^^^^
+
+error: lambda return type cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:23:34
+   |
+23 |     multi_returns := |x: i64| -> (Box($T), i64) { return .{ v = x }, x; };
+   |                                  ^^^^^^^^^^^^^^
+
+error: lambda return type cannot be generic; a lambda is a value, so give '$Ts' a concrete type
+  --> issues/lambda-signature-refuses-an-unbound-binder.sx:24:35
+   |
+24 |     spread_returns := |x: i64| -> (..$Ts, i64) { return x; };
+   |                                   ^^^^^^^^^^^^

@@ -1,0 +1,65 @@
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:41:22
+   |
+41 |     for e in items { e.n = e.n + 10; }
+   |                      ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:44:30
+   |
+44 |     for e, i in items, 0.. { e.n += 10; }
+   |                              ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:47:22
+   |
+47 |     for e in items { e.tags[0] = 7; }
+   |                      ^^^^^^^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:51:25
+   |
+51 |     for e in items { a, e.n = 5, 6; }
+   |                         ^^^
+
+error: cannot assign through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:54:24
+   |
+54 |     for e in items { --e.n; }
+   |                        ^^^
+
+error: cannot assign through immutable capture 'h' — it is a by-value copy of the element; capture by reference with '*h' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:59:24
+   |
+59 |     for h in holders { h.p.n = 7; }
+   |                        ^^^^^
+
+error: cannot take the address through immutable capture 'e' — it is a by-value copy of the element; capture by reference with '*e' to write into the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:62:29
+   |
+62 |     for e in items { takes(*e.n); }
+   |                             ^^^
+
+error: cannot assign through immutable capture 'b' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:67:26
+   |
+67 |         case .box: |b| { b.n = 4; }
+   |                          ^^^
+
+error: cannot assign through immutable capture 't' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:74:26
+   |
+74 |         case Item: |t| { t.n = 6; }
+   |                          ^^^
+
+error: cannot assign through constant 'c' — a '::' declaration is immutable; use ':=' to declare a mutable local
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:80:5
+   |
+80 |     c.n = 9;
+   |     ^^^
+
+error: cannot assign through immutable capture 'x' — a pack-element alias is read-only; copy it into a `:=` local to mutate
+  --> examples/diagnostics/2236-diagnostics-capture-member-assignment.sx:31:26
+   |
+31 |     inline for x in xs { x.n = 1; }
+   |                          ^^^

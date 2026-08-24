@@ -1,0 +1,27 @@
+@import "modules/std.sx";
+
+Sized :: interface { size :: (self: *Self) -> i64; }
+
+Cube :: struct { side: i64; }
+impl Sized for Cube { size :: (self: *Cube) -> i64 { self.side } }
+
+count :: (items: []any) -> i64 { items.len }
+named :: (v: any) -> string { type_name(type_of(v)) }
+
+main :: () {
+    t := Cube{ side = 3 };
+    a := t.(Sized);
+
+    print("{}\n", count(.{ a, t }));
+
+    row : []any = .{ a, t };
+    print("{} {}\n", named(row[0]), named(row[1]));
+    print("{} {}\n", row[0].(Cube).side, row[1].(Cube).side);
+
+    nums : []i64 = .{ 1, 2, 3 };
+    print("{} {}\n", nums.len, nums[2]);
+
+    // The `ptr`/`len` names write the fat pointer's own slots, not elements.
+    head : []i64 = .{ ptr = nums.ptr, len = 2 };
+    print("{} {}\n", head.len, head[1]);
+}
