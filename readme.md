@@ -57,7 +57,8 @@ sx lsp                   # start language server
 
 | Type | Description |
 |------|-------------|
-| `i8`..`i64`, `u8`..`u64` | Integers (default `i64`) |
+| `i8` `i16` `i32` `i64`, `u8` `u16` `u32` `u64` | Integers (default `i64`) |
+| `@int(N, .signed)` / `@int(N, .unsigned)` | The integer of width `N`, 1 to 64 — `@int(8, .signed)` is `i8` |
 | `f32`, `f64` | Floats (default `f64`) |
 | `bool` | `true` / `false` |
 | `string` | UTF-8 `{ptr, len}` |
