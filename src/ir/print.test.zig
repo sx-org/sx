@@ -87,3 +87,25 @@ test "print conditional branch" {
     try std.testing.expect(std.mem.indexOf(u8, output, "then:") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "else:") != null);
 }
+
+test "print an odd-width integer as its constructor" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    var b = Builder.init(&module);
+
+    const narrow_ty = module.types.internInteger(3, true);
+    _ = b.beginFunction(module.types.internString("narrow"), &.{}, narrow_ty);
+    const entry = b.appendBlock(module.types.internString("entry"), &.{});
+    b.switchToBlock(entry);
+    b.ret(b.constInt(1, narrow_ty), narrow_ty);
+    b.finalize();
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    try print_mod.printModule(&module, &aw.writer);
+    var result = aw.writer.toArrayList();
+    defer result.deinit(alloc);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.items, "const 1 : @int(3, .signed)") != null);
+}

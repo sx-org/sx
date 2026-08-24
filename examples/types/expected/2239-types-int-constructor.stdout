@@ -1,6 +1,6 @@
 alias=true spaced=true const=true
 x=-4 y=1
 small=31 name=Holder
-widen=-2048 name=i12
+widen=-2048 name=@int(12, .signed)
 sizes=8 1
 lambda=true

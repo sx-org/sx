@@ -54,25 +54,21 @@ pub const TypeLowering = struct {
         return lowered;
     }
 
+    fn intLLVMType(self: TypeLowering, width: u8) c.LLVMTypeRef {
+        return switch (width) {
+            1 => self.e.cached_i1,
+            8 => self.e.cached_i8,
+            16 => self.e.cached_i16,
+            32 => self.e.cached_i32,
+            64 => self.e.cached_i64,
+            else => c.LLVMIntTypeInContext(self.e.context, width),
+        };
+    }
+
     fn toLLVMTypeInfo(self: TypeLowering, ty: TypeId) c.LLVMTypeRef {
         const info = self.e.ir_mod.types.get(ty);
         return switch (info) {
-            .signed => |w| switch (w) {
-                1 => self.e.cached_i1,
-                8 => self.e.cached_i8,
-                16 => self.e.cached_i16,
-                32 => self.e.cached_i32,
-                64 => self.e.cached_i64,
-                else => c.LLVMIntTypeInContext(self.e.context, w),
-            },
-            .unsigned => |w| switch (w) {
-                1 => self.e.cached_i1,
-                8 => self.e.cached_i8,
-                16 => self.e.cached_i16,
-                32 => self.e.cached_i32,
-                64 => self.e.cached_i64,
-                else => c.LLVMIntTypeInContext(self.e.context, w),
-            },
+            .signed, .unsigned => self.intLLVMType(self.e.ir_mod.types.integerLayout(ty).?.width),
             .f32 => self.e.cached_f32,
             .f64 => self.e.cached_f64,
             .void => self.e.cached_void,

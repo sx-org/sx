@@ -3038,15 +3038,7 @@ pub const Lowering = struct {
             }
         }
         const d = self.diagnostics orelse return;
-        var name_buf: [8]u8 = undefined;
-        const tn = blk: {
-            if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-            break :blk switch (self.module.types.get(ty)) {
-                .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                else => self.module.types.typeName(ty),
-            };
-        };
+        const tn = self.formatTypeName(ty);
         // Sub-64-bit types have an i64-expressible range — keep the exact
         // "(range min..max)" wording. The 64-bit types (i64/u64) can't (their
         // bound overflows i64), so report the max magnitude instead.
@@ -3065,17 +3057,7 @@ pub const Lowering = struct {
         const r = self.intLiteralRange(ty) orelse return;
         if (value < r.min or value > r.max) {
             if (self.diagnostics) |d| {
-                // Custom-width ints are structural (unnamed in the type
-                // table) — render them as s{N}/u{N}.
-                var name_buf: [8]u8 = undefined;
-                const tn = blk: {
-                    if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-                    break :blk switch (self.module.types.get(ty)) {
-                        .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                        .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                        else => self.module.types.typeName(ty),
-                    };
-                };
+                const tn = self.formatTypeName(ty);
                 d.addFmt(.err, span, "integer literal {} does not fit in {s} (range {}..{}) — use an explicit `xx` / `.(T)` to truncate", .{ value, tn, r.min, r.max });
             }
         }
@@ -3092,15 +3074,7 @@ pub const Lowering = struct {
         const r = self.intLiteralRange(ty) orelse return;
         if (cl.value < r.min or cl.value > r.max) {
             if (self.diagnostics) |d| {
-                var name_buf: [8]u8 = undefined;
-                const tn = blk: {
-                    if (ty.isBuiltin()) break :blk self.module.types.typeName(ty);
-                    break :blk switch (self.module.types.get(ty)) {
-                        .signed => |w| std.fmt.bufPrint(&name_buf, "i{d}", .{w}) catch "integer",
-                        .unsigned => |w| std.fmt.bufPrint(&name_buf, "u{d}", .{w}) catch "integer",
-                        else => self.module.types.typeName(ty),
-                    };
-                };
+                const tn = self.formatTypeName(ty);
                 d.addFmt(.err, span, "char literal '{s}' (value {}) does not fit in {s} (range {}..{}) — use a wider type such as u32 to hold this code point", .{ cl.raw, cl.value, tn, r.min, r.max });
             }
         }
