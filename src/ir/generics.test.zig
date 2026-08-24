@@ -53,6 +53,12 @@ test "generics: mangleTypeName encodes the mono-key fragment per type shape" {
     const pt = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Point"), .fields = &.{} } });
     try std.testing.expectEqualStrings("Point", gr.mangleTypeName(pt));
 
+    // A formed int and a struct spelled like that width are two types, so
+    // their fragments differ.
+    try std.testing.expectEqualStrings("int_7_u", gr.mangleTypeName(tt.intern(.{ .unsigned = 7 })));
+    const width_named = tt.intern(.{ .@"struct" = .{ .name = tt.internString("u7"), .fields = &.{} } });
+    try std.testing.expectEqualStrings("u7", gr.mangleTypeName(width_named));
+
     // Anonymous product mangles as its interned `__anon` struct name.
     const tup = tt.internProduct(&[_]TypeId{ .i64, .bool }, null);
     try std.testing.expectEqualStrings("__anon", gr.mangleTypeName(tup));
