@@ -4,8 +4,8 @@ error: 'u8' is a reserved type name and cannot be used as an identifier
 12 |     go :: (self: *Box, u8: i64) {
    |                        ^^
 
-error: 'i2' is a reserved type name and cannot be used as an identifier
+error: 'i8' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1122-diagnostics-reserved-name-impl-method.sx:13:9
    |
-13 |         i2 := Box{ total = 1 };
+13 |         i8 := Box{ total = 1 };
    |         ^^

@@ -787,7 +787,7 @@ fn lowerComptimePlainStructMethod(
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
-    // `.type_expr` (e.g. `i2(4)`), but if a function of that name is in
+    // `.type_expr` (e.g. `i8(4)`), but if a function of that name is in
     // scope — a backtick-declared sx fn or a `@import c` extern fn whose C
     // name collides with a reserved type spelling — it is a CALL to that
     // function. `TypeName(val)` is not a cast (casts are `cast(T, val)`), so

@@ -89,7 +89,7 @@ K : [4]i64 : .[11, 22, 33, 44];
 N :: K[0] + K[3];        // folds
 ```
 
-`::` is the only const spelling — writes through the name are errors. A float into an integer slot must be integral at comptime (`4.0` → `4`; `1.5` errors) unless `xx` / `.(i64)`. Bare builtin type names are reserved; `` `i2 `` escapes one.
+`::` is the only const spelling — writes through the name are errors. A float into an integer slot must be integral at comptime (`4.0` → `4`; `1.5` errors) unless `xx` / `.(i64)`. Bare builtin type names are reserved; `` `i32 `` escapes one.
 
 ### Multiple return values
 

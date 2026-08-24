@@ -4,3 +4,4 @@ small=31 name=Holder
 widen=-2048 name=@int(12, .signed)
 sizes=8 1
 lambda=true
+free=42

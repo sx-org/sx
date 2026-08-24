@@ -1,5 +1,5 @@
 // A reserved/builtin type name is rejected as a binding name inside an `impl`
-// block's method — both as a parameter (`u8`) and as a local (`i2`): the
+// block's method — both as a parameter (`u8`) and as a local (`i8`): the
 // binding-name walk descends `impl_block` into each method's `fn_decl`.
 @import "modules/std.sx";
 
@@ -10,9 +10,9 @@ Doer :: constraint { go :: (self: *Self, n: i64); }
 
 impl Doer for Box {
     go :: (self: *Box, u8: i64) {
-        i2 := Box{ total = 1 };
-        update(*i2, u8);
-        self.total += i2.total;
+        i8 := Box{ total = 1 };
+        update(*i8, u8);
+        self.total += i8.total;
     }
 }
 

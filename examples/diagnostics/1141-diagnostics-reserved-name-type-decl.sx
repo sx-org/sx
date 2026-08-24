@@ -1,7 +1,7 @@
 // A reserved/builtin type-name spelling is rejected as the NAME of every
 // type-introducing `::` declaration — struct, enum, union, error-set and a typed
 // constant — as it is for `:=`, value-const and function names (examples/1140).
-// The backtick escape (`` `i2 :: struct{…} ``, examples/0154) is the only way to
+// The backtick escape (`` `u8 :: struct{…} ``, examples/0154) is the only way to
 // spell these names in handwritten sx; `@import c` extern decls stay exempt
 // (examples/1220).
 @import "modules/std.sx";
@@ -10,7 +10,7 @@ i8 :: struct { v: i64; }
 i16 :: enum { A; B; }
 u16 :: union { a: i32; b: f32; }
 u32 :: error { Bad, Empty }
-i2 : i64 : 5;
+u8 : i64 : 5;
 
 main :: () -> i32 {
     return 0;

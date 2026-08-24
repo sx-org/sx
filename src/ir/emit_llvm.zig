@@ -2337,7 +2337,7 @@ pub const LLVMEmitter = struct {
 
         // int→int: SExt, ZExt, or Trunc. Arbitrary-width int TypeIds carry
         // their width in the type table — `intBits` only knows builtins and
-        // would misclassify e.g. a u1→u32 widen as a 64→32 truncation.
+        // would misclassify e.g. an `@int(1, .unsigned)`→`u32` widen as a 64→32 truncation.
         const ptr_bits: u32 = @as(u32, self.ir_mod.types.pointer_size) * 8;
         const from_bits = intBitsEx(self, from) orelse ptr_bits;
         const to_bits = intBitsEx(self, to) orelse ptr_bits;

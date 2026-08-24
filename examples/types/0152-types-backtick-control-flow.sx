@@ -1,5 +1,5 @@
 // Backtick raw identifier across every control-flow / capture / binding form,
-// plus bare later uses. A reserved type-name spelling (`i2`, `u8`, …) works as a
+// plus bare later uses. A reserved type-name spelling (`u64`, `u8`, …) works as a
 // binding name in a destructure, an `if`/`while` optional binding, a `for`
 // capture + index, and a match-arm capture; a backtick-named function is
 // bare-callable; and a backtick struct field is bare- or backtick-accessible.
@@ -13,9 +13,9 @@ pair :: () -> (i64, i64) { return 1, 2; }
 maybe :: () -> ?i64 { return 42; }
 
 // Function named with a reserved spelling — bare-callable (no backtick at call).
-`i2 :: (n: i64) -> i64 { return n + 1; }
+`u64 :: (n: i64) -> i64 { return n + 1; }
 
-Quad :: struct { `i1: i32; `i2: i32; }
+Quad :: struct { `i8: i32; `u64: i32; }
 
 main :: () -> i32 {
     // destructure binding names
@@ -47,10 +47,10 @@ main :: () -> i32 {
     print("match = {}\n", m);
 
     // backtick function called BARE and via backtick — both resolve to the fn
-    print("call  = {} {}\n", i2(10), `i2(10));
+    print("call  = {} {}\n", u64(10), `u64(10));
 
     // struct field named with a reserved spelling: bare + backtick member access
-    q := Quad{ `i1 = 7, `i2 = 9 };
-    print("field = {} {} | {} {}\n", q.i1, q.i2, q.`i1, q.`i2);
+    q := Quad{ `i8 = 7, `u64 = 9 };
+    print("field = {} {} | {} {}\n", q.i8, q.u64, q.`i8, q.`u64);
     return 0;
 }

@@ -11,7 +11,7 @@ Punct :: []i32;
 
 Bytes :: @Slice(u8, u32);
 Tiny  :: @Slice(u8, u8);
-Nib   :: @Slice(u8, u4);
+Nib   :: @Slice(u8, @int(4, .unsigned));
 Words :: @Slice(i32, i16);
 
 Holder :: struct { data: Bytes; }

@@ -1,7 +1,7 @@
-error: 'i2' is a reserved type name and cannot be used as an identifier
+error: 'i8' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:12:5
    |
-12 |     i2, rest := pair();                  // destructure name
+12 |     i8, rest := pair();                  // destructure name
    |     ^^
 
 error: 'u8' is a reserved type name and cannot be used as an identifier

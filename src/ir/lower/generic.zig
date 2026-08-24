@@ -1050,7 +1050,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         tags.append(self.alloc, TypeId.u64.index()) catch {};
         tags.append(self.alloc, TypeId.usize.index()) catch {};
         tags.append(self.alloc, TypeId.isize.index()) catch {};
-        // Arbitrary-width ints (u2/i5/…) match `case int:` too. Boxing
+        // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
         // normalizes them into a builtin tag (`boxAnyOf`), but an interior
         // VIEW (`struct_field_value` on an `any` receiver) carries the
         // field's TRUE tag — normalization can't reach a view, so the

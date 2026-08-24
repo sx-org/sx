@@ -1,0 +1,5 @@
+error: unknown type 'i7'
+  --> examples/diagnostics/2239-diagnostics-int-width-name-rejected.sx:5:9
+   |
+ 5 |     x : i7 = 0;
+   |         ^^

@@ -498,7 +498,7 @@ pub const Token = struct {
     tag: Tag,
     loc: Loc,
     /// True when an `.identifier` was introduced by a leading backtick
-    /// (`` `i2 ``): a RAW identifier whose text excludes the backtick and which
+    /// (`` `i32 ``): a RAW identifier whose text excludes the backtick and which
     /// the parser must NEVER type-classify (it bypasses the reserved-type-name
     /// rule). `loc` already spans only the un-backticked name, so `slice` returns
     /// the bare text.

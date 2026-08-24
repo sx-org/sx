@@ -1,0 +1,7 @@
+// The reserved integer spellings are the eight aliases. Any other digit-suffixed
+// `i`/`u` spelling is an ordinary unknown name, not a width-parameterised int;
+// `@int(7, .signed)` is how that width is spelled.
+main :: () -> i32 {
+    x : i7 = 0;
+    return x;
+}

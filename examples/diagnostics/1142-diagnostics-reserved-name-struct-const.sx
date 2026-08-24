@@ -1,12 +1,12 @@
 // A bare reserved/builtin type-name spelling is rejected as the NAME of a
-// STRUCT-BODY constant — both the untyped (`i2 :: 5`) and the typed
+// STRUCT-BODY constant — both the untyped (`i8 :: 5`) and the typed
 // (`u8 : i64 : 9`) forms — as it is for a top-level const (examples/1140) or a
 // type decl (examples/1141). The caret lands on the constant's name. The
 // backtick escape (examples/0156) is the only way to spell these names.
 @import "modules/std.sx";
 
 Holder :: struct {
-    i2 :: 5;
+    i8 :: 5;
     u8 : i64 : 9;
 }
 

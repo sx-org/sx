@@ -1401,11 +1401,11 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
     switch (receiver.data) {
         .identifier => |id| {
             if (id.is_raw or self.identifierBindsValue(id.name)) return null;
-            return TypeResolver.resolveBuiltinName(id.name, &self.module.types);
+            return TypeResolver.resolvePrimitive(id.name);
         },
         .type_expr => |te| {
             if (te.is_raw) return null;
-            return TypeResolver.resolveBuiltinName(te.name, &self.module.types);
+            return TypeResolver.resolvePrimitive(te.name);
         },
         else => return self.probeFormedType(receiver),
     }

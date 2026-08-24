@@ -3,6 +3,6 @@
 pair :: () -> (i64, i64) { return 1, 2; }
 
 run :: () -> i32 {
-    i2, rest := pair();   // destructure name in an IMPORTED module
+    i8, rest := pair();   // destructure name in an IMPORTED module
     return 0;
 }

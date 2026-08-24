@@ -7,7 +7,7 @@ Bad :: @Slice(u8, bool);
 
 Tiny :: @Slice(u8, u8);
 
-Nib :: @Slice(u8, u4);
+Nib :: @Slice(u8, @int(4, .unsigned));
 
 take :: (b: Tiny) -> u8 { b.len }
 
