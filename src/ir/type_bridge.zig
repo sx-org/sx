@@ -434,6 +434,24 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             return table.sliceOfLen(elem, len_ty);
         }
     }
+    if (std.mem.eql(u8, base_name, contracts.int_head)) {
+        if (pt.args.len != 2) return .unresolved;
+        const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+        const width_u32 = switch (program_index_mod.foldDimU32(pt.args[0], si, 1)) {
+            .ok => |n| n,
+            else => return .unresolved,
+        };
+        if (width_u32 > ir_types.max_int_width) return .unresolved;
+        const signed: bool = switch (pt.args[1].data) {
+            .enum_literal => |el| blk: {
+                if (std.mem.eql(u8, el.name, "signed")) break :blk true;
+                if (std.mem.eql(u8, el.name, "unsigned")) break :blk false;
+                return .unresolved;
+            },
+            else => return .unresolved,
+        };
+        return table.internInteger(@intCast(width_u32), signed);
+    }
     // Generic struct instantiation — register as named type
     const name_id = table.internString(pt.name);
     return table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
