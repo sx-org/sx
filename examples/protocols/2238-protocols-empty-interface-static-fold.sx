@@ -1,0 +1,26 @@
+// An empty `interface` is the same 3-word handle as a method-bearing one, so
+// its static initializers fold the same way: a `@context_extend` default and an
+// ordinary global both erase a named global instance into a borrow of that
+// symbol, with a 0-slot vtable.
+@import "modules/std.sx";
+
+Marker :: interface {}
+
+Sq :: struct { n: i64; }
+impl Marker for Sq {}
+
+the_sq : Sq = .{ n = 1 };
+
+@context_extend mark: Marker = the_sq;
+
+standing : Marker = the_sq;
+
+main :: () {
+    print("ctx type   {}\n", type_of(context.mark) == Sq);
+    print("std type   {}\n", type_of(standing) == Sq);
+    print("ctx id     {}\n", context.mark.(@Protocol).type_id == Sq);
+
+    the_sq.n = 7;
+    print("ctx borrow {}\n", context.mark.(Sq).n);
+    print("std borrow {}\n", standing.(Sq).n);
+}
