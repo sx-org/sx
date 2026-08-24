@@ -4406,7 +4406,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         },
 
         // type_expr can appear as a variable reference when the name collides
-        // with a builtin type name (e.g. i2, u8). Check scope first.
+        // with a builtin type name (e.g. u8). Check scope first.
         .type_expr => |te| blk: {
             if (self.scope) |scope| {
                 if (scope.lookup(te.name)) |binding| {

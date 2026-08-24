@@ -3,9 +3,6 @@
 // annotation, a struct field, a signature, a reflection argument — and the
 // eight reserved spellings name exactly what it forms: `@int(8, .signed)` IS
 // `i8`. The width is any compile-time integer, so a named const drives it.
-//
-// Only those eight spellings are reserved, so a width spelling the aliases do
-// not cover (`i2`, `u7`, …) is an ordinary identifier.
 
 @import "modules/std.sx";
 
@@ -18,6 +15,10 @@ Holder :: struct { small: @int(5, .unsigned); }
 
 widen :: (v: @int(12, .signed)) -> i32 { v }
 
+Doubler :: interface { twice :: (self: *Self) -> i64; }
+
+impl Doubler for i8 { twice :: (self: *i8) -> i64 { self.* * 2 } }
+
 main :: () -> i32 {
     print("alias={} spaced={} const={}\n",
         type_eq(i8, @int(8, .signed)),
@@ -26,7 +27,7 @@ main :: () -> i32 {
 
     x : @int(3, .signed) = -4;
     y : Flag = 1;
-    print("x={} y={}\n", x, y);
+    print("x={} y={} flag_is_bool={}\n", x, y, type_eq(Flag, bool));
 
     h : Holder = ---;
     h.small = 31;
@@ -38,7 +39,7 @@ main :: () -> i32 {
     f := || -> @int(8, .signed) { 0 };
     print("lambda={}\n", type_eq(type_of(f()), i8));
 
-    i2 := 42;
-    print("free={}\n", i2);
+    m : @int(8, .signed) = 5;
+    print("method={}\n", m.twice());
     0
 }
