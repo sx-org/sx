@@ -99,6 +99,15 @@ pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
     };
 }
 
+/// The generic binder `type_expr` names among the lambda's own `$…` params,
+/// or null when it names none.
+fn binderNameOf(lam: *const ast.Lambda, type_expr: *const Node) ?[]const u8 {
+    for (lam.type_params) |tp| {
+        if (Lowering.matchTypeParamStatic(type_expr, tp.name)) return tp.name;
+    }
+    return null;
+}
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     return lowerLambdaTyped(self, lam, .literal, null);
 }
@@ -260,7 +269,17 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
                 }
                 break :blk .unresolved;
             }
-            break :blk self.resolveParamType(&p);
+            const declared = self.resolveParamType(&p);
+            // A binder still unbound here has nothing left to bind it: a
+            // literal is a value, not a template, so no instantiation follows.
+            if (declared == .unresolved) {
+                if (binderNameOf(lam, p.type_expr)) |binder| {
+                    if (self.diagnostics) |d| {
+                        d.addFmt(.err, p.type_expr.span, "lambda parameter '{s}' cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{ p.name, binder });
+                    }
+                }
+            }
+            break :blk declared;
         };
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
