@@ -135,8 +135,10 @@ var free_list: ?*Task = null;
 /// (`fiber.contextSwitch` is inline asm; the aarch64 backend does not honor
 /// that clobber in the same function).
 ///
-/// aarch64/riscv64 spill the link register onto this frame: those ABIs keep
-/// it in a register, and a size-optimized outlined `ret` omits saving it.
+/// aarch64/riscv64 keep the return address in a register the switch destroys,
+/// so this frame carries a slot for it. The slot address is pinned to a
+/// register the switch clobbers: an unpinned operand can land in the link
+/// register itself, and the reload then reads the other fiber's slot.
 noinline fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
     var s: fiber.Switch = .{ .old = save, .new = target };
     switch (comptime builtin.cpu.arch) {
@@ -144,24 +146,24 @@ noinline fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
             var lr: usize = undefined;
             asm volatile ("str x30, [%[p]]"
                 :
-                : [p] "r" (&lr),
+                : [p] "{x9}" (&lr),
                 : .{ .memory = true });
             _ = fiber.contextSwitch(&s);
             asm volatile ("ldr x30, [%[p]]"
                 :
-                : [p] "r" (&lr),
+                : [p] "{x9}" (&lr),
                 : .{ .x30 = true, .memory = true });
         },
         .riscv64 => {
             var ra: usize = undefined;
             asm volatile ("sd ra, 0(%[p])"
                 :
-                : [p] "r" (&ra),
+                : [p] "{x5}" (&ra),
                 : .{ .memory = true });
             _ = fiber.contextSwitch(&s);
             asm volatile ("ld ra, 0(%[p])"
                 :
-                : [p] "r" (&ra),
+                : [p] "{x5}" (&ra),
                 : .{ .x1 = true, .memory = true });
         },
         else => {
