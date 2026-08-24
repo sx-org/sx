@@ -356,19 +356,7 @@ pub fn isErasedProtocolType(self: *Lowering, tid: TypeId) bool {
 /// tag switch can never disagree on what a category means.
 pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8) bool {
     const tt = &self.module.types;
-    if (std.mem.eql(u8, name, "int")) {
-        switch (tid) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => return true,
-            else => {},
-        }
-        if (!tid.isBuiltin()) {
-            switch (tt.get(tid)) {
-                .signed, .unsigned => return true,
-                else => {},
-            }
-        }
-        return false;
-    }
+    if (std.mem.eql(u8, name, "int")) return tt.isIntegerType(tid);
     // `signed` / `unsigned` partition `int`; neither reaches a float.
     if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
         if (!staticTypeMatchesCategory(self, tid, "int")) return false;

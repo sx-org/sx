@@ -178,11 +178,11 @@ test "TypeResolver.resolveNamed: skip_builtin resolves a raw reserved-name type,
 
 test "TypeResolver.parseWidthInt: every width 1..64, both signs; rejects out-of-range / non-int" {
     // The single width parser — covers the named primitives (i8/u64/…) too.
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 1, .signed = true }), TypeResolver.parseWidthInt("i1"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 3, .signed = true }), TypeResolver.parseWidthInt("i3"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = true }), TypeResolver.parseWidthInt("i64"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 1, .signed = false }), TypeResolver.parseWidthInt("u1"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = false }), TypeResolver.parseWidthInt("u64"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 1, .signed = true }), TypeResolver.parseWidthInt("i1"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 3, .signed = true }), TypeResolver.parseWidthInt("i3"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = true }), TypeResolver.parseWidthInt("i64"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 1, .signed = false }), TypeResolver.parseWidthInt("u1"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = false }), TypeResolver.parseWidthInt("u64"));
     // Width 0 and >64, and non-`s`/`u` names, are not width-ints.
     try std.testing.expect(TypeResolver.parseWidthInt("i0") == null);
     try std.testing.expect(TypeResolver.parseWidthInt("u65") == null);
@@ -193,9 +193,9 @@ test "TypeResolver.parseWidthInt: every width 1..64, both signs; rejects out-of-
 }
 
 test "TypeResolver.integerWidthSign: width-ints plus usize/isize, null for non-integers" {
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = false }), TypeResolver.integerWidthSign("usize"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 64, .signed = true }), TypeResolver.integerWidthSign("isize"));
-    try std.testing.expectEqual(@as(?TypeResolver.WidthInt, .{ .width = 8, .signed = false }), TypeResolver.integerWidthSign("u8"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = false }), TypeResolver.integerWidthSign("usize"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = true }), TypeResolver.integerWidthSign("isize"));
+    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 8, .signed = false }), TypeResolver.integerWidthSign("u8"));
     // Non-integer builtins and user names are not integer types.
     try std.testing.expect(TypeResolver.integerWidthSign("f64") == null);
     try std.testing.expect(TypeResolver.integerWidthSign("bool") == null);

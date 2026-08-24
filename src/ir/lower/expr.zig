@@ -1388,7 +1388,7 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
 /// `lowerFieldAccess`. Folds the limit to a comptime const of the queried
 /// type via the shared `TypeResolver` logic (no second computor) + the
 /// existing `constInt` / `constFloat` const paths:
-///   - integer `.min`/`.max` → `constInt` (via `integerLimitFor`);
+///   - integer `.min`/`.max` → `constInt` (via `TypeTable.integerLimit`);
 ///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
 ///     `.nan` → `constFloat` (via `floatLimitFor`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
@@ -1416,15 +1416,17 @@ pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.
     // and can never be value-shadowed.
     if (fa.object.data == .identifier and self.identifierBindsValue(name)) return null;
 
-    if (TypeResolver.integerLimitFor(name, fa.field)) |value| {
-        return self.builder.constInt(value, ty);
+    if (TypeResolver.isIntLimitField(fa.field)) {
+        if (self.module.types.integerLimit(ty, std.mem.eql(u8, fa.field, "max"))) |value| {
+            return self.builder.constInt(value, ty);
+        }
     }
     if (TypeResolver.floatLimitFor(name, fa.field)) |value| {
         return self.builder.constFloat(value, ty);
     }
     // The field is a limit accessor, but it does not apply to this type.
     if (self.diagnostics) |d| {
-        if (TypeResolver.integerWidthSign(name) != null) {
+        if (self.module.types.isIntegerType(ty)) {
             // Integer receiver + a float-only accessor.
             d.addFmt(.err, span, "type '{s}' has no '.{s}' — '.{s}' applies only to float types (f32/f64); integer types expose only '.min'/'.max'", .{ name, fa.field, fa.field });
         } else {

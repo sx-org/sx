@@ -1304,8 +1304,8 @@ fn isReservedTypeName(name: []const u8) bool {
 
 fn isBuiltinTypeName(name: []const u8) bool {
     if (TypeResolver.resolvePrimitive(name) != null) return true;
-    // Arbitrary-width integers / floats: u1, i7, u128, f16, f80, …
-    if (name.len >= 2 and (name[0] == 'u' or name[0] == 'i' or name[0] == 'f')) {
+    // Arbitrary-width integers: u1, i7, u128, …
+    if (name.len >= 2 and (name[0] == 'u' or name[0] == 'i')) {
         var all_digits = true;
         for (name[1..]) |c| {
             if (!std.ascii.isDigit(c)) {

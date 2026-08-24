@@ -196,11 +196,13 @@ pub const ExprTyper = struct {
                         // a `.type_expr` receiver is never shadowed.
                         const shadowed = fa.object.data == .identifier and
                             self.l.identifierBindsValue(tn);
-                        if (!shadowed and
-                            (TypeResolver.integerLimitFor(tn, fa.field) != null or
-                                TypeResolver.floatLimitFor(tn, fa.field) != null))
-                        {
-                            if (TypeResolver.resolveBuiltinName(tn, &self.l.module.types)) |t| return t;
+                        if (!shadowed) {
+                            if (TypeResolver.resolveBuiltinName(tn, &self.l.module.types)) |t| {
+                                const folds = (TypeResolver.isIntLimitField(fa.field) and
+                                    self.l.module.types.isIntegerType(t)) or
+                                    TypeResolver.floatLimitFor(tn, fa.field) != null;
+                                if (folds) return t;
+                            }
                         }
                     }
                 }

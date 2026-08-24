@@ -2948,43 +2948,9 @@ pub const Lowering = struct {
     /// hex literal wraps negative through the lexer's i64 value, so a
     /// min/max check would false-positive) — and for non-integers.
     pub fn intLiteralRange(self: *Lowering, ty: TypeId) ?struct { min: i64, max: i64 } {
-        var width: u8 = 0;
-        var is_signed = false;
-        switch (ty) {
-            .i8 => {
-                width = 8;
-                is_signed = true;
-            },
-            .i16 => {
-                width = 16;
-                is_signed = true;
-            },
-            .i32 => {
-                width = 32;
-                is_signed = true;
-            },
-            .u8 => width = 8,
-            .u16 => width = 16,
-            .u32 => width = 32,
-            else => {
-                if (ty.isBuiltin()) return null; // i64/u64/isize/usize/non-int
-                switch (self.module.types.get(ty)) {
-                    .signed => |w| {
-                        width = w;
-                        is_signed = true;
-                    },
-                    .unsigned => |w| width = w,
-                    else => return null,
-                }
-                if (width >= 64) return null;
-            },
-        }
-        if (is_signed) {
-            const max = (@as(i64, 1) << @intCast(width - 1)) - 1;
-            return .{ .min = -max - 1, .max = max };
-        }
-        const max = (@as(i64, 1) << @intCast(width)) - 1;
-        return .{ .min = 0, .max = max };
+        const layout = self.module.types.integerLayout(ty) orelse return null;
+        if (layout.width >= 64) return null;
+        return .{ .min = layout.limit(false), .max = layout.limit(true) };
     }
 
     /// Max NON-NEGATIVE magnitude a bare integer literal may hold in `ty`. A
@@ -2994,48 +2960,8 @@ pub const Lowering = struct {
     /// u64.max), unlike `intLiteralRange` which returns null there because a
     /// >i64.max value can't be an i64 range bound. Null for non-integers.
     pub fn intLiteralMaxMagnitude(self: *Lowering, ty: TypeId) ?u64 {
-        var width: u8 = 0;
-        var is_signed = false;
-        switch (ty) {
-            .i8 => {
-                width = 8;
-                is_signed = true;
-            },
-            .i16 => {
-                width = 16;
-                is_signed = true;
-            },
-            .i32 => {
-                width = 32;
-                is_signed = true;
-            },
-            .i64, .isize => {
-                width = 64;
-                is_signed = true;
-            },
-            .u8 => width = 8,
-            .u16 => width = 16,
-            .u32 => width = 32,
-            .u64, .usize => width = 64,
-            else => {
-                if (ty.isBuiltin()) return null;
-                switch (self.module.types.get(ty)) {
-                    .signed => |w| {
-                        width = w;
-                        is_signed = true;
-                    },
-                    .unsigned => |w| width = w,
-                    else => return null,
-                }
-            },
-        }
-        if (is_signed) {
-            // 2^(width-1) - 1 (width 64 → i64.max; no overflow: 1<<63 fits u64)
-            return (@as(u64, 1) << @intCast(width - 1)) - 1;
-        }
-        // 2^width - 1 (width 64 → u64.max; 1<<64 would overflow, special-case)
-        if (width >= 64) return std.math.maxInt(u64);
-        return (@as(u64, 1) << @intCast(width)) - 1;
+        const layout = self.module.types.integerLayout(ty) orelse return null;
+        return @bitCast(layout.limit(true));
     }
 
     /// Fits-check for a BARE integer literal, magnitude-based (see
