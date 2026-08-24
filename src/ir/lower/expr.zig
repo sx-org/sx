@@ -4724,10 +4724,13 @@ pub fn checkConditionType(self: *Lowering, ty: TypeId, span: ast.Span) bool {
     return false;
 }
 
-/// Lower `node` as a boolean condition. If its type is an optional, reduce
-/// it to its has_value flag (presence-as-truth) — same rule as `if opt`/
-/// `while opt`. Without this, a bare optional operand reaches a condBr/phi as
-/// a `{T,i1}` aggregate and folds truthy. Returns an i1/bool Ref.
+/// Lower `node` as a boolean condition, narrowing every truthy shape
+/// `isValidConditionType` admits down to an i1: an integer-backed value against
+/// zero, a pointer against null, an optional to its has_value flag
+/// (presence-as-truth, the same rule as `if opt`/`while opt`). The narrowing is
+/// mandatory here rather than deferred to the branch, because `and`/`or` join
+/// both operands in ONE `bool` merge parameter — a wider operand reaching that
+/// merge is an ill-typed phi.
 /// A non-condition-typed operand (struct/float/...) is rejected with a located
 /// type error via `checkConditionType`; on rejection a placeholder `false` is
 /// returned so lowering can continue to surface the diagnostic.
@@ -4738,10 +4741,19 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
         return self.builder.constBool(false);
     }
     const v = self.lowerExpr(node);
-    if (!ty.isBuiltin() and self.module.types.get(ty) == .optional) {
-        return self.builder.emit(.{ .optional_has_value = .{ .operand = v } }, .bool);
-    }
-    return v;
+    if (ty == .unresolved) return v;
+    return switch (self.module.types.get(ty)) {
+        .signed, .unsigned, .usize, .isize, .@"enum", .error_set => self.builder.emit(.{ .cmp_ne = .{
+            .lhs = v,
+            .rhs = self.builder.constInt(0, ty),
+        } }, .bool),
+        .pointer, .many_pointer, .cstring => self.builder.emit(.{ .cmp_ne = .{
+            .lhs = v,
+            .rhs = self.builder.constNull(ty),
+        } }, .bool),
+        .optional => self.builder.emit(.{ .optional_has_value = .{ .operand = v } }, .bool),
+        else => v,
+    };
 }
 
 /// `subject is target`. The target is a TYPE, so the answer is a
