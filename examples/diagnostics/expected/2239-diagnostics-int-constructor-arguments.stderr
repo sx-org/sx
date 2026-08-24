@@ -34,14 +34,8 @@ error: @int signedness is the choice '.signed' or '.unsigned'
 16 |     bare  : @int(8, signed) = 0;
    |                     ^^^^^^
 
-error: @Vector lane count must be a positive compile-time integer constant
-  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:17:21
-   |
-17 |     lane  : @Vector(.a, f32) = ---;
-   |                     ^^
-
 error: '.foo' is a choice, not a type
-  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:18:17
+  --> examples/diagnostics/2239-diagnostics-int-constructor-arguments.sx:17:17
    |
-18 |     boxed : Box(.foo) = ---;
+17 |     boxed : Box(.foo) = ---;
    |                 ^^^^

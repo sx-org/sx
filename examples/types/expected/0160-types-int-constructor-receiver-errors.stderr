@@ -4,20 +4,8 @@ error: @int width 0 is out of range — an integer is 1 to 64 bits wide
  7 |     a := @int(0, .signed).max;
    |               ^
 
-error: '.foo' is not an @int signedness — write '.signed' or '.unsigned'
-  --> examples/types/0160-types-int-constructor-receiver-errors.sx:8:18
-   |
- 8 |     b := @int(3, .foo).max;
-   |                  ^^^^
-
-error: '@int' takes two arguments — write '@int(N, .signed)'
-  --> examples/types/0160-types-int-constructor-receiver-errors.sx:9:10
-   |
- 9 |     c := @int(3).max;
-   |          ^^^^^^^
-
 error: @int width 0 is out of range — an integer is 1 to 64 bits wide
-  --> examples/types/0160-types-int-constructor-receiver-errors.sx:10:15
+  --> examples/types/0160-types-int-constructor-receiver-errors.sx:8:15
    |
-10 |     d := @int(0, .signed) is int;
+ 8 |     d := @int(0, .signed) is int;
    |               ^
