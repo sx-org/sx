@@ -12,6 +12,8 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const lower_protocol = @import("protocol.zig");
+const lower_init_plan = @import("init_plan.zig");
+const lower_build_block = @import("build_block.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
@@ -99,32 +101,86 @@ pub fn callableSigOf(self: *Lowering, ty: TypeId) ?CallableSig {
     };
 }
 
-/// The generic binder `type_expr` names among the lambda's own `$…` params,
-/// or null when it names none.
-fn binderNameOf(lam: *const ast.Lambda, type_expr: *const Node) ?[]const u8 {
-    for (lam.type_params) |tp| {
-        if (Lowering.matchTypeParamStatic(type_expr, tp.name)) return tp.name;
+/// Does an active binding decide `$name`?
+fn binderIsBound(self: *Lowering, name: []const u8) bool {
+    const bindings = self.type_bindings orelse return false;
+    return (bindings.get(name) orelse return false) != .unresolved;
+}
+
+/// Does an active binding decide the pack `$name`?
+fn packIsBound(self: *Lowering, name: []const u8) bool {
+    if (self.pack_bindings) |pb| if (pb.contains(name)) return true;
+    if (self.pack_arg_types) |pat| if (pat.contains(name)) return true;
+    return false;
+}
+
+/// The `$` binder a lambda signature writes that nothing at this lowering can
+/// decide, or null when every binder it writes is bound. A lambda is a value,
+/// not a template, so no instantiation follows to bind one; the answer comes
+/// from the annotation AST because interning loses some of what was written
+/// (a pack collapses to a 0-arity closure, a phantom instance keeps no field).
+///
+/// `root` is the annotation itself: `$I/@Init(X)` there is a formation
+/// parameter, whose binder the argument decides, so only `X` is still open.
+/// The same spelling under a wrapper is an ordinary unbound binder.
+fn unboundSignatureBinder(self: *Lowering, node: *const Node, root: bool) ?[]const u8 {
+    switch (node.data) {
+        .type_expr => |te| {
+            if (root) {
+                if (lower_init_plan.boundTargetNode(node)) |target| return unboundSignatureBinder(self, target, false);
+                if (lower_build_block.boundProtocolNode(node)) |protocol| return unboundSignatureBinder(self, protocol, false);
+            }
+            if (te.is_generic and !binderIsBound(self, te.name)) return te.name;
+            for (te.protocol_constraints) |bound| if (unboundSignatureBinder(self, bound, false)) |n| return n;
+        },
+        .optional_type_expr => |o| return unboundSignatureBinder(self, o.inner_type, false),
+        .pointer_type_expr => |p| return unboundSignatureBinder(self, p.pointee_type, false),
+        .many_pointer_type_expr => |m| return unboundSignatureBinder(self, m.element_type, false),
+        .slice_type_expr => |s| return unboundSignatureBinder(self, s.element_type, false),
+        .array_type_expr => |a| return unboundSignatureBinder(self, a.element_type, false),
+        .spread_expr => |s| return unboundSignatureBinder(self, s.operand, false),
+        .parameterized_type_expr => |pt| {
+            for (pt.args) |arg| if (unboundSignatureBinder(self, arg, false)) |n| return n;
+        },
+        .function_type_expr => |ft| {
+            for (ft.param_types) |pt| if (unboundSignatureBinder(self, pt, false)) |n| return n;
+            if (ft.return_type) |rt| return unboundSignatureBinder(self, rt, false);
+        },
+        .closure_type_expr => |ct| {
+            if (ct.pack_name) |pn| if (!packIsBound(self, pn)) return pn;
+            for (ct.param_types) |pt| if (unboundSignatureBinder(self, pt, false)) |n| return n;
+            if (ct.return_type) |rt| return unboundSignatureBinder(self, rt, false);
+        },
+        .tuple_type_expr => |tt| {
+            for (tt.field_types) |ft| if (unboundSignatureBinder(self, ft, false)) |n| return n;
+        },
+        .return_type_expr => |rt| {
+            for (rt.field_types) |ft| if (unboundSignatureBinder(self, ft, false)) |n| return n;
+        },
+        .struct_decl => |sd| {
+            for (sd.field_types) |ft| if (unboundSignatureBinder(self, ft, false)) |n| return n;
+        },
+        .union_decl => |ud| {
+            for (ud.field_types) |ft| if (unboundSignatureBinder(self, ft, false)) |n| return n;
+        },
+        .enum_decl => |ed| {
+            for (ed.variant_types) |vt| if (vt) |t| {
+                if (unboundSignatureBinder(self, t, false)) |n| return n;
+            };
+            if (ed.backing_type) |bt| return unboundSignatureBinder(self, bt, false);
+        },
+        else => {},
     }
     return null;
 }
 
-fn typeCarriesUnresolved(self: *Lowering, ty: TypeId) bool {
-    if (ty == .unresolved) return true;
-    if (ty.isBuiltin()) return false;
-    return switch (self.module.types.get(ty)) {
-        .optional => |o| typeCarriesUnresolved(self, o.child),
-        .slice => |s| typeCarriesUnresolved(self, s.element),
-        .array => |a| typeCarriesUnresolved(self, a.element),
-        .pointer => |p| typeCarriesUnresolved(self, p.pointee),
-        .many_pointer => |m| typeCarriesUnresolved(self, m.element),
-        .vector => |v| typeCarriesUnresolved(self, v.element),
-        .closure => |c| blk: {
-            if (typeCarriesUnresolved(self, c.ret)) break :blk true;
-            for (c.params) |cp| if (typeCarriesUnresolved(self, cp)) break :blk true;
-            break :blk false;
-        },
-        else => false,
-    };
+/// `unboundSignatureBinder` on an annotation root, silent when resolving that
+/// annotation already reported against it — an unknown type or a pack index
+/// outside its binding is one error, not two.
+fn unreportedUnboundBinder(self: *Lowering, node: *const Node, errors_before: usize) ?[]const u8 {
+    const diags = self.diagnostics orelse return null;
+    if (diags.errorCount() > errors_before) return null;
+    return unboundSignatureBinder(self, node, true);
 }
 
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
@@ -288,14 +344,11 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
                 }
                 break :blk .unresolved;
             }
+            const errors_before = if (self.diagnostics) |d| d.errorCount() else 0;
             const declared = self.resolveParamType(&p);
-            // A binder still unbound here has nothing left to bind it: a
-            // literal is a value, not a template, so no instantiation follows.
-            if (typeCarriesUnresolved(self, declared)) {
-                if (binderNameOf(lam, p.type_expr)) |binder| {
-                    if (self.diagnostics) |d| {
-                        d.addFmt(.err, p.type_expr.span, "lambda parameter '{s}' cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{ p.name, binder });
-                    }
+            if (unreportedUnboundBinder(self, p.type_expr, errors_before)) |binder| {
+                if (self.diagnostics) |d| {
+                    d.addFmt(.err, p.type_expr.span, "lambda parameter '{s}' cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{ p.name, binder });
                 }
             }
             break :blk declared;
@@ -308,7 +361,14 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
 
     const ret_ty = blk: {
         if (lam.return_type) |rt| {
-            break :blk type_bridge.resolveAstType(rt, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+            const errors_before = if (self.diagnostics) |d| d.errorCount() else 0;
+            const declared = type_bridge.resolveAstType(rt, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+            if (unreportedUnboundBinder(self, rt, errors_before)) |binder| {
+                if (self.diagnostics) |d| {
+                    d.addFmt(.err, rt.span, "lambda return type cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{binder});
+                }
+            }
+            break :blk declared;
         }
         // Use target closure return type if available — but only when it's
         // a resolved type. An `.unresolved` ret comes from an unbound
