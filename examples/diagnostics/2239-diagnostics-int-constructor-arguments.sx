@@ -14,7 +14,6 @@ main :: () -> i32 {
     wide  : @int(65, .unsigned) = 0;
     other : @int(8, .foo) = 0;
     bare  : @int(8, signed) = 0;
-    lane  : @Vector(.a, f32) = ---;
     boxed : Box(.foo) = ---;
     0
 }

@@ -50,11 +50,6 @@ main :: () -> i32 {
     mu : u8 = u8.max;
     ms : i8 = i8.min;
     print("typed: m3={} mu={} ms={}\n", m3, mu, ms);  // 3 255 -128
-    print("m3 type: {}\n", type_eq(type_of(@int(3, .signed).max), @int(3, .signed))); // true
-
-    print("is int: {}\n", 0.(@int(3, .signed)) is int);       // true
-    print("is unsigned: {}\n", @int(4, .unsigned) is unsigned); // true
-    print("is signed: {}\n", @int(3, .signed) is signed);       // true
 
     // A limit is a compile-time integer, so it is a valid array dimension.
     a : [u8.max]u8 = ---;

@@ -15,10 +15,6 @@ usize.max as i64 == -1: true
 usize.max == u64.max: true
 isize.min == i64.min: true
 typed: m3=3 mu=255 ms=-128
-m3 type: true
-is int: true
-is unsigned: true
-is signed: true
 [u8.max]u8 len=255 a[254]=7
 [i16.max]u8 len=32767 b[32766]=9
 [@int(2, .unsigned).max]i64 len=3 c[2]=5

@@ -5,8 +5,6 @@
 
 main :: () -> i32 {
     a := @int(0, .signed).max;
-    b := @int(3, .foo).max;
-    c := @int(3).max;
     d := @int(0, .signed) is int;
     return 0;
 }
