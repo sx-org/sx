@@ -443,9 +443,9 @@ test "isUnsignedInt: builtin signedness classification" {
     }
     // Signed / non-integer builtins are not unsigned.
     inline for (.{
-        TypeId.i8,    TypeId.i16, TypeId.i32,  TypeId.i64, TypeId.isize,
-        TypeId.bool,  TypeId.f32, TypeId.f64,  TypeId.string,
-        TypeId.void,  TypeId.any, TypeId.unresolved,
+        TypeId.i8,   TypeId.i16,        TypeId.i32, TypeId.i64,    TypeId.isize,
+        TypeId.bool, TypeId.f32,        TypeId.f64, TypeId.string, TypeId.void,
+        TypeId.any,  TypeId.unresolved,
     }) |ty| {
         try std.testing.expect(!table.isUnsignedInt(ty));
     }
@@ -728,4 +728,116 @@ test "type_decl_tids maps decl pointer to TypeId" {
     const key: *const anyopaque = @ptrCast(&node);
     try table.type_decl_tids.put(key, id);
     try std.testing.expectEqual(id, table.type_decl_tids.get(key).?);
+}
+
+test "internInteger: the eight aliases are their builtin slots" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    try std.testing.expectEqual(@as(TypeId, .i8), table.internInteger(8, true));
+    try std.testing.expectEqual(@as(TypeId, .i16), table.internInteger(16, true));
+    try std.testing.expectEqual(@as(TypeId, .i32), table.internInteger(32, true));
+    try std.testing.expectEqual(@as(TypeId, .i64), table.internInteger(64, true));
+    try std.testing.expectEqual(@as(TypeId, .u8), table.internInteger(8, false));
+    try std.testing.expectEqual(@as(TypeId, .u16), table.internInteger(16, false));
+    try std.testing.expectEqual(@as(TypeId, .u32), table.internInteger(32, false));
+    try std.testing.expectEqual(@as(TypeId, .u64), table.internInteger(64, false));
+}
+
+test "internInteger: an odd width is one stable user type" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const i3_ty = table.internInteger(3, true);
+    try std.testing.expectEqual(i3_ty, table.internInteger(3, true));
+    try std.testing.expect(!i3_ty.isBuiltin());
+    try std.testing.expectEqual(types.IntLayout{ .width = 3, .signed = true }, table.integerLayout(i3_ty).?);
+
+    try std.testing.expect(table.internInteger(3, false) != i3_ty);
+    try std.testing.expect(table.internInteger(4, true) != i3_ty);
+}
+
+test "intern: a builtin's structural info answers its builtin slot" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    try std.testing.expectEqual(@as(TypeId, .f32), table.intern(.f32));
+    try std.testing.expectEqual(@as(TypeId, .f64), table.intern(.f64));
+    try std.testing.expectEqual(@as(TypeId, .bool), table.intern(.bool));
+    try std.testing.expectEqual(@as(TypeId, .string), table.intern(.string));
+    try std.testing.expectEqual(@as(TypeId, .void), table.intern(.void));
+    try std.testing.expectEqual(@as(TypeId, .i8), table.intern(.{ .signed = 8 }));
+    try std.testing.expectEqual(@as(TypeId, .u32), table.intern(.{ .unsigned = 32 }));
+}
+
+test "lookupIntAlias: the eight reserved spellings, nothing else" {
+    try std.testing.expectEqual(types.IntLayout{ .width = 8, .signed = true }, types.lookupIntAlias("i8").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 16, .signed = true }, types.lookupIntAlias("i16").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 32, .signed = true }, types.lookupIntAlias("i32").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 64, .signed = true }, types.lookupIntAlias("i64").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 8, .signed = false }, types.lookupIntAlias("u8").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 16, .signed = false }, types.lookupIntAlias("u16").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 32, .signed = false }, types.lookupIntAlias("u32").?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 64, .signed = false }, types.lookupIntAlias("u64").?);
+
+    for ([_][]const u8{ "i3", "u1", "i128", "isize", "usize", "f32", "i", "", "int8" }) |n| {
+        try std.testing.expect(types.lookupIntAlias(n) == null);
+    }
+}
+
+test "canonicalInt: a builtin slot only where a reserved spelling exists" {
+    try std.testing.expectEqual(@as(TypeId, .i16), types.canonicalInt(16, true).?);
+    try std.testing.expectEqual(@as(TypeId, .u64), types.canonicalInt(64, false).?);
+    try std.testing.expect(types.canonicalInt(1, false) == null);
+    try std.testing.expect(types.canonicalInt(24, true) == null);
+}
+
+test "integerLayout: usize/isize carry the target pointer width" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    try std.testing.expectEqual(types.IntLayout{ .width = 64, .signed = false }, table.integerLayout(.usize).?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 64, .signed = true }, table.integerLayout(.isize).?);
+    table.pointer_size = 4;
+    try std.testing.expectEqual(types.IntLayout{ .width = 32, .signed = false }, table.integerLayout(.usize).?);
+    try std.testing.expectEqual(types.IntLayout{ .width = 32, .signed = true }, table.integerLayout(.isize).?);
+}
+
+test "integerLayout: null for every non-integer" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    for ([_]TypeId{ .bool, .f32, .f64, .string, .cstring, .void, .any, .noreturn, .type_value, .unresolved }) |ty| {
+        try std.testing.expect(table.integerLayout(ty) == null);
+    }
+    try std.testing.expect(table.integerLayout(table.ptrTo(.u8)) == null);
+}
+
+test "integerLimit: min/max across widths and extremes" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const u1_ty = table.internInteger(1, false);
+    const i3_ty = table.internInteger(3, true);
+    try std.testing.expectEqual(@as(i64, 0), table.integerLimit(u1_ty, false).?);
+    try std.testing.expectEqual(@as(i64, 1), table.integerLimit(u1_ty, true).?);
+    try std.testing.expectEqual(@as(i64, -4), table.integerLimit(i3_ty, false).?);
+    try std.testing.expectEqual(@as(i64, 3), table.integerLimit(i3_ty, true).?);
+
+    try std.testing.expectEqual(@as(i64, -128), table.integerLimit(.i8, false).?);
+    try std.testing.expectEqual(@as(i64, 255), table.integerLimit(.u8, true).?);
+    try std.testing.expectEqual(std.math.minInt(i64), table.integerLimit(.i64, false).?);
+    try std.testing.expectEqual(std.math.maxInt(i64), table.integerLimit(.i64, true).?);
+    // u64.max is all-ones — `-1` read back as i64, maxInt(u64) as u64.
+    try std.testing.expectEqual(@as(i64, -1), table.integerLimit(.u64, true).?);
+    try std.testing.expectEqual(std.math.maxInt(u64), @as(u64, @bitCast(table.integerLimit(.usize, true).?)));
+
+    try std.testing.expect(table.integerLimit(.f64, true) == null);
+    try std.testing.expect(table.integerLimit(.bool, false) == null);
 }

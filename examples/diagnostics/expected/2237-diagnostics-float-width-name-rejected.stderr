@@ -1,0 +1,5 @@
+error: unknown type 'f16'
+  --> examples/diagnostics/2237-diagnostics-float-width-name-rejected.sx:4:9
+   |
+ 4 |     x : f16 = 0;
+   |         ^^^

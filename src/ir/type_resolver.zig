@@ -34,35 +34,37 @@ pub const TypeResolver = struct {
     diagnostics: ?*errors.DiagnosticList,
     index: *ProgramIndex,
 
+    /// Every builtin whose spelling is a fixed keyword. The integer aliases are
+    /// NOT here — `types.lookupIntAlias` owns them, so a spelling and a width
+    /// can never name different types.
+    const named_builtins = [_]struct { name: []const u8, id: TypeId }{
+        .{ .name = "f32", .id = .f32 },
+        .{ .name = "f64", .id = .f64 },
+        .{ .name = "bool", .id = .bool },
+        .{ .name = "string", .id = .string },
+        .{ .name = "cstring", .id = .cstring },
+        .{ .name = "void", .id = .void },
+        .{ .name = "any", .id = .any },
+        // A `Type` value is its own 8-byte builtin handle (`.type_value`),
+        // DISTINCT from the 16-byte boxed `.any`. Flowing a `Type` into an `Any`
+        // slot boxes it (`{ tag = .any.index(), value = TypeId.index() }`) via
+        // the standard box-any coercion; reflection reads it back through
+        // `reflectArgRepr`.
+        .{ .name = "Type", .id = .type_value },
+        .{ .name = "noreturn", .id = .noreturn },
+        .{ .name = "usize", .id = .usize },
+        .{ .name = "isize", .id = .isize },
+    };
+
     /// Builtin primitive keyword → `TypeId`; `null` for any non-primitive name
     /// (the caller then continues with generic / alias / named-struct
-    /// resolution). Single source of truth for the builtin keyword set.
+    /// resolution). Single source of truth for the builtin keyword set: the
+    /// named builtins plus the reserved integer aliases.
     /// Namespaced (no `self`) — primitive resolution is stateless.
     pub fn resolvePrimitive(name: []const u8) ?TypeId {
         if (name.len == 0) return null;
-        if (std.mem.eql(u8, name, "i64")) return .i64;
-        if (std.mem.eql(u8, name, "i32")) return .i32;
-        if (std.mem.eql(u8, name, "i16")) return .i16;
-        if (std.mem.eql(u8, name, "i8")) return .i8;
-        if (std.mem.eql(u8, name, "u64")) return .u64;
-        if (std.mem.eql(u8, name, "u32")) return .u32;
-        if (std.mem.eql(u8, name, "u16")) return .u16;
-        if (std.mem.eql(u8, name, "u8")) return .u8;
-        if (std.mem.eql(u8, name, "f32")) return .f32;
-        if (std.mem.eql(u8, name, "f64")) return .f64;
-        if (std.mem.eql(u8, name, "bool")) return .bool;
-        if (std.mem.eql(u8, name, "string")) return .string;
-        if (std.mem.eql(u8, name, "cstring")) return .cstring;
-        if (std.mem.eql(u8, name, "void")) return .void;
-        if (std.mem.eql(u8, name, "any")) return .any;
-        // A `Type` value is its own 8-byte builtin handle (`.type_value`), DISTINCT
-        // from the 16-byte boxed `.any`. Flowing a `Type` into an `Any` slot boxes
-        // it (`{ tag = .any.index(), value = TypeId.index() }`) via the standard
-        // box-any coercion; reflection reads it back through `reflectArgRepr`.
-        if (std.mem.eql(u8, name, "Type")) return .type_value;
-        if (std.mem.eql(u8, name, "noreturn")) return .noreturn;
-        if (std.mem.eql(u8, name, "usize")) return .usize;
-        if (std.mem.eql(u8, name, "isize")) return .isize;
+        if (types.lookupIntAlias(name)) |layout| return types.canonicalInt(layout.width, layout.signed);
+        for (named_builtins) |b| if (std.mem.eql(u8, name, b.name)) return b.id;
         return null;
     }
 
@@ -72,8 +74,7 @@ pub const TypeResolver = struct {
     /// `TypeId`) and the numeric-limit accessors (`.min`/`.max`, via
     /// `integerWidthSign`) both classify through here, so the recognized width
     /// set cannot diverge (the two-resolver defect class).
-    pub const WidthInt = struct { width: u8, signed: bool };
-    pub fn parseWidthInt(name: []const u8) ?WidthInt {
+    pub fn parseWidthInt(name: []const u8) ?types.IntLayout {
         if (name.len < 2) return null;
         if (name[0] != 'i' and name[0] != 'u') return null;
         const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
@@ -89,9 +90,7 @@ pub const TypeResolver = struct {
     /// it to recover the queried type.
     pub fn resolveBuiltinName(name: []const u8, table: *TypeTable) ?TypeId {
         if (resolvePrimitive(name)) |id| return id;
-        if (parseWidthInt(name)) |wi| {
-            return if (wi.signed) table.intern(.{ .signed = wi.width }) else table.intern(.{ .unsigned = wi.width });
-        }
+        if (parseWidthInt(name)) |layout| return table.internInteger(layout.width, layout.signed);
         return null;
     }
 
@@ -99,41 +98,29 @@ pub const TypeResolver = struct {
     /// `parseWidthInt`, plus `usize`/`isize` (target-width = 64 on the host).
     /// null for a non-integer name (floats, `bool`, `string`, a user type, …) —
     /// so the `.min`/`.max` fold fires for integers only.
-    pub fn integerWidthSign(name: []const u8) ?WidthInt {
-        if (parseWidthInt(name)) |wi| return wi;
+    pub fn integerWidthSign(name: []const u8) ?types.IntLayout {
+        if (parseWidthInt(name)) |layout| return layout;
         if (std.mem.eql(u8, name, "usize")) return .{ .width = 64, .signed = false };
         if (std.mem.eql(u8, name, "isize")) return .{ .width = 64, .signed = true };
         return null;
     }
 
-    /// The two's-complement bit pattern (as a raw `i64`) of a fixed-width integer
-    /// type's `.min`/`.max`. Pure `(width, signedness)` arithmetic — never a
-    /// per-name table. `sN`: min = -(2^(N-1)), max = 2^(N-1)-1. `uN`: min = 0,
-    /// max = 2^N-1. The all-ones `u64.max`/`usize.max` (18446744073709551615)
-    /// exceeds `i64`'s max, so it is returned as its bit pattern (`-1` as `i64`);
-    /// the caller pairs it with the `u64`/`usize` `TypeId` so no signed path
-    /// re-signs it.
-    pub fn integerLimitBits(wi: WidthInt, want_max: bool) i64 {
-        if (wi.signed) {
-            const half_shift: u6 = @intCast(wi.width - 1);
-            const half: u64 = @as(u64, 1) << half_shift; // 2^(width-1)
-            return if (want_max) @bitCast(half - 1) else @bitCast(0 -% half);
-        }
-        if (!want_max) return 0; // unsigned min
-        const lead: u6 = @intCast(64 - @as(u8, wi.width));
-        return @bitCast((~@as(u64, 0)) >> lead); // 2^width - 1
+    /// True when `field` is `min` or `max` — the two limits an integer type
+    /// carries.
+    pub fn isIntLimitField(field: []const u8) bool {
+        return std.mem.eql(u8, field, "min") or std.mem.eql(u8, field, "max");
     }
 
-    /// `<IntType>.min` / `.max` → the type's limit as a raw `i64`, or null when
-    /// `name` is not a builtin integer type or `field` is not `min`/`max`. THE
-    /// single name+field → value fold, shared by the value path (lower.zig) and
-    /// the comptime-int / array-dim path (program_index.evalConstIntExpr) so the
-    /// two cannot disagree on what `u8.max` evaluates to.
+    /// `<IntType>.min` / `.max` → the type's limit as a raw `i64`, keyed by
+    /// NAME. The comptime-int / array-dim path (`program_index.evalConstIntExpr`)
+    /// folds through here, where no `TypeTable` is in reach; the value and typer
+    /// paths hold a `TypeId` and read `TypeTable.integerLimit` instead. Both
+    /// compute through `IntLayout.limit`, so they cannot disagree on what
+    /// `u8.max` evaluates to.
     pub fn integerLimitFor(name: []const u8, field: []const u8) ?i64 {
-        const want_max = std.mem.eql(u8, field, "max");
-        if (!want_max and !std.mem.eql(u8, field, "min")) return null;
-        const wi = integerWidthSign(name) orelse return null;
-        return integerLimitBits(wi, want_max);
+        if (!isIntLimitField(field)) return null;
+        const layout = integerWidthSign(name) orelse return null;
+        return layout.limit(std.mem.eql(u8, field, "max"));
     }
 
     /// The full numeric-limit accessor field set: `.min`/`.max` (valid on int AND

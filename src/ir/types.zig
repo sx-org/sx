@@ -68,6 +68,59 @@ pub const TypeId = enum(u32) {
     }
 };
 
+// ── Integer layout ──────────────────────────────────────────────────────
+
+/// What an integer type IS: a bit width in 1–64 and a signedness. The whole
+/// identity — two integer types with the same layout are the same type.
+pub const IntLayout = struct {
+    width: u8,
+    signed: bool,
+
+    /// The layout's `.min`/`.max` as a raw two's-complement `i64` bit pattern.
+    /// `u64.max` (18446744073709551615) exceeds `i64`, so it comes back as the
+    /// all-ones pattern (`-1`); the caller pairs it with the unsigned `TypeId`
+    /// so no signed path re-signs it.
+    pub fn limit(self: IntLayout, want_max: bool) i64 {
+        if (self.signed) {
+            const half: u64 = @as(u64, 1) << @intCast(self.width - 1); // 2^(width-1)
+            return if (want_max) @bitCast(half - 1) else @bitCast(0 -% half);
+        }
+        if (!want_max) return 0;
+        const lead: u6 = @intCast(64 - self.width);
+        return @bitCast((~@as(u64, 0)) >> lead); // 2^width - 1
+    }
+};
+
+/// The reserved integer spellings and the layout each names.
+const int_aliases = [_]struct { name: []const u8, layout: IntLayout }{
+    .{ .name = "i8", .layout = .{ .width = 8, .signed = true } },
+    .{ .name = "i16", .layout = .{ .width = 16, .signed = true } },
+    .{ .name = "i32", .layout = .{ .width = 32, .signed = true } },
+    .{ .name = "i64", .layout = .{ .width = 64, .signed = true } },
+    .{ .name = "u8", .layout = .{ .width = 8, .signed = false } },
+    .{ .name = "u16", .layout = .{ .width = 16, .signed = false } },
+    .{ .name = "u32", .layout = .{ .width = 32, .signed = false } },
+    .{ .name = "u64", .layout = .{ .width = 64, .signed = false } },
+};
+
+/// A reserved integer spelling → its layout, else null.
+pub fn lookupIntAlias(name: []const u8) ?IntLayout {
+    for (int_aliases) |a| if (std.mem.eql(u8, name, a.name)) return a.layout;
+    return null;
+}
+
+/// The builtin slot an integer of this shape occupies, or null when the width
+/// has no reserved spelling and must be interned into a user slot.
+pub fn canonicalInt(width: u8, signed: bool) ?TypeId {
+    return switch (width) {
+        8 => if (signed) .i8 else .u8,
+        16 => if (signed) .i16 else .u16,
+        32 => if (signed) .i32 else .u32,
+        64 => if (signed) .i64 else .u64,
+        else => null,
+    };
+}
+
 // ── TypeInfo ────────────────────────────────────────────────────────────
 // Resolved type information stored in the TypeTable.
 // Unlike the AST-level `types.Type` which uses string names for references,
@@ -459,8 +512,12 @@ pub const TypeTable = struct {
             .cstring, // 18: thin null-terminated char*
             .type_value, // 19: comptime `Type` value (8-byte handle, distinct from any)
         };
-        for (&builtins) |info| {
+        // Every builtin is its layout's ONE type: seeding the intern map is what
+        // makes `intern(.{ .signed = 8 })` answer `.i8` rather than minting a
+        // second, structurally identical user slot.
+        for (&builtins, 0..) |info, i| {
             table.infos.append(alloc, info) catch unreachable;
+            table.intern_map.putNoClobber(.{ .info = info }, TypeId.fromIndex(@intCast(i))) catch unreachable;
         }
         // Pad the reserved builtin headroom (slots after the real builtins, up to
         // `first_user`) with the `unresolved` tripwire: these slots are never a
@@ -1080,31 +1137,52 @@ pub const TypeTable = struct {
         };
     }
 
-    /// Bit width of an integer type, including interned `uN`/`iN`. Null when
-    /// `ty` is not an integer. `usize`/`isize` use the target pointer width.
-    pub fn integerBitWidth(self: *const TypeTable, ty: TypeId) ?u32 {
+    /// The integer type of `width` bits and `signed`ness. The eight reserved
+    /// widths are their builtin slots; every other width interns into a user
+    /// slot. THE integer constructor — no caller mints an integer `TypeInfo`
+    /// directly, so `i8` can never end up a different type from an 8-bit signed
+    /// integer built any other way.
+    pub fn internInteger(self: *TypeTable, width: u8, signed: bool) TypeId {
+        if (canonicalInt(width, signed)) |id| return id;
+        return self.intern(if (signed) .{ .signed = width } else .{ .unsigned = width });
+    }
+
+    /// The layout of `ty`, or null when `ty` is not an integer (`bool` is not
+    /// one). `usize`/`isize` answer the target pointer width. THE integer
+    /// classifier — width, signedness, limits and `is int` all read it, so no
+    /// two of them can disagree about what an integer is.
+    pub fn integerLayout(self: *const TypeTable, ty: TypeId) ?IntLayout {
         return switch (ty) {
-            .i8, .u8 => 8,
-            .i16, .u16 => 16,
-            .i32, .u32 => 32,
-            .i64, .u64 => 64,
-            .isize, .usize => @as(u32, self.pointer_size) * 8,
+            .i8 => .{ .width = 8, .signed = true },
+            .i16 => .{ .width = 16, .signed = true },
+            .i32 => .{ .width = 32, .signed = true },
+            .i64 => .{ .width = 64, .signed = true },
+            .u8 => .{ .width = 8, .signed = false },
+            .u16 => .{ .width = 16, .signed = false },
+            .u32 => .{ .width = 32, .signed = false },
+            .u64 => .{ .width = 64, .signed = false },
+            .isize => .{ .width = self.pointer_size * 8, .signed = true },
+            .usize => .{ .width = self.pointer_size * 8, .signed = false },
             else => if (ty.isBuiltin()) null else switch (self.get(ty)) {
-                .signed => |w| w,
-                .unsigned => |w| w,
+                .signed => |w| .{ .width = w, .signed = true },
+                .unsigned => |w| .{ .width = w, .signed = false },
                 else => null,
             },
         };
+    }
+
+    /// `<IntType>.min` / `.max` as a raw `i64` bit pattern (see
+    /// `IntLayout.limit`), or null when `ty` is not an integer.
+    pub fn integerLimit(self: *const TypeTable, ty: TypeId, want_max: bool) ?i64 {
+        const layout = self.integerLayout(ty) orelse return null;
+        return layout.limit(want_max);
     }
 
     /// The largest count a length word of type `len_ty` can carry. Signed
     /// `Len` stops at the signed maximum (`2^(w-1)-1`), not the storage
     /// width. Null when `len_ty` is not an integer type.
     pub fn lenWordMax(self: *const TypeTable, len_ty: TypeId) ?u64 {
-        const bits = self.integerBitWidth(len_ty) orelse return null;
-        if (self.isUnsignedInt(len_ty))
-            return if (bits >= 64) std.math.maxInt(u64) else (@as(u64, 1) << @intCast(bits)) - 1;
-        return if (bits >= 64) @as(u64, std.math.maxInt(i64)) else (@as(u64, 1) << @intCast(bits - 1)) - 1;
+        return @bitCast(self.integerLimit(len_ty, true) orelse return null);
     }
 
     /// True when count `n` is representable in `len_ty`.
@@ -1150,9 +1228,10 @@ pub const TypeTable = struct {
             if (self.get(id) != .slice) return null;
         }
         const len_ty = self.lenTypeOf(id);
+        const layout = self.integerLayout(len_ty) orelse IntLayout{ .width = 64, .signed = true };
         return .{
-            .bits = self.integerBitWidth(len_ty) orelse 64,
-            .signed = !self.isUnsignedInt(len_ty),
+            .bits = layout.width,
+            .signed = layout.signed,
             .offset = self.fatLenField(len_ty).offset,
         };
     }
@@ -1417,32 +1496,18 @@ pub const TypeTable = struct {
         return 8;
     }
 
-    /// True iff `ty` is an integer — a builtin width, `usize`/`isize`, or a
-    /// user-defined arbitrary-width int. `bool` is not one.
+    /// True iff `ty` is an integer — a builtin width, `usize`/`isize`, or an
+    /// interned arbitrary-width int. `bool` is not one.
     pub fn isIntegerType(self: *const TypeTable, ty: TypeId) bool {
-        switch (ty) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => return true,
-            else => {},
-        }
-        if (ty.isBuiltin()) return false;
-        return switch (self.get(ty)) {
-            .signed, .unsigned => true,
-            else => false,
-        };
+        return self.integerLayout(ty) != null;
     }
 
-    /// True iff `ty` is an unsigned integer — a builtin (u8/u16/u32/u64/usize)
-    /// or a user-defined arbitrary-width unsigned int. Canonical signedness
-    /// query for reflection (`type_is_unsigned`) and the `{}` formatter so a
-    /// u64 value renders as unsigned decimal rather than the i64 reinterpretation.
+    /// True iff `ty` is an unsigned integer. Canonical signedness query for
+    /// reflection (`type_is_unsigned`) and the `{}` formatter so a u64 value
+    /// renders as unsigned decimal rather than the i64 reinterpretation.
     pub fn isUnsignedInt(self: *const TypeTable, ty: TypeId) bool {
-        switch (ty) {
-            .u8, .u16, .u32, .u64, .usize => return true,
-            .bool, .i8, .i16, .i32, .i64, .isize => return false,
-            else => {},
-        }
-        if (ty.isBuiltin()) return false;
-        return self.get(ty) == .unsigned;
+        const layout = self.integerLayout(ty) orelse return false;
+        return !layout.signed;
     }
 
     pub fn typeSizeBytes(self: *const TypeTable, ty: TypeId) usize {
