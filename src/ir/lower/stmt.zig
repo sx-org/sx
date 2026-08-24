@@ -967,6 +967,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         const ref = self.lowerExpr(val);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
+        if (bindDivergingInitializer(self, vd.name, ref)) return;
         // A bare function reference is deliberately represented by the
         // `.i64`-typed `func_ref` op because several async/fiber paths consume
         // that exact IR shape.  For an unannotated local, however, the binding
@@ -992,6 +993,18 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
         }
     }
+}
+
+/// A declaration whose initializer DIVERGES (`x := { spin() }` on a
+/// `-> noreturn` callee) binds nothing: control never reaches the storage.
+/// Divergence is normalized before the initializer's type is asked for, so the
+/// sizeless `noreturn` never reaches an `alloca`.
+fn bindDivergingInitializer(self: *Lowering, name: []const u8, ref: Ref) bool {
+    if (!expressionDiverged(self, ref)) return false;
+    if (self.scope) |scope| {
+        scope.put(name, .{ .ref = ref, .ty = .unresolved, .is_alloca = false });
+    }
+    return true;
 }
 
 fn rejectVoidInitializer(
