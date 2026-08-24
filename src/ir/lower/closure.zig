@@ -108,6 +108,25 @@ fn binderNameOf(lam: *const ast.Lambda, type_expr: *const Node) ?[]const u8 {
     return null;
 }
 
+fn typeCarriesUnresolved(self: *Lowering, ty: TypeId) bool {
+    if (ty == .unresolved) return true;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .optional => |o| typeCarriesUnresolved(self, o.child),
+        .slice => |s| typeCarriesUnresolved(self, s.element),
+        .array => |a| typeCarriesUnresolved(self, a.element),
+        .pointer => |p| typeCarriesUnresolved(self, p.pointee),
+        .many_pointer => |m| typeCarriesUnresolved(self, m.element),
+        .vector => |v| typeCarriesUnresolved(self, v.element),
+        .closure => |c| blk: {
+            if (typeCarriesUnresolved(self, c.ret)) break :blk true;
+            for (c.params) |cp| if (typeCarriesUnresolved(self, cp)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     return lowerLambdaTyped(self, lam, .literal, null);
 }
@@ -272,7 +291,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
             const declared = self.resolveParamType(&p);
             // A binder still unbound here has nothing left to bind it: a
             // literal is a value, not a template, so no instantiation follows.
-            if (declared == .unresolved) {
+            if (typeCarriesUnresolved(self, declared)) {
                 if (binderNameOf(lam, p.type_expr)) |binder| {
                     if (self.diagnostics) |d| {
                         d.addFmt(.err, p.type_expr.span, "lambda parameter '{s}' cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{ p.name, binder });
