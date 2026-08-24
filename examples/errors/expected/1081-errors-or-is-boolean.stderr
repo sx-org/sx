@@ -1,10 +1,10 @@
-error: condition must be a bool, integer, pointer, or optional, but has type 'failable'
+error: condition must be a bool, integer, pointer, or optional, but has type '(i32, !)'
   --> examples/errors/1081-errors-or-is-boolean.sx:15:10
    |
 15 |     x := parse(-1) or 0;               // error: failable LHS is not a bool
    |          ^^^^^^^^^
 
-error: condition must be a bool, integer, pointer, or optional, but has type 'failable'
+error: condition must be a bool, integer, pointer, or optional, but has type '(i32, !)'
   --> examples/errors/1081-errors-or-is-boolean.sx:16:10
    |
 16 |     y := parse(-1) and true;           // error: failable LHS is not a bool

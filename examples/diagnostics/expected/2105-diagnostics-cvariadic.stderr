@@ -148,7 +148,7 @@ error: argument 2: 'string' cannot cross a C-variadic tail; use a C ABI integer,
 150 |     texts(1, held);
     |     ^^^^^^^^^^^^^^
 
-error: argument 2: 'i48' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+error: argument 2: '@int(48, .signed)' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:152:5
     |
 152 |     printf("%d\n", wide);        // a width no C variadic slot holds
@@ -280,7 +280,7 @@ error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value for
 117 |     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
     |                                                ^^^^
 
-error: no conversion from 'unresolved' to 'i64'
+error: no conversion from '<unresolved>' to 'i64'
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:119:12
     |
 119 |     return xx narrow;

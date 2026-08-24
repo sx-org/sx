@@ -92,6 +92,11 @@ pub const IntLayout = struct {
         const lead: u6 = @intCast(64 - self.width);
         return @bitCast((~@as(u64, 0)) >> lead); // 2^width - 1
     }
+
+    /// The `@int(N, .signed)` constructor spelling.
+    pub fn format(self: IntLayout, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        try writer.print("@int({d}, .{s})", .{ self.width, if (self.signed) "signed" else "unsigned" });
+    }
 };
 
 /// The reserved integer spellings and the layout each names.
@@ -1844,8 +1849,7 @@ pub const TypeTable = struct {
                 buf.append(alloc, ')') catch break :blk "pack(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "pack(?)";
             },
-            .signed => |w| std.fmt.allocPrint(alloc, "i{d}", .{w}) catch "i?",
-            .unsigned => |w| std.fmt.allocPrint(alloc, "u{d}", .{w}) catch "u?",
+            .signed, .unsigned => std.fmt.allocPrint(alloc, "{f}", .{self.integerLayout(id).?}) catch "@int(?)",
             else => self.typeName(id),
         };
     }

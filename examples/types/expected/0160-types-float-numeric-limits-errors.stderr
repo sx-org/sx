@@ -34,7 +34,7 @@ error: field 'epsilon' not found on type 'Type'
 26 |     f := MyStruct.epsilon;
    |          ^^^^^^^^^^^^^^^^
 
-error: type 'i3' has no '.epsilon' — '.epsilon' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
+error: type '@int(3, .signed)' has no '.epsilon' — '.epsilon' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
   --> examples/types/0160-types-float-numeric-limits-errors.sx:27:10
    |
 27 |     g := @int(3, .signed).epsilon;

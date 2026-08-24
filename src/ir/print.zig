@@ -522,6 +522,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(f.ret, tt, writer);
             if (f.call_conv == .c) try writer.writeAll(" abi(.c)");
         },
+        .signed, .unsigned => try writer.print("{f}", .{tt.integerLayout(id).?}),
         .closure => |c| {
             try writer.writeAll("closure(");
             for (c.params, 0..) |p, i| {

@@ -759,6 +759,19 @@ test "internInteger: an odd width is one stable user type" {
     try std.testing.expect(table.internInteger(4, true) != i3_ty);
 }
 
+test "formatTypeName: a width without a reserved spelling names its constructor" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    try std.testing.expectEqualStrings("@int(3, .signed)", table.formatTypeName(a, table.internInteger(3, true)));
+    try std.testing.expectEqualStrings("@int(4, .unsigned)", table.formatTypeName(a, table.internInteger(4, false)));
+    try std.testing.expectEqualStrings("i8", table.formatTypeName(a, table.internInteger(8, true)));
+}
+
 test "intern: a builtin's structural info answers its builtin slot" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

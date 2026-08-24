@@ -1,4 +1,4 @@
-error: function returns 'failable' but this `return` carries no value — return a value of that type
+error: function returns '(i32, !)' but this `return` carries no value — return a value of that type
   --> examples/diagnostics/2073-diagnostics-valueless-return.sx:20:16
    |
 20 |     if x > 0 { return; }

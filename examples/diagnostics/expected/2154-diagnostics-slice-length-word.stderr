@@ -22,7 +22,7 @@ error: length 300 does not fit the u8 length word of '@Slice(u8,u8)'
 22 |     s2 : Tiny = big[0..];
    |                 ^^^^^^^^
 
-error: array length 20 does not fit the u4 length word of '@Slice(u8,u4)'
+error: array length 20 does not fit the @int(4, .unsigned) length word of '@Slice(u8,@int(4, .unsigned))'
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:25:5
    |
 25 |     take_nib(mid);
