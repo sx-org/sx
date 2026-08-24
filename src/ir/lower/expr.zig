@@ -28,6 +28,22 @@ const exprIsFailable = Lowering.exprIsFailable;
 const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
+/// Refuse a `void` element in an aggregate slot that holds a value. `{}` is the
+/// void value, so a `void` slot legitimately takes one (`.{ {}, 9 }` for a
+/// `Tuple(void, i32)`); every other slot would insert `void` into the aggregate
+/// and fail LLVM verification. The caller substitutes a zero of the slot type.
+pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field: ?StringId, index: usize, span: ast.Span) bool {
+    if (src_ty != .void or slot_ty == .void or slot_ty == .unresolved) return false;
+    if (self.diagnostics) |d| {
+        const id = if (field) |f|
+            d.addFmtId(.err, span, "field '{s}' cannot take 'void' — this expression produces no value", .{self.module.types.getString(f)})
+        else
+            d.addFmtId(.err, span, "element {d} cannot take 'void' — this expression produces no value", .{index});
+        d.addHelpFmt(id, span, null, "call it as a statement instead of using its result", .{});
+    }
+    return true;
+}
+
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
     // `.{ }` is a struct literal. It is not a handle and not `?I` absence.
     if (sl.type_expr == null and sl.field_inits.len == 0) {
@@ -480,7 +496,9 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     // initializer BORROWS (`.{ allocator = gpa }` aliases
                     // `gpa`); the node-less path cannot tell the lvalue from
                     // an rvalue.
-                    val = if (self.getProtocolInfo(sf.ty) != null)
+                    val = if (refuseVoidElement(self, src_ty, sf.ty, sf.name, fi, l.node.span))
+                        self.zeroValue(sf.ty)
+                    else if (self.getProtocolInfo(sf.ty) != null)
                         self.coerceOrErase(val, src_ty, sf.ty, l.node)
                     else
                         self.coerceToType(val, src_ty, sf.ty);
@@ -570,7 +588,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // is authoritative.
         if (elem_target != .unresolved) {
             const src_ty = self.builder.getRefType(val);
-            if (src_ty != elem_target) {
+            const slot_name: ?StringId = if (i < struct_fields.len) struct_fields[i].name else null;
+            if (refuseVoidElement(self, src_ty, elem_target, slot_name, i, fi.value.span)) {
+                val = self.zeroValue(elem_target);
+            } else if (src_ty != elem_target) {
                 val = self.coerceToType(val, src_ty, elem_target);
             }
         }
@@ -2162,8 +2183,12 @@ pub fn lowerTaggedEnumLiteral(
         }
         self.target_type = payload_ty;
         var val = self.lowerExpr(sl.field_inits[0].value);
-        const src_ty = self.inferExprType(sl.field_inits[0].value);
-        val = self.coerceToType(val, src_ty, payload_ty);
+        const src_ty = self.builder.getRefType(val);
+        if (refuseVoidElement(self, src_ty, payload_ty, null, 0, sl.field_inits[0].value.span)) {
+            val = self.zeroValue(payload_ty);
+        } else {
+            val = self.coerceToType(val, src_ty, payload_ty);
+        }
         self.target_type = saved_tt;
         return self.builder.enumInit(tag, val, union_ty);
     }
@@ -2190,8 +2215,12 @@ pub fn lowerTaggedEnumLiteral(
             self.target_type = payload_fields[i].ty;
             var val = self.lowerExpr(fi.value);
             self.target_type = saved_inner;
-            const src_ty = self.inferExprType(fi.value);
-            val = self.coerceToType(val, src_ty, payload_fields[i].ty);
+            const src_ty = self.builder.getRefType(val);
+            if (refuseVoidElement(self, src_ty, payload_fields[i].ty, payload_fields[i].name, i, fi.value.span)) {
+                val = self.zeroValue(payload_fields[i].ty);
+            } else {
+                val = self.coerceToType(val, src_ty, payload_fields[i].ty);
+            }
             fields.append(self.alloc, val) catch unreachable;
         } else {
             fields.append(self.alloc, self.lowerExpr(fi.value)) catch unreachable;
@@ -2412,7 +2441,9 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         // at `elem_ty` (the common `[N]i64`/`[N]Struct` case).
         if (elem_ty != .unresolved) {
             const val_ty = self.builder.getRefType(val);
-            if (val_ty != elem_ty) {
+            if (refuseVoidElement(self, val_ty, elem_ty, null, elems.items.len, elem.span)) {
+                val = self.zeroValue(elem_ty);
+            } else if (val_ty != elem_ty) {
                 val = self.coerceToType(val, val_ty, elem_ty);
             }
         }
@@ -3091,13 +3122,16 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
         var val = self.lowerExpr(elem.value);
         self.target_type = saved_target;
         const val_ty = self.builder.getRefType(val);
-        if (val_ty != field_ty and val_ty != .void) {
+        const name_id: ?StringId = if (elem.name) |name| self.module.types.internString(name) else null;
+        if (refuseVoidElement(self, val_ty, field_ty, name_id, out_idx, elem.value.span)) {
+            val = self.zeroValue(field_ty);
+        } else if (val_ty != field_ty) {
             val = self.coerceToType(val, val_ty, field_ty);
         }
         elems.append(self.alloc, val) catch unreachable;
         field_type_ids.append(self.alloc, field_ty) catch unreachable;
-        if (elem.name) |name| {
-            name_ids.append(self.alloc, self.module.types.internString(name)) catch unreachable;
+        if (name_id) |nid| {
+            name_ids.append(self.alloc, nid) catch unreachable;
             has_names = true;
         } else {
             name_ids.append(self.alloc, self.module.types.internString("")) catch unreachable;

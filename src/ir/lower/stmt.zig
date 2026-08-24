@@ -3301,8 +3301,11 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
         const val = self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         const fl = self.fieldLvaluePtr(slot, ty, fname) orelse unreachable;
-        const coerced = self.coerceToType(val, self.builder.getRefType(val), fl.ty);
-        self.builder.store(fl.ptr, coerced);
+        if (self.refuseVoidElement(self.builder.getRefType(val), fl.ty, self.module.types.internString(fname), 0, fi.value.span)) {
+            self.builder.store(fl.ptr, self.zeroValue(fl.ty));
+        } else {
+            self.builder.store(fl.ptr, self.coerceToType(val, self.builder.getRefType(val), fl.ty));
+        }
     }
     return self.builder.load(slot, ty);
 }

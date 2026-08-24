@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+
+Marked :: struct { tag: void; n: i64; }
+
+main :: () {
+    positional := Marked{ {}, 9 };
+    contextual : Marked = .{ {}, 8 };
+    anonymous := .{ {}, 7 };
+    print("{} {} {}\n", positional.n, contextual.n, anonymous.1);
+}
