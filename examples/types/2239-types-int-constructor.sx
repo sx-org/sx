@@ -1,8 +1,5 @@
 // `@int(N, .signed)` / `@int(N, .unsigned)` is the N-bit integer type, N in
-// 1..=64. It forms a type on every resolution path — a `::` alias, an
-// annotation, a struct field, a signature, a reflection argument — and the
-// eight reserved spellings name exactly what it forms: `@int(8, .signed)` IS
-// `i8`. The width is any compile-time integer, so a named const drives it.
+// 1..=64. `@int(8, .signed)` IS `i8`. The width is any compile-time integer.
 
 @import "modules/std.sx";
 

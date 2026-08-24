@@ -1,11 +1,8 @@
 // Integer numeric-limit accessors: `<IntType>.min` / `.max` fold to a
 // compile-time constant of the QUERIED integer type, driven by the
 // (width, signedness) arithmetic (signed N: min=-(2^(N-1)), max=2^(N-1)-1;
-// unsigned N: min=0, max=2^N-1). The receiver is the type, however it is
-// spelled: a reserved alias (`i8`, `u64`, `usize`) or the constructor
-// `@int(N, .signed)` / `@int(N, .unsigned)` for any width 1..64. Usable in
-// expressions and in array-dimension position via the comptime-int path
-// (`[u8.max]T`, `[@int(2, .unsigned).max]T`).
+// unsigned N: min=0, max=2^N-1). The receiver is a reserved alias or
+// `@int(N, .signed)` / `@int(N, .unsigned)`.
 //
 // The extreme values that the i64-based integer formatter cannot render
 // directly — `i64.min` (i64::MIN) and the all-ones `u64.max`/`usize.max` — are
@@ -55,14 +52,11 @@ main :: () -> i32 {
     print("typed: m3={} mu={} ms={}\n", m3, mu, ms);  // 3 255 -128
     print("m3 type: {}\n", type_eq(type_of(@int(3, .signed).max), @int(3, .signed))); // true
 
-    // A limit is an integer of its own type, so the type categories answer for it.
     print("is int: {}\n", 0.(@int(3, .signed)) is int);       // true
     print("is unsigned: {}\n", @int(4, .unsigned) is unsigned); // true
     print("is signed: {}\n", @int(3, .signed) is signed);       // true
 
-    // Array-dimension / comptime-int path: `[u8.max]T`, `[i16.max]T` and
-    // `[@int(2, .unsigned).max]T` are valid counts (255, 32767, 3), usable
-    // end-to-end.
+    // A limit is a compile-time integer, so it is a valid array dimension.
     a : [u8.max]u8 = ---;
     a[254] = 7;
     print("[u8.max]u8 len={} a[254]={}\n", a.len, a[254]); // 255 7

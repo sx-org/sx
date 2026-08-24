@@ -86,13 +86,12 @@ test "sema: a raw struct-field annotation resolves to the user type; bare stays 
 
 // ── raw provenance through sema's COMPOUND type metadata ────────
 //
-// A COMPOUND raw type (`*`i8`, `?`i8`, `[N]`i8`, …) stores its inner name as a
+// A COMPOUND raw type (`*`i8`, `?`i8`, `[N]`i8`) stores its inner name as a
 // bare string on the Type's info struct; the resolver re-reads that name via
 // `resolveTypeNameStr`, threading `is_raw` ALONGSIDE it. Without the raw flag
 // the resolver passes `skip_builtin = false` and the LSP index reclassifies a
-// user type named `i8` as the builtin int, diverging from codegen. These pin
-// every compound form: the raw inner resolves to the user type, the bare inner
-// stays the builtin (control).
+// user type named `i8` as the builtin int, diverging from codegen. The raw
+// inner is the user type; the bare inner is the builtin.
 
 fn symType(res: sema.SemaResult, name: []const u8) ?Type {
     for (res.symbols) |sym| {
@@ -183,12 +182,9 @@ test "sema: indexing a raw `[N]`i8` array resolves the user element; bare `[N]i8
     try std.testing.expectEqual(@as(u8, 8), w.signed);
 }
 
-// Parameterized raw type (`` `i8(i64) ``). Unlike the shapes above this never
-// had the divergence — instantiation resolves the base name straight against
-// `struct_types` (no builtin classifier in the path), so it passes before AND
-// after. Included as coverage that the universal model holds for the
-// parameterized form too: a `` `i8 ``-declared generic instantiates and its
-// field resolves.
+// Parameterized raw type (`` `i8(i64) ``). Instantiation resolves the base
+// name against `struct_types` (no builtin classifier in the path): a
+// `` `i8 ``-declared generic instantiates and its field resolves.
 test "sema: a raw parameterized type `` `i8(i64) `` instantiates the user generic" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

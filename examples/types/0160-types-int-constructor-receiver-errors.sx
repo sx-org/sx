@@ -1,6 +1,5 @@
-// A malformed `@int` used as a numeric-limit receiver or as an `is` subject
-// reports the constructor diagnostic (width, signedness, arity) — the same
-// wording a type-position `@int` reports.
+// A malformed `@int` as a numeric-limit receiver or an `is` subject reports
+// the constructor diagnostic.
 @import "modules/std.sx";
 
 main :: () -> i32 {

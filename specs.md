@@ -657,19 +657,17 @@ m3     := @int(3, .signed).max;   // 3   (arbitrary width)
 n      := u64.max;                // 18446744073709551615 (all-ones)
 ```
 
-- **Receiver.** Any builtin integer type, however it is spelled: one of the eight
-  aliases, the constructor `@int(N, .signed)` / `@int(N, .unsigned)` for any
-  width 1–64, plus `usize`/`isize` (target-width — `u64`/`i64` on a
-  64-bit host). A spelling and the constructor it names carry one limit:
-  `i8.max` is `@int(8, .signed).max`.
+- **Receiver.** Any builtin integer type: one of the eight aliases, the
+  constructor `@int(N, .signed)` / `@int(N, .unsigned)`, plus `usize`/`isize`
+  (target-width — `u64`/`i64` on a 64-bit host).
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
   - signed `N`: `min = -(2^(N-1))`, `max = 2^(N-1) - 1`
   - unsigned `N`: `min = 0`, `max = 2^N - 1`
 - **Result type.** The constant has the **queried** type: `@int(3, .signed).max`
   is an `@int(3, .signed)`, `u64.max` is a `u64`. So it is usable anywhere a
-  constant of that type is legal — initializers, `::` / `:=` bindings, and
-  larger expressions — and in array-dimension / count position via the
-  compile-time integer path (`[u8.max]T` is a 255-element array;
+  constant of that type is legal — initializers, `:=` bindings, and larger
+  expressions — and in array-dimension / count position via the compile-time
+  integer path (`[u8.max]T` is a 255-element array;
   `[@int(2, .unsigned).max]T` a 3-element one). A count that does not fit
   (`[u64.max]T`) is rejected as an oversized dimension.
 - **Representation note.** `u64.max` / `usize.max` is the all-ones 64-bit value

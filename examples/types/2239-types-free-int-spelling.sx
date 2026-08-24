@@ -1,7 +1,6 @@
 // A width spelling outside the eight aliases is an ordinary name: a declared
-// `i2` is that declaration's type, distinct from the 2-bit integer that only
-// `@int(2, .signed)` spells — including as a generic argument, where the two
-// are separate instances.
+// `i2` is that declaration's type, distinct from `@int(2, .signed)` — two
+// generic instances, not one.
 @import "modules/std.sx";
 
 i2 :: struct { x: i64; }
