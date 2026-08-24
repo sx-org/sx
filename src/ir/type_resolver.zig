@@ -56,40 +56,16 @@ pub const TypeResolver = struct {
         .{ .name = "isize", .id = .isize },
     };
 
-    /// Builtin primitive keyword → `TypeId`; `null` for any non-primitive name
-    /// (the caller then continues with generic / alias / named-struct
-    /// resolution). Single source of truth for the builtin keyword set: the
-    /// named builtins plus the reserved integer aliases.
+    /// A bare name → its builtin `TypeId`, `null` for any non-builtin name (the
+    /// caller then continues with generic / alias / named-struct resolution).
+    /// Single source of truth for the builtin keyword set: the named builtins
+    /// plus the eight reserved integer aliases. A width outside those eight
+    /// reaches a `TypeId` only through `internInteger`, never through a name.
     /// Namespaced (no `self`) — primitive resolution is stateless.
     pub fn resolvePrimitive(name: []const u8) ?TypeId {
         if (name.len == 0) return null;
         if (types.lookupIntAlias(name)) |layout| return types.canonicalInt(layout.width, layout.signed);
         for (named_builtins) |b| if (std.mem.eql(u8, name, b.name)) return b.id;
-        return null;
-    }
-
-    /// An arbitrary-bit-width integer type NAME (`i1`–`i64`, `u1`–`u64`, which
-    /// also subsumes `i8`/`u8`/…/`i64`/`u64`): its width + signedness, else
-    /// null. THE single width parser — `resolveBuiltinName` interns the `TypeId`
-    /// through it, so the recognized width set cannot diverge (the two-resolver
-    /// defect class).
-    pub fn parseWidthInt(name: []const u8) ?types.IntLayout {
-        if (name.len < 2) return null;
-        if (name[0] != 'i' and name[0] != 'u') return null;
-        const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-        if (width < 1 or width > types.max_int_width) return null;
-        return .{ .width = width, .signed = name[0] == 'i' };
-    }
-
-    /// A bare name → its builtin `TypeId` (primitive keyword OR arbitrary-width
-    /// integer), WITHOUT the named-struct / alias / stub fallthrough of
-    /// `resolveNamed`. null for any non-builtin name. The shared builtin
-    /// classifier: `resolveNamed` resolves through it first (then continues to
-    /// struct/alias resolution), and the numeric-limit accessor intercept uses
-    /// it to recover the queried type.
-    pub fn resolveBuiltinName(name: []const u8, table: *TypeTable) ?TypeId {
-        if (resolvePrimitive(name)) |id| return id;
-        if (parseWidthInt(name)) |layout| return table.internInteger(layout.width, layout.signed);
         return null;
     }
 
@@ -281,28 +257,25 @@ pub const TypeResolver = struct {
         };
     }
 
-    /// Resolve a bare type NAME to a `TypeId`: primitive → arbitrary-width int
-    /// (`i1`–`u64`) → string-form pointer/slice/optional prefixes → already-
-    /// registered named type → alias (`alias_map`) → fresh empty-struct stub.
+    /// Resolve a bare type NAME to a `TypeId`: primitive → string-form
+    /// pointer/slice/optional prefixes → already-registered named type → alias
+    /// (`alias_map`) → fresh empty-struct stub.
     /// `alias_map` is the single-source alias table (owned by `ProgramIndex`);
     /// callers pass it explicitly — Lowering via the index (`resolveName`),
     /// `type_bridge` via the alias map threaded through `resolveAstType`. The
     /// stub fall-through preserves long-standing behavior for as-yet-
     /// unregistered names.
     ///
-    /// `skip_builtin` is the backtick raw-identifier escape (`` `i2 `` in type
+    /// `skip_builtin` is the backtick raw-identifier escape (`` `i8 `` in type
     /// position): a raw reference is the LITERAL name used as a
     /// type, so it bypasses the builtin/reserved classifier and resolves only
-    /// through registered-type → alias → stub. A bare `i2` keeps the default
+    /// through registered-type → alias → stub. A bare `i8` keeps the default
     /// (`false`) and resolves to the builtin int type. The string-prefix
     /// recursion always passes `false`: the inner names (`*T`/`?T`) are bare,
     /// never raw.
     pub fn resolveNamed(name: []const u8, table: *TypeTable, alias_map: ?*const std.StringHashMap(TypeId), skip_builtin: bool) TypeId {
-        // Builtin primitive keyword or arbitrary-width integer (`i1`-`i64`,
-        // `u1`-`u64`) — the single builtin classifier, also reused by the
-        // numeric-limit accessor intercept.
         if (!skip_builtin) {
-            if (resolveBuiltinName(name, table)) |id| return id;
+            if (resolvePrimitive(name)) |id| return id;
         }
 
         // Sentinel-terminated slice: [:0]u8 → string.

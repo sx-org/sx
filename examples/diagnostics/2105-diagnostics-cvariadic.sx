@@ -140,7 +140,7 @@ walks_a_borrowed_list :: (n: i32, ap: @VaList) -> i64 export {
 }
 
 main :: () -> i32 {
-    wide: i48 = 5;
+    wide: @int(48, .signed) = 5;
     pair: Pair = .{1, 2};
     nums: [2]i32 = .[1, 2];
     absent: ?*i32 = null;

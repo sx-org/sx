@@ -2686,15 +2686,15 @@ pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []co
     return .{ .func = one };
 }
 
-/// A type-alias RHS that is a builtin name (`i8`, `f64`, `u1`, …), or
+/// A type-alias RHS that is a builtin name (`i8`, `f64`, `usize`, …), or
 /// null when the RHS is some other shape.
-fn aliasRhsBuiltin(cd: *const ast.ConstDecl, table: *types.TypeTable) ?TypeId {
+fn aliasRhsBuiltin(cd: *const ast.ConstDecl) ?TypeId {
     const name = switch (cd.value.data) {
         .type_expr => |te| te.name,
         .identifier => |id| id.name,
         else => return null,
     };
-    return TypeResolver.resolveBuiltinName(name, table);
+    return TypeResolver.resolvePrimitive(name);
 }
 
 /// Walk `author` through identifier alias hops until a builtin RHS. Depth-
@@ -2707,7 +2707,7 @@ fn resolveBuiltinAliasChain(
     if (depth > 32) return null;
     if (author.raw != .const_decl) return null;
     const cd = author.raw.const_decl;
-    if (aliasRhsBuiltin(cd, &self.module.types)) |tid| return tid;
+    if (aliasRhsBuiltin(cd)) |tid| return tid;
     const hop = switch (cd.value.data) {
         .identifier => |id| id,
         else => return null,
@@ -2792,10 +2792,10 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 /// switch.
 pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, raw: bool) TypeHeadResolution {
     const table = &self.module.types;
-    // Builtin primitive keyword / arbitrary-width int — unless a raw escape
-    // routes the literal name straight to nominal resolution.
+    // Builtin primitive keyword — unless a raw escape routes the literal name
+    // straight to nominal resolution.
     if (!raw) {
-        if (TypeResolver.resolveBuiltinName(name, table)) |id| return .{ .resolved = id };
+        if (TypeResolver.resolvePrimitive(name)) |id| return .{ .resolved = id };
     }
     // Structural string-forms that reach the leaf as a literal type-expr
     // name (`[:0]u8` → string, `[*]T`, `*T`, `?T`) carry NO nominal author —

@@ -442,7 +442,7 @@ pub const ExprTyper = struct {
                 return .unresolved;
             },
             .type_expr => |te| {
-                // type_expr can also be a variable reference (e.g., "i1" matches builtin i1 type)
+                // type_expr can also be a variable reference (e.g., "i32" matches builtin i32 type)
                 if (self.l.scope) |scope| {
                     if (scope.lookup(te.name)) |binding| {
                         return binding.ty;

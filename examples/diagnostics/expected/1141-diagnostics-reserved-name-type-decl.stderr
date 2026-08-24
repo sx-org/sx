@@ -22,8 +22,8 @@ error: 'u32' is a reserved type name and cannot be used as an identifier
 12 | u32 :: error { Bad, Empty }
    | ^^^
 
-error: 'i2' is a reserved type name and cannot be used as an identifier
+error: 'u8' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:13:1
    |
-13 | i2 : i64 : 5;
+13 | u8 : i64 : 5;
    | ^^

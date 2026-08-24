@@ -280,7 +280,7 @@ pub const ProtocolResolver = struct {
         }
         // Unit/comptime hosts may not wire source/import facts. Preserve their
         // pre-source-aware registered-type lookup without fabricating a type.
-        if (TypeResolver.resolveBuiltinName(ib.target_type, &self.l.module.types)) |ty| return ty;
+        if (TypeResolver.resolvePrimitive(ib.target_type)) |ty| return ty;
         return self.l.module.types.findByName(self.l.module.types.internString(ib.target_type));
     }
 

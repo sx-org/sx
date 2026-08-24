@@ -1,9 +1,9 @@
-// A local declared with a reserved/builtin type-name spelling (`i2` is the
-// arbitrary-width `sN` integer type) is rejected at the declaration site.
+// A local declared with a reserved/builtin type-name spelling (`i8`, one of the
+// eight integer aliases) is rejected at the declaration site.
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    i2 := 42;
-    print("i2: {}\n", i2);
+    i8 := 42;
+    print("i8: {}\n", i8);
     return 0;
 }

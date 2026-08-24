@@ -8,9 +8,9 @@ update :: ufcs (self: *Box, n: i64) {
 }
 
 run_imported_reserved_name :: () -> i32 {
-    i2 := Box{ total = 0, count = 0 };
-    update(*i2, 5);
-    i2.update(7);
-    print("imported i2 total={} count={}\n", i2.total, i2.count);
+    i8 := Box{ total = 0, count = 0 };
+    update(*i8, 5);
+    i8.update(7);
+    print("imported i8 total={} count={}\n", i8.total, i8.count);
     return 0;
 }

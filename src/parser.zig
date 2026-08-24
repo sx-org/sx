@@ -912,14 +912,14 @@ pub const Parser = struct {
         }
 
         if (self.tokens.tag(self.tok).isTypeKeyword() or self.isIdentLike()) {
-            // A backtick raw identifier (`` `i2 ``) in type position is the
-            // LITERAL name `i2` used as a type reference — never the builtin /
+            // A backtick raw identifier (`` `i32 ``) in type position is the
+            // LITERAL name `i32` used as a type reference — never the builtin /
             // reserved keyword. The raw flag rides the type ATOM through the
             // SAME qualified-path / `Closure` / parameterized continuations as a
-            // bare name (so `` `i2(i64) ``, `` `i2.Inner ``, `` *`i2 `` all
+            // bare name (so `` `i32(i64) ``, `` `i32.Inner ``, `` *`i32 `` all
             // parse); it is threaded onto the final `type_expr` /
             // `parameterized_type_expr` so resolution skips the builtin
-            // classifier and looks up a `` `i2 ``-declared type.
+            // classifier and looks up a `` `i32 ``-declared type.
             const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             var name = self.tokens.slice(self.tok);
             self.advance();
@@ -4009,10 +4009,10 @@ pub const Parser = struct {
             .identifier => {
                 const name = self.tokens.slice(self.tok);
                 const is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
+                // A backtick raw identifier (`` `i32 ``) is NEVER type-classified —
                 // it is always a value identifier, bypassing the reserved-type-name
                 // rule. Only a bare spelling is checked for a type name
-                // (e.g. i32, u8, s128).
+                // (e.g. i32, u8).
                 if (!is_raw and Type.fromName(name) != null) {
                     self.advance();
                     return try self.createNode(start, .{ .type_expr = .{ .name = name } });

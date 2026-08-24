@@ -3,6 +3,9 @@
 // annotation, a struct field, a signature, a reflection argument — and the
 // eight reserved spellings name exactly what it forms: `@int(8, .signed)` IS
 // `i8`. The width is any compile-time integer, so a named const drives it.
+//
+// Only those eight spellings are reserved, so a width spelling the aliases do
+// not cover (`i2`, `u7`, …) is an ordinary identifier.
 
 @import "modules/std.sx";
 
@@ -34,5 +37,8 @@ main :: () -> i32 {
 
     f := || -> @int(8, .signed) { 0 };
     print("lambda={}\n", type_eq(type_of(f()), i8));
+
+    i2 := 42;
+    print("free={}\n", i2);
     0
 }

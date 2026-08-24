@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const ir_types = @import("ir/types.zig");
 const Node = ast.Node;
 
 /// Editor-indexing and parse-time name metadata — used by `src/sema.zig` (the
@@ -122,25 +123,14 @@ pub const Type = union(enum) {
 
     pub fn fromName(name: []const u8) ?Type {
         if (name.len == 0) return null;
+        if (ir_types.lookupIntAlias(name)) |layout| {
+            return if (layout.signed) Type.s(layout.width) else Type.u(layout.width);
+        }
         return switch (name[0]) {
             's' => if (std.mem.eql(u8, name, "string")) .string_type else null,
             'c' => if (std.mem.eql(u8, name, "cstring")) .cstring_type else null,
-            'u' => {
-                if (std.mem.eql(u8, name, "usize")) return .usize_type;
-                if (name.len >= 2) {
-                    const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-                    if (width >= 1 and width <= 64) return Type.u(width);
-                }
-                return null;
-            },
-            'i' => {
-                if (std.mem.eql(u8, name, "isize")) return .isize_type;
-                if (name.len >= 2) {
-                    const width = std.fmt.parseInt(u8, name[1..], 10) catch return null;
-                    if (width >= 1 and width <= 64) return Type.s(width);
-                }
-                return null;
-            },
+            'u' => if (std.mem.eql(u8, name, "usize")) .usize_type else null,
+            'i' => if (std.mem.eql(u8, name, "isize")) .isize_type else null,
             'b' => if (std.mem.eql(u8, name, "bool")) .boolean else null,
             'f' => {
                 if (std.mem.eql(u8, name, "f32")) return .f32;

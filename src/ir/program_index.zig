@@ -183,7 +183,7 @@ pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: [
         .type_expr => |te| if (te.is_raw) return null else te.name,
         else => return null,
     };
-    const ty = type_resolver.TypeResolver.resolveBuiltinName(name, table) orelse return null;
+    const ty = type_resolver.TypeResolver.resolvePrimitive(name) orelse return null;
     return table.integerLimit(ty, std.mem.eql(u8, field, "max"));
 }
 

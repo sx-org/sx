@@ -153,43 +153,30 @@ test "TypeResolver.resolveName resolves aliases via ProgramIndex (not the TypeTa
     try std.testing.expectEqual(@as(TypeId, .i64), tr.resolveName("i64", false));
 }
 
-test "TypeResolver.resolveNamed: width-int, string-prefix, unknown→stub" {
+test "TypeResolver.resolveNamed: alias, string-prefix, unknown→stub" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
-    try std.testing.expectEqual(table.intern(.{ .signed = 7 }), TypeResolver.resolveNamed("i7", &table, null, false));
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
     try std.testing.expectEqual(table.ptrTo(.i64), TypeResolver.resolveNamed("*i64", &table, null, false));
     // Unknown name, no alias map → empty-struct stub (preserved behavior;
     // never `.unresolved`, which is reserved for failed *generic* resolution).
     try std.testing.expect(TypeResolver.resolveNamed("Unknown", &table, null, false) != .unresolved);
+    // A width no alias names is an ordinary unknown name, not the 7-bit int.
+    const stub = table.intern(.{ .@"struct" = .{ .name = table.internString("i7"), .fields = &.{} } });
+    try std.testing.expectEqual(stub, TypeResolver.resolveNamed("i7", &table, null, false));
 }
 
 test "TypeResolver.resolveNamed: skip_builtin resolves a raw reserved-name type, not the builtin" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
-    // A registered user type named "i2" (a reserved int spelling).
-    const name_id = table.internString("i2");
-    const user_i2 = table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
-    // Bare lookup → the builtin 2-bit signed int; raw lookup → the user type.
-    try std.testing.expectEqual(table.intern(.{ .signed = 2 }), TypeResolver.resolveNamed("i2", &table, null, false));
-    try std.testing.expectEqual(user_i2, TypeResolver.resolveNamed("i2", &table, null, true));
-}
-
-test "TypeResolver.parseWidthInt: every width 1..64, both signs; rejects out-of-range / non-int" {
-    // The single width parser — covers the named primitives (i8/u64/…) too.
-    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 1, .signed = true }), TypeResolver.parseWidthInt("i1"));
-    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 3, .signed = true }), TypeResolver.parseWidthInt("i3"));
-    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = true }), TypeResolver.parseWidthInt("i64"));
-    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 1, .signed = false }), TypeResolver.parseWidthInt("u1"));
-    try std.testing.expectEqual(@as(?types.IntLayout, .{ .width = 64, .signed = false }), TypeResolver.parseWidthInt("u64"));
-    // Width 0 and >64, and non-`s`/`u` names, are not width-ints.
-    try std.testing.expect(TypeResolver.parseWidthInt("i0") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("u65") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("usize") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("f32") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("sx") == null);
-    try std.testing.expect(TypeResolver.parseWidthInt("s") == null);
+    // A registered user type named "i8" (a reserved int spelling).
+    const name_id = table.internString("i8");
+    const user_i8 = table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
+    // Bare lookup → the builtin 8-bit signed int; raw lookup → the user type.
+    try std.testing.expectEqual(@as(TypeId, .i8), TypeResolver.resolveNamed("i8", &table, null, false));
+    try std.testing.expectEqual(user_i8, TypeResolver.resolveNamed("i8", &table, null, true));
 }
 
 test "TypeResolver.isIntLimitField: the two limits an integer carries" {

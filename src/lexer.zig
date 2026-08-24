@@ -194,7 +194,7 @@ pub const Lexer = struct {
         // following identifier to be RAW (never type-classified, never
         // reserved-checked). The emitted token's span excludes the backtick, so
         // its text is the bare name, and a backticked keyword spelling
-        // (`` `i2 ``, `` `string ``) is still an `.identifier`, never a keyword.
+        // (`` `i32 ``, `` `string ``) is still an `.identifier`, never a keyword.
         if (c == '`') {
             const id_start = start + 1;
             if (id_start < self.source.len and isIdentStart(self.source[id_start])) {

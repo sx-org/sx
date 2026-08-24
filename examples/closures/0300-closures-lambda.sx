@@ -1,7 +1,7 @@
 @import "modules/std.sx";
 
 main :: () {
-    fx :: (s:i3) -> i3 {
+    fx :: (s: @int(3, .signed)) -> @int(3, .signed) {
         s
     }
 

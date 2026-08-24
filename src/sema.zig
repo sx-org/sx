@@ -511,7 +511,7 @@ pub const Analyzer = struct {
                 return .void_type;
             }
             // type_expr or identifier — check aliases, enums, structs. A raw
-            // reference (`` `i2 ``) skips the builtin classifier and resolves
+            // reference (`` `i32 ``) skips the builtin classifier and resolves
             // through user-defined types only.
             if (tn.data == .type_expr or tn.data == .identifier) {
                 const name = if (tn.data == .type_expr) tn.data.type_expr.name else tn.data.identifier.name;
@@ -535,7 +535,7 @@ pub const Analyzer = struct {
     /// structs), falling back to primitive spellings. Unlike `Type.fromName`,
     /// this knows user-defined types; returns `unresolved` when it can't place
     /// the name. `skip_builtin` is the backtick raw escape — a raw
-    /// reference (`` `i2 ``) bypasses the builtin/reserved classifier and
+    /// reference (`` `i32 ``) bypasses the builtin/reserved classifier and
     /// resolves only through user-defined types, mirroring the codegen-side
     /// `TypeResolver.resolveNamed`. Inner names of compound shapes
     /// (pointer/slice element/pointee) are always bare, so their callers pass
@@ -565,10 +565,10 @@ pub const Analyzer = struct {
         };
     }
 
-    /// The backtick raw bit of an inner type-name node (`` `i2 ``). A compound
+    /// The backtick raw bit of an inner type-name node (`` `i32 ``). A compound
     /// shape (`*T`, `?T`, `[]T`, …) stores its inner name as a bare string, so
     /// this bit must travel ALONGSIDE that name — otherwise the
-    /// resolver re-reads `i2` as the builtin int. Non-leaf nodes are never raw.
+    /// resolver re-reads `i32` as the builtin int. Non-leaf nodes are never raw.
     fn typeExprIsRaw(node: *Node) bool {
         return switch (node.data) {
             .type_expr => |te| te.is_raw,
@@ -580,7 +580,7 @@ pub const Analyzer = struct {
     /// When a compound shape stores the NAME of an ALREADY-resolved inner type
     /// (no syntactic node to read `is_raw` from — e.g. a for-loop element), a
     /// user nominal type must be re-resolved with `skip_builtin` so a struct/
-    /// enum/union named `i2` is not reclassified as the builtin. Builtins keep
+    /// enum/union named `i32` is not reclassified as the builtin. Builtins keep
     /// `false`. Harmless for non-colliding names (the registry lookup is the
     /// same either way).
     fn innerNameIsRaw(inner: Type) bool {
