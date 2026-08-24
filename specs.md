@@ -4564,7 +4564,7 @@ category, and there is no `constraint` category word. Flags-ness is
 as the right operand.
 
 ### Logical Operators
-`and` and `or` are short-circuit boolean operators. The right operand is not evaluated if the left operand determines the result.
+`and` and `or` are short-circuit boolean operators. The right operand is not evaluated if the left operand determines the result. Each operand is a condition — a bool, an integer or integer-backed value (`!= 0`), a pointer (`!= null`), or an optional (present) — and the result is always a `bool`.
 ```sx
 if 0 <= x <= 100 and 0 <= y <= 100 {
     print("contained");

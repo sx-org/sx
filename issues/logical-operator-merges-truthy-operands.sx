@@ -1,0 +1,47 @@
+@import "modules/std.sx";
+
+Color :: enum { red; green; }
+E :: error { Bad, Worse }
+
+LITERAL_OR :: @run (1 or 2);
+LITERAL_AND :: @run (0 and 1);
+
+may :: (n: i64) -> (i64, !E) {
+    if n < 0 { raise error.Bad; }
+    return n;
+}
+
+main :: () {
+    print("{} {}\n", 1 or 2, 0 or 0);
+    print("{} {}\n", 1 and 2, 1 and 0);
+
+    n := 3;
+    z := 0;
+    print("{} {}\n", n or false, z and true);
+
+    u: usize = 0;
+    print("{} {}\n", u or true, u and true);
+
+    present: *i64 = *n;
+    absent: *i64 = null;
+    print("{} {}\n", present and true, absent or false);
+
+    arr := [3]i64.[1, 2, 3];
+    many: [*]i64 = *arr[0];
+    print("{} {}\n", many and true, many or false);
+
+    some: ?i64 = 7;
+    none: ?i64 = null;
+    print("{} {}\n", some and true, none or false);
+
+    print("{} {}\n", Color.green or false, Color.red and true);
+
+    _, bad := may(-1);
+    _, good := may(3);
+    print("{} {}\n", bad and true, good or false);
+
+    s: cstring = "hi";
+    print("{} {}\n", s and true, 1 > 0 and 2);
+
+    print("{} {}\n", LITERAL_OR, LITERAL_AND);
+}
