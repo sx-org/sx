@@ -730,8 +730,8 @@ qn  := f64.nan;           // a quiet NaN
     (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.true_min`, `@int(3, .signed).epsilon`) is a clean compile
-  error — integer types expose only `.min` / `.max`.
+  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose
+  only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged

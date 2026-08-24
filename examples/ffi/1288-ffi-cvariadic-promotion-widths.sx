@@ -1,6 +1,6 @@
 // Every argument at or past the fixed count crosses a C-variadic tail under the
 // C default argument promotions, so an integer narrower than 32 bits arrives as
-// `i32` — at every width `@int` forms, 1 through 31 in both signs.
+// `i32`.
 //
 // Each width is read back three ways: through the sx definition by name, through
 // an `abi(.c)` function VALUE of the same signature, and through the

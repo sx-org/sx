@@ -1666,10 +1666,9 @@ pub const Lowering = struct {
     }
 
     /// Resolve the `N` argument of `@int(N, .signed)`: the bit width, folded
-    /// through the same shared const evaluator a `@Vector` lane and an array
-    /// dimension use, so a literal, a module const, and a const expression all
-    /// answer alike. An out-of-range or non-const width is a hard error and
-    /// yields null; the caller poisons rather than fabricating a width.
+    /// through the shared const evaluator. An out-of-range or non-const width
+    /// is a hard error and yields null; the caller poisons rather than
+    /// fabricating a width.
     pub fn resolveIntWidth(self: *Lowering, width_node: *const Node) ?u8 {
         const out_of_range: i64 = switch (program_index_mod.foldDimU32(width_node, self, 1)) {
             .ok => |n| if (n <= types.max_int_width) return @intCast(n) else n,
