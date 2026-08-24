@@ -1,5 +1,6 @@
 // A malformed `@int` as a numeric-limit receiver or an `is` subject reports
-// the constructor diagnostic.
+// the constructor diagnostic at that receiver, not a generic
+// field-not-found.
 @import "modules/std.sx";
 
 main :: () -> i32 {
