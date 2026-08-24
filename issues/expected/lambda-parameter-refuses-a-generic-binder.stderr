@@ -1,0 +1,5 @@
+error: lambda parameter 'x' cannot be generic; a lambda is a value, so give '$T' a concrete type
+  --> issues/lambda-parameter-refuses-a-generic-binder.sx:4:15
+   |
+ 4 |     id := |x: $T| -> T x;
+   |               ^^

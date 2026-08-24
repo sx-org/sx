@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+
+main :: () {
+    id := |x: $T| -> T x;
+    _ = id(1);
+}
