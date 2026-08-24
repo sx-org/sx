@@ -45,12 +45,11 @@ pub const Type = union(enum) {
     unresolved,
 
     /// `is_raw` records whether the inner type-name came from a backtick raw
-    /// reference (`` `i2 ``) or an already-resolved user type. It is the
+    /// reference (`` `i32 ``) or an already-resolved user type. It is the
     /// `skip_builtin` the resolver MUST pass when re-resolving the stored inner
-    /// name — without it `resolveTypeNameStr` would reclassify a
-    /// user type named `i2` as the builtin int, diverging from codegen. The
-    /// field is REQUIRED (no default) so a future construction site cannot
-    /// silently drop the bit, the way the LSP index did for compound shapes.
+    /// name — without it `resolveTypeNameStr` would reclassify a user type
+    /// named `i32` as the builtin int, diverging from codegen. The field is
+    /// REQUIRED (no default) so a construction site cannot silently drop it.
     pub const SliceTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
@@ -211,7 +210,7 @@ pub const Type = union(enum) {
 
     pub fn fromTypeExpr(node: *Node) ?Type {
         if (node.data != .type_expr) return null;
-        // A backtick raw type reference (`` `i2 ``) is the LITERAL name used as
+        // A backtick raw type reference (`` `i32 ``) is the LITERAL name used as
         // a type — it must skip this builtin/reserved classifier and resolve
         // through user-defined types only, mirroring the codegen-
         // side `resolveNamed`'s `skip_builtin`. Returning null lets the sema
