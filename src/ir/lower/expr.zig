@@ -1382,6 +1382,34 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
     return false;
 }
 
+/// The type a numeric-limit receiver denotes: a builtin type spelling (`i64`,
+/// `usize`) or a compiler-formed constructor (`@int(3, .signed)`). Null when
+/// the receiver denotes no builtin type.
+///
+/// A backtick raw identifier can bind a value whose spelling shadows a builtin
+/// type name (`` `f64 := … ``); field access on that value is an ordinary field
+/// read, so a raw receiver — and a bare identifier bound through any of scope /
+/// globals / module consts — denotes no type here. A bare `.type_expr` receiver
+/// is the type spelling itself and folds even while a raw value of the same
+/// spelling is bound.
+///
+/// THE single receiver classifier: lowering, inference and the comptime-int
+/// folder all read the queried type through it, so no two of them can disagree
+/// about which receiver carries a limit (two-resolver defect class).
+pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
+    switch (receiver.data) {
+        .identifier => |id| {
+            if (id.is_raw or self.identifierBindsValue(id.name)) return null;
+            return TypeResolver.resolveBuiltinName(id.name, &self.module.types);
+        },
+        .type_expr => |te| {
+            if (te.is_raw) return null;
+            return TypeResolver.resolveBuiltinName(te.name, &self.module.types);
+        },
+        else => return self.probeFormedType(receiver),
+    }
+}
+
 /// Numeric-limit accessor intercept (`<Type>.min`/`.max`/`.epsilon`/
 /// `.min_positive`/`.true_min`/`.inf`/`.nan`), a sibling of the `error.X` /
 /// `Struct.CONST` / pack-arity identifier-receiver intercepts in
@@ -1390,7 +1418,7 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
 /// existing `constInt` / `constFloat` const paths:
 ///   - integer `.min`/`.max` → `constInt` (via `TypeTable.integerLimit`);
 ///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
-///     `.nan` → `constFloat` (via `floatLimitFor`).
+///     `.nan` → `constFloat` (via `floatLimitOf`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
 /// a builtin type (a user struct → ordinary field lowering reports
 /// field-not-found). Two clean diagnostics (then a placeholder, so lowering
@@ -1399,33 +1427,20 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
 ///   - any accessor on a builtin NON-numeric receiver
 ///     (`bool`/`string`/`void`/`Any`/`noreturn`).
 pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) ?Ref {
-    const name = switch (fa.object.data) {
-        .identifier => |id| id.name,
-        .type_expr => |te| te.name,
-        else => return null,
-    };
     if (!TypeResolver.isLimitField(fa.field)) return null;
-    const ty = TypeResolver.resolveBuiltinName(name, &self.module.types) orelse return null;
-
-    // A backtick raw identifier can bind a value whose spelling
-    // shadows a builtin type name (`` `f64 := … ``). Field access on that
-    // value is an ordinary field read, not a numeric-limit fold — defer to
-    // the normal field-access path when the receiver identifier resolves to
-    // a value binding through any of scope / globals / module consts.
-    // A `.type_expr` receiver is unambiguously a type
-    // and can never be value-shadowed.
-    if (fa.object.data == .identifier and self.identifierBindsValue(name)) return null;
+    const ty = self.limitReceiverType(fa.object) orelse return null;
 
     if (TypeResolver.isIntLimitField(fa.field)) {
         if (self.module.types.integerLimit(ty, std.mem.eql(u8, fa.field, "max"))) |value| {
             return self.builder.constInt(value, ty);
         }
     }
-    if (TypeResolver.floatLimitFor(name, fa.field)) |value| {
+    if (TypeResolver.floatLimitOf(ty, fa.field)) |value| {
         return self.builder.constFloat(value, ty);
     }
     // The field is a limit accessor, but it does not apply to this type.
     if (self.diagnostics) |d| {
+        const name = self.formatTypeName(ty);
         if (self.module.types.isIntegerType(ty)) {
             // Integer receiver + a float-only accessor.
             d.addFmt(.err, span, "type '{s}' has no '.{s}' — '.{s}' applies only to float types (f32/f64); integer types expose only '.min'/'.max'", .{ name, fa.field, fa.field });
@@ -1435,6 +1450,16 @@ pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.
         }
     }
     return self.emitPlaceholder(fa.field);
+}
+
+/// `<IntType>.min` / `.max` for the shared comptime-integer folder — the
+/// queried type's limit through the SAME receiver classifier and
+/// `TypeTable.integerLimit` the value path folds, so an array dimension
+/// (`[@int(2, .unsigned).max]i64`) and the expression agree.
+pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?i64 {
+    if (!TypeResolver.isIntLimitField(field)) return null;
+    const ty = self.limitReceiverType(receiver) orelse return null;
+    return self.module.types.integerLimit(ty, std.mem.eql(u8, field, "max"));
 }
 
 /// Lower a struct-level constant value (e.g., Phys.GRAVITY).

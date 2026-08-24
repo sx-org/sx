@@ -616,13 +616,16 @@ pub fn staticIsCondition(self: *Lowering, lhs: *const Node, rhs: *const Node) ?b
     return self.staticIsAnswer(subject, rhs);
 }
 
-/// Does this node name a type STATICALLY — a spelling or a bound generic
-/// parameter, as opposed to a runtime `Type` value?
+/// Does this node name a type STATICALLY — a spelling, a compiler-formed
+/// constructor, or a bound generic parameter, as opposed to a runtime `Type`
+/// value? A general call is a runtime value, so only a constructor head admits
+/// the call grammar (`@int(4, .unsigned) is unsigned`).
 fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .identifier, .type_expr, .field_access, .parameterized_type_expr,
         .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr,
         .optional_type_expr, .array_type_expr => {},
+        .call => return self.probeFormedType(node) != null,
         else => return false,
     }
     return self.isStaticTypeArg(node);

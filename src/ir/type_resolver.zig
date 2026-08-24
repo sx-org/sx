@@ -70,10 +70,9 @@ pub const TypeResolver = struct {
 
     /// An arbitrary-bit-width integer type NAME (`i1`–`i64`, `u1`–`u64`, which
     /// also subsumes `i8`/`u8`/…/`i64`/`u64`): its width + signedness, else
-    /// null. THE single width parser — `resolveBuiltinName` (to intern the
-    /// `TypeId`) and the numeric-limit accessors (`.min`/`.max`, via
-    /// `integerWidthSign`) both classify through here, so the recognized width
-    /// set cannot diverge (the two-resolver defect class).
+    /// null. THE single width parser — `resolveBuiltinName` interns the `TypeId`
+    /// through it, so the recognized width set cannot diverge (the two-resolver
+    /// defect class).
     pub fn parseWidthInt(name: []const u8) ?types.IntLayout {
         if (name.len < 2) return null;
         if (name[0] != 'i' and name[0] != 'u') return null;
@@ -94,33 +93,10 @@ pub const TypeResolver = struct {
         return null;
     }
 
-    /// Width + signedness of a builtin INTEGER type NAME: the `i`/`u` widths via
-    /// `parseWidthInt`, plus `usize`/`isize` (target-width = 64 on the host).
-    /// null for a non-integer name (floats, `bool`, `string`, a user type, …) —
-    /// so the `.min`/`.max` fold fires for integers only.
-    pub fn integerWidthSign(name: []const u8) ?types.IntLayout {
-        if (parseWidthInt(name)) |layout| return layout;
-        if (std.mem.eql(u8, name, "usize")) return .{ .width = 64, .signed = false };
-        if (std.mem.eql(u8, name, "isize")) return .{ .width = 64, .signed = true };
-        return null;
-    }
-
     /// True when `field` is `min` or `max` — the two limits an integer type
     /// carries.
     pub fn isIntLimitField(field: []const u8) bool {
         return std.mem.eql(u8, field, "min") or std.mem.eql(u8, field, "max");
-    }
-
-    /// `<IntType>.min` / `.max` → the type's limit as a raw `i64`, keyed by
-    /// NAME. The comptime-int / array-dim path (`program_index.evalConstIntExpr`)
-    /// folds through here, where no `TypeTable` is in reach; the value and typer
-    /// paths hold a `TypeId` and read `TypeTable.integerLimit` instead. Both
-    /// compute through `IntLayout.limit`, so they cannot disagree on what
-    /// `u8.max` evaluates to.
-    pub fn integerLimitFor(name: []const u8, field: []const u8) ?i64 {
-        if (!isIntLimitField(field)) return null;
-        const layout = integerWidthSign(name) orelse return null;
-        return layout.limit(std.mem.eql(u8, field, "max"));
     }
 
     /// The full numeric-limit accessor field set: `.min`/`.max` (valid on int AND
@@ -138,7 +114,7 @@ pub const TypeResolver = struct {
     /// `<FloatType>.<field>` → the limit as an `f64` value (the queried type is
     /// `f32`/`f64`; every f32 limit is exactly representable in f64, so widening
     /// is lossless and the caller pairs the value with the queried `TypeId` —
-    /// `builder.constFloat` narrows it back at emit), or null when `name` is not a
+    /// `builder.constFloat` narrows it back at emit), or null when `ty` is not a
     /// builtin float type or `field` is not a limit accessor. Values come straight
     /// from `std.math` (`floatMax`/`floatEps`/`floatMin`/`floatTrueMin`/`inf`/`nan`):
     ///   - `.min` = most-NEGATIVE finite (`-max`, NOT C's DBL_MIN)
@@ -147,12 +123,19 @@ pub const TypeResolver = struct {
     ///   - `.min_positive` = smallest positive NORMAL (`floatMin`; = C DBL_MIN)
     ///   - `.true_min` = smallest positive SUBNORMAL (`floatTrueMin`)
     ///   - `.inf` = +infinity, `.nan` = a quiet NaN
-    /// THE single name+field → float fold, shared by the value path (lower.zig)
-    /// and `expr_typer` so they can't disagree.
-    pub fn floatLimitFor(name: []const u8, field: []const u8) ?f64 {
-        if (std.mem.eql(u8, name, "f64")) return floatLimitValue(f64, field);
-        if (std.mem.eql(u8, name, "f32")) return floatLimitValue(f32, field);
+    /// THE single float-limit fold: the value path and `expr_typer` hold the
+    /// queried `TypeId` and ask here; `floatLimitFor` is the same fold keyed by
+    /// spelling.
+    pub fn floatLimitOf(ty: TypeId, field: []const u8) ?f64 {
+        if (ty == .f64) return floatLimitValue(f64, field);
+        if (ty == .f32) return floatLimitValue(f32, field);
         return null;
+    }
+
+    /// `floatLimitOf` keyed by NAME, for the comptime-float folder — it walks an
+    /// expression tree of spellings, not of resolved types.
+    pub fn floatLimitFor(name: []const u8, field: []const u8) ?f64 {
+        return floatLimitOf(resolvePrimitive(name) orelse return null, field);
     }
 
     fn floatLimitValue(comptime T: type, field: []const u8) ?f64 {

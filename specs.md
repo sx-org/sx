@@ -640,31 +640,34 @@ as an array dimension (`['A']u8`), and in `match` / `inline if` const comparison
 
 ### Numeric Limits
 
-A field-like access on a builtin **integer** type name folds, at compile time, to
+A field-like access on a builtin **integer** type folds, at compile time, to
 that type's smallest/largest representable value:
 
 ```sx
-maxS64 := i64.max;   // 9223372036854775807
-minS32 := i32.min;   // -2147483648
-maxU8  := u8.max;    // 255
-minU8  := u8.min;    // 0
-m3     := i3.max;    // 3   (arbitrary width)
-n      := u64.max;   // 18446744073709551615 (all-ones)
+maxS64 := i64.max;                // 9223372036854775807
+minS32 := i32.min;                // -2147483648
+maxU8  := u8.max;                 // 255
+minU8  := u8.min;                 // 0
+m3     := @int(3, .signed).max;   // 3   (arbitrary width)
+n      := u64.max;                // 18446744073709551615 (all-ones)
 ```
 
-- **Receiver.** Any builtin integer type: every signed width `i1`..`i64`, every
-  unsigned width `u1`..`u64` (arbitrary 1–64 bit widths, not only the
-  power-of-two ones), plus `usize`/`isize` (target-width — `u64`/`i64` on a
-  64-bit host).
+- **Receiver.** Any builtin integer type, however it is spelled: every signed
+  width `i1`..`i64`, every unsigned width `u1`..`u64` (arbitrary 1–64 bit
+  widths, not only the power-of-two ones), the constructor `@int(N, .signed)` /
+  `@int(N, .unsigned)`, plus `usize`/`isize` (target-width — `u64`/`i64` on a
+  64-bit host). A spelling and the constructor it names carry one limit:
+  `i8.max` is `@int(8, .signed).max`.
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
   - `sN`: `min = -(2^(N-1))`, `max = 2^(N-1) - 1`
   - `uN`: `min = 0`, `max = 2^N - 1`
-- **Result type.** The constant has the **queried** type: `i3.max` is an `i3`,
-  `u64.max` is a `u64`. So it is usable anywhere a constant of that type is
-  legal — initializers, `::` / `:=` bindings, and larger expressions — and in
-  array-dimension / count position via the compile-time integer path
-  (`[u8.max]T` is a 255-element array; `[i16.max]T` a 32767-element one). A
-  count that does not fit (`[u64.max]T`) is rejected as an oversized dimension.
+- **Result type.** The constant has the **queried** type: `@int(3, .signed).max`
+  is an `@int(3, .signed)`, `u64.max` is a `u64`. So it is usable anywhere a
+  constant of that type is legal — initializers, `::` / `:=` bindings, and
+  larger expressions — and in array-dimension / count position via the
+  compile-time integer path (`[u8.max]T` is a 255-element array;
+  `[@int(2, .unsigned).max]T` a 3-element one). A count that does not fit
+  (`[u64.max]T`) is rejected as an oversized dimension.
 - **Representation note.** `u64.max` / `usize.max` is the all-ones 64-bit value
   (`18446744073709551615`), which exceeds the signed `i64` range used for
   integer constants; it is stored as that exact bit pattern carrying the `u64`
@@ -725,8 +728,8 @@ qn  := f64.nan;           // a quiet NaN
     (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose only
-  `.min` / `.max`.
+  `u8.inf`, `i64.true_min`, `@int(3, .signed).epsilon`) is a clean compile
+  error — integer types expose only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
@@ -737,20 +740,21 @@ qn  := f64.nan;           // a quiet NaN
   `0x7F7FFFFF` / `0xFF7FFFFF` / `0x34000000` / `0x00800000` / `0x00000001` /
   `0x7F800000`.
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
-  only when the receiver is a builtin numeric **type name** (`f64.epsilon`,
-  `i32.max`, `u8.max`). A backtick raw identifier that binds a *value* whose
-  spelling shadows a type name is an ordinary value: `` `f64.epsilon ``
-  reads that value's `epsilon` field — it does **not** fold to the limit. This
-  holds for **every** value-binding kind — a `` `f64 := … `` local, a module-scope
-  global, or a `` `f64 :: … `` module constant — so the fold can never silently
-  hijack a raw value, whatever its scope. The two never collide: a bare builtin
-  name in expression position is always a type, and only the raw `` `…` `` spelling
-  can bind a value under it. The same rule governs the compile-time **narrowing
-  and count** contexts: a raw value-shadow field read is an ordinary *runtime*
-  read there too — never a compile-time numeric-limit leaf — so `` `f64.epsilon ``
-  narrowing into an integer binding truncates like any runtime float (its field
-  value, not the limit), and `` `i8.max `` used as an array dimension is rejected
-  as a non-constant count rather than folding to the builtin `127`.
+  only when the receiver is a builtin numeric **type** — a name (`f64.epsilon`,
+  `i32.max`, `u8.max`) or the `@int` constructor. A backtick raw identifier
+  that binds a *value* whose spelling shadows a type name is an ordinary value:
+  `` `f64.epsilon `` reads that value's `epsilon` field — it does **not** fold
+  to the limit. This holds for **every** value-binding kind — a `` `f64 := … ``
+  local, a module-scope global, or a `` `f64 :: … `` module constant — so the
+  fold can never silently hijack a raw value, whatever its scope. The two never
+  collide: a bare builtin name in expression position is always a type, and only
+  the raw `` `…` `` spelling can bind a value under it. The same rule governs the
+  compile-time **narrowing and count** contexts: a raw value-shadow field read
+  is an ordinary *runtime* read there too — never a compile-time numeric-limit
+  leaf — so `` `f64.epsilon `` narrowing into an integer binding truncates like
+  any runtime float (its field value, not the limit), and `` `i8.max `` used as
+  an array dimension is rejected as a non-constant count rather than folding to
+  the builtin `127`.
 
 ### Enum Types
 User-defined sum types with named variants. Variants may optionally carry typed data (tagged unions). Internally, payload-less enums are represented as `i64` (variant index). Enums with payloads are represented as `{ i64, [max_payload_size x i8] }` (tag + data).
