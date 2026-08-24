@@ -1145,7 +1145,13 @@ pub fn lowerPackFnCallNamed(
         if (ct_fi >= call_node.args.len) break;
         if (p.is_comptime) {
             name_buf.appendSlice(self.alloc, "__ct_") catch @panic("out of memory while mangling pack function");
-            self.genericResolver().appendComptimeValueMangle(&name_buf, call_node.args[ct_fi]);
+            const ct_arg = call_node.args[ct_fi];
+            if (!self.genericResolver().appendComptimeValueMangle(&name_buf, ct_arg)) {
+                if (self.diagnostics) |diags| {
+                    diags.addFmt(.err, ct_arg.span, "this argument is not a literal, so comptime parameter '{s}' has no value here", .{p.name});
+                }
+                return self.builder.constInt(0, .void);
+            }
         }
         ct_fi += 1;
     }
