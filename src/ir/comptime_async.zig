@@ -131,17 +131,43 @@ fn taskEntry() callconv(.naked) void {
 var current_task: ?*Task = null;
 var free_list: ?*Task = null;
 
-/// Out of line, and it must stay that way: `fiber.contextSwitch` is an inline
-/// asm that declares the link register clobbered, and the aarch64 backend does
-/// not honor that clobber — it will happily keep a live value in `x30` across
-/// the switch, where the resumed side finds the other stack's leftover return
-/// address instead. Behind a call boundary the ordinary ABI covers every
-/// register class: the caller treats `x30` as call-clobbered, and this frame's
-/// own prologue/epilogue saves and restores the callee-saved registers the asm
-/// lists.
+/// Out of line so the caller treats the link register as call-clobbered
+/// (`fiber.contextSwitch` is inline asm; the aarch64 backend does not honor
+/// that clobber in the same function).
+///
+/// aarch64/riscv64 spill the link register onto this frame: those ABIs keep
+/// it in a register, and a size-optimized outlined `ret` omits saving it.
 noinline fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
     var s: fiber.Switch = .{ .old = save, .new = target };
-    _ = fiber.contextSwitch(&s);
+    switch (comptime builtin.cpu.arch) {
+        .aarch64 => {
+            var lr: usize = undefined;
+            asm volatile ("str x30, [%[p]]"
+                :
+                : [p] "r" (&lr),
+                : .{ .memory = true });
+            _ = fiber.contextSwitch(&s);
+            asm volatile ("ldr x30, [%[p]]"
+                :
+                : [p] "r" (&lr),
+                : .{ .x30 = true, .memory = true });
+        },
+        .riscv64 => {
+            var ra: usize = undefined;
+            asm volatile ("sd ra, 0(%[p])"
+                :
+                : [p] "r" (&ra),
+                : .{ .memory = true });
+            _ = fiber.contextSwitch(&s);
+            asm volatile ("ld ra, 0(%[p])"
+                :
+                : [p] "r" (&ra),
+                : .{ .x1 = true, .memory = true });
+        },
+        else => {
+            _ = fiber.contextSwitch(&s);
+        },
+    }
 }
 
 /// Switch onto `t`'s stack; returns once `t` parks or finishes.

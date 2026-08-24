@@ -383,8 +383,9 @@ pub fn build(b: *std.Build) void {
     // The comptime-evaluation suspension substrate switches stacks under a full
     // register clobber, so its correctness is a CODEGEN property: a Debug build
     // spills everything and can never observe a register the switch destroys.
-    // It gets its own optimized test artifact — it depends on nothing but std,
-    // so the extra compile is cheap — and the Debug gate covers it too.
+    // ReleaseFast and ReleaseSmall each get their own test artifact — they
+    // depend on nothing but std, so the extra compiles are cheap — and the
+    // Debug gate covers both.
     const async_substrate_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/ir/comptime_async.test.zig"),
@@ -393,6 +394,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_async_substrate_tests = b.addRunArtifact(async_substrate_tests);
+    const async_substrate_small_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ir/comptime_async.test.zig"),
+            .target = target,
+            .optimize = .ReleaseSmall,
+        }),
+    });
+    const run_async_substrate_small_tests = b.addRunArtifact(async_substrate_small_tests);
 
     // The path layer reaches for the OS stat structs, which zig defines per
     // target — `std.c.Stat` and `std.posix.Stat` are `void` on linux, so a
@@ -421,6 +430,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lex_tests.step);
     test_step.dependOn(&run_pkg_migrate_tests.step);
     test_step.dependOn(&run_async_substrate_tests.step);
+    test_step.dependOn(&run_async_substrate_small_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
     test_step.dependOn(&imports_linux_check.step);
