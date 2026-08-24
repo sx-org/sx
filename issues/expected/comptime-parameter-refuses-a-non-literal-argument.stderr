@@ -1,0 +1,5 @@
+error: this argument is not a literal, so comptime parameter 'fmt' has no value here
+  --> issues/comptime-parameter-refuses-a-non-literal-argument.sx:8:11
+   |
+ 8 |     print(cb);
+   |           ^^

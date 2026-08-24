@@ -166,8 +166,10 @@ pub const GenericResolver = struct {
 
     /// Append a comptime parameter VALUE's mono fragment to `buf` (int/bool
     /// verbatim, float with `.`/`-` escaped, string hashed) so distinct
-    /// comptime-value call sites get distinct monos.
-    pub fn appendComptimeValueMangle(self: GenericResolver, buf: *std.ArrayList(u8), node: *const Node) void {
+    /// comptime-value call sites get distinct monos. Returns false for a node
+    /// whose value the identity cannot encode — a name, a call, an operator
+    /// expression — leaving the refusal to the caller.
+    pub fn appendComptimeValueMangle(self: GenericResolver, buf: *std.ArrayList(u8), node: *const Node) bool {
         switch (node.data) {
             .int_literal => |lit| {
                 var tmp: [32]u8 = undefined;
@@ -198,8 +200,9 @@ pub const GenericResolver = struct {
                     buf.append(self.l.alloc, hex[byte & 0xf]) catch @panic("out of memory while mangling comptime value");
                 }
             },
-            else => @panic("unsupported comptime value in monomorph identity"),
+            else => return false,
         }
+        return true;
     }
 
     // ── Type-parameter substitution ─────────────────────────────────────
