@@ -2378,6 +2378,9 @@ fn rhsNeedsTargetType(value: *const ast.Node) bool {
     return switch (value.data) {
         .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
+        // An `error.X` tag literal names the destination set's member, so it
+        // resolves against the field's type like the `.X` shorthand does.
+        .field_access => Lowering.isErrorTagLiteralNode(value),
         else => false,
     };
 }

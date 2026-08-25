@@ -266,7 +266,7 @@ pub const LLVMEmitter = struct {
 
     // Cached field name arrays for reflection (TypeId → LLVM global)
     field_name_arrays: std.AutoHashMap(u32, c.LLVMValueRef),
-    // The always-linked tag-name table (global tag id → name); built once.
+    // The always-linked member-name table (member id → name); built once.
     tag_name_array: ?c.LLVMValueRef = null,
 
     // Lazy global `[N x string]` indexed by TypeId.index(), holding

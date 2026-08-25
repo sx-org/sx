@@ -149,7 +149,7 @@ test "resolveAstType: named-const array dimension resolves to the same length as
     try std.testing.expectEqual(@as(u32, 4), info.array.length);
 }
 
-test "resolveAstType: error_set_decl registers an error-set type + interns tags" {
+test "resolveAstType: error_set_decl registers an error-set type + interns members" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -168,10 +168,32 @@ test "resolveAstType: error_set_decl registers an error-set type + interns tags"
     try std.testing.expect(info == .error_set);
     try std.testing.expectEqualStrings("ParseErr", table.getString(info.error_set.name));
     try std.testing.expectEqual(@as(usize, 2), info.error_set.tags.len);
-    // Tags were interned into the global pool (round-trip a name through it).
-    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.internTag("BadDigit")));
+    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMemberId(id, "BadDigit").?));
     // Re-resolving the same decl dedups to the same TypeId.
     try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
+}
+
+test "resolveAstType: twin inline error sets are distinct TypeIds" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const tag_names = [_][]const u8{"A"};
+    const a = try alloc.create(Node);
+    defer alloc.destroy(a);
+    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_set_decl = .{
+        .name = "E",
+        .tag_names = &tag_names,
+        .tag_name_starts = &.{ast.no_source_start},
+    } } };
+    const b = try alloc.create(Node);
+    defer alloc.destroy(b);
+    b.* = a.*;
+
+    const ia = type_bridge.resolveAstType(a, &table, null, null);
+    const ib = type_bridge.resolveAstType(b, &table, null, null);
+    try std.testing.expect(ia != ib);
+    try std.testing.expect(table.errorSetMemberId(ia, "A").? != table.errorSetMemberId(ib, "A").?);
 }
 
 // ── failable-signature error channel resolution ──
@@ -182,7 +204,8 @@ test "resolveAstType: `!Named` resolves to the declared error set" {
     defer table.deinit();
 
     // Register `ParseErr :: error { BadDigit }` directly.
-    const set = table.errorSetType(table.internString("ParseErr"), &[_]u32{table.internTag("BadDigit")});
+    const pe = table.internString("ParseErr");
+    const set = table.errorSetType(.empty, &[_]u32{table.internMember(table.internErrorOwner(&pe, pe), "BadDigit")});
 
     // `!ParseErr` (an error_type_expr naming one set) resolves to that set.
     const node = try alloc.create(Node);
@@ -219,7 +242,8 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
     const alloc = arena.allocator();
     var table = TypeTable.init(alloc);
 
-    const set = table.errorSetType(table.internString("IoErr"), &[_]u32{table.internTag("Eof")});
+    const io = table.internString("IoErr");
+    const set = table.errorSetType(.empty, &[_]u32{table.internMember(table.internErrorOwner(&io, io), "Eof")});
 
     const val_ty = try alloc.create(Node);
     defer alloc.destroy(val_ty);

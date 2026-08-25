@@ -1230,7 +1230,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         break :blk false;
     };
     // An error-set subject (`match e { case .X: ... }`): the value IS its u32
-    // tag id, and `case .X` matches the global tag id of `X`.
+    // member id, and `case .X` matches the subject channel's member `X`.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
             break :blk self.module.types.get(subject_ty) == .error_set;
@@ -1632,8 +1632,9 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
                     } else if (ty_info == .error_set) {
-                        // `case .X` matches the global tag id of `X`.
-                        break :blk @intCast(self.module.types.internTag(pat_name));
+                        // `case .X` matches the subject channel's member `X`.
+                        break :blk @intCast(self.module.types.errorSetMemberId(subject_ty, pat_name) orelse
+                            self.anonymousErrorMember(pat_name));
                     }
                 }
                 break :blk @intCast(i);

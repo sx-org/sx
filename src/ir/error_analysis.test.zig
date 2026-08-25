@@ -49,7 +49,7 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
 
     ea.convergeInferredErrorSets();
 
-    const foo = module.types.internTag("Foo");
+    const foo = lowering.anonymousErrorMember("Foo");
     const raiser_set = lowering.inferred_error_sets.get("raiser") orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), raiser_set.len);
     try std.testing.expectEqual(foo, raiser_set[0]);
@@ -91,7 +91,7 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     var it = lowering.shape_inferred_sets.valueIterator();
     const tags = it.next().?.*;
     try std.testing.expectEqual(@as(usize, 1), tags.len);
-    try std.testing.expectEqual(module.types.internTag("Bar"), tags[0]);
+    try std.testing.expectEqual(lowering.anonymousErrorMember("Bar"), tags[0]);
 }
 
 test "error_analysis: empty-inferred warnings are emitted in source order, not hashmap order" {

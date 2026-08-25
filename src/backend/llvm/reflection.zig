@@ -614,10 +614,10 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// The always-linked tag-name table: a `[N x {ptr, i64}]` global of tag
-    /// names indexed by global tag id (the `TagRegistry` namespace; slot 0 is
-    /// the reserved "" no-error name). `error_tag_name_get` GEPs into it at the
-    /// runtime tag id. Built once per module. Always emitted (not trace-gated)
+    /// The always-linked member-name table: a `[N x {ptr, i64}]` global of
+    /// member names indexed by member id (the `TagRegistry` namespace; slot 0
+    /// is the reserved "" no-error name). `error_tag_name_get` GEPs into it at
+    /// the runtime member id. Built once per module. Always emitted (not trace-gated)
     /// so `{}` interpolation of an error tag works even in release builds.
     pub fn getOrBuildTagNameArray(self: Reflection) c.LLVMValueRef {
         if (self.e.tag_name_array) |g| return g;

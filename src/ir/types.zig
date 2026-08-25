@@ -328,14 +328,14 @@ pub const TypeInfo = union(enum) {
         };
     };
 
-    /// A declared error set `Foo :: error { A, B }`. `tags` are GLOBAL tag
-    /// ids from the TypeTable's `TagRegistry` (sorted, canonical). Identity is
-    /// the `name` (like an enum). Runtime layout is u32 — the error channel's
-    /// tag value; id 0 is reserved for "no error".
+    /// An error channel. `tags` are qualified member ids from the TypeTable's
+    /// `TagRegistry` (sorted, deduped) and ARE the set's identity; `name` is the
+    /// spelling derived from them, and only a MEMBER-LESS channel (a bare `!`,
+    /// an unresolved composition) is identified by that spelling instead.
+    /// Runtime layout is u32 — the channel's member id; id 0 is "no error".
     pub const ErrorSetInfo = struct {
         name: StringId,
-        tags: []const u32, // sorted global tag ids
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
+        tags: []const u32,
     };
 };
 
@@ -403,48 +403,102 @@ pub const StringPool = struct {
 };
 
 // ── TagRegistry ─────────────────────────────────────────────────────────
-// Global error-tag pool: tag name → u32 id, monotonic, id 0 reserved for
-// "no error". Tag identity is the name, program-wide — two declared sets that
-// list the same tag share its id (the design's global-flat tag identity). A
-// separate namespace from StringPool so tag ids stay dense (compact id→name
-// table for `{}` interpolation + traces).
+// Error-member pool: (owning declaration, member name) → u32 id, monotonic,
+// id 0 reserved for "no error". A member's identity is the PAIR, so
+// `FooError.A` and `BooError.A` are two different members. Owner 0 is the
+// anonymous owner — the member spelling written with no set in hand. A
+// separate namespace from StringPool so ids stay dense (compact id→name table
+// for `{}` interpolation + traces).
 
 pub const TagRegistry = struct {
-    /// tag name → id. Keys point to owned allocations in `names`.
-    map: std.StringHashMap(u32),
-    /// id → tag name. Index 0 is the reserved "" (no-error) slot.
+    /// The anonymous owner: a member named without a set to own it.
+    pub const anonymous_owner: u32 = 0;
+
+    const Key = struct { owner: u32, name: []const u8 };
+
+    const KeyContext = struct {
+        pub fn hash(_: KeyContext, k: Key) u64 {
+            var h = std.hash.Wyhash.init(0);
+            h.update(std.mem.asBytes(&k.owner));
+            h.update(k.name);
+            return h.final();
+        }
+        pub fn eql(_: KeyContext, a: Key, b: Key) bool {
+            return a.owner == b.owner and std.mem.eql(u8, a.name, b.name);
+        }
+    };
+
+    /// (owner, member name) → id. Key names point to owned allocations in `names`.
+    map: std.HashMap(Key, u32, KeyContext, 80),
+    /// id → member name. Index 0 is the reserved "" (no-error) slot.
     names: std.ArrayList([]const u8),
+    /// id → owning set, parallel to `names`.
+    owners: std.ArrayList(u32),
+    /// owner → the owning declaration's spelling. Slot 0 is the anonymous owner.
+    owner_names: std.ArrayList(StringId),
+    /// owning declaration pointer → owner.
+    owner_ids: std.AutoHashMap(*const anyopaque, u32),
     next_id: u32,
 
     pub fn init(alloc: Allocator) TagRegistry {
         var reg = TagRegistry{
-            .map = std.StringHashMap(u32).init(alloc),
+            .map = std.HashMap(Key, u32, KeyContext, 80).init(alloc),
             .names = std.ArrayList([]const u8).empty,
+            .owners = std.ArrayList(u32).empty,
+            .owner_names = std.ArrayList(StringId).empty,
+            .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
         reg.names.append(alloc, "") catch unreachable; // slot 0
+        reg.owners.append(alloc, anonymous_owner) catch unreachable;
+        reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
         return reg;
     }
 
     pub fn deinit(self: *TagRegistry, alloc: Allocator) void {
         for (self.names.items[1..]) |n| alloc.free(@constCast(n));
         self.names.deinit(alloc);
+        self.owners.deinit(alloc);
+        self.owner_names.deinit(alloc);
+        self.owner_ids.deinit();
         self.map.deinit();
     }
 
-    pub fn intern(self: *TagRegistry, alloc: Allocator, name: []const u8) u32 {
-        if (self.map.get(name)) |id| return id;
+    /// The owner id of the declaration at `decl`, allocating one on first sight.
+    /// `name` is its spelling, which a set of its members renders as.
+    pub fn internOwner(self: *TagRegistry, alloc: Allocator, decl: *const anyopaque, name: StringId) u32 {
+        const gop = self.owner_ids.getOrPut(decl) catch unreachable;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = @intCast(self.owner_names.items.len);
+            self.owner_names.append(alloc, name) catch unreachable;
+        }
+        return gop.value_ptr.*;
+    }
+
+    pub fn intern(self: *TagRegistry, alloc: Allocator, owner: u32, name: []const u8) u32 {
+        if (self.map.get(.{ .owner = owner, .name = name })) |id| return id;
         const id = self.next_id;
         self.next_id += 1;
         const owned = alloc.dupe(u8, name) catch unreachable;
         self.names.append(alloc, owned) catch unreachable;
-        self.map.put(owned, id) catch unreachable;
+        self.owners.append(alloc, owner) catch unreachable;
+        self.map.put(.{ .owner = owner, .name = owned }, id) catch unreachable;
         return id;
     }
 
     pub fn getName(self: *const TagRegistry, id: u32) []const u8 {
         if (id >= self.names.items.len) return "";
         return self.names.items[id];
+    }
+
+    pub fn ownerOf(self: *const TagRegistry, id: u32) u32 {
+        if (id >= self.owners.items.len) return anonymous_owner;
+        return self.owners.items[id];
+    }
+
+    pub fn ownerName(self: *const TagRegistry, owner: u32) StringId {
+        if (owner >= self.owner_names.items.len) return .empty;
+        return self.owner_names.items[owner];
     }
 };
 
@@ -731,7 +785,7 @@ pub const TypeTable = struct {
         return id;
     }
 
-    /// Intern a nominal type (struct/enum/union/tagged_union/error_set) under a
+    /// Intern a nominal type (struct/enum/union/tagged_union) under a
     /// stable nominal identity. `nominal_id` folds into the intern key so two
     /// authors that share a display name still get distinct TypeIds. With
     /// `nominal_id == 0` this is byte-identical to `intern` (structural keying),
@@ -744,7 +798,6 @@ pub const TypeTable = struct {
             .@"enum" => |*e| e.nominal_id = nominal_id,
             .@"union" => |*u| u.nominal_id = nominal_id,
             .tagged_union => |*u| u.nominal_id = nominal_id,
-            .error_set => |*e| e.nominal_id = nominal_id,
             else => std.debug.assert(nominal_id == 0),
         }
         return self.intern(stamped);
@@ -790,6 +843,16 @@ pub const TypeTable = struct {
             if (n != null and n.? == name) return TypeId.fromIndex(@intCast(i));
         }
         return null;
+    }
+
+    /// True when `id` is some declaration's registered slot — as opposed to a
+    /// forward-reference stub, which no declaration has claimed yet.
+    pub fn isDeclSlot(self: *const TypeTable, id: TypeId) bool {
+        var it = self.type_decl_tids.valueIterator();
+        while (it.next()) |claimed| {
+            if (claimed.* == id) return true;
+        }
+        return false;
     }
 
     /// True when `ty` IS the C-variadic cursor. Its storage is the target's
@@ -1401,22 +1464,79 @@ pub const TypeTable = struct {
         return self.intern(.{ .pack = .{ .elements = owned } });
     }
 
-    /// Intern an error-tag name into the global tag pool, returning its id.
-    pub fn internTag(self: *TypeTable, name: []const u8) u32 {
-        return self.tags.intern(self.alloc, name);
+    /// The owner id of the error-set declaration at `decl`, spelled `name`.
+    pub fn internErrorOwner(self: *TypeTable, decl: *const anyopaque, name: StringId) u32 {
+        return self.tags.internOwner(self.alloc, decl, name);
     }
 
-    /// Look up a tag name from its global id.
+    /// Intern `owner`'s member `name`, returning its id.
+    pub fn internMember(self: *TypeTable, owner: u32, name: []const u8) u32 {
+        return self.tags.intern(self.alloc, owner, name);
+    }
+
+    /// Look up a member's name from its id.
     pub fn getTagName(self: *const TypeTable, id: u32) []const u8 {
         return self.tags.getName(id);
     }
 
-    /// Construct (and intern) a named error-set type. `tag_ids` are global tag
-    /// ids (from `internTag`); they are sorted here for canonical storage.
-    pub fn errorSetType(self: *TypeTable, name: StringId, tag_ids: []const u32) TypeId {
-        const owned = self.slice_arena.allocator().dupe(u32, tag_ids) catch unreachable;
-        std.mem.sort(u32, owned, {}, std.sort.asc(u32));
-        return self.intern(.{ .error_set = .{ .name = name, .tags = owned } });
+    /// The id of the member `name` names in error set `set`, or null when the
+    /// set carries no such member. The single name → member resolution behind
+    /// every `.Member` / `Set.Member` spelling.
+    pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
+        if (set.isBuiltin()) return null;
+        const info = self.get(set);
+        if (info != .error_set) return null;
+        for (info.error_set.tags) |id| {
+            if (std.mem.eql(u8, self.getTagName(id), name)) return id;
+        }
+        return null;
+    }
+
+    /// The spelling a channel holding `members` renders as: the owning
+    /// declaration's name when every member shares one owner, else the
+    /// `|`-joined `Owner.Member` list.
+    pub fn errorSetDisplayName(self: *TypeTable, members: []const u32) StringId {
+        const owner = self.tags.ownerOf(members[0]);
+        var single = owner != TagRegistry.anonymous_owner;
+        for (members[1..]) |m| {
+            if (self.tags.ownerOf(m) != owner) single = false;
+        }
+        if (single) return self.tags.ownerName(owner);
+        var spelling = std.ArrayList(u8).empty;
+        defer spelling.deinit(self.alloc);
+        for (members, 0..) |m, i| {
+            if (i > 0) spelling.appendSlice(self.alloc, " | ") catch unreachable;
+            const own = self.tags.ownerName(self.tags.ownerOf(m));
+            if (own != .empty) {
+                spelling.appendSlice(self.alloc, self.getString(own)) catch unreachable;
+                spelling.append(self.alloc, '.') catch unreachable;
+            }
+            spelling.appendSlice(self.alloc, self.getTagName(m)) catch unreachable;
+        }
+        return self.internString(spelling.items);
+    }
+
+    /// The `.error_set` body over `member_ids`. Identity is the member set —
+    /// sorted and deduped here — and the display spelling is derived from it.
+    /// `spelling` names a MEMBER-LESS channel, which has no members to derive
+    /// one from.
+    pub fn errorSetInfo(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeInfo {
+        const sorted = self.slice_arena.allocator().dupe(u32, member_ids) catch unreachable;
+        std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
+        var n: usize = 0;
+        for (sorted) |m| {
+            if (n > 0 and sorted[n - 1] == m) continue;
+            sorted[n] = m;
+            n += 1;
+        }
+        const owned = sorted[0..n];
+        const name = if (n == 0) spelling else self.errorSetDisplayName(owned);
+        return .{ .error_set = .{ .name = name, .tags = owned } };
+    }
+
+    /// Construct (and intern) an error channel from its member ids.
+    pub fn errorSetType(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeId {
+        return self.intern(self.errorSetInfo(spelling, member_ids));
     }
 
     /// Size in bytes for a type (pointer-sized = 8 on 64-bit).
@@ -1940,9 +2060,11 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             if (u.nominal_id != 0) h.update(std.mem.asBytes(&u.nominal_id));
         },
         .protocol => |p| h.update(std.mem.asBytes(&p.name)),
+        // An error channel keys by its MEMBER SET; the derived spelling is a
+        // function of that set, and identifies a member-less channel alone.
         .error_set => |e| {
             h.update(std.mem.asBytes(&e.name));
-            if (e.nominal_id != 0) h.update(std.mem.asBytes(&e.nominal_id));
+            for (e.tags) |t| h.update(std.mem.asBytes(&t));
         },
         .failable => |f| {
             h.update(std.mem.asBytes(&f.value));
@@ -2006,7 +2128,14 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .@"union" => |u| u.name == b.@"union".name and u.nominal_id == b.@"union".nominal_id,
         .tagged_union => |u| u.name == b.tagged_union.name and u.nominal_id == b.tagged_union.nominal_id,
         .protocol => |p| p.name == b.protocol.name,
-        .error_set => |e| e.name == b.error_set.name and e.nominal_id == b.error_set.nominal_id,
+        .error_set => |e| {
+            const f = b.error_set;
+            if (e.name != f.name or e.tags.len != f.tags.len) return false;
+            for (e.tags, f.tags) |et, ft| {
+                if (et != ft) return false;
+            }
+            return true;
+        },
         .failable => |f| f.value == b.failable.value and f.err == b.failable.err,
         .pack => |p| {
             const q = b.pack;

@@ -246,7 +246,9 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         .enum_decl => |ed| resolveInlineEnum(&ed, table, si),
         .struct_decl => |sd| resolveInlineStruct(&sd, table, si),
         .union_decl => |ud| resolveInlineUnion(&ud, table, si),
-        .error_set_decl => |esd| resolveInlineErrorSet(&esd, table),
+        // The DECLARATION owns the set's members, so the owner key must be the
+        // node's stable inner pointer, not the switch payload's copy.
+        .error_set_decl => internErrorSetDecl(&n.data.error_set_decl, table),
         .error_type_expr => |ete| resolveErrorType(&ete, table, si),
         // A bare spread element (`..Ts`) reaching here is BY DESIGN, not a caller
         // bug: `resolveClosurePackShape` / `resolveTupleSpreadShape` preserve a
@@ -762,48 +764,30 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
     } };
 }
 
-/// `Foo :: error { A, B }` → a registered `.error_set` type. Tag names are
-/// interned into the global tag pool; the set stores their (sorted) ids. The
-/// caller (lowering) is responsible for rejecting an empty set, so this only
-/// sees non-empty declarations.
-///
-/// INLINE / structural path ONLY: keeps the `findByName` short-circuit so an
-/// anonymous / re-resolved set re-uses an existing same-name slot. The
-/// declaration-side per-decl nominal path (`Lowering.registerErrorSetDecl`)
-/// builds the body via `buildErrorSetInfo` and interns under its own nominal id
-/// instead.
-fn resolveInlineErrorSet(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeId {
-    const name_id = table.internString(esd.name);
-
-    if (table.findByName(name_id)) |existing| return existing;
-
-    const info = buildErrorSetInfo(esd, table);
-    return table.intern(info);
-}
-
-/// Build the `.error_set` `TypeInfo` body for an error-set decl WITHOUT
-/// interning a top-level slot — the shared body-BUILDER behind both the
-/// structural inline path (`resolveInlineErrorSet`) and the stateful per-decl
-/// registration (`Lowering.registerErrorSetDecl`, which interns it under a
-/// per-decl nominal identity so two same-name top-level sets get DISTINCT
-/// TypeIds). Tags are interned into the global pool and stored sorted in the
-/// slice arena (mirrors `errorSetType`'s canonicalization).
-pub fn buildErrorSetInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeInfo {
+/// The `.error_set` body of `Foo :: error { A, B }`. The DECLARATION owns its
+/// members, so two sets listing the same spelling own two different members and
+/// the sets themselves are distinct — a twin inline set at another site
+/// included. The caller (lowering) rejects an empty set, so this only sees
+/// non-empty declarations.
+pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeInfo {
     const alloc = table.alloc;
     const name_id = table.internString(esd.name);
+    const owner = table.internErrorOwner(@ptrCast(esd), name_id);
 
-    var tag_ids = std.ArrayList(u32).empty;
-    defer tag_ids.deinit(alloc);
+    var member_ids = std.ArrayList(u32).empty;
+    defer member_ids.deinit(alloc);
     for (esd.tag_names) |tn| {
-        tag_ids.append(alloc, table.internTag(tn)) catch unreachable;
+        member_ids.append(alloc, table.internMember(owner, tn)) catch unreachable;
     }
-    const owned = table.slice_arena.allocator().dupe(u32, tag_ids.items) catch unreachable;
-    std.mem.sort(u32, owned, {}, std.sort.asc(u32));
-    return .{ .error_set = .{ .name = name_id, .tags = owned } };
+    return table.errorSetInfo(name_id, member_ids.items);
+}
+
+pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeId {
+    return table.intern(errorSetDeclInfo(esd, table));
 }
 
 /// The error channel of a failable signature: one named set → that declared
-/// set (registered by `resolveInlineErrorSet`); a bare `!` or a composition →
+/// set (registered by `internErrorSetDecl`); a bare `!` or a composition →
 /// a placeholder set keyed by the channel's own spelling. A placeholder's
 /// members are refined per failable function by the whole-program SCC pass;
 /// every bare `!` resolves to the same empty inferred set, which is correct

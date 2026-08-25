@@ -435,8 +435,9 @@ test "comptime_vm exec: error_tag_name_get maps a tag id to its name string" {
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
-    _ = table.internTag("Foo");
-    const bad = table.internTag("Bad"); // the tag we'll resolve
+    const owner = table.internErrorOwner(&table, table.internString("E"));
+    _ = table.internMember(owner, "Foo");
+    const bad = table.internMember(owner, "Bad"); // the member we'll resolve
 
     // return error_tag_name(<bad tag id>)  → the string "Bad"
     var fb = Fb.init(alloc, &.{}, .string);

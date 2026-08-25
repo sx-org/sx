@@ -217,7 +217,6 @@ pub fn ensurePlainStructMethodLowered(self: *Lowering, method: PlainStructMethod
     return fid;
 }
 
-/// Register a struct declaration's fields and methods in the IR type table.
 /// Register a `Foo :: error { A, B }` declaration as an error-set type.
 /// Rejects an empty set here (sema gate) since type_bridge has no
 /// diagnostics; non-empty sets are interned via type_bridge.
@@ -229,19 +228,43 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
         }
         return;
     }
-    // Per-decl nominal identity — the error-set twin of `registerEnumDecl`.
-    // A GENUINE same-name shadow already reserved its DISTINCT slot up-front in
-    // `scanDecls` (the first at id 0, the rest at nonzero ids): reuse that id. A
-    // single-author name keeps id 0. The body is built by the shared
-    // `type_bridge.buildErrorSetInfo`; `internNamedTypeDecl` interns it under
-    // the computed nominal id and records `decl_key → TypeId` so a local
-    // `Foo :: error { Boom }` does not collapse onto a same-name imported set.
+    internErrorSetSlot(self, &node.data.error_set_decl);
+}
+
+/// Intern `esd`'s member set and record it as the declaration's slot. The
+/// declaration owns its members, so its member set addresses it alone — a
+/// same-name set in another module owns different members and interns
+/// elsewhere — and re-running yields the same TypeId. `decl_key → TypeId` lets
+/// a reference select this author directly (`namedRefTid`) rather than by
+/// first-author name lookup.
+fn internErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const table = &self.module.types;
-    const name_id = table.internString(esd.name);
-    const decl_key: *const anyopaque = @ptrCast(&node.data.error_set_decl);
-    const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
-    const info = type_bridge.buildErrorSetInfo(&node.data.error_set_decl, table);
-    _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    const decl_key: *const anyopaque = @ptrCast(esd);
+    const info = type_bridge.errorSetDeclInfo(esd, table);
+    const id = adoptableForwardStub(table, info) orelse table.intern(info);
+    table.type_decl_tids.put(decl_key, id) catch {};
+}
+
+/// Give a GENUINE same-name ERROR-SET shadow author its slot before any
+/// signature resolves, so a forward reference from `f :: (e: E)` binds the
+/// querying module's own author instead of whichever same-name type interned
+/// first.
+pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
+    if (esd.tag_names.len == 0) return; // the empty-set diagnostic is registration's
+    internErrorSetSlot(self, esd);
+}
+
+/// The forward-reference stub a signature naming this set before it registered
+/// left under the spelling: that slot BECOMES the set, so both spellings
+/// address one TypeId. A slot another declaration already claims — a same-name
+/// struct shadow's reservation — is that declaration's, so the set interns its
+/// own instead.
+fn adoptableForwardStub(table: *types.TypeTable, info: types.TypeInfo) ?TypeId {
+    const cand = table.findByName(info.error_set.name) orelse return null;
+    if (!adoptsForwardStructStub(table.get(cand), info)) return null;
+    if (table.isDeclSlot(cand)) return null;
+    table.replaceKeyedInfo(cand, info);
+    return cand;
 }
 
 /// The `nominal_id` stamped on a nominal `TypeInfo` (0 for non-nominal /
@@ -253,7 +276,6 @@ pub fn nominalIdOf(info: types.TypeInfo) u32 {
         .@"enum" => |e| e.nominal_id,
         .@"union" => |u| u.nominal_id,
         .tagged_union => |u| u.nominal_id,
-        .error_set => |e| e.nominal_id,
         else => 0,
     };
 }
@@ -268,7 +290,6 @@ pub fn stampNominalId(info: types.TypeInfo, nid: u32) types.TypeInfo {
         .@"enum" => |*e| e.nominal_id = nid,
         .@"union" => |*u| u.nominal_id = nid,
         .tagged_union => |*u| u.nominal_id = nid,
-        .error_set => |*e| e.nominal_id = nid,
         else => {},
     }
     return out;
@@ -328,23 +349,6 @@ pub fn reserveShadowUnionSlot(self: *Lowering, ud: *const ast.UnionDecl) void {
     const name_id = table.internString(ud.name);
     const nominal_id = self.shadowNominalId(name_id);
     const reserved = table.internNominal(.{ .@"union" = .{ .name = name_id, .fields = &.{} } }, nominal_id);
-    table.type_decl_tids.put(decl_key, reserved) catch {};
-}
-
-/// Reserve a GENUINE same-name ERROR-SET shadow author's DISTINCT nominal slot
-/// up-front — the error-set twin of `reserveShadowStructSlot`. The reserved
-/// slot is an empty `.error_set` (its body — the tag id list — is not part of the
-/// intern key, only name + nominal id), so `internNamedTypeDecl` later fills the
-/// real tags via `updatePreservingKey`. Without this, a local `Foo :: error { ... }`
-/// declared after a same-name imported set would collapse onto the imported
-/// TypeId via the `findByName` first-author fallback.
-pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
-    const table = &self.module.types;
-    const decl_key: *const anyopaque = @ptrCast(esd);
-    if (table.type_decl_tids.contains(decl_key)) return;
-    const name_id = table.internString(esd.name);
-    const nominal_id = self.shadowNominalId(name_id);
-    const reserved = table.internNominal(.{ .error_set = .{ .name = name_id, .tags = &.{} } }, nominal_id);
     table.type_decl_tids.put(decl_key, reserved) catch {};
 }
 

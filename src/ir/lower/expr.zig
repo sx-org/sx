@@ -2100,13 +2100,11 @@ pub fn emitBadEnumVariant(
     );
 }
 
-/// Lower an `error.X` tag literal to its global tag id (a `u32`). When the
-/// destination context (`target_type`) is a named error set, or an optional
-/// wrapping one, the value is typed as that set and `X`'s membership is
-/// validated; otherwise the value is the raw `u32` global tag id (per the
-/// spec's context rule).
+/// Lower an `error.X` tag literal. When the destination context
+/// (`target_type`) is an error set, or an optional wrapping one, the value is
+/// that set's member `X`, typed as the set; otherwise it is the anonymous
+/// owner's member as a raw `u32` id (per the spec's context rule).
 pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Span) Ref {
-    const tag_id = self.module.types.internTag(tag_name);
     if (self.target_type) |t| {
         if (!t.isBuiltin()) {
             const info = self.module.types.get(t);
@@ -2123,31 +2121,25 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
                 else => {},
             }
             if (error_set_ty) |set_ty| {
-                const set_info = self.module.types.get(set_ty).error_set;
-                // The bare-`!` inferred placeholder (reserved name "!") accepts
-                // any tag — its members aren't known until the whole-program SCC
-                // pass folds in every raised tag. Skip membership for it.
-                if (!std.mem.eql(u8, self.module.types.getString(set_info.name), "!")) {
-                    var in_set = false;
-                    for (set_info.tags) |member| {
-                        if (member == tag_id) {
-                            in_set = true;
-                            break;
-                        }
-                    }
-                    if (!in_set) {
+                const member = self.module.types.errorSetMemberId(set_ty, tag_name) orelse blk: {
+                    // The bare-`!` inferred placeholder carries no members until
+                    // the whole-program SCC pass folds in every raised tag, so
+                    // it takes any spelling.
+                    if (!self.isInferredErrorSet(set_ty)) {
                         if (self.diagnostics) |diags| {
-                            diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, self.module.types.getString(set_info.name) });
+                            const set_name = self.module.types.getString(self.module.types.get(set_ty).error_set.name);
+                            diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, set_name });
                         }
                     }
-                }
-                const tag = self.builder.constInt(@as(i64, @intCast(tag_id)), set_ty);
+                    break :blk self.anonymousErrorMember(tag_name);
+                };
+                const tag = self.builder.constInt(@as(i64, @intCast(member)), set_ty);
                 if (optional_ty) |opt_ty| return self.builder.optionalWrap(tag, opt_ty);
                 return tag;
             }
             // A NOMINAL non-error destination (struct / enum / union /
             // tagged union): an error tag has no representation there — the
-            // raw-u32 fallback below would flow the global tag id into the
+            // raw-u32 fallback below would flow the member id into the
             // aggregate's bytes and silently reinterpret it (`f(error.Fault)`
             // into a struct-typed param reads back as the struct's first
             // field). Per the spec's context rule the fallback
@@ -2165,20 +2157,26 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
             }
         }
     }
-    return self.builder.constInt(@as(i64, @intCast(tag_id)), .u32);
+    return self.builder.constInt(@as(i64, @intCast(self.anonymousErrorMember(tag_name))), .u32);
 }
 
-/// Lower a qualified error member `Set.Member` to its tag id, typed as `Set`.
+/// The member `name` names with no set in hand — the anonymous owner's, which
+/// no declared set carries.
+pub fn anonymousErrorMember(self: *Lowering, name: []const u8) u32 {
+    return self.module.types.internMember(types.TagRegistry.anonymous_owner, name);
+}
+
+/// Lower a qualified error member `Set.Member` to its member id, typed as `Set`.
 /// Membership is `Set`'s, not the destination context's.
 pub fn lowerQualifiedErrorMember(self: *Lowering, set_ty: TypeId, member: []const u8, span: ast.Span) Ref {
-    const info = self.module.types.get(set_ty).error_set;
-    const tag_id = self.module.types.internTag(member);
-    if (!Lowering.containsTag(info.tags, tag_id)) {
+    const id = self.module.types.errorSetMemberId(set_ty, member) orelse blk: {
         if (self.diagnostics) |diags| {
+            const info = self.module.types.get(set_ty).error_set;
             diags.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ self.module.types.getString(info.name), member });
         }
-    }
-    return self.builder.constInt(@as(i64, @intCast(tag_id)), set_ty);
+        break :blk self.anonymousErrorMember(member);
+    };
+    return self.builder.constInt(@as(i64, @intCast(id)), set_ty);
 }
 
 /// Lower a tagged enum construction: .Variant{ field_inits }

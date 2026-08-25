@@ -41,7 +41,7 @@ pub const ErrorAnalysis = struct {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (Lowering.literalTagName(rs.tag)) |nm| {
-                    tags.append(self.l.alloc, self.l.module.types.internTag(nm)) catch {};
+                    tags.append(self.l.alloc, self.l.anonymousErrorMember(nm)) catch {};
                 } else if (self.l.qualifiedErrorMember(rs.tag)) |qm| {
                     // What a qualified member contributes is its STATIC TYPE —
                     // the whole set, not the one member named at the site.
