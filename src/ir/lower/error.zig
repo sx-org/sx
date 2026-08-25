@@ -495,7 +495,7 @@ fn memberPayloadValue(self: *Lowering, sl: *const ast.StructLiteral, payload_ty:
         defer self.target_type = saved;
         return self.lowerStructLiteral(&inner, span);
     }
-    if (sl.field_inits.len != 1 or sl.field_inits[0].name != null) {
+    if (sl.field_inits.len != 1 or (sl.field_inits[0].name != null and !sl.field_inits[0].was_shorthand)) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, span, "'{s}' carries a payload of type '{s}' — write the one value in the braces ('.{s}{{ … }}')", .{ member_name, self.formatTypeName(payload_ty), member_name });
         }
