@@ -1637,7 +1637,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     defer edges.deinit(self.alloc);
     // `dyn` is irrelevant to closure-shape widening: a shape node unions tags.
     var dyn_unused = false;
-    self.errorAnalysis().collectErrorSites(lam.body, &tags, &edges, &dyn_unused, null);
+    self.errorAnalysis().collectEscapes(lam.body, &tags, &edges, &dyn_unused, null);
     for (edges.items) |callee| {
         for (self.calleeEscapeTags(callee)) |t| {
             if (!containsTag(tags.items, t)) tags.append(self.alloc, t) catch {};

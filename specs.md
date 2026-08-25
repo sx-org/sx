@@ -6361,9 +6361,9 @@ parameter, field, alias, `Closure`, lambda — writes its channel out.
 ### Inferred channels
 
 An inferred channel — a named function's bare `!`, or a `try { block }` — is the
-flatten-merge of the static channel types of the `try`s and `raise`s in its body
-that reach it (§`raise`, §`try`). Every member comes from a declared set; a
-`raise` never mints one.
+flatten-merge of the static channel types of the `try`s, `raise`s, and forwarded
+calls — a `return`ed call and the body's tail call — that reach it (§`raise`,
+§`try`). Every member comes from a declared set; a `raise` never mints one.
 
 ```sx
 inner :: () -> (i32, !) {

@@ -23,7 +23,7 @@ pub const ErrorFacts = struct {
 /// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
 /// (`recordClosureShape`) + its type/shape helpers stay in `Lowering`; this
-/// module calls back for that and reaches its own `collectErrorSites` via the
+/// module calls back for that and reaches its own `collectEscapes` via the
 /// facade.
 pub const ErrorAnalysis = struct {
     l: *Lowering,
@@ -74,6 +74,24 @@ pub const ErrorAnalysis = struct {
         }
     }
 
+    /// The call a failable body hands back with no `return` keyword. A `while`
+    /// or `for` body is not that position.
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .block => |b| {
+                if (!b.produces_value or b.stmts.len == 0) return;
+                self.contributeTailCall(b.stmts[b.stmts.len - 1], edges, dyn, enclosing_fd);
+            },
+            .if_expr => |ie| {
+                self.contributeTailCall(ie.then_branch, edges, dyn, enclosing_fd);
+                if (ie.else_branch) |eb| self.contributeTailCall(eb, edges, dyn, enclosing_fd);
+            },
+            .match_expr => |me| for (me.arms) |arm| self.contributeTailCall(arm.body, edges, dyn, enclosing_fd),
+            .call => |c| self.contributeCallee(c.callee, enclosing_fd, edges, dyn),
+            else => {},
+        }
+    }
+
     /// `"<head>.<method>"` when that names a declaration, else null.
     fn qualifiedEdge(self: ErrorAnalysis, head: []const u8, method: []const u8) ?[]const u8 {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
@@ -102,7 +120,7 @@ pub const ErrorAnalysis = struct {
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
-    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (Lowering.literalTagName(rs.tag)) |nm| {
@@ -130,14 +148,7 @@ pub const ErrorAnalysis = struct {
                 }
                 self.collectErrorSites(te.operand, tags, edges, dyn, enclosing_fd);
             },
-            .block => |b| {
-                for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd);
-                // A producing block's last call is the implicit `return <call>` tail.
-                if (b.produces_value and b.stmts.len > 0) {
-                    const last = b.stmts[b.stmts.len - 1];
-                    if (last.data == .call) self.contributeCallee(last.data.call.callee, enclosing_fd, edges, dyn);
-                }
-            },
+            .block => |b| for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd),
             .if_expr => |ie| {
                 self.collectErrorSites(ie.condition, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);
@@ -212,6 +223,13 @@ pub const ErrorAnalysis = struct {
         }
     }
 
+    /// Every escape of a failable `body`: the tags it raises and the edges of
+    /// the calls whose failure leaves it.
+    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
+        self.contributeTailCall(body, edges, dyn, enclosing_fd);
+    }
+
     /// Whole-program fix-point that converges each bare-`!` function's inferred
     /// error set — `-> !` and value-carrying `-> (T..., !)` alike — and
     /// materialises the converged set as that declaration's channel TypeId.
@@ -257,7 +275,7 @@ pub const ErrorAnalysis = struct {
                 var edges = std.ArrayList([]const u8).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
-                self.collectErrorSites(fd.body, &tags, &edges, &dyn, fd);
+                self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
                 work.put(e.key_ptr.*, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
                 work_key.put(fd, e.key_ptr.*) catch {};
             }

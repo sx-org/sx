@@ -6,3 +6,6 @@ in_hand=9
 relay=11
 read_fwd=4
 implicit_fwd=1
+loop_fwd=3
+arm_fwd=1
+nested_fwd=1
