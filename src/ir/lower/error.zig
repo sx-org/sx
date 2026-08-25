@@ -177,6 +177,19 @@ pub fn raisedMember(self: *Lowering, node: *const Node) ?RaisedMember {
     return .{ .set = null, .shorthand = head.data == .enum_literal, .member = name, .constructed = braced != null };
 }
 
+/// The member name a `match` arm's pattern names on an error-set subject, in
+/// any spelling — `.X`, `X`, `Set.X`. Null for an `else:` arm or a pattern no
+/// member spelling reaches.
+pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
+    const pat = pattern orelse return null;
+    return switch (pat.data) {
+        .enum_literal => |el| el.name,
+        .identifier => |id| id.name,
+        .field_access => |fa| fa.field,
+        else => null,
+    };
+}
+
 /// The channel a `|` composition in type position denotes, or null when an
 /// operand names no error set.
 pub fn composedChannel(self: *Lowering, node: *const Node) ?TypeId {

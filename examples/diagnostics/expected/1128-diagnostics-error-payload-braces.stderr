@@ -1,33 +1,39 @@
 error: 'Wide' carries a payload of type 'i64', and this names it bare
-  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:11:57
+  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:12:57
    |
-11 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+12 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
    |                                                         ^^^^^^^^^^^^^^^^^^
 
 help: construct it — '.Wide{ … }'
    |
-11 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+12 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
    |                                                         ^^^^^^^^^^^^^^^^^^
 
 error: 'Bare' carries no payload, and a brace group holds one
-  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:12:63
+  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:13:63
    |
-12 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+13 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
    |                                                               ^^^^^^^^
 
 help: write '.Bare'
    |
-12 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+13 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
    |                                                               ^^^^^^^^
 
 error: 'Wide' carries a payload of type 'i64' — write the one value in the braces ('.Wide{ … }')
-  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:13:63
+  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:14:63
    |
-13 | empty_scalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
+14 | empty_scalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
    |                                                               ^^^^^^^
 
 error: error set 'PayErr' has no member 'Gone'
-  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:14:63
+  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:15:63
    |
-14 | absent       :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Gone{1}; } return n; }
+15 | absent       :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Gone{1}; } return n; }
    |                                                               ^^^^^^^^^^^^^^
+
+error: error set 'PayErr' has no member 'Gone'
+  --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:17:76
+   |
+17 | absent_arm   :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
+   |                                                                            ^^^^^

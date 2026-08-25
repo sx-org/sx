@@ -3230,6 +3230,7 @@ pub const Lowering = struct {
     pub const checkSlotChannel = lower_error.checkSlotChannel;
     pub const literalTagName = lower_error.literalTagName;
     pub const raisedMember = lower_error.raisedMember;
+    pub const errorArmMemberName = lower_error.errorArmMemberName;
     pub const lowerErrorMemberConstruction = lower_error.lowerErrorMemberConstruction;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;

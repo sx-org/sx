@@ -1,7 +1,8 @@
 // A member's brace group holds its payload: the channel value carries a copy,
 // and a `match` arm binds it back off a caught value. Empty braces are a struct
 // payload's own defaults. A retype into a wider channel carries the payload
-// alongside the tag, whatever each channel reserves for one.
+// alongside the tag, whatever each channel reserves for one. A value-position
+// `match` whose every arm binds takes its result type from those payloads.
 
 @import "modules/std.sx";
 
@@ -39,6 +40,14 @@ read :: (e: Both) -> i64 {
     };
 }
 
+Pair :: error { L: i64; R: i64 }
+
+pair :: (n: i64) -> (i64, !Pair) {
+    if n < 0 { raise .L{5}; }
+    if n == 0 { raise .R{6}; }
+    return n;
+}
+
 small :: (n: i64) -> (i64, !Small) {
     if n < 0 { raise Small.S{7}; }
     return n;
@@ -59,5 +68,9 @@ main :: () -> i32 {
         else: -1;
     });
     print("ident={}\n", widen(3) catch |e| read(e));
+    print("pair={}\n", pair(-1) catch |e| match e {
+        case .L: |l| l;
+        case .R: |r| r;
+    });
     return 0;
 }
