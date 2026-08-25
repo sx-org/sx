@@ -927,10 +927,10 @@ pub const Lowering = struct {
     /// closure/fn-type SLOT call (no static fn name). Key = `closureShapeKey`.
     shape_inferred_sets: std.StringHashMap([]const u32),
     /// The channel a bare-`!` declaration carries: the interned flatten-merge
-    /// of the static types its body `try`s / `raise`s. Every re-resolution of
+    /// of the static types its body `try`s / `raise`s, or the DYNAMIC channel
+    /// when those escapes name no static member set. Every re-resolution of
     /// that signature reads the entry, so slot exactness and value subset both
-    /// compare one TypeId. A declaration whose body escapes through an opaque
-    /// channel has no static merge and is absent.
+    /// compare one TypeId.
     inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
