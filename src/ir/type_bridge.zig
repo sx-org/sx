@@ -787,8 +787,7 @@ pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeI
 
 /// Append the members the channel operand `name` contributes to `out`: a named
 /// set contributes every member it declares, `Set.Member` the one it names.
-/// False when the spelling names no error set — the caller then keeps the
-/// member-less channel rather than composing a wrong one.
+/// False when the spelling names no error set.
 pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
     if (qualifiedChannelMember(name, table, inner)) |member| {
         out.append(table.alloc, member) catch unreachable;
