@@ -42,6 +42,12 @@ pub const ErrorAnalysis = struct {
             .raise_stmt => |rs| {
                 if (Lowering.literalTagName(rs.tag)) |nm| {
                     tags.append(self.l.alloc, self.l.module.types.internTag(nm)) catch {};
+                } else if (self.l.qualifiedErrorMember(rs.tag)) |qm| {
+                    // What a qualified member contributes is its STATIC TYPE —
+                    // the whole set, not the one member named at the site.
+                    for (self.l.module.types.get(qm.set).error_set.tags) |t| {
+                        if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
+                    }
                 }
                 self.collectErrorSites(rs.tag, tags, edges, dyn);
             },

@@ -18,9 +18,10 @@
 @import "modules/build.sx";
 
 Named :: error { Nope }
+Wide :: error { Elsewhere }
 
 wide :: () -> ! {
-    raise error.Elsewhere;
+    raise Wide.Elsewhere;
 }
 
 // 1. Refused: the same forward rule as an explicit `return wide();`.

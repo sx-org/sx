@@ -131,6 +131,7 @@ gen_val :: () -> string {
 // --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
 
 SmokeErr :: error { Empty; BadDigit; Overflow }
+CheckErr :: error { NotReady }
 
 // value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
@@ -140,9 +141,9 @@ sm_parse :: (n: i32) -> (i32, !SmokeErr) {
     return n * 2;
 }
 
-// pure failable, inferred set (ad-hoc tag minted into `!`)
+// pure failable, inferred set: the raised member's set converges into `!`
 sm_check :: (ok: bool) -> ! {
-    if !ok { raise error.NotReady; }
+    if !ok { raise CheckErr.NotReady; }
     return;
 }
 

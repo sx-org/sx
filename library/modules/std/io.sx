@@ -286,8 +286,8 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
     v := f.value;
     f.consumed = true;
     fut_release(f);   // frees the Future iff the worker has also finished
-    if canceled { raise error.Canceled; }
-    if failed { raise error.Failed; }
+    if canceled { raise IoErr.Canceled; }
+    if failed { raise IoErr.Failed; }
     return v;
 }
 

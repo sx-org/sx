@@ -1,26 +1,29 @@
 // Whole-program inferred error sets. A bare `-> !` function's
-// error set is INFERRED: the union of the tags it raises directly plus the
-// sets of the failable functions it `try`s, converged across the whole call
-// graph by a fix-point pass. Here `leaf` raises {Foo}; `mid` try-propagates
-// leaf AND raises Bar, so `mid` converges to {Foo, Bar}; the named caller
-// `run :: -> !A` then type-checks because mid's converged set is a subset of
-// A. The rejection (a converged tag NOT in the caller's set) lives in
-// `examples/224-inferred-widening-reject.sx`.
+// error set is INFERRED: the union of the STATIC TYPES it raises directly plus
+// the sets of the failable functions it `try`s, converged across the whole call
+// graph by a fix-point pass. Here `leaf` raises `Lo.Foo` so its set is Lo;
+// `mid` try-propagates leaf AND raises `Hi.Bar`, so `mid` converges to
+// {Foo, Bar}; the named caller `run :: -> !A` then type-checks because mid's
+// converged set is a subset of A. The rejection (a converged tag NOT in the
+// caller's set) lives in
+// `examples/errors/1007-errors-inferred-widening-reject.sx`.
 
 @import "modules/std.sx";
 
-A :: error { Foo; Bar }
+A  :: error { Foo; Bar }
+Lo :: error { Foo }
+Hi :: error { Bar }
 
 leaf :: (n: i32) -> ! {
-    if n < 0 { raise error.Foo; }
+    if n < 0 { raise Lo.Foo; }
     return;
 }
 
-// Inferred set converges to {Foo, Bar}: {Foo} absorbed from `try leaf` plus
-// the directly-raised Bar.
+// Inferred set converges to {Foo, Bar}: Lo absorbed from `try leaf` plus the
+// directly-raised Hi.
 mid :: (n: i32) -> ! {
     try leaf(n);
-    if n == 100 { raise error.Bar; }
+    if n == 100 { raise Hi.Bar; }
     return;
 }
 
@@ -33,8 +36,8 @@ run :: (n: i32) -> !A {
 main :: () -> i32 {
     e := run(-1);                          // leaf raises Foo -> propagates out
     r : i32 = 0;
-    if e == error.Foo { r = r + 7; }       // true  -> +7
-    if e == error.Bar { r = r + 1; }        // false (Foo escaped, not Bar)
+    if e == A.Foo { r = r + 7; }           // true  -> +7
+    if e == A.Bar { r = r + 1; }           // false (Foo escaped, not Bar)
     print("inferred result: {}\n", r);      // -> 7
     return r;
 }

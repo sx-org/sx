@@ -108,6 +108,31 @@ pub fn literalTagName(node: *const Node) ?[]const u8 {
     return null;
 }
 
+/// The error set a qualified member spelling `Set.Member` names, read from its
+/// OBJECT node: a type name resolving to an error set, not shadowed by a value
+/// binding or a global value.
+pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+    if (object.data != .identifier) return null;
+    const name = object.data.identifier.name;
+    if (self.scope) |s| {
+        if (s.lookup(name) != null) return null;
+    }
+    if (self.program_index.global_names.contains(name)) return null;
+    const ty = self.module.types.findByName(self.module.types.internString(name)) orelse return null;
+    if (ty.isBuiltin()) return null;
+    return if (self.module.types.get(ty) == .error_set) ty else null;
+}
+
+pub const QualifiedErrorMember = struct { set: TypeId, member: []const u8 };
+
+/// `Set.Member` read as a whole node, or null when `node` is not one.
+pub fn qualifiedErrorMember(self: *Lowering, node: *const Node) ?QualifiedErrorMember {
+    if (node.data != .field_access) return null;
+    const fa = node.data.field_access;
+    const set = self.qualifiedErrorSet(fa.object) orelse return null;
+    return .{ .set = set, .member = fa.field };
+}
+
 /// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
 /// Returns null when neither operand is error-related (general path runs).
 /// Both operands must be a tag (an `error.X` literal or an error-set value);
@@ -218,6 +243,22 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
     }
 }
 
+/// Diagnose a qualified member `qm` that the named destination set `dst` does
+/// not carry.
+fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span: ast.Span) void {
+    if (dst.isBuiltin()) return;
+    const dst_info = self.module.types.get(dst);
+    if (dst_info != .error_set) return;
+    const src_info = self.module.types.get(qm.set).error_set;
+    const tag = self.module.types.internTag(qm.member);
+    // A member its own set does not carry is diagnosed where the member is read.
+    if (!containsTag(src_info.tags, tag)) return;
+    if (containsTag(dst_info.error_set.tags, tag)) return;
+    if (self.diagnostics) |diags| {
+        diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.error_set.name) });
+    }
+}
+
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
@@ -267,9 +308,15 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const tag_ref = self.lowerExpr(rs.tag);
     self.target_type = saved_target;
 
-    if (!inferred and literalTagName(rs.tag) == null) {
-        if (self.errorSetTypeOf(rs.tag)) |src_set| {
-            self.checkErrorSetSubset(src_set, err_set, span);
+    if (!inferred) {
+        if (qualifiedErrorMember(self, rs.tag)) |qm| {
+            // A qualified member carries its whole set as its static type, but
+            // only the member itself lands in the channel.
+            checkMemberInSet(self, qm, err_set, span);
+        } else if (literalTagName(rs.tag) == null) {
+            if (self.errorSetTypeOf(rs.tag)) |src_set| {
+                self.checkErrorSetSubset(src_set, err_set, span);
+            }
         }
     }
 
