@@ -1170,9 +1170,10 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 
 /// The type a match arm's payload capture (`case .v: |x|`) binds, from the
 /// subject's type: a tagged-union arm captures its variant's payload, an
-/// optional arm captures the unwrapped child (mirrors `lowerMatch`'s capture
-/// lowering). Null when the subject/pattern supplies no typed payload — the
-/// arm-level binding guard diagnoses those at lowering.
+/// error-set arm captures the payload its member declares, an optional arm
+/// captures the unwrapped child (mirrors `lowerMatch`'s capture lowering).
+/// Null when the subject/pattern supplies no typed payload — the arm-level
+/// binding guard diagnoses those at lowering.
 fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
     if (subject_ty.isBuiltin()) return null;
     switch (self.module.types.get(subject_ty)) {
@@ -1188,6 +1189,12 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
                 if (std.mem.eql(u8, self.module.types.strings.get(f.name), pat_name)) return f.ty;
             }
             return null;
+        },
+        .error_set => {
+            const name = Lowering.errorArmMemberName(pattern) orelse return null;
+            const member = self.module.types.errorSetMemberId(subject_ty, name) orelse return null;
+            const payload = self.module.types.memberPayload(member);
+            return if (payload == .void) null else payload;
         },
         else => return null,
     }

@@ -2153,6 +2153,62 @@ pub const LLVMEmitter = struct {
         return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(channel_llvm), word, 0, "channel.from.tag");
     }
 
+    /// A `val`-shaped stack copy, so a payload area can be addressed.
+    fn spill(self: *LLVMEmitter, val: c.LLVMValueRef, name: [*:0]const u8) c.LLVMValueRef {
+        const slot = self.buildEntryAlloca(c.LLVMTypeOf(val), name);
+        _ = c.LLVMBuildStore(self.builder, val, slot);
+        return slot;
+    }
+
+    /// The alignment a channel's payload area is addressed at. The tag word
+    /// heads the channel, so the area inherits the channel's own alignment.
+    fn channelAlign(self: *LLVMEmitter, channel: TypeId) c_uint {
+        return @intCast(self.ir_mod.types.typeAlignBytes(channel));
+    }
+
+    /// A `channel`-typed value carrying `tag` over `bytes` copied from
+    /// `payload_ptr`.
+    fn channelOverPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload_ptr: c.LLVMValueRef, payload_align: c_uint, bytes: u64) c.LLVMValueRef {
+        const channel_llvm = self.toLLVMType(channel);
+        const slot = self.buildEntryAlloca(channel_llvm, "channel.slot");
+        _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(channel_llvm), slot);
+        if (bytes > 0) {
+            const area = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 1, "channel.area");
+            _ = c.LLVMBuildMemCpy(self.builder, area, self.channelAlign(channel), payload_ptr, payload_align, c.LLVMConstInt(self.cached_i64, bytes, 0));
+        }
+        const tag_ptr = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 0, "channel.tagp");
+        _ = c.LLVMBuildStore(self.builder, self.coerceArg(tag, self.cached_i32), tag_ptr);
+        return c.LLVMBuildLoad2(self.builder, channel_llvm, slot, "channel.val");
+    }
+
+    /// A `channel` value carrying `tag` over a copy of `payload`.
+    pub fn channelWithPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload: c.LLVMValueRef) c.LLVMValueRef {
+        const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+        const payload_llvm = c.LLVMTypeOf(payload);
+        return self.channelOverPayload(channel, tag, self.spill(payload, "channel.pay"), c.LLVMABIAlignmentOfType(dl, payload_llvm), c.LLVMABISizeOfType(dl, payload_llvm));
+    }
+
+    /// `channel_val`'s payload area read as `payload_llvm`.
+    pub fn channelPayload(self: *LLVMEmitter, channel: TypeId, channel_val: c.LLVMValueRef, payload_llvm: c.LLVMTypeRef) c.LLVMValueRef {
+        const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), self.spill(channel_val, "channel.read"), 1, "channel.area");
+        const out = self.buildEntryAlloca(payload_llvm, "channel.pay");
+        const size = c.LLVMConstInt(self.cached_i64, c.LLVMABISizeOfType(dl, payload_llvm), 0);
+        _ = c.LLVMBuildMemCpy(self.builder, out, c.LLVMABIAlignmentOfType(dl, payload_llvm), area, self.channelAlign(channel), size);
+        return c.LLVMBuildLoad2(self.builder, payload_llvm, out, "channel.pay.val");
+    }
+
+    /// `val` retyped from channel `from` to channel `to`, carrying the tag word
+    /// and whatever payload area both channels reserve.
+    pub fn channelRetype(self: *LLVMEmitter, val: c.LLVMValueRef, from: TypeId, to: TypeId) c.LLVMValueRef {
+        const table = &self.ir_mod.types;
+        const tag = self.channelTag(val, from);
+        if (!table.isPayloadCarryingChannel(from)) return self.channelFromTag(self.toLLVMType(to), tag);
+        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(from), self.spill(val, "channel.src"), 1, "channel.area");
+        const bytes = @min(table.channelPayloadBytes(from), table.channelPayloadBytes(to));
+        return self.channelOverPayload(to, tag, area, self.channelAlign(from), bytes);
+    }
+
     /// The scalar an aggregate compares as when the other operand is one: a
     /// 1-tuple's lone element, or a payload-carrying channel's tag word.
     /// Null when the aggregate has no such reading.

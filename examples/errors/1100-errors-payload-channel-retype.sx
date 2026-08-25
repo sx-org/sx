@@ -7,7 +7,7 @@ Wide   :: error { C: i64 };
 Both   :: Narrow | Wide;
 
 from_narrow :: (n: i32) -> (i32, !Narrow) {
-    if n < 0 { raise Narrow.B; }
+    if n < 0 { raise Narrow.B{3}; }
     return n;
 }
 

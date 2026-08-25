@@ -5,7 +5,7 @@
 Pay :: error { Bare; Wide: i64 }
 
 f :: (n: i32) -> (i32, !Pay) {
-    if n < 0 { raise Pay.Wide; }
+    if n < 0 { raise Pay.Wide{9}; }
     return n;
 }
 

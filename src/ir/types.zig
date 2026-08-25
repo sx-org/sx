@@ -1516,12 +1516,18 @@ pub const TypeTable = struct {
         return widest;
     }
 
+    /// The payload bytes the channel `ty` reserves, 0 when `ty` is no channel
+    /// at all or every member of it is payload-free.
+    pub fn channelPayloadBytes(self: *const TypeTable, ty: TypeId) usize {
+        if (ty.isBuiltin()) return 0;
+        const info = self.get(ty);
+        if (info != .error_set) return 0;
+        return self.errorChannelPayloadBytes(info.error_set.tags);
+    }
+
     /// Whether a channel over `ty` reserves payload bytes for its members.
     pub fn isPayloadCarryingChannel(self: *const TypeTable, ty: TypeId) bool {
-        if (ty.isBuiltin()) return false;
-        const info = self.get(ty);
-        if (info != .error_set) return false;
-        return self.errorChannelPayloadBytes(info.error_set.tags) > 0;
+        return self.channelPayloadBytes(ty) > 0;
     }
 
     /// The id of the member `name` names in error set `set`, or null when the

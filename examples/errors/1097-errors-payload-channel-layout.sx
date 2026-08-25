@@ -10,7 +10,7 @@ PayErr :: error {
 }
 
 boom :: (n: i64) -> (i64, !PayErr) {
-    if n < 0 { raise PayErr.Wide; }
+    if n < 0 { raise PayErr.Wide{7}; }
     if n == 0 { raise PayErr.Bare; }
     return n * 2;
 }

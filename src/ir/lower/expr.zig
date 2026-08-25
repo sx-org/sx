@@ -71,13 +71,19 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Check for tagged enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
+        // An error member's brace group holds its payload, so a head naming one
+        // constructs the channel value rather than resolving as a type.
+        if (self.qualifiedErrorMember(te)) |qm| {
+            return self.lowerErrorMemberConstruction(sl, qm.set, qm.member, span);
+        }
         if (te.data == .enum_literal) {
             const variant_name = te.data.enum_literal.name;
-            const union_ty = self.target_type orelse .unresolved;
-            if (!union_ty.isBuiltin()) {
-                const union_info = self.module.types.get(union_ty);
-                if (union_info == .tagged_union) {
-                    return self.lowerTaggedEnumLiteral(sl, variant_name, union_ty, union_info.tagged_union, span);
+            const target = self.target_type orelse .unresolved;
+            if (!target.isBuiltin()) {
+                switch (self.module.types.get(target)) {
+                    .error_set => return self.lowerErrorMemberConstruction(sl, target, variant_name, span),
+                    .tagged_union => |tu| return self.lowerTaggedEnumLiteral(sl, variant_name, target, tu, span),
+                    else => {},
                 }
             }
         }

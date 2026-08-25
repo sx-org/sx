@@ -138,6 +138,58 @@ pub fn qualifiedErrorMember(self: *Lowering, node: *const Node) ?QualifiedErrorM
     return .{ .set = set, .member = fa.field };
 }
 
+/// A member named at a `raise`, over every spelling of it.
+pub const RaisedMember = struct {
+    /// The set a qualified spelling names; null when the member resolves in
+    /// the channel in hand.
+    set: ?TypeId,
+    /// The `.X` spelling, which resolves ONLY against a channel in hand.
+    shorthand: bool,
+    member: []const u8,
+    /// The spelling carries a brace group, so it builds the member's payload.
+    constructed: bool,
+};
+
+/// The head a brace group is written against, or null when `node` carries no
+/// brace group. A `raise` operand reaches error analysis before its statement
+/// settles, so both readings of the juxtaposition answer.
+fn bracedHead(node: *const Node) ?*const Node {
+    return switch (node.data) {
+        .struct_literal => |sl| sl.type_expr,
+        .juxtaposition => |jx| jx.expr,
+        else => null,
+    };
+}
+
+/// The member a `raise` operand names — `.X`, `Set.X`, or either with a
+/// payload brace group — or null when the operand is a live error value.
+pub fn raisedMember(self: *Lowering, node: *const Node) ?RaisedMember {
+    const braced = bracedHead(node);
+    const head = braced orelse node;
+    if (qualifiedErrorMember(self, head)) |qm|
+        return .{ .set = qm.set, .shorthand = false, .member = qm.member, .constructed = braced != null };
+    const name = if (braced == null)
+        literalTagName(head) orelse return null
+    else if (head.data == .enum_literal)
+        head.data.enum_literal.name
+    else
+        return null;
+    return .{ .set = null, .shorthand = head.data == .enum_literal, .member = name, .constructed = braced != null };
+}
+
+/// The member name a `match` arm's pattern names on an error-set subject, in
+/// any spelling — `.X`, `X`, `Set.X`. Null for an `else:` arm or a pattern no
+/// member spelling reaches.
+pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
+    const pat = pattern orelse return null;
+    return switch (pat.data) {
+        .enum_literal => |el| el.name,
+        .identifier => |id| id.name,
+        .field_access => |fa| fa.field,
+        else => null,
+    };
+}
+
 /// The channel a `|` composition in type position denotes, or null when an
 /// operand names no error set.
 pub fn composedChannel(self: *Lowering, node: *const Node) ?TypeId {
@@ -421,6 +473,73 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     }
 }
 
+/// The channel value `Set.Member{ … }` / `.Member{ … }` builds: `member`'s tag
+/// over a copy of its declared payload, typed as `set_ty`.
+pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLiteral, set_ty: TypeId, member_name: []const u8, span: ast.Span) Ref {
+    const table = &self.module.types;
+    const member = table.errorSetMemberId(set_ty, member_name) orelse {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).error_set.name), member_name });
+        }
+        return self.builder.constUndef(set_ty);
+    };
+    const tag = self.builder.constInt(@intCast(member), set_ty);
+    const payload_ty = table.memberPayload(member);
+    if (payload_ty == .void) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "'{s}' carries no payload, and a brace group holds one", .{member_name});
+            d.addHelpFmt(id, span, null, "write '.{s}'", .{member_name});
+        }
+        return tag;
+    }
+    const payload = memberPayloadValue(self, sl, payload_ty, member_name, span) orelse return tag;
+    return self.builder.enumInit(member, payload, set_ty);
+}
+
+/// The payload a member's brace group holds. A struct payload takes the struct
+/// literal's own rules, empty braces included; every other payload is the one
+/// value in the braces, so empty braces name nothing to carry.
+fn memberPayloadValue(self: *Lowering, sl: *const ast.StructLiteral, payload_ty: TypeId, member_name: []const u8, span: ast.Span) ?Ref {
+    const table = &self.module.types;
+    if (!payload_ty.isBuiltin() and table.get(payload_ty) == .@"struct") {
+        const inner: ast.StructLiteral = .{ .struct_name = null, .type_expr = null, .field_inits = sl.field_inits };
+        const saved = self.target_type;
+        self.target_type = payload_ty;
+        defer self.target_type = saved;
+        return self.lowerStructLiteral(&inner, span);
+    }
+    if (sl.field_inits.len != 1 or (sl.field_inits[0].name != null and !sl.field_inits[0].was_shorthand)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "'{s}' carries a payload of type '{s}' — write the one value in the braces ('.{s}{{ … }}')", .{ member_name, self.formatTypeName(payload_ty), member_name });
+        }
+        return null;
+    }
+    const value_node = sl.field_inits[0].value;
+    const saved = self.target_type;
+    self.target_type = payload_ty;
+    const val = self.lowerExpr(value_node);
+    self.target_type = saved;
+    const src_ty = self.builder.getRefType(val);
+    if (self.refuseVoidElement(src_ty, payload_ty, null, 0, value_node.span)) return self.zeroValue(payload_ty);
+    return self.coerceToType(val, src_ty, payload_ty);
+}
+
+/// Diagnose a member spelled bare where it declares a payload: the channel
+/// value carries that payload, and only a brace group supplies one.
+fn checkMemberPayloadConstructed(self: *Lowering, rm: RaisedMember, channel: TypeId, span: ast.Span) bool {
+    if (rm.constructed) return true;
+    const set = rm.set orelse channel;
+    if (set.isBuiltin() or self.module.types.get(set) != .error_set) return true;
+    const member = self.module.types.errorSetMemberId(set, rm.member) orelse return true;
+    const payload_ty = self.module.types.memberPayload(member);
+    if (payload_ty == .void) return true;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' carries a payload of type '{s}', and this names it bare", .{ rm.member, self.formatTypeName(payload_ty) });
+        d.addHelpFmt(id, span, null, "construct it — '.{s}{{ … }}'", .{rm.member});
+    }
+    return false;
+}
+
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
@@ -460,16 +579,19 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         return;
     };
     const inferred = self.channelIsOpen(err_set);
+    const named = raisedMember(self, rs.tag);
 
     // A `.X` shorthand resolves only against a channel already in hand. A
     // signature written bare `!` is not one: the channel is what its raises
     // converge to, so `.X` has nothing to name a member in.
-    if (rs.tag.data == .enum_literal and channelIsWrittenInferred(self, err_set)) {
-        if (self.diagnostics) |d| {
-            const tag = rs.tag.data.enum_literal.name;
-            d.addFmt(.err, span, "`.{s}` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.{s}`)", .{ tag, tag });
+    if (named) |rm| {
+        if (rm.shorthand and channelIsWrittenInferred(self, err_set)) {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "`.{s}` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.{s}`)", .{ rm.member, rm.member });
+            }
+            return;
         }
-        return;
+        if (!checkMemberPayloadConstructed(self, rm, err_set, span)) return;
     }
 
     // (2) Set check. Lowering EXPR with the function's error set as the
@@ -482,14 +604,12 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     self.target_type = saved_target;
 
     if (!inferred) {
-        if (qualifiedErrorMember(self, rs.tag)) |qm| {
+        if (named) |rm| {
             // A qualified member carries its whole set as its static type, but
             // only the member itself lands in the channel.
-            checkMemberInSet(self, qm, err_set, span);
-        } else if (literalTagName(rs.tag) == null) {
-            if (self.errorSetTypeOf(rs.tag)) |src_set| {
-                self.checkErrorSetSubset(src_set, err_set, span);
-            }
+            if (rm.set) |set| checkMemberInSet(self, .{ .set = set, .member = rm.member }, err_set, span);
+        } else if (self.errorSetTypeOf(rs.tag)) |src_set| {
+            self.checkErrorSetSubset(src_set, err_set, span);
         }
     }
 
