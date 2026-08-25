@@ -160,7 +160,7 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList
             return collectChannelMembers(self, b.rhs, out);
         },
         .error_set_decl => {
-            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table);
+            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table, self);
             out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
             return true;
         },

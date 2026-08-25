@@ -429,6 +429,27 @@ test "errorSetType: u32 layout, owner display, identity is the member set" {
     try std.testing.expect(table.errorSetMemberId(set, "Nope") == null);
 }
 
+test "errorSetType: the channel sizes to its tag word plus its widest member payload" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const name = table.internString("PayloadErr");
+    const owner = table.internErrorOwner(&name, name);
+    const bare = table.internMember(owner, "Bare");
+    const small = table.internMember(owner, "Small");
+    const wide = table.internMember(owner, "Wide");
+    table.setMemberPayload(small, .i32);
+    table.setMemberPayload(wide, .i64);
+
+    const set = table.errorSetType(.empty, &[_]u32{ bare, small, wide });
+    try std.testing.expectEqual(TypeId.i64, table.memberPayload(wide));
+    try std.testing.expectEqual(TypeId.void, table.memberPayload(bare));
+    try std.testing.expectEqual(@as(u32, 12), table.sizeOf(set));
+    try std.testing.expectEqual(@as(usize, 12), table.typeSizeBytes(set));
+    try std.testing.expectEqual(@as(usize, 4), table.typeAlignBytes(set));
+}
+
 test "errorSetType: a shared member spelling does not merge two owners' sets" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

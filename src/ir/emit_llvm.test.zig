@@ -613,6 +613,34 @@ test "emit: type conversion toLLVMType" {
     _ = emitter.toLLVMType(.noreturn);
 }
 
+test "emit: a payload-carrying error channel lowers to { tag, payload } and its failable agrees" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    const name = str(&module, "PayloadErr");
+    const owner = module.types.internErrorOwner(&name, name);
+    const bare = module.types.internMember(owner, "Bare");
+    const wide = module.types.internMember(owner, "Wide");
+    module.types.setMemberPayload(wide, .i64);
+    const channel = module.types.errorSetType(.empty, &[_]u32{ bare, wide });
+    const failable = module.types.internFailable(.i64, channel);
+
+    var emitter = LLVMEmitter.init(alloc, &module, "test_error_payload", .{});
+    defer emitter.deinit();
+    const dl = c.LLVMGetModuleDataLayout(emitter.llvm_module);
+
+    try std.testing.expectEqual(@as(u32, 12), module.types.sizeOf(channel));
+    try std.testing.expectEqual(
+        @as(c_ulonglong, 12),
+        c.LLVMABISizeOfType(dl, emitter.toLLVMType(channel)),
+    );
+    try std.testing.expectEqual(
+        @as(c_ulonglong, @intCast(module.types.typeSizeBytes(failable))),
+        c.LLVMABISizeOfType(dl, emitter.toLLVMType(failable)),
+    );
+}
+
 // ── ABI param coercion ──────────────────────────────────────────────
 // Lock the C-ABI struct-coercion buckets (abiCoerceParamType / needsByval),
 // which feed callconv(.c) / #extern signatures.

@@ -332,7 +332,8 @@ pub const TypeInfo = union(enum) {
     /// `TagRegistry` (sorted, deduped) and ARE the set's identity; `name` is the
     /// spelling derived from them, and only a MEMBER-LESS channel (a bare `!`,
     /// an unresolved composition) is identified by that spelling instead.
-    /// Runtime layout is u32 — the channel's member id; id 0 is "no error".
+    /// Runtime layout is `{ qualified_tag: u32, widest member payload }` — the
+    /// tag is the channel's member id, and id 0 is "no error".
     pub const ErrorSetInfo = struct {
         name: StringId,
         tags: []const u32,
@@ -434,6 +435,9 @@ pub const TagRegistry = struct {
     names: std.ArrayList([]const u8),
     /// id → owning set, parallel to `names`.
     owners: std.ArrayList(u32),
+    /// id → the member's declared payload type, parallel to `names`. `.void` is
+    /// a payload-free member.
+    payloads: std.ArrayList(TypeId),
     /// owner → the owning declaration's spelling. Slot 0 is the anonymous owner.
     owner_names: std.ArrayList(StringId),
     /// owning declaration pointer → owner.
@@ -445,12 +449,14 @@ pub const TagRegistry = struct {
             .map = std.HashMap(Key, u32, KeyContext, 80).init(alloc),
             .names = std.ArrayList([]const u8).empty,
             .owners = std.ArrayList(u32).empty,
+            .payloads = std.ArrayList(TypeId).empty,
             .owner_names = std.ArrayList(StringId).empty,
             .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
         reg.names.append(alloc, "") catch unreachable; // slot 0
         reg.owners.append(alloc, anonymous_owner) catch unreachable;
+        reg.payloads.append(alloc, .void) catch unreachable;
         reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
         return reg;
     }
@@ -459,6 +465,7 @@ pub const TagRegistry = struct {
         for (self.names.items[1..]) |n| alloc.free(@constCast(n));
         self.names.deinit(alloc);
         self.owners.deinit(alloc);
+        self.payloads.deinit(alloc);
         self.owner_names.deinit(alloc);
         self.owner_ids.deinit();
         self.map.deinit();
@@ -482,6 +489,7 @@ pub const TagRegistry = struct {
         const owned = alloc.dupe(u8, name) catch unreachable;
         self.names.append(alloc, owned) catch unreachable;
         self.owners.append(alloc, owner) catch unreachable;
+        self.payloads.append(alloc, .void) catch unreachable;
         self.map.put(.{ .owner = owner, .name = owned }, id) catch unreachable;
         return id;
     }
@@ -489,6 +497,15 @@ pub const TagRegistry = struct {
     pub fn getName(self: *const TagRegistry, id: u32) []const u8 {
         if (id >= self.names.items.len) return "";
         return self.names.items[id];
+    }
+
+    pub fn setPayload(self: *TagRegistry, id: u32, ty: TypeId) void {
+        self.payloads.items[id] = ty;
+    }
+
+    pub fn payloadOf(self: *const TagRegistry, id: u32) TypeId {
+        if (id >= self.payloads.items.len) return .void;
+        return self.payloads.items[id];
     }
 
     pub fn ownerOf(self: *const TagRegistry, id: u32) u32 {
@@ -1478,6 +1495,27 @@ pub const TypeTable = struct {
         return self.tags.getName(id);
     }
 
+    /// Record the payload type `Member: T` declares.
+    pub fn setMemberPayload(self: *TypeTable, member: u32, payload: TypeId) void {
+        self.tags.setPayload(member, payload);
+    }
+
+    /// A member's declared payload type; `.void` when it carries none.
+    pub fn memberPayload(self: *const TypeTable, member: u32) TypeId {
+        return self.tags.payloadOf(member);
+    }
+
+    /// The bytes a channel over `tags` reserves for a payload: the widest
+    /// declared member payload, 0 when every member is payload-free.
+    pub fn errorChannelPayloadBytes(self: *const TypeTable, tags: []const u32) usize {
+        var widest: usize = 0;
+        for (tags) |m| {
+            const sz = self.typeSizeBytes(self.memberPayload(m));
+            if (sz > widest) widest = sz;
+        }
+        return widest;
+    }
+
     /// The id of the member `name` names in error set `set`, or null when the
     /// set carries no such member.
     pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
@@ -1595,7 +1633,7 @@ pub const TypeTable = struct {
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
-            .error_set => 4, // u32 tag id on the error channel
+            .error_set => |es| 4 + @as(u32, @intCast(self.errorChannelPayloadBytes(es.tags))),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
             // before codegen. Reaching runtime layout means a pack leaked.
@@ -1734,7 +1772,8 @@ pub const TypeTable = struct {
             },
             .any => 2 * ptr_size, // {type_tag, data_ptr}
             .protocol => 3 * ptr_size, // {ctx, type_id, vtable}
-            .error_set => 4, // u32 tag id
+            // The payload area aligns to 1, so the tag word alone pads the tail.
+            .error_set => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeSizeBytes(bt);
                 return 8;
@@ -1787,7 +1826,7 @@ pub const TypeTable = struct {
             // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
             // the tag word.
             .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
-            .error_set => 4, // u32 tag id
+            .error_set => 4, // the tag word; a payload area does not raise it
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeAlignBytes(bt);
                 return 8;

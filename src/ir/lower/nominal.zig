@@ -237,7 +237,7 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
 fn internErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const table = &self.module.types;
     const decl_key: *const anyopaque = @ptrCast(esd);
-    const info = type_bridge.errorSetDeclInfo(esd, table);
+    const info = type_bridge.errorSetDeclInfo(esd, table, self);
     const id = adoptableForwardStub(table, info) orelse table.intern(info);
     table.type_decl_tids.put(decl_key, id) catch {};
 }

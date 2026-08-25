@@ -74,7 +74,15 @@ pub const Ops = struct {
             c.LLVMConstInt(ty, @bitCast(val), 1)
         else if (kind == c.LLVMPointerTypeKind)
             c.LLVMConstNull(ty)
-        else
+        else if (emit.tagWordType(ty)) |tag_ty| blk: {
+            // A `{tag, [N x i8]}` constant carries the value in its tag word
+            // over a zeroed payload area.
+            var elems = [_]c.LLVMValueRef{
+                c.LLVMConstInt(tag_ty, @bitCast(val), 1),
+                c.LLVMConstNull(c.LLVMStructGetTypeAtIndex(ty, 1)),
+            };
+            break :blk c.LLVMConstStructInContext(self.e.context, &elems, 2, 0);
+        } else
             // void or other non-integer type: emit i64 0 as unused placeholder
             c.LLVMConstInt(c.LLVMInt64TypeInContext(self.e.context), 0, 0);
         self.e.mapRef(llvm_val);
@@ -2836,7 +2844,7 @@ pub const Ops = struct {
         // ids can't occur — ids come from the same registry the table
         // is built from — so no bounds branch is needed.
         const global = self.e.reflection().getOrBuildTagNameArray();
-        const tag_raw = self.e.resolveRef(u.operand);
+        const tag_raw = self.e.tagWordOf(self.e.resolveRef(u.operand));
         const idx = c.LLVMBuildZExt(self.e.builder, tag_raw, self.e.cached_i64, "etn.idx");
         const string_ty = self.e.getStringStructType();
         const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
@@ -2850,7 +2858,7 @@ pub const Ops = struct {
 
     // ── Switch branch ──────────────────────────────────────
     pub fn emitSwitchBr(self: Ops, sw: SwitchBranch, func_idx: u32) void {
-        const operand = self.e.resolveRef(sw.operand);
+        const operand = self.e.tagWordOf(self.e.resolveRef(sw.operand));
         const default_bb = self.e.getBlock(func_idx, sw.default);
         const switch_inst = c.LLVMBuildSwitch(self.e.builder, operand, default_bb, @intCast(sw.cases.len));
         for (sw.cases) |case| {

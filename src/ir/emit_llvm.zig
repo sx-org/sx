@@ -163,6 +163,17 @@ pub const Jni = struct {
     }
 };
 
+/// The tag-word type of a `{tag, [N x i8]}` value — a tagged union, a
+/// payload-carrying error channel — or null for any other LLVM type.
+pub fn tagWordType(ty: c.LLVMTypeRef) ?c.LLVMTypeRef {
+    if (c.LLVMGetTypeKind(ty) != c.LLVMStructTypeKind) return null;
+    if (c.LLVMCountStructElementTypes(ty) != 2) return null;
+    if (c.LLVMGetTypeKind(c.LLVMStructGetTypeAtIndex(ty, 1)) != c.LLVMArrayTypeKind) return null;
+    const tag_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
+    if (c.LLVMGetTypeKind(tag_ty) != c.LLVMIntegerTypeKind) return null;
+    return tag_ty;
+}
+
 // ── LLVMEmitter ─────────────────────────────────────────────────────────
 // Emits LLVM IR from an IR Module. Replaces
 // the AST-based codegen.
@@ -894,7 +905,7 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .failable => {},
+                .@"struct", .@"union", .tagged_union, .failable, .error_set => {},
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -2139,6 +2150,22 @@ pub const LLVMEmitter = struct {
 
     // ── Comparison helpers ────────────────────────────────────────────
 
+    /// The discriminant a `{tag, [N x i8]}` value carries; any other value is
+    /// its own discriminant.
+    pub fn tagWordOf(self: *LLVMEmitter, val: c.LLVMValueRef) c.LLVMValueRef {
+        if (tagWordType(c.LLVMTypeOf(val)) == null) return val;
+        return c.LLVMBuildExtractValue(self.builder, val, 0, "tag.word");
+    }
+
+    /// The scalar an aggregate compares as when the other operand is one: a
+    /// 1-tuple's lone element, or the tag word of a `{tag, [N x i8]}` value.
+    /// Null when the aggregate has no such reading.
+    fn scalarForCmp(self: *LLVMEmitter, val: c.LLVMValueRef, ty: c.LLVMTypeRef) ?c.LLVMValueRef {
+        if (c.LLVMCountStructElementTypes(ty) == 1) return c.LLVMBuildExtractValue(self.builder, val, 0, "tup.unwrap");
+        if (tagWordType(ty) == null) return null;
+        return self.tagWordOf(val);
+    }
+
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
         var lhs = self.resolveRef(bin.lhs);
         var rhs = self.resolveRef(bin.rhs);
@@ -2148,16 +2175,16 @@ pub const LLVMEmitter = struct {
         var rhs_ty = c.LLVMTypeOf(rhs);
         var rhs_kind = c.LLVMGetTypeKind(rhs_ty);
 
-        // Unwrap single-element struct (1-tuple) to scalar for comparison
+        // Read an aggregate as its comparable scalar when the other side is one.
         if (kind == c.LLVMStructTypeKind and rhs_kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(lhs_ty) == 1) {
-                lhs = c.LLVMBuildExtractValue(self.builder, lhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(lhs, lhs_ty)) |scalar| {
+                lhs = scalar;
                 lhs_ty = c.LLVMTypeOf(lhs);
                 kind = c.LLVMGetTypeKind(lhs_ty);
             }
         } else if (rhs_kind == c.LLVMStructTypeKind and kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(rhs_ty) == 1) {
-                rhs = c.LLVMBuildExtractValue(self.builder, rhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(rhs, rhs_ty)) |scalar| {
+                rhs = scalar;
                 rhs_ty = c.LLVMTypeOf(rhs);
                 rhs_kind = c.LLVMGetTypeKind(rhs_ty);
             }
@@ -2716,6 +2743,15 @@ pub const LLVMEmitter = struct {
             _ = c.LLVMBuildStore(self.builder, val, tmp);
             return c.LLVMBuildLoad2(self.builder, param_ty, tmp, "abi.coerce");
         }
+        // Integer → `{tag, [N x i8]}`: an integer that fits the tag word IS the
+        // tag, over a zeroed payload area.
+        if (val_kind == c.LLVMIntegerTypeKind and param_kind == c.LLVMStructTypeKind) {
+            if (tagWordType(param_ty)) |tag_ty| {
+                if (c.LLVMGetIntTypeWidth(val_ty) <= c.LLVMGetIntTypeWidth(tag_ty)) {
+                    return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(param_ty), self.coerceArg(val, tag_ty), 0, "ca.tag");
+                }
+            }
+        }
         // Integer → Struct (C ABI return coercion: store integer to memory, load as struct)
         if (val_kind == c.LLVMIntegerTypeKind and param_kind == c.LLVMStructTypeKind) {
             const tmp = self.buildEntryAlloca(val_ty, "abi.ret.tmp");
@@ -3064,7 +3100,7 @@ pub const LLVMEmitter = struct {
     /// and `ret i32 1`.
     pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef) void {
         const llvm_func = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const tag_i32 = self.coerceArg(tag_val, self.cached_i32);
+        const tag_i32 = self.coerceArg(self.tagWordOf(tag_val), self.cached_i32);
 
         const is_err = c.LLVMBuildICmp(self.builder, c.LLVMIntNE, tag_i32, c.LLVMConstInt(self.cached_i32, 0, 0), "main.iserr");
         const ok_bb = c.LLVMAppendBasicBlockInContext(self.context, llvm_func, "main.ok");
