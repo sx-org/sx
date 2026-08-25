@@ -74,11 +74,11 @@ pub const Ops = struct {
             c.LLVMConstInt(ty, @bitCast(val), 1)
         else if (kind == c.LLVMPointerTypeKind)
             c.LLVMConstNull(ty)
-        else if (emit.tagWordType(ty)) |tag_ty| blk: {
-            // A `{tag, [N x i8]}` constant carries the value in its tag word
-            // over a zeroed payload area.
+        else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) blk: {
+            // A channel constant carries the value in its tag word over a
+            // zeroed payload area.
             var elems = [_]c.LLVMValueRef{
-                c.LLVMConstInt(tag_ty, @bitCast(val), 1),
+                c.LLVMConstInt(c.LLVMStructGetTypeAtIndex(ty, 0), @bitCast(val), 1),
                 c.LLVMConstNull(c.LLVMStructGetTypeAtIndex(ty, 1)),
             };
             break :blk c.LLVMConstStructInContext(self.e.context, &elems, 2, 0);
@@ -798,11 +798,10 @@ pub const Ops = struct {
             }
         } else if (from_kind == c.LLVMIntegerTypeKind and to_kind == c.LLVMPointerTypeKind) {
             self.e.mapRef(c.LLVMBuildIntToPtr(self.e.builder, operand, to_ty, "itp"));
-        } else if (emit.tagWordType(to_ty)) |tag_ty| {
-            const tag = self.e.coerceArg(self.e.tagWordOf(operand), tag_ty);
-            self.e.mapRef(c.LLVMBuildInsertValue(self.e.builder, c.LLVMConstNull(to_ty), tag, 0, "bitcast.tag"));
-        } else if (emit.tagWordType(c.LLVMTypeOf(operand)) != null) {
-            self.e.mapRef(self.e.coerceArg(self.e.tagWordOf(operand), to_ty));
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.to)) {
+            self.e.mapRef(self.e.channelFromTag(to_ty, self.e.channelTag(operand, conv.from)));
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.from)) {
+            self.e.mapRef(self.e.coerceArg(self.e.channelTag(operand, conv.from), to_ty));
         } else {
             self.e.mapRef(c.LLVMBuildBitCast(self.e.builder, operand, to_ty, "bitcast"));
         }
@@ -2660,14 +2659,14 @@ pub const Ops = struct {
         if (self.e.current_func_is_main) {
             const rinfo = self.e.ir_mod.types.get(func.ret);
             if (rinfo == .error_set) {
-                self.e.emitFailableMainRet(null, val);
+                self.e.emitFailableMainRet(null, val, func.ret);
                 self.e.advanceRefCounter();
                 return;
             }
             if (rinfo == .failable and self.e.ir_mod.types.failableValueSlotCount(rinfo.failable) == 1) {
                 const value = c.LLVMBuildExtractValue(self.e.builder, val, 0, "main.ret.val");
                 const tag = c.LLVMBuildExtractValue(self.e.builder, val, 1, "main.ret.tag");
-                self.e.emitFailableMainRet(value, tag);
+                self.e.emitFailableMainRet(value, tag, rinfo.failable.err);
                 self.e.advanceRefCounter();
                 return;
             }
@@ -2722,7 +2721,7 @@ pub const Ops = struct {
     }
 
     pub fn emitCondBr(self: Ops, cbr: CondBranch, func_idx: u32) void {
-        var cond = self.e.tagWordOf(self.e.resolveRef(cbr.cond));
+        var cond = self.e.channelTag(self.e.resolveRef(cbr.cond), self.e.getRefIRType(cbr.cond));
         const then_bb = self.e.getBlock(func_idx, cbr.then_target);
         const else_bb = self.e.getBlock(func_idx, cbr.else_target);
         // Coerce condition to i1 if needed (e.g., loaded bool stored as i64)
@@ -2849,7 +2848,7 @@ pub const Ops = struct {
         // ids can't occur — ids come from the same registry the table
         // is built from — so no bounds branch is needed.
         const global = self.e.reflection().getOrBuildTagNameArray();
-        const tag_raw = self.e.tagWordOf(self.e.resolveRef(u.operand));
+        const tag_raw = self.e.channelTag(self.e.resolveRef(u.operand), self.e.getRefIRType(u.operand));
         const idx = c.LLVMBuildZExt(self.e.builder, tag_raw, self.e.cached_i64, "etn.idx");
         const string_ty = self.e.getStringStructType();
         const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
@@ -2863,7 +2862,7 @@ pub const Ops = struct {
 
     // ── Switch branch ──────────────────────────────────────
     pub fn emitSwitchBr(self: Ops, sw: SwitchBranch, func_idx: u32) void {
-        const operand = self.e.tagWordOf(self.e.resolveRef(sw.operand));
+        const operand = self.e.channelTag(self.e.resolveRef(sw.operand), self.e.getRefIRType(sw.operand));
         const default_bb = self.e.getBlock(func_idx, sw.default);
         const switch_inst = c.LLVMBuildSwitch(self.e.builder, operand, default_bb, @intCast(sw.cases.len));
         for (sw.cases) |case| {

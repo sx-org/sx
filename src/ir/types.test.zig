@@ -448,6 +448,12 @@ test "errorSetType: the channel sizes to its tag word plus its widest member pay
     try std.testing.expectEqual(@as(u32, 12), table.sizeOf(set));
     try std.testing.expectEqual(@as(usize, 12), table.typeSizeBytes(set));
     try std.testing.expectEqual(@as(usize, 4), table.typeAlignBytes(set));
+
+    const half = table.internMember(owner, "Half");
+    table.setMemberPayload(half, .i16);
+    const padded = table.errorSetType(.empty, &[_]u32{half});
+    try std.testing.expectEqual(@as(u32, 8), table.sizeOf(padded));
+    try std.testing.expectEqual(@as(usize, 8), table.typeSizeBytes(padded));
 }
 
 test "errorSetType: a shared member spelling does not merge two owners' sets" {

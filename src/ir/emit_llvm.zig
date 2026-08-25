@@ -163,17 +163,6 @@ pub const Jni = struct {
     }
 };
 
-/// The tag-word type of a `{tag, [N x i8]}` value — a tagged union, a
-/// payload-carrying error channel — or null for any other LLVM type.
-pub fn tagWordType(ty: c.LLVMTypeRef) ?c.LLVMTypeRef {
-    if (c.LLVMGetTypeKind(ty) != c.LLVMStructTypeKind) return null;
-    if (c.LLVMCountStructElementTypes(ty) != 2) return null;
-    if (c.LLVMGetTypeKind(c.LLVMStructGetTypeAtIndex(ty, 1)) != c.LLVMArrayTypeKind) return null;
-    const tag_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
-    if (c.LLVMGetTypeKind(tag_ty) != c.LLVMIntegerTypeKind) return null;
-    return tag_ty;
-}
-
 // ── LLVMEmitter ─────────────────────────────────────────────────────────
 // Emits LLVM IR from an IR Module. Replaces
 // the AST-based codegen.
@@ -2150,20 +2139,28 @@ pub const LLVMEmitter = struct {
 
     // ── Comparison helpers ────────────────────────────────────────────
 
-    /// The discriminant a `{tag, [N x i8]}` value carries; any other value is
-    /// its own discriminant.
-    pub fn tagWordOf(self: *LLVMEmitter, val: c.LLVMValueRef) c.LLVMValueRef {
-        if (tagWordType(c.LLVMTypeOf(val)) == null) return val;
-        return c.LLVMBuildExtractValue(self.builder, val, 0, "tag.word");
+    /// The discriminant of a payload-carrying error channel; any other value
+    /// is its own discriminant.
+    pub fn channelTag(self: *LLVMEmitter, val: c.LLVMValueRef, ty: ?TypeId) c.LLVMValueRef {
+        const chan = ty orelse return val;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return val;
+        return c.LLVMBuildExtractValue(self.builder, val, 0, "channel.tag");
+    }
+
+    /// A `channel_llvm`-typed channel carrying `tag` over a zeroed payload area.
+    pub fn channelFromTag(self: *LLVMEmitter, channel_llvm: c.LLVMTypeRef, tag: c.LLVMValueRef) c.LLVMValueRef {
+        const word = self.coerceArg(tag, self.cached_i32);
+        return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(channel_llvm), word, 0, "channel.from.tag");
     }
 
     /// The scalar an aggregate compares as when the other operand is one: a
-    /// 1-tuple's lone element, or the tag word of a `{tag, [N x i8]}` value.
+    /// 1-tuple's lone element, or a payload-carrying channel's tag word.
     /// Null when the aggregate has no such reading.
-    fn scalarForCmp(self: *LLVMEmitter, val: c.LLVMValueRef, ty: c.LLVMTypeRef) ?c.LLVMValueRef {
-        if (c.LLVMCountStructElementTypes(ty) == 1) return c.LLVMBuildExtractValue(self.builder, val, 0, "tup.unwrap");
-        if (tagWordType(ty) == null) return null;
-        return self.tagWordOf(val);
+    fn scalarForCmp(self: *LLVMEmitter, val: c.LLVMValueRef, llvm_ty: c.LLVMTypeRef, ty: ?TypeId) ?c.LLVMValueRef {
+        if (c.LLVMCountStructElementTypes(llvm_ty) == 1) return c.LLVMBuildExtractValue(self.builder, val, 0, "tup.unwrap");
+        const chan = ty orelse return null;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return null;
+        return self.channelTag(val, chan);
     }
 
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
@@ -2177,13 +2174,13 @@ pub const LLVMEmitter = struct {
 
         // Read an aggregate as its comparable scalar when the other side is one.
         if (kind == c.LLVMStructTypeKind and rhs_kind != c.LLVMStructTypeKind) {
-            if (self.scalarForCmp(lhs, lhs_ty)) |scalar| {
+            if (self.scalarForCmp(lhs, lhs_ty, self.getRefIRType(bin.lhs))) |scalar| {
                 lhs = scalar;
                 lhs_ty = c.LLVMTypeOf(lhs);
                 kind = c.LLVMGetTypeKind(lhs_ty);
             }
         } else if (rhs_kind == c.LLVMStructTypeKind and kind != c.LLVMStructTypeKind) {
-            if (self.scalarForCmp(rhs, rhs_ty)) |scalar| {
+            if (self.scalarForCmp(rhs, rhs_ty, self.getRefIRType(bin.rhs))) |scalar| {
                 rhs = scalar;
                 rhs_ty = c.LLVMTypeOf(rhs);
                 rhs_kind = c.LLVMGetTypeKind(rhs_ty);
@@ -2738,22 +2735,10 @@ pub const LLVMEmitter = struct {
         }
         // Struct → Integer (C ABI coercion: store struct to memory, load as integer)
         if (val_kind == c.LLVMStructTypeKind and param_kind == c.LLVMIntegerTypeKind) {
-            if (tagWordType(val_ty) != null) {
-                return self.coerceArg(self.tagWordOf(val), param_ty);
-            }
             const tmp = self.buildEntryAlloca(param_ty, "abi.tmp");
             _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(param_ty), tmp);
             _ = c.LLVMBuildStore(self.builder, val, tmp);
             return c.LLVMBuildLoad2(self.builder, param_ty, tmp, "abi.coerce");
-        }
-        // Integer → `{tag, [N x i8]}`: an integer that fits the tag word IS the
-        // tag, over a zeroed payload area.
-        if (val_kind == c.LLVMIntegerTypeKind and param_kind == c.LLVMStructTypeKind) {
-            if (tagWordType(param_ty)) |tag_ty| {
-                if (c.LLVMGetIntTypeWidth(val_ty) <= c.LLVMGetIntTypeWidth(tag_ty)) {
-                    return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(param_ty), self.coerceArg(val, tag_ty), 0, "ca.tag");
-                }
-            }
         }
         // Integer → Struct (C ABI return coercion: store integer to memory, load as struct)
         if (val_kind == c.LLVMIntegerTypeKind and param_kind == c.LLVMStructTypeKind) {
@@ -3094,16 +3079,16 @@ pub const LLVMEmitter = struct {
     }
 
     /// Failable main entry-point wrapper. At the LLVM level main
-    /// returns i32. `tag_val` is the u32 error tag (0 = "no error"); `value` is
-    /// the integer value slot for a value-carrying `-> (int, !)` main, or null
-    /// for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
+    /// returns i32. `tag_val` is the `tag_ty` error channel (0 = "no error");
+    /// `value` is the integer value slot for a value-carrying `-> (int, !)`
+    /// main, or null for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
     /// (success — exit code truncated to u8 downstream); else resolve the tag
     /// name from the always-linked tag-name table, hand it + the tag to
     /// `sx_trace_report_unhandled` (prints the header + return trace to stderr),
     /// and `ret i32 1`.
-    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef) void {
+    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef, tag_ty: TypeId) void {
         const llvm_func = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const tag_i32 = self.coerceArg(self.tagWordOf(tag_val), self.cached_i32);
+        const tag_i32 = self.coerceArg(self.channelTag(tag_val, tag_ty), self.cached_i32);
 
         const is_err = c.LLVMBuildICmp(self.builder, c.LLVMIntNE, tag_i32, c.LLVMConstInt(self.cached_i32, 0, 0), "main.iserr");
         const ok_bb = c.LLVMAppendBasicBlockInContext(self.context, llvm_func, "main.ok");

@@ -106,6 +106,20 @@ test "conversions: classify selects protocol erasure for a concrete source" {
 
     // Concrete struct → protocol value: erasure.
     try std.testing.expectEqual(Plan.erase_protocol, cr.classify(circle, drawable));
+
+    // An error-set value whose tags the destination composition carries.
+    const tt = &module.types;
+    const narrow_name = tt.internString("Narrow");
+    const narrow_owner = tt.internErrorOwner(&narrow_name, narrow_name);
+    const b = tt.internMember(narrow_owner, "B");
+    tt.setMemberPayload(b, .i32);
+    const wide_name = tt.internString("Wide");
+    const wide_owner = tt.internErrorOwner(&wide_name, wide_name);
+    const cc = tt.internMember(wide_owner, "C");
+    tt.setMemberPayload(cc, .i64);
+    const narrow = tt.errorSetType(.empty, &[_]u32{b});
+    const both = tt.errorSetType(.empty, &[_]u32{ b, cc });
+    try std.testing.expectEqual(Plan.error_set_retype, cr.classify(narrow, both));
 }
 
 test "conversions: classifyXX picks the xx-operator head decision" {

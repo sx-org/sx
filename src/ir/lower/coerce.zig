@@ -1708,6 +1708,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
         .no_op => return val,
+        .error_set_retype => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         // No modeled coercion — the value passes through UNCHANGED. For an
         // EXPLICIT `xx`/`cast(T)` that is the intended escape hatch: record
         // the ref so downstream IMPLICIT sites (a return, a call arg, a field

@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const types = @import("types.zig");
 const lower = @import("lower.zig");
+const lower_error = @import("lower/error.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -55,6 +56,7 @@ pub const CoercionResolver = struct {
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
         string_to_cstring, // literal-only implicit; other strings need to_cstring
         cstring_to_string_reject, // explicit from_cstring required (diagnostic)
+        error_set_retype, // error set → error set, tags legal in the destination
         none, // nothing applies — pass the value through
     };
 
@@ -222,6 +224,13 @@ pub const CoercionResolver = struct {
             if (dst_bits < src_bits) return .narrow;
             if (dst_bits > src_bits) return .widen;
         }
+        // A legal error-set retype: the source tag word is the destination
+        // channel's discriminant. Modeled because each channel is sized by its
+        // own member payloads, so a `.none` weld is refused on width. A pair
+        // the destination cannot name stays `.none`: membership is the
+        // implicit gate, and `unifyValueArmTypes` reads a modeled plan as a
+        // safe join.
+        if (lower_error.errorSetValueRetypeIsLegal(self.l, src_ty, dst_ty)) return .error_set_retype;
         return .none;
     }
 

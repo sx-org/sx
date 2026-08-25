@@ -1516,6 +1516,14 @@ pub const TypeTable = struct {
         return widest;
     }
 
+    /// Whether a channel over `ty` reserves payload bytes for its members.
+    pub fn isPayloadCarryingChannel(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        const info = self.get(ty);
+        if (info != .error_set) return false;
+        return self.errorChannelPayloadBytes(info.error_set.tags) > 0;
+    }
+
     /// The id of the member `name` names in error set `set`, or null when the
     /// set carries no such member.
     pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
@@ -1633,7 +1641,7 @@ pub const TypeTable = struct {
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
-            .error_set => |es| 4 + @as(u32, @intCast(self.errorChannelPayloadBytes(es.tags))),
+            .error_set => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
             // before codegen. Reaching runtime layout means a pack leaked.
