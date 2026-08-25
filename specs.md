@@ -196,7 +196,7 @@ exempt. The escape works in **every identifier position** — local, global,
 parameter, struct field, union tag, function name, type/alias/import name, a later
 reference, and every control-flow / capture / binding form (destructure name,
 `if` / `while` optional binding, `for` capture and index, match-arm capture, and a
-`catch` tag binding):
+`catch` error binding):
 
 ```sx
 `u8 := 100;                       // global
@@ -6464,10 +6464,9 @@ v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
 
-`try` works in any value-producing position (argument, struct/array literal,
-`if`-condition); evaluation is left-to-right and short-circuits on the first
-failure, so no partial aggregate is ever built. `try` never binds the error —
-that is `catch`'s job.
+Evaluation is left-to-right and short-circuits on the first failure, so no
+partial aggregate is ever built. `try` never binds the error — that is
+`catch`'s job.
 
 ### `try { block }`
 
