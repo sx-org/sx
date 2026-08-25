@@ -246,8 +246,8 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         .enum_decl => |ed| resolveInlineEnum(&ed, table, si),
         .struct_decl => |sd| resolveInlineStruct(&sd, table, si),
         .union_decl => |ud| resolveInlineUnion(&ud, table, si),
-        // The DECLARATION owns the set's members, so the owner key must be the
-        // node's stable inner pointer, not the switch payload's copy.
+        // The owner key must be the node's stable inner pointer, not the
+        // switch payload's copy.
         .error_set_decl => internErrorSetDecl(&n.data.error_set_decl, table),
         .error_type_expr => |ete| resolveErrorType(&ete, table, si),
         // A bare spread element (`..Ts`) reaching here is BY DESIGN, not a caller
@@ -764,11 +764,10 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
     } };
 }
 
-/// The `.error_set` body of `Foo :: error { A, B }`. The DECLARATION owns its
-/// members, so two sets listing the same spelling own two different members and
-/// the sets themselves are distinct — a twin inline set at another site
-/// included. The caller (lowering) rejects an empty set, so this only sees
-/// non-empty declarations.
+/// The `.error_set` body of `Foo :: error { A, B }`. The declaration owns its
+/// members, so two sets listing the same spelling own two different members.
+/// The caller (lowering) rejects an empty set, so this only sees non-empty
+/// declarations.
 pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeInfo {
     const alloc = table.alloc;
     const name_id = table.internString(esd.name);

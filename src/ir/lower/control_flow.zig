@@ -1632,7 +1632,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
                     } else if (ty_info == .error_set) {
-                        // `case .X` matches the subject channel's member `X`.
                         break :blk @intCast(self.module.types.errorSetMemberId(subject_ty, pat_name) orelse
                             self.anonymousErrorMember(pat_name));
                     }

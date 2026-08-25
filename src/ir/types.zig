@@ -1469,7 +1469,6 @@ pub const TypeTable = struct {
         return self.tags.internOwner(self.alloc, decl, name);
     }
 
-    /// Intern `owner`'s member `name`, returning its id.
     pub fn internMember(self: *TypeTable, owner: u32, name: []const u8) u32 {
         return self.tags.intern(self.alloc, owner, name);
     }
@@ -1480,8 +1479,7 @@ pub const TypeTable = struct {
     }
 
     /// The id of the member `name` names in error set `set`, or null when the
-    /// set carries no such member. The single name → member resolution behind
-    /// every `.Member` / `Set.Member` spelling.
+    /// set carries no such member.
     pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
         if (set.isBuiltin()) return null;
         const info = self.get(set);

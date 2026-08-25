@@ -231,12 +231,9 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
     internErrorSetSlot(self, &node.data.error_set_decl);
 }
 
-/// Intern `esd`'s member set and record it as the declaration's slot. The
-/// declaration owns its members, so its member set addresses it alone — a
-/// same-name set in another module owns different members and interns
-/// elsewhere — and re-running yields the same TypeId. `decl_key → TypeId` lets
-/// a reference select this author directly (`namedRefTid`) rather than by
-/// first-author name lookup.
+/// Intern `esd`'s member set and record the `decl_key → TypeId` so a
+/// reference selects this author (`namedRefTid`) rather than first-author
+/// name lookup.
 fn internErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const table = &self.module.types;
     const decl_key: *const anyopaque = @ptrCast(esd);

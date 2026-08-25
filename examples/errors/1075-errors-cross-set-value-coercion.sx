@@ -18,7 +18,6 @@ take_broad :: (b: Broad) -> void { print("param: {}\n", b); }
 Holder :: struct { e: Broad; }
 
 main :: () -> i32 {
-    // Every position takes a value of the channel's own set.
     v, be := wide_src();
     same : Broad = be;
     print("decl: {}\n", same);
@@ -36,7 +35,7 @@ main :: () -> i32 {
     print("literal: {}\n", lit);
 
     // The contextual `.Name` shorthand types itself from the destination set
-    // in every position `error.Name` does, and means exactly the same member.
+    // and names the same member as `error.Name`.
     short : Broad = .Extra;
     print("shorthand decl: {}\n", short);
     take_broad(.Wide);
@@ -48,7 +47,7 @@ main :: () -> i32 {
     raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
     raises_wide() catch |e| { print("shorthand raise: {}\n", e); };
 
-    // Propagation through a channel of the same set keeps working.
+    // A `try` through a same-set channel.
     x := via_broad() catch |e| { print("propagated: {}\n", e); return 0; };
     return 0;
 }
