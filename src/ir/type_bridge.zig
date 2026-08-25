@@ -785,14 +785,59 @@ pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeI
     return table.intern(errorSetDeclInfo(esd, table));
 }
 
-/// The error channel of a failable signature: one named set → that declared
-/// set (registered by `internErrorSetDecl`); a bare `!` or a composition →
-/// a placeholder set keyed by the channel's own spelling. A placeholder's
-/// members are refined per failable function by the whole-program SCC pass;
-/// every bare `!` resolves to the same empty inferred set, which is correct
-/// while no function raises.
+/// Append the members the channel operand `name` contributes to `out`: a named
+/// set contributes every member it declares, `Set.Member` the one it names.
+/// False when the spelling names no error set — the caller then keeps the
+/// member-less channel rather than composing a wrong one.
+pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
+    if (qualifiedChannelMember(name, table, inner)) |member| {
+        out.append(table.alloc, member) catch unreachable;
+        return true;
+    }
+    const set = inner.resolveName(name);
+    if (set.isBuiltin()) return false;
+    const info = table.get(set);
+    if (info != .error_set) return false;
+    out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
+    return true;
+}
+
+/// The member id `Set.Member` names, or null when the spelling's head is not a
+/// declared error set (a namespaced set `mod.Set`, or a plain name). The head
+/// is probed by name before it is resolved, because resolution MINTS a stub for
+/// an unregistered name and a namespace prefix must not get one.
+fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+    const probe = table.findByName(table.internString(name[0..dot])) orelse return null;
+    if (probe.isBuiltin() or table.get(probe) != .error_set) return null;
+    const set = inner.resolveName(name[0..dot]);
+    if (set.isBuiltin() or table.get(set) != .error_set) return null;
+    return table.errorSetMemberId(set, name[dot + 1 ..]);
+}
+
+/// The error channel of a failable signature: `!Set` → that declared set
+/// (registered by `internErrorSetDecl`); `!Set.Member` → the singleton channel
+/// carrying that member; `!(A | B)` → the channel their members merge into. A
+/// bare `!` — and a composition whose operands do not all name a set yet — is a
+/// placeholder keyed by the channel's own spelling, refined per failable
+/// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
-    if (ete.namedSet()) |name| return inner.resolveName(name);
+    if (ete.namedSet()) |name| {
+        if (qualifiedChannelMember(name, table, inner)) |member| {
+            return table.errorSetType(.empty, &.{member});
+        }
+        // A forward-referenced set resolves to the stub its declaration adopts,
+        // so the name — not its members — is what this yields.
+        return inner.resolveName(name);
+    }
+    if (ete.operands.len > 0) compose: {
+        var members = std.ArrayList(u32).empty;
+        defer members.deinit(table.alloc);
+        for (ete.operands) |op| {
+            if (!channelOperandMembers(op, table, inner, &members)) break :compose;
+        }
+        return table.errorSetType(.empty, members.items);
+    }
     // `!` and `|` are not legal type/identifier names, so a spelling built from
     // them can never collide with a user-declared set.
     const spelling = if (ete.operands.len == 0)

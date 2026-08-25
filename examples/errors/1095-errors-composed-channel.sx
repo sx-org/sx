@@ -1,0 +1,50 @@
+// A channel IS its member set. `A | B` in type position merges the members of
+// its operands — a named set, a qualified member, or an inline `error { … }`
+// whose members the composition owns — and `Set.Member` after `!` names the
+// singleton carrying that member alone.
+//
+// A `Closure` slot takes exactly its own channel, so each slot below is an
+// equality: `!(IoErr.Failed | IoErr.Canceled)` fills an `!IoErr` slot because
+// those are every member IoErr declares, and the written `!(IoErr | Disk)`
+// fills the `!Both` one.
+
+@import "modules/std.sx";
+
+IoErr :: error { Failed; Canceled }
+Disk  :: error { Full }
+Both  :: IoErr | Disk;
+Torn  :: Disk | error { Ripped };
+
+sweep :: (n: i32) -> (i32, !(IoErr.Failed | IoErr.Canceled)) {
+    if n < 0 { raise IoErr.Canceled; }
+    return n * 2;
+}
+
+halt :: (n: i32) -> (i32, !IoErr.Failed) {
+    if n < 0 { raise IoErr.Failed; }
+    return n;
+}
+
+wide :: (n: i32) -> (i32, !Both) {
+    if n == 0 { raise Disk.Full; }
+    return try sweep(n);
+}
+
+tear :: (n: i32) -> (i32, !Torn) {
+    if n < 0 { raise Torn.Ripped; }
+    return n + 1;
+}
+
+main :: () -> i32 {
+    whole  : Closure(i32) -> (i32, !IoErr)        = sweep;
+    single : Closure(i32) -> (i32, !IoErr.Failed) = halt;
+    named  : Closure(i32) -> (i32, !Both)         = wide;
+    inline_composed : Closure(i32) -> (i32, !(IoErr | Disk)) = wide;
+
+    print("whole={}\n", whole(4) catch |e| -1);            // 8
+    print("single={}\n", single(-1) catch |e| -1);         // -1
+    print("named={}\n", named(0) catch |e| -2);            // -2
+    print("inline={}\n", inline_composed(3) catch |e| -3); // 6
+    print("torn={}\n", tear(-1) catch |e| -4);             // -4
+    return 0;
+}

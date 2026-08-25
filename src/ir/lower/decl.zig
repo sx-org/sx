@@ -924,6 +924,13 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 } else if (cd.value.data == .union_decl) {
                     // Per-decl nominal identity for plain union types
                     self.registerUnionDecl(&cd.value.data.union_decl);
+                } else if (cd.value.data == .binary_op and cd.value.data.binary_op.op == .bit_or) {
+                    // `Both :: FooError | BooError` — the name binds the channel
+                    // its operands merge into. A composition naming a set
+                    // written further down binds in the post-scan round.
+                    if (self.composedChannel(cd.value)) |channel| {
+                        self.putTypeAlias(self.current_source_file, cd.name, channel);
+                    }
                 } else if (isCompositeAliasRhs(cd.value.data)) {
                     // COMPOSITE type alias — tuple / array / slice / optional /
                     // pointer / many-pointer / function / closure RHS
@@ -1215,6 +1222,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => {},
         }
     }
+    resolveErrorCompositionAliases(self, decls);
     self.resolveForwardIdentifierAliases(decls);
     resolveCompositeAliases(self, decls);
     // Retry only impls that could not be registered in declaration order
@@ -1846,6 +1854,27 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     if (self.diagnostics) |d|
         d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant", .{vd.name});
     return null;
+}
+
+/// Bind each `Name :: A | B` error composition to the channel its operands
+/// merge into. Rounds repeat while one binds, so a composition may name a set —
+/// or another composition — written below it.
+fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) void {
+    var progressed = true;
+    while (progressed) {
+        progressed = false;
+        for (decls) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = decl.data.const_decl;
+            if (cd.value.data != .binary_op or cd.value.data.binary_op.op != .bit_or) continue;
+            const src = decl.source_file orelse self.main_file orelse continue;
+            if (self.aliasResolvedInSource(src, cd.name)) continue;
+            self.setCurrentSourceFile(decl.source_file);
+            const channel = self.composedChannel(cd.value) orelse continue;
+            self.putTypeAlias(decl.source_file, cd.name, channel);
+            progressed = true;
+        }
+    }
 }
 
 /// Resolve identifier-RHS type aliases whose target is declared LATER in the

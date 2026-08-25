@@ -1404,6 +1404,17 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
         return false;
     }
+    // Two callables of one shape are the same width, which the reinterpretation
+    // rule below reads as legitimate — but a slot calls through exactly the
+    // channel it names, so the channels are asked about first.
+    if (self.slotReturnType(src_ty)) |src_ret| {
+        if (self.slotReturnType(dst_ty)) |dst_ret| {
+            if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                self.assignability_error_count += 1;
+                return false;
+            }
+        }
+    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         switch (diag) {
