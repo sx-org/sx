@@ -834,7 +834,7 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
 /// The error channel of a failable signature: `!Set` → that declared set
 /// (registered by `internErrorSetDecl`); `!Set.Member` → the singleton channel
 /// carrying that member; `!(A | B)` → the channel their members merge into. A
-/// bare `!` — and a composition whose operands do not all name a set yet — is a
+/// bare `!` — and a composition whose operands do not all name a set — is a
 /// placeholder keyed by the channel's own spelling, refined per failable
 /// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
@@ -848,8 +848,6 @@ pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner:
         else
             false;
         if (!head_is_set) {
-            // A forward-referenced set resolves to the stub its declaration adopts,
-            // so the name — not its members — is what this yields.
             return inner.resolveName(name);
         }
     } else if (ete.operands.len > 0) compose: {
