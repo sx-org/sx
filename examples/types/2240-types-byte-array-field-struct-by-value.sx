@@ -1,0 +1,16 @@
+// A struct whose fields are an integer and a byte array passes by value with
+// both fields intact.
+
+@import "modules/std.sx";
+
+S :: struct { a: i32; b: [4]u8 }
+
+take :: (s: S) -> i64 {
+    return s.a * 100 + s.b[0];
+}
+
+main :: () -> i32 {
+    s := S{ a = 5, b = .[3, 0, 0, 0] };
+    print("r={}\n", take(s));
+    return 0;
+}

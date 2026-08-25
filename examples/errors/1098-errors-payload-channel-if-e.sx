@@ -1,0 +1,27 @@
+// `if e` on a payload-carrying channel is the tag word against zero.
+
+@import "modules/std.sx";
+
+Pay :: error { Bare; Wide: i64 }
+
+f :: (n: i32) -> (i32, !Pay) {
+    if n < 0 { raise Pay.Wide; }
+    return n;
+}
+
+main :: () -> i32 {
+    v, e := f(-1);
+    if e {
+        print("set\n");
+    } else {
+        print("clear-err={}\n", v);
+        return 1;
+    }
+    v2, e2 := f(1);
+    if e2 {
+        print("set-ok\n");
+        return 2;
+    }
+    print("clear={}\n", v2);
+    return 0;
+}

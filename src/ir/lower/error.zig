@@ -160,7 +160,7 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList
             return collectChannelMembers(self, b.rhs, out);
         },
         .error_set_decl => {
-            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table);
+            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table, self);
             out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
             return true;
         },
@@ -290,13 +290,33 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
     self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
 }
 
-/// An error-set VALUE crossing between two named sets is legal only when
-/// every tag of `src` is a member of `dst` — the same subset rule the error
-/// channel applies to `raise` and to a forwarded failable. Both sets are
-/// u32-backed, so the width-based reinterpret guard in `coerce.zig` classifies
-/// the pair as a legitimate same-width passthrough and lets a foreign tag land
-/// in the destination slot, where no `error.X` literal of that set can ever
-/// name it. The inferred bare-`!` placeholder absorbs any tag on either side.
+/// Whether an error-set value of `src` is a legal retype to `dst`: every
+/// source tag id is in `dst`, or an inferred bare-`!` on either side absorbs
+/// any tag.
+pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) bool {
+    if (src == dst) return true;
+    if (src.isBuiltin() or dst.isBuiltin()) return false;
+    const src_info = self.module.types.get(src);
+    const dst_info = self.module.types.get(dst);
+    if (src_info != .error_set or dst_info != .error_set) return false;
+    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return true;
+    for (src_info.error_set.tags) |tag| {
+        var found = false;
+        for (dst_info.error_set.tags) |d| {
+            if (d == tag) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/// Diagnose every tag of `src` that the destination set `dst` cannot name.
+/// Membership is the implicit gate on an error-set value coercion; a pair it
+/// refuses is unmodeled, so no `error.X` literal of `dst` could name the tag
+/// that lands in the slot.
 pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
     if (src == dst) return;
     if (src.isBuiltin() or dst.isBuiltin()) return;
@@ -495,8 +515,8 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
 /// `return callee(...)` forwarding a failable tuple whose ERROR SET differs
 /// from the enclosing function's (`(T, !Concrete)` → `(T, !)`, or concrete →
 /// concrete). Error members are ids in one pool (TypeTable.TagRegistry; 0 = "no
-/// error"), so every error set shares one runtime repr — a u32 member id — and
-/// a legal forward re-packs the value slots plus the raw id, no translation.
+/// error"), so a legal forward re-packs the value slots and carries the source
+/// tag word into the destination channel's shape.
 /// Legality mirrors `raise`'s subset rule (specs.md "Error sets"): the open
 /// bare `!` absorbs any concrete set; a NAMED caller set requires the
 /// callee's set ⊆ caller's (each escapee diagnosed); a bare-`!` CALLEE has no
@@ -525,8 +545,9 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
             fv;
         vals.append(self.alloc, cf) catch unreachable;
     }
-    const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, err_ty);
-    const tup = self.buildFailableTuple(ret_ty, vals.items, tag);
+    const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, src.err);
+    const coerced_tag = if (src.err != err_ty) self.coerceExplicit(tag, src.err, err_ty) else tag;
+    const tup = self.buildFailableTuple(ret_ty, vals.items, coerced_tag);
     self.emitTupleRet(ret_ty, tup);
 }
 
@@ -553,8 +574,8 @@ fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span
 /// The returned value of a PURE failable's `return EXPR;` (`-> !` /
 /// `-> !Named`, whose return type IS the error set), coerced for the ret.
 /// A pure→pure forward (`return check();`, EXPR's type is another error
-/// set) applies the shared set-compat rule — every channel is one shared u32
-/// repr, so the re-type IS the whole coercion. A value-carrying
+/// set) applies the shared set-compat rule, then retypes the tag word into the
+/// destination channel. A value-carrying
 /// failable result (`return inner();` where inner is `-> (T, !E)`) is
 /// REJECTED per the arity rule (its value slots have nowhere to go — the
 /// old coerce path silently truncated the tuple, returning the VALUE bits
@@ -570,7 +591,9 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
                     // well-formed; the build aborts via hasErrors.
                     return self.builder.constInt(0, ret_ty);
                 }
-                return self.coerceToType(ref, val_ty, ret_ty);
+                // `checkForwardSetCompat` above is the membership gate, so
+                // the coercion skips the implicit preamble's.
+                return self.coerceExplicit(ref, val_ty, ret_ty);
             },
             .failable => |vf| {
                 const n = self.module.types.failableValueSlotCount(vf);

@@ -252,7 +252,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         .union_decl => |ud| resolveInlineUnion(&ud, table, si),
         // The owner key must be the node's stable inner pointer, not the
         // switch payload's copy.
-        .error_set_decl => internErrorSetDecl(&n.data.error_set_decl, table),
+        .error_set_decl => internErrorSetDecl(&n.data.error_set_decl, table, si),
         .error_type_expr => |ete| resolveErrorType(&ete, table, si),
         // A bare spread element (`..Ts`) reaching here is BY DESIGN, not a caller
         // bug: `resolveClosurePackShape` / `resolveTupleSpreadShape` preserve a
@@ -769,24 +769,28 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
 }
 
 /// The `.error_set` body of `Foo :: error { A, B }`. The declaration owns its
-/// members, so two sets listing the same spelling own two different members.
-/// The caller (lowering) rejects an empty set, so this only sees non-empty
-/// declarations.
-pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeInfo {
+/// members, so two sets listing the same spelling own two different members,
+/// and each member carries the payload type it declares. The caller (lowering)
+/// rejects an empty set, so this only sees non-empty declarations.
+pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeInfo {
     const alloc = table.alloc;
     const name_id = table.internString(esd.name);
     const owner = table.internErrorOwner(@ptrCast(esd), name_id);
 
     var member_ids = std.ArrayList(u32).empty;
     defer member_ids.deinit(alloc);
-    for (esd.tag_names) |tn| {
-        member_ids.append(alloc, table.internMember(owner, tn)) catch unreachable;
+    for (esd.tag_names, 0..) |tn, i| {
+        const member = table.internMember(owner, tn);
+        if (i < esd.tag_types.len) {
+            if (esd.tag_types[i]) |payload| table.setMemberPayload(member, inner.resolveInner(payload));
+        }
+        member_ids.append(alloc, member) catch unreachable;
     }
     return table.errorSetInfo(name_id, member_ids.items);
 }
 
-pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeId {
-    return table.intern(errorSetDeclInfo(esd, table));
+pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeId {
+    return table.intern(errorSetDeclInfo(esd, table, inner));
 }
 
 /// Append the members the channel operand `name` contributes to `out`: a named

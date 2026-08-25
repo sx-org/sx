@@ -894,7 +894,7 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .failable => {},
+                .@"struct", .@"union", .tagged_union, .failable, .error_set => {},
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -2139,6 +2139,30 @@ pub const LLVMEmitter = struct {
 
     // ── Comparison helpers ────────────────────────────────────────────
 
+    /// The discriminant of a payload-carrying error channel; any other value
+    /// is its own discriminant.
+    pub fn channelTag(self: *LLVMEmitter, val: c.LLVMValueRef, ty: ?TypeId) c.LLVMValueRef {
+        const chan = ty orelse return val;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return val;
+        return c.LLVMBuildExtractValue(self.builder, val, 0, "channel.tag");
+    }
+
+    /// A `channel_llvm`-typed channel carrying `tag` over a zeroed payload area.
+    pub fn channelFromTag(self: *LLVMEmitter, channel_llvm: c.LLVMTypeRef, tag: c.LLVMValueRef) c.LLVMValueRef {
+        const word = self.coerceArg(tag, self.cached_i32);
+        return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(channel_llvm), word, 0, "channel.from.tag");
+    }
+
+    /// The scalar an aggregate compares as when the other operand is one: a
+    /// 1-tuple's lone element, or a payload-carrying channel's tag word.
+    /// Null when the aggregate has no such reading.
+    fn scalarForCmp(self: *LLVMEmitter, val: c.LLVMValueRef, llvm_ty: c.LLVMTypeRef, ty: ?TypeId) ?c.LLVMValueRef {
+        if (c.LLVMCountStructElementTypes(llvm_ty) == 1) return c.LLVMBuildExtractValue(self.builder, val, 0, "tup.unwrap");
+        const chan = ty orelse return null;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return null;
+        return self.channelTag(val, chan);
+    }
+
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
         var lhs = self.resolveRef(bin.lhs);
         var rhs = self.resolveRef(bin.rhs);
@@ -2148,16 +2172,16 @@ pub const LLVMEmitter = struct {
         var rhs_ty = c.LLVMTypeOf(rhs);
         var rhs_kind = c.LLVMGetTypeKind(rhs_ty);
 
-        // Unwrap single-element struct (1-tuple) to scalar for comparison
+        // Read an aggregate as its comparable scalar when the other side is one.
         if (kind == c.LLVMStructTypeKind and rhs_kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(lhs_ty) == 1) {
-                lhs = c.LLVMBuildExtractValue(self.builder, lhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(lhs, lhs_ty, self.getRefIRType(bin.lhs))) |scalar| {
+                lhs = scalar;
                 lhs_ty = c.LLVMTypeOf(lhs);
                 kind = c.LLVMGetTypeKind(lhs_ty);
             }
         } else if (rhs_kind == c.LLVMStructTypeKind and kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(rhs_ty) == 1) {
-                rhs = c.LLVMBuildExtractValue(self.builder, rhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(rhs, rhs_ty, self.getRefIRType(bin.rhs))) |scalar| {
+                rhs = scalar;
                 rhs_ty = c.LLVMTypeOf(rhs);
                 rhs_kind = c.LLVMGetTypeKind(rhs_ty);
             }
@@ -3055,16 +3079,16 @@ pub const LLVMEmitter = struct {
     }
 
     /// Failable main entry-point wrapper. At the LLVM level main
-    /// returns i32. `tag_val` is the u32 error tag (0 = "no error"); `value` is
-    /// the integer value slot for a value-carrying `-> (int, !)` main, or null
-    /// for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
+    /// returns i32. `tag_val` is the `tag_ty` error channel (0 = "no error");
+    /// `value` is the integer value slot for a value-carrying `-> (int, !)`
+    /// main, or null for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
     /// (success — exit code truncated to u8 downstream); else resolve the tag
     /// name from the always-linked tag-name table, hand it + the tag to
     /// `sx_trace_report_unhandled` (prints the header + return trace to stderr),
     /// and `ret i32 1`.
-    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef) void {
+    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef, tag_ty: TypeId) void {
         const llvm_func = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const tag_i32 = self.coerceArg(tag_val, self.cached_i32);
+        const tag_i32 = self.coerceArg(self.channelTag(tag_val, tag_ty), self.cached_i32);
 
         const is_err = c.LLVMBuildICmp(self.builder, c.LLVMIntNE, tag_i32, c.LLVMConstInt(self.cached_i32, 0, 0), "main.iserr");
         const ok_bb = c.LLVMAppendBasicBlockInContext(self.context, llvm_func, "main.ok");

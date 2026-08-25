@@ -3026,6 +3026,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
+    /// The bytes a word-kind value occupies at its address: the type's size,
+    /// except an error channel, whose register holds only the leading tag word
+    /// of a slot its payload area widens.
+    fn wordBytes(table: *const types.TypeTable, ty: TypeId) usize {
+        if (!ty.isBuiltin() and table.get(ty) == .error_set) return 4;
+        return table.typeSizeBytes(ty);
+    }
+
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {
         switch (ty) {
             .bool, .i8, .u8, .i16, .u16, .i32, .u32, .f32, .i64, .u64, .f64, .usize, .isize, .cstring => return .word,
@@ -3132,7 +3140,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         return switch (kindOf(table, ty)) {
             .word => {
-                const sz = table.typeSizeBytes(ty);
+                const sz = wordBytes(table, ty);
                 const raw = try self.machine.readWord(addr, sz);
                 return if (isSignedInt(ty) and sz < 8) signExtendWord(raw, sz) else raw;
             },
@@ -3159,7 +3167,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.machine.writeWord(addr, 4, bits);
         }
         switch (kindOf(table, ty)) {
-            .word => try self.machine.writeWord(addr, table.typeSizeBytes(ty), val),
+            .word => try self.machine.writeWord(addr, wordBytes(table, ty), val),
             .aggregate => {
                 const n = table.typeSizeBytes(ty);
                 if (n == 0) return;
