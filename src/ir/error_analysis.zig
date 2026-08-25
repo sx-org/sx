@@ -42,6 +42,12 @@ pub const ErrorAnalysis = struct {
             .raise_stmt => |rs| {
                 if (Lowering.literalTagName(rs.tag)) |nm| {
                     tags.append(self.l.alloc, self.l.module.types.internTag(nm)) catch {};
+                } else if (self.l.qualifiedErrorMember(rs.tag)) |qm| {
+                    // What a qualified member contributes is its STATIC TYPE —
+                    // the whole set, not the one member named at the site.
+                    for (self.l.module.types.get(qm.set).error_set.tags) |t| {
+                        if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
+                    }
                 }
                 self.collectErrorSites(rs.tag, tags, edges, dyn);
             },
@@ -161,15 +167,20 @@ pub const ErrorAnalysis = struct {
         defer work.deinit();
 
         // Seed each bare-`!` function with its direct escape sites.
-        var it = self.l.program_index.fn_ast_map.iterator();
-        while (it.next()) |e| {
-            const fd = e.value_ptr.*;
-            if (!Lowering.astIsPureBareInferred(fd.return_type)) continue;
-            var tags = std.ArrayList(u32).empty;
-            var edges = std.ArrayList([]const u8).empty;
-            var dyn = false;
-            self.collectErrorSites(fd.body, &tags, &edges, &dyn);
-            work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+        {
+            const saved = self.l.current_source_file;
+            defer self.l.setCurrentSourceFile(saved);
+            var it = self.l.program_index.fn_ast_map.iterator();
+            while (it.next()) |e| {
+                const fd = e.value_ptr.*;
+                if (!Lowering.astIsPureBareInferred(fd.return_type)) continue;
+                var tags = std.ArrayList(u32).empty;
+                var edges = std.ArrayList([]const u8).empty;
+                var dyn = false;
+                self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
+                self.collectErrorSites(fd.body, &tags, &edges, &dyn);
+                work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+            }
         }
 
         // Union edge contributions until no set grows (monotone → terminates).

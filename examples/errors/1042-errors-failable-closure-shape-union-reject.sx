@@ -13,12 +13,15 @@ reject :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !Small) {
     return try h(x);   // Negative, Other ∉ Small → two diagnostics
 }
 
+Neg :: error { Negative }
+Oth :: error { Other }
+
 main :: () -> i32 {
     gpa := GPA.init();
     push .{ allocator = gpa } {
         handlers : List(Closure(i32) -> (i32, !)) = .{};
-        handlers.append(|x: i32| -> (i32, !) { if x < 0 { raise error.Negative; } return x; });
-        handlers.append(|x: i32| -> (i32, !) { if x == 0 { raise error.Other; } return x; });
+        handlers.append(|x: i32| -> (i32, !) { if x < 0 { raise Neg.Negative; } return x; });
+        handlers.append(|x: i32| -> (i32, !) { if x == 0 { raise Oth.Other; } return x; });
         print("r={}\n", reject(handlers.items[0], 5) catch |e| 0);
     }
     return 0;

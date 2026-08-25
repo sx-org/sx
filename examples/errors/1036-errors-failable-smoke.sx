@@ -7,6 +7,8 @@
 @import "modules/std.sx";
 
 SmokeErr :: error { Empty; BadDigit; Overflow }
+CheckErr :: error { NotReady }
+AcquireErr :: error { Acquire }
 
 // value-carrying, named set
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
@@ -16,9 +18,9 @@ sm_parse :: (n: i32) -> (i32, !SmokeErr) {
     return n * 2;
 }
 
-// pure failable, inferred set (ad-hoc tag)
+// pure failable, inferred set
 sm_check :: (ok: bool) -> ! {
-    if !ok { raise error.NotReady; }
+    if !ok { raise CheckErr.NotReady; }
     return;
 }
 
@@ -41,7 +43,7 @@ sm_or_default :: (n: i32) -> i32 {
 sm_acquire :: (fail: bool) -> (i32, !) {
     defer  print("  defer A\n");
     onfail print("  onfail B\n");
-    if fail { raise error.Acquire; }
+    if fail { raise AcquireErr.Acquire; }
     return 7;
 }
 

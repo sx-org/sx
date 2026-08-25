@@ -1,17 +1,17 @@
 error: cannot forward this failable result: it carries 0 value slots, but the function returns 1
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:29:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:30:12
    |
-29 |     return pure_cal(x);
+30 |     return pure_cal(x);
    |            ^^^^^^^^^^^
 
 error: cannot forward this failable result: it carries 1 value slot, but the function returns 0
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:35:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:36:12
    |
-35 |     return val_cal(x);
+36 |     return val_cal(x);
    |            ^^^^^^^^^^
 
 error: cannot forward a bare-`!` failable result through the named error set 'MyErr' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e { raise error.X; } return v;`)
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:40:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:41:12
    |
-40 |     return bare_cal(x);
+41 |     return bare_cal(x);
    |            ^^^^^^^^^^^

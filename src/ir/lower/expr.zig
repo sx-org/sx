@@ -1032,6 +1032,10 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         return self.lowerErrorTagLiteral(fa.field, span);
     }
 
+    if (self.qualifiedErrorSet(fa.object)) |set_ty| {
+        return self.lowerQualifiedErrorMember(set_ty, fa.field, span);
+    }
+
     // Full namespace-member selection in value position. This handles both a
     // direct member (`alias.CONST`) and a nested namespace terminal
     // (`facade.engine_alias.CONST`) without ever stripping to a globally keyed
@@ -2162,6 +2166,19 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
         }
     }
     return self.builder.constInt(@as(i64, @intCast(tag_id)), .u32);
+}
+
+/// Lower a qualified error member `Set.Member` to its tag id, typed as `Set`.
+/// Membership is `Set`'s, not the destination context's.
+pub fn lowerQualifiedErrorMember(self: *Lowering, set_ty: TypeId, member: []const u8, span: ast.Span) Ref {
+    const info = self.module.types.get(set_ty).error_set;
+    const tag_id = self.module.types.internTag(member);
+    if (!Lowering.containsTag(info.tags, tag_id)) {
+        if (self.diagnostics) |diags| {
+            diags.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ self.module.types.getString(info.name), member });
+        }
+    }
+    return self.builder.constInt(@as(i64, @intCast(tag_id)), set_ty);
 }
 
 /// Lower a tagged enum construction: .Variant{ field_inits }

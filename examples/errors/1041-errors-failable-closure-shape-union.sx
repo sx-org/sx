@@ -8,6 +8,8 @@
 @import "modules/std.sx";
 
 All :: error { Negative; Other }
+Neg :: error { Negative }
+Oth :: error { Other }
 
 // `h` is a bare-`!` Closure slot; the caller declares the union as `!All`.
 dispatch :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !All) {
@@ -20,8 +22,8 @@ main :: () -> i32 {
         // Two literals of the SAME shape raising DIFFERENT tags both feed the
         // one shared `Closure(i32)->(i32,!)` union node.
         handlers : List(Closure(i32) -> (i32, !)) = .{};
-        handlers.append(|x: i32| -> (i32, !) { if x < 0 { raise error.Negative; } return x * 2; });
-        handlers.append(|x: i32| -> (i32, !) { if x == 0 { raise error.Other; } return x + 100; });
+        handlers.append(|x: i32| -> (i32, !) { if x < 0 { raise Neg.Negative; } return x * 2; });
+        handlers.append(|x: i32| -> (i32, !) { if x == 0 { raise Oth.Other; } return x + 100; });
 
         // success paths
         print("ok0={}\n", dispatch(handlers.items[0], 5) catch |e| 0);   // 10

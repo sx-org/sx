@@ -319,6 +319,7 @@ pub const ExprTyper = struct {
                         return if (is_opt_chain) self.l.optionalOfFlattened(rt) else rt;
                     }
                 }
+                if (self.l.qualifiedErrorSet(fa.object)) |set_ty| return set_ty;
                 // Bare `Enum.variant` — a qualified enum literal read as a VALUE
                 // (its type is the enum). Mirrors the `lowerFieldAccess`
                 // qualified-enum-literal path: object is a type NAME resolving to
