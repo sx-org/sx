@@ -118,7 +118,13 @@ pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
         if (s.lookup(name) != null) return null;
     }
     if (self.program_index.global_names.contains(name)) return null;
-    const ty = self.module.types.findByName(self.module.types.internString(name)) orelse return null;
+    const ty = if (self.current_source_file orelse self.main_file) |from|
+        switch (self.selectNominalLeaf(name, from, false)) {
+            .resolved => |tid| tid,
+            else => return null,
+        }
+    else
+        self.module.types.findByName(self.module.types.internString(name)) orelse return null;
     if (ty.isBuiltin()) return null;
     return if (self.module.types.get(ty) == .error_set) ty else null;
 }
