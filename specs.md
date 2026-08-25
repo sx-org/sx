@@ -196,7 +196,7 @@ exempt. The escape works in **every identifier position** — local, global,
 parameter, struct field, union tag, function name, type/alias/import name, a later
 reference, and every control-flow / capture / binding form (destructure name,
 `if` / `while` optional binding, `for` capture and index, match-arm capture, and a
-`catch` / `onfail` tag binding):
+`catch` tag binding):
 
 ```sx
 `u8 := 100;                       // global
@@ -277,11 +277,11 @@ GLSL;
 ```
 
 ### Keywords
-`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `onfail`, `error`, `private`
+`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (tagged unions). `union` is reserved for C-style untagged unions (memory overlays).
 
-> Note: `raise`, `try`, `catch`, `onfail`, and `error` are the error-handling keywords. `??` supplies a failable's default, alongside its optional one. See [§12 Error Handling](#12-error-handling).
+> Note: `raise`, `try`, `catch`, and `error` are the error-handling keywords. `??` supplies a failable's default, alongside its optional one. See [§12 Error Handling](#12-error-handling).
 
 > Note: `private` is the file-local visibility modifier for module-scope
 > declarations and struct fields — see
@@ -393,7 +393,6 @@ Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
 Show   :: interface (T) { render :: (self: *Self) -> T; }
 Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
 v := risky() catch |e| -1;                    // catch binding
-onfail |e| { … }                              // onfail binding
 ```
 
 **Position — `-` and `*` are infix wherever a left operand is complete.** Both
@@ -458,7 +457,7 @@ print("{}\n", b);
 
 One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
-`break` / `continue` / `defer` / `onfail`, `@import` / `@insert` / `@error` and
+`break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
 body. The value-less spellings take it the same way — a `return` with nothing to
 return, and a `name : Type` declaration with no initializer:
@@ -782,10 +781,12 @@ Variants are referenced with dot-prefix syntax: `.variant1`
 #### Construction
 ```sx
 c := Color.red;                  // payload-less
-s :Shape = .circle(3.14);       // inferred from context
+s : Shape = .circle{3.14};       // inferred from context
 s = .none;                       // void variant
-s = Shape.rect(42);              // explicit prefix
+s = Shape.rect{42};              // explicit prefix
 ```
+A variant with a payload carries it in a brace group; a void variant takes none.
+The brace rules are those of [§12 Payloads](#payloads).
 
 #### Payload Access
 ```sx
@@ -793,7 +794,7 @@ r := s.circle;   // load payload as f32 (undefined behavior if wrong variant act
 ```
 
 #### Setting a Variant
-A variant is set by construction — `s = .rect(payload)` — which writes both the
+A variant is set by construction — `s = .rect{payload}` — which writes both the
 tag and the payload together. Direct member assignment to a variant
 (`s.rect = payload`) is **rejected at compile time**: it would store the payload
 but not the tag, leaving the two desynced so a later `match` takes the wrong arm.
@@ -3125,7 +3126,8 @@ are not written onward.
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
-| `?T == T` / `?T == null` / error-set vs tag | unchanged |
+| `?T == T` / `?T == null` | unchanged |
+| Two error values, or an error against `@Tag` / `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
 `any`, interface handles against a foreign type, and distinct structs are refused.
 
@@ -3208,10 +3210,10 @@ pointer-to-interface pointee are refused.
 On an **`any` receiver** the assertion has three temperaments:
 
 - **`.(T)` consumed via the error channel = graceful**: the assertion is
-  failable `(T, !CastError)`; `try av.(i64)` propagates (the global
-  `mismatch` tag is absorbed by an inferred `!` caller or any named set
-  containing a `mismatch` tag), `av.(i64) ?? 0` falls back,
-  `av.(i64) catch |e| { … }` binds the tag. Only a DIRECT assertion operand
+  failable `(T, !CastError)`; `try av.(i64)` propagates (`CastError.mismatch`
+  merges into an inferred `!` caller and is accepted by any named channel
+  holding it), `av.(i64) ?? 0` falls back,
+  `av.(i64) catch |e| { … }` binds the error. Only a DIRECT assertion operand
   is consumed — an assertion nested in a call argument stays unconsumed.
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
@@ -3490,7 +3492,7 @@ demanded by a `-> T` function body (it becomes the return), by value position
 (`x := { … }`, an `if`/`else` used as a value, a `catch` body, an argument), and
 by a build body's statement position (it publishes — see
 [`@BuildBlock(P)`](#buildblockp)). Where nothing demands a value — a `-> void`
-body, a `defer` / `onfail` cleanup body, a loop body, a statement `if` — the
+body, a `defer` cleanup body, a loop body, a statement `if` — the
 expression still runs and its value is silently discarded.
 
 ```sx
@@ -3511,12 +3513,12 @@ in return position, the return-position restrictions do not reach its tail.
 
 ```sx
 check :: (n: i32) -> !ParseErr {
-  if n < 0 { raise error.BadDigit; }
-  measure();          // undemanded — discarded, then the success exit
+  if n < 0 { raise ParseErr.BadDigit; }
+  measure();               // undemanded — discarded, then the success exit
 }
 
 fail :: () -> !ParseErr {
-  error.BadDigit;     // an ERROR tail IS the return
+  ParseErr.BadDigit;       // an ERROR tail IS the return
 }
 ```
 
@@ -3526,7 +3528,7 @@ local function and an inlined comptime callee:
 
 ```sx
 report := || -> !ParseErr measure();   // discarded, then the success exit
-raise_it := || -> !ParseErr error.BadDigit;
+raise_it := || -> !ParseErr ParseErr.BadDigit;
 ```
 
 It is also decided per live path: where the tail is an `if` or a `match`, each
@@ -4296,7 +4298,8 @@ Name :: enum {
 }
 ```
 
-Defines a new enum type with the given variants. Trailing comma is allowed.
+Defines a new enum type with the given variants. A trailing `;` before the
+closing brace is optional.
 
 ### Enum Backing Type
 
@@ -4582,37 +4585,33 @@ if 0 <= x <= 100 and 0 <= y <= 100 {
 }
 ```
 
-### If Expression (inline form)
+### If Expression
 ```sx
-if condition then consequent else alternate
+if condition result else result
 ```
-Both branches are single expressions. The whole form produces a value.
+`condition` is a header expression and each result is an expression — a block
+among them, whose last expression is that branch's value. The whole form produces
+a value; without `else` it is a statement.
+
 ```sx
-x := if true then 1 else 2;
-```
-The `else` branch is optional. Without it, the form is a statement (no value):
-```sx
-if i == 2 then continue;
-if done then break;
-if err then return;
+x := if true 1 else 2;
+if i == 2 continue;
+y := x + if false { 7 } else { 12 };
 ```
 
-### If Expression (block form)
+`then` is an optional delimiter between the condition and the result. It is
+**required** where the result's first token can continue the condition — `(`,
+`[`, `.`, `{`, `*`, `-`, or a binary operator:
+
 ```sx
-if condition {
-  stmts
-} else {
-  stmts
-}
+v := if a < b then *a else null;   // without `then`, `b * a` reads as one operand
 ```
-Each branch is a block. The last expression in each block is the branch's value. Can be used inline within other expressions:
-```sx
-y := x + if false {
-  7;
-} else {
-  12;
-};
-```
+
+A `{` immediately after the condition opens a block body, so a result that is a
+named aggregate literal takes `then`.
+
+An optional binding (`if val := expr { … }`) is a condition form — see
+[§2 Safe Unwrap](#safe-unwrap-if-val--expr).
 
 ### Pattern Matching
 ```sx
@@ -4858,11 +4857,11 @@ no intermediate binding. A `(` applies arguments across any gap, so
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for x, i in xs, 0..` — both `x` and `i`), a match-arm payload capture
-(`case .circle: |r|`), a `catch` / `onfail` error binding
+(`case .circle: |r|`), a `catch` error binding
 (`f() catch |e|`), and an `inline for` pack-element alias
 (`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; a write into
-it — the binding itself (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`)
+it — the binding itself (`x = v`, `i = 99`, `r = 5.0`, `e = ParseErr.Bad`)
 or a member/element of it (`x.n = v`, `x.tags[0] = v`, `--x.n`,
 `h.p.n = v`) — is a compile error rather than a silent no-op.
 Auto-deref through a pointer field of the copy (`h.p.n`) is refused
@@ -5631,6 +5630,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * size_of(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
 - `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
+- `@tag(x: $T) -> @Tag(T)` — the discriminant of an error-set, enum, or tagged-union value, payload dropped. `@Tag(T)` is a first-class type; see [§12 `@tag`](#tag) for its comparison, matching, and interpolation rules.
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
@@ -6077,6 +6077,9 @@ sx build <file.sx>     Compile to binary
 sx lsp                 Start language server (LSP)
 ```
 
+Warnings are reported on a **successful** compile too, before the program runs;
+a warnings-only build still exits 0.
+
 ### Options
 
 | Flag | Description |
@@ -6290,118 +6293,168 @@ See [§12 Error Handling](#12-error-handling).
 
 sx models recoverable errors as a **separate return channel**, not a wrapped
 result type. A `!` as the **last slot** of the parenthesized result list adds one
-extra return slot — a `u32` error tag — alongside the normal value slots. This
-keeps sx's native multi-return ergonomics: `-> (i32, i64, !)` is a function
-returning two values *and* an error, with no tuple-in-a-wrapper. A single-value
-failable is `-> (T, !)`; an error-only failable is `-> !`. (There is no bare
-`-> T !` spelling — the error channel always rides inside the `(…, !)` list.)
+extra return slot — the error — alongside the normal value slots. This keeps
+sx's native multi-return ergonomics: `-> (i32, i64, !)` is a function returning
+two values *and* an error, with no tuple-in-a-wrapper. A single-value failable is
+`-> (T, !)`; an error-only failable is `-> !`. The error channel always rides
+inside the `(…, !)` list — there is no bare `-> T !` spelling.
 
 This section is the canonical surface reference.
 
-### Failable signatures
-
-```sx
-parse_digit :: (s: string) -> (i32, !) { ... }         // one value + error
-parse       :: (s: string) -> (i32, i64, !) { ... }    // multi-value + error
-must_init   :: () -> ! { ... }                         // pure failable, no value
-divide      :: (a: i32, b: i32) -> (i32, !MathErr) { ... } // named set
-```
-
-The `!` is always the **last** slot. `0` in the error slot means "no error";
-non-zero is an interned global tag id.
-
 ### Error sets
 
-Two forms of error set:
+An error set lists its members with the enum member grammar: `;`-separated, each
+member optionally carrying a payload type.
 
 ```sx
-// Named set — declared once, referenced by name from signatures.
-ParseErr :: error { BadDigit, Overflow, Empty };
-
-// Inferred set — bare `!` collects whatever tags the body raises.
-quick :: () -> (i32, !) {
-  if cond raise error.SomeAdHocTag;   // mints into the inferred set
-  return 0;
+FooError :: error {
+    A;                              // void member
+    B: i32;                         // scalar payload
+    C: struct { v: i32; at: i64 };  // struct payload — its fields are `;`-separated too
 }
 ```
 
-- An `error { ... }` set is an opaque type; tags are referenced as `error.X`.
-- A declared empty set `error { }` is **rejected**.
-- **Inferred sets are whole-program.** The compiler runs an SCC fix-point pass
-  over the entire call graph to converge each bare-`!` function's set
-  (matching sx's whole-program compilation model). Callers see the converged
-  union, not bare `!`.
-- A top-level (non-`main`) function declared `!` that never errors warns
-  ("declared `!` but never errors — drop the `!`"). Closures and
-  function-type slots with an empty `!` do **not** warn. A body that
-  forwards (`return callee(...)`) or `try`s an opaque channel — an interface
-  or UFCS method, a closure slot, a checked assertion — carries a
-  load-bearing `!` and does not warn either.
-- Warnings are reported on a **successful** compile too, before the program
-  runs; a warnings-only build still exits 0.
+A member's identity is the pair `(set, tag)`, so `FooError.A` and `BooError.A`
+are different members. An empty `error { }` is rejected.
 
-**Tag identity is the name, globally (Zig-style).** Two sets that both list
-`NotFound` reference the *same* tag id; `if e == error.NotFound` matches every
-`NotFound` regardless of which set raised it. Use distinct names
-(`FsNotFound` / `HttpNotFound`) when subsystems must be distinguishable.
+An inline `error { … }` is legal in a declaration — standalone or as an operand
+of `|`. A channel spelling takes no inline set.
 
-**Forwarding a failable result** (`return callee(...)` where the callee is
-itself failable — value-carrying or pure) follows `raise`'s subset rule on
-the error channel. Because tag identity is global, no tag translation is
-involved — the compiler re-packs the value slots plus the raw tag:
+```sx
+Extended :: FooError | error { Extra: string };
+```
 
-- callee's set is the caller's set (named or bare) → forwards as-is;
-- concrete `!E` → bare `!` → **legal** (the open channel absorbs any set);
-- concrete `!A` → concrete `!B` → legal iff `A ⊆ B`; each escapee tag is
-  diagnosed otherwise;
-- bare `!` → named set → **rejected** (the callee's inferred set is not
-  statically known at the forward site) — destructure and re-raise instead;
-- value-slot arity must match, counting a pure failable as 0 value slots:
-  `(T, !E)` cannot forward through `(T, U, !)`, `!E` cannot forward through
-  `(T, !)` (nothing to fill the value slot), and `(T, !E)` cannot forward
-  through a pure `!` (the value slot has nowhere to go) — each diagnosed.
+### Composition
 
-**Arity tie-break.** A bang-less tuple whose last field is an error set
-(`(T, ErrSet)`) is structurally identical to a failable result, so a returned
-tuple is ambiguous between "my value list" and "a forwarded failable". The
-VALUE interpretation wins when the tuple's field count matches the caller's
-value arity AND each element fits its slot (per-slot error-set-ness matches
-— an error-set element in a non-error-set slot has no implicit conversion,
-and vice versa). So `return v, e` into `-> (i64, MyErr, !)` is the
-two-value list; `return inner(x)` (an `(i64, !MyErr)` result) into
-`-> (i64, i64, !)` is a forward and is diagnosed as a 1-vs-2 arity error.
+`A | B` composes whole sets and qualified members into one set:
 
-A forward hop pushes **no** return-trace frame: like the matched-set
-`return callee()` it is a plain data return, so the trace records the raise
-site and any `try` propagation hops, not intermediate forwards.
+```sx
+Both      :: FooError | BooError;
+IoOrOther :: IoErr.Failed | Other.Failure;
+```
+
+Named sets compose by member set: two named sets listing the same members are the
+same type, and a composition naming every member of a set *is* that set
+(`!(IoErr.Failed | IoErr.Canceled)` is `!IoErr`). Two inline `error { … }`
+operands listing the same members are distinct — each interns its own members. A
+member introduced by an inline operand belongs to the composition that names it
+(`Extended.Extra`).
+
+### Channels
+
+`!` takes a type expression: a named set, a qualified member, or a parenthesized
+composition.
+
+```sx
+divide :: (a: i32, b: i32) -> (i32, !MathErr);   // named set
+sleep  :: () -> !IoErr.Canceled;                 // one member
+mix    :: () -> !(IoErr.Failed | Other.Failure); // composition
+quick  :: () -> (i32, !);                        // inferred
+```
+
+`IoErr.Failed` in type position is the singleton channel; in value position it is
+the member.
+
+Bare `!` is a named function declaration's spelling only. A function-type slot —
+parameter, field, alias, `Closure`, lambda — writes its channel out.
+
+### Inferred channels
+
+A bare `!` is the flatten-merge of the static channel types the body `try`s and
+`raise`s. Every member comes from a declared set; a `raise` never mints one.
+
+```sx
+inner :: () -> (i32, !) {
+  try foo();                 // foo is `-> (i32, !FooError)` → merges FooError
+  if bad raise BooError.X;   // static type BooError        → merges BooError
+  0
+}                            // inner's channel is FooError | BooError
+```
+
+The contribution is the **static type** of the tried or raised value, so
+`raise FooError.X` merges all of `FooError`, not just `X`. Mutually recursive
+inferred channels converge by fix-point over the call graph; callers see the
+merged set, never a bare `!`.
+
+### Members as values
+
+A member is written qualified, or with the `.X` shorthand wherever the
+destination supplies a channel — construction, `==`, and `case`.
+
+```sx
+t := IoErr.Failed;   // singleton channel {intern(IoErr, Failed)}
+e : IoErr;           // the whole set — a binding is never narrowed
+```
+
+`.X` resolves when exactly one member named `X` is live in the destination
+channel; where a composition carries two, the qualified form disambiguates
+(`case FooError.A:`, `case png.Error.X:`).
+
+`raise .X` resolves against a channel **already in hand** — the named channel of
+the enclosing function or `try { }` block. An inferred channel is not in hand; it
+is what the `raise` contributes to, so the member is qualified there, and a
+partial merge does not resolve it either.
+
+```sx
+mix :: () -> !(IoErr.Failed | Other.Failure) {
+  raise .Failed;      // OK — the channel is in hand
+}
+
+helper :: () -> (i32, !) {
+  try foo();
+  raise .B;           // ERROR — inferred channel; write `raise FooError.B`
+}
+```
+
+### Payloads
+
+`.Tag` alone is a void member. A member with a payload is constructed with a
+brace group holding it:
+
+```sx
+raise FooError.A;            // void
+raise .B{42};                // scalar payload
+raise .C{ v = 1, at = 0 };   // struct payload — literal fields are `,`-separated
+raise .C{};                  // struct payload — each field takes its default
+```
+
+- `.Tag` without braces is illegal when the member carries a payload.
+- `.Tag{}` is illegal when the member is void or its payload is a scalar.
+- `.Tag{}` on a struct payload fills every field from that struct's own defaults
+  (zero, `=`, or `---`), exactly as `T{}` does.
+
+The brace group **juxtaposes** the member (§Trailing Blocks); no glue or
+adjacency rule applies. A payload travels as a by-value copy, and a static string
+inside one stays live. Enum variants construct the same way (§Enum Types).
 
 ### `raise`
 
-Statement form. Terminates the immediately enclosing failable function (like
-`return`), setting the error slot; value slots are left undefined.
+Statement form. Terminates the immediately enclosing failable body — a function
+or a `try { }` block — setting the error channel; value slots are left undefined.
 
 ```sx
-if bad raise error.BadDigit;   // literal tag
+if bad raise FooError.B{42};
 
 v := foo() catch |e| {
-  if e == error.Specific return default;
-  raise e;                     // variable tag — re-raise
+  if e == .A return default;
+  raise e;                     // forward
 };
 ```
 
-`raise EXPR` accepts any tag-typed expression. EXPR's set must be ⊆ the
-enclosing function's error set (for a named set), or is absorbed into the
-inferred set (for bare `!`). `raise` inside an inline expression is rejected
-(`v := if cond raise error.X else 0;` — compile error). A closure body is its
-own function boundary: `raise` inside a closure terminates the *closure*.
+A constructor into a **named** destination is legal iff `intern(owner, tag)` is a
+live member of that channel: `mix` above may `raise IoErr.Failed`. `raise EXPR`
+of a live error follows the subset rule below. `raise` inside an inline
+expression is rejected (`v := if cond raise FooError.A else 0;`). A closure body
+is its own boundary: `raise` there terminates the *closure*.
 
 ### `try`
 
-Expression form. `try X` requires `X` to be failable; on `X`'s failure it
-routes control to the nearest enclosing fallback target:
+Expression form. `try X` requires `X` to be failable; on `X`'s failure it routes
+control to the nearest enclosing fallback target:
 
 - inside a `??` chain → the next `??` operand;
-- otherwise → the function's error return (propagation, like Zig's `try`).
+- under a `catch` → that handler;
+- otherwise → the enclosing failable boundary (propagation).
 
 ```sx
 v       := try parse_digit(s);          // propagate on failure
@@ -6413,26 +6466,45 @@ return try transform(try parse(s));     // nests in any value position
 
 `try` works in any value-producing position (argument, struct/array literal,
 `if`-condition); evaluation is left-to-right and short-circuits on the first
-failure, so no partial aggregate is ever built. `try`'s body never binds the
-tag — use `catch` for that.
+failure, so no partial aggregate is ever built. `try` never binds the error —
+that is `catch`'s job.
+
+### `try { block }`
+
+`try` in front of a block makes that block an error boundary carrying its own
+inferred channel. Inner `try` and `raise` contribute to it, and a `raise` inside
+targets that channel rather than the enclosing function. The block's last
+expression is its success value.
+
+```sx
+v := try {
+  h := try open(path);
+  defer close(h);
+  try read_all(h)
+} catch |e| {
+  log.warn("load failed: {}", e);
+  default
+};
+```
 
 ### `catch`
 
-Expression form. Handles the error inline. The binding sits in **pipes**
-(`catch |e|`) — like a match-arm payload capture — and is **optional**. Three
-shapes, disambiguated by the token after `catch`:
+Expression form — a `try` fallback of the same class as `??`. It handles the
+error inline. The binding sits in **pipes** (`catch |e|`) — like a match-arm
+payload capture — and is **optional**. Three shapes, disambiguated by the token
+after `catch`:
 
 | Form | Binding | Body |
 |---|---|---|
-| `catch { ... }` | none (tag ignored) | block — braces required |
+| `catch { ... }` | none (error ignored) | block — braces required |
 | `catch \|e\| { ... }` | `e` | block |
 | `catch \|e\| EXPR` | `e` | bare expression (no braces) |
 
-Dispatching on the tag is the bare-expression shape with a `match` over the
-binding: `catch |e| match e { case ... }`.
+The nearest fallback wins, so a `try` sitting directly under a `catch` lands in
+that `catch`: `try foo() catch { 0 }` and `foo() catch { 0 }` are the same
+expression. `foo() catch {}` absorbs.
 
-A bare binding (`catch e { }`) is a parse error with a hint to write the
-pipes.
+A bare binding (`catch e { }`) is a parse error with a hint to write the pipes.
 
 ```sx
 v := parse_digit(s) catch |e| {
@@ -6447,7 +6519,7 @@ v, n := parse(s) catch |e| {
   .{0, 0}                               // tuple body for a multi-value failable
 };
 
-v := parse(s) catch |e| match e {       // dispatch on the tag
+v := parse(s) catch |e| match e {       // dispatch on the member
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;
@@ -6482,7 +6554,7 @@ Expression form — the operator that defaults an optional (§2 Optional Types)
 also defaults a failable. On a failable LHS the RHS shape decides the result:
 
 - **plain value of the success type** — terminate; the chain becomes
-  non-failable; on LHS failure the result is the RHS value (LHS tag discarded);
+  non-failable; on LHS failure the result is the RHS value (LHS error discarded);
 - **`try EXPR`** — chain; on LHS failure, attempt the RHS (its `try` defines
   the next fallback target);
 - **bare failable** — allowed only when its error path hits a marker
@@ -6508,7 +6580,7 @@ error there (`parse(s) or 0` names no bool).
 ### Path-marker rule
 
 A failable expression `X` may appear **bare** (no `try`) iff its error path
-passes through at least one explicit marker before reaching the function
+passes through at least one explicit marker before reaching the enclosing
 boundary. The markers are: a `try` keyword, a `catch` handler, a `??` value
 terminator, or a destructure binding (`v, err := X`). Otherwise `try` (or one
 of the other markers directly on `X`) is required.
@@ -6519,47 +6591,145 @@ a := parse(s) catch |e| {...}; // OK — catch marks
 v, err := failable();        // OK — destructure marks
 a := try foo() ?? try boo(); // OK — each try marks its own exit
 
-a := foo() ?? boo();         // ERROR — no marker on the way to the function
+a := foo() ?? boo();         // ERROR — no marker on the way to the boundary
 a := foo();                  // ERROR — bare, no marker downstream
 ```
 
-### Set widening
+### Subset
 
-Widening is checked **only at subexpressions whose failure escapes to the
-function** (propagation). For a **named** caller `!CallerErr`, the escape set
-must be ⊆ `CallerErr` (no auto-widening). For an **inferred** caller `!`, the
-escape set is absorbed into the converged union. Failures absorbed by a
-downstream chain operand / `catch` / terminator / destructure don't contribute.
+`A ⊆ B` when every member of `A` is live in `B`: `FooError ⊆ Both`,
+`IoErr.Canceled ⊆ IoErr`.
 
-### `error.X` as a value
+**Values follow ⊆.** `try`, `raise`, and `return` of a live failable widen into
+any destination channel that holds their members — a tag copy plus the live
+payload, with no translation table.
 
-`error.X` is a first-class value outside `raise`:
+- `!E` into a bare `!` merges, and a bare `!` into `!B` is legal iff the merged
+  set ⊆ `B` (`Both ⊈ IoErr` rejects `return inner()`);
+- `!A` into `!B` is legal iff `A ⊆ B`; each escaping member is diagnosed
+  otherwise;
+- value-slot arity must match, counting a pure failable as 0 value slots:
+  `(T, !E)` cannot forward through `(T, U, !)`, `!E` cannot forward through
+  `(T, !)` (nothing to fill the value slot), and `(T, !E)` cannot forward
+  through a pure `!` (the value slot has nowhere to go) — each diagnosed.
+
+**Slots are exact.** A `Closure` or function-pointer slot compares channels by
+identity, named functions included:
 
 ```sx
-default_err : ParseErr = error.BadDigit;  // typed as the named set
-tag_id      : u32      = error.BadDigit;  // untyped context → global tag id
-if e == error.Empty { ... }               // compare against a literal
+slot    : Closure(() -> (i32, !Both));
+io_slot : Closure(() -> (i32, !IoErr));
+
+slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
+slot    = inner;   // OK — inner's inferred channel IS Both
+slot    = ok;      // ERROR — a non-failable function is not a failable slot
+io_slot = inner;   // ERROR — Both is not IoErr
 ```
 
-- Against a **named-set** destination, `error.X` is valid only if `X ∈` the set
-  (typo-checked). A comparison to a literal not in the set is a compile error
-  (it could never be true). For **inferred** sets this check is skipped.
-- A contextual **`.X` shorthand** is accepted wherever the destination supplies
-  a named set — declaration, argument, field init, `raise` / `return` into a
-  channel, comparison against an error-set operand. It names the same tag as
-  `error.X` and is membership-checked identically, exactly as an enum literal
-  types itself from an enum destination. Against a bare `!` channel it mints
-  into the inferred set, like `error.X`.
-- An error-set **value** crossing into a differently-typed named set follows
-  the same subset rule as the error channel: `A` coerces to `B` only if
-  `A ⊆ B`, in declaration, argument, and field-init positions alike. Each
-  escaping tag is diagnosed; `xx` forces a narrowing.
-- An error-set value compares (`==` / `!=`) only with an `error.X` literal or
-  another error-set value — **never a raw integer** (`e == 42` is rejected).
-  Coerce explicitly (`(xx e) == id`) to use the raw id.
-- **Interpolation renders the tag name.** `{}` on an error-set value prints the
-  tag name (`BadDigit`), never the raw id, via a tag-name table that is
-  **always linked, even in release builds**.
+No dest-typed thunk, environment stash, or hidden allocation stands behind a slot
+assignment: the channel matches or the assignment is rejected. An interface or
+protocol method keeps the channel it is written with — `Io.suspend_raw` is
+`!IoErr.Canceled`, not `!IoErr`.
+
+A generic callability bound `$F/() -> ($R, !)` accepts any failable channel,
+named or inferred, and does not stamp `!` onto a lambda. Naming the set
+(`$F/() -> (T, !E)`) is exact, like a slot.
+
+**Arity tie-break.** A bang-less tuple whose last field is an error set
+(`(T, ErrSet)`) is structurally identical to a failable result, so a returned
+tuple is ambiguous between "my value list" and "a forwarded failable". The
+VALUE interpretation wins when the tuple's field count matches the caller's
+value arity AND each element fits its slot (per-slot error-set-ness matches
+— an error-set element in a non-error-set slot has no implicit conversion,
+and vice versa). So `return v, e` into `-> (i64, MyErr, !)` is the
+two-value list; `return inner(x)` (an `(i64, !MyErr)` result) into
+`-> (i64, i64, !)` is a forward and is diagnosed as a 1-vs-2 arity error.
+
+A forward hop pushes **no** return-trace frame: it is a plain data return, so the
+trace records the raise site and any `try` propagation hops, not intermediate
+forwards.
+
+### Comparison
+
+Two live errors compare when one channel is ⊆ the other; otherwise the
+comparison is a type error rather than a constant `false`.
+
+```sx
+if e1 == e2 { ... }         // tag AND payload
+if e == .D  { ... }         // tag only — `.D` resolves in e's channel
+hit := e == .D{42};         // tag AND payload
+bad := e == 42;             // ERROR — never a raw integer
+```
+
+A `{` directly after an `if` / `match` header condition opens the body, so a
+payload construction in that position is parenthesized (`if e == (.D{42}) { … }`).
+
+### `@tag`
+
+`@tag(x) -> @Tag(T)` reads the discriminant of an error set, enum, or tagged
+union value, dropping the payload.
+
+```sx
+t := @tag(e);
+if t == .D            { ... }   // `@Tag(T)` against a member — tag only
+if @tag(a) == @tag(b) { ... }   // tag only
+if e == t             { ... }   // an error value against a `@Tag` — tag only
+```
+
+Comparability follows the same ⊆ rule on the channels. A `@Tag` is not a `raise`
+operand, and a `match` arm on a `@Tag` subject takes no `|p|` capture.
+
+### Matching
+
+`match` over an error value dispatches on the member. Covering every member is
+exhaustive; an `else` arm is allowed. The subject binding is not narrowed inside
+an arm.
+
+```sx
+match e {
+  case FooError.A: 0;      // qualified — required where `.A` is ambiguous
+  case .B: |v| v;          // payload capture
+  else:    -1;
+}
+```
+
+### Interpolation
+
+`{}` on an error **value** prints the interning owner, the member, and the
+payload (`FooError.D{42}`); on a `@Tag` it prints owner and member alone
+(`FooError.D`, `IoErr.Failed`, `Shape.none`). A member introduced by an inline
+`error { … }` operand prints under the composition that names it. The import
+binding a set was reached through never appears. The name table is **always
+linked, release builds included**.
+
+### Cleanup
+
+`defer` runs on every exit of its block — success or failure (§Defer). A
+conditional cleanup is a `defer` in front of an `if`, not a form of its own:
+
+```sx
+make_handle :: () -> (Handle, !) {
+  h := try sys_open();
+  keep := false;
+  defer if !keep sys_close(h);   // close unless the handle is handed out
+
+  try configure(h);
+  try register(h);
+  keep = true;
+  return h;
+}
+```
+
+To act on the error itself, destructure it and read the snapshot at exit:
+
+```sx
+v, e := attempt();
+defer if e != null log.warn("attempt failed: {}", e);
+```
+
+**Restrictions.** `raise` / `try` / `return` / `break` / `continue` are rejected
+inside a `defer` body — a cleanup body has no control-transfer target. A failable
+call in cleanup is absorbed locally (`close(h) catch {};` or `flush(buf) ?? 0`).
 
 ### Discard rejection & flow-check
 
@@ -6573,56 +6743,6 @@ Value slots may be discarded (`_, n := parse(s) catch |e| { return; }`). The
 statement form `try foo();` is the explicit "propagate, use no value." On a
 value-carrying failable, the value slot is live only where the compiler can
 prove the error slot is null (path-sensitive flow-check).
-
-### `onfail` (error-path cleanup)
-
-Statement form. Block-rooted (Zig-aligned): legal in any block inside a
-failable function. **Fires when an error propagates out of its enclosing
-block**, regardless of whether an outer `catch` / terminator later absorbs it.
-On success exit (fall-through, `return`, `break` / `continue` without an error)
-it is skipped — only `defer` runs.
-
-```sx
-make_handle :: () -> (Handle, !) {
-  h := try open();
-  onfail close(h);          // close ONLY on a subsequent failure
-  try configure(h);         // fails → onfail runs → close(h)
-  return h;                 // success → onfail skipped; caller owns h
-}
-
-open :: (path: string) -> (Handle, !) {
-  h := try sys_open(path);
-  onfail |e| { log.warn("init failed for {}: {}", path, e); sys_close(h); }
-  ...
-}
-```
-
-**Ordering with `defer`.** Both run in reverse declaration order, interleaved.
-On block-error exit both kinds run (newest-first); on block-success exit only
-`defer`s run.
-
-**Restrictions.** `raise` / `try` / `return` / `break` / `continue` are
-rejected inside an `onfail` (and a `defer`) body — a cleanup body has no
-control-transfer target. A failable call in cleanup must be absorbed locally
-(`close(h) catch {};` or `flush(buf) ?? 0`). `onfail` outside a failable
-function, or at top level, is rejected.
-
-### Closures with `!`
-
-- **Explicit annotation required.** A closure literal's value type is inferred
-  from its body, but if that body raises or `try`-escapes, the `!` channel is
-  **not** inferred — declare it (`|x: i32| -> (i32, !) { ... }`). This keeps
-  adding a `raise` from silently changing a closure's type.
-- **Program-wide union per shape.** All `Closure(<sig>) -> (T, !)` occurrences
-  with the same signature share one inferred-set node; the SCC pass unions
-  every closure flowing into any matching slot.
-- **FFI boundary.** A failable closure cannot be assigned to a non-failable
-  function-type slot — extern (C) code can't observe the error channel. Wrap and
-  absorb the error instead.
-- **Non-failable → failable widening is allowed** (∅ ⊆ any set). A
-  non-failable closure assigned to a failable slot contributes ∅; a single
-  coalesced adapter thunk `(v) → (v, 0)` reconciles the 1-slot vs 2-slot ABI at
-  the crossing point.
 
 ### Return traces
 
@@ -6647,13 +6767,25 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   can step sx source — that is a debugger artifact, separate from trace
   resolution.
 
+### I/O channels
+
+```sx
+IoErr :: error { Failed; Canceled }
+```
+
+`Io.suspend_raw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
+worker is a lambda, so it writes its channel out
+(`context.io.async(|| -> (i64, !IoErr) try compute(a, b))`).
+
 ### ABI
 
-The error slot is a `u32`, always the last slot of the multi-return tuple, in
-both register- and stack-return conventions. `0` = no error; non-zero = an
-interned global tag id (pool capacity ~4.3 billion; fixed 32-bit, no dynamic
-widening across builds). Errors are a pure value channel — no coupling to the
-implicit `context`.
+The error rides the last slot of the multi-return tuple as
+`{ qualified_tag: u32, payload }`, in both register- and stack-return
+conventions. `0` in the tag means "no error"; non-zero is the interned
+`(set, member)` id (pool capacity ~4.3 billion; fixed 32-bit, no dynamic
+widening across builds). The payload area is sized by the channel's widest
+member, so a channel's size is a property of that channel. Errors are a pure
+value channel — no coupling to the implicit `context`.
 
 ---
 
@@ -6668,7 +6800,9 @@ import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
 context_extend  = '@context_extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
-error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
+error_decl      = IDENT '::' set_operand ('|' set_operand)* end
+set_operand     = IDENT ('.' IDENT)?          // a named set or a qualified member
+                | 'error' '{' set_members '}' // at least one member; `error { }` is rejected
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
                 | IDENT '::' type 'intrinsic' end
@@ -6683,8 +6817,12 @@ linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
                   // `end` closes the tail
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
-ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel as last `-> (…, !)` slot
-enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
+ret_type        = type ('!' chan?)?     // trailing `!` = failable; channel as last `-> (…, !)` slot
+chan            = IDENT ('.' IDENT)?          // a named set or a qualified member
+                | '(' chan ('|' chan)+ ')'    // a composition is parenthesized under `!`
+enum_decl       = IDENT '::' 'enum' '{' set_members '}'
+set_members     = set_member (';' set_member)* ';'?
+set_member      = IDENT (':' type)?           // the type is the member's payload
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
                   // members are `;`-separated; a trailing `;` before `}` is optional
@@ -6703,14 +6841,13 @@ param           = IDENT ':' type ('=' expr)?
 block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
                   // not, that expr is the block's value — `;` only separates
 stmt            = decl | assignment end | multi_assign end | return_stmt | defer_stmt | insert_stmt
-                | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt
+                | push_stmt | break_stmt | continue_stmt | raise_stmt
                 | scope_stmt | expr end
 scope_stmt      = block             // a statement, so it never continues a postfix chain
 return_stmt     = 'return' expr? end
 break_stmt      = 'break' end
 continue_stmt   = 'continue' end
 raise_stmt      = 'raise' expr end
-onfail_stmt     = 'onfail' ('|' IDENT '|')? (block | expr end)
 defer_stmt      = 'defer' expr end
 insert_stmt     = '@insert' expr end
 push_stmt       = 'push' expr block
@@ -6746,8 +6883,9 @@ field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
                   // the label is an IDENT — a keyword label is backticked
                   // (`` `if = 2 ``), bare it heads the expr alternative
-if_expr         = 'if' expr 'then' expr ('else' expr)?
-                | 'if' expr block ('else' block)?
+if_expr         = 'if' expr 'then'? expr ('else' expr)?
+                  // `then` is required where the result's first token can continue
+                  // the condition; a '{' right after the condition opens a block body
                   // the 'else' of an if is any 'else' NOT followed by a ':' —
                   // one token of lookahead separates it from an else_arm head
 match_expr      = 'match' expr '{' case_arm* else_arm? '}'
@@ -6768,8 +6906,8 @@ args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
                 | '(' type ')'                               // grouping (bare parens never form a product)
-                | '(' fn_type_list? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
-                | '!' IDENT?                                  // pure failable (`!` / `!Named`)
+                | '(' fn_type_list? ')' '->' type ('!' chan)?  // function type (params optional; optional error channel)
+                | '!' chan?                                   // pure failable (`!` / `!Chan`)
 fn_type_list    = type (',' type)* (',' c_tail)? ','?
                 | c_tail ','?       // a C-variadic function type needs `abi(.c)`
 tuple_type_list = tuple_type_elem (',' tuple_type_elem)* ','?
