@@ -550,7 +550,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
         if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns {d}", .{ sn, if (sn == 1) @as([]const u8, "") else @as([]const u8, "s"), dn });
         return;
     }
-    checkForwardSetCompat(self, src_err, err_ty, span);
+    if (!checkForwardSetCompat(self, src_err, err_ty, span)) return;
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
     for (0..dn) |i| {
@@ -569,14 +569,30 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
     self.emitTupleRet(ret_ty, tup);
 }
 
+/// Diagnose a source whose channel is still the inferred placeholder: it has
+/// no static member set, so it cannot be shown ⊆ a named destination.
+fn diagNoStaticMemberSet(self: *Lowering, dst_err: TypeId, span: ast.Span) void {
+    if (self.diagnostics) |d| {
+        const dst_info = self.module.types.get(dst_err);
+        d.addFmt(.err, span, "cannot forward a bare-`!` result through the named error set '{s}' — the source channel has no static member set", .{self.module.types.getString(dst_info.error_set.name)});
+    }
+}
+
 /// The error-set rule for a failable FORWARD (`return callee()` across sets),
 /// mirroring `raise`'s: the open bare `!` absorbs any concrete set; a NAMED
 /// caller set requires the callee's set ⊆ caller's, each escapee diagnosed
 /// while the shape-correct lowering continues (the build aborts via hasErrors).
-fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) void {
-    if (src_err == dst_err) return;
-    if (self.isInferredErrorSet(dst_err)) return;
+/// A source that is still the inferred placeholder has no static member set,
+/// so the pack is aborted.
+fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) bool {
+    if (src_err == dst_err) return true;
+    if (self.isInferredErrorSet(dst_err)) return true;
+    if (self.isInferredErrorSet(src_err)) {
+        diagNoStaticMemberSet(self, dst_err, span);
+        return false;
+    }
     self.checkErrorSetSubset(src_err, dst_err, span);
+    return true;
 }
 
 /// The returned value of a PURE failable's `return EXPR;` (`-> !` /
@@ -594,9 +610,11 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
     if (!val_ty.isBuiltin()) {
         switch (self.module.types.get(val_ty)) {
             .error_set => {
+                if (!checkForwardSetCompat(self, val_ty, ret_ty, span)) {
+                    return self.builder.constInt(0, ret_ty);
+                }
                 // `checkForwardSetCompat` is the membership gate, so the
                 // coercion skips the implicit preamble's.
-                checkForwardSetCompat(self, val_ty, ret_ty, span);
                 return self.coerceExplicit(ref, val_ty, ret_ty);
             },
             .failable => |vf| {
@@ -1122,8 +1140,9 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
 
 /// Widening at an escape (function-propagation) site: the escaping set must
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
-/// via the whole-program SCC — no check. A bare-`!` callee carries
-/// no tags on its placeholder TypeId, so check its SCC-converged set.
+/// via the whole-program SCC — no check. A placeholder callee with no
+/// materialised channel has no static member set. A closure/fn-type SLOT
+/// widens against the shape-keyed union.
 /// Shared by `try` propagation and a failable `??` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {
     if (self.isInferredErrorSet(caller_set)) return;
@@ -1131,10 +1150,16 @@ pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set
         self.checkErrorSetSubset(callee_set, caller_set, span);
         return;
     }
-    // Bare-`!` callee: either a named top-level function (its converged set
-    // is name-keyed) or a closure/fn-type SLOT (its set is shape-keyed,
-    // shared program-wide by value-signature).
+    // Bare-`!` callee: a named top-level function (its converged set is
+    // name-keyed) or a closure/fn-type SLOT (its set is shape-keyed, shared
+    // program-wide by value-signature).
     if (callTargetName(callee_node)) |nm| {
+        if (self.edgeCalleeDecl(nm, self.current_source_file)) |fd| {
+            if (astChannelIsInferred(fd.return_type) and self.inferred_channels.get(fd) == null) {
+                diagNoStaticMemberSet(self, caller_set, span);
+                return;
+            }
+        }
         if (self.inferred_error_sets.get(nm)) |tags| {
             self.diagTagsNotInSet(tags, caller_set, span);
             return;

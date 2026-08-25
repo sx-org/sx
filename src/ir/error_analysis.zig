@@ -209,12 +209,23 @@ pub const ErrorAnalysis = struct {
                     const callee_fd = self.l.edgeCalleeDecl(callee, we.value_ptr.source_file) orelse {
                         // No single author is visible at the edge, so the
                         // channel it escapes through is not statically known.
-                        we.value_ptr.dyn = true;
+                        if (!we.value_ptr.dyn) {
+                            we.value_ptr.dyn = true;
+                            changed = true;
+                        }
                         continue;
                     };
                     const callee_tags: []const u32 = blk: {
                         if (work_key.get(callee_fd)) |k| {
-                            if (work.getPtr(k)) |cc| break :blk cc.tags.items;
+                            if (work.getPtr(k)) |cc| {
+                                // A callee whose merge is non-static makes this
+                                // node's merge non-static.
+                                if (cc.dyn and !we.value_ptr.dyn) {
+                                    we.value_ptr.dyn = true;
+                                    changed = true;
+                                }
+                                break :blk cc.tags.items;
+                            }
                         }
                         break :blk self.l.declaredChannelTags(callee_fd);
                     };

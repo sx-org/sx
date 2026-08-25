@@ -3,7 +3,9 @@
 // each member IoErr does not carry is named. A `raise Set.Member` into a named
 // destination that does not carry the member is refused the same way. Under a
 // bare `!` there is no channel in hand for a `.Member` shorthand to resolve
-// against, so it must be qualified.
+// against, so it must be qualified. A source that still carries the placeholder
+// `!` — a Closure slot, or a wrap of a callee whose channel is opaque — has no
+// static member set, so a named destination cannot absorb it.
 
 @import "modules/std.sx";
 
@@ -31,9 +33,28 @@ shorthand :: (n: i32) -> (i32, !) {
     return n;
 }
 
+slot_fwd :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !IoErr) {
+    return h(x);
+}
+
+opaque :: (f: Closure() -> !) -> ! {
+    try f();
+}
+
+wrap :: () -> ! {
+    try opaque(|| -> ! { raise Other.Nope; });
+}
+
+dyn_fwd :: () -> !IoErr {
+    return wrap();
+}
+
 main :: () -> i32 {
     canal : Closure(i32) -> (i32, !IoErr) = inner;
+    g := |x: i32| -> (i32, !) { if x < 0 { raise Other.Nope; } return x; };
     print("{} {} {}\n", canal(1) catch { -1 }, forward(1) catch { -2 }, stray(1) catch { -3 });
     print("{}\n", shorthand(1) catch { -4 });
+    print("{}\n", slot_fwd(g, 1) catch { -5 });
+    print("{}\n", dyn_fwd() catch { -6 });
     return 0;
 }
