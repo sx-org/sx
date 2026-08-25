@@ -29,8 +29,9 @@ test "lower: bodyDemand maps a declared return type to one demand" {
     try std.testing.expect(l.bodyDemand(point) == .return_value);
 
     // PURE failable (`-> !Named`): only an ERROR tail is the return.
-    const tag = tt.internTag("Nope");
-    const failed = tt.errorSetType(tt.internString("Failed"), &[_]u32{tag});
+    const failed_name = tt.internString("Failed");
+    const tag = tt.internMember(tt.internErrorOwner(&failed_name, failed_name), "Nope");
+    const failed = tt.errorSetType(.empty, &[_]u32{tag});
     try std.testing.expect(l.bodyDemand(failed) == .error_only);
     try std.testing.expectEqual(failed, l.bodyDemand(failed).error_only);
 

@@ -254,9 +254,8 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     const dst_info = self.module.types.get(dst);
     if (dst_info != .error_set) return;
     const src_info = self.module.types.get(qm.set).error_set;
-    const tag = self.module.types.internTag(qm.member);
     // Non-membership in Set is diagnosed at the member read.
-    if (!containsTag(src_info.tags, tag)) return;
+    const tag = self.module.types.errorSetMemberId(qm.set, qm.member) orelse return;
     if (containsTag(dst_info.error_set.tags, tag)) return;
     if (self.diagnostics) |diags| {
         diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.error_set.name) });
@@ -421,9 +420,9 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
 
 /// `return callee(...)` forwarding a failable tuple whose ERROR SET differs
 /// from the enclosing function's (`(T, !Concrete)` → `(T, !)`, or concrete →
-/// concrete). Error tags are GLOBAL ids (TypeTable.TagRegistry; 0 = "no
-/// error"), so every error set shares one runtime repr — a u32 tag — and a
-/// legal forward re-packs the value slots plus the raw tag, no translation.
+/// concrete). Error members are ids in one pool (TypeTable.TagRegistry; 0 = "no
+/// error"), so every error set shares one runtime repr — a u32 member id — and
+/// a legal forward re-packs the value slots plus the raw id, no translation.
 /// Legality mirrors `raise`'s subset rule (specs.md "Error sets"): the open
 /// bare `!` absorbs any concrete set; a NAMED caller set requires the
 /// callee's set ⊆ caller's (each escapee diagnosed); a bare-`!` CALLEE has no
@@ -480,8 +479,8 @@ fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span
 /// The returned value of a PURE failable's `return EXPR;` (`-> !` /
 /// `-> !Named`, whose return type IS the error set), coerced for the ret.
 /// A pure→pure forward (`return check();`, EXPR's type is another error
-/// set) applies the shared set-compat rule — tags are global ids in one
-/// shared u32 repr, so the re-type IS the whole coercion. A value-carrying
+/// set) applies the shared set-compat rule — every channel is one shared u32
+/// repr, so the re-type IS the whole coercion. A value-carrying
 /// failable result (`return inner();` where inner is `-> (T, !E)`) is
 /// REJECTED per the arity rule (its value slots have nowhere to go — the
 /// old coerce path silently truncated the tuple, returning the VALUE bits

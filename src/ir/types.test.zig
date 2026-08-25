@@ -354,7 +354,9 @@ test "failable value slots: named struct is one slot, anon product flattens" {
     defer arena.deinit();
     var table = TypeTable.init(arena.allocator());
 
-    const err = table.errorSetType(table.internString("E"), &[_]u32{table.internTag("Bad")});
+    const e_name = table.internString("E");
+    const e_owner = table.internErrorOwner(&e_name, e_name);
+    const err = table.errorSetType(e_name, &[_]u32{table.internMember(e_owner, "Bad")});
     const box_fields = [_]TypeInfo.StructInfo.Field{
         .{ .name = table.internString("n"), .ty = .i64 },
         .{ .name = table.internString("k"), .ty = .i64 },
@@ -375,61 +377,103 @@ test "failable value slots: named struct is one slot, anon product flattens" {
 
 // ── error sets + tag registry ──
 
-test "TagRegistry interns tags, id 0 reserved, global identity" {
+test "TagRegistry: id 0 reserved, member identity is (owner, name)" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
-    const bad = table.internTag("BadDigit");
-    const over = table.internTag("Overflow");
-    const bad_again = table.internTag("BadDigit");
+    const foo_key = [_]u8{1};
+    const boo_key = [_]u8{2};
+    const foo = table.internErrorOwner(&foo_key, table.internString("FooError"));
+    const boo = table.internErrorOwner(&boo_key, table.internString("BooError"));
 
-    try std.testing.expect(bad >= 1); // id 0 reserved for "no error"
-    try std.testing.expect(bad != over); // distinct names → distinct ids
-    try std.testing.expectEqual(bad, bad_again); // same name → same id (global-flat)
-    try std.testing.expectEqualStrings("BadDigit", table.getTagName(bad));
-    try std.testing.expectEqualStrings("Overflow", table.getTagName(over));
+    const foo_a = table.internMember(foo, "A");
+    const foo_b = table.internMember(foo, "B");
+    const boo_a = table.internMember(boo, "A");
+
+    try std.testing.expect(foo_a >= 1); // id 0 reserved for "no error"
+    try std.testing.expect(foo_a != foo_b);
+    try std.testing.expect(foo_a != boo_a); // same spelling, different owners
+    try std.testing.expectEqual(foo_a, table.internMember(foo, "A"));
+    try std.testing.expectEqualStrings("A", table.getTagName(foo_a));
+    try std.testing.expectEqualStrings("A", table.getTagName(boo_a));
     try std.testing.expectEqualStrings("", table.getTagName(0)); // reserved slot
 }
 
-test "errorSetType: u32 layout, named display, dedup by name" {
+test "errorSetType: u32 layout, owner display, identity is the member set" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
     const name = table.internString("ParseErr");
-    const tags = [_]u32{ table.internTag("BadDigit"), table.internTag("Overflow"), table.internTag("Empty") };
-    const set = table.errorSetType(name, &tags);
+    const owner = table.internErrorOwner(&name, name);
+    const members = [_]u32{
+        table.internMember(owner, "BadDigit"),
+        table.internMember(owner, "Overflow"),
+        table.internMember(owner, "Empty"),
+    };
+    const set = table.errorSetType(.empty, &members);
 
-    // u32 runtime layout (the error channel's tag value).
+    // u32 runtime layout (the error channel's member id).
     try std.testing.expectEqual(@as(u32, 4), table.sizeOf(set));
     try std.testing.expectEqual(@as(usize, 4), table.typeSizeBytes(set));
     try std.testing.expectEqual(@as(usize, 4), table.typeAlignBytes(set));
-    // Displays by name; resolvable by name.
+    // One owner across every member → the owner's spelling, resolvable by it.
     try std.testing.expectEqualStrings("ParseErr", table.typeName(set));
     try std.testing.expectEqual(set, table.findByName(name).?);
-    // Info shape.
     const info = table.get(set);
     try std.testing.expect(info == .error_set);
     try std.testing.expectEqual(@as(usize, 3), info.error_set.tags.len);
-    // Identity is the name → re-constructing the same set dedups.
-    try std.testing.expectEqual(set, table.errorSetType(name, &tags));
+    try std.testing.expectEqual(set, table.errorSetType(.empty, &members));
+    try std.testing.expectEqual(members[0], table.errorSetMemberId(set, "BadDigit").?);
+    try std.testing.expect(table.errorSetMemberId(set, "Nope") == null);
 }
 
-test "errorSetType: tags stored sorted by global id" {
+test "errorSetType: a shared member spelling does not merge two owners' sets" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const narrow_name = table.internString("Narrow");
+    const broad_name = table.internString("Broad");
+    const narrow_owner = table.internErrorOwner(&narrow_name, narrow_name);
+    const broad_owner = table.internErrorOwner(&broad_name, broad_name);
+
+    const narrow = table.errorSetType(.empty, &[_]u32{table.internMember(narrow_owner, "Wide")});
+    const broad = table.errorSetType(.empty, &[_]u32{
+        table.internMember(broad_owner, "Wide"),
+        table.internMember(broad_owner, "Extra"),
+    });
+
+    try std.testing.expect(narrow != broad);
+    try std.testing.expect(table.errorSetMemberId(narrow, "Wide").? != table.errorSetMemberId(broad, "Wide").?);
+}
+
+test "errorSetType: members stored sorted, duplicates collapsed" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
     const name = table.internString("E");
-    const c = table.internTag("C");
-    const a = table.internTag("A");
-    const b = table.internTag("B");
-    // Pass out of order; errorSetType sorts for canonical storage.
-    const set = table.errorSetType(name, &[_]u32{ c, a, b });
+    const owner = table.internErrorOwner(&name, name);
+    const c = table.internMember(owner, "C");
+    const a = table.internMember(owner, "A");
+    const b = table.internMember(owner, "B");
+    const set = table.errorSetType(.empty, &[_]u32{ c, a, b, a });
     const stored = table.get(set).error_set.tags;
     try std.testing.expectEqual(@as(usize, 3), stored.len);
-    try std.testing.expect(stored[0] <= stored[1] and stored[1] <= stored[2]);
+    try std.testing.expect(stored[0] < stored[1] and stored[1] < stored[2]);
+}
+
+test "errorSetType: a member-less channel is identified by its spelling" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const inferred = table.errorSetType(table.internString("!"), &.{});
+    const composed = table.errorSetType(table.internString("A | B"), &.{});
+    try std.testing.expect(inferred != composed);
+    try std.testing.expectEqual(inferred, table.errorSetType(table.internString("!"), &.{}));
 }
 
 test "isUnsignedInt: builtin signedness classification" {
@@ -670,18 +714,12 @@ test "same display-name distinct nominal ids" {
     try std.testing.expectEqual(@as(u32, 2), table.get(b).@"struct".nominal_id);
     try std.testing.expectEqual(@as(u32, 0), table.get(structural).@"struct".nominal_id);
 
-    // Same disambiguation holds for the enum and error_set nominal arms.
+    // Same disambiguation holds for the enum nominal arm.
     const bar = table.internString("Bar");
     const variants = [_]types.StringId{ table.internString("a"), table.internString("b") };
     const e1 = table.internNominal(.{ .@"enum" = .{ .name = bar, .variants = &variants } }, 1);
     const e2 = table.internNominal(.{ .@"enum" = .{ .name = bar, .variants = &variants } }, 2);
     try std.testing.expect(e1 != e2);
-
-    const baz = table.internString("Baz");
-    const tags = [_]u32{ 1, 2 };
-    const es1 = table.internNominal(.{ .error_set = .{ .name = baz, .tags = &tags } }, 1);
-    const es2 = table.internNominal(.{ .error_set = .{ .name = baz, .tags = &tags } }, 2);
-    try std.testing.expect(es1 != es2);
 }
 
 test "internNominal(.,0) interns identically to intern" {

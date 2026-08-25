@@ -2110,12 +2110,9 @@ pub const Lowering = struct {
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
-            // to shadow. Same-name error-set collisions have nothing for the
-            // reference to select: error-set DECLARATIONS carry no per-decl
-            // nominal identity (struct/enum/union do), so a same-name set
-            // collapses to one TypeId at registration. `error_set_decl` is NOT
-            // in this switch: it interns only tag names, resolving no type
-            // names, so it stays on the flat `else`.
+            // to shadow. `error_set_decl` is NOT in this switch: it interns only
+            // member names, resolving no type names, so it stays on the flat
+            // `else`.
             .error_type_expr => return type_bridge.resolveErrorType(&node.data.error_type_expr, &self.module.types, self),
             else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map),
         }
@@ -3858,6 +3855,7 @@ pub const Lowering = struct {
     pub const lowerFieldAccessOnType = lower_expr.lowerFieldAccessOnType;
     pub const lowerEnumLiteral = lower_expr.lowerEnumLiteral;
     pub const lowerErrorTagLiteral = lower_expr.lowerErrorTagLiteral;
+    pub const anonymousErrorMember = lower_expr.anonymousErrorMember;
     pub const lowerQualifiedErrorMember = lower_expr.lowerQualifiedErrorMember;
     pub const lowerTaggedEnumLiteral = lower_expr.lowerTaggedEnumLiteral;
     pub const findTaggedVariant = lower_expr.findTaggedVariant;

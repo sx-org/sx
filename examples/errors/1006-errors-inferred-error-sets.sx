@@ -1,33 +1,30 @@
 // Whole-program inferred error sets. A bare `-> !` function's
 // error set is INFERRED: the union of the STATIC TYPES it raises directly plus
 // the sets of the failable functions it `try`s, converged across the whole call
-// graph by a fix-point pass. Here `leaf` raises `Lo.Foo` so its set is Lo;
-// `mid` try-propagates leaf AND raises `Hi.Bar`, so `mid` converges to
-// {Foo, Bar}; the named caller `run :: -> !A` then type-checks because mid's
-// converged set is a subset of A. The rejection (a converged tag NOT in the
-// caller's set) lives in
+// graph by a fix-point pass. Here `leaf` raises `A.Foo`; `mid` try-propagates
+// leaf AND raises `A.Bar`, so `mid` converges to both members; the named caller
+// `run :: -> !A` then type-checks because mid's converged set is a subset of A.
+// The rejection (a converged member NOT in the caller's set) lives in
 // `examples/errors/1007-errors-inferred-widening-reject.sx`.
 
 @import "modules/std.sx";
 
-A  :: error { Foo; Bar }
-Lo :: error { Foo }
-Hi :: error { Bar }
+A :: error { Foo; Bar }
 
 leaf :: (n: i32) -> ! {
-    if n < 0 { raise Lo.Foo; }
+    if n < 0 { raise A.Foo; }
     return;
 }
 
-// Inferred set converges to {Foo, Bar}: Lo absorbed from `try leaf` plus the
-// directly-raised Hi.
+// Inferred set converges to {A.Foo, A.Bar}: leaf's set absorbed through the
+// `try` edge plus the directly-raised member.
 mid :: (n: i32) -> ! {
     try leaf(n);
-    if n == 100 { raise Hi.Bar; }
+    if n == 100 { raise A.Bar; }
     return;
 }
 
-// Named caller: mid's converged {Foo, Bar} is a subset of A -> widening OK.
+// Named caller: mid's converged set is a subset of A -> widening OK.
 run :: (n: i32) -> !A {
     try mid(n);
     return;

@@ -1112,7 +1112,6 @@ fn protocolConcreteDispatchName(self: *Lowering, display_name: []const u8, concr
         .@"enum" => |e| e.nominal_id,
         .@"union" => |u| u.nominal_id,
         .tagged_union => |u| u.nominal_id,
-        .error_set => |e| e.nominal_id,
         else => 0,
     };
     if (nominal_id == 0) return display_name;

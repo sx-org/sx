@@ -1,8 +1,7 @@
-// The qualified member spelling `Set.Member`: the member is checked against its
-// OWN set, and the value's static type is `Set`.
+// The qualified member spelling `Set.Member`: a member's identity is the pair,
+// so `Wide.Fault` and `Narrow.Fault` are two members that merely share a
+// spelling. The value's static type is `Set`.
 //
-// Into a NAMED channel only the member named at the site has to belong to that
-// channel — `Wide.Fault` reaches `-> !Narrow` though `Wide.Extra` could not.
 // Into an inferred `!` the whole static type contributes, so `spread` converges
 // to Wide and only a caller set covering both members accepts it.
 
@@ -12,7 +11,7 @@ Wide   :: error { Fault; Extra }
 Narrow :: error { Fault }
 
 pick :: (n: i32) -> !Narrow {
-    if n < 0 { raise Wide.Fault; }
+    if n < 0 { raise Narrow.Fault; }
     return;
 }
 
@@ -30,7 +29,6 @@ main :: () -> i32 {
     r : i32 = 0;
     e := pick(-1);
     if e == Narrow.Fault { r = r + 4; }          // true  -> +4
-    if e == Wide.Extra   { r = r + 1; }           // false (Fault was raised)
 
     t := Wide.Extra;
     f := relay(-1);
