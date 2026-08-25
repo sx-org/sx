@@ -798,6 +798,11 @@ pub const Ops = struct {
             }
         } else if (from_kind == c.LLVMIntegerTypeKind and to_kind == c.LLVMPointerTypeKind) {
             self.e.mapRef(c.LLVMBuildIntToPtr(self.e.builder, operand, to_ty, "itp"));
+        } else if (emit.tagWordType(to_ty)) |tag_ty| {
+            const tag = self.e.coerceArg(self.e.tagWordOf(operand), tag_ty);
+            self.e.mapRef(c.LLVMBuildInsertValue(self.e.builder, c.LLVMConstNull(to_ty), tag, 0, "bitcast.tag"));
+        } else if (emit.tagWordType(c.LLVMTypeOf(operand)) != null) {
+            self.e.mapRef(self.e.coerceArg(self.e.tagWordOf(operand), to_ty));
         } else {
             self.e.mapRef(c.LLVMBuildBitCast(self.e.builder, operand, to_ty, "bitcast"));
         }
@@ -2717,7 +2722,7 @@ pub const Ops = struct {
     }
 
     pub fn emitCondBr(self: Ops, cbr: CondBranch, func_idx: u32) void {
-        var cond = self.e.resolveRef(cbr.cond);
+        var cond = self.e.tagWordOf(self.e.resolveRef(cbr.cond));
         const then_bb = self.e.getBlock(func_idx, cbr.then_target);
         const else_bb = self.e.getBlock(func_idx, cbr.else_target);
         // Coerce condition to i1 if needed (e.g., loaded bool stored as i64)

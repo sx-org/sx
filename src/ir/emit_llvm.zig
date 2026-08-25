@@ -2738,6 +2738,9 @@ pub const LLVMEmitter = struct {
         }
         // Struct → Integer (C ABI coercion: store struct to memory, load as integer)
         if (val_kind == c.LLVMStructTypeKind and param_kind == c.LLVMIntegerTypeKind) {
+            if (tagWordType(val_ty) != null) {
+                return self.coerceArg(self.tagWordOf(val), param_ty);
+            }
             const tmp = self.buildEntryAlloca(param_ty, "abi.tmp");
             _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(param_ty), tmp);
             _ = c.LLVMBuildStore(self.builder, val, tmp);
