@@ -1,0 +1,28 @@
+// A `Closure` or function-pointer slot calls through exactly the channel it
+// names. A callable whose channel is another set, or which carries none at
+// all, does not fill it — and neither does a failable one in a slot that
+// carries no channel to route the failure through. A callable VALUE of another
+// channel and a function name the slot promotes are both refused.
+
+@import "modules/std.sx";
+
+A :: error { X }
+B :: error { Y }
+
+fa    :: (n: i32) -> (i32, !A) { if n < 0 { raise A.X; } return n; }
+plain :: (n: i32) -> i32 { return n; }
+
+main :: () -> i32 {
+    held  : Closure(i32) -> (i32, !A) = fa;
+    copy  : Closure(i32) -> (i32, !B) = held;
+    other : Closure(i32) -> (i32, !B) = fa;
+    none  : Closure(i32) -> (i32, !A) = plain;
+    bare  : (i32) -> i32 = fa;
+    print("{} {} {} {}\n", copy(1) catch |e| -1, other(1) catch |e| -1, none(1) catch |e| -1, bare(1));
+    take(held, 1);
+    return 0;
+}
+
+take :: (cb: Closure(i32) -> (i32, !B), n: i32) -> i32 {
+    return cb(n) catch |e| -1;
+}

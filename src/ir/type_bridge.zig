@@ -50,6 +50,10 @@ const StatelessInner = struct {
     pub fn resolveName(self: StatelessInner, name: []const u8) TypeId {
         return resolveTypeName(name, self.table, self.alias_map, false);
     }
+    pub fn aliasType(self: StatelessInner, name: []const u8) ?TypeId {
+        const map = self.alias_map orelse return null;
+        return map.get(name);
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -785,14 +789,75 @@ pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeI
     return table.intern(errorSetDeclInfo(esd, table));
 }
 
-/// The error channel of a failable signature: one named set → that declared
-/// set (registered by `internErrorSetDecl`); a bare `!` or a composition →
-/// a placeholder set keyed by the channel's own spelling. A placeholder's
-/// members are refined per failable function by the whole-program SCC pass;
-/// every bare `!` resolves to the same empty inferred set, which is correct
-/// while no function raises.
+/// Append the members the channel operand `name` contributes to `out`: a named
+/// set contributes every member it declares, `Set.Member` the one it names.
+/// False when the spelling names no error set.
+pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
+    if (qualifiedChannelMember(name, table, inner)) |member| {
+        out.append(table.alloc, member) catch unreachable;
+        return true;
+    }
+    if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+        if (channelHeadErrorSet(name[0..dot], table, inner) != null) return false;
+    }
+    const set = inner.resolveName(name);
+    if (set.isBuiltin()) return false;
+    const info = table.get(set);
+    if (info != .error_set) return false;
+    out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
+    return true;
+}
+
+/// The member id `Set.Member` names, or null when the head is not an error
+/// set (declared or aliased) or the member is absent. The head is probed in
+/// the type table and the alias map before resolveName, which mints a stub
+/// for an unregistered name.
+fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+    const head = name[0..dot];
+    _ = channelHeadErrorSet(head, table, inner) orelse return null;
+    const set = inner.resolveName(head);
+    if (set.isBuiltin() or table.get(set) != .error_set) return null;
+    return table.errorSetMemberId(set, name[dot + 1 ..]);
+}
+
+fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?TypeId {
+    if (table.findByName(table.internString(head))) |probe| {
+        if (probe.isBuiltin() or table.get(probe) != .error_set) return null;
+        return probe;
+    }
+    const aliased = inner.aliasType(head) orelse return null;
+    if (aliased.isBuiltin() or table.get(aliased) != .error_set) return null;
+    return aliased;
+}
+
+/// The error channel of a failable signature: `!Set` → that declared set
+/// (registered by `internErrorSetDecl`); `!Set.Member` → the singleton channel
+/// carrying that member; `!(A | B)` → the channel their members merge into. A
+/// bare `!` — and a composition whose operands do not all name a set — is a
+/// placeholder keyed by the channel's own spelling, refined per failable
+/// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
-    if (ete.namedSet()) |name| return inner.resolveName(name);
+    if (ete.namedSet()) |name| {
+        if (qualifiedChannelMember(name, table, inner)) |member| {
+            return table.errorSetType(.empty, &.{member});
+        }
+        // resolveName of the dotted spelling mints a struct used as the failable err.
+        const head_is_set = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot|
+            channelHeadErrorSet(name[0..dot], table, inner) != null
+        else
+            false;
+        if (!head_is_set) {
+            return inner.resolveName(name);
+        }
+    } else if (ete.operands.len > 0) compose: {
+        var members = std.ArrayList(u32).empty;
+        defer members.deinit(table.alloc);
+        for (ete.operands) |op| {
+            if (!channelOperandMembers(op, table, inner, &members)) break :compose;
+        }
+        return table.errorSetType(.empty, members.items);
+    }
     // `!` and `|` are not legal type/identifier names, so a spelling built from
     // them can never collide with a user-declared set.
     const spelling = if (ete.operands.len == 0)

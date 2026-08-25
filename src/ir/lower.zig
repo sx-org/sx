@@ -1622,6 +1622,10 @@ pub const Lowering = struct {
         return self.resolveNominalLeaf(name, false, null);
     }
 
+    pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
+        return self.program_index.type_alias_map.get(name);
+    }
+
     /// Fixed-array dimension hook for `TypeResolver.resolveCompound`. A literal
     /// `[16]T` and a named-const `N :: 16; [N]T` must resolve to the SAME length:
     /// the dimension folds to a compile-time integer (looked up in the comptime /
@@ -3212,6 +3216,9 @@ pub const Lowering = struct {
     pub const isErrorTagLiteralNode = lower_error.isErrorTagLiteralNode;
     pub const qualifiedErrorSet = lower_error.qualifiedErrorSet;
     pub const qualifiedErrorMember = lower_error.qualifiedErrorMember;
+    pub const composedChannel = lower_error.composedChannel;
+    pub const slotReturnType = lower_error.slotReturnType;
+    pub const checkSlotChannel = lower_error.checkSlotChannel;
     pub const literalTagName = lower_error.literalTagName;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;

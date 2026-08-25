@@ -3678,6 +3678,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     if (self.target_type) |tt| {
                         if (!tt.isBuiltin()) {
                             const tt_info = self.module.types.get(tt);
+                            if (self.slotReturnType(tt)) |slot_ret| {
+                                const declared_ret = self.module.functions.items[@intFromEnum(fid)].ret;
+                                if (!self.checkSlotChannel(declared_ret, slot_ret, node.span))
+                                    break :blk self.emitPlaceholder(eff_fn_name);
+                            }
                             if (tt_info == .closure) {
                                 const tramp_id = self.createBareFnTrampoline(fid, tt_info.closure);
                                 break :blk self.builder.closureCreate(tramp_id, Ref.none, tt);

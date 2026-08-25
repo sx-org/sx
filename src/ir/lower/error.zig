@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
+const type_bridge = @import("../type_bridge.zig");
 const inst_mod = @import("../inst.zig");
 const mod_mod = @import("../module.zig");
 const errors = @import("../../errors.zig");
@@ -137,6 +138,42 @@ pub fn qualifiedErrorMember(self: *Lowering, node: *const Node) ?QualifiedErrorM
     return .{ .set = set, .member = fa.field };
 }
 
+/// The channel a `|` composition in type position denotes, or null when an
+/// operand names no error set.
+pub fn composedChannel(self: *Lowering, node: *const Node) ?TypeId {
+    const table = &self.module.types;
+    var members = std.ArrayList(u32).empty;
+    defer members.deinit(table.alloc);
+    if (!collectChannelMembers(self, node, &members)) return null;
+    return table.errorSetType(.empty, members.items);
+}
+
+/// Append what each operand of a `|` composition contributes: a named set,
+/// a qualified member, or an inline `error { … }` whose members this
+/// declaration owns.
+fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList(u32)) bool {
+    const table = &self.module.types;
+    switch (node.data) {
+        .binary_op => |b| {
+            if (b.op != .bit_or) return false;
+            if (!collectChannelMembers(self, b.lhs, out)) return false;
+            return collectChannelMembers(self, b.rhs, out);
+        },
+        .error_set_decl => {
+            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table);
+            out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
+            return true;
+        },
+        .identifier => |id| return type_bridge.channelOperandMembers(id.name, table, self, out),
+        .field_access => {
+            const path = self.qualifiedTypeName(node) orelse return false;
+            defer self.alloc.free(path);
+            return type_bridge.channelOperandMembers(path, table, self, out);
+        },
+        else => return false,
+    }
+}
+
 /// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
 /// Returns null when neither operand is error-related (general path runs).
 /// Both operands must be a tag (an `error.X` literal or an error-set value);
@@ -197,6 +234,43 @@ pub fn errorChannelOf(self: *Lowering, ret_ty: TypeId) ?TypeId {
         .failable => |f| return f.err,
         else => return null,
     }
+}
+
+/// The return type a `Closure` or function-pointer slot calls through, seen
+/// past an optional wrapper, or null when `slot` is neither.
+pub fn slotReturnType(self: *Lowering, slot: TypeId) ?TypeId {
+    if (slot.isBuiltin()) return null;
+    return switch (self.module.types.get(slot)) {
+        .closure => |c| c.ret,
+        .function => |f| f.ret,
+        .optional => |o| slotReturnType(self, o.child),
+        else => null,
+    };
+}
+
+/// Refuse a callable whose error channel is not the slot's own: a `Closure` or
+/// function-pointer slot calls through exactly the channel it names, so a
+/// merely-narrower channel — or none at all — cannot fill it.
+pub fn checkSlotChannel(self: *Lowering, value_ret: TypeId, slot_ret: TypeId, span: ast.Span) bool {
+    const have = self.errorChannelOf(value_ret);
+    const want = self.errorChannelOf(slot_ret);
+    if (have == want) return true;
+    if (self.diagnostics) |diags| {
+        const have_phrase = channelPhrase(self, have);
+        defer self.alloc.free(have_phrase);
+        const want_phrase = channelPhrase(self, want);
+        defer self.alloc.free(want_phrase);
+        diags.addFmt(.err, span, "a callable with {s} does not fill a slot with {s} — a `Closure` or function-pointer slot takes exactly its own channel", .{ have_phrase, want_phrase });
+    }
+    return false;
+}
+
+/// How the message names `channel`. The bare-`!` placeholder carries no member
+/// set to name, so it reads as inferred. Owned by the caller.
+fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
+    const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
+    if (self.isInferredErrorSet(c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
+    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
 }
 
 /// True for the bare-`!` inferred placeholder error set (reserved name "!").

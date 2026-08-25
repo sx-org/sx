@@ -1404,6 +1404,17 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
         return false;
     }
+    // Two callables of one shape are the same width, which the reinterpretation
+    // rule below reads as legitimate — but a slot calls through exactly the
+    // channel it names, so the channels are asked about first.
+    if (self.slotReturnType(src_ty)) |src_ret| {
+        if (self.slotReturnType(dst_ty)) |dst_ret| {
+            if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                self.assignability_error_count += 1;
+                return false;
+            }
+        }
+    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         switch (diag) {
@@ -1682,7 +1693,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     }
     if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
         const cs = self.builder.current_span;
-        self.checkErrorSetValueCoercion(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
+        const src_sig = valueTypeOfRef(self, val, src_ty);
+        if (self.slotReturnType(src_sig)) |src_ret| {
+            if (self.slotReturnType(dst_ty)) |dst_ret| {
+                if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                    self.assignability_error_count += 1;
+                }
+            }
+        }
     }
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.

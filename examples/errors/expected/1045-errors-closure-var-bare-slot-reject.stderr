@@ -4,6 +4,12 @@ error: a closure value cannot be passed as a bare function-pointer `(...) -> ...
 24 |     _ := bare(inc, 9);          // reject: closure value → bare slot
    |          ^^^^^^^^^^^^
 
+error: a callable with no error channel does not fill a slot with the error channel 'E' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1045-errors-closure-var-bare-slot-reject.sx:25:10
+   |
+25 |     _ := baref(inc, 9);         // reject: also the ∅-widening crossing
+   |          ^^^^^^^^^^^^^
+
 error: a closure value cannot be passed as a bare function-pointer `(...) -> ...` — its environment can't be carried across the bare ABI; pass the closure literal directly at the call site, or declare the parameter type as `Closure(...)`
   --> examples/errors/1045-errors-closure-var-bare-slot-reject.sx:25:10
    |

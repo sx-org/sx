@@ -1106,6 +1106,11 @@ pub const UnknownTypeChecker = struct {
         if (!isIdentLike(name)) return;
         const sets = self.error_sets orelse return;
         if (sets.contains(name)) return;
+        // A composition (`Both :: FooError | BooError`) authors no set of its
+        // own — it binds a name to the channel its operands merge into.
+        if (self.index.type_alias_map.get(name)) |aliased| {
+            if (!aliased.isBuiltin() and self.types.get(aliased) == .error_set) return;
+        }
         // A name that names a real (non-error-set) TYPE — a struct/enum/union,
         // a builtin, or a fabricated stub — is a type-in-error-position misuse.
         if (isBuiltinTypeName(name)) {

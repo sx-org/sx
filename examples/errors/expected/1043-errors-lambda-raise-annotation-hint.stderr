@@ -3,3 +3,9 @@ error: lambda body raises; declare its return type explicitly with `-> (T, !)` o
    |
 18 |     print("{}\n", take(|x: i32| -> i32 { if x < 0 { raise error.Neg; } return x; }, -1));
    |                                                     ^^^^^^^^^^^^^^^^
+
+error: a callable with no error channel does not fill a slot with the error channel 'E' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1043-errors-lambda-raise-annotation-hint.sx:18:19
+   |
+18 |     print("{}\n", take(|x: i32| -> i32 { if x < 0 { raise error.Neg; } return x; }, -1));
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -880,6 +880,17 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.setCurrentSourceFile(decl.source_file);
         self.reserveShadowSlot(td);
     }
+    // The signatures below resolve their `!` channels against these bindings; a
+    // channel resolved before its operands bind keeps a member-less placeholder.
+    for (decls) |decl| {
+        const esd = switch (topLevelTypeDecl(decl) orelse continue) {
+            .error_set => |e| e,
+            else => continue,
+        };
+        self.reserveShadowErrorSetSlot(esd);
+    }
+    self.resolveForwardIdentifierAliases(decls);
+    resolveErrorCompositionAliases(self, decls);
     for (decls) |decl| {
         if (!claimDecl(self, decl)) continue;
         self.setCurrentSourceFile(decl.source_file);
@@ -1848,6 +1859,27 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     return null;
 }
 
+/// Bind each `Name :: A | B` error composition to the interned member set of
+/// its operands. Rounds repeat while one binds, so a composition may name
+/// another composition.
+fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) void {
+    var progressed = true;
+    while (progressed) {
+        progressed = false;
+        for (decls) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = decl.data.const_decl;
+            if (cd.value.data != .binary_op or cd.value.data.binary_op.op != .bit_or) continue;
+            const src = decl.source_file orelse self.main_file orelse continue;
+            if (self.aliasResolvedInSource(src, cd.name)) continue;
+            self.setCurrentSourceFile(decl.source_file);
+            const channel = self.composedChannel(cd.value) orelse continue;
+            self.putTypeAlias(decl.source_file, cd.name, channel);
+            progressed = true;
+        }
+    }
+}
+
 /// Resolve identifier-RHS type aliases whose target is declared LATER in the
 /// file. The forward scan above only registers an alias (`A :: B`) when `B`
 /// is already resolved as a type author; a forward target isn't yet present,
@@ -1885,6 +1917,9 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
             };
             const src = decl.source_file orelse self.main_file orelse continue;
             if (self.aliasResolvedInSource(src, cd.name)) continue;
+            // A diagnostic the RHS walk raises (an alias cycle) belongs to this
+            // declaration's file.
+            self.setCurrentSourceFile(decl.source_file);
             // The (leaf-name, from-source, raw) triple to resolve the alias RHS:
             //  • `A :: B`        — a bare identifier; resolve `B` from `src`.
             //  • `A :: ns.Leaf`  — a qualified RHS (`Color :: inner.Color`); the

@@ -763,24 +763,26 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolv
 }
 
 /// Report a const-alias cycle once. `cycle` is the closed loop's decls in
-/// walk order (first element = re-visited decl). Keyed by the cycle's
-/// minimum decl address so every entry point into the same loop — each
-/// member decl's own registration probe, plus any use-site probe — shares
-/// one diagnostic.
+/// walk order (first element = re-visited decl). Both the once-only key and
+/// the reported rotation are the loop's minimum decl address, so every entry
+/// point into the same loop — each member decl's own registration probe, plus
+/// any use-site probe — shares one diagnostic and one message.
 fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void {
     const diags = self.diagnostics orelse return;
-    var key: usize = std.math.maxInt(usize);
-    for (cycle) |cd| key = @min(key, @intFromPtr(cd));
-    const gop = self.alias_cycle_diagnosed.getOrPut(key) catch return;
+    var head: usize = 0;
+    for (cycle, 0..) |cd, i| {
+        if (@intFromPtr(cd) < @intFromPtr(cycle[head])) head = i;
+    }
+    const gop = self.alias_cycle_diagnosed.getOrPut(@intFromPtr(cycle[head])) catch return;
     if (gop.found_existing) return;
     var names: std.ArrayList(u8) = .empty;
     defer names.deinit(self.alloc);
-    for (cycle) |cd| {
-        names.appendSlice(self.alloc, cd.name) catch @panic("out of memory");
+    for (0..cycle.len) |i| {
+        names.appendSlice(self.alloc, cycle[(head + i) % cycle.len].name) catch @panic("out of memory");
         names.appendSlice(self.alloc, " -> ") catch @panic("out of memory");
     }
-    names.appendSlice(self.alloc, cycle[0].name) catch @panic("out of memory");
-    diags.addFmt(.err, cycle[0].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
+    names.appendSlice(self.alloc, cycle[head].name) catch @panic("out of memory");
+    diags.addFmt(.err, cycle[head].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
 }
 
 /// The fn decl a const ALIAS chain terminates at, or null when `cd` is not
