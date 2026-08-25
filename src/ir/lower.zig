@@ -926,6 +926,12 @@ pub const Lowering = struct {
     /// escape tags in. Read by `checkEscapeWidening` when a `try` operand is a
     /// closure/fn-type SLOT call (no static fn name). Key = `closureShapeKey`.
     shape_inferred_sets: std.StringHashMap([]const u32),
+    /// The channel a bare-`!` declaration carries: the interned flatten-merge
+    /// of the static types its body `try`s / `raise`s. Every re-resolution of
+    /// that signature reads the entry, so slot exactness and value subset both
+    /// compare one TypeId. A declaration whose body escapes through an opaque
+    /// channel has no static merge and is absent.
+    inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
     /// is part of the contract — e.g. `Io.suspend_raw`); a conforming impl
@@ -1369,6 +1375,7 @@ pub const Lowering = struct {
             .inferred_error_sets = std.StringHashMap([]const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
+            .inferred_channels = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
     }
@@ -1408,7 +1415,9 @@ pub const Lowering = struct {
             // (`resolveParamType` et al.), not in the common resolver — return
             // types are re-resolved in many places (call-result typing, protocol
             // impls) that a central reject would wrongly trip.
-            return self.resolveTypeWithBindings(rt);
+            const resolved = self.resolveTypeWithBindings(rt);
+            if (self.inferred_channels.get(fd)) |chan| return self.withErrorChannel(resolved, chan);
+            return resolved;
         }
         // No explicit annotation — the type is inferred from the body, which
         // references the function's own parameters (`|x: i32| x * 2`). Those
@@ -3261,9 +3270,12 @@ pub const Lowering = struct {
     pub const flattenCoalesceChain = lower_error.flattenCoalesceChain;
     pub const lowerFailableCoalesce = lower_error.lowerFailableCoalesce;
     pub const callTargetName = lower_error.callTargetName;
-    pub const astIsPureBareInferred = lower_error.astIsPureBareInferred;
-    pub const astPureNamedSet = lower_error.astPureNamedSet;
-    pub const namedSetTags = lower_error.namedSetTags;
+    pub const astChannelNode = lower_error.astChannelNode;
+    pub const astChannelIsInferred = lower_error.astChannelIsInferred;
+    pub const declaredChannelTags = lower_error.declaredChannelTags;
+    pub const edgeCalleeDecl = lower_error.edgeCalleeDecl;
+    pub const withErrorChannel = lower_error.withErrorChannel;
+    pub const materialiseInferredChannel = lower_error.materialiseInferredChannel;
     pub const convergeInferredErrorSets = lower_error.convergeInferredErrorSets;
     pub const containsTag = lower_error.containsTag;
     pub const convergeClosureShapeSets = lower_error.convergeClosureShapeSets;

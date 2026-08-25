@@ -273,6 +273,15 @@ fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
     return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
 }
 
+/// True when the enclosing signature's channel is written bare `!` — the
+/// materialised merge of its own raises, or the placeholder a lambda/slot
+/// shape still carries.
+fn channelIsWrittenInferred(self: *Lowering, err_set: TypeId) bool {
+    if (self.isInferredErrorSet(err_set)) return true;
+    const fd = self.current_fn_decl orelse return false;
+    return astChannelIsInferred(fd.return_type);
+}
+
 /// True for the bare-`!` inferred placeholder error set (reserved name "!").
 pub fn isInferredErrorSet(self: *Lowering, set: TypeId) bool {
     if (set.isBuiltin()) return false;
@@ -396,6 +405,17 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     };
     const inferred = self.isInferredErrorSet(err_set);
 
+    // A `.X` shorthand resolves only against a channel already in hand. A
+    // signature written bare `!` is not one: the channel is what its raises
+    // converge to, so `.X` has nothing to name a member in.
+    if (rs.tag.data == .enum_literal and channelIsWrittenInferred(self, err_set)) {
+        if (self.diagnostics) |d| {
+            const tag = rs.tag.data.enum_literal.name;
+            d.addFmt(.err, span, "`.{s}` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.{s}`)", .{ tag, tag });
+        }
+        return;
+    }
+
     // (2) Set check. Lowering EXPR with the function's error set as the
     //     target type makes a literal `raise error.X` validate `X ∈ set`
     //     inside lowerErrorTagLiteral (the inferred placeholder accepts any
@@ -518,10 +538,8 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
 /// error"), so a legal forward re-packs the value slots and carries the source
 /// tag word into the destination channel's shape.
 /// Legality mirrors `raise`'s subset rule (specs.md "Error sets"): the open
-/// bare `!` absorbs any concrete set; a NAMED caller set requires the
-/// callee's set ⊆ caller's (each escapee diagnosed); a bare-`!` CALLEE has no
-/// statically-known tag set (its placeholder TypeId carries no tags), so it
-/// cannot be proven ⊆ a named set — rejected, destructure + re-raise instead.
+/// bare `!` absorbs any concrete set; a NAMED caller set requires the callee's
+/// set ⊆ caller's, each escapee diagnosed.
 fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty: TypeId, src_err: TypeId, span: ast.Span) void {
     const dst = self.module.types.get(ret_ty).failable;
     const src = self.module.types.get(val_ty).failable;
@@ -532,7 +550,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
         if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns {d}", .{ sn, if (sn == 1) @as([]const u8, "") else @as([]const u8, "s"), dn });
         return;
     }
-    if (!checkForwardSetCompat(self, src_err, err_ty, span)) return;
+    checkForwardSetCompat(self, src_err, err_ty, span);
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
     for (0..dn) |i| {
@@ -551,24 +569,14 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
     self.emitTupleRet(ret_ty, tup);
 }
 
-/// The shared error-set compatibility rule for a failable FORWARD (`return
-/// callee()` across sets), mirroring `raise`'s subset rule (specs.md "Error
-/// sets"): the open bare `!` absorbs any concrete set; a NAMED caller set
-/// requires the callee's set ⊆ caller's (each escapee diagnosed, but the
-/// shape-correct lowering continues — the build aborts via hasErrors); a
-/// bare-`!` CALLEE has no statically-known tag set (its placeholder TypeId
-/// carries no tags), so it cannot be proven ⊆ a named set — rejected
-/// (returns false), destructure + re-raise instead.
-fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) bool {
-    if (src_err == dst_err) return true;
-    if (self.isInferredErrorSet(dst_err)) return true;
-    if (self.isInferredErrorSet(src_err)) {
-        const dst_info = self.module.types.get(dst_err);
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward a bare-`!` failable result through the named error set '{s}' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e {{ raise error.X; }} return v;`)", .{self.module.types.getString(dst_info.error_set.name)});
-        return false;
-    }
+/// The error-set rule for a failable FORWARD (`return callee()` across sets),
+/// mirroring `raise`'s: the open bare `!` absorbs any concrete set; a NAMED
+/// caller set requires the callee's set ⊆ caller's, each escapee diagnosed
+/// while the shape-correct lowering continues (the build aborts via hasErrors).
+fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) void {
+    if (src_err == dst_err) return;
+    if (self.isInferredErrorSet(dst_err)) return;
     self.checkErrorSetSubset(src_err, dst_err, span);
-    return true;
 }
 
 /// The returned value of a PURE failable's `return EXPR;` (`-> !` /
@@ -586,13 +594,9 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
     if (!val_ty.isBuiltin()) {
         switch (self.module.types.get(val_ty)) {
             .error_set => {
-                if (!checkForwardSetCompat(self, val_ty, ret_ty, span)) {
-                    // Rejected (diagnosed): a typed placeholder keeps the ret
-                    // well-formed; the build aborts via hasErrors.
-                    return self.builder.constInt(0, ret_ty);
-                }
-                // `checkForwardSetCompat` above is the membership gate, so
-                // the coercion skips the implicit preamble's.
+                // `checkForwardSetCompat` is the membership gate, so the
+                // coercion skips the implicit preamble's.
+                checkForwardSetCompat(self, val_ty, ret_ty, span);
                 return self.coerceExplicit(ref, val_ty, ret_ty);
             },
             .failable => |vf| {
@@ -1462,29 +1466,62 @@ pub fn callTargetName(node: *const Node) ?[]const u8 {
     return if (callee.data == .identifier) callee.data.identifier.name else null;
 }
 
-/// True when `rt` is a pure bare-`!` failable return (`-> !`, the inferred
-/// set) — NOT `!Named` and NOT a value-carrying `-> (T..., !)` tuple.
-pub fn astIsPureBareInferred(rt: ?*const Node) bool {
-    const n = rt orelse return false;
-    return n.data == .error_type_expr and n.data.error_type_expr.operands.len == 0;
-}
-
-/// The named-set name of a pure `-> !Named` return (`"Named"`), or null for
-/// bare-`!`, value-carrying, or non-failable returns.
-pub fn astPureNamedSet(rt: ?*const Node) ?[]const u8 {
+/// The `!` node of a return type's error channel: the return type itself
+/// (`-> !Set`), or the trailing slot of a failable result list
+/// (`-> (T, !Set)`, `-> (A, B, !Set)`). Null for a non-failable return.
+pub fn astChannelNode(rt: ?*const Node) ?*const Node {
     const n = rt orelse return null;
-    if (n.data != .error_type_expr) return null;
-    return n.data.error_type_expr.namedSet();
+    const slots: []const *Node = switch (n.data) {
+        .error_type_expr => return n,
+        .tuple_type_expr => |t| t.field_types,
+        .return_type_expr => |r| r.field_types,
+        else => return null,
+    };
+    if (slots.len == 0) return null;
+    const last = slots[slots.len - 1];
+    return if (last.data == .error_type_expr) last else null;
 }
 
-/// The declared tags of a named error set, by name; null if not a
-/// registered error set.
-pub fn namedSetTags(self: *Lowering, name: []const u8) ?[]const u32 {
-    const sid = self.module.types.internString(name);
-    const tid = self.module.types.findByName(sid) orelse return null;
-    if (tid.isBuiltin()) return null;
-    const info = self.module.types.get(tid);
-    return if (info == .error_set) info.error_set.tags else null;
+/// True when a signature's error channel is written bare `!`.
+pub fn astChannelIsInferred(rt: ?*const Node) bool {
+    const n = astChannelNode(rt) orelse return false;
+    return n.data.error_type_expr.operands.len == 0;
+}
+
+/// The members a declaration's WRITTEN channel carries. Empty for a bare `!`,
+/// whose members are the convergence's result rather than its input. The
+/// channel spelling resolves in the declaring module, which is not the ambient
+/// one during a whole-program pass.
+pub fn declaredChannelTags(self: *Lowering, fd: *const ast.FnDecl) []const u32 {
+    const node = astChannelNode(fd.return_type) orelse return &.{};
+    const saved = self.current_source_file;
+    defer self.setCurrentSourceFile(saved);
+    self.setCurrentSourceFile(fd.body.source_file orelse saved);
+    const ty = self.resolveType(node);
+    if (ty.isBuiltin()) return &.{};
+    const info = self.module.types.get(ty);
+    return if (info == .error_set) info.error_set.tags else &.{};
+}
+
+/// `ret` with its error channel replaced by `chan`.
+pub fn withErrorChannel(self: *Lowering, ret: TypeId, chan: TypeId) TypeId {
+    if (ret.isBuiltin()) return ret;
+    return switch (self.module.types.get(ret)) {
+        .error_set => chan,
+        .failable => |f| self.module.types.internFailable(f.value, chan),
+        else => ret,
+    };
+}
+
+/// Give a bare-`!` declaration the channel its body converged to: the interned
+/// flatten-merge of `members` becomes the declaration's channel TypeId, on the
+/// already-declared signature and on every later re-resolution of it.
+pub fn materialiseInferredChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, members: []const u32) void {
+    const chan = self.module.types.errorSetType(.empty, members);
+    self.inferred_channels.put(fd, chan) catch return;
+    const fid = self.resolveFuncByName(name) orelse return;
+    const func = self.module.getFunctionMut(fid);
+    func.ret = withErrorChannel(self, func.ret, chan);
 }
 
 /// Whole-program inferred-error-set convergence. Thin delegation to the
@@ -1541,13 +1578,26 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     self.unionShapeTags(key, tags.items);
 }
 
+/// The declaration a `try g()` / `return g()` edge names, seen from the module
+/// the edge is WRITTEN in — two imported modules may each author `g`, and the
+/// name-keyed winner is not what the spelling means at every site. Null when no
+/// single author is visible there.
+pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*const ast.FnDecl {
+    if (from) |file| {
+        switch (self.selectCallableAuthor(name, file, .any_body)) {
+            .func => |f| return f.decl,
+            .ambiguous, .not_callable => return null,
+            .none => {},
+        }
+    }
+    return self.program_index.fn_ast_map.get(name);
+}
+
 /// The escape tags of a callee referenced by name from a `try g()` edge:
-/// a bare-`!` callee's converged set, or a `-> !Named` callee's declared set.
+/// a bare-`!` callee's converged set, or a named callee's written one.
 pub fn calleeEscapeTags(self: *Lowering, callee: []const u8) []const u32 {
     if (self.inferred_error_sets.get(callee)) |t| return t;
-    if (self.program_index.fn_ast_map.get(callee)) |cfd| {
-        if (astPureNamedSet(cfd.return_type)) |nm| return self.namedSetTags(nm) orelse &.{};
-    }
+    if (edgeCalleeDecl(self, callee, self.current_source_file)) |cfd| return declaredChannelTags(self, cfd);
     return &.{};
 }
 

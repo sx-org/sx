@@ -10,7 +10,13 @@ error: cannot forward this failable result: it carries 1 value slot, but the fun
 36 |     return val_cal(x);
    |            ^^^^^^^^^^
 
-error: cannot forward a bare-`!` failable result through the named error set 'MyErr' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e { raise error.X; } return v;`)
+error: error tag 'error.Odd' is not in caller's error set 'MyErr'
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:41:12
+   |
+41 |     return bare_cal(x);
+   |            ^^^^^^^^^^^
+
+error: error tag 'error.Big' is not in caller's error set 'MyErr'
   --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:41:12
    |
 41 |     return bare_cal(x);

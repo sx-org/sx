@@ -1,0 +1,23 @@
+error: a callable with the error channel 'FooError.A | IoErr.Failed | IoErr.Canceled' does not fill a slot with the error channel 'IoErr' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:35:45
+   |
+35 |     canal : Closure(i32) -> (i32, !IoErr) = inner;
+   |                                             ^^^^^
+
+error: error tag 'error.A' is not in caller's error set 'IoErr'
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:21:12
+   |
+21 |     return inner(n);
+   |            ^^^^^^^^
+
+error: error member 'Other.Nope' is not in caller's error set 'IoErr'
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:25:16
+   |
+25 |     if n < 0 { raise Other.Nope; }
+   |                ^^^^^^^^^^^^^^^^^
+
+error: `.A` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.A`)
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:30:16
+   |
+30 |     if n < 0 { raise .A; }
+   |                ^^^^^^^^^

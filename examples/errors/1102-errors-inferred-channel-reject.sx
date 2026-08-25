@@ -1,0 +1,39 @@
+// What the materialised channel refuses. `inner` converges to `FooError | IoErr`,
+// so a `!IoErr` slot does not take it and a `!IoErr` return cannot forward it —
+// each member IoErr does not carry is named. A `raise Set.Member` into a named
+// destination that does not carry the member is refused the same way. Under a
+// bare `!` there is no channel in hand for a `.Member` shorthand to resolve
+// against, so it must be qualified.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+Other    :: error { Nope }
+
+inner :: (n: i32) -> (i32, !) {
+    if n < 0 { raise FooError.A; }
+    if n == 0 { raise IoErr.Failed; }
+    return n;
+}
+
+forward :: (n: i32) -> (i32, !IoErr) {
+    return inner(n);
+}
+
+stray :: (n: i32) -> (i32, !IoErr) {
+    if n < 0 { raise Other.Nope; }
+    return n;
+}
+
+shorthand :: (n: i32) -> (i32, !) {
+    if n < 0 { raise .A; }
+    return n;
+}
+
+main :: () -> i32 {
+    canal : Closure(i32) -> (i32, !IoErr) = inner;
+    print("{} {} {}\n", canal(1) catch { -1 }, forward(1) catch { -2 }, stray(1) catch { -3 });
+    print("{}\n", shorthand(1) catch { -4 });
+    return 0;
+}

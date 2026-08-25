@@ -48,6 +48,9 @@ pub const ErrorAnalysis = struct {
                     for (self.l.module.types.get(qm.set).error_set.tags) |t| {
                         if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
                     }
+                } else {
+                    // A computed tag (`raise e`) names no static set here.
+                    dyn.* = true;
                 }
                 self.collectErrorSites(rs.tag, tags, edges, dyn);
             },
@@ -73,6 +76,10 @@ pub const ErrorAnalysis = struct {
                 self.collectErrorSites(ie.then_branch, tags, edges, dyn);
                 if (ie.else_branch) |eb| self.collectErrorSites(eb, tags, edges, dyn);
             },
+            .match_expr => |me| {
+                self.collectErrorSites(me.subject, tags, edges, dyn);
+                for (me.arms) |arm| self.collectErrorSites(arm.body, tags, edges, dyn);
+            },
             .while_expr => |w| {
                 self.collectErrorSites(w.condition, tags, edges, dyn);
                 self.collectErrorSites(w.body, tags, edges, dyn);
@@ -85,11 +92,12 @@ pub const ErrorAnalysis = struct {
                 self.collectErrorSites(f.body, tags, edges, dyn);
             },
             .return_stmt => |r| if (r.value) |v| {
-                // `return callee(...)` in a pure `-> !` function is a FORWARD of
-                // the callee's error channel (a pure failable returns no value),
-                // so it contributes the callee's set exactly like a `try` edge.
+                // `return callee(...)` FORWARDS the callee's error channel, so
+                // it contributes the callee's set exactly like a `try` edge.
                 if (Lowering.callTargetName(v)) |nm| {
                     edges.append(self.l.alloc, nm) catch {};
+                } else if (v.data == .call) {
+                    dyn.* = true;
                 }
                 self.collectErrorSites(v, tags, edges, dyn);
             },
@@ -141,15 +149,15 @@ pub const ErrorAnalysis = struct {
         }
     }
 
-    /// Whole-program fix-point that converges each top-level bare-`!` function's
-    /// inferred error set. The seed loop admits exactly the
-    /// `astIsPureBareInferred` return types (`-> !`) — not `!Named`, not a
-    /// value-carrying `-> (T..., !)`. Runs after `scanDecls` (ASTs + named
-    /// error sets registered) and before body lowering, so `lowerTry`'s
-    /// named-caller widening sees the converged callee sets. Also emits the
-    /// empty-inferred warning.
+    /// Whole-program fix-point that converges each bare-`!` function's inferred
+    /// error set — `-> !` and value-carrying `-> (T..., !)` alike — and
+    /// materialises the converged set as that declaration's channel TypeId.
+    /// Runs after `scanDecls` (ASTs + named error sets registered) and before
+    /// body lowering, so every later check reads the materialised channel. Also
+    /// emits the empty-inferred warning.
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
+            fd: *const ast.FnDecl,
             tags: std.ArrayList(u32),
             edges: std.ArrayList([]const u8),
             rt: ?*const Node,
@@ -157,14 +165,21 @@ pub const ErrorAnalysis = struct {
             // THAT file, and this whole-program pass runs with whatever
             // ambient source file the previous phase left behind.
             source_file: ?[]const u8,
-            // The body `try`s an OPAQUE error channel (a protocol / UFCS method,
-            // a closure call, a checked assertion) — so it genuinely propagates a
-            // dynamic error even when no concrete tag converges. Suppresses the
-            // empty-set "drop the `!`" warning.
+            // The body escapes through an OPAQUE error channel (a protocol /
+            // UFCS method, a closure call, a checked assertion, a `raise` of a
+            // computed tag) — so it genuinely propagates a dynamic error even
+            // when no concrete tag converges. Suppresses the empty-set "drop the
+            // `!`" warning, and leaves the channel unmaterialised: a merge over
+            // a channel nobody can name is not the set the body escapes.
             dyn: bool,
         };
         var work = std.StringHashMap(Node_).init(self.l.alloc);
         defer work.deinit();
+        // A bare-`!` declaration's key in `work`, so an edge that resolved to a
+        // DECLARATION reaches that declaration's node rather than whichever
+        // same-name function the map is keyed under.
+        var work_key = std.AutoHashMap(*const ast.FnDecl, []const u8).init(self.l.alloc);
+        defer work_key.deinit();
 
         // Seed each bare-`!` function with its direct escape sites.
         {
@@ -173,13 +188,14 @@ pub const ErrorAnalysis = struct {
             var it = self.l.program_index.fn_ast_map.iterator();
             while (it.next()) |e| {
                 const fd = e.value_ptr.*;
-                if (!Lowering.astIsPureBareInferred(fd.return_type)) continue;
+                if (!Lowering.astChannelIsInferred(fd.return_type)) continue;
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList([]const u8).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
                 self.collectErrorSites(fd.body, &tags, &edges, &dyn);
-                work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+                work.put(e.key_ptr.*, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+                work_key.put(fd, e.key_ptr.*) catch {};
             }
         }
 
@@ -190,14 +206,17 @@ pub const ErrorAnalysis = struct {
             var wit = work.iterator();
             while (wit.next()) |we| {
                 for (we.value_ptr.edges.items) |callee| {
+                    const callee_fd = self.l.edgeCalleeDecl(callee, we.value_ptr.source_file) orelse {
+                        // No single author is visible at the edge, so the
+                        // channel it escapes through is not statically known.
+                        we.value_ptr.dyn = true;
+                        continue;
+                    };
                     const callee_tags: []const u32 = blk: {
-                        if (work.getPtr(callee)) |cc| break :blk cc.tags.items;
-                        if (self.l.program_index.fn_ast_map.get(callee)) |cfd| {
-                            if (Lowering.astPureNamedSet(cfd.return_type)) |nm| {
-                                break :blk self.l.namedSetTags(nm) orelse &.{};
-                            }
+                        if (work_key.get(callee_fd)) |k| {
+                            if (work.getPtr(k)) |cc| break :blk cc.tags.items;
                         }
-                        break :blk &.{};
+                        break :blk self.l.declaredChannelTags(callee_fd);
                     };
                     for (callee_tags) |t| {
                         if (!Lowering.containsTag(we.value_ptr.tags.items, t)) {
@@ -209,7 +228,8 @@ pub const ErrorAnalysis = struct {
             }
         }
 
-        // Store the converged sets (sorted) and warn on empty inferred sets.
+        // Store the converged sets (sorted), materialise them, and warn on
+        // empty inferred sets.
         // `work` is a StringHashMap, so its iteration order is hash order — walk
         // it directly and the warnings below come out scrambled, and differently
         // under any other hash. Order by source span first so the diagnostics
@@ -239,11 +259,13 @@ pub const ErrorAnalysis = struct {
             const sorted = self.l.alloc.dupe(u32, se.node.tags.items) catch continue;
             std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
             self.l.inferred_error_sets.put(se.name, sorted) catch {};
+            if (!se.node.dyn) self.l.materialiseInferredChannel(se.node.fd, se.name, sorted);
             // Skip `main` (its `!` is the program's top error channel) and any
             // protocol-impl method (its `!` is dictated by the protocol
             // contract — e.g. `Io.suspend_raw` — so a non-raising impl body
             // is not a "drop the `!`" case; see `impl_method_names`).
-            if (sorted.len == 0 and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
+            const whole_return_is_channel = Lowering.astChannelNode(se.node.rt) == se.node.rt;
+            if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
                 if (self.l.diagnostics) |diags| {
                     if (se.node.rt) |rt| {
                         self.l.setCurrentSourceFile(se.node.source_file orelse saved_file);

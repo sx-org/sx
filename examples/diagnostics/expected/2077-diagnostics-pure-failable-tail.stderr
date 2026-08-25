@@ -1,4 +1,4 @@
-error: cannot forward a bare-`!` failable result through the named error set 'Named' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e { raise error.X; } return v;`)
+error: error tag 'error.Elsewhere' is not in caller's error set 'Named'
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:29:5
    |
 29 |     wide()

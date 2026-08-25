@@ -4,8 +4,8 @@
 // all.
 //
 //   1. Forwarding a bare-`!` callee as the tail of a `-> !Named` function is
-//      refused exactly as `return wide();` is: an inferred set is not
-//      statically known, so it cannot be proven a subset of the named one.
+//      refused exactly as `return wide();` is: the callee's converged channel
+//      carries a member the named set does not.
 //   2. A tail whose type never resolves is reported once and poisons the body
 //      — it is never reinterpreted as an error tag. So is a contextual `.X`
 //      naming a tag the declared set does not have: the tail reads the declared

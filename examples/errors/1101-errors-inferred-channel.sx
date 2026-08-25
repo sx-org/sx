@@ -1,0 +1,50 @@
+// A bare `!` carries the flatten-merge of the static types its body `try`s and
+// `raise`s, interned as one channel TypeId. `inner` converges to `Both`, so it
+// fills a `!Both` slot exactly and forwards into a `!Both` return; `narrow`
+// converges to `IoErr` because `raise IoErr.Failed` contributes the whole set,
+// not the one member. A `raise Set.Member` into a NAMED destination is legal
+// for a member that destination carries, and `.Member` resolves against a
+// channel already in hand.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+Both     :: FooError | IoErr;
+
+inner :: (n: i32) -> (i32, !) {
+    if n < 0 { raise FooError.A; }
+    if n == 0 { raise IoErr.Failed; }
+    return n;
+}
+
+narrow :: (n: i32) -> (i32, !) {
+    if n < 0 { raise IoErr.Failed; }
+    return n;
+}
+
+forward :: (n: i32) -> (i32, !Both) {
+    return inner(n);
+}
+
+mix :: (n: i32) -> (i32, !IoErr) {
+    if n < 0 { raise IoErr.Failed; }
+    return n;
+}
+
+in_hand :: (n: i32) -> (i32, !FooError) {
+    if n < 0 { raise .A; }
+    return n;
+}
+
+main :: () -> i32 {
+    wide  : Closure(i32) -> (i32, !Both)  = inner;
+    canal : Closure(i32) -> (i32, !IoErr) = narrow;
+
+    print("wide={}\n", wide(-1) catch |e| { if e == FooError.A { 1 } else { 2 } });
+    print("canal={}\n", canal(-1) catch |e| { if e == IoErr.Failed { 3 } else { 4 } });
+    print("forward={}\n", forward(0) catch |e| { if e == IoErr.Failed { 5 } else { 6 } });
+    print("mix={}\n", mix(-1) catch |e| { if e == IoErr.Failed { 7 } else { 8 } });
+    print("in_hand={}\n", in_hand(-1) catch |e| { if e == FooError.A { 9 } else { 10 } });
+    return 0;
+}
