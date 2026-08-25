@@ -3,9 +3,9 @@
 // 1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 is required, so
 // the raw tag would land in the value slot;
 // 2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 are required;
-// 3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error set is
-// not statically known at the forward site, so it cannot be proven ⊆ the named
-// set — destructure and re-raise instead.
+// 3. bare-`!` callee → NAMED-set caller: the callee's channel is the merge its
+// body converged to, and each of its members the named set cannot name is
+// reported.
 
 @import "modules/std.sx";
 
@@ -36,7 +36,7 @@ f2 :: (x: i64) -> ! {
     return val_cal(x);
 }
 
-// (3) bare `!` → named set: rejected (inferred set unknown here)
+// (3) bare `!` → named set: rejected (BareErr ⊄ MyErr)
 f3 :: (x: i64) -> !MyErr {
     return bare_cal(x);
 }

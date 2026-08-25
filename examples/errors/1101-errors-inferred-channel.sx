@@ -1,0 +1,132 @@
+// A bare `!` carries the flatten-merge of the static types its body `try`s and
+// `raise`s, interned as one channel TypeId. `inner` converges to `Both`, so it
+// fills a `!Both` slot exactly and forwards into a `!Both` return; `narrow`
+// converges to `IoErr` because `raise IoErr.Failed` contributes the whole set,
+// not the one member. A `raise Set.Member` into a NAMED destination is legal
+// for a member that destination carries, and `.Member` resolves against a
+// channel already in hand. A tail-returned NON-FAILABLE UFCS call contributes
+// nothing to the merge, so `tail` converges to `IoErr` and forwards into a
+// `!IoErr` return. `p.read()` of a Point parameter contributes `Point.read`,
+// not the libc `read` that shares the bare name, so `read_via` converges to
+// `IoErr`. An implicit failable tail `inner(n)` contributes that callee, so
+// `implicit` converges to `Both`. A discarded call ending a loop body is not
+// the implicit tail. An `if` occupying the tail is, through both its arms. A
+// nested producing block occupying the tail is.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+Both     :: FooError | IoErr;
+
+inner :: (n: i32) -> (i32, !) {
+    if n < 0 { raise FooError.A; }
+    if n == 0 { raise IoErr.Failed; }
+    return n;
+}
+
+narrow :: (n: i32) -> (i32, !) {
+    if n < 0 { raise IoErr.Failed; }
+    return n;
+}
+
+forward :: (n: i32) -> (i32, !Both) {
+    return inner(n);
+}
+
+implicit :: (n: i32) -> (i32, !) {
+    inner(n)
+}
+
+implicit_fwd :: (n: i32) -> (i32, !Both) {
+    return implicit(n);
+}
+
+mix :: (n: i32) -> (i32, !IoErr) {
+    if n < 0 { raise IoErr.Failed; }
+    return n;
+}
+
+Point :: struct {
+    x: i32;
+    y: i32;
+
+    read :: (self: Point) -> (i32, !IoErr) { return self.x; }
+}
+
+point_sum :: ufcs (p: Point) -> i32 { return p.x + p.y; }
+
+tail :: (p: Point, n: i32) -> (i32, !) {
+    if n < 0 { raise IoErr.Canceled; }
+    return p.point_sum();
+}
+
+relay :: (p: Point, n: i32) -> (i32, !IoErr) {
+    return tail(p, n);
+}
+
+read_via :: (p: Point) -> (i32, !) {
+    return p.read();
+}
+
+read_fwd :: (p: Point) -> (i32, !IoErr) {
+    return read_via(p);
+}
+
+in_hand :: (n: i32) -> (i32, !FooError) {
+    if n < 0 { raise .A; }
+    return n;
+}
+
+Counter :: struct {
+    n: i32;
+
+    bump :: (self: *Counter) -> () { self.n = self.n + 1; }
+}
+
+loop_tail :: (x: i32) -> (i32, !) {
+    c : Counter = .{ n = 0 };
+    i := 0;
+    while i < x { i = i + 1; c.bump(); }
+    if x < 0 { raise IoErr.Failed; }
+    return c.n;
+}
+
+loop_fwd :: (x: i32) -> (i32, !IoErr) {
+    return loop_tail(x);
+}
+
+arm_tail :: (n: i32) -> (i32, !) {
+    if n < 0 { narrow(n) } else { inner(n) }
+}
+
+arm_fwd :: (n: i32) -> (i32, !Both) {
+    return arm_tail(n);
+}
+
+nested_tail :: (n: i32) -> (i32, !) {
+    { inner(n) }
+}
+
+nested_fwd :: (n: i32) -> (i32, !Both) {
+    return nested_tail(n);
+}
+
+main :: () -> i32 {
+    wide  : Closure(i32) -> (i32, !Both)  = inner;
+    canal : Closure(i32) -> (i32, !IoErr) = narrow;
+
+    print("wide={}\n", wide(-1) catch |e| { if e == FooError.A { 1 } else { 2 } });
+    print("canal={}\n", canal(-1) catch |e| { if e == IoErr.Failed { 3 } else { 4 } });
+    print("forward={}\n", forward(0) catch |e| { if e == IoErr.Failed { 5 } else { 6 } });
+    print("mix={}\n", mix(-1) catch |e| { if e == IoErr.Failed { 7 } else { 8 } });
+    print("in_hand={}\n", in_hand(-1) catch |e| { if e == FooError.A { 9 } else { 10 } });
+    pt : Point = .{ x = 4, y = 7 };
+    print("relay={}\n", relay(pt, 1) catch { -1 });
+    print("read_fwd={}\n", read_fwd(pt) catch { -1 });
+    print("implicit_fwd={}\n", implicit_fwd(1) catch { -1 });
+    print("loop_fwd={}\n", loop_fwd(3) catch { -1 });
+    print("arm_fwd={}\n", arm_fwd(1) catch { -1 });
+    print("nested_fwd={}\n", nested_fwd(1) catch { -1 });
+    return 0;
+}

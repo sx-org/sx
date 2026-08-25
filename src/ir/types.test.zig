@@ -503,6 +503,20 @@ test "errorSetType: a member-less channel is identified by its spelling" {
     try std.testing.expectEqual(inferred, table.errorSetType(table.internString("!"), &.{}));
 }
 
+test "dynErrorChannel: distinct from the bare-`!` placeholder and from the empty merge" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const dyn = table.dynErrorChannel();
+    const inferred = table.errorSetType(table.internString("!"), &.{});
+    const empty = table.errorSetType(.empty, &.{});
+    try std.testing.expect(dyn != inferred);
+    try std.testing.expect(dyn != empty);
+    try std.testing.expect(inferred != empty);
+    try std.testing.expectEqual(dyn, table.dynErrorChannel());
+}
+
 test "isUnsignedInt: builtin signedness classification" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

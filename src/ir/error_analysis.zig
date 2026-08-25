@@ -23,7 +23,7 @@ pub const ErrorFacts = struct {
 /// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
 /// (`recordClosureShape`) + its type/shape helpers stay in `Lowering`; this
-/// module calls back for that and reaches its own `collectErrorSites` via the
+/// module calls back for that and reaches its own `collectEscapes` via the
 /// facade.
 pub const ErrorAnalysis = struct {
     l: *Lowering,
@@ -35,9 +35,92 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// Collect the error TAGS raised + the `try`-call EDGES of a function body,
-    /// for the inferred-set fix-point. Stops at nested function boundaries.
-    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool) void {
+    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
+    /// callee's declaration, or `dyn` when the callee spelling names none. A
+    /// resolved non-failable callee contributes an edge whose declared channel
+    /// is empty. `enclosing_fd` types a receiver written as one of its
+    /// parameters; a receiver that is anything else is not typed here.
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
+        switch (callee.data) {
+            .identifier => |id| edges.append(self.l.alloc, id.name) catch {},
+            .field_access => |fa| {
+                if (fa.object.data == .identifier) {
+                    const obj = fa.object.data.identifier.name;
+                    // A namespace- or type-qualified callee is spelled exactly as
+                    // its declaration is registered, so it outranks the bare name:
+                    // two modules may each author `parse`.
+                    if (self.qualifiedEdge(obj, fa.field)) |q| {
+                        edges.append(self.l.alloc, q) catch {};
+                        return;
+                    }
+                    // A typed Type.method outranks the bare name: a free function
+                    // may share it (libc `read`).
+                    if (self.paramTypeName(enclosing_fd, obj)) |tn| {
+                        if (self.qualifiedEdge(tn, fa.field)) |q| {
+                            edges.append(self.l.alloc, q) catch {};
+                            return;
+                        }
+                    }
+                }
+                // A UFCS free function lives under the BARE method name.
+                const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
+                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) {
+                    edges.append(self.l.alloc, bare) catch {};
+                    return;
+                }
+                dyn.* = true;
+            },
+            else => dyn.* = true,
+        }
+    }
+
+    /// The call a failable body hands back with no `return` keyword. A `while`
+    /// or `for` body is not that position.
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .block => |b| {
+                if (!b.produces_value or b.stmts.len == 0) return;
+                self.contributeTailCall(b.stmts[b.stmts.len - 1], edges, dyn, enclosing_fd);
+            },
+            .if_expr => |ie| {
+                self.contributeTailCall(ie.then_branch, edges, dyn, enclosing_fd);
+                if (ie.else_branch) |eb| self.contributeTailCall(eb, edges, dyn, enclosing_fd);
+            },
+            .match_expr => |me| for (me.arms) |arm| self.contributeTailCall(arm.body, edges, dyn, enclosing_fd),
+            .call => |c| self.contributeCallee(c.callee, enclosing_fd, edges, dyn),
+            else => {},
+        }
+    }
+
+    /// `"<head>.<method>"` when that names a declaration, else null.
+    fn qualifiedEdge(self: ErrorAnalysis, head: []const u8, method: []const u8) ?[]const u8 {
+        const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
+        if (self.l.edgeCalleeDecl(qualified, self.l.current_source_file) == null) return null;
+        return qualified;
+    }
+
+    /// The nominal spelling of the parameter `name` of `fd`, seen past a
+    /// pointer, or null when `fd` has no such parameter or its written type is
+    /// not nominal.
+    fn paramTypeName(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?[]const u8 {
+        const decl = fd orelse return null;
+        for (decl.params) |p| {
+            if (!std.mem.eql(u8, p.name, name)) continue;
+            var ty = self.l.resolveType(p.type_expr);
+            if (ty.isBuiltin()) return null;
+            if (self.l.module.types.get(ty) == .pointer) ty = self.l.module.types.get(ty).pointer.pointee;
+            if (ty.isBuiltin()) return null;
+            return switch (self.l.module.types.get(ty)) {
+                .@"struct" => |s| self.l.module.types.getString(s.name),
+                else => null,
+            };
+        }
+        return null;
+    }
+
+    /// Collect the error TAGS raised + the call EDGES of a function body, for
+    /// the inferred-set fix-point. Stops at nested function boundaries.
+    fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (Lowering.literalTagName(rs.tag)) |nm| {
@@ -48,108 +131,114 @@ pub const ErrorAnalysis = struct {
                     for (self.l.module.types.get(qm.set).error_set.tags) |t| {
                         if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
                     }
-                }
-                self.collectErrorSites(rs.tag, tags, edges, dyn);
-            },
-            .try_expr => |te| {
-                if (Lowering.callTargetName(te.operand)) |nm| {
-                    edges.append(self.l.alloc, nm) catch {};
                 } else {
-                    // A `try` on anything but a plain-identifier call — a protocol
-                    // method (`io.suspend_raw`), a UFCS / instance method, a
-                    // closure / fn-pointer value, a checked assertion (`av.(T)`).
-                    // Its error channel is OPAQUE to this static convergence (no
-                    // free-fn name to resolve a set from), so the function
-                    // genuinely propagates a dynamic error. Mark it so the
-                    // "declared `!` but never errors" warning is suppressed — the
-                    // `!` is load-bearing, not droppable.
+                    // A computed tag (`raise e`) names no static set here.
                     dyn.* = true;
                 }
-                self.collectErrorSites(te.operand, tags, edges, dyn);
+                self.collectErrorSites(rs.tag, tags, edges, dyn, enclosing_fd);
             },
-            .block => |b| for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn),
+            .try_expr => |te| {
+                if (te.operand.data == .call) {
+                    self.contributeCallee(te.operand.data.call.callee, enclosing_fd, edges, dyn);
+                } else {
+                    // A `try` on a non-call — a closure / fn-pointer value, a
+                    // checked assertion (`av.(T)`) — escapes through a channel
+                    // no declaration names.
+                    dyn.* = true;
+                }
+                self.collectErrorSites(te.operand, tags, edges, dyn, enclosing_fd);
+            },
+            .block => |b| for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd),
             .if_expr => |ie| {
-                self.collectErrorSites(ie.condition, tags, edges, dyn);
-                self.collectErrorSites(ie.then_branch, tags, edges, dyn);
-                if (ie.else_branch) |eb| self.collectErrorSites(eb, tags, edges, dyn);
+                self.collectErrorSites(ie.condition, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);
+                if (ie.else_branch) |eb| self.collectErrorSites(eb, tags, edges, dyn, enclosing_fd);
+            },
+            .match_expr => |me| {
+                self.collectErrorSites(me.subject, tags, edges, dyn, enclosing_fd);
+                for (me.arms) |arm| self.collectErrorSites(arm.body, tags, edges, dyn, enclosing_fd);
             },
             .while_expr => |w| {
-                self.collectErrorSites(w.condition, tags, edges, dyn);
-                self.collectErrorSites(w.body, tags, edges, dyn);
+                self.collectErrorSites(w.condition, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(w.body, tags, edges, dyn, enclosing_fd);
             },
             .for_expr => |f| {
                 for (f.iterables) |it| {
-                    self.collectErrorSites(it.expr, tags, edges, dyn);
-                    if (it.range_end) |re| self.collectErrorSites(re, tags, edges, dyn);
+                    self.collectErrorSites(it.expr, tags, edges, dyn, enclosing_fd);
+                    if (it.range_end) |re| self.collectErrorSites(re, tags, edges, dyn, enclosing_fd);
                 }
-                self.collectErrorSites(f.body, tags, edges, dyn);
+                self.collectErrorSites(f.body, tags, edges, dyn, enclosing_fd);
             },
             .return_stmt => |r| if (r.value) |v| {
-                // `return callee(...)` in a pure `-> !` function is a FORWARD of
-                // the callee's error channel (a pure failable returns no value),
-                // so it contributes the callee's set exactly like a `try` edge.
-                if (Lowering.callTargetName(v)) |nm| {
-                    edges.append(self.l.alloc, nm) catch {};
-                }
-                self.collectErrorSites(v, tags, edges, dyn);
+                // `return callee(...)` FORWARDS the callee's error channel, so
+                // it contributes the callee's set exactly like a `try` edge.
+                if (v.data == .call) self.contributeCallee(v.data.call.callee, enclosing_fd, edges, dyn);
+                self.collectErrorSites(v, tags, edges, dyn, enclosing_fd);
             },
-            .var_decl => |v| if (v.value) |val| self.collectErrorSites(val, tags, edges, dyn),
-            .const_decl => |c| self.collectErrorSites(c.value, tags, edges, dyn),
-            .destructure_decl => |d| self.collectErrorSites(d.value, tags, edges, dyn),
+            .var_decl => |v| if (v.value) |val| self.collectErrorSites(val, tags, edges, dyn, enclosing_fd),
+            .const_decl => |c| self.collectErrorSites(c.value, tags, edges, dyn, enclosing_fd),
+            .destructure_decl => |d| self.collectErrorSites(d.value, tags, edges, dyn, enclosing_fd),
             .assignment => |a| {
-                self.collectErrorSites(a.target, tags, edges, dyn);
-                self.collectErrorSites(a.value, tags, edges, dyn);
+                self.collectErrorSites(a.target, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(a.value, tags, edges, dyn, enclosing_fd);
             },
             .multi_assign => |m| {
-                for (m.targets) |t| self.collectErrorSites(t, tags, edges, dyn);
-                for (m.values) |v| self.collectErrorSites(v, tags, edges, dyn);
+                for (m.targets) |t| self.collectErrorSites(t, tags, edges, dyn, enclosing_fd);
+                for (m.values) |v| self.collectErrorSites(v, tags, edges, dyn, enclosing_fd);
             },
             .call => |c| {
-                self.collectErrorSites(c.callee, tags, edges, dyn);
-                for (c.args) |a| self.collectErrorSites(a, tags, edges, dyn);
+                self.collectErrorSites(c.callee, tags, edges, dyn, enclosing_fd);
+                for (c.args) |a| self.collectErrorSites(a, tags, edges, dyn, enclosing_fd);
             },
             .binary_op => |b| {
-                self.collectErrorSites(b.lhs, tags, edges, dyn);
-                self.collectErrorSites(b.rhs, tags, edges, dyn);
+                self.collectErrorSites(b.lhs, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(b.rhs, tags, edges, dyn, enclosing_fd);
             },
-            .unary_op => |u| self.collectErrorSites(u.operand, tags, edges, dyn),
-            .deref_expr => |d| self.collectErrorSites(d.operand, tags, edges, dyn),
-            .force_unwrap => |fu| self.collectErrorSites(fu.operand, tags, edges, dyn),
+            .unary_op => |u| self.collectErrorSites(u.operand, tags, edges, dyn, enclosing_fd),
+            .deref_expr => |d| self.collectErrorSites(d.operand, tags, edges, dyn, enclosing_fd),
+            .force_unwrap => |fu| self.collectErrorSites(fu.operand, tags, edges, dyn, enclosing_fd),
             .null_coalesce => |nc| {
-                self.collectErrorSites(nc.lhs, tags, edges, dyn);
-                self.collectErrorSites(nc.rhs, tags, edges, dyn);
+                self.collectErrorSites(nc.lhs, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
             },
-            .field_access => |fa| self.collectErrorSites(fa.object, tags, edges, dyn),
+            .field_access => |fa| self.collectErrorSites(fa.object, tags, edges, dyn, enclosing_fd),
             .index_expr => |ix| {
-                self.collectErrorSites(ix.object, tags, edges, dyn);
-                self.collectErrorSites(ix.index, tags, edges, dyn);
+                self.collectErrorSites(ix.object, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(ix.index, tags, edges, dyn, enclosing_fd);
             },
-            .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn),
+            .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn, enclosing_fd),
             .catch_expr => |ce| {
-                self.collectErrorSites(ce.operand, tags, edges, dyn);
-                self.collectErrorSites(ce.body, tags, edges, dyn);
+                self.collectErrorSites(ce.operand, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
             },
-            .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn),
+            .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),
             .push_stmt => |p| {
-                self.collectErrorSites(p.context_expr, tags, edges, dyn);
-                self.collectErrorSites(p.body, tags, edges, dyn);
+                self.collectErrorSites(p.context_expr, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(p.body, tags, edges, dyn, enclosing_fd);
             },
-            .array_literal => |al| for (al.elements) |el| self.collectErrorSites(el, tags, edges, dyn),
-            .tuple_literal => |tl| for (tl.elements) |el| self.collectErrorSites(el.value, tags, edges, dyn),
+            .array_literal => |al| for (al.elements) |el| self.collectErrorSites(el, tags, edges, dyn, enclosing_fd),
+            .tuple_literal => |tl| for (tl.elements) |el| self.collectErrorSites(el.value, tags, edges, dyn, enclosing_fd),
             // Stop at nested function boundaries; leaves contribute nothing.
             else => {},
         }
     }
 
-    /// Whole-program fix-point that converges each top-level bare-`!` function's
-    /// inferred error set. The seed loop admits exactly the
-    /// `astIsPureBareInferred` return types (`-> !`) — not `!Named`, not a
-    /// value-carrying `-> (T..., !)`. Runs after `scanDecls` (ASTs + named
-    /// error sets registered) and before body lowering, so `lowerTry`'s
-    /// named-caller widening sees the converged callee sets. Also emits the
-    /// empty-inferred warning.
+    /// Every escape of a failable `body`: the tags it raises and the edges of
+    /// the calls whose failure leaves it.
+    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
+        self.contributeTailCall(body, edges, dyn, enclosing_fd);
+    }
+
+    /// Whole-program fix-point that converges each bare-`!` function's inferred
+    /// error set — `-> !` and value-carrying `-> (T..., !)` alike — and
+    /// materialises the converged set as that declaration's channel TypeId.
+    /// Runs after `scanDecls` (ASTs + named error sets registered) and before
+    /// body lowering, so every later check reads the materialised channel. Also
+    /// emits the empty-inferred warning.
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
+            fd: *const ast.FnDecl,
             tags: std.ArrayList(u32),
             edges: std.ArrayList([]const u8),
             rt: ?*const Node,
@@ -157,14 +246,22 @@ pub const ErrorAnalysis = struct {
             // THAT file, and this whole-program pass runs with whatever
             // ambient source file the previous phase left behind.
             source_file: ?[]const u8,
-            // The body `try`s an OPAQUE error channel (a protocol / UFCS method,
-            // a closure call, a checked assertion) — so it genuinely propagates a
-            // dynamic error even when no concrete tag converges. Suppresses the
-            // empty-set "drop the `!`" warning.
+            // The body escapes through a channel that cannot be named (a `try`
+            // of a closure value or a checked assertion, a `raise` of a
+            // computed tag, a call whose callee names no declaration), so it
+            // genuinely propagates a dynamic error even when no concrete tag
+            // converges. Suppresses the empty-set "drop the `!`" warning, and
+            // makes the channel the DYNAMIC one: a merge over a channel nobody
+            // can name is not the set the body escapes.
             dyn: bool,
         };
         var work = std.StringHashMap(Node_).init(self.l.alloc);
         defer work.deinit();
+        // A bare-`!` declaration's key in `work`, so an edge that resolved to a
+        // DECLARATION reaches that declaration's node rather than whichever
+        // same-name function the map is keyed under.
+        var work_key = std.AutoHashMap(*const ast.FnDecl, []const u8).init(self.l.alloc);
+        defer work_key.deinit();
 
         // Seed each bare-`!` function with its direct escape sites.
         {
@@ -173,13 +270,14 @@ pub const ErrorAnalysis = struct {
             var it = self.l.program_index.fn_ast_map.iterator();
             while (it.next()) |e| {
                 const fd = e.value_ptr.*;
-                if (!Lowering.astIsPureBareInferred(fd.return_type)) continue;
+                if (!Lowering.astChannelIsInferred(fd.return_type)) continue;
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList([]const u8).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
-                self.collectErrorSites(fd.body, &tags, &edges, &dyn);
-                work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+                self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
+                work.put(e.key_ptr.*, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+                work_key.put(fd, e.key_ptr.*) catch {};
             }
         }
 
@@ -190,14 +288,28 @@ pub const ErrorAnalysis = struct {
             var wit = work.iterator();
             while (wit.next()) |we| {
                 for (we.value_ptr.edges.items) |callee| {
+                    const callee_fd = self.l.edgeCalleeDecl(callee, we.value_ptr.source_file) orelse {
+                        // No single author is visible at the edge, so the
+                        // channel it escapes through is not statically known.
+                        if (!we.value_ptr.dyn) {
+                            we.value_ptr.dyn = true;
+                            changed = true;
+                        }
+                        continue;
+                    };
                     const callee_tags: []const u32 = blk: {
-                        if (work.getPtr(callee)) |cc| break :blk cc.tags.items;
-                        if (self.l.program_index.fn_ast_map.get(callee)) |cfd| {
-                            if (Lowering.astPureNamedSet(cfd.return_type)) |nm| {
-                                break :blk self.l.namedSetTags(nm) orelse &.{};
+                        if (work_key.get(callee_fd)) |k| {
+                            if (work.getPtr(k)) |cc| {
+                                // A callee whose merge is non-static makes this
+                                // node's merge non-static.
+                                if (cc.dyn and !we.value_ptr.dyn) {
+                                    we.value_ptr.dyn = true;
+                                    changed = true;
+                                }
+                                break :blk cc.tags.items;
                             }
                         }
-                        break :blk &.{};
+                        break :blk self.l.declaredChannelTags(callee_fd);
                     };
                     for (callee_tags) |t| {
                         if (!Lowering.containsTag(we.value_ptr.tags.items, t)) {
@@ -209,7 +321,8 @@ pub const ErrorAnalysis = struct {
             }
         }
 
-        // Store the converged sets (sorted) and warn on empty inferred sets.
+        // Store the converged sets (sorted), materialise them, and warn on
+        // empty inferred sets.
         // `work` is a StringHashMap, so its iteration order is hash order — walk
         // it directly and the warnings below come out scrambled, and differently
         // under any other hash. Order by source span first so the diagnostics
@@ -239,11 +352,13 @@ pub const ErrorAnalysis = struct {
             const sorted = self.l.alloc.dupe(u32, se.node.tags.items) catch continue;
             std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
             self.l.inferred_error_sets.put(se.name, sorted) catch {};
+            if (se.node.dyn) self.l.materialiseDynChannel(se.node.fd, se.name) else self.l.materialiseInferredChannel(se.node.fd, se.name, sorted);
             // Skip `main` (its `!` is the program's top error channel) and any
             // protocol-impl method (its `!` is dictated by the protocol
             // contract — e.g. `Io.suspend_raw` — so a non-raising impl body
             // is not a "drop the `!`" case; see `impl_method_names`).
-            if (sorted.len == 0 and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
+            const whole_return_is_channel = Lowering.astChannelNode(se.node.rt) == se.node.rt;
+            if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
                 if (self.l.diagnostics) |diags| {
                     if (se.node.rt) |rt| {
                         self.l.setCurrentSourceFile(se.node.source_file orelse saved_file);

@@ -1,0 +1,72 @@
+// What the materialised channel refuses. `inner` converges to `FooError | IoErr`,
+// so a `!IoErr` slot does not take it and a `!IoErr` return cannot forward it —
+// each member IoErr does not carry is named. A `raise Set.Member` into a named
+// destination that does not carry the member is refused the same way. Under a
+// bare `!` there is no channel in hand for a `.Member` shorthand to resolve
+// against, so it must be qualified. A source that still carries the placeholder
+// `!` — a Closure slot, or a wrap of a callee whose channel is opaque — has no
+// static member set, so a named destination cannot absorb it. A bare-`!` SLOT
+// is the placeholder a written fn-type spelling carries, and a declaration's
+// channel is its merge, a named set, or the dynamic channel — never that
+// placeholder.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+Other    :: error { Nope }
+
+inner :: (n: i32) -> (i32, !) {
+    if n < 0 { raise FooError.A; }
+    if n == 0 { raise IoErr.Failed; }
+    return n;
+}
+
+forward :: (n: i32) -> (i32, !IoErr) {
+    return inner(n);
+}
+
+stray :: (n: i32) -> (i32, !IoErr) {
+    if n < 0 { raise Other.Nope; }
+    return n;
+}
+
+shorthand :: (n: i32) -> (i32, !) {
+    if n < 0 { raise .A; }
+    return n;
+}
+
+slot_fwd :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !IoErr) {
+    return h(x);
+}
+
+opaque :: (f: Closure() -> !) -> ! {
+    try f();
+}
+
+wrap :: () -> ! {
+    try opaque(|| -> ! { raise Other.Nope; });
+}
+
+leak :: (n: i32) -> (i32, !) {
+    try opaque(|| -> ! { raise Other.Nope; });
+    return n;
+}
+
+dyn_fwd :: () -> !IoErr {
+    return wrap();
+}
+
+main :: () -> i32 {
+    canal : Closure(i32) -> (i32, !IoErr) = inner;
+    slot_bare  : Closure(i32) -> (i32, !) = inner;
+    slot_named : Closure(i32) -> (i32, !) = stray;
+    slot_dyn   : Closure(i32) -> (i32, !) = leak;
+    g := |x: i32| -> (i32, !) { if x < 0 { raise Other.Nope; } return x; };
+    print("{} {} {}\n", canal(1) catch { -1 }, forward(1) catch { -2 }, stray(1) catch { -3 });
+    print("{}\n", shorthand(1) catch { -4 });
+    print("{}\n", slot_fwd(g, 1) catch { -5 });
+    print("{}\n", dyn_fwd() catch { -6 });
+    print("{} {} {}\n", slot_bare(1) catch { -7 }, slot_named(1) catch { -8 }, slot_dyn(1) catch { -9 });
+    return 0;
+}

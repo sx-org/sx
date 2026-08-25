@@ -1583,6 +1583,17 @@ pub const TypeTable = struct {
         return self.intern(self.errorSetInfo(spelling, member_ids));
     }
 
+    /// The spelling of the DYNAMIC channel. `!` is not legal in a type or
+    /// identifier name, so this cannot collide with a user-declared set — nor
+    /// with the bare-`!` placeholder a written fn-type spelling carries.
+    pub const dyn_channel_spelling = "!dyn";
+
+    /// The channel of a declaration whose body escapes through a channel that
+    /// cannot be named: member-less, identified by its spelling alone.
+    pub fn dynErrorChannel(self: *TypeTable) TypeId {
+        return self.errorSetType(self.internString(dyn_channel_spelling), &.{});
+    }
+
     /// Size in bytes for a type (pointer-sized = 8 on 64-bit).
     pub fn sizeOf(self: *const TypeTable, id: TypeId) u32 {
         const info = self.get(id);
