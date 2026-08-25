@@ -44,14 +44,22 @@ pub const ErrorAnalysis = struct {
         switch (callee.data) {
             .identifier => |id| edges.append(self.l.alloc, id.name) catch {},
             .field_access => |fa| {
-                // A namespace- or type-qualified callee is spelled exactly as
-                // its declaration is registered, so it outranks the bare name:
-                // two modules may each author `parse`.
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
+                    // A namespace- or type-qualified callee is spelled exactly as
+                    // its declaration is registered, so it outranks the bare name:
+                    // two modules may each author `parse`.
                     if (self.qualifiedEdge(obj, fa.field)) |q| {
                         edges.append(self.l.alloc, q) catch {};
                         return;
+                    }
+                    // A typed Type.method outranks the bare name: a free function
+                    // may share it (libc `read`).
+                    if (self.paramTypeName(enclosing_fd, obj)) |tn| {
+                        if (self.qualifiedEdge(tn, fa.field)) |q| {
+                            edges.append(self.l.alloc, q) catch {};
+                            return;
+                        }
                     }
                 }
                 // A UFCS free function lives under the BARE method name.
@@ -59,14 +67,6 @@ pub const ErrorAnalysis = struct {
                 if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) {
                     edges.append(self.l.alloc, bare) catch {};
                     return;
-                }
-                if (fa.object.data == .identifier) {
-                    if (self.paramTypeName(enclosing_fd, fa.object.data.identifier.name)) |tn| {
-                        if (self.qualifiedEdge(tn, fa.field)) |q| {
-                            edges.append(self.l.alloc, q) catch {};
-                            return;
-                        }
-                    }
                 }
                 dyn.* = true;
             },
@@ -130,7 +130,14 @@ pub const ErrorAnalysis = struct {
                 }
                 self.collectErrorSites(te.operand, tags, edges, dyn, enclosing_fd);
             },
-            .block => |b| for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd),
+            .block => |b| {
+                for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd);
+                // A producing block's last call is the implicit `return <call>` tail.
+                if (b.produces_value and b.stmts.len > 0) {
+                    const last = b.stmts[b.stmts.len - 1];
+                    if (last.data == .call) self.contributeCallee(last.data.call.callee, enclosing_fd, edges, dyn);
+                }
+            },
             .if_expr => |ie| {
                 self.collectErrorSites(ie.condition, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);

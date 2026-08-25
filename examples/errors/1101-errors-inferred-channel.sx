@@ -6,7 +6,10 @@
 // for a member that destination carries, and `.Member` resolves against a
 // channel already in hand. A tail-returned NON-FAILABLE UFCS call contributes
 // nothing to the merge, so `tail` converges to `IoErr` and forwards into a
-// `!IoErr` return.
+// `!IoErr` return. `p.read()` of a Point parameter contributes `Point.read`,
+// not the libc `read` that shares the bare name, so `read_via` converges to
+// `IoErr`. An implicit failable tail `inner(n)` contributes that callee, so
+// `implicit` converges to `Both`.
 
 @import "modules/std.sx";
 
@@ -29,12 +32,25 @@ forward :: (n: i32) -> (i32, !Both) {
     return inner(n);
 }
 
+implicit :: (n: i32) -> (i32, !) {
+    inner(n)
+}
+
+implicit_fwd :: (n: i32) -> (i32, !Both) {
+    return implicit(n);
+}
+
 mix :: (n: i32) -> (i32, !IoErr) {
     if n < 0 { raise IoErr.Failed; }
     return n;
 }
 
-Point :: struct { x: i32; y: i32 }
+Point :: struct {
+    x: i32;
+    y: i32;
+
+    read :: (self: Point) -> (i32, !IoErr) { return self.x; }
+}
 
 point_sum :: ufcs (p: Point) -> i32 { return p.x + p.y; }
 
@@ -45,6 +61,14 @@ tail :: (p: Point, n: i32) -> (i32, !) {
 
 relay :: (p: Point, n: i32) -> (i32, !IoErr) {
     return tail(p, n);
+}
+
+read_via :: (p: Point) -> (i32, !) {
+    return p.read();
+}
+
+read_fwd :: (p: Point) -> (i32, !IoErr) {
+    return read_via(p);
 }
 
 in_hand :: (n: i32) -> (i32, !FooError) {
@@ -63,5 +87,7 @@ main :: () -> i32 {
     print("in_hand={}\n", in_hand(-1) catch |e| { if e == FooError.A { 9 } else { 10 } });
     pt : Point = .{ x = 4, y = 7 };
     print("relay={}\n", relay(pt, 1) catch { -1 });
+    print("read_fwd={}\n", read_fwd(pt) catch { -1 });
+    print("implicit_fwd={}\n", implicit_fwd(1) catch { -1 });
     return 0;
 }

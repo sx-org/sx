@@ -4,3 +4,5 @@ forward=5
 mix=7
 in_hand=9
 relay=11
+read_fwd=4
+implicit_fwd=1
