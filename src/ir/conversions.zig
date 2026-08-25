@@ -227,7 +227,7 @@ pub const CoercionResolver = struct {
         // A legal error-set retype: the source tag word is the destination
         // channel's discriminant. Modeled because each channel is sized by its
         // own member payloads, so a `.none` weld is refused on width. A pair
-        // the destination cannot name stays `.none`: membership is the
+        // the destination cannot name is `.none`: membership is the
         // implicit gate, and `unifyValueArmTypes` reads a modeled plan as a
         // safe join.
         if (lower_error.errorSetValueRetypeIsLegal(self.l, src_ty, dst_ty)) return .error_set_retype;

@@ -290,11 +290,9 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
     self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
 }
 
-/// Whether an error-set VALUE crosses legally from `src` to `dst`: every tag
-/// of `src` is a member of `dst` — the same subset rule the error channel
-/// applies to `raise` and to a forwarded failable — or an inferred bare-`!`
-/// placeholder on either side absorbs any tag. `classify` reads this to model
-/// the retype; `checkErrorSetValueCoercion` diagnoses each escapee.
+/// Whether an error-set value of `src` is a legal retype to `dst`: every
+/// source tag id is in `dst`, or an inferred bare-`!` on either side absorbs
+/// any tag.
 pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) bool {
     if (src == dst) return true;
     if (src.isBuiltin() or dst.isBuiltin()) return false;
