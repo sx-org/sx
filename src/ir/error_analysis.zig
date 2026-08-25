@@ -123,13 +123,15 @@ pub const ErrorAnalysis = struct {
     fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
-                if (Lowering.literalTagName(rs.tag)) |nm| {
-                    tags.append(self.l.alloc, self.l.anonymousErrorMember(nm)) catch {};
-                } else if (self.l.qualifiedErrorMember(rs.tag)) |qm| {
-                    // What a qualified member contributes is its STATIC TYPE —
-                    // the whole set, not the one member named at the site.
-                    for (self.l.module.types.get(qm.set).error_set.tags) |t| {
-                        if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
+                if (self.l.raisedMember(rs.tag)) |rm| {
+                    if (rm.set) |set| {
+                        // What a qualified member contributes is its STATIC TYPE —
+                        // the whole set, not the one member named at the site.
+                        for (self.l.module.types.get(set).error_set.tags) |t| {
+                            if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
+                        }
+                    } else {
+                        tags.append(self.l.alloc, self.l.anonymousErrorMember(rm.member)) catch {};
                     }
                 } else {
                     // A computed tag (`raise e`) names no static set here.

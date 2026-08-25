@@ -1,0 +1,22 @@
+// A member's payload and its brace group answer to each other: a payload needs
+// braces, and braces need a payload. Empty braces stand only for a struct
+// payload's defaults, and a construction head names a member the set carries.
+
+PayErr :: error {
+    Bare;
+    Wide: i64;
+    Boxed: struct { v: i32; at: i64 };
+}
+
+bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+empty_scalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
+absent       :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Gone{1}; } return n; }
+
+main :: () -> i32 {
+    a := bare_member(-1) catch { 0 };
+    b := void_braces(-1) catch { 0 };
+    c := empty_scalar(-1) catch { 0 };
+    d := absent(-1) catch { 0 };
+    return xx (a + b + c + d);
+}

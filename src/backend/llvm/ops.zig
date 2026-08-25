@@ -799,7 +799,7 @@ pub const Ops = struct {
         } else if (from_kind == c.LLVMIntegerTypeKind and to_kind == c.LLVMPointerTypeKind) {
             self.e.mapRef(c.LLVMBuildIntToPtr(self.e.builder, operand, to_ty, "itp"));
         } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.to)) {
-            self.e.mapRef(self.e.channelFromTag(to_ty, self.e.channelTag(operand, conv.from)));
+            self.e.mapRef(self.e.channelRetype(operand, conv.from, conv.to));
         } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.from)) {
             self.e.mapRef(self.e.coerceArg(self.e.channelTag(operand, conv.from), to_ty));
         } else {
@@ -2221,6 +2221,9 @@ pub const Ops = struct {
             } else {
                 self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, ei.tag, 0));
             }
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) {
+            const tag = c.LLVMConstInt(self.e.cached_i32, ei.tag, 0);
+            self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, self.e.resolveRef(ei.payload)));
         } else {
             // Tagged union with payload — { header, payload_bytes }
             const union_ty = self.e.toLLVMType(instruction.ty);
@@ -2268,6 +2271,12 @@ pub const Ops = struct {
 
     pub fn emitEnumPayload(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
         const base = self.e.resolveRef(fa.base);
+        if (self.e.getRefIRType(fa.base)) |base_ir_ty| {
+            if (self.e.ir_mod.types.isPayloadCarryingChannel(base_ir_ty)) {
+                self.e.mapRef(self.e.channelPayload(base_ir_ty, base, self.e.toLLVMType(instruction.ty)));
+                return;
+            }
+        }
         const result_ty = self.e.toLLVMType(instruction.ty);
         const base_ty = c.LLVMTypeOf(base);
         const base_kind = c.LLVMGetTypeKind(base_ty);

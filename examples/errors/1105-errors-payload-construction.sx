@@ -1,0 +1,61 @@
+// A member's brace group holds its payload: the channel value carries a copy,
+// and a `match` arm binds it back off a caught value. Empty braces are a struct
+// payload's own defaults. A retype into a wider channel carries the payload
+// alongside the tag, whatever each channel reserves for one.
+
+@import "modules/std.sx";
+
+PayErr :: error {
+    Bare;
+    Wide: i64;
+    Boxed: struct { v: i32 = 5; at: i64 = 9 };
+}
+
+Extra :: error { Late };
+Both  :: PayErr | Extra;
+
+Small :: error { S: i32 };
+Mixed :: Small | PayErr;
+
+boom :: (n: i64) -> (i64, !PayErr) {
+    if n < 0 { raise PayErr.Boxed{ v = 1, at = 77 }; }
+    if n == 0 { raise .Wide{42}; }
+    if n == 1 { raise PayErr.Boxed{}; }
+    if n == 2 { raise PayErr.Bare; }
+    return n * 2;
+}
+
+widen :: (n: i64) -> (i64, !Both) {
+    return boom(n);
+}
+
+read :: (e: Both) -> i64 {
+    return match e {
+        case .Bare:  -1;
+        case .Wide:  |w| w;
+        case .Boxed: |b| b.at * 100 + b.v;
+        case .Late:  -2;
+    };
+}
+
+small :: (n: i64) -> (i64, !Small) {
+    if n < 0 { raise Small.S{7}; }
+    return n;
+}
+
+into_mixed :: (n: i64) -> (i64, !Mixed) {
+    return small(n);
+}
+
+main :: () -> i32 {
+    print("wide={}\n", widen(0) catch |e| read(e));
+    print("boxed={}\n", widen(-1) catch |e| read(e));
+    print("defaults={}\n", widen(1) catch |e| read(e));
+    print("bare={}\n", widen(2) catch |e| read(e));
+    print("ok={}\n", widen(5) catch { -9 });
+    print("mixed={}\n", into_mixed(-1) catch |e| match e {
+        case .S: |s| s;
+        else: -1;
+    });
+    return 0;
+}

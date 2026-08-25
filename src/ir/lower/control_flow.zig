@@ -1730,6 +1730,30 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 const child_ty = if (opt_info == .optional) opt_info.optional.child else .i64;
                 const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = subject } }, child_ty);
                 arm_scope.put(capture_name, .{ .ref = unwrapped, .ty = child_ty, .is_alloca = false, .origin = .match_payload });
+            } else if (is_error_set_match) {
+                // An arm binds the payload the member it names declares, read
+                // out of the channel value.
+                const pat_name: []const u8 = if (arm.pattern) |arm_pat| switch (arm_pat.data) {
+                    .enum_literal => |el| el.name,
+                    .identifier => |id| id.name,
+                    .field_access => |fa| fa.field,
+                    else => "",
+                } else "";
+                const member = self.module.types.errorSetMemberId(subject_ty, pat_name);
+                const payload_ty = if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
+                if (payload_ty == .void) {
+                    if (self.diagnostics) |diags| {
+                        const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
+                        diags.addFmt(.err, bind_span, "'{s}' carries no payload to bind", .{pat_name});
+                    }
+                    arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
+                } else {
+                    const payload = self.builder.emit(.{ .enum_payload = .{
+                        .base = subject,
+                        .field_index = member.?,
+                    } }, payload_ty);
+                    arm_scope.put(capture_name, .{ .ref = payload, .ty = payload_ty, .is_alloca = false, .origin = .match_payload });
+                }
             } else {
                 // Resolve actual variant index and payload type from the subject's type
                 var variant_idx: u32 = @intCast(i);

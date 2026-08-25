@@ -229,6 +229,34 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
         return;
     }
     internErrorSetSlot(self, &node.data.error_set_decl);
+    registerPayloadShapes(self, &node.data.error_set_decl);
+}
+
+/// Name each member's inline payload struct after the member, and record the
+/// field defaults it declares, so `.Member{ … }` reads as that struct's own
+/// literal — empty braces included.
+fn registerPayloadShapes(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
+    if (esd.tag_types.len != esd.tag_names.len) return;
+    for (esd.tag_types, esd.tag_names) |maybe_payload, tag_name| {
+        const payload = maybe_payload orelse continue;
+        if (payload.data != .struct_decl) continue;
+        const ty = self.resolveInner(payload);
+        qualifyAnonType(self, &self.module.types, ty, esd.name, tag_name);
+        const declared = payload.data.struct_decl.field_defaults;
+        var any = false;
+        for (declared) |d| any = any or d != null;
+        if (!any) continue;
+        const defaults = self.alloc.alloc(?*const Node, declared.len) catch return;
+        for (declared, defaults) |d, *slot| {
+            slot.* = d;
+            // A default lowers wherever a literal leaves its field out, so it
+            // carries the declaring source to resolve its bare names over.
+            if (d) |n| {
+                if (n.source_file == null) n.source_file = self.current_source_file;
+            }
+        }
+        self.struct_defaults_by_tid.put(ty, defaults) catch {};
+    }
 }
 
 /// Intern `esd`'s member set and record the `decl_key → TypeId` so a
