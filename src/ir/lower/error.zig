@@ -138,8 +138,8 @@ pub fn qualifiedErrorMember(self: *Lowering, node: *const Node) ?QualifiedErrorM
     return .{ .set = set, .member = fa.field };
 }
 
-/// The channel a `|` composition in type position denotes, or null while an
-/// operand names no error set (a set written further down the file).
+/// The channel a `|` composition in type position denotes, or null when an
+/// operand names no error set.
 pub fn composedChannel(self: *Lowering, node: *const Node) ?TypeId {
     const table = &self.module.types;
     var members = std.ArrayList(u32).empty;
@@ -256,14 +256,21 @@ pub fn checkSlotChannel(self: *Lowering, value_ret: TypeId, slot_ret: TypeId, sp
     const want = self.errorChannelOf(slot_ret);
     if (have == want) return true;
     if (self.diagnostics) |diags| {
-        diags.addFmt(.err, span, "a callable with {s} does not fill a slot with {s} — a `Closure` or function-pointer slot takes exactly its own channel", .{ channelPhrase(self, have), channelPhrase(self, want) });
+        const have_phrase = channelPhrase(self, have);
+        defer self.alloc.free(have_phrase);
+        const want_phrase = channelPhrase(self, want);
+        defer self.alloc.free(want_phrase);
+        diags.addFmt(.err, span, "a callable with {s} does not fill a slot with {s} — a `Closure` or function-pointer slot takes exactly its own channel", .{ have_phrase, want_phrase });
     }
     return false;
 }
 
+/// How the message names `channel`. The bare-`!` placeholder carries no member
+/// set to name, so it reads as inferred. Owned by the caller.
 fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
-    const c = channel orelse return "no error channel";
-    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch "an error channel";
+    const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
+    if (self.isInferredErrorSet(c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
+    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
 }
 
 /// True for the bare-`!` inferred placeholder error set (reserved name "!").

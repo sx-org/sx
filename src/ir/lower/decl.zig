@@ -880,6 +880,17 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.setCurrentSourceFile(decl.source_file);
         self.reserveShadowSlot(td);
     }
+    // The signatures below resolve their `!` channels against these bindings; a
+    // channel resolved before its operands bind keeps a member-less placeholder.
+    for (decls) |decl| {
+        const esd = switch (topLevelTypeDecl(decl) orelse continue) {
+            .error_set => |e| e,
+            else => continue,
+        };
+        self.reserveShadowErrorSetSlot(esd);
+    }
+    self.resolveForwardIdentifierAliases(decls);
+    resolveErrorCompositionAliases(self, decls);
     for (decls) |decl| {
         if (!claimDecl(self, decl)) continue;
         self.setCurrentSourceFile(decl.source_file);
@@ -924,13 +935,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 } else if (cd.value.data == .union_decl) {
                     // Per-decl nominal identity for plain union types
                     self.registerUnionDecl(&cd.value.data.union_decl);
-                } else if (cd.value.data == .binary_op and cd.value.data.binary_op.op == .bit_or) {
-                    // `Both :: FooError | BooError` — the name binds the channel
-                    // its operands merge into. A composition naming a set
-                    // written further down binds in the post-scan round.
-                    if (self.composedChannel(cd.value)) |channel| {
-                        self.putTypeAlias(self.current_source_file, cd.name, channel);
-                    }
                 } else if (isCompositeAliasRhs(cd.value.data)) {
                     // COMPOSITE type alias — tuple / array / slice / optional /
                     // pointer / many-pointer / function / closure RHS
@@ -1222,7 +1226,6 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => {},
         }
     }
-    resolveErrorCompositionAliases(self, decls);
     self.resolveForwardIdentifierAliases(decls);
     resolveCompositeAliases(self, decls);
     // Retry only impls that could not be registered in declaration order
@@ -1856,9 +1859,9 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     return null;
 }
 
-/// Bind each `Name :: A | B` error composition to the channel its operands
-/// merge into. Rounds repeat while one binds, so a composition may name a set —
-/// or another composition — written below it.
+/// Bind each `Name :: A | B` error composition to the interned member set of
+/// its operands. Rounds repeat while one binds, so a composition may name
+/// another composition.
 fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) void {
     var progressed = true;
     while (progressed) {
@@ -1914,6 +1917,9 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
             };
             const src = decl.source_file orelse self.main_file orelse continue;
             if (self.aliasResolvedInSource(src, cd.name)) continue;
+            // A diagnostic the RHS walk raises (an alias cycle) belongs to this
+            // declaration's file.
+            self.setCurrentSourceFile(decl.source_file);
             // The (leaf-name, from-source, raw) triple to resolve the alias RHS:
             //  • `A :: B`        — a bare identifier; resolve `B` from `src`.
             //  • `A :: ns.Leaf`  — a qualified RHS (`Color :: inner.Color`); the

@@ -1,7 +1,8 @@
 // A channel IS its member set. `A | B` in type position merges the members of
 // its operands — a named set, a qualified member, or an inline `error { … }`
 // whose members the composition owns — and `Set.Member` after `!` names the
-// singleton carrying that member alone.
+// singleton carrying that member alone. A signature may name a composition
+// declared later, and a composition may name sets declared later.
 //
 // A `Closure` slot takes exactly its own channel, so each slot below is an
 // equality: `!(IoErr.Failed | IoErr.Canceled)` fills an `!IoErr` slot because
@@ -9,11 +10,6 @@
 // the `!Both` one, and `!Both.Failed` fills `!IoErr.Failed`.
 
 @import "modules/std.sx";
-
-IoErr :: error { Failed; Canceled }
-Disk  :: error { Full }
-Both  :: IoErr | Disk;
-Torn  :: Disk | error { Ripped };
 
 sweep :: (n: i32) -> (i32, !(IoErr.Failed | IoErr.Canceled)) {
     if n < 0 { raise IoErr.Canceled; }
@@ -35,8 +31,17 @@ tear :: (n: i32) -> (i32, !Torn) {
     return n + 1;
 }
 
+Both :: IoErr | Disk;
+Torn :: Disk | error { Ripped };
+
+IoErr :: error { Failed; Canceled }
+Disk  :: error { Full }
+
 main :: () -> i32 {
-    whole  : Closure(i32) -> (i32, !IoErr)        = sweep;
+    whole  : Closure(i32) -> (i32, !IoErr) = |n: i32| -> (i32, !(IoErr.Failed | IoErr.Canceled)) {
+        if n < 0 { raise IoErr.Canceled; }
+        return n * 2;
+    };
     single : Closure(i32) -> (i32, !IoErr.Failed) = halt;
     named  : Closure(i32) -> (i32, !Both)         = wide;
     inline_composed : Closure(i32) -> (i32, !(IoErr | Disk)) = wide;
