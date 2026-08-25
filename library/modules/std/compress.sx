@@ -5,18 +5,18 @@
 // no C-compatible flags or statuses.
 
 Error :: error {
-    InvalidArgument,
-    InvalidOptions,
-    InvalidData,
-    UnexpectedEnd,
-    ChecksumMismatch,
-    Unsupported,
-    OutputLimit,
-    NotFound,
-    TooLarge,
-    Finished,
-    Io,
-    AllocationFailed,
+    InvalidArgument;
+    InvalidOptions;
+    InvalidData;
+    UnexpectedEnd;
+    ChecksumMismatch;
+    Unsupported;
+    OutputLimit;
+    NotFound;
+    TooLarge;
+    Finished;
+    Io;
+    AllocationFailed;
 }
 
 Strategy :: enum { default; filtered; huffman_only; rle; fixed; }

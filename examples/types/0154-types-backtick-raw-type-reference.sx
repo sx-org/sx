@@ -12,7 +12,7 @@
 `i32 :: struct { x: i64; }
 `i8 :: enum { A; B; }
 `u16 :: union { i: i32; f: f32; }
-`u32 :: error { Bad, Empty }
+`u32 :: error { Bad; Empty }
 RawAlias :: `i32;   // alias to a backtick-declared struct
 
 // A bare `i32` in type position is still the 32-bit signed int.

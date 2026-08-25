@@ -184,10 +184,10 @@ test "resolveAstType: `!Named` resolves to the declared error set" {
     // Register `ParseErr :: error { BadDigit }` directly.
     const set = table.errorSetType(table.internString("ParseErr"), &[_]u32{table.internTag("BadDigit")});
 
-    // `!ParseErr` (an error_type_expr with a name) resolves to that set.
+    // `!ParseErr` (an error_type_expr naming one set) resolves to that set.
     const node = try alloc.create(Node);
     defer alloc.destroy(node);
-    node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = "ParseErr" } } };
+    node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .operands = &.{"ParseErr"} } } };
     try std.testing.expectEqual(set, type_bridge.resolveAstType(node, &table, null, null));
 }
 
@@ -198,10 +198,10 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
 
     const a = try alloc.create(Node);
     defer alloc.destroy(a);
-    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
     const b = try alloc.create(Node);
     defer alloc.destroy(b);
-    b.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    b.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
 
     const ia = type_bridge.resolveAstType(a, &table, null, null);
     const ib = type_bridge.resolveAstType(b, &table, null, null);
@@ -226,7 +226,7 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
     val_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "i32" } } };
     const err_ty = try alloc.create(Node);
     defer alloc.destroy(err_ty);
-    err_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = "IoErr" } } };
+    err_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .operands = &.{"IoErr"} } } };
     const fields = [_]*Node{ val_ty, err_ty };
     const tuple = try alloc.create(Node);
     defer alloc.destroy(tuple);

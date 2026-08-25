@@ -8,19 +8,19 @@
 @import "modules/std/internal/png.sx";
 
 Error :: error {
-    InvalidDimensions,
-    InvalidStride,
-    PixelDataTooShort,
-    InvalidCompressionLevel,
-    TooLarge,
-    CompressionFailed,
-    AllocationFailed,
-    InvalidSignature,
-    TruncatedData,
-    ChecksumMismatch,
-    UnsupportedFormat,
-    InvalidFilter,
-    DecompressionFailed,
+    InvalidDimensions;
+    InvalidStride;
+    PixelDataTooShort;
+    InvalidCompressionLevel;
+    TooLarge;
+    CompressionFailed;
+    AllocationFailed;
+    InvalidSignature;
+    TruncatedData;
+    ChecksumMismatch;
+    UnsupportedFormat;
+    InvalidFilter;
+    DecompressionFailed;
 }
 
 PixelFormat :: enum {

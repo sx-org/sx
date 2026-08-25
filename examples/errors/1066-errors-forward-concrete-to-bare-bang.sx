@@ -20,7 +20,7 @@
 @import "modules/std.sx";
 
 MyErr :: error { Boom }
-WideErr :: error { Boom, Other }
+WideErr :: error { Boom; Other }
 
 inner :: (x: i64) -> (i64, !MyErr) {
     if x < 0 { raise error.Boom; }

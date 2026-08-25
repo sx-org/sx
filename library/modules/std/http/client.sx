@@ -33,22 +33,22 @@ types :: @import "modules/std/http/types.sx";
 HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
 
 ClientErr :: error {
-    Connect,    // socket()/connect()/resolve failed, or the connect timed out
-    Tls,        // the TLS dial failed (setup/handshake/VERIFICATION), or an
+    Connect;    // socket()/connect()/resolve failed; or the connect timed out
+    Tls;        // the TLS dial failed (setup/handshake/VERIFICATION); or an
                 // https URL was fetched without a dialer configured
-    Send,       // write() failed (an expired io timeout included)
-    Recv,       // read() failed or timed out, the peer closed before a full
-                // response, or chunked framing was malformed
-    TooLarge,   // the response did not fit the caller's buffer
-    BadStatus,  // the status line was malformed / no header terminator
-    Url,        // fetch: the URL did not parse (scheme/host/port)
-    Redirect,   // fetch: the redirect chain exceeded max_redirects
-    Closed,     // recv_on: the peer closed before sending ANY response byte —
-                // a clean EOF or an RST, which are the same fact reported
+    Send;       // write() failed (an expired io timeout included)
+    Recv;       // read() failed or timed out; the peer closed before a full
+                // response; or chunked framing was malformed
+    TooLarge;   // the response did not fit the caller's buffer
+    BadStatus;  // the status line was malformed / no header terminator
+    Url;        // fetch: the URL did not parse (scheme/host/port)
+    Redirect;   // fetch: the redirect chain exceeded max_redirects
+    Closed;     // recv_on: the peer closed before sending ANY response byte —
+                // a clean EOF or an RST; which are the same fact reported
                 // differently depending on a race — the stale-keep-alive
                 // signature (the pool's ONLY safe retry window besides a send
                 // fault: the request provably never executed)
-    Allocation, // content-decoder state could not be allocated
+    Allocation; // content-decoder state could not be allocated
 }
 
 // ── sessions ──────────────────────────────────────────────────

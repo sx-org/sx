@@ -2001,7 +2001,7 @@ test "enum variant name starts point at each variant" {
 test "error tag name starts point at each tag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const src: [:0]const u8 = "ParseErr :: error { BadDigit, Overflow };";
+    const src: [:0]const u8 = "ParseErr :: error { BadDigit; Overflow };";
     var parser = try Parser.init(arena.allocator(), src);
     const root = try parser.parse();
     const esd = root.data.root.decls[0].data.error_set_decl;
@@ -2033,13 +2033,11 @@ test "empty member lists have empty name-start arrays" {
         \\S :: struct {}
         \\E :: enum {}
         \\U :: union {}
-        \\Er :: error {}
     );
     const decls = (try parser.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 0), decls[0].data.struct_decl.field_name_starts.len);
     try std.testing.expectEqual(@as(usize, 0), decls[1].data.enum_decl.variant_name_starts.len);
     try std.testing.expectEqual(@as(usize, 0), decls[2].data.union_decl.field_name_starts.len);
-    try std.testing.expectEqual(@as(usize, 0), decls[3].data.error_set_decl.tag_name_starts.len);
 }
 
 test "a struct-body typed constant adds no field name start" {

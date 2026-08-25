@@ -29,7 +29,7 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     const ea = ErrorAnalysis{ .l = &lowering };
 
     // raiser :: () -> ! { raise error.Foo; }
-    const r_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+    const r_rt = mk(alloc, .{ .error_type_expr = .{} });
     const r_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
     const r_fa = mk(alloc, .{ .field_access = .{ .object = r_err, .field = "Foo" } });
     const r_raise = mk(alloc, .{ .raise_stmt = .{ .tag = r_fa } });
@@ -37,7 +37,7 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     const raiser_fd = ast.FnDecl{ .name = "raiser", .params = &.{}, .return_type = r_rt, .body = r_body };
 
     // caller :: () -> ! { try raiser(); }  — no direct raise; inherits {Foo}.
-    const c_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+    const c_rt = mk(alloc, .{ .error_type_expr = .{} });
     const c_callee = mk(alloc, .{ .identifier = .{ .name = "raiser" } });
     const c_call = mk(alloc, .{ .call = .{ .callee = c_callee, .args = &.{} } });
     const c_try = mk(alloc, .{ .try_expr = .{ .operand = c_call } });
@@ -73,7 +73,7 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
 
     // host :: () { () -> ! { raise error.Bar; }; }  — a bare-`!` closure literal
     // sitting in `host`'s body; its raises union into the shape set.
-    const lam_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+    const lam_rt = mk(alloc, .{ .error_type_expr = .{} });
     const l_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
     const l_fa = mk(alloc, .{ .field_access = .{ .object = l_err, .field = "Bar" } });
     const l_raise = mk(alloc, .{ .raise_stmt = .{ .tag = l_fa } });
@@ -115,7 +115,7 @@ test "error_analysis: empty-inferred warnings are emitted in source order, not h
     };
     var fds: [names.len]ast.FnDecl = undefined;
     for (&names, 0..) |name, i| {
-        const rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+        const rt = mk(alloc, .{ .error_type_expr = .{} });
         // Ascending, distinct spans → source order is unambiguous.
         rt.span = .{ .start = @intCast((i + 1) * 100), .end = @intCast((i + 1) * 100 + 1) };
         const body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{} } });

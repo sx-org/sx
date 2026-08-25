@@ -5,7 +5,7 @@
 // examples/1123), so the backtick escape is the only way to spell these tags.
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
     if n < 0  { raise error.Bad; }

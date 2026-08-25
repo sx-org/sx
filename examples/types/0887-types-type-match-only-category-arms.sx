@@ -3,7 +3,7 @@
 // The categories themselves classify like any other.
 @import "modules/std.sx";
 
-ParseErr :: error { BadDigit, Overflow };
+ParseErr :: error { BadDigit; Overflow };
 
 only_opt :: (t: Type) -> string {
     match t {

@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-SmokeErr :: error { Empty, BadDigit, Overflow }
+SmokeErr :: error { Empty; BadDigit; Overflow }
 
 // value-carrying, named set
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {

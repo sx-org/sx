@@ -130,7 +130,7 @@ gen_val :: () -> string {
 
 // --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
 
-SmokeErr :: error { Empty, BadDigit, Overflow }
+SmokeErr :: error { Empty; BadDigit; Overflow }
 
 // value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {

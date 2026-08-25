@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-ParseErr :: error { BadDigit, Overflow }
+ParseErr :: error { BadDigit; Overflow }
 
 main :: () -> i32 {
     c : ParseErr = error.NotInSet;   // error: NotInSet not in ParseErr

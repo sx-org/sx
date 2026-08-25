@@ -802,16 +802,21 @@ pub fn buildErrorSetInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeIn
     return .{ .error_set = .{ .name = name_id, .tags = owned } };
 }
 
-/// The error channel of a failable signature: `!Named` → the declared error
-/// set (registered by `resolveInlineErrorSet`); bare `!` → a shared inferred
-/// placeholder set. The placeholder's members are refined per failable
-/// function by the whole-program SCC pass; every bare `!` resolves to the
-/// same empty inferred set, which is correct while no function raises.
+/// The error channel of a failable signature: one named set → that declared
+/// set (registered by `resolveInlineErrorSet`); a bare `!` or a composition →
+/// a placeholder set keyed by the channel's own spelling. A placeholder's
+/// members are refined per failable function by the whole-program SCC pass;
+/// every bare `!` resolves to the same empty inferred set, which is correct
+/// while no function raises.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
-    if (ete.name) |name| return inner.resolveName(name);
-    // `!` is not a legal type/identifier name, so this reserved StringId can
-    // never collide with a user-declared set.
-    const name_id = table.internString("!");
+    if (ete.namedSet()) |name| return inner.resolveName(name);
+    // `!` and `|` are not legal type/identifier names, so a spelling built from
+    // them can never collide with a user-declared set.
+    const spelling = if (ete.operands.len == 0)
+        "!"
+    else
+        std.mem.join(table.alloc, " | ", ete.operands) catch return .unresolved;
+    const name_id = table.internString(spelling);
     if (table.findByName(name_id)) |existing| return existing;
     return table.errorSetType(name_id, &.{});
 }

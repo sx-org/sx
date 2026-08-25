@@ -282,7 +282,7 @@ os_args :: (buf: []string) -> []string {
 // The parser's failure contract. The first four are INPUT errors a caller
 // reacts to; `TooManyFlags` rejects a command that declares more flags than
 // the inline `Parsed.values` array holds (16) — never a silent truncation.
-CliError :: error { UnknownCommand, UnknownFlag, MissingValue, MissingRequired, TooManyFlags }
+CliError :: error { UnknownCommand; UnknownFlag; MissingValue; MissingRequired; TooManyFlags }
 
 // One flag's contract: its long name (without the `--`), whether it takes
 // a value, and whether it must be present. Caller-owned; passed as a view.

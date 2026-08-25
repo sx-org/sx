@@ -314,15 +314,15 @@ SQLITE_STATIC    : isize :  0;
 SQLITE_TRANSIENT : isize : -1;
 
 SqliteErr :: error {
-    Open,
-    Exec,
-    Prepare,
-    Bind,
-    Step,
-    Blob,
-    Backup,
-    Serialize,
-    Metadata,
+    Open;
+    Exec;
+    Prepare;
+    Bind;
+    Step;
+    Blob;
+    Backup;
+    Serialize;
+    Metadata;
 }
 
 // ── string helpers ────────────────────────────────────────────────────
