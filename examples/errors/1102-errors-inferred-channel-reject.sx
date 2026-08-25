@@ -5,7 +5,10 @@
 // bare `!` there is no channel in hand for a `.Member` shorthand to resolve
 // against, so it must be qualified. A source that still carries the placeholder
 // `!` — a Closure slot, or a wrap of a callee whose channel is opaque — has no
-// static member set, so a named destination cannot absorb it.
+// static member set, so a named destination cannot absorb it. A bare-`!` SLOT
+// is the placeholder a written fn-type spelling carries, and a declaration's
+// channel is its merge, a named set, or the dynamic channel — never that
+// placeholder.
 
 @import "modules/std.sx";
 
@@ -45,16 +48,25 @@ wrap :: () -> ! {
     try opaque(|| -> ! { raise Other.Nope; });
 }
 
+leak :: (n: i32) -> (i32, !) {
+    try opaque(|| -> ! { raise Other.Nope; });
+    return n;
+}
+
 dyn_fwd :: () -> !IoErr {
     return wrap();
 }
 
 main :: () -> i32 {
     canal : Closure(i32) -> (i32, !IoErr) = inner;
+    slot_bare  : Closure(i32) -> (i32, !) = inner;
+    slot_named : Closure(i32) -> (i32, !) = stray;
+    slot_dyn   : Closure(i32) -> (i32, !) = leak;
     g := |x: i32| -> (i32, !) { if x < 0 { raise Other.Nope; } return x; };
     print("{} {} {}\n", canal(1) catch { -1 }, forward(1) catch { -2 }, stray(1) catch { -3 });
     print("{}\n", shorthand(1) catch { -4 });
     print("{}\n", slot_fwd(g, 1) catch { -5 });
     print("{}\n", dyn_fwd() catch { -6 });
+    print("{} {} {}\n", slot_bare(1) catch { -7 }, slot_named(1) catch { -8 }, slot_dyn(1) catch { -9 });
     return 0;
 }

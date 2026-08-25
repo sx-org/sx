@@ -4,7 +4,9 @@
 // converges to `IoErr` because `raise IoErr.Failed` contributes the whole set,
 // not the one member. A `raise Set.Member` into a NAMED destination is legal
 // for a member that destination carries, and `.Member` resolves against a
-// channel already in hand.
+// channel already in hand. A tail-returned NON-FAILABLE UFCS call contributes
+// nothing to the merge, so `tail` converges to `IoErr` and forwards into a
+// `!IoErr` return.
 
 @import "modules/std.sx";
 
@@ -32,6 +34,19 @@ mix :: (n: i32) -> (i32, !IoErr) {
     return n;
 }
 
+Point :: struct { x: i32; y: i32 }
+
+point_sum :: ufcs (p: Point) -> i32 { return p.x + p.y; }
+
+tail :: (p: Point, n: i32) -> (i32, !) {
+    if n < 0 { raise IoErr.Canceled; }
+    return p.point_sum();
+}
+
+relay :: (p: Point, n: i32) -> (i32, !IoErr) {
+    return tail(p, n);
+}
+
 in_hand :: (n: i32) -> (i32, !FooError) {
     if n < 0 { raise .A; }
     return n;
@@ -46,5 +61,7 @@ main :: () -> i32 {
     print("forward={}\n", forward(0) catch |e| { if e == IoErr.Failed { 5 } else { 6 } });
     print("mix={}\n", mix(-1) catch |e| { if e == IoErr.Failed { 7 } else { 8 } });
     print("in_hand={}\n", in_hand(-1) catch |e| { if e == FooError.A { 9 } else { 10 } });
+    pt : Point = .{ x = 4, y = 7 };
+    print("relay={}\n", relay(pt, 1) catch { -1 });
     return 0;
 }

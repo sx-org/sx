@@ -2122,10 +2122,9 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
             }
             if (error_set_ty) |set_ty| {
                 const member = self.module.types.errorSetMemberId(set_ty, tag_name) orelse blk: {
-                    // The bare-`!` inferred placeholder carries no members until
-                    // the whole-program SCC pass folds in every raised tag, so
-                    // it takes any spelling.
-                    if (!self.isInferredErrorSet(set_ty)) {
+                    // An open channel has no static member set, so it takes any
+                    // spelling.
+                    if (!self.channelIsOpen(set_ty)) {
                         if (self.diagnostics) |diags| {
                             const set_name = self.module.types.getString(self.module.types.get(set_ty).error_set.name);
                             diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, set_name });

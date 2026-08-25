@@ -265,29 +265,85 @@ pub fn checkSlotChannel(self: *Lowering, value_ret: TypeId, slot_ret: TypeId, sp
     return false;
 }
 
-/// How the message names `channel`. The bare-`!` placeholder carries no member
-/// set to name, so it reads as inferred. Owned by the caller.
+/// How the message names `channel`. A member-less channel has only its
+/// identity to name. Owned by the caller.
 fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
     const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
-    if (self.isInferredErrorSet(c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
+    if (channelIsPlaceholder(self, c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
+    if (channelIsDyn(self, c)) return self.alloc.dupe(u8, "a dynamic error channel") catch unreachable;
+    const members = channelMembers(self, c);
+    if (members.len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
+    // A merge over one owner's members renders as that owner's spelling, which
+    // is another channel's name; the member list tells the two apart.
+    const name = self.module.types.get(c).error_set.name;
+    if (self.module.types.findByName(name)) |other| {
+        if (other != c) {
+            const list = memberList(self, members);
+            defer self.alloc.free(list);
+            return std.fmt.allocPrint(self.alloc, "the error channel '{s}' ({s})", .{ self.module.types.getString(name), list }) catch unreachable;
+        }
+    }
     return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
 }
 
-/// True when the enclosing signature's channel is written bare `!` — the
-/// materialised merge of its own raises, or the placeholder a lambda/slot
-/// shape still carries.
+/// The members `set` carries, empty when `set` is not an error channel.
+fn channelMembers(self: *Lowering, set: TypeId) []const u32 {
+    if (set.isBuiltin()) return &.{};
+    const info = self.module.types.get(set);
+    return if (info == .error_set) info.error_set.tags else &.{};
+}
+
+/// The `Owner.Member` spellings of `members`, comma-joined. Owned by the caller.
+fn memberList(self: *Lowering, members: []const u32) []const u8 {
+    var buf = std.ArrayList(u8).empty;
+    for (members, 0..) |m, i| {
+        if (i > 0) buf.appendSlice(self.alloc, ", ") catch unreachable;
+        const owner = self.module.types.tags.ownerName(self.module.types.tags.ownerOf(m));
+        if (owner != .empty) {
+            buf.appendSlice(self.alloc, self.module.types.getString(owner)) catch unreachable;
+            buf.append(self.alloc, '.') catch unreachable;
+        }
+        buf.appendSlice(self.alloc, self.module.types.getTagName(m)) catch unreachable;
+    }
+    return buf.toOwnedSlice(self.alloc) catch unreachable;
+}
+
+/// True when the enclosing signature's channel is written bare `!` — an open
+/// channel, or a merge materialised from the raises of a declaration whose
+/// return type is written `!`.
 fn channelIsWrittenInferred(self: *Lowering, err_set: TypeId) bool {
-    if (self.isInferredErrorSet(err_set)) return true;
+    if (self.channelIsOpen(err_set)) return true;
     const fd = self.current_fn_decl orelse return false;
     return astChannelIsInferred(fd.return_type);
 }
 
-/// True for the bare-`!` inferred placeholder error set (reserved name "!").
-pub fn isInferredErrorSet(self: *Lowering, set: TypeId) bool {
-    if (set.isBuiltin()) return false;
+/// The reserved spelling a MEMBER-LESS channel is identified by, or null when
+/// `set` is not one.
+fn channelSpelling(self: *Lowering, set: TypeId) ?[]const u8 {
+    if (set.isBuiltin()) return null;
     const info = self.module.types.get(set);
-    if (info != .error_set) return false;
-    return std.mem.eql(u8, self.module.types.getString(info.error_set.name), "!");
+    if (info != .error_set or info.error_set.tags.len > 0) return null;
+    return self.module.types.getString(info.error_set.name);
+}
+
+/// True for the bare-`!` placeholder a WRITTEN fn-type spelling carries
+/// (reserved name "!").
+pub fn channelIsPlaceholder(self: *Lowering, set: TypeId) bool {
+    const spelling = channelSpelling(self, set) orelse return false;
+    return std.mem.eql(u8, spelling, "!");
+}
+
+/// True for the channel of a declaration whose body escapes through a channel
+/// that cannot be named.
+pub fn channelIsDyn(self: *Lowering, set: TypeId) bool {
+    const spelling = channelSpelling(self, set) orelse return false;
+    return std.mem.eql(u8, spelling, types.TypeTable.dyn_channel_spelling);
+}
+
+/// True for a channel with NO STATIC MEMBER SET. It absorbs any tag as a
+/// destination, and cannot be shown ⊆ a named set as a source.
+pub fn channelIsOpen(self: *Lowering, set: TypeId) bool {
+    return channelIsPlaceholder(self, set) or channelIsDyn(self, set);
 }
 
 /// Diagnose every tag of `src` that is not also a member of `dst` (the
@@ -308,7 +364,7 @@ pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) boo
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return false;
-    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return true;
+    if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return true;
     for (src_info.error_set.tags) |tag| {
         var found = false;
         for (dst_info.error_set.tags) |d| {
@@ -332,7 +388,7 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return;
-    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return;
+    if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return;
     const src_name = self.module.types.getString(src_info.error_set.name);
     const dst_name = self.module.types.getString(dst_info.error_set.name);
     for (src_info.error_set.tags) |tag| {
@@ -403,7 +459,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         self.diagRaiseNotFailable(span);
         return;
     };
-    const inferred = self.isInferredErrorSet(err_set);
+    const inferred = self.channelIsOpen(err_set);
 
     // A `.X` shorthand resolves only against a channel already in hand. A
     // signature written bare `!` is not one: the channel is what its raises
@@ -569,8 +625,8 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
     self.emitTupleRet(ret_ty, tup);
 }
 
-/// Diagnose a source whose channel is still the inferred placeholder: it has
-/// no static member set, so it cannot be shown ⊆ a named destination.
+/// Diagnose a source whose channel is open: it has no static member set, so it
+/// cannot be shown ⊆ a named destination.
 fn diagNoStaticMemberSet(self: *Lowering, dst_err: TypeId, span: ast.Span) void {
     if (self.diagnostics) |d| {
         const dst_info = self.module.types.get(dst_err);
@@ -582,12 +638,11 @@ fn diagNoStaticMemberSet(self: *Lowering, dst_err: TypeId, span: ast.Span) void 
 /// mirroring `raise`'s: the open bare `!` absorbs any concrete set; a NAMED
 /// caller set requires the callee's set ⊆ caller's, each escapee diagnosed
 /// while the shape-correct lowering continues (the build aborts via hasErrors).
-/// A source that is still the inferred placeholder has no static member set,
-/// so the pack is aborted.
+/// An open source has no static member set, so the pack is aborted.
 fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) bool {
     if (src_err == dst_err) return true;
-    if (self.isInferredErrorSet(dst_err)) return true;
-    if (self.isInferredErrorSet(src_err)) {
+    if (self.channelIsOpen(dst_err)) return true;
+    if (self.channelIsOpen(src_err)) {
         diagNoStaticMemberSet(self, dst_err, span);
         return false;
     }
@@ -1139,32 +1194,22 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
 }
 
 /// Widening at an escape (function-propagation) site: the escaping set must
-/// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
-/// via the whole-program SCC — no check. A placeholder callee with no
-/// materialised channel has no static member set. A closure/fn-type SLOT
-/// widens against the shape-keyed union.
+/// be ⊆ the caller's named set. An open caller absorbs everything — no check.
+/// A dynamic callee has no static member set. A closure/fn-type SLOT widens
+/// against the shape-keyed union.
 /// Shared by `try` propagation and a failable `??` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {
-    if (self.isInferredErrorSet(caller_set)) return;
-    if (!self.isInferredErrorSet(callee_set)) {
+    if (self.channelIsOpen(caller_set)) return;
+    if (!self.channelIsOpen(callee_set)) {
         self.checkErrorSetSubset(callee_set, caller_set, span);
         return;
     }
-    // Bare-`!` callee: a named top-level function (its converged set is
-    // name-keyed) or a closure/fn-type SLOT (its set is shape-keyed, shared
-    // program-wide by value-signature).
-    if (callTargetName(callee_node)) |nm| {
-        if (self.edgeCalleeDecl(nm, self.current_source_file)) |fd| {
-            if (astChannelIsInferred(fd.return_type) and self.inferred_channels.get(fd) == null) {
-                diagNoStaticMemberSet(self, caller_set, span);
-                return;
-            }
-        }
-        if (self.inferred_error_sets.get(nm)) |tags| {
-            self.diagTagsNotInSet(tags, caller_set, span);
-            return;
-        }
+    if (self.channelIsDyn(callee_set)) {
+        diagNoStaticMemberSet(self, caller_set, span);
+        return;
     }
+    // Placeholder callee: a closure/fn-type SLOT, whose set is shape-keyed,
+    // shared program-wide by value-signature.
     if (self.shapeKeyOfCallee(callee_node)) |key| {
         if (self.shape_inferred_sets.get(key)) |tags| {
             self.diagTagsNotInSet(tags, caller_set, span);
@@ -1481,16 +1526,6 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
 
 // ── whole-program inferred-error-set convergence ──────────
 
-/// The bare callee name of a call expression (`g(...)` → "g"), or null if
-/// the node isn't a direct call to a named function. Convergence resolves only
-/// the bare identifier (top-level functions); UFCS / mangled-local callees
-/// aren't tracked by the SCC.
-pub fn callTargetName(node: *const Node) ?[]const u8 {
-    if (node.data != .call) return null;
-    const callee = node.data.call.callee;
-    return if (callee.data == .identifier) callee.data.identifier.name else null;
-}
-
 /// The `!` node of a return type's error channel: the return type itself
 /// (`-> !Set`), or the trailing slot of a failable result list
 /// (`-> (T, !Set)`, `-> (A, B, !Set)`). Null for a non-failable return.
@@ -1542,7 +1577,16 @@ pub fn withErrorChannel(self: *Lowering, ret: TypeId, chan: TypeId) TypeId {
 /// flatten-merge of `members` becomes the declaration's channel TypeId, on the
 /// already-declared signature and on every later re-resolution of it.
 pub fn materialiseInferredChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, members: []const u32) void {
-    const chan = self.module.types.errorSetType(.empty, members);
+    installChannel(self, fd, name, self.module.types.errorSetType(.empty, members));
+}
+
+/// Give a bare-`!` declaration whose escapes name no static member set the
+/// DYNAMIC channel.
+pub fn materialiseDynChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
+    installChannel(self, fd, name, self.module.types.dynErrorChannel());
+}
+
+fn installChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, chan: TypeId) void {
     self.inferred_channels.put(fd, chan) catch return;
     const fid = self.resolveFuncByName(name) orelse return;
     const func = self.module.getFunctionMut(fid);
@@ -1577,7 +1621,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     const rt_node = lam.return_type orelse return; // no annotation → non-failable infer
     const ret = self.resolveType(rt_node);
     const es = self.errorChannelOf(ret) orelse return; // not failable
-    if (!self.isInferredErrorSet(es)) return; // `!Named` → its own set, not the inferred union
+    if (!self.channelIsPlaceholder(es)) return; // `!Named` → its own set, not the inferred union
 
     var ptys = std.ArrayList(TypeId).empty;
     defer ptys.deinit(self.alloc);
@@ -1591,10 +1635,9 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     defer tags.deinit(self.alloc);
     var edges = std.ArrayList([]const u8).empty;
     defer edges.deinit(self.alloc);
-    // `dyn` (opaque-error-channel `try`) is irrelevant to closure-shape set
-    // widening — that signal only gates the top-level "drop the `!`" warning.
+    // `dyn` is irrelevant to closure-shape widening: a shape node unions tags.
     var dyn_unused = false;
-    self.errorAnalysis().collectErrorSites(lam.body, &tags, &edges, &dyn_unused);
+    self.errorAnalysis().collectErrorSites(lam.body, &tags, &edges, &dyn_unused, null);
     for (edges.items) |callee| {
         for (self.calleeEscapeTags(callee)) |t| {
             if (!containsTag(tags.items, t)) tags.append(self.alloc, t) catch {};
