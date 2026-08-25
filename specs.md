@@ -6333,12 +6333,12 @@ Both      :: FooError | BooError;
 IoOrOther :: IoErr.Failed | Other.Failure;
 ```
 
-Named sets compose by member set: two named sets listing the same members are the
-same type, and a composition naming every member of a set *is* that set
-(`!(IoErr.Failed | IoErr.Canceled)` is `!IoErr`). Two inline `error { … }`
-operands listing the same members are distinct — each interns its own members. A
-member introduced by an inline operand belongs to the composition that names it
-(`Extended.Extra`).
+Named compositions compare by interned member set: `FooError | BooError` and
+`BooError | FooError` are one type. A composition that names every member of a
+set is that set (`IoErr.Failed | IoErr.Canceled` is `IoErr` when those are its
+only members). Two inline `error { … }` operands that list the same tags are
+distinct — each interns its own members. A member introduced by an inline operand
+belongs to the composition that names it (`Extended.Extra`).
 
 ### Channels
 
@@ -6390,10 +6390,11 @@ e : IoErr;           // the whole set — a binding is never narrowed
 channel; where a composition carries two, the qualified form disambiguates
 (`case FooError.A:`, `case png.Error.X:`).
 
-`raise .X` resolves against a channel **already in hand** — the named channel of
-the enclosing function or `try { }` block. An inferred channel is not in hand; it
-is what the `raise` contributes to, so the member is qualified there, and a
-partial merge does not resolve it either.
+`raise .X` resolves against a channel **already in hand** — a channel written on
+the enclosing function (`!ParseErr`, `!(IoErr.Failed | Other.Failure)`). An
+inferred `!` is not in hand: a named function's bare `!`, or a `try { block }`.
+`raise .X` is illegal there; qualify. A partial merge does not resolve it
+(`try foo(); raise .B` is still illegal).
 
 ```sx
 mix :: () -> !(IoErr.Failed | Other.Failure) {
@@ -6404,6 +6405,11 @@ helper :: () -> (i32, !) {
   try foo();
   raise .B;           // ERROR — inferred channel; write `raise FooError.B`
 }
+
+v := try {
+  raise .B;            // ERROR — inferred channel
+  raise FooError.B;    // OK — contributes FooError to the block
+} catch |e| { default };
 ```
 
 ### Payloads

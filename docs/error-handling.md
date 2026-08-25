@@ -27,7 +27,7 @@ values, it doesn't replace them.
 Three things to know up front:
 
 1. **An error belongs to a set.** A member's identity is the pair
-   `(set, member)`, so `ParseErr.Empty` and `IoErr.Empty` are two
+   `(set, tag)`, so `ParseErr.Empty` and `IoErr.Empty` are two
    different errors that happen to share a spelling.
 2. **You can't ignore an error by accident.** Every failable result
    must be explicitly propagated, handled, or absorbed — the compiler
@@ -100,8 +100,8 @@ that a call fails only by cancellation.
 
 ## Raising an error
 
-`raise` ends the function with an error, like `return` ends it with a
-value:
+`raise` ends the enclosing failable body — the function or a `try { block }` —
+with an error, like `return` ends a function with a value:
 
 ```sx
 if denominator == 0 raise MathErr.DivByZero;
@@ -125,6 +125,16 @@ helper :: () -> ! {
   raise .Empty;              // ERROR — inferred channel
   raise ParseErr.Empty;      // OK
 }
+```
+
+A `try { block }` is the same inferred case — `raise .Empty` is illegal
+there; write `raise ParseErr.Empty`:
+
+```sx
+v := try {
+  raise .Empty;              // ERROR — inferred channel
+  raise ParseErr.Empty;      // OK
+} catch |e| { default };
 ```
 
 Where a composition carries two members of the same name, qualify to say
