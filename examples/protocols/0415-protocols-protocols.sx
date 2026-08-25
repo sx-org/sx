@@ -132,6 +132,7 @@ gen_val :: () -> string {
 
 SmokeErr :: error { Empty; BadDigit; Overflow }
 CheckErr :: error { NotReady }
+AcquireErr :: error { Acquire }
 
 // value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
@@ -166,7 +167,7 @@ sm_or_default :: (n: i32) -> i32 {
 sm_acquire :: (fail: bool) -> (i32, !) {
     defer  print("  smoke defer A\n");
     onfail print("  smoke onfail B\n");
-    if fail { raise error.Acquire; }
+    if fail { raise AcquireErr.Acquire; }
     return 7;
 }
 
