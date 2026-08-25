@@ -1,6 +1,5 @@
 // A member's declared payload widens its channel to `{ qualified_tag, payload }`,
-// sized to the widest member. The tag stays the discriminant of a channel
-// value: `==`, `match`, `{}`, and the raise/absorb paths all read it.
+// sized to the widest member. The tag is the discriminant of a channel value.
 
 @import "modules/std.sx";
 
