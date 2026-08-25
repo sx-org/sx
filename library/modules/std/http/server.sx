@@ -26,10 +26,10 @@ usleep :: (usec: i64) -> i32 extern libc;
 // (the overlap-safe memmove is clib.memmove — the shared libc surface.)
 
 HttpErr :: error {
-    Bind,    // socket/bind/listen failed for the configured address, or
+    Bind;    // socket/bind/listen failed for the configured address; or
              // bind_addr / unix_path was unusable
-    Loop,    // the readiness loop could not be created or waited on
-    Config,  // invalid Config combination (stream_request_body
+    Loop;    // the readiness loop could not be created or waited on
+    Config;  // invalid Config combination (stream_request_body
              // requires pool mode; unix_path with bind_addr or
              // reuse_port — see each field's doc)
 }

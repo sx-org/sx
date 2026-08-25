@@ -50,9 +50,9 @@ timp :: @import "modules/std/time.sx";
 // stays top-level; on linux its kqueue externs are unused declares.)
 
 EventErr :: error {
-    Init,       // the kernel queue could not be created
-    Register,   // an interest change was refused
-    Wait,       // the wait itself failed (not a timeout)
+    Init;       // the kernel queue could not be created
+    Register;   // an interest change was refused
+    Wait;       // the wait itself failed (not a timeout)
 }
 
 // A normalized readiness report for one registered fd.

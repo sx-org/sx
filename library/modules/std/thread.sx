@@ -40,8 +40,8 @@ c :: @import "modules/std/c.sx";
 // / `c.CondBuf` below.
 
 ThreadErr :: error {
-    Spawn,    // pthread_create refused
-    Init,     // mutex/cond/pool initialization failed
+    Spawn;    // pthread_create refused
+    Init;     // mutex/cond/pool initialization failed
 }
 
 // ── Mutex / Cond (in-place; see MOVE SEMANTICS above) ────────────────

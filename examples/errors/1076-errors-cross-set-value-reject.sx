@@ -7,7 +7,7 @@
 @import "modules/std.sx";
 
 Narrow :: error { Wide }
-Broad  :: error { Wide, Extra }
+Broad  :: error { Wide; Extra }
 
 broad_src :: () -> (i32, !Broad) { raise error.Extra; }
 

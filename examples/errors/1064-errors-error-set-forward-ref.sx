@@ -27,7 +27,7 @@ parse :: (n: i32) -> (i32, !E) {
     return n * 2;
 }
 
-E :: error { Fault, Other }
+E :: error { Fault; Other }
 
 main :: () -> i32 {
     bad := check(-1);

@@ -19,7 +19,7 @@ error: 'u16' is a reserved type name and cannot be used as an identifier
 error: 'u32' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:12:1
    |
-12 | u32 :: error { Bad, Empty }
+12 | u32 :: error { Bad; Empty }
    | ^^^
 
 error: 'u8' is a reserved type name and cannot be used as an identifier

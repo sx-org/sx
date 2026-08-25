@@ -515,9 +515,9 @@ set_cloexec :: (fd: i32) -> bool {
 //                write, ECONNRESET on read.
 //   Fault      — any other errno (caller treats the fd as broken).
 SockErr :: error {
-    WouldBlock,
-    Closed,
-    Fault,
+    WouldBlock;
+    Closed;
+    Fault;
 }
 
 // Accept one pending connection on a nonblocking listener. A connection

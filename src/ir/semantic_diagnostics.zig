@@ -1080,16 +1080,15 @@ pub const UnknownTypeChecker = struct {
                     self.checkTypeNodeForUnknown(a, declared, in_scope, type_vals, struct_field);
                 }
             },
-            // `!E` (named failable channel) in type position. A bare `!`
-            // (name == null) is the inferred/void channel and is always valid.
-            // A named `!E` is valid ONLY when `E` is a declared error set;
-            // otherwise the lowering path silently fabricates a zero-field
-            // `{}` stub, so reject it here with a precise
-            // diagnostic — "unknown error set" for an undeclared name, "expected
-            // an error set" for a name that resolves to a non-error-set type or
-            // a value.
-            .error_type_expr => |ete| if (ete.name) |name|
-                self.reportIfNotErrorSet(name, node.span),
+            // `!E` (a written failable channel) in type position. A bare `!`
+            // is the inferred/void channel and is always valid. A written
+            // channel names declared error sets ONLY; otherwise the lowering
+            // path silently fabricates a zero-field `{}` stub, so reject it
+            // here with a precise diagnostic — "unknown error set" for an
+            // undeclared name, "expected an error set" for a name that resolves
+            // to a non-error-set type or a value.
+            .error_type_expr => |ete| for (ete.operands) |set|
+                self.reportIfNotErrorSet(set, node.span),
             else => {},
         }
     }

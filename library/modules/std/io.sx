@@ -31,7 +31,7 @@ time :: @import "modules/std/time.sx";
 // A canceled future raises `.Canceled` out of `await`; a failed task
 // raises `.Failed`. The `(T, !IoErr)` value-failable shape is the same
 // one the rest of the stdlib uses (see examples/1011-, 1012-).
-IoErr :: error { Canceled, Failed }
+IoErr :: error { Canceled; Failed }
 
 // --- CBlockingIo: stateless Io that runs tasks synchronously ---
 //

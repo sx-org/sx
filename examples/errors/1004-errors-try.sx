@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-E :: error { Bad, Worse }
+E :: error { Bad; Worse }
 
 inner :: (n: i32) -> !E {
     if n < 0 { raise error.Bad; }

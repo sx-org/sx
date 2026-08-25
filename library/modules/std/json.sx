@@ -76,7 +76,7 @@ c :: @import "modules/std/c.sx";
 // short/failed file write (Io), or a `float` that JSON cannot spell — a
 // NaN or an infinity (NonFinite). Surfaced on the error channel — never a
 // silent truncation or default.
-JsonError :: error { Overflow, Io, NonFinite }
+JsonError :: error { Overflow; Io; NonFinite }
 
 // ── Value model ──────────────────────────────────────────────────────
 //
@@ -451,7 +451,7 @@ write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 
 // The reader's failure contract. Meaningful variants so a caller can tell
 // a truncated document from a bad escape from trailing junk.
-JsonParseError :: error { UnexpectedToken, UnexpectedEnd, BadEscape, BadNumber, TrailingGarbage, BadControlChar }
+JsonParseError :: error { UnexpectedToken; UnexpectedEnd; BadEscape; BadNumber; TrailingGarbage; BadControlChar }
 
 // Lowercase/uppercase hex nibble value (0..15) of an ASCII byte; a non-hex
 // byte in a `\uXXXX` escape is a `BadEscape`.

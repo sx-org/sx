@@ -9,7 +9,7 @@
 
 @import "modules/std.sx";
 
-A :: error { Foo, Bar }
+A :: error { Foo; Bar }
 
 leaf :: (n: i32) -> ! {
     if n < 0 { raise error.Foo; }

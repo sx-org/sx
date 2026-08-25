@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-All :: error { Negative, Other }
+All :: error { Negative; Other }
 
 // `h` is a bare-`!` Closure slot; the caller declares the union as `!All`.
 dispatch :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !All) {

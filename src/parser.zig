@@ -350,9 +350,19 @@ pub const Parser = struct {
             return node;
         }
 
-        // Error-set declaration: name :: error { TagA, TagB }
+        // Error-set declaration: `name :: error { A; B: i32 }`. An inline set is
+        // also a `|` operand, and there the declaration binds the composition.
         if (self.tokens.tag(self.tok) == .kw_error) {
-            return self.parseErrorSetDecl(name, start_pos, name_is_raw);
+            const members = try self.parseErrorSetBody();
+            if (self.tokens.tag(self.tok) != .pipe) {
+                const set = try self.errorSetNode(name, start_pos, name_is_raw, members);
+                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+                return set;
+            }
+            const head = try self.errorSetNode("__anon", start_pos, false, members);
+            const composed = try self.parseBinaryRhs(head, Prec.none, .bit_or);
+            try self.endDeclaration(composed);
+            return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = composed, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
         // Struct declaration
@@ -631,18 +641,13 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
         }
 
-        // Error channel type: bare `!` (inferred set) or `!Named` (named set).
-        // Legal only as the trailing element of a multi-return result list
-        // (enforced by the parenthesized-list loop below) or as a bare
-        // failable return type. Sema restricts it to return positions.
+        // Error channel type: `!` and the channel it takes. Legal only as the
+        // trailing element of a multi-return result list (enforced by the
+        // parenthesized-list loop below) or as a bare failable return type.
+        // Sema restricts it to return positions.
         if (self.tokens.tag(self.tok) == .bang) {
             self.advance(); // skip '!'
-            var set_name: ?[]const u8 = null;
-            if (self.tokens.tag(self.tok) == .identifier) {
-                set_name = self.tokens.slice(self.tok);
-                self.advance();
-            }
-            return try self.createNode(start, .{ .error_type_expr = .{ .name = set_name } });
+            return try self.createNode(start, .{ .error_type_expr = .{ .operands = try self.parseChannel() } });
         }
 
         // Optional type: ?T
@@ -921,22 +926,7 @@ pub const Parser = struct {
             // `parameterized_type_expr` so resolution skips the builtin
             // classifier and looks up a `` `i32 ``-declared type.
             const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
-            var name = self.tokens.slice(self.tok);
-            self.advance();
-
-            // Qualified name: ns.Type or ns.Type(args)
-            while (self.tokens.tag(self.tok) == .dot) {
-                const dot_saved = self.tok;
-                self.advance();
-                if (self.isIdentLike() or self.tokens.tag(self.tok).isTypeKeyword()) {
-                    name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, self.tokens.slice(self.tok) });
-                    self.advance();
-                } else {
-                    // Not a qualified name continuation — restore the dot
-                    self.tok = dot_saved;
-                    break;
-                }
-            }
+            const name = try self.parseQualifiedName();
 
             // Only a `Closure` IMMEDIATELY followed by `(` builds the type; a
             // bare one is an ordinary name.
@@ -977,6 +967,49 @@ pub const Parser = struct {
             return try self.parseEnumDecl("__anon", start, false);
         }
         return self.fail("expected type name");
+    }
+
+    /// `IDENT ('.' IDENT)*` — a dotted path in type position, joined into one
+    /// name. A `.` that no name follows stays for the caller.
+    fn parseQualifiedName(self: *Parser) anyerror![]const u8 {
+        var name = self.tokens.slice(self.tok);
+        self.advance();
+        while (self.tokens.tag(self.tok) == .dot) {
+            const dot_saved = self.tok;
+            self.advance();
+            if (self.isIdentLike() or self.tokens.tag(self.tok).isTypeKeyword()) {
+                name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, self.tokens.slice(self.tok) });
+                self.advance();
+            } else {
+                self.tok = dot_saved;
+                break;
+            }
+        }
+        return name;
+    }
+
+    /// `chan = set_ref | '(' set_ref ('|' set_ref)+ ')'` — what a `!` takes, as
+    /// the list of set references it names. Empty when the `!` stands bare.
+    fn parseChannel(self: *Parser) anyerror![]const []const u8 {
+        if (self.tokens.tag(self.tok) == .l_paren) {
+            self.advance(); // skip '('
+            var operands = std.ArrayList([]const u8).empty;
+            while (true) {
+                if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected an error set name in the channel");
+                try operands.append(self.allocator, try self.parseQualifiedName());
+                if (self.tokens.tag(self.tok) != .pipe) break;
+                self.advance(); // skip '|'
+            }
+            try self.expect(.r_paren);
+            if (operands.items.len < 2) {
+                return self.fail("a parenthesized channel composes two or more sets — one set is written `!Set`");
+            }
+            return try operands.toOwnedSlice(self.allocator);
+        }
+        if (self.tokens.tag(self.tok) != .identifier) return &.{};
+        const one = try self.allocator.alloc([]const u8, 1);
+        one[0] = try self.parseQualifiedName();
+        return one;
     }
 
     /// The bounds trailing a type-variable binder: `('/' BoundExpr)*`.
@@ -1187,6 +1220,90 @@ pub const Parser = struct {
         } });
     }
 
+    /// Which body a `set_members` list sits in — it picks the member spellings
+    /// admitted and the nouns the rejections use.
+    const SetKind = enum {
+        enum_variant,
+        enum_flag,
+        error_member,
+
+        fn nameExpected(self: SetKind) []const u8 {
+            return switch (self) {
+                .enum_variant, .enum_flag => "expected variant name",
+                .error_member => "expected error set member name",
+            };
+        }
+
+        fn privateReject(self: SetKind) []const u8 {
+            return switch (self) {
+                .enum_variant, .enum_flag => "'private' is not allowed on an enum case",
+                .error_member => "'private' is not allowed on an error set member",
+            };
+        }
+    };
+
+    const SetMembers = struct {
+        names: []const []const u8,
+        name_starts: []const u32,
+        /// Payload type per member, or null; empty when no member carries one.
+        payloads: []const ?*Node,
+        /// Explicit discriminant per member, or null; empty when none is written.
+        values: []const ?*Node,
+    };
+
+    /// `set_members = set_member (';' set_member)* ';'?`, where a member is
+    /// `IDENT (':' type)?` — the grammar an enum's variants and an error set's
+    /// members share, plus the enum's `IDENT '::' expr` discriminant. Stops at
+    /// the closing `}`, which the caller consumes.
+    fn parseSetMembers(self: *Parser, kind: SetKind) anyerror!SetMembers {
+        var names = std.ArrayList([]const u8).empty;
+        var name_starts = std.ArrayList(u32).empty;
+        var payloads = std.ArrayList(?*Node).empty;
+        var values = std.ArrayList(?*Node).empty;
+        var has_payload = false;
+        var has_value = false;
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                return self.fail(kind.privateReject());
+            }
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName(kind.nameExpected());
+            }
+            try names.append(self.allocator, self.tokens.slice(self.tok));
+            try name_starts.append(self.allocator, self.tokens.start(self.tok));
+            self.advance();
+            var value: ?*Node = null;
+            if (self.tokens.tag(self.tok) == .colon_colon) {
+                if (kind == .error_member) {
+                    return self.fail("an error set member takes no explicit value — its identity is the pair (set, tag)");
+                }
+                self.advance();
+                value = try self.parseExpr();
+                has_value = true;
+            }
+            var payload: ?*Node = null;
+            if (self.tokens.tag(self.tok) == .colon) {
+                if (kind == .enum_flag) {
+                    return self.fail("flags enum variants cannot have payloads");
+                }
+                self.advance();
+                payload = try self.parseTypeExpr();
+                has_payload = true;
+            }
+            try values.append(self.allocator, value);
+            try payloads.append(self.allocator, payload);
+            if (self.tokens.tag(self.tok) == .semicolon) {
+                self.advance();
+            }
+        }
+        return .{
+            .names = try names.toOwnedSlice(self.allocator),
+            .name_starts = try name_starts.toOwnedSlice(self.allocator),
+            .payloads = if (has_payload) try payloads.toOwnedSlice(self.allocator) else &.{},
+            .values = if (has_value) try values.toOwnedSlice(self.allocator) else &.{},
+        };
+    }
+
     fn parseEnumDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         self.advance(); // skip 'enum'
 
@@ -1204,98 +1321,40 @@ pub const Parser = struct {
         }
 
         try self.expect(.l_brace);
-        var variant_names = std.ArrayList([]const u8).empty;
-        var variant_name_starts = std.ArrayList(u32).empty;
-        var variant_types = std.ArrayList(?*Node).empty;
-        var variant_values = std.ArrayList(?*Node).empty;
-        var has_any_type = false;
-        var has_any_value = false;
-        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            if (self.tokens.tag(self.tok) == .kw_private) {
-                return self.fail("'private' is not allowed on an enum case");
-            }
-            if (!self.isMemberDeclName()) {
-                return self.failMemberDeclName("expected variant name");
-            }
-            try variant_names.append(self.allocator, self.tokens.slice(self.tok));
-            try variant_name_starts.append(self.allocator, self.tokens.start(self.tok));
-            self.advance();
-            if (self.tokens.tag(self.tok) == .colon_colon) {
-                // Explicit value: name :: expr;  or  name :: expr: type;
-                self.advance();
-                const val_expr = try self.parseExpr();
-                try variant_values.append(self.allocator, val_expr);
-                has_any_value = true;
-                // Check for payload type after value: name :: 0x300: KeyData
-                if (self.tokens.tag(self.tok) == .colon) {
-                    if (is_flags) {
-                        return self.fail("flags enum variants cannot have payloads");
-                    }
-                    self.advance();
-                    const vtype = try self.parseTypeExpr();
-                    try variant_types.append(self.allocator, vtype);
-                    has_any_type = true;
-                } else {
-                    try variant_types.append(self.allocator, null);
-                }
-            } else if (self.tokens.tag(self.tok) == .colon) {
-                // Typed variant: name: type;
-                if (is_flags) {
-                    return self.fail("flags enum variants cannot have payloads");
-                }
-                self.advance();
-                const vtype = try self.parseTypeExpr();
-                try variant_types.append(self.allocator, vtype);
-                try variant_values.append(self.allocator, null);
-                has_any_type = true;
-            } else {
-                // Void variant: name;
-                try variant_types.append(self.allocator, null);
-                try variant_values.append(self.allocator, null);
-            }
-            if (self.tokens.tag(self.tok) == .semicolon) {
-                self.advance();
-            }
-        }
+        const members = try self.parseSetMembers(if (is_flags) .enum_flag else .enum_variant);
         try self.expect(.r_brace);
         // Always produce enum_decl; variant_types distinguishes payload-less from tagged
         return try self.createNode(start_pos, .{ .enum_decl = .{
             .name = name,
-            .variant_names = try variant_names.toOwnedSlice(self.allocator),
-            .variant_name_starts = try variant_name_starts.toOwnedSlice(self.allocator),
-            .variant_types = if (has_any_type) try variant_types.toOwnedSlice(self.allocator) else &.{},
+            .variant_names = members.names,
+            .variant_name_starts = members.name_starts,
+            .variant_types = members.payloads,
             .is_flags = is_flags,
-            .variant_values = if (has_any_value) try variant_values.toOwnedSlice(self.allocator) else &.{},
+            .variant_values = members.values,
             .backing_type = backing_type,
             .is_raw = name_is_raw,
         } });
     }
 
-    fn parseErrorSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+    /// `'error' '{' set_members '}'` — an inline set, from the keyword through
+    /// its closing brace. It holds at least one member.
+    fn parseErrorSetBody(self: *Parser) anyerror!SetMembers {
         self.advance(); // skip 'error'
         try self.expect(.l_brace);
-        var tag_names = std.ArrayList([]const u8).empty;
-        var tag_name_starts = std.ArrayList(u32).empty;
-        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            if (tag_names.items.len > 0) {
-                try self.expect(.comma);
-                if (self.tokens.tag(self.tok) == .r_brace) break; // trailing comma ok
-            }
-            if (self.tokens.tag(self.tok) != .identifier) {
-                return self.fail("expected error tag name");
-            }
-            try tag_names.append(self.allocator, self.tokens.slice(self.tok));
-            try tag_name_starts.append(self.allocator, self.tokens.start(self.tok));
-            self.advance();
+        const members = try self.parseSetMembers(.error_member);
+        if (members.names.len == 0) {
+            return self.fail("an error set holds at least one member");
         }
         try self.expect(.r_brace);
-        // Accept an optional trailing `;` — error-set decls read like value
-        // bindings and are commonly written `Foo :: error { ... };`.
-        if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+        return members;
+    }
+
+    fn errorSetNode(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool, members: SetMembers) anyerror!*Node {
         return try self.createNode(start_pos, .{ .error_set_decl = .{
             .name = name,
-            .tag_names = try tag_names.toOwnedSlice(self.allocator),
-            .tag_name_starts = try tag_name_starts.toOwnedSlice(self.allocator),
+            .tag_names = members.names,
+            .tag_name_starts = members.name_starts,
+            .tag_types = members.payloads,
             .is_raw = name_is_raw,
         } });
     }
@@ -3376,8 +3435,51 @@ pub const Parser = struct {
     }
 
     fn parseBinary(self: *Parser, min_prec: u8, pipe: PipeRole) anyerror!*Node {
-        const lhs = try self.parseUnary(pipe);
+        const lhs = try self.parseCatchExpr(pipe);
         return self.parseBinaryRhs(lhs, min_prec, pipe);
+    }
+
+    /// `catch_expr = unary ('catch' ('|' IDENT '|')? (block | unary))?` — the
+    /// operand tier a binary operator takes, so the handler covers the whole
+    /// unary in front of it (`try foo() catch { 0 }` is `(try foo()) catch`).
+    /// Three shapes, disambiguated by the token after `catch`:
+    ///   catch { block }            — no binding (braces required)
+    ///   catch |e| { block }        — binding + block body
+    ///   catch |e| unary            — binding + bare-expression body
+    fn parseCatchExpr(self: *Parser, pipe: PipeRole) anyerror!*Node {
+        const operand = try self.parseUnary(pipe);
+        if (self.tokens.tag(self.tok) != .kw_catch) return operand;
+        self.advance(); // consume 'catch'
+        var binding: ?[]const u8 = null;
+        var binding_span: ?ast.Span = null;
+        var binding_is_raw = false;
+        if (self.tokens.tag(self.tok) == .identifier) {
+            return self.fail("the catch error binding needs pipes: `catch |e| { ... }`");
+        }
+        if (self.tokens.tag(self.tok) == .pipe) {
+            self.advance();
+            if (self.tokens.tag(self.tok) != .identifier) {
+                return self.fail("expected an error binding name in `catch |e|`");
+            }
+            binding = self.tokens.slice(self.tok);
+            binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            self.advance();
+            try self.expect(.pipe);
+        }
+        const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
+            try self.parseBlock()
+        else if (binding != null)
+            try self.parseUnary(pipe)
+        else
+            return self.fail("`catch` without a binding requires a braced body: `catch { ... }`");
+        return try self.createNode(operand.span.start, .{ .catch_expr = .{
+            .operand = operand,
+            .binding = binding,
+            .binding_span = binding_span,
+            .binding_is_raw = binding_is_raw,
+            .body = body,
+        } });
     }
 
     fn parseBinaryRhs(self: *Parser, initial_lhs: *Node, min_prec: u8, pipe: PipeRole) anyerror!*Node {
@@ -3704,43 +3806,6 @@ pub const Parser = struct {
                 // Force unwrap: expr?!
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
-            } else if (self.tokens.tag(self.tok) == .kw_catch) {
-                // `X catch [|binding|] BODY` — postfix failure handler.
-                // Three shapes, disambiguated by peeking after `catch`:
-                //   catch { block }            — no binding (braces required)
-                //   catch |e| { block }        — binding + block body
-                //   catch |e| EXPR             — binding + bare-expression body
-                self.advance(); // consume 'catch'
-                var binding: ?[]const u8 = null;
-                var binding_span: ?ast.Span = null;
-                var binding_is_raw = false;
-                if (self.tokens.tag(self.tok) == .identifier) {
-                    return self.fail("the catch error binding needs pipes: `catch |e| { ... }`");
-                }
-                if (self.tokens.tag(self.tok) == .pipe) {
-                    self.advance();
-                    if (self.tokens.tag(self.tok) != .identifier) {
-                        return self.fail("expected an error binding name in `catch |e|`");
-                    }
-                    binding = self.tokens.slice(self.tok);
-                    binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
-                    binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                    self.advance();
-                    try self.expect(.pipe);
-                }
-                const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
-                    try self.parseBlock()
-                else if (binding != null)
-                    try self.parseExprRole(pipe)
-                else
-                    return self.fail("`catch` without a binding requires a braced body: `catch { ... }`");
-                expr = try self.createNode(expr.span.start, .{ .catch_expr = .{
-                    .operand = expr,
-                    .binding = binding,
-                    .binding_span = binding_span,
-                    .binding_is_raw = binding_is_raw,
-                    .body = body,
-                } });
             } else {
                 break;
             }
@@ -4161,9 +4226,14 @@ pub const Parser = struct {
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
             },
 
-            // `error` in expression position is the head of a tag literal
-            // `error.X` (parsed as a field access); sema gives it meaning.
+            // An inline error set — a composition names its own members through
+            // this operand. Bare `error` heads a tag literal `error.X` (parsed
+            // as a field access); sema gives it meaning.
             .kw_error => {
+                if (self.peekNext() == .l_brace) {
+                    const members = try self.parseErrorSetBody();
+                    return try self.errorSetNode("__anon", start, false, members);
+                }
                 self.advance();
                 return try self.createNode(start, .{ .identifier = .{ .name = "error" } });
             },
@@ -4277,9 +4347,11 @@ pub const Parser = struct {
         condition = try self.parseBinaryRhs(condition, Prec.logical_or, .bit_or);
         self.header = saved_if_cond;
 
-        // Inline form: if cond then expr [else expr]
-        if (self.tokens.tag(self.tok) == .kw_then) {
-            self.advance();
+        // Inline form: `if cond then? result (else result)?`. `then` delimits a
+        // result whose first token would otherwise continue the condition; a `{`
+        // right after the condition opens a block body instead.
+        if (self.tokens.tag(self.tok) != .l_brace) {
+            if (self.tokens.tag(self.tok) == .kw_then) self.advance();
             const then_branch = try self.parseExprRole(pipe);
             var else_branch: ?*Node = null;
             if (self.atChainingElse()) {
@@ -4897,6 +4969,8 @@ pub const Parser = struct {
                 self.tokens.tag(self.tok) == .percent or self.tokens.tag(self.tok) == .plus or
                 self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .question or
                 self.tokens.tag(self.tok) == .bang or
+                // `|` composes the sets of a channel: `-> !(A | B)`.
+                self.tokens.tag(self.tok) == .pipe or
                 // A named multi-return slot DEFAULT (`-> (sum: i32 = 0, …)`):
                 // skip the `=` and the value expression's literal tokens so the
                 // scan keeps going to the body `{`, instead of misreading the
@@ -6594,8 +6668,8 @@ test "parse pack expansion: call-arg spread q(..xs) reuses spread_expr" {
 
 // ── `error { ... }` decls + `!` / `!Named` type exprs ──
 
-test "parse error-set decl: tags collected" {
-    const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
+test "parse error-set decl: members carry payload types" {
+    const source = "FooError :: error { A; B: i32; C: struct { v: i32; at: i64 } }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -6603,16 +6677,20 @@ test "parse error-set decl: tags collected" {
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .error_set_decl);
-    try std.testing.expectEqualStrings("ParseErr", decl.data.error_set_decl.name);
+    try std.testing.expectEqualStrings("FooError", decl.data.error_set_decl.name);
     const tags = decl.data.error_set_decl.tag_names;
     try std.testing.expectEqual(@as(usize, 3), tags.len);
-    try std.testing.expectEqualStrings("BadDigit", tags[0]);
-    try std.testing.expectEqualStrings("Overflow", tags[1]);
-    try std.testing.expectEqualStrings("Empty", tags[2]);
+    try std.testing.expectEqualStrings("A", tags[0]);
+    const payloads = decl.data.error_set_decl.tag_types;
+    try std.testing.expectEqual(@as(usize, 3), payloads.len);
+    try std.testing.expect(payloads[0] == null);
+    try std.testing.expectEqualStrings("i32", payloads[1].?.data.type_expr.name);
+    try std.testing.expect(payloads[2].?.data == .struct_decl);
+    try std.testing.expectEqual(@as(usize, 2), payloads[2].?.data.struct_decl.field_names.len);
 }
 
-test "parse error-set decl: single tag, trailing comma, trailing semicolon" {
-    const source = "E :: error { Only, };";
+test "parse error-set decl: a trailing `;` closes the last member" {
+    const source = "E :: error { Only; };";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -6622,6 +6700,47 @@ test "parse error-set decl: single tag, trailing comma, trailing semicolon" {
     const tags = decl.data.error_set_decl.tag_names;
     try std.testing.expectEqual(@as(usize, 1), tags.len);
     try std.testing.expectEqualStrings("Only", tags[0]);
+    try std.testing.expectEqual(@as(usize, 0), decl.data.error_set_decl.tag_types.len);
+}
+
+test "parse error-set decl: empty `error { }` is rejected" {
+    const source = "E :: error { }";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("an error set holds at least one member", parser.err_msg.?);
+}
+
+test "parse error-set composition: an inline set is a `|` operand" {
+    const source = "Extended :: FooError | error { Extra: string }";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0];
+    try std.testing.expect(decl.data == .const_decl);
+    const composed = decl.data.const_decl.value;
+    try std.testing.expect(composed.data == .binary_op);
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, composed.data.binary_op.op);
+    try std.testing.expectEqualStrings("FooError", composed.data.binary_op.lhs.data.identifier.name);
+    const inline_set = composed.data.binary_op.rhs;
+    try std.testing.expect(inline_set.data == .error_set_decl);
+    try std.testing.expectEqualStrings("Extra", inline_set.data.error_set_decl.tag_names[0]);
+}
+
+test "parse error-set composition: an inline set heads the declaration" {
+    const source = "Extended :: error { Extra } | FooError;";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0];
+    try std.testing.expect(decl.data == .const_decl);
+    try std.testing.expectEqualStrings("Extended", decl.data.const_decl.name);
+    const composed = decl.data.const_decl.value;
+    try std.testing.expect(composed.data.binary_op.lhs.data == .error_set_decl);
+    try std.testing.expectEqualStrings("FooError", composed.data.binary_op.rhs.data.identifier.name);
 }
 
 test "parse bare failable return: inferred `!`" {
@@ -6632,7 +6751,7 @@ test "parse bare failable return: inferred `!`" {
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
-    try std.testing.expect(rt.data.error_type_expr.name == null);
+    try std.testing.expect(rt.data.error_type_expr.operands.len == 0);
 }
 
 test "parse bare failable return: named `!Foo`" {
@@ -6643,7 +6762,7 @@ test "parse bare failable return: named `!Foo`" {
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
-    try std.testing.expectEqualStrings("ParseErr", rt.data.error_type_expr.name.?);
+    try std.testing.expectEqualStrings("ParseErr", rt.data.error_type_expr.operands[0]);
 }
 
 test "parse single-value failable `-> (T, !)`" {
@@ -6659,7 +6778,7 @@ test "parse single-value failable `-> (T, !)`" {
     try std.testing.expect(fields[0].data == .type_expr);
     try std.testing.expectEqualStrings("i32", fields[0].data.type_expr.name);
     try std.testing.expect(fields[1].data == .error_type_expr);
-    try std.testing.expect(fields[1].data.error_type_expr.name == null);
+    try std.testing.expect(fields[1].data.error_type_expr.operands.len == 0);
 }
 
 test "parse multi-value named failable `-> (A, B, !Foo)`" {
@@ -6673,7 +6792,32 @@ test "parse multi-value named failable `-> (A, B, !Foo)`" {
     const fields = if (rt.data == .return_type_expr) rt.data.return_type_expr.field_types else rt.data.tuple_type_expr.field_types;
     try std.testing.expectEqual(@as(usize, 3), fields.len);
     try std.testing.expect(fields[2].data == .error_type_expr);
-    try std.testing.expectEqualStrings("ParseErr", fields[2].data.error_type_expr.name.?);
+    try std.testing.expectEqualStrings("ParseErr", fields[2].data.error_type_expr.operands[0]);
+}
+
+test "parse channel: a qualified member and a parenthesized composition" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var one = try Parser.init(arena.allocator(), "f :: () -> !IoErr.Canceled { 0; }");
+    const member = (try one.parse()).data.root.decls[0].data.fn_decl.return_type.?;
+    try std.testing.expectEqual(@as(usize, 1), member.data.error_type_expr.operands.len);
+    try std.testing.expectEqualStrings("IoErr.Canceled", member.data.error_type_expr.operands[0]);
+
+    var many = try Parser.init(arena.allocator(), "f :: () -> !(IoErr.Failed | Other.Failure) { 0; }");
+    const composed = (try many.parse()).data.root.decls[0].data.fn_decl.return_type.?;
+    const operands = composed.data.error_type_expr.operands;
+    try std.testing.expectEqual(@as(usize, 2), operands.len);
+    try std.testing.expectEqualStrings("IoErr.Failed", operands[0]);
+    try std.testing.expectEqualStrings("Other.Failure", operands[1]);
+}
+
+test "parse channel: a one-operand parenthesized composition is rejected" {
+    const source = "f :: () -> !(IoErr) { 0; }";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "parse bare failable `-> T !` is rejected" {
@@ -6701,7 +6845,7 @@ test "parse bare-paren failable `-> (i32, !, i64)` is rejected" {
 }
 
 test "round-trip print: error-set decl" {
-    const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
+    const source = "ParseErr :: error { BadDigit; Overflow: i32; Empty }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -6851,6 +6995,16 @@ test "try prefix stacks under xx: xx try foo()" {
     try std.testing.expect(v.data.unary_op.operand.data == .try_expr);
 }
 
+test "catch sits above try: `try { block } catch` handles the try" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try { g() } catch { 0 }; }");
+    try std.testing.expect(v.data == .catch_expr);
+    const tried = v.data.catch_expr.operand;
+    try std.testing.expect(tried.data == .try_expr);
+    try std.testing.expect(tried.data.try_expr.operand.data == .block);
+}
+
 test "catch no binding, braced body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6925,6 +7079,43 @@ test "raise variable form" {
     const s = try e02FirstStmt(arena.allocator(), "f :: () { raise e; }");
     try std.testing.expect(s.data == .raise_stmt);
     try std.testing.expect(s.data.raise_stmt.tag.data == .identifier);
+}
+
+test "a payload brace group juxtaposes the member it constructs" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const s = try e02FirstStmt(arena.allocator(), "f :: () { raise .C{ v = 1, at = 0 }; }");
+    const constructed = s.data.raise_stmt.tag;
+    try std.testing.expect(constructed.data == .juxtaposition);
+    const member = constructed.data.juxtaposition.expr;
+    try std.testing.expect(member.data == .enum_literal);
+    try std.testing.expectEqualStrings("C", member.data.enum_literal.name);
+    try std.testing.expectEqual(@as(usize, 2), constructed.data.juxtaposition.block.data.block.stmts.len);
+}
+
+test "`defer if` is a defer over an if, not a production of its own" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const s = try e02FirstStmt(arena.allocator(), "f :: () { defer if !keep close(h); }");
+    try std.testing.expect(s.data == .defer_stmt);
+    const cond_cleanup = s.data.defer_stmt.expr;
+    try std.testing.expect(cond_cleanup.data == .if_expr);
+    try std.testing.expect(cond_cleanup.data.if_expr.is_inline);
+    try std.testing.expect(cond_cleanup.data.if_expr.then_branch.data == .call);
+    try std.testing.expect(cond_cleanup.data.if_expr.else_branch == null);
+}
+
+test "`then` delimits a result whose first token would continue the condition" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const with_then = try e02FirstValue(arena.allocator(), "f :: () { v := if a < b then *a else null; }");
+    const branch = with_then.data.if_expr.then_branch;
+    try std.testing.expect(branch.data == .unary_op and branch.data.unary_op.op == .address_of);
+    try std.testing.expect(with_then.data.if_expr.else_branch.?.data == .null_literal);
+
+    // Without `then` the same tokens read as one condition, leaving no result.
+    var glued = try Parser.init(arena.allocator(), "f :: () { v := if a < b *a else null; }");
+    try std.testing.expectError(error.ParseError, glued.parse());
 }
 
 test "raise rejected in expression position" {
@@ -7094,7 +7285,7 @@ test "full failable function parses end-to-end (every failable form)" {
     try std.testing.expect(rt.data == .tuple_type_expr);
     const fields = rt.data.tuple_type_expr.field_types;
     try std.testing.expect(fields[fields.len - 1].data == .error_type_expr);
-    try std.testing.expectEqualStrings("ParseErr", fields[fields.len - 1].data.error_type_expr.name.?);
+    try std.testing.expectEqualStrings("ParseErr", fields[fields.len - 1].data.error_type_expr.operands[0]);
     // body statement kinds
     const stmts = decl.data.fn_decl.body.data.block.stmts;
     try std.testing.expectEqual(@as(usize, 5), stmts.len);

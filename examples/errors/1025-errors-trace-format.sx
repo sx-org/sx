@@ -14,7 +14,7 @@ trace :: @import "modules/std/trace.sx";
 // Buffer length probe (the runtime symbol; public read API is the trace module).
 sx_trace_len :: () -> u32 extern;
 
-E :: error { BadInput, Overflow }
+E :: error { BadInput; Overflow }
 
 leaf :: (n: i32) -> !E {
     if n < 0 { raise error.BadInput; }   // pushes frame 0

@@ -949,7 +949,7 @@ test "converge inferred error sets: empty -> warning, raising -> converged set" 
 
     // stub :: () -> ! { return; }   — bare `!`, never raises.
     const stub_rt = alloc.create(Node) catch unreachable;
-    stub_rt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    stub_rt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
     const stub_ret = alloc.create(Node) catch unreachable;
     stub_ret.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .return_stmt = .{ .value = null } } };
     const stub_body = alloc.create(Node) catch unreachable;
@@ -959,7 +959,7 @@ test "converge inferred error sets: empty -> warning, raising -> converged set" 
 
     // raiser :: () -> ! { raise error.Foo; }   — bare `!`, raises Foo.
     const r_rt = alloc.create(Node) catch unreachable;
-    r_rt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    r_rt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
     const r_err = alloc.create(Node) catch unreachable;
     r_err.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = "error" } } };
     const r_fa = alloc.create(Node) catch unreachable;

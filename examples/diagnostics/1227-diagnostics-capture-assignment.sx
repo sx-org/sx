@@ -13,7 +13,7 @@
 @import "modules/std.sx";
 
 Shape :: enum { circle: f64; rect: i64; }
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 must :: (n: i32) -> !E { if n == 0 { raise error.Empty; } return; }
 

@@ -1319,7 +1319,7 @@ pub fn callTargetName(node: *const Node) ?[]const u8 {
 /// set) — NOT `!Named` and NOT a value-carrying `-> (T..., !)` tuple.
 pub fn astIsPureBareInferred(rt: ?*const Node) bool {
     const n = rt orelse return false;
-    return n.data == .error_type_expr and n.data.error_type_expr.name == null;
+    return n.data == .error_type_expr and n.data.error_type_expr.operands.len == 0;
 }
 
 /// The named-set name of a pure `-> !Named` return (`"Named"`), or null for
@@ -1327,7 +1327,7 @@ pub fn astIsPureBareInferred(rt: ?*const Node) bool {
 pub fn astPureNamedSet(rt: ?*const Node) ?[]const u8 {
     const n = rt orelse return null;
     if (n.data != .error_type_expr) return null;
-    return n.data.error_type_expr.name;
+    return n.data.error_type_expr.namedSet();
 }
 
 /// The declared tags of a named error set, by name; null if not a
