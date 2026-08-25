@@ -64,7 +64,7 @@ typo like `.BadDgit` never reaches a caller.
 ### Inferred sets — just write `!`
 
 A named function may leave its channel to the compiler. Bare `!` is the
-merge of the sets its body `try`s and `raise`s:
+merge of the sets its body `try`s and `raise`s that reach that function:
 
 ```sx
 read_line :: (r: *Reader) -> (string, !) {
@@ -117,24 +117,15 @@ parse_int :: (s: string) -> (i32, !ParseErr) {
 }
 ```
 
-Inside a bare-`!` function the channel is what the `raise` is *building*,
-so there is nothing to resolve against — qualify the member:
+Inside an inferred channel — a named function's bare `!` or a
+`try { block }` — the channel is what the `raise` is *building*, so there
+is nothing to resolve against; qualify the member:
 
 ```sx
 helper :: () -> ! {
   raise .Empty;              // ERROR — inferred channel
   raise ParseErr.Empty;      // OK
 }
-```
-
-A `try { block }` is the same inferred case — `raise .Empty` is illegal
-there; write `raise ParseErr.Empty`:
-
-```sx
-v := try {
-  raise .Empty;              // ERROR — inferred channel
-  raise ParseErr.Empty;      // OK
-} catch |e| { default };
 ```
 
 Where a composition carries two members of the same name, qualify to say

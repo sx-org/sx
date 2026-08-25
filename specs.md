@@ -6360,14 +6360,16 @@ parameter, field, alias, `Closure`, lambda — writes its channel out.
 
 ### Inferred channels
 
-A bare `!` is the flatten-merge of the static channel types the body `try`s and
-`raise`s. Every member comes from a declared set; a `raise` never mints one.
+An inferred channel — a named function's bare `!`, or a `try { block }` — is the
+flatten-merge of the static channel types of the `try`s and `raise`s in its body
+that reach it (§`raise`, §`try`). Every member comes from a declared set; a
+`raise` never mints one.
 
 ```sx
 inner :: () -> (i32, !) {
   try foo();                 // foo is `-> (i32, !FooError)` → merges FooError
   if bad raise BooError.X;   // static type BooError        → merges BooError
-  0
+  try bar() catch { 0 }      // reaches the catch, not inner → merges nothing
 }                            // inner's channel is FooError | BooError
 ```
 
@@ -6405,11 +6407,6 @@ helper :: () -> (i32, !) {
   try foo();
   raise .B;           // ERROR — inferred channel; write `raise FooError.B`
 }
-
-v := try {
-  raise .B;            // ERROR — inferred channel
-  raise FooError.B;    // OK — contributes FooError to the block
-} catch |e| { default };
 ```
 
 ### Payloads
@@ -6477,9 +6474,7 @@ partial aggregate is ever built. `try` never binds the error — that is
 ### `try { block }`
 
 `try` in front of a block makes that block an error boundary carrying its own
-inferred channel. Inner `try` and `raise` contribute to it, and a `raise` inside
-targets that channel rather than the enclosing function. The block's last
-expression is its success value.
+inferred channel. The block's last expression is its success value.
 
 ```sx
 v := try {
@@ -6787,7 +6782,7 @@ worker is a lambda, so it writes its channel out
 The error rides the last slot of the multi-return tuple as
 `{ qualified_tag: u32, payload }`, in both register- and stack-return
 conventions. `0` in the tag means "no error"; non-zero is the interned
-`(set, member)` id (pool capacity ~4.3 billion; fixed 32-bit, no dynamic
+`(set, tag)` id (pool capacity ~4.3 billion; fixed 32-bit, no dynamic
 widening across builds). The payload area is sized by the channel's widest
 member, so a channel's size is a property of that channel. Errors are a pure
 value channel — no coupling to the implicit `context`.
@@ -6806,7 +6801,9 @@ import_decl     = '@import' STRING end
 context_extend  = '@context_extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
 error_decl      = IDENT '::' set_operand ('|' set_operand)* end
-set_operand     = IDENT ('.' IDENT)?          // a named set or a qualified member
+set_ref         = IDENT ('.' IDENT)*          // a named set or a qualified member; each
+                  // leading IDENT may be an import binding (`png.Error.Bad`)
+set_operand     = set_ref
                 | 'error' '{' set_members '}' // at least one member; `error { }` is rejected
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
@@ -6823,7 +6820,7 @@ linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' chan?)?     // trailing `!` = failable; channel as last `-> (…, !)` slot
-chan            = IDENT ('.' IDENT)?          // a named set or a qualified member
+chan            = set_ref
                 | '(' chan ('|' chan)+ ')'    // a composition is parenthesized under `!`
 enum_decl       = IDENT '::' 'enum' '{' set_members '}'
 set_members     = set_member (';' set_member)* ';'?
@@ -6902,7 +6899,7 @@ arm_body        = 'break' end
                 | '=>' expr end         // the last arm's expr may drop `end`
                 | stmt*                 // every form ends as a statement does
 else_arm        = 'else' ':' stmt*
-pattern         = '.' IDENT | INT | BOOL | IDENT
+pattern         = '.' IDENT | INT | BOOL | set_ref
 closure         = '|' params? '|' env? ('->' type)? (expr | block)
 env             = '_{' (env_field (',' env_field)* ','?)? '}'
                   // one token '_{': `_ {` with a space is not it
