@@ -1,23 +1,29 @@
 error: a callable with the error channel 'A' does not fill a slot with the error channel 'B' — a `Closure` or function-pointer slot takes exactly its own channel
-  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:18:41
+  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:17:41
    |
-18 |     copy  : Closure(i32) -> (i32, !B) = held;
+17 |     copy  : Closure(i32) -> (i32, !B) = held;
    |                                         ^^^^
 
 error: a callable with the error channel 'A' does not fill a slot with the error channel 'B' — a `Closure` or function-pointer slot takes exactly its own channel
-  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:19:41
+  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:18:41
    |
-19 |     other : Closure(i32) -> (i32, !B) = fa;
+18 |     other : Closure(i32) -> (i32, !B) = fa;
    |                                         ^^
 
 error: a callable with no error channel does not fill a slot with the error channel 'A' — a `Closure` or function-pointer slot takes exactly its own channel
-  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:20:41
+  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:19:41
    |
-20 |     none  : Closure(i32) -> (i32, !A) = plain;
+19 |     none  : Closure(i32) -> (i32, !A) = plain;
    |                                         ^^^^^
 
 error: a callable with the error channel 'A' does not fill a slot with no error channel — a `Closure` or function-pointer slot takes exactly its own channel
-  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:21:28
+  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:20:28
    |
-21 |     bare  : (i32) -> i32 = fa;
+20 |     bare  : (i32) -> i32 = fa;
    |                            ^^
+
+error: a callable with the error channel 'A' does not fill a slot with the error channel 'B' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1096-errors-channel-slot-exact-reject.sx:22:5
+   |
+22 |     take(held, 1);
+   |     ^^^^^^^^^^^^^

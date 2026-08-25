@@ -50,6 +50,10 @@ const StatelessInner = struct {
     pub fn resolveName(self: StatelessInner, name: []const u8) TypeId {
         return resolveTypeName(name, self.table, self.alias_map, false);
     }
+    pub fn aliasType(self: StatelessInner, name: []const u8) ?TypeId {
+        const map = self.alias_map orelse return null;
+        return map.get(name);
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -793,6 +797,9 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
         out.append(table.alloc, member) catch unreachable;
         return true;
     }
+    if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+        if (channelHeadErrorSet(name[0..dot], table, inner) != null) return false;
+    }
     const set = inner.resolveName(name);
     if (set.isBuiltin()) return false;
     const info = table.get(set);
@@ -801,17 +808,27 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
     return true;
 }
 
-/// The member id `Set.Member` names, or null when the spelling's head is not a
-/// declared error set (a namespaced set `mod.Set`, or a plain name). The head
-/// is probed by name before it is resolved, because resolution MINTS a stub for
-/// an unregistered name and a namespace prefix must not get one.
+/// The member id `Set.Member` names, or null when the head is not an error
+/// set (declared or aliased) or the member is absent. The head is probed in
+/// the type table and the alias map before resolveName, which mints a stub
+/// for an unregistered name.
 fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
-    const probe = table.findByName(table.internString(name[0..dot])) orelse return null;
-    if (probe.isBuiltin() or table.get(probe) != .error_set) return null;
-    const set = inner.resolveName(name[0..dot]);
+    const head = name[0..dot];
+    _ = channelHeadErrorSet(head, table, inner) orelse return null;
+    const set = inner.resolveName(head);
     if (set.isBuiltin() or table.get(set) != .error_set) return null;
     return table.errorSetMemberId(set, name[dot + 1 ..]);
+}
+
+fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?TypeId {
+    if (table.findByName(table.internString(head))) |probe| {
+        if (probe.isBuiltin() or table.get(probe) != .error_set) return null;
+        return probe;
+    }
+    const aliased = inner.aliasType(head) orelse return null;
+    if (aliased.isBuiltin() or table.get(aliased) != .error_set) return null;
+    return aliased;
 }
 
 /// The error channel of a failable signature: `!Set` → that declared set
@@ -825,11 +842,17 @@ pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner:
         if (qualifiedChannelMember(name, table, inner)) |member| {
             return table.errorSetType(.empty, &.{member});
         }
-        // A forward-referenced set resolves to the stub its declaration adopts,
-        // so the name — not its members — is what this yields.
-        return inner.resolveName(name);
-    }
-    if (ete.operands.len > 0) compose: {
+        // resolveName of the dotted spelling mints a struct used as the failable err.
+        const head_is_set = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot|
+            channelHeadErrorSet(name[0..dot], table, inner) != null
+        else
+            false;
+        if (!head_is_set) {
+            // A forward-referenced set resolves to the stub its declaration adopts,
+            // so the name — not its members — is what this yields.
+            return inner.resolveName(name);
+        }
+    } else if (ete.operands.len > 0) compose: {
         var members = std.ArrayList(u32).empty;
         defer members.deinit(table.alloc);
         for (ete.operands) |op| {

@@ -5,8 +5,8 @@
 //
 // A `Closure` slot takes exactly its own channel, so each slot below is an
 // equality: `!(IoErr.Failed | IoErr.Canceled)` fills an `!IoErr` slot because
-// those are every member IoErr declares, and the written `!(IoErr | Disk)`
-// fills the `!Both` one.
+// those are every member IoErr declares, the written `!(IoErr | Disk)` fills
+// the `!Both` one, and `!Both.Failed` fills `!IoErr.Failed`.
 
 @import "modules/std.sx";
 
@@ -20,7 +20,7 @@ sweep :: (n: i32) -> (i32, !(IoErr.Failed | IoErr.Canceled)) {
     return n * 2;
 }
 
-halt :: (n: i32) -> (i32, !IoErr.Failed) {
+halt :: (n: i32) -> (i32, !Both.Failed) {
     if n < 0 { raise IoErr.Failed; }
     return n;
 }
