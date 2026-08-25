@@ -879,7 +879,8 @@ pub const ErrorTypeExpr = struct {
     /// more = a parenthesized composition (`!(A | B)`).
     operands: []const []const u8 = &.{},
 
-    /// The single set the channel names; null when it is inferred or composed.
+    /// The single operand when the channel names one set or member; null when
+    /// it is inferred or composed.
     pub fn namedSet(self: ErrorTypeExpr) ?[]const u8 {
         return if (self.operands.len == 1) self.operands[0] else null;
     }

@@ -988,8 +988,8 @@ pub const Parser = struct {
         return name;
     }
 
-    /// `chan = set_ref | '(' chan ('|' chan)+ ')'` — what a `!` takes, as the
-    /// list of set references it names. Empty when the `!` stands bare.
+    /// `chan = set_ref | '(' set_ref ('|' set_ref)+ ')'` — what a `!` takes, as
+    /// the list of set references it names. Empty when the `!` stands bare.
     fn parseChannel(self: *Parser) anyerror![]const []const u8 {
         if (self.tokens.tag(self.tok) == .l_paren) {
             self.advance(); // skip '('
@@ -3445,7 +3445,7 @@ pub const Parser = struct {
     /// Three shapes, disambiguated by the token after `catch`:
     ///   catch { block }            — no binding (braces required)
     ///   catch |e| { block }        — binding + block body
-    ///   catch |e| EXPR             — binding + bare-expression body
+    ///   catch |e| unary            — binding + bare-expression body
     fn parseCatchExpr(self: *Parser, pipe: PipeRole) anyerror!*Node {
         const operand = try self.parseUnary(pipe);
         if (self.tokens.tag(self.tok) != .kw_catch) return operand;
