@@ -18,7 +18,7 @@ sm_parse :: (n: i32) -> (i32, !SmokeErr) {
     return n * 2;
 }
 
-// pure failable, inferred set: the raised member's set converges into `!`
+// pure failable, inferred set
 sm_check :: (ok: bool) -> ! {
     if !ok { raise CheckErr.NotReady; }
     return;

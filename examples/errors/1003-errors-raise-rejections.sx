@@ -19,7 +19,7 @@ bad_tag :: () -> !ParseErr {
     raise error.NotInSet;            // error: NotInSet not in ParseErr
 }
 
-// Qualified member its own set does not carry.
+// Member absent from its own set.
 bad_member :: () -> !ParseErr {
     raise ParseErr.NotAMember;       // error: NotAMember is not a ParseErr member
 }

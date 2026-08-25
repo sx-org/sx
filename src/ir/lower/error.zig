@@ -251,7 +251,7 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     if (dst_info != .error_set) return;
     const src_info = self.module.types.get(qm.set).error_set;
     const tag = self.module.types.internTag(qm.member);
-    // A member its own set does not carry is diagnosed where the member is read.
+    // Non-membership in Set is diagnosed at the member read.
     if (!containsTag(src_info.tags, tag)) return;
     if (containsTag(dst_info.error_set.tags, tag)) return;
     if (self.diagnostics) |diags| {
