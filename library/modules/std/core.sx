@@ -314,9 +314,8 @@ __sx_printf_f64 :: (f: f64) {
 // the compiler's own string pool and type table, so they exist only at `@run` /
 // constant-evaluation time and have no runtime form.
 //
-// Handles are bare `u32`s: a `StringId` / `TypeId` alias would be one more
-// prelude data type for a word that is already a word. Callers alias them
-// locally where it aids reading.
+// Handles are bare `u32`s so they intern no extra prelude type. Callers alias
+// them locally where it aids reading.
 raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
 raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
 raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)

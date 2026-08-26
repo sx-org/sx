@@ -7,9 +7,7 @@ const Node = ast.Node;
 const Parser = @import("parser.zig").Parser;
 
 // The comptime type-metaprogramming surface must PARSE — the data types as
-// struct/enum decls, and the comptime builtins (`declare` / `define` /
-// `field_type`) as bodyless `intrinsic` consts. Mirrors the exact spellings in
-// the prelude and meta.sx.
+// struct/enum decls, and bodyless `intrinsic` consts.
 test "parser: comptime type-metaprogramming surface parses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

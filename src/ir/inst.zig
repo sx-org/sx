@@ -628,8 +628,7 @@ pub const BuiltinId = enum(u16) {
     rt_variant_value,
     // Reflect a type INTO the prelude's `TypeInfo` value: read its shape out
     // of the type table and construct the same value `define` decodes, so the
-    // two round-trip. Comptime-only (the interp builds the Value aggregate);
-    // emit bails (Type is comptime-only).
+    // two round-trip. A runtime `Type` loads the matching const record.
     @"@typeInfo",
 };
 
