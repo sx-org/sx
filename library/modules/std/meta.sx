@@ -142,7 +142,7 @@ KIND_TAGGED_UNION :: 3; // a payload-carrying enum
 //                          tagged-union value byte-compatibly is a compiler job.
 //   struct_field_type($T, idx)  — the i-th field / variant-payload / element type. A
 //                          compiler builtin that folds at LOWER time, so it
-//                          composes inside `type_eq` / `type_name` / any type-arg
+//                          composes inside `type_eq` / `@typeName` / any type-arg
 //                          slot — a property `raw_field_type` (a runtime value)
 //                          can't provide. Declared in `std/core.sx` (it carries
 //                          no data type, so it lives in the prelude) and reaches

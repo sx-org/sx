@@ -94,14 +94,14 @@ impl Into(Block) for Closure(..$args) -> $R {
 // Void return type emits `typed_fn(...)`; non-void emits
 // `return typed_fn(...)`.
 build_block_convert :: (args: []Type, $ret: Type) -> string {
-    ret_name := type_name(ret);
+    ret_name := @typeName(ret);
     code := "__invoke :: (block_self: *Block";
     i : i64 = 0;
     while i < args.len {
         code = concat(code, ", arg");
         code = concat(code, int_to_string(i));
         code = concat(code, ": ");
-        code = concat(code, type_name(args[i]));
+        code = concat(code, @typeName(args[i]));
         i = i + 1;
     }
     code = concat(code, ") -> ");
@@ -110,7 +110,7 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     i = 0;
     while i < args.len {
         code = concat(code, ", ");
-        code = concat(code, type_name(args[i]));
+        code = concat(code, @typeName(args[i]));
         i = i + 1;
     }
     code = concat(code, ") -> ");
@@ -119,7 +119,7 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     i = 0;
     while i < args.len {
         code = concat(code, ", ");
-        code = concat(code, type_name(args[i]));
+        code = concat(code, @typeName(args[i]));
         i = i + 1;
     }
     code = concat(code, ") -> ");

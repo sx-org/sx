@@ -33,7 +33,7 @@ main :: () {
     // assert, or through the view's own data pointer
     avr : any = r;
     print("outer: {}\n", avr.(@Any).type_id == @Any);
-    if s2 := avr.(?@Any) { print("payload tag: {}\n", type_name(s2.type_id)); }
+    if s2 := avr.(?@Any) { print("payload tag: {}\n", @typeName(s2.type_id)); }
     inner : *@Any = xx avr.(@Any).data;
     print("inner data: {}\n", inner.data == r.data);
 }

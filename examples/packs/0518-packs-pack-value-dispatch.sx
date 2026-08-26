@@ -4,7 +4,7 @@
 //
 // Two usage shapes covered here:
 //
-// 1. `type_name($args[0])` — the value-form Type goes through the
+// 1. `@typeName($args[0])` — the value-form Type goes through the
 //    reflection intrinsic, picking up the per-mono concrete type.
 //
 // 2. `inline if type_eq($args[0], i64) { ... }` — compile-time
@@ -18,7 +18,7 @@
 
 @import "modules/std.sx";
 
-show :: (..$args) -> string => type_name($args[0]);
+show :: (..$args) -> string => @typeName($args[0]);
 
 describe :: (..$args) -> string {
     inline if type_eq($args[0], i64) { return "got i64"; }
@@ -28,7 +28,7 @@ describe :: (..$args) -> string {
 }
 
 main :: () -> i32 {
-    // type_name picks up the per-mono first-arg type.
+    // @typeName picks up the per-mono first-arg type.
     print("{}\n", show(42));         // i64
     print("{}\n", show("hi"));        // string
     print("{}\n", show(3.14));        // f64

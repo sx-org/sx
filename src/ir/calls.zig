@@ -202,6 +202,12 @@ pub const CallResolver = struct {
                 };
                 return .{ .kind = .builtin, .return_type = rt, .target = .{ .builtin = bid } };
             }
+            // `@tag(x)` types as `@Tag(T)`, read off the argument — a shape the
+            // registry's fixed `ret` cannot carry.
+            if (std.mem.eql(u8, bare_name, "@tag") and c.args.len == 1) {
+                const src = self.l.inferExprType(c.args[0]);
+                return refl(bare_name, self.l.tagTypeFor(src) orelse .unresolved);
+            }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs
             // their result type to mangle with the right tag. The registry owns

@@ -2869,6 +2869,37 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
+    pub fn emitErrorPayloadView(self: Ops, u: UnaryOp) void {
+        // The live member's payload as an `any`: its TypeId out of the
+        // member-payload-type table at the runtime member id, over the address
+        // of the channel's payload area. A payload-free channel reserves no
+        // area, so the view is `void` over a null address.
+        const chan = self.e.getRefIRType(u.operand);
+        const val = self.e.resolveRef(u.operand);
+        const no_area = if (chan) |ch| !self.e.ir_mod.types.isPayloadCarryingChannel(ch) else true;
+        const type_id = if (no_area)
+            c.LLVMConstInt(self.e.cached_i64, TypeId.void.index(), 0)
+        else blk: {
+            const tag = self.e.channelTag(val, chan);
+            const idx = c.LLVMBuildZExt(self.e.builder, tag, self.e.cached_i64, "epv.idx");
+            const global = self.e.reflection().getOrBuildTagPayloadTypeArray();
+            const n: u32 = @intCast(self.e.ir_mod.types.tags.payloads.items.len);
+            const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+            const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+            var indices = [2]c.LLVMValueRef{ zero, idx };
+            const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, "epv.gep");
+            break :blk c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, gep, "epv.type");
+        };
+        const data = if (!no_area)
+            c.LLVMBuildPtrToInt(self.e.builder, self.e.channelPayloadAddr(chan.?, val), self.e.cached_i64, "epv.data")
+        else
+            c.LLVMConstInt(self.e.cached_i64, 0, 0);
+        var result = c.LLVMGetUndef(self.e.getAnyStructType());
+        result = c.LLVMBuildInsertValue(self.e.builder, result, data, 0, "epv.d");
+        result = c.LLVMBuildInsertValue(self.e.builder, result, type_id, 1, "epv.t");
+        self.e.mapRef(result);
+    }
+
     // ── Switch branch ──────────────────────────────────────
     pub fn emitSwitchBr(self: Ops, sw: SwitchBranch, func_idx: u32) void {
         const operand = self.e.channelTag(self.e.resolveRef(sw.operand), self.e.getRefIRType(sw.operand));

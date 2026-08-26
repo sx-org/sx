@@ -1,0 +1,9 @@
+owner=FooError view=@Tag(FooError)
+member=D A
+payload=42
+shorthand=true true
+views=true false
+value=true
+match=1
+enum=true Color
+union=true @Tag(Shape)

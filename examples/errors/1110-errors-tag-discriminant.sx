@@ -1,0 +1,45 @@
+// `@tag(x)` reads the discriminant of an error, enum, or tagged-union value:
+// `@Tag(T)`, the type over T's members alone. It compares with a `.Member`
+// shorthand, with another `@Tag`, and with a live error value — tag only,
+// with comparability following the ⊆ rule on the channels. `@typeName` of an
+// error names the owner, `@errorName` the member alone, and `@errorPayload`
+// views a live member's payload.
+
+@import "modules/std.sx";
+
+FooError :: error {
+    A;
+    D: i32;
+}
+
+Color :: enum { red; green; blue; }
+Shape :: enum { circle: f32; none; }
+
+boom :: (n: i64) -> (i64, !FooError) {
+    if n < 0 { raise .D{42}; }
+    raise FooError.A;
+}
+
+main :: () -> i32 {
+    _, d := boom(-1);
+    _, a := boom(1);
+
+    print("owner={} view={}\n", @typeName(FooError), @typeName(@Tag(FooError)));
+    print("member={} {}\n", @errorName(d), @errorName(a));
+    print("payload={}\n", @errorPayload(d));
+
+    t := @tag(d);
+    print("shorthand={} {}\n", t == .D, @tag(a) == .A);
+    print("views={} {}\n", @tag(d) == t, t == @tag(a));
+    print("value={}\n", d == t);
+
+    print("match={}\n", match t {
+        case .A: 0;
+        case .D: 1;
+    });
+
+    s : Shape = .circle(2.0);
+    print("enum={} {}\n", @tag(Color.blue) == .blue, @typeName(@Tag(Color)));
+    print("union={} {}\n", @tag(s) == .circle, @typeName(@Tag(Shape)));
+    return 0;
+}

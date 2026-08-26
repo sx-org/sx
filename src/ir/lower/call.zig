@@ -2784,7 +2784,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // dedicated atomic ops. Listed exhaustively on purpose — a new intrinsic
         // must decide here rather than fall through a catch-all.
         .type_of,
-        .type_name,
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2798,7 +2798,9 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@tag",
+        .@"@errorPayload",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3090,7 +3092,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .size_of,
         .align_of,
         .type_of,
-        .type_name,
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3104,7 +3106,9 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@tag",
+        .@"@errorPayload",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3376,7 +3380,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .size_of,
         .align_of,
         .type_of,
-        .type_name,
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3390,7 +3394,9 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@tag",
+        .@"@errorPayload",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3722,7 +3728,7 @@ fn isReflectionCall(name: []const u8) bool {
         .size_of,
         .align_of,
         .type_of,
-        .type_name,
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3736,7 +3742,9 @@ fn isReflectionCall(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@tag",
+        .@"@errorPayload",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -4016,8 +4024,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // Scalars and other fieldless types: 0 fields (a leaf).
         return self.builder.constInt(0, .i64);
     }
-    if (std.mem.eql(u8, name, "type_name")) {
-        // type_name(T):
+    if (std.mem.eql(u8, name, "@typeName")) {
+        // @typeName(T):
         //   - Statically resolvable arg (type expression, pack
         //     index, generic binding, etc.) → fold to const_string
         //     at lower time.
@@ -4156,12 +4164,20 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const arg = self.lowerExpr(c.args[0]);
         return self.builder.emit(.{ .trace_resolve = .{ .operand = arg } }, frame_ty);
     }
-    if (std.mem.eql(u8, name, "error_name")) {
-        // error_tag_name(e) → look the error-set value's runtime tag id up
-        // in the always-linked tag-name table. The value IS its u32 tag id.
+    if (std.mem.eql(u8, name, "@errorName")) {
+        // The member name alone: the error value's runtime member id read out
+        // of the always-linked member-name table.
         if (c.args.len < 1) return self.builder.constString(self.module.types.internString(""));
         const e = self.lowerExpr(c.args[0]);
         return self.builder.emit(.{ .error_tag_name_get = .{ .operand = e } }, .string);
+    }
+    if (std.mem.eql(u8, name, "@tag")) {
+        if (c.args.len < 1) return self.builder.constUndef(.i32);
+        return self.lowerTagOf(c.args[0], c.callee.span);
+    }
+    if (std.mem.eql(u8, name, "@errorPayload")) {
+        if (c.args.len < 1) return self.builder.constInt(0, .any);
+        return self.lowerErrorPayload(c.args[0], c.callee.span);
     }
     if (std.mem.eql(u8, name, "struct_field_value") or std.mem.eql(u8, name, "variant_payload")) {
         // struct_field_value(s, i) → field_value_get (structs/tuples/unions);
@@ -4623,7 +4639,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
         std.mem.eql(u8, name, "align_of") or
         std.mem.eql(u8, name, "struct_field_count") or
         std.mem.eql(u8, name, "variant_count") or
-        std.mem.eql(u8, name, "type_name") or
+        std.mem.eql(u8, name, "@typeName") or
         std.mem.eql(u8, name, "is_flags"))
         1
     else
@@ -4659,13 +4675,13 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 }
 
 /// Result-typed placeholder returned after `reflectionTypeArgGuard`
-/// diagnoses a non-type argument: a string for `type_name`, a bool for
+/// diagnoses a non-type argument: a string for `@typeName`, a bool for
 /// the predicate builtins, an int for the size / count builtins. Never
 /// observed at runtime — the diagnostic already fails the build — but
 /// keeps the IR well-typed so lowering can finish and report every
 /// error in one pass.
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
-    if (std.mem.eql(u8, name, "type_name"))
+    if (std.mem.eql(u8, name, "@typeName"))
         return self.builder.constString(self.module.types.internString(""));
     if (std.mem.eql(u8, name, "type_eq") or std.mem.eql(u8, name, "is_flags"))
         return self.builder.constBool(false);

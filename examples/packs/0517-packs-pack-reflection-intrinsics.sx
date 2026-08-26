@@ -1,7 +1,7 @@
 // Three comptime spellings let a pack-fn body branch on type identity /
 // contract membership:
 //
-//   type_name(T)     -> string  // display name of T
+//   @typeName(T)     -> string  // display name of T
 //   type_eq(T1, T2)  -> bool    // structural TypeId equality
 //   T is P           -> bool    // T has a reachable impl for P
 //
@@ -28,8 +28,8 @@ impl Wrap(i64) for i32 {
 }
 
 main :: () -> i32 {
-    // type_name — display names.
-    print("{} {} {}\n", type_name(i64), type_name(string), type_name(bool));
+    // @typeName — display names.
+    print("{} {} {}\n", @typeName(i64), @typeName(string), @typeName(bool));
 
     // type_eq — structural equality on TypeIds.
     print("{} {} {} {}\n",

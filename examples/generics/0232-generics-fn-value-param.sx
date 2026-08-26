@@ -14,7 +14,7 @@ relay :: (g: $G) -> i64 { return apply(g); }
 apply2 :: (f: $F, a: i64, b: i64) -> i64 { return f(a, b); }
 add2 :: (a: i64, b: i64) -> i64 { return a + b; }
 
-describe :: (f: $F) -> string { return type_name(type_of(f)); }
+describe :: (f: $F) -> string { return @typeName(type_of(f)); }
 
 main :: () {
     print("{}\n", apply(some_fn));

@@ -11,26 +11,26 @@ main :: () {
 
     live := p.(*i64);
     ann : *i64 = p.(*i64);
-    print("inferred={} annotated={}\n", type_name(type_of(live)), type_name(type_of(ann)));
+    print("inferred={} annotated={}\n", @typeName(type_of(live)), @typeName(type_of(ann)));
     print("live={}\n", live.*);
     print("ann={}\n", ann.*);
 
     // Implicit, no cast: a same-width pointer store.
     q : *i64 = p;
-    print("implicit={} {}\n", type_name(type_of(q)), q.*);
+    print("implicit={} {}\n", @typeName(type_of(q)), q.*);
 
     // Byte view of the same address.
     b := p.(*u8);
-    print("byte={} {}\n", type_name(type_of(b)), b.*);
+    print("byte={} {}\n", @typeName(type_of(b)), b.*);
 
     // `*T` ↔ `[*]T`.
     many := p.([*]i64);
     back := many.(*i64);
-    print("many={} {} back={} {}\n", type_name(type_of(many)), many[0], type_name(type_of(back)), back.*);
+    print("many={} {} back={} {}\n", @typeName(type_of(many)), many[0], @typeName(type_of(back)), back.*);
 
     // `cstring` on both sides of the cast.
     cs : cstring = "hi";
     head := cs.(*u8);
     round := head.(cstring);
-    print("head={} {} round={}\n", type_name(type_of(head)), head.*, type_name(type_of(round)));
+    print("head={} {} round={}\n", @typeName(type_of(head)), head.*, @typeName(type_of(round)));
 }

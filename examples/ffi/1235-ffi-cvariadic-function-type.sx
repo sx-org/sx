@@ -81,9 +81,9 @@ main :: () -> i32 {
     t := Table{ open = constant, shut = plain };
     print("field_open={} field_shut={}\n", t.open(1, 2), t.shut());
 
-    print("summer={}\n", type_name(Summer));
-    print("zero={}\n", type_name(Zero));
-    print("empty={}\n", type_name(Empty));
+    print("summer={}\n", @typeName(Summer));
+    print("zero={}\n", @typeName(Zero));
+    print("empty={}\n", @typeName(Empty));
     print("summer_is_fixed={} zero_is_empty={}\n", Summer == Fixed, Zero == Empty);
     return 0;
 }

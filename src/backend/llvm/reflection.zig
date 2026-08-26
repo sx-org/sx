@@ -652,6 +652,31 @@ pub const Reflection = struct {
         return global;
     }
 
+    /// The member-payload-type table: an `[N x i64]` global of member payload
+    /// TypeIds indexed by member id, parallel to the member-name table.
+    /// `error_payload_view` GEPs into it at the runtime member id to type the
+    /// view it hands back.
+    pub fn getOrBuildTagPayloadTypeArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_payload_type_array) |g| return g;
+
+        const payloads = self.e.ir_mod.types.tags.payloads.items;
+        var vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer vals.deinit(self.e.alloc);
+        for (payloads) |ty| {
+            vals.append(self.e.alloc, c.LLVMConstInt(self.e.cached_i64, ty.index(), 0)) catch unreachable;
+        }
+
+        const n: u32 = @intCast(payloads.len);
+        const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_payload_types");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(self.e.cached_i64, vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_payload_type_array = global;
+        return global;
+    }
+
     /// An interned constant sx `string` (`{ ptr, i64 }`) of the cached string
     /// struct type, backed by a private NUL-terminated data global. Cached by
     /// content so a path/name shared by many push sites is emitted once.

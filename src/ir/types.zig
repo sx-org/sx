@@ -198,6 +198,10 @@ pub const TypeInfo = union(enum) {
         explicit_values: ?[]const i64 = null, // for flags (power-of-2) or custom values
         backing_type: ?TypeId = null, // e.g. u32 for `enum u32 { ... }`
         nominal_id: u32 = 0, // stable nominal identity; 0 == structural
+        /// Set on `@Tag(E)` for an error `E`: the error this enum discriminates.
+        /// Its variant values ARE `E`'s member ids, so the enum reads as the
+        /// channel's tag word.
+        error_of: ?TypeId = null,
     };
 
     pub const UnionInfo = struct {
@@ -1587,6 +1591,46 @@ pub const TypeTable = struct {
     /// Construct (and intern) an error channel from its member ids.
     pub fn errorSetType(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeId {
         return self.intern(self.errorSetInfo(spelling, member_ids));
+    }
+
+    /// `@Tag(e)` for an error: the payload-free enum over its members, each
+    /// valued by its member id, so the enum IS the channel's tag word.
+    pub fn errorTagEnum(self: *TypeTable, e: TypeId) TypeId {
+        const es = self.get(e).error_set;
+        const arena = self.slice_arena.allocator();
+        const variants = arena.alloc(StringId, es.tags.len) catch unreachable;
+        const values = arena.alloc(i64, es.tags.len) catch unreachable;
+        for (es.tags, variants, values) |member, *v, *val| {
+            v.* = self.internString(self.getTagName(member));
+            val.* = @intCast(member);
+        }
+        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(es.name)}) catch unreachable;
+        defer self.alloc.free(spelling);
+        return self.intern(.{ .@"enum" = .{
+            .name = self.internString(spelling),
+            .variants = variants,
+            .explicit_values = values,
+            .backing_type = .u32,
+            .error_of = e,
+        } });
+    }
+
+    /// `@Tag(u)` for a tagged union: the payload-free enum over its variants,
+    /// carrying the union's tag type and values so the two agree at runtime.
+    pub fn unionTagEnum(self: *TypeTable, u: TypeId) TypeId {
+        const info = self.get(u).tagged_union;
+        const arena = self.slice_arena.allocator();
+        const variants = arena.alloc(StringId, info.fields.len) catch unreachable;
+        for (info.fields, variants) |f, *v| v.* = f.name;
+        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(info.name)}) catch unreachable;
+        defer self.alloc.free(spelling);
+        return self.intern(.{ .@"enum" = .{
+            .name = self.internString(spelling),
+            .variants = variants,
+            .explicit_values = info.explicit_tag_values,
+            .backing_type = info.tag_type,
+            .nominal_id = info.nominal_id,
+        } });
     }
 
     /// The spelling of the DYNAMIC channel. `!` is not legal in a type or

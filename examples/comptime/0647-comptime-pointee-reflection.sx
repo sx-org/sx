@@ -12,11 +12,11 @@ Payload :: ($P: Type) -> Type { return struct_field_type(pointee_type(P), 0); }
 
 main :: () -> i32 {
     // plain pointer
-    print("pointee_type(*i64)  = {}\n", type_name(pointee_type(*i64)));
-    print("pointee_type(*bool) = {}\n", type_name(pointee_type(*bool)));
+    print("pointee_type(*i64)  = {}\n", @typeName(pointee_type(*i64)));
+    print("pointee_type(*bool) = {}\n", @typeName(pointee_type(*bool)));
 
     // pointer to a generic struct → the struct type
-    print("pointee_type(*Box(f64)) field0 = {}\n", type_name(struct_field_type(pointee_type(*Box(f64)), 0)));
+    print("pointee_type(*Box(f64)) field0 = {}\n", @typeName(struct_field_type(pointee_type(*Box(f64)), 0)));
 
     // composed projection, used as a real type
     v : Payload(*Box(i64)) = 42;

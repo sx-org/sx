@@ -301,6 +301,7 @@ pub const Op = union(enum) {
     field_name_get: FieldReflect, // field_name(T, i) → string (runtime index)
     field_value_get: FieldReflect, // field_value(s, i) → Any (runtime struct + index)
     error_tag_name_get: UnaryOp, // error_tag_name(e) → string (runtime tag id → name, via the always-linked tag-name table)
+    error_payload_view: UnaryOp, // error_payload(e) → any (the live member's payload area, typed through the member-payload-type table)
 
     // ── Terminators ─────────────────────────────────────────────────
     br: Branch,

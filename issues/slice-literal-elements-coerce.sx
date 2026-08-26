@@ -6,7 +6,7 @@ Cube :: struct { side: i64; }
 impl Sized for Cube { size :: (self: *Cube) -> i64 { self.side } }
 
 count :: (items: []any) -> i64 { items.len }
-named :: (v: any) -> string { type_name(type_of(v)) }
+named :: (v: any) -> string { @typeName(type_of(v)) }
 
 main :: () {
     t := Cube{ side = 3 };

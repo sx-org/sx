@@ -83,8 +83,8 @@ main :: () {
         else: print("typeof-enum: other\n");
     }
 
-    // type_name
-    print("typename: {}\n", type_name(Point));
+    // @typeName
+    print("typename: {}\n", @typeName(Point));
 
     // struct_field_count on struct
     print("fieldcount: {}\n", struct_field_count(Point));

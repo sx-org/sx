@@ -1,23 +1,23 @@
 // The dynamic reflection paths that work with a runtime `Type` value (an i64
-// tag at runtime, spec §Type): type_of on values and any, type_name and
+// tag at runtime, spec §Type): type_of on values and any, @typeName and
 // `is unsigned` through locals, params, and []Type elements.
 @import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 
-describe :: (tp: Type) -> string { type_name(tp) }
+describe :: (tp: Type) -> string { @typeName(tp) }
 
 main :: () {
     x : u16 = 9;
     tp := type_of(x);                       // runtime Type value
-    print("local:  {} unsigned={}\n", type_name(tp), tp is unsigned);
+    print("local:  {} unsigned={}\n", @typeName(tp), tp is unsigned);
     print("param:  {}\n", describe(tp));
 
     p := Point{ x = 1, y = 2 };
     tps : [2]Type = .[type_of(x), type_of(p)];
-    print("elem0:  {}\n", type_name(tps[0]));
-    print("elem1:  {}\n", type_name(tps[1]));
+    print("elem0:  {}\n", @typeName(tps[0]));
+    print("elem1:  {}\n", @typeName(tps[1]));
 
     av : any = p;
-    print("anytag: {}\n", type_name(type_of(av)));
+    print("anytag: {}\n", @typeName(type_of(av)));
 }

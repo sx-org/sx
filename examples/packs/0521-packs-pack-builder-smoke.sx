@@ -3,8 +3,8 @@
 //
 //   1. A pack-fn passes its bound `$args` to a builder via `@run`.
 //   2. The builder receives a `[]Type` slice and walks it, calling
-//      `type_name(list[i])` per position.
-//   3. `type_name(list[i])` is the DYNAMIC form — the index_expr argument is
+//      `@typeName(list[i])` per position.
+//   3. `@typeName(list[i])` is the DYNAMIC form — the index_expr argument is
 //      not statically resolvable at lower time, so lowering emits a
 //      `callBuiltin(.type_name, ...)` whose interp arm reads the runtime
 //      `Value.type_tag(TypeId)` and returns the per-position name.
@@ -20,7 +20,7 @@ describe :: (..$args) -> string {
     i : i64 = 0;
     while i < list.len {
         if i > 0 { s = concat(s, ", "); }
-        s = concat(s, type_name(list[i]));
+        s = concat(s, @typeName(list[i]));
         i = i + 1;
     }
     s = concat(s, "]");

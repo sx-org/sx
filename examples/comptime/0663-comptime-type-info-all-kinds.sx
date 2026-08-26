@@ -20,11 +20,11 @@ describe :: ($T: Type) -> string {
         }
         case .int: |ii| { return format("int bits={} signed={}", ii.bits, ii.signed); }
         case .float: |fi| { return format("float bits={}", fi.bits); }
-        case .array: |ai| { return format("array len={} elem={}", ai.len, type_name(ai.elem)); }
-        case .vector: |vi| { return format("vector lanes={} elem={}", vi.lanes, type_name(vi.elem)); }
-        case .slice: |sl| { return format("slice elem={}", type_name(sl.elem)); }
-        case .pointer: |pi| { return format("pointer pointee={}", type_name(pi.pointee)); }
-        case .optional: |oi| { return format("optional inner={}", type_name(oi.inner)); }
+        case .array: |ai| { return format("array len={} elem={}", ai.len, @typeName(ai.elem)); }
+        case .vector: |vi| { return format("vector lanes={} elem={}", vi.lanes, @typeName(vi.elem)); }
+        case .slice: |sl| { return format("slice elem={}", @typeName(sl.elem)); }
+        case .pointer: |pi| { return format("pointer pointee={}", @typeName(pi.pointee)); }
+        case .optional: |oi| { return format("optional inner={}", @typeName(oi.inner)); }
         case .string: { return "string"; }
         case .bool: { return "bool"; }
         else: { return "other"; }

@@ -14,7 +14,7 @@ impl Noted for Cube { size :: (self: *Cube) -> i64 { self.side } }
 
 Holder :: struct { seen: any; }
 
-named :: (v: any) -> string { type_name(type_of(v)) }
+named :: (v: any) -> string { @typeName(type_of(v)) }
 returned :: (s: Sized) -> any { s }
 
 main :: () {

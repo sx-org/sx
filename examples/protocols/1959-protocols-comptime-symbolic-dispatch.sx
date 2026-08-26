@@ -39,7 +39,7 @@ narrowed :: () -> i64 {
 named :: () -> string {
     w := Widget{ n = 1 };
     v : View = w;
-    return type_name(type_of(v));
+    return @typeName(type_of(v));
 }
 
 // A protocol value flowing through an ordinary function parameter and back

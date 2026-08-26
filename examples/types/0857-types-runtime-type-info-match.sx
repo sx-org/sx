@@ -16,7 +16,7 @@ kind_of :: (tp: Type) -> string {
         case .enum: |ei| { return format("enum n={} v2={}", ei.variants.len, ei.variants[2].name); }
         case .union: |ui| { return format("union n={}", ui.arms.len); }
         case .int: |ii| { return format("int {}sig={}", ii.bits, ii.signed); }
-        case .array: |ai| { return format("array [{}]{}", ai.len, type_name(ai.elem)); }
+        case .array: |ai| { return format("array [{}]{}", ai.len, @typeName(ai.elem)); }
         case .string: { return "string"; }
         else: { return "other"; }
     }

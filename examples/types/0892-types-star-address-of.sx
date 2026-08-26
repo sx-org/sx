@@ -18,7 +18,7 @@ main :: () {
     bump(*x);
     print("value: {}\n", x);
 
-    print("types: {} {} {}\n", size_of(*i64), size_of(**i64), type_name(*Pair));
+    print("types: {} {} {}\n", size_of(*i64), size_of(**i64), @typeName(*Pair));
 
     pr := Pair{ a = 5, b = 6 };
     fp := *pr.b;

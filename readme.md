@@ -227,7 +227,7 @@ match shape {
 match av {
     case i64: |v| print("int {}\n", v);
     case []u8: |b| print("{} bytes\n", b.len);
-    else: print("{}\n", type_name(type_of(av)));
+    else: print("{}\n", @typeName(type_of(av)));
 }
 
 if 0 <= x <= 100 { … }
@@ -342,7 +342,7 @@ main :: () {
 
 ```sx
 describe :: (tp: Type) {
-    print("{} (size {})\n", type_name(tp), size_of(tp));
+    print("{} (size {})\n", @typeName(tp), size_of(tp));
     match type_info(tp) {
         case .struct: |si| { for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); } }
         else: {}

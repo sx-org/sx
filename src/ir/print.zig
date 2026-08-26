@@ -397,6 +397,7 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .field_name_get => |fr| try writer.print("field_name_get T{d}[%{d}] : ", .{ fr.struct_type.index(), fr.index.index() }),
         .field_value_get => |fr| try writer.print("field_value_get %{d}, T{d}[%{d}] : ", .{ fr.base.index(), fr.struct_type.index(), fr.index.index() }),
         .error_tag_name_get => |u| try writer.print("error_tag_name_get %{d} : ", .{u.operand.index()}),
+        .error_payload_view => |u| try writer.print("error_payload_view %{d} : ", .{u.operand.index()}),
 
         // ── Terminators ─────────────────────────────────────────
         .br => |b| {
