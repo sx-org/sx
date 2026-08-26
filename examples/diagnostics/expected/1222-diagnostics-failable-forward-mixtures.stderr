@@ -1,23 +1,23 @@
 error: cannot forward this failable result: it carries 0 value slots, but the function returns 1
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:30:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:29:12
    |
-30 |     return pure_cal(x);
+29 |     return pure_cal(x);
    |            ^^^^^^^^^^^
 
 error: cannot forward this failable result: it carries 1 value slot, but the function returns 0
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:36:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:35:12
    |
-36 |     return val_cal(x);
+35 |     return val_cal(x);
    |            ^^^^^^^^^^
 
 error: error member 'Odd' is not in caller's error set 'MyErr'
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:41:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:40:12
    |
-41 |     return bare_cal(x);
+40 |     return bare_cal(x);
    |            ^^^^^^^^^^^
 
 error: error member 'Big' is not in caller's error set 'MyErr'
-  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:41:12
+  --> examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx:40:12
    |
-41 |     return bare_cal(x);
+40 |     return bare_cal(x);
    |            ^^^^^^^^^^^
