@@ -137,6 +137,12 @@ pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref 
         }
         return self.builder.constInt(0, .any);
     }
+    if (self.module.types.isTagOnlyChannel(src)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "'{s}' is a tag view and carries no payload", .{self.formatTypeName(src)});
+        }
+        return self.builder.constInt(0, .any);
+    }
     const val = self.lowerExpr(arg);
     return self.builder.emit(.{ .error_payload_view = .{ .operand = val } }, .any);
 }
@@ -484,13 +490,15 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
 
 /// Whether an error-set value of `src` is a legal retype to `dst`: every
 /// source tag id is in `dst`, or an inferred bare-`!` on either side absorbs
-/// any tag.
+/// any tag. A tag view cannot retype onto a live channel — it carries no
+/// payload to grow into one.
 pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) bool {
     if (src == dst) return true;
     if (src.isBuiltin() or dst.isBuiltin()) return false;
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return false;
+    if (src_info.error_set.tag_only and !dst_info.error_set.tag_only) return false;
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return true;
     for (src_info.error_set.tags) |tag| {
         var found = false;
@@ -515,6 +523,12 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return;
+    if (src_info.error_set.tag_only and !dst_info.error_set.tag_only) {
+        if (self.diagnostics) |diags| {
+            diags.addFmt(.err, span, "'{s}' is a tag view and carries no payload — cannot coerce to '{s}'", .{ self.formatTypeName(src), self.formatTypeName(dst) });
+        }
+        return;
+    }
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return;
     const src_name = self.module.types.getString(src_info.error_set.name);
     const dst_name = self.module.types.getString(dst_info.error_set.name);
