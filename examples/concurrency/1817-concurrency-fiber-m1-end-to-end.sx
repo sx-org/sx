@@ -42,9 +42,9 @@ main :: () -> i64 {
     push .{ io = s } {
         ps.spawn(||_{ pl } {
             // Launch three async workers; each sleeps, logs its completion, returns.
-            a := context.io.async(||_{ pl } -> (i64, !) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });
-            b := context.io.async(||_{ pl } -> (i64, !) { try context.io.sleep(10); rec(pl, 2, context.io.now_ms()); 20 });
-            c := context.io.async(||_{ pl } -> (i64, !) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
+            a := context.io.async(||_{ pl } -> (i64, !IoErr) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });
+            b := context.io.async(||_{ pl } -> (i64, !IoErr) { try context.io.sleep(10); rec(pl, 2, context.io.now_ms()); 20 });
+            c := context.io.async(||_{ pl } -> (i64, !IoErr) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
 
             // Await in SPAWN order; results come back correct regardless.
             va := a.await() ?? { -1 };

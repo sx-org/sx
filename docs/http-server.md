@@ -70,7 +70,7 @@ Three dispatch models, chosen by `Config`:
   The provider (`fiber_sched.sx`) wraps `std/sched` — aarch64-only (the
   context-switch asm); it is a direct import, never re-exported, so
   non-fiber programs stay portable. Fibers and a pool together are
-  rejected (`error.Config`). Handlers must not call the scheduler's own
+  rejected (`HttpErr.Config`). Handlers must not call the scheduler's own
   `sleep`/`block_on_fd`; `resp.stream` producers follow the INLINE
   lifetime contract (the fiber's stack is gone when the producer is
   pulled — `ctx` must be caller-owned). Fiber handlers run on a **128 KB
@@ -222,7 +222,7 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
     once the body completes.
   - Inline mode (`thread_pool_count == 0`) cannot stream (the reader would
     block the loop thread that feeds it) — `Server.init` raises
-    `error.Config`.
+    `HttpErr.Config`.
 
   See `examples/http/1698-http-stream-request-body.sx`.
 
@@ -293,8 +293,8 @@ transparently decode. If the caller manually sends an `Accept-Encoding` in that
 mode, arbitrary unknown, repeated, or stacked coding fields and the coded body
 remain intact, allowing explicit codec use. With decoding enabled, exactly one
 supported coding is required. Malformed framing/coding lists, unsupported
-codings, truncated streams, and checksum failures return `error.Recv`;
-insufficient decoded capacity returns `error.TooLarge`.
+codings, truncated streams, and checksum failures return `ClientErr.Recv`;
+insufficient decoded capacity returns `ClientErr.TooLarge`.
 
 See `examples/http/1719-http-content-encoding.sx` and the adjacent 1727–1730
 regressions for fixed/streamed coding, negotiation and range policy, framing
@@ -360,7 +360,7 @@ The listener is configured entirely from `Config`:
   `""` (default) binds IPv4 `INADDR_ANY`; `"127.0.0.1"` restricts to v4
   loopback; `"::"` makes an IPv6 listener that ALSO serves v4 by default
   (see `ipv6_only`); `"::1"` is v6 loopback only. A value that parses as
-  neither family is `error.Bind` — never a fallback bind. Hostnames are
+  neither family is `HttpErr.Bind` — never a fallback bind. Hostnames are
   not resolved here (a bind address is infrastructure, not DNS); use
   `socket.resolve` yourself if you must.
 - **`ipv6_only`** — every v6 listener sets `IPV6_V6ONLY` explicitly from
@@ -368,7 +368,7 @@ The listener is configured entirely from `Config`:
   as mapped addresses), never the OS's sysctl-dependent default.
 - **`unix_path`** — non-empty makes an AF_UNIX listener on that path
   (`port`, `bind_addr`, `reuse_port` do not apply; combining with
-  `bind_addr`/`reuse_port` is `error.Config`). **The path belongs to the
+  `bind_addr`/`reuse_port` is `HttpErr.Config`). **The path belongs to the
   server, exclusively**: whatever file is there is unlinked before bind
   (a regular file included), and `close()`/`stop()` remove it — so never
   point two servers at the same path (they unlink each other's live

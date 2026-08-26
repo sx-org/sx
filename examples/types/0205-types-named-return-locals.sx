@@ -22,7 +22,7 @@ bounds :: (n: i32) -> (lo: i32, hi: i32) {
 // Named slots work with an error channel too (the error is the last slot).
 Err :: error { Negative }
 roots :: (n: i32) -> (val: i32, sq: i32, !) {
-    if n < 0 { raise error.Negative; }
+    if n < 0 { raise Err.Negative; }
     val = n;
     sq = n * n;
 }

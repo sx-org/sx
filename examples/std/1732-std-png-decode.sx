@@ -52,12 +52,12 @@ main :: () {
 
     // Rejects: signature, truncation, CRC.
     bad := png.decode("not a png at all") catch |e| {
-        process.assert(e == error.InvalidSignature, "signature reject");
+        process.assert(e == .InvalidSignature, "signature reject");
         print("sig reject ok\n");
         png.Image{ pixels = "", width = 0, height = 0, format = .rgba }
     };
     short := png.decode(data[..20]) catch |e| {
-        process.assert(e == error.TruncatedData, "truncation reject");
+        process.assert(e == .TruncatedData, "truncation reject");
         print("trunc reject ok\n");
         png.Image{ pixels = "", width = 0, height = 0, format = .rgba }
     };
@@ -68,7 +68,7 @@ main :: () {
     corrupt[16] = corrupt[16] ^ 0xff;
     cstr := string{ ptr = *corrupt[0], len = data.len };
     crc := png.decode(cstr) catch |e| {
-        process.assert(e == error.ChecksumMismatch, "crc reject");
+        process.assert(e == .ChecksumMismatch, "crc reject");
         print("crc reject ok\n");
         png.Image{ pixels = "", width = 0, height = 0, format = .rgba }
     };

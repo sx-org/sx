@@ -15,7 +15,7 @@ gen :: ($T: Type, v: T) -> (T, !E) { v }
 
 // Generic that RAISES — the caller's catch must still fire.
 gfail :: ($T: Type, v: T, bad: bool) -> (T, !E) {
-    if bad { raise error.Bad; }
+    if bad { raise .Bad; }
     v
 }
 

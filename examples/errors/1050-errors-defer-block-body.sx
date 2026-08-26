@@ -7,7 +7,7 @@
 E :: error { Bad }
 
 probe   :: () -> (i32, !E) { return 21; }
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 
 run :: () {
     defer {

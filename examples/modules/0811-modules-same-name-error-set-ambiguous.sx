@@ -8,7 +8,7 @@
 // last-wins author:
 //
 //   - reflection / type-arg slot     `size_of(IoErr)`
-//   - typed error-value annotation    `e : IoErr = error.Disk`
+//   - typed error-value annotation    `e : IoErr = .Disk`
 //   - type-as-value                   `t : Type = IoErr`
 //   - type-category match arm         `case IoErr:`
 //   - `!Named` failable channel       `-> !IoErr`   (audited use surface)
@@ -30,12 +30,12 @@ describe :: ($T: Type) -> i32 {
 }
 
 fail_io :: () -> !IoErr {
-    raise error.Disk;
+    raise .Disk;
 }
 
 main :: () -> i32 {
     sz := size_of(IoErr);
-    e : IoErr = error.Disk;
+    e : IoErr = .Disk;
     t : Type = IoErr;
     k := describe(i64);
     0

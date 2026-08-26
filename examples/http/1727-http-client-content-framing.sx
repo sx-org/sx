@@ -114,7 +114,7 @@ decode_case :: (packed: string, plain: string, coding: string, framing: i64, one
     storage := context.allocator.alloc_bytes(cap);
     if storage == null { socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); } return false; }
     response, e := http.Client.recv(pair[0], xx storage, cap);
-    if one_short { ok = ok and e == error.TooLarge; }
+    if one_short { ok = ok and e == .TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
         ok = ok and !e and response.decoded_from != null and response.decoded_from?! == wanted
@@ -179,7 +179,7 @@ encoded_response_fails :: (packed: string, coding: string) -> bool {
     storage : [4096]u8 = ---;
     _, e := http.Client.recv(pair[0], *storage[0], storage.len);
     socket.close(pair[0]);
-    ok and e == error.Recv
+    ok and e == .Recv
 }
 
 coding_list_fails :: (value: string) -> bool {
@@ -192,7 +192,7 @@ coding_list_fails :: (value: string) -> bool {
     storage : [4096]u8 = ---;
     _, e := http.Client.recv(pair[0], *storage[0], storage.len);
     socket.close(pair[0]);
-    ok and e == error.Recv
+    ok and e == .Recv
 }
 
 main :: () -> i32 {

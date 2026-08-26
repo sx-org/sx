@@ -8,14 +8,14 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
-recover :: () -> (i32, !E) { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
+recover :: () -> (i32, !E) { raise .Bad; }
 
 work :: (n: i32) -> !E {
     defer  print("defer: always\n");                                 // plain cleanup
     onfail { failing() catch |e| print("onfail: caught (catch)\n"); }  // catch absorbs
     onfail { x := recover() ?? 7; print("onfail: x={} (??)\n", x); } // ??-value absorbs
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

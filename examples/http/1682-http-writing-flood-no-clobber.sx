@@ -117,8 +117,8 @@ main :: () -> i32 {
             // 3x the 8 KB cap already landed and the kernel is backed up
             // (the fixed server stopped reading): the over-cap branch has
             // fired — no need to force the rest through.
-            else if we == error.WouldBlock and fsent >= 24576 { break; }
-            else if we != error.WouldBlock { break; }   // server reset us
+            else if we == .WouldBlock and fsent >= 24576 { break; }
+            else if we != .WouldBlock { break; }   // server reset us
             srv.tick(1) catch {};
             t += 1;
         }
@@ -135,7 +135,7 @@ main :: () -> i32 {
             while true {
                 n, re := socket.read_nb(ca, *rbuf[total], (cap - total));
                 if !re { total += n; got += n; continue; }
-                if re == error.Closed { done = true; }  // orderly EOF after close_after
+                if re == .Closed { done = true; }  // orderly EOF after close_after
                 break;                                  // WouldBlock: next tick
             }
             if got > 0 { stall = 0; } else { stall += 1; }

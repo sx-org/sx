@@ -10,7 +10,7 @@
 E :: error { Bad }
 
 inner :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 
@@ -25,8 +25,8 @@ run :: (n: i32) -> !E {
 
 // `onfail e` binds the tag.
 classify :: (n: i32) -> !E {
-    onfail |e| { if e == error.Bad { print("cleanup: bad\n"); } }
-    if n < 0 { raise error.Bad; }
+    onfail |e| { if e == .Bad { print("cleanup: bad\n"); } }
+    if n < 0 { raise .Bad; }
     return;
 }
 

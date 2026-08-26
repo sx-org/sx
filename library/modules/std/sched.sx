@@ -32,7 +32,7 @@
 c :: @import "modules/std/c.sx";
 // True cancellation: `suspend_raw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
-// to raise `error.Canceled` on resume. atomic.sx has no naked asm, so it is safe
+// to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fib_tramp re-emit).
 @import "modules/std/atomic.sx";
 // `race` synthesizes its result type (a tagged-union mirroring the input tuple's
@@ -627,16 +627,15 @@ impl Io for Scheduler {
             entry_fn(arg);
         });
         // Stash the cancel-flag back-ref: `suspend_raw` consults it on
-        // this fiber to raise `error.Canceled`. `null` for an uncancellable spawn.
+        // this fiber to raise `IoErr.Canceled`. `null` for an uncancellable spawn.
         f.cancel_flag = opts.cancel_flag;
         return f;
     }
 
-    // Park the running fiber until a matching `ready`. `-> !` is the cancellation
-    // channel the protocol mandates: `error.Canceled` is raised INSTEAD of
-    // parking when the task is already cancelled, and again on resumption when
-    // a `cancel` landed while parked.
-    suspend_raw :: (self: *Scheduler, park: *ParkToken) -> ! {
+    // Park the running fiber until a matching `ready`. `IoErr.Canceled` is
+    // raised INSTEAD of parking when the task is already cancelled, and again
+    // on resumption when a `cancel` landed while parked.
+    suspend_raw :: (self: *Scheduler, park: *ParkToken) -> !IoErr.Canceled {
         // PRE-PARK check: if this fiber's task was
         // already cancelled before it reached this suspend, deliver immediately —
         // do NOT park (a park with no pending waker would deadlock; the cancel's
@@ -650,7 +649,7 @@ impl Io for Scheduler {
             // Evict any pending timer / waiter for this fiber before unwinding.
             cancel_timer_for(self, self.current);
             cancel_io_waiter_for(self, self.current);
-            raise error.Canceled;
+            raise .Canceled;
         }
         // Record the parking fiber so a cross-fiber `ready(park)` (the worker that
         // completes the awaited task, or a `cancel` that wakes this worker) can
@@ -660,7 +659,7 @@ impl Io for Scheduler {
         // POST-RESUME check: a `cancel` that landed while we were parked woke us
         // here (evicting any armed timer). Deliver `Canceled` so the worker
         // abandons its body — its post-suspend lines never run.
-        if self.fiber_canceled(self.current) { raise error.Canceled; }
+        if self.fiber_canceled(self.current) { raise .Canceled; }
     }
 
     // True iff fiber `f`'s task carries a cancel flag that is set. The flag is a

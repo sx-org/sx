@@ -11,7 +11,7 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 
 work :: (n: i32) -> !E {
     defer {
@@ -26,7 +26,7 @@ work :: (n: i32) -> !E {
             failing();              // REJECTED: nested in the `while` body
         }
     }
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

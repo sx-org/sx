@@ -42,13 +42,13 @@ main :: () -> i64 {
             held := pctx.leak_count();
 
             n := 41;
-            f := context.io.async(||_{ n } -> (i64, !) n, a_h);
+            f := context.io.async(||_{ n } -> (i64, !IoErr) n, a_h);
             po.read = f.await() ?? 0;
 
             // A worker that WRITES its env writes the persisted copy — the
             // binding the literal read keeps the value it had.
             hits := 0;
-            g := context.io.async(||_{ hits } -> (i64, !) { hits = hits + 1; hits }, a_h);
+            g := context.io.async(||_{ hits } -> (i64, !IoErr) { hits = hits + 1; hits }, a_h);
             po.wrote = g.await() ?? 0;
             po.outer = hits;
 
@@ -57,7 +57,7 @@ main :: () -> i64 {
 
             before := pgpa.alloc_count;
             k := 6;
-            h := context.io.async(||_{ k } -> (i64, !) k * 7, arena_h);
+            h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena_h);
             po.arena_read = h.await() ?? 0;
             po.growth = pgpa.alloc_count - before;
         });

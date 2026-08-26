@@ -14,7 +14,7 @@ runwith :: (cb: Closure(i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch |
 
 main :: () -> i32 {
     // block-body and arrow-body failable closures, called directly
-    m := |x: i64| -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; };
+    m := |x: i64| -> (i64, !E) { if x < 0 { raise .Neg; } return x * 2; };
     n := |x: i64| -> (i64, !E) x + 1;
     print("{} {} {} {}\n", m(5) catch |e| 0, m(-1) catch |e| 99, m(-1) ?? 7, n(40) catch |e| 0); // 10 99 7 41
 

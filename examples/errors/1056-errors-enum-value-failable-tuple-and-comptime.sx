@@ -1,7 +1,7 @@
 // Enum-valued value-carrying failables, two paths the bare-success rule
 // does not itself cover.
 //
-// An EXPLICIT full failable tuple return `return (.v, error.X)` keeps the
+// An EXPLICIT full failable tuple return `return (.v, .X)` keeps the
 // return target at the FULL failable tuple; the target narrows to the value
 // type only for a BARE value, otherwise the trailing error element does not
 // resolve against the error set. Both branches live in one fn: bare-value
@@ -10,7 +10,7 @@
 // A COMPTIME-PARAM ($n) value-failable body is INLINED at the call site
 // (lowerComptimeCall), so the success return takes the inline-return path,
 // which zeroes the error slot there as well. The error slot is read at
-// RUNTIME on the success path (cast, bare `if`, `== error.X`) so an undef
+// RUNTIME on the success path (cast, bare `if`, `== .X`) so an undef
 // slot is caught, not masked by the `if !e` proof.
 
 @import "modules/std.sx";
@@ -21,14 +21,14 @@ E :: error { Nope }
 // F1: bare-value success path AND explicit-tuple error path in one function.
 classify :: (s: string) -> (Color, !E) {
     if s == "ok" { return .blue; }        // bare value → {2, 0}
-    return .{.red, error.Nope};            // explicit full tuple → {0, 1}
+    return .{.red, .Nope};            // explicit full tuple → {0, 1}
 }
 
 // F2: comptime parameter forces inline lowering of the body.
 ct_pick :: ($n: i32, s: string) -> (Color, !E) {
     if s == "red"  { return .red; }       // bare value, inline path → {0, 0}
     if s == "blue" { return .blue; }      // bare value, inline path → {2, 0}
-    raise error.Nope;                     // inline error path → {undef, 1}
+    raise .Nope;                     // inline error path → {undef, 1}
 }
 
 main :: () -> i32 {
@@ -41,14 +41,14 @@ main :: () -> i32 {
     // ── F1 error (explicit tuple): right tag flows, no panic ──
     c2, e2 := classify("bad");
     print("F1 bad: err nonzero = {}\n", e2.(i64) != 0);             // true (ordinal is program-global, not pinned)
-    if e2 == error.Nope { print("F1 bad: is Nope (ok)\n"); } else { print("F1 bad: not Nope (WRONG)\n"); }
+    if e2 == .Nope { print("F1 bad: is Nope (ok)\n"); } else { print("F1 bad: not Nope (WRONG)\n"); }
     print("F1 bad: tag name = {}\n", error_name(e2));               // Nope
 
     // ── F2 success (comptime-param, inline path): error slot 0 at runtime ──
     c3, e3 := ct_pick(7, "red");
     print("F2 red: err int = {}\n", e3.(i64));                      // 0
     if e3 { print("F2 red bare-if: ERROR (WRONG)\n"); } else { print("F2 red bare-if: ok\n"); }
-    if e3 == error.Nope { print("F2 red == Nope (WRONG)\n"); } else { print("F2 red != Nope (ok)\n"); }
+    if e3 == .Nope { print("F2 red == Nope (WRONG)\n"); } else { print("F2 red != Nope (ok)\n"); }
     if !e3 { print("F2 red guard: c = {}\n", c3.(i64)); }           // 0
 
     c4, e4 := ct_pick(7, "blue");
@@ -57,7 +57,7 @@ main :: () -> i32 {
     // ── F2 error (comptime-param, inline error path): right tag ──
     c5, e5 := ct_pick(7, "x");
     print("F2 err: err nonzero = {}\n", e5.(i64) != 0);             // true (ordinal is program-global, not pinned)
-    if e5 == error.Nope { print("F2 err: is Nope (ok)\n"); } else { print("F2 err: not Nope (WRONG)\n"); }
+    if e5 == .Nope { print("F2 err: is Nope (ok)\n"); } else { print("F2 err: not Nope (WRONG)\n"); }
 
     return 0;
 }

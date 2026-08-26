@@ -21,7 +21,7 @@
 MyErr :: error { Boom }
 
 inner :: (x: i64) -> (i64, !MyErr) {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
     return x;
 }
 
@@ -37,7 +37,7 @@ fwd_same :: (x: i64) -> (i64, !MyErr) {
 
 // multi-value concrete → bare
 inner2 :: (x: i64) -> (i64, i64, !MyErr) {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
     return x, x + 1;
 }
 fwd2 :: (x: i64) -> (i64, i64, !) {
@@ -46,7 +46,7 @@ fwd2 :: (x: i64) -> (i64, i64, !) {
 
 // pure failable concrete → bare
 check :: (x: i64) -> !MyErr {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
 }
 fwd_pure :: (x: i64) -> ! {
     return check(x);
@@ -120,7 +120,7 @@ main :: () -> i32 {
     // tie-break: value tuple with an error-set-typed slot is the value list
     pv, pe, pee := pair();
     if pee { return 17; }
-    if pe != error.Boom { return 18; }
+    if pe != .Boom { return 18; }
     print("pair = {}, Boom-as-value\n", pv);
 
     // try / ?? interop

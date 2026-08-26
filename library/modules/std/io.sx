@@ -26,13 +26,6 @@
 c    :: @import "modules/std/c.sx";
 time :: @import "modules/std/time.sx";
 
-// --- IoErr: the error channel async rides (cancellation = model (a)) ---
-//
-// A canceled future raises `.Canceled` out of `await`; a failed task
-// raises `.Failed`. The `(T, !IoErr)` value-failable shape is the same
-// one the rest of the stdlib uses (see examples/1011-, 1012-).
-IoErr :: error { Canceled; Failed }
-
 // --- CBlockingIo: stateless Io that runs tasks synchronously ---
 //
 // Zero-sized struct (mirror of CAllocator). Used as the default
@@ -64,10 +57,9 @@ impl Io for CBlockingIo {
         return null;
     }
     // Blocking never suspends — a suspend at the bottom of the M:1 stack
-    // would deadlock. No-op (returns success). The `!` is part of the
-    // protocol contract (a suspending impl raises `.Canceled` out here),
-    // so the conforming blocking impl keeps it even though it never raises.
-    suspend_raw :: (self: *CBlockingIo, park: *ParkToken) -> ! {
+    // would deadlock. No-op (returns success). The channel is the protocol's,
+    // so the conforming impl carries it even though it never raises.
+    suspend_raw :: (self: *CBlockingIo, park: *ParkToken) -> !IoErr.Canceled {
         return;
     }
     ready :: (self: *CBlockingIo, park: ParkToken) {}
@@ -328,7 +320,7 @@ cancel :: ufcs (f: *Future($R)) {
 // here instead of running past the sleep. No-op under `CBlockingIo` (its
 // `arm_timer`/`suspend_raw` are stubs — the blocking model has no scheduler to
 // advance a virtual clock).
-sleep :: ufcs (io: Io, ms: i64) -> ! {
+sleep :: ufcs (io: Io, ms: i64) -> !IoErr.Canceled {
     pk : ParkToken = .{ handle = null };
     io.arm_timer(io.now_ms() + ms, pk);
     try io.suspend_raw(*pk);

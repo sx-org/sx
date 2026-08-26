@@ -3,7 +3,7 @@ Failure :: error { Broken };
 
 main :: () -> i32 {
     failure : ?Failure = null;
-    failure = error.Broken;
+    failure = .Broken;
     if failure == null { return 1; }
     0
 }

@@ -429,33 +429,33 @@ SqliteStmt :: struct {
     // ── binding ──
     bind_text :: (self: *SqliteStmt, idx: i32, s: string) -> !SqliteErr {
         rc := sqlite3_bind_text(self.handle, idx, s.ptr, s.len, SQLITE_TRANSIENT);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     bind_blob :: (self: *SqliteStmt, idx: i32, bytes: string) -> !SqliteErr {
         rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, bytes.len, SQLITE_TRANSIENT);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     bind_double :: (self: *SqliteStmt, idx: i32, v: f64) -> !SqliteErr {
         rc := sqlite3_bind_double(self.handle, idx, v);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     bind_int64 :: (self: *SqliteStmt, idx: i32, v: i64) -> !SqliteErr {
         rc := sqlite3_bind_int64(self.handle, idx, v);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     bind_null :: (self: *SqliteStmt, idx: i32) -> !SqliteErr {
         rc := sqlite3_bind_null(self.handle, idx);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     // Reserve an `n`-byte zero-filled blob (fill it via SqliteBlob I/O).
     bind_zeroblob :: (self: *SqliteStmt, idx: i32, n: u64) -> !SqliteErr {
         rc := sqlite3_bind_zeroblob64(self.handle, idx, n);
-        if rc != SQLITE_OK { raise error.Bind; }
+        if rc != SQLITE_OK { raise .Bind; }
         return;
     }
     clear_bindings :: (self: *SqliteStmt) {
@@ -480,7 +480,7 @@ SqliteStmt :: struct {
     // detail left in the connection's errmsg.
     step :: (self: *SqliteStmt) -> (i32, !SqliteErr) {
         rc := sqlite3_step(self.handle);
-        if rc != SQLITE_ROW and rc != SQLITE_DONE { raise error.Step; }
+        if rc != SQLITE_ROW and rc != SQLITE_DONE { raise .Step; }
         return rc;
     }
     reset :: (self: *SqliteStmt) {
@@ -586,7 +586,7 @@ Sqlite :: struct {
         rc := sqlite3_open(to_cstring(path), *h);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
-            raise error.Open;
+            raise .Open;
         }
         return Sqlite{ handle = h };
     }
@@ -596,7 +596,7 @@ Sqlite :: struct {
         rc := sqlite3_open_v2(to_cstring(path), *h, flags, 0);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
-            raise error.Open;
+            raise .Open;
         }
         return Sqlite{ handle = h };
     }
@@ -616,14 +616,14 @@ Sqlite :: struct {
     // (DDL, pragmas, BEGIN/COMMIT). Detail via errmsg on failure.
     exec :: (self: *Sqlite, sql: string) -> !SqliteErr {
         rc := sqlite3_exec(self.handle, to_cstring(sql), 0, 0, 0);
-        if rc != SQLITE_OK { raise error.Exec; }
+        if rc != SQLITE_OK { raise .Exec; }
         return;
     }
 
     prepare :: (self: *Sqlite, sql: string) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
         rc := sqlite3_prepare_v2(self.handle, sql.ptr, sql.len, *sh, 0);
-        if rc != SQLITE_OK { raise error.Prepare; }
+        if rc != SQLITE_OK { raise .Prepare; }
         return SqliteStmt{ handle = sh, db = self.handle };
     }
     // prepare with SQLITE_PREPARE_* flags (e.g. PERSISTENT for the
@@ -631,7 +631,7 @@ Sqlite :: struct {
     prepare_v3 :: (self: *Sqlite, sql: string, flags: u32) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
         rc := sqlite3_prepare_v3(self.handle, sql.ptr, sql.len, flags, *sh, 0);
-        if rc != SQLITE_OK { raise error.Prepare; }
+        if rc != SQLITE_OK { raise .Prepare; }
         return SqliteStmt{ handle = sh, db = self.handle };
     }
 
@@ -709,7 +709,7 @@ Sqlite :: struct {
         pk : i32 = 0;
         ai : i32 = 0;
         rc := sqlite3_table_column_metadata(self.handle, to_cstring("main"), to_cstring(table), to_cstring(column), *dt, *cs, *nn, *pk, *ai);
-        if rc != SQLITE_OK { raise error.Metadata; }
+        if rc != SQLITE_OK { raise .Metadata; }
         dtp : ?*u8 = if dt != 0 then dt.(*u8).(?*u8) else null;
         csp : ?*u8 = if cs != 0 then cs.(*u8).(?*u8) else null;
         return ColumnMeta{
@@ -728,19 +728,19 @@ Sqlite :: struct {
             sqlite3_free(q);
             return out;
         }
-        raise error.Serialize;
+        raise .Serialize;
     }
     // Replace "main" with the database image in `bytes`. The image is
     // copied into sqlite-owned memory (FREEONCLOSE+RESIZEABLE), so
     // `bytes` may die immediately after.
     deserialize :: (self: *Sqlite, bytes: string) -> !SqliteErr {
         buf := sqlite3_malloc64((bytes.len));
-        if buf == 0 { raise error.Serialize; }
+        if buf == 0 { raise .Serialize; }
         bp : [*]u8 = buf.([*]u8);
         c.memcpy(bp, bytes.ptr, bytes.len);
         rc := sqlite3_deserialize(self.handle, to_cstring("main"), buf, bytes.len, bytes.len,
                                   SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
-        if rc != SQLITE_OK { raise error.Serialize; }
+        if rc != SQLITE_OK { raise .Serialize; }
         return;
     }
 }
@@ -757,14 +757,14 @@ SqliteBlob :: struct {
         h : usize = 0;
         rc := sqlite3_blob_open(db.handle, to_cstring("main"), to_cstring(table), to_cstring(column),
                                 rowid, if writable then 1 else 0, *h);
-        if rc != SQLITE_OK { raise error.Blob; }
+        if rc != SQLITE_OK { raise .Blob; }
         return SqliteBlob{ handle = h };
     }
     // Point this handle at the same column in a DIFFERENT row (cheaper
     // than close + open).
     reopen :: (self: *SqliteBlob, rowid: i64) -> !SqliteErr {
         rc := sqlite3_blob_reopen(self.handle, rowid);
-        if rc != SQLITE_OK { raise error.Blob; }
+        if rc != SQLITE_OK { raise .Blob; }
         return;
     }
     bytes :: (self: *SqliteBlob) -> i32 {
@@ -774,13 +774,13 @@ SqliteBlob :: struct {
         len : i64 = n;
         raw : [*]u8 = (context.allocator.alloc_bytes(len + 1)).([*]u8);
         rc := sqlite3_blob_read(self.handle, raw, n, offset);
-        if rc != SQLITE_OK { raise error.Blob; }
+        if rc != SQLITE_OK { raise .Blob; }
         raw[len] = 0;
         return string{ ptr = raw, len = len };
     }
     write :: (self: *SqliteBlob, offset: i32, data: string) -> !SqliteErr {
         rc := sqlite3_blob_write(self.handle, data.ptr, data.len, offset);
-        if rc != SQLITE_OK { raise error.Blob; }
+        if rc != SQLITE_OK { raise .Blob; }
         return;
     }
     close :: (self: *SqliteBlob) {
@@ -799,7 +799,7 @@ SqliteBackup :: struct {
 
     init :: (dst: *Sqlite, src: *Sqlite) -> (SqliteBackup, !SqliteErr) {
         h := sqlite3_backup_init(dst.handle, to_cstring("main"), src.handle, to_cstring("main"));
-        if h == 0 { raise error.Backup; }
+        if h == 0 { raise .Backup; }
         return SqliteBackup{ handle = h };
     }
     // Copy up to `n` pages (-1 = all remaining). SQLITE_OK = more to do,
@@ -825,6 +825,6 @@ sqlite_backup_run :: (dst: *Sqlite, src: *Sqlite) -> !SqliteErr {
     bk := try SqliteBackup.init(dst, src);
     rc := bk.step(-1);
     frc := bk.finish();
-    if rc != SQLITE_DONE or frc != SQLITE_OK { raise error.Backup; }
+    if rc != SQLITE_DONE or frc != SQLITE_OK { raise .Backup; }
     return;
 }

@@ -13,13 +13,13 @@
 E :: error { A; B };
 
 fa :: (n: i32) -> (i32, !E) {
-    if n == 0 { raise error.A; }
-    if n < 0  { raise error.B; }
+    if n == 0 { raise .A; }
+    if n < 0  { raise .B; }
     return n;
 }
 
 fv :: (n: i32) -> !E {                       // void (pure) failable
-    if n == 0 { raise error.A; }
+    if n == 0 { raise .A; }
     return;
 }
 

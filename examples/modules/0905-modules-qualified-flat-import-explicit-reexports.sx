@@ -14,7 +14,7 @@ main :: () -> i32 {
     overlay.number = 9;
     if overlay.number != 9 { return 4; }
 
-    err : facade.PublicError = error.Bad;
+    err : facade.PublicError = .Bad;
     protocol : facade.PublicProtocol = ---;
     alias : facade.PublicAlias = .{ value = 10 };
     if alias.value != 10 { return 5; }

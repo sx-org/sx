@@ -10,20 +10,20 @@
 
 // Param position: E is not declared yet.
 describe :: (e: E) -> i32 {
-    if e == error.Fault { return 1; }
-    if e == error.Other { return 2; }
+    if e == .Fault { return 1; }
+    if e == .Other { return 2; }
     return 0;
 }
 
 // Pure-failable return position.
 check :: (n: i32) -> !E {
-    if n < 0 { raise error.Fault; }
+    if n < 0 { raise .Fault; }
     return;
 }
 
 // Value-failable tuple return position.
 parse :: (n: i32) -> (i32, !E) {
-    if n == 0 { raise error.Other; }
+    if n == 0 { raise .Other; }
     return n * 2;
 }
 
@@ -33,9 +33,9 @@ main :: () -> i32 {
     bad := check(-1);
     good := check(1);
     r : i32 = 0;
-    if bad == error.Fault  { r = r + 1; }   // true  -> +1
-    if bad == error.Other  { r = r + 2; }   // false
-    if good == error.Fault { r = r + 4; }   // false (success = no error)
+    if bad == .Fault  { r = r + 1; }   // true  -> +1
+    if bad == .Other  { r = r + 2; }   // false
+    if good == .Fault { r = r + 4; }   // false (success = no error)
     print("check r={}\n", r);               // -> 1
 
     a := parse(21) catch |e| -1;            // success -> 42

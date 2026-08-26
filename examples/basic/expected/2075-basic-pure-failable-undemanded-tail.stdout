@@ -17,7 +17,6 @@ defer success
 tick defer-mixed
 defer mixed
 caught fails
-caught contextual
 caught forwards
 caught arrow
 caught prefix

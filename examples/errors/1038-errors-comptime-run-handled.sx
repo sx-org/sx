@@ -8,14 +8,14 @@
 E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
 guard :: (ok: bool) -> !E {
     onfail print("comptime cleanup\n");
-    if !ok { raise error.Bad; }
+    if !ok { raise .Bad; }
     return;
 }
 

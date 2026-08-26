@@ -10,7 +10,7 @@
 E :: error { Bad; Worse }
 
 inner :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;                              // success — no error
 }
 
@@ -24,9 +24,9 @@ main :: () -> i32 {
     bad  := outer(-1);                   // inner raises Bad -> outer propagates
     good := outer(7);                    // inner succeeds   -> outer succeeds
     r : i32 = 0;
-    if bad  == error.Bad   { r = r + 5; }    // true  -> +5
-    if good == error.Bad   { r = r + 1; }     // false (success = no error)
-    if bad  == error.Worse { r = r + 2; }     // false (propagated Bad)
+    if bad  == .Bad   { r = r + 5; }    // true  -> +5
+    if good == .Bad   { r = r + 1; }     // false (success = no error)
+    if bad  == .Worse { r = r + 2; }     // false (propagated Bad)
     print("try result: {}\n", r);             // -> 5
     return r;
 }

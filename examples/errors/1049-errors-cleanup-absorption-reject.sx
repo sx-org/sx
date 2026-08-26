@@ -8,12 +8,12 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 
 work :: (n: i32) -> !E {
     defer  failing();          // REJECTED: bare failable in a defer body
     onfail { failing(); }      // REJECTED: bare failable in an onfail body
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

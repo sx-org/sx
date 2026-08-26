@@ -6,7 +6,7 @@
 E :: error { Boom }
 
 f :: (fail: bool) -> (i64, !E) {
-    if fail { raise error.Boom; }
+    if fail { raise .Boom; }
     return 42;
 }
 

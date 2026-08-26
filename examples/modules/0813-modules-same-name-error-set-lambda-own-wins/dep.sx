@@ -7,5 +7,5 @@
 IoErr :: error { Net }
 
 dep_err :: () -> IoErr {
-    return error.Net;
+    return .Net;
 }

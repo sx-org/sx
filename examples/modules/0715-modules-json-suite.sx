@@ -53,7 +53,7 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
     raw : [5]u8 = ---;
     raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
-    return raises(string{ ptr = *raw[0], len = 5 }, error.BadControlChar, alloc);
+    return raises(string{ ptr = *raw[0], len = 5 }, .BadControlChar, alloc);
 }
 
 // Build the PART A document: every value kind, in the insertion order the
@@ -195,34 +195,34 @@ main :: () -> ! {
 
     // ── PART C. malformed-input matrix — one assertion per variant + edge ─
     // UnexpectedToken: bad literal, non-string key, missing comma.
-    report("err-token-literal", raises("xyz",     error.UnexpectedToken, a));
-    report("err-token-key",     raises("{1:2}",   error.UnexpectedToken, a));
-    report("err-token-comma",   raises("[1 2]",   error.UnexpectedToken, a));
+    report("err-token-literal", raises("xyz",     .UnexpectedToken, a));
+    report("err-token-key",     raises("{1:2}",   .UnexpectedToken, a));
+    report("err-token-comma",   raises("[1 2]",   .UnexpectedToken, a));
 
     // UnexpectedEnd: truncated object / array / string.
-    report("err-end-object", raises("{\"a\":", error.UnexpectedEnd, a));
-    report("err-end-array",  raises("[1,",     error.UnexpectedEnd, a));
-    report("err-end-string", raises("\"abc",   error.UnexpectedEnd, a));
+    report("err-end-object", raises("{\"a\":", .UnexpectedEnd, a));
+    report("err-end-array",  raises("[1,",     .UnexpectedEnd, a));
+    report("err-end-string", raises("\"abc",   .UnexpectedEnd, a));
 
     // BadEscape: unknown escape, non-hex \u, high surrogate not followed by
     // a low surrogate.
-    report("err-esc-unknown",   raises("\"a\\xb\"",        error.BadEscape, a));
-    report("err-esc-bad-hex",   raises("\"\\uZZZZ\"",      error.BadEscape, a));
-    report("err-esc-surrogate", raises("\"\\uD83D\\u0041\"", error.BadEscape, a));
+    report("err-esc-unknown",   raises("\"a\\xb\"",        .BadEscape, a));
+    report("err-esc-bad-hex",   raises("\"\\uZZZZ\"",      .BadEscape, a));
+    report("err-esc-surrogate", raises("\"\\uD83D\\u0041\"", .BadEscape, a));
 
     // BadNumber: leading zero, lone minus, a fraction or exponent with no
     // digit, an integer just past i64 MAX (overflow), and a float past the
     // finite range.
-    report("err-num-leadzero", raises("01",  error.BadNumber, a));
-    report("err-num-lonedash", raises("-",   error.BadNumber, a));
-    report("err-num-nofrac",   raises("1.",  error.BadNumber, a));
-    report("err-num-noexp",    raises("1e",  error.BadNumber, a));
-    report("err-num-overflow", raises("9223372036854775808", error.BadNumber, a));
-    report("err-num-inf",      raises("1e400", error.BadNumber, a));
+    report("err-num-leadzero", raises("01",  .BadNumber, a));
+    report("err-num-lonedash", raises("-",   .BadNumber, a));
+    report("err-num-nofrac",   raises("1.",  .BadNumber, a));
+    report("err-num-noexp",    raises("1e",  .BadNumber, a));
+    report("err-num-overflow", raises("9223372036854775808", .BadNumber, a));
+    report("err-num-inf",      raises("1e400", .BadNumber, a));
 
     // TrailingGarbage: junk after a complete value.
-    report("err-trail-array",  raises("[1,2] x", error.TrailingGarbage, a));
-    report("err-trail-scalar", raises("null x",  error.TrailingGarbage, a));
+    report("err-trail-array",  raises("[1,2] x", .TrailingGarbage, a));
+    report("err-trail-scalar", raises("null x",  .TrailingGarbage, a));
 
     // BadControlChar: a raw control byte (< 0x20) inside a string.
     report("err-ctrl-tab", ctrl_raises(9,  a));   // raw 0x09

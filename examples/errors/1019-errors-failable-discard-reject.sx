@@ -11,12 +11,12 @@
 E :: error { Bad; Empty }
 
 pair :: (n: i32) -> (i32, i32, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return .{n, n + 1};
 }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return n * 2;
 }
 

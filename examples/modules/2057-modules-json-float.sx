@@ -60,7 +60,7 @@ far_overflow_raises :: (alloc: Allocator) -> bool {
     j := 0;
     while j < tail.len { src[2 + FAR_ZEROS + j] = tail[j]; j += 1; }
     _, e := parse(string{ ptr = src, len = len }, alloc);
-    e == error.BadNumber
+    e == .BadNumber
 }
 
 MIXED :: "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
@@ -107,16 +107,16 @@ main :: () -> ! {
     report("epsilon-round-trips",    round_trips(f64.epsilon, arena));
     report("negative-zero-round-trips", round_trips(neg_zero(), arena));
 
-    report("overflow-is-bad-number", raises("1e400", error.BadNumber, arena));
-    report("missing-fraction-digit-is-bad-number", raises("1.", error.BadNumber, arena));
-    report("missing-exponent-digit-is-bad-number", raises("1e", error.BadNumber, arena));
-    report("leading-zero-is-bad-number", raises("01.5", error.BadNumber, arena));
+    report("overflow-is-bad-number", raises("1e400", .BadNumber, arena));
+    report("missing-fraction-digit-is-bad-number", raises("1.", .BadNumber, arena));
+    report("missing-exponent-digit-is-bad-number", raises("1e", .BadNumber, arena));
+    report("leading-zero-is-bad-number", raises("01.5", .BadNumber, arena));
     // No JSON value starts with a point, so `.5` never reaches the number
     // grammar.
-    report("bare-point-is-unexpected", raises(".5", error.UnexpectedToken, arena));
+    report("bare-point-is-unexpected", raises(".5", .UnexpectedToken, arena));
     report("far-exponent-overflows", far_overflow_raises(arena));
-    report("infinity-is-non-finite", write_raises(f64.inf, error.NonFinite));
-    report("nan-is-non-finite", write_raises(f64.nan, error.NonFinite));
+    report("infinity-is-non-finite", write_raises(f64.inf, .NonFinite));
+    report("nan-is-non-finite", write_raises(f64.nan, .NonFinite));
 
     tree := try parse(MIXED, arena);
     buf : [256]u8 = ---;

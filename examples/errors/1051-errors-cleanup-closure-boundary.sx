@@ -17,7 +17,7 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 recover :: () -> (i32, !E) { return 21; }
 
 work :: () {

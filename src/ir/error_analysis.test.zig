@@ -28,10 +28,9 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     var lowering = Lowering.init(&module);
     const ea = ErrorAnalysis{ .l = &lowering };
 
-    // raiser :: () -> ! { raise error.Foo; }
+    // raiser :: () -> ! { raise .Foo; }
     const r_rt = mk(alloc, .{ .error_type_expr = .{} });
-    const r_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
-    const r_fa = mk(alloc, .{ .field_access = .{ .object = r_err, .field = "Foo" } });
+    const r_fa = mk(alloc, .{ .enum_literal = .{ .name = "Foo" } });
     const r_raise = mk(alloc, .{ .raise_stmt = .{ .tag = r_fa } });
     const r_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{r_raise} } });
     const raiser_fd = ast.FnDecl{ .name = "raiser", .params = &.{}, .return_type = r_rt, .body = r_body };
@@ -71,11 +70,10 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     var lowering = Lowering.init(&module);
     const ea = ErrorAnalysis{ .l = &lowering };
 
-    // host :: () { () -> ! { raise error.Bar; }; }  — a bare-`!` closure literal
+    // host :: () { () -> ! { raise .Bar; }; }  — a bare-`!` closure literal
     // sitting in `host`'s body; its raises union into the shape set.
     const lam_rt = mk(alloc, .{ .error_type_expr = .{} });
-    const l_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
-    const l_fa = mk(alloc, .{ .field_access = .{ .object = l_err, .field = "Bar" } });
+    const l_fa = mk(alloc, .{ .enum_literal = .{ .name = "Bar" } });
     const l_raise = mk(alloc, .{ .raise_stmt = .{ .tag = l_fa } });
     const lam_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{l_raise} } });
     const lambda = mk(alloc, .{ .lambda = .{ .params = &.{}, .return_type = lam_rt, .body = lam_body } });

@@ -141,15 +141,15 @@ main :: () -> ! {
     over_cmds : []Command = .[ Command{ group = "big", command = "cmd", flags = over_flags } ];
     over_args : []string  = .["big", "cmd"];
 
-    report("err-zero-args",       raises(a_zero_args,     cmds,      error.UnknownCommand));
-    report("err-unknown-cmd",     raises(a_unknown_cmd,   cmds,      error.UnknownCommand));
-    report("err-unknown-group",   raises(a_unknown_group, cmds,      error.UnknownCommand));
-    report("err-too-few",         raises(a_too_few,       cmds,      error.UnknownCommand));
-    report("err-unknown-flag",    raises(a_unknown_flag,  cmds,      error.UnknownFlag));
-    report("err-missing-value",   raises(a_missing_value, cmds,      error.MissingValue));
-    report("err-value-eats-flag", raises(a_value_eats,    cmds,      error.MissingValue));
-    report("err-missing-req",     raises(a_missing_req,   cmds,      error.MissingRequired));
-    report("err-too-many-flags",  raises(over_args,       over_cmds, error.TooManyFlags));
+    report("err-zero-args",       raises(a_zero_args,     cmds,      .UnknownCommand));
+    report("err-unknown-cmd",     raises(a_unknown_cmd,   cmds,      .UnknownCommand));
+    report("err-unknown-group",   raises(a_unknown_group, cmds,      .UnknownCommand));
+    report("err-too-few",         raises(a_too_few,       cmds,      .UnknownCommand));
+    report("err-unknown-flag",    raises(a_unknown_flag,  cmds,      .UnknownFlag));
+    report("err-missing-value",   raises(a_missing_value, cmds,      .MissingValue));
+    report("err-value-eats-flag", raises(a_value_eats,    cmds,      .MissingValue));
+    report("err-missing-req",     raises(a_missing_req,   cmds,      .MissingRequired));
+    report("err-too-many-flags",  raises(over_args,       over_cmds, .TooManyFlags));
 
     // ── 8. Diag pins the offending (token, index) for EVERY raise site ─
     // Each failure records the exact offending token (a VIEW into `args`,
@@ -170,48 +170,48 @@ main :: () -> ! {
     // actually WROTE the value, not that it merely left the default.
     de : Diag = .{};
     _, ue := parse(a_unknown_flag, cmds, *de);
-    report("diag-flag-tag",     ue == error.UnknownFlag);
+    report("diag-flag-tag",     ue == .UnknownFlag);
     report("diag-flag-token",   de.token == "--nope" and de.index == 4);
 
     dc : Diag = .{};
     _, ce := parse(a_unknown_cmd, cmds, *dc);
-    report("diag-cmd-tag",      ce == error.UnknownCommand);
+    report("diag-cmd-tag",      ce == .UnknownCommand);
     report("diag-cmd-token",    dc.token == "deploy" and dc.index == 1);
 
     dg : Diag = .{};
     _, ge := parse(a_unknown_group, cmds, *dg);
-    report("diag-group-tag",    ge == error.UnknownCommand);
+    report("diag-group-tag",    ge == .UnknownCommand);
     report("diag-group-token",  dg.token == "publish" and dg.index == 1);
 
     df : Diag = .{};
     _, fe := parse(a_too_few, cmds, *df);
-    report("diag-too-few-tag",   fe == error.UnknownCommand);
+    report("diag-too-few-tag",   fe == .UnknownCommand);
     report("diag-too-few-token", df.token == "ci" and df.index == 0);
 
     d0 : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1/"" are defaults
     _, z0e := parse(a_zero_args, cmds, *d0);
-    report("diag-zero-args-tag",   z0e == error.UnknownCommand);
+    report("diag-zero-args-tag",   z0e == .UnknownCommand);
     report("diag-zero-args-token", d0.token == "" and d0.index == -1);
 
     dv : Diag = .{};
     _, ve := parse(a_missing_value, cmds, *dv);
-    report("diag-missing-value-tag",   ve == error.MissingValue);
+    report("diag-missing-value-tag",   ve == .MissingValue);
     report("diag-missing-value-token", dv.token == "--out" and dv.index == 2);
 
     dz : Diag = .{};
     _, ze := parse(a_value_eats, cmds, *dz);
-    report("diag-value-eats-tag",   ze == error.MissingValue);
+    report("diag-value-eats-tag",   ze == .MissingValue);
     report("diag-value-eats-token", dz.token == "--out" and dz.index == 2);
 
     dm : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
     _, me := parse(a_missing_req, cmds, *dm);
-    report("diag-req-tag",    me == error.MissingRequired);
+    report("diag-req-tag",    me == .MissingRequired);
     report("diag-req-token",  dm.token == "out");
     report("diag-req-index",  dm.index == -1);
 
     dt : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
     _, te := parse(over_args, over_cmds, *dt);
-    report("diag-too-many-tag",   te == error.TooManyFlags);
+    report("diag-too-many-tag",   te == .TooManyFlags);
     report("diag-too-many-token", dt.token == "cmd" and dt.index == -1);
 
     print("=== DONE ===\n");

@@ -68,7 +68,7 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
     while true {
         n, re := socket.read_nb(fd, *buf[total.*], (cap - total.*));
         if !re { total.* += n; continue; }
-        if re == error.Closed { return true; }
+        if re == .Closed { return true; }
         return false;
     }
     return false;   // unreachable — the loop above always returns

@@ -167,7 +167,7 @@ push-then-clear and leave no residue — the steady state mirrors Zig's.
 ```
 error return trace (most recent call last):
   parse at parse.sx:12:5
-     if !is_digit(s[0]) raise error.BadDigit;
+     if !is_digit(s[0]) raise .BadDigit;
                         ^
   run   at main.sx:20:9
      v := try parse(s);
@@ -388,7 +388,7 @@ symbolization is delegated to the platform debugger — sx ships none.
 
 | Artifact | Lookup | Size | Shipped in release? |
 |---|---|---|---|
-| **Tag-name table** | tag id → name string | tiny (per distinct tag) | **yes, always** — `{}` interpolation and the failable-`main` reporter's `error: unhandled error reached main: error.X` line need names even in release |
+| **Tag-name table** | tag id → name string | tiny (per distinct tag) | **yes, always** — `{}` interpolation and the failable-`main` reporter's `error: unhandled error reached main: X` line need names even in release |
 | **`Frame` location table** | push site → `{file,line,col,func}` | small (interned strings; per push site) | **debug only** — rides the trace-mode gate |
 | **DWARF (`.debug_line` / `DISubprogram`)** | PC → file:line:col, for *debuggers* | larger (per source position) | **debug only**, strippable; consumed by `lldb`/`gdb`, never by the trace formatter |
 

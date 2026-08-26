@@ -1,7 +1,7 @@
 // End-to-end error handling: failable functions (named + inferred sets) consumed
 // through every absorbing form — destructure, `try` (in helpers), `catch` (bare-
 // expr / match-body / diverging block / no-binding), `or` value-terminator,
-// `onfail` cleanup interleaved with `defer`, plus `error.X` as a value and `{}`
+// `onfail` cleanup interleaved with `defer`, plus a member as a value and `{}`
 // tag-name interpolation.
 
 @import "modules/std.sx";
@@ -12,9 +12,9 @@ AcquireErr :: error { Acquire }
 
 // value-carrying, named set
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
-    if n < 0  { raise error.BadDigit; }
-    if n == 0 { raise error.Empty; }
-    if n > 99 { raise error.Overflow; }
+    if n < 0  { raise .BadDigit; }
+    if n == 0 { raise .Empty; }
+    if n > 99 { raise .Overflow; }
     return n * 2;
 }
 
@@ -72,15 +72,15 @@ sm_wrap :: ($T: Type, f: Closure() -> (T, !SmokeErr)) -> (T, !SmokeErr) {
 }
 
 main :: () {
-    // error.X as a typed value + {} interpolation renders the tag name
-    e0 : SmokeErr = error.BadDigit;
+    // a member as a typed value + {} interpolation renders the tag name
+    e0 : SmokeErr = .BadDigit;
     print("tag: {}\n", e0);
 
     // success destructure + error inspect
     v1, err1 := sm_parse(5);
     if !err1 { print("parsed: {}\n", v1); }
     v2, err2 := sm_parse(-1);
-    if err2 == error.BadDigit { print("got: {}\n", err2); }
+    if err2 == .BadDigit { print("got: {}\n", err2); }
 
     // catch — bare-expr body
     ce := sm_parse(0) catch |e| 100;
@@ -122,9 +122,9 @@ main :: () {
     iv, ierr := sm_acquire(false);
 
     // composition: inline failable closure literal through a Closure(...) param
-    cl := sm_run(|x: i32| -> (i32, !SmokeErr) { if x < 0 { raise error.BadDigit; } return x * 2; }, 6) catch |e| -1;
+    cl := sm_run(|x: i32| -> (i32, !SmokeErr) { if x < 0 { raise .BadDigit; } return x * 2; }, 6) catch |e| -1;
     print("closure-run: {}\n", cl);                                                     // 12
-    print("closure-run-err: {}\n", sm_run(|x: i32| -> (i32, !SmokeErr) { raise error.Empty; }, 1) catch |e| -9); // -9
+    print("closure-run-err: {}\n", sm_run(|x: i32| -> (i32, !SmokeErr) { raise .Empty; }, 1) catch |e| -9); // -9
 
     // non-failable closure literal widened into the failable bare slot
     print("widen: {}\n", sm_widen(|x: i32| -> i32 x + 1, 9));               // 10

@@ -1,4 +1,4 @@
-error: error tag 'error.Elsewhere' is not in caller's error set 'Named'
+error: error member 'Elsewhere' is not in caller's error set 'Named'
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:29:5
    |
 29 |     wide()
@@ -10,7 +10,7 @@ error: unresolved 'no_such_name' (in examples/diagnostics/2077-diagnostics-pure-
 43 |     no_such_name
    |     ^^^^^^^^^^^^
 
-error: error tag 'error.Missing' is not in error set 'Named'
+error: error member '.Missing' is not in error set 'Named'
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:49:5
    |
 49 |     .Missing

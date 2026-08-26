@@ -11,7 +11,7 @@
 Narrow :: error { Wide }
 Broad  :: error { Wide; Extra }
 
-broad_src :: () -> (i32, !Broad) { raise error.Extra; }
+broad_src :: () -> (i32, !Broad) { raise .Extra; }
 
 take_narrow :: (n: Narrow) -> void { print("{}\n", n); }
 
@@ -24,10 +24,6 @@ main :: () -> i32 {
     take_narrow(be);             // error: same, in argument position
     h := Holder{ e = be };      // error: same, in field-init position
 
-    lit : Narrow = error.Extra;  // error: tag literal not in Narrow
-
-    // The `.Name` shorthand is membership-checked by the same rule, and
-    // reports the same diagnostic as the `error.Name` spelling.
     short : Narrow = .Extra;     // error: Extra not in Narrow
     take_narrow(.Extra);         // error: same, in argument position
     hs := Holder{ e = .Extra }; // error: same, in field-init position

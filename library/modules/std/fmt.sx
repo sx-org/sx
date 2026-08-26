@@ -597,7 +597,7 @@ print :: ($fmt: string, ..$args) {
 CastError :: error { mismatch }
 
 __sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
-    if !type_eq(type_of(av), T) { raise error.mismatch; }
+    if !type_eq(type_of(av), T) { raise .mismatch; }
     return av.(@Any).data.(*T).*;
 }
 
@@ -638,7 +638,7 @@ __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
 // present payload goes down the error channel; null passes through.
 __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
     if av := o {
-        if !type_eq(type_of(av), T) { raise error.mismatch; }
+        if !type_eq(type_of(av), T) { raise .mismatch; }
         v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
