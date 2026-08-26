@@ -1254,7 +1254,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // over a runtime union/string VALUE re-open the exact invalid-IR hole
     // this gate closes; and a direct `Any` subject dispatched on its unboxed
     // VALUE instead of its type tag — the silently-wrong arm, exit 0. Both
-    // now diagnose: match on the `@typeOf(...)` result, not the value.
+    // diagnose: match on the `@typeOf(...)` result, not the value.
     if (!is_optional_match and !is_error_set_match) {
         const dispatchable = blk: {
             if (subject_ty.isBuiltin()) break :blk switch (subject_ty) {
