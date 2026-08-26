@@ -206,7 +206,7 @@ pub const CallResolver = struct {
             // registry's fixed `ret` cannot carry.
             if (std.mem.eql(u8, bare_name, "@tag") and c.args.len == 1) {
                 const src = self.l.inferExprType(c.args[0]);
-                return refl(bare_name, self.l.tagOnlyChannelFor(src) orelse .unresolved);
+                return refl(bare_name, self.l.tagTypeFor(src) orelse .unresolved);
             }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs

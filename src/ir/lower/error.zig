@@ -86,45 +86,52 @@ pub fn placeholderTraceFrame(self: *Lowering) Ref {
 /// The named error-set TypeId of `node`'s type, or null if not an
 /// error-set-typed expression.
 pub fn errorSetTypeOf(self: *Lowering, node: *const Node) ?TypeId {
-    const t = self.inferExprType(node);
-    if (t.isBuiltin()) return null;
-    return if (self.module.types.get(t) == .error_set) t else null;
+    return liveChannelOf(self, self.inferExprType(node));
 }
 
-/// `@Tag(T)`: T's tags without its payloads. An error channel drops its
-/// payload area, a payload-free enum already IS its tags, and a tagged union
-/// views as the payload-free enum over its variants.
-pub fn tagOnlyChannelFor(self: *Lowering, ty: TypeId) ?TypeId {
+/// `ty` when it is an error channel, else null.
+fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return if (self.module.types.get(ty) == .error_set) ty else null;
+}
+
+/// `@Tag(T)`: T's discriminant. An error views as the payload-free enum over
+/// its members, a payload-free enum already IS its discriminant, and a tagged
+/// union views as the enum over its variants.
+pub fn tagTypeFor(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
-        .error_set => self.module.types.tagOnlyChannel(ty),
+        .error_set => self.module.types.errorTagEnum(ty),
         .@"enum" => ty,
         .tagged_union => self.module.types.unionTagEnum(ty),
         else => null,
     };
 }
 
-/// `tagOnlyChannelFor`, diagnosing the kinds that have no tag view.
-pub fn tagOnlyChannelOf(self: *Lowering, ty: TypeId, span: ast.Span) TypeId {
+/// `tagTypeFor`, diagnosing the kinds that have no discriminant.
+pub fn tagTypeOf(self: *Lowering, ty: TypeId, span: ast.Span) TypeId {
     if (ty == .unresolved) return .unresolved;
-    if (tagOnlyChannelFor(self, ty)) |tag_ty| return tag_ty;
+    if (tagTypeFor(self, ty)) |tag_ty| return tag_ty;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "@Tag expects an error, enum, or tagged union; '{s}' is none", .{self.formatTypeName(ty)});
     }
     return .unresolved;
 }
 
-/// `@tag(val)`: the tag-only view of an error, enum, or tagged-union value.
+/// The error a `@Tag(E)` discriminates, or null when `ty` is not one.
+pub fn errorBehindTag(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    return if (info == .@"enum") info.@"enum".error_of else null;
+}
+
+/// `@tag(val)`: the discriminant an error, enum, or tagged-union value carries.
 pub fn lowerTagOf(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
     const src = self.inferExprType(arg);
-    const tag_ty = tagOnlyChannelOf(self, src, span);
+    const tag_ty = tagTypeOf(self, src, span);
     if (tag_ty == .unresolved) return self.builder.constUndef(.i32);
     const val = self.lowerExpr(arg);
-    if (tag_ty == src) return val;
-    if (self.module.types.get(tag_ty) == .@"enum") {
-        return self.builder.enumTag(val, tag_ty);
-    }
-    return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src, .to = tag_ty } }, tag_ty);
+    return if (tag_ty == src) val else self.builder.enumTag(val, tag_ty);
 }
 
 /// `@errorPayload(e)`: the live member's payload as an `any` view over the
@@ -134,12 +141,6 @@ pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref 
     if (src.isBuiltin() or self.module.types.get(src) != .error_set) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, span, "@errorPayload expects an error value; '{s}' is not one", .{self.formatTypeName(src)});
-        }
-        return self.builder.constInt(0, .any);
-    }
-    if (self.module.types.isTagOnlyChannel(src)) {
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "'{s}' is a tag view and carries no payload", .{self.formatTypeName(src)});
         }
         return self.builder.constInt(0, .any);
     }
@@ -297,23 +298,29 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList
     }
 }
 
-/// Lower `==` / `!=` when an error-set value is involved. Returns null when
-/// neither operand is error-related (general path runs). Both operands must be
-/// a member spelling or an error-set value; otherwise it's a type error (e.g.
-/// comparing a member to a raw integer).
+/// Lower `==` / `!=` when an error value or a `@Tag(E)` is involved. Returns
+/// null when neither operand is error-related (general path runs). Both
+/// operands must be a member spelling, an error value, or a `@Tag(E)`;
+/// otherwise it's a type error (e.g. comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
-    const l_set = self.errorSetTypeOf(bop.lhs);
-    const r_set = self.errorSetTypeOf(bop.rhs);
-    if (l_set == null and r_set == null) return null;
+    const l_ty = self.inferExprType(bop.lhs);
+    const r_ty = self.inferExprType(bop.rhs);
+    const l_set = liveChannelOf(self, l_ty);
+    const r_set = liveChannelOf(self, r_ty);
+    // A `@Tag(E)` stands for E here: the members decide comparability, and a
+    // live operand contributes its tag word alone.
+    const l_chan = l_set orelse errorBehindTag(self, l_ty);
+    const r_chan = r_set orelse errorBehindTag(self, r_ty);
+    if (l_chan == null and r_chan == null) return null;
 
     // A contextual `.Name` shorthand is a member when the OTHER operand
-    // supplies the set to type it from; with no set on either side there is
-    // nothing to resolve against and it stays an ordinary enum literal.
-    const l_dot = bop.lhs.data == .enum_literal and r_set != null;
-    const r_dot = bop.rhs.data == .enum_literal and l_set != null;
+    // supplies the type to resolve it in; with neither side error-related
+    // there is nothing to resolve against and it stays an enum literal.
+    const l_dot = bop.lhs.data == .enum_literal and r_chan != null;
+    const r_dot = bop.rhs.data == .enum_literal and l_chan != null;
 
-    const l_ok = l_set != null or l_dot;
-    const r_ok = r_set != null or r_dot;
+    const l_ok = l_chan != null or l_dot;
+    const r_ok = r_chan != null or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
             const bad = if (!l_ok) bop.lhs else bop.rhs;
@@ -322,8 +329,8 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
         return self.builder.constBool(false);
     }
 
-    // Two live channels compare only when one holds the other's members.
-    if (l_set) |l| if (r_set) |r| {
+    // Two channels compare only when one holds the other's members.
+    if (l_chan) |l| if (r_chan) |r| {
         if (!errorSetValueRetypeIsLegal(self, l, r) and !errorSetValueRetypeIsLegal(self, r, l)) {
             if (self.diagnostics) |diags| {
                 diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(l), self.formatTypeName(r) });
@@ -332,11 +339,11 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
         }
     };
 
-    // Lower both sides with the set type as context so a `.X` shorthand
-    // resolves to it (and validates membership).
-    const set_ty = l_set orelse r_set;
+    // A `.X` shorthand resolves in the other operand's OWN type — the channel
+    // for a live value, the `@Tag(E)` enum for a view.
+    const ctx_ty: ?TypeId = if (l_dot) r_ty else if (r_dot) l_ty else (l_set orelse r_set);
     const saved = self.target_type;
-    if (set_ty) |st| self.target_type = st;
+    if (ctx_ty) |ct| self.target_type = ct;
     const lv = self.lowerExpr(bop.lhs);
     const rv = self.lowerExpr(bop.rhs);
     self.target_type = saved;
@@ -490,15 +497,13 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
 
 /// Whether an error-set value of `src` is a legal retype to `dst`: every
 /// source tag id is in `dst`, or an inferred bare-`!` on either side absorbs
-/// any tag. A tag view cannot retype onto a live channel — it carries no
-/// payload to grow into one.
+/// any tag.
 pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) bool {
     if (src == dst) return true;
     if (src.isBuiltin() or dst.isBuiltin()) return false;
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return false;
-    if (src_info.error_set.tag_only and !dst_info.error_set.tag_only) return false;
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return true;
     for (src_info.error_set.tags) |tag| {
         var found = false;
@@ -523,12 +528,6 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
     if (src_info != .error_set or dst_info != .error_set) return;
-    if (src_info.error_set.tag_only and !dst_info.error_set.tag_only) {
-        if (self.diagnostics) |diags| {
-            diags.addFmt(.err, span, "'{s}' is a tag view and carries no payload — cannot coerce to '{s}'", .{ self.formatTypeName(src), self.formatTypeName(dst) });
-        }
-        return;
-    }
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return;
     const src_name = self.module.types.getString(src_info.error_set.name);
     const dst_name = self.module.types.getString(dst_info.error_set.name);
@@ -653,6 +652,17 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
     }
 }
 
+/// The channel a `raise` operand carries, seen past an optional wrapper — a
+/// destructured error slot raises as it stands.
+fn raisedChannel(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .error_set => ty,
+        .optional => |o| raisedChannel(self, o.child),
+        else => null,
+    };
+}
+
 /// `raise EXPR;` — terminate the enclosing failable body via the error
 /// channel: the innermost `try { … }` boundary, else the function itself.
 pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) void {
@@ -666,13 +676,13 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const inferred = self.channelIsOpen(err_set);
     const named = raisedMember(self, rs.tag);
 
-    // A `@Tag(T)` view names a member but carries no payload, so it cannot
-    // supply the value a channel raises.
+    // (1b) The operand names a member or carries a channel — nothing else
+    //      supplies the value a channel raises.
     if (named == null) {
         const raised_ty = self.inferExprType(rs.tag);
-        if (self.module.types.isTagOnlyChannel(raised_ty)) {
+        if (raised_ty != .unresolved and raisedChannel(self, raised_ty) == null) {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "'{s}' is a tag view and carries no payload — raise a member of '{s}' instead", .{ self.formatTypeName(raised_ty), self.formatTypeName(err_set) });
+                d.addFmt(.err, span, "raise takes an error member or an error value; '{s}' is neither", .{self.formatTypeName(raised_ty)});
             }
             return;
         }

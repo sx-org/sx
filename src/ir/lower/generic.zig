@@ -1935,7 +1935,7 @@ pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node,
         return .unresolved;
     }
     if (std.mem.eql(u8, head, contracts.tag_head)) {
-        return self.tagOnlyChannelOf(self.resolveTypeWithBindings(args[0]), args[0].span);
+        return self.tagTypeOf(self.resolveTypeWithBindings(args[0]), args[0].span);
     }
     if (std.mem.eql(u8, head, contracts.vector_head)) {
         const length = self.resolveVectorLane(args[0]) orelse return .unresolved;

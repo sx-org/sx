@@ -131,11 +131,10 @@ pub const GenericResolver = struct {
 
     /// An error keys by its MEMBERS. A member-less channel (`!`, `!dyn`) is
     /// identified by its spelling instead, whose punctuation the key carries as
-    /// `_`. A `@Tag(T)` view carries the same members over a `tg` prefix, so it
-    /// keys apart from the live channel.
+    /// `_`.
     fn mangleErrorMembers(self: GenericResolver, e: types.TypeInfo.ErrorSetInfo) []const u8 {
         var buf = std.ArrayList(u8).empty;
-        buf.appendSlice(self.l.alloc, if (e.tag_only) "tg" else "er") catch @panic("out of memory while mangling type");
+        buf.appendSlice(self.l.alloc, "er") catch @panic("out of memory while mangling type");
         if (e.tags.len == 0) {
             for (self.l.module.types.getString(e.name)) |c| {
                 const safe = if (std.ascii.isAlphanumeric(c)) c else '_';

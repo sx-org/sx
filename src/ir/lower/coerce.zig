@@ -1415,14 +1415,6 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
             }
         }
     }
-    if (isErrorSetType(self, src_ty) and isErrorSetType(self, dst_ty)) {
-        const src_info = self.module.types.get(src_ty);
-        const dst_info = self.module.types.get(dst_ty);
-        if (src_info.error_set.tag_only and !dst_info.error_set.tag_only) {
-            self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
-            return false;
-        }
-    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         switch (diag) {
@@ -1590,9 +1582,6 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
-    // A tag view has no payload area to grow into a live channel, even at tag-word width.
-    if (self.module.types.isTagOnlyChannel(src_ty) and isErrorSetType(self, dst_ty) and
-        !self.module.types.isTagOnlyChannel(dst_ty)) return true;
     const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
     const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
     if (src_optional != dst_optional) return true;

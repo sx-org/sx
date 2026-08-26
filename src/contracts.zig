@@ -212,8 +212,8 @@ pub const slice_head = "@Slice";
 /// an N-bit integer, N in 1..=64. `@int(8, .signed)` IS `i8`.
 pub const int_head = "@int";
 
-/// The tag-only type constructor: `@Tag(T)` names T's tags without its
-/// payloads, for T an error, enum, or tagged union.
+/// The discriminant type constructor: `@Tag(T)` is the type over T's members
+/// alone, for T an error, enum, or tagged union.
 pub const tag_head = "@Tag";
 
 /// True for a compiler-formed head that CONSTRUCTS a type from its arguments.

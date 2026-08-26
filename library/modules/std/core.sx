@@ -52,8 +52,8 @@ variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 // The MEMBER name an error value carries — `D`, not `FooError.D`. The owner
 // is `@typeName` of the error.
 @errorName :: (e: $T) -> string;
-// The tag-only view of an error, enum, or tagged-union value: `@Tag(T)`,
-// which compares but carries no payload and cannot be raised.
+// The discriminant an error, enum, or tagged-union value carries: `@Tag(T)`,
+// the type over T's members alone.
 @tag :: (val: $T) -> @Tag(T);
 // An error value's live payload as an `any` view — the `variant_payload`
 // sibling for error channels. A payload-free member views as `void`.

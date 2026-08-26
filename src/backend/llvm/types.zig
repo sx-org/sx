@@ -74,7 +74,7 @@ pub const TypeLowering = struct {
             .void => self.e.cached_void,
             .bool => self.e.cached_i1,
             .error_set => |es| {
-                const payload_bytes = self.e.ir_mod.types.errorSetPayloadBytes(es);
+                const payload_bytes = self.e.ir_mod.types.errorChannelPayloadBytes(es.tags);
                 if (payload_bytes == 0) return self.e.cached_i32;
                 var field_types: [2]c.LLVMTypeRef = .{
                     self.e.cached_i32,

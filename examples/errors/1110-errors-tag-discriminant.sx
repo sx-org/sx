@@ -1,10 +1,9 @@
-// `@tag(x)` is `@Tag(T)`: the member a value carries, with its payload area
-// dropped. It compares with a `.Member` shorthand, with another `@Tag`, and
-// with a live error value of the same channel. The printed owner is
-// `@typeName` of the error; `@errorName` is the member alone, and
-// `@errorPayload` views the live member's payload. An enum already IS its
-// tags, so `@Tag` of one is the enum itself; a tagged union views as the
-// payload-free enum over its variants.
+// `@tag(x)` reads the discriminant of an error, enum, or tagged-union value:
+// `@Tag(T)`, the type over T's members alone. It compares with a `.Member`
+// shorthand, with another `@Tag`, and with a live error value — tag only,
+// with comparability following the ⊆ rule on the channels. `@typeName` of an
+// error names the owner, `@errorName` the member alone, and `@errorPayload`
+// views a live member's payload.
 
 @import "modules/std.sx";
 
@@ -29,11 +28,12 @@ main :: () -> i32 {
     print("member={} {}\n", @errorName(d), @errorName(a));
     print("payload={}\n", @errorPayload(d));
 
-    print("shorthand={} {}\n", @tag(d) == .D, @tag(a) == .A);
-    print("views={} {}\n", @tag(d) == @tag(d), @tag(d) == @tag(a));
-    print("value={}\n", d == @tag(d));
+    t := @tag(d);
+    print("shorthand={} {}\n", t == .D, @tag(a) == .A);
+    print("views={} {}\n", @tag(d) == t, t == @tag(a));
+    print("value={}\n", d == t);
 
-    print("match={}\n", match @tag(d) {
+    print("match={}\n", match t {
         case .A: 0;
         case .D: 1;
     });
