@@ -1185,6 +1185,7 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
             const pat_name = switch (pat.data) {
                 .enum_literal => |el| el.name,
                 .identifier => |id| id.name,
+                .field_access => |fa| fa.field,
                 else => return null,
             };
             for (tu.fields) |f| {

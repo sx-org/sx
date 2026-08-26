@@ -1,0 +1,17 @@
+// `error.X` on a match arm is not a value.
+
+@import "modules/std.sx";
+
+Fault :: error { Broken }
+
+f :: () -> !Fault {
+    raise Fault.Broken;
+}
+
+main :: () -> i32 {
+    e := f();
+    return match e {
+        case error.Broken: 1;    // error: `error.X` names no value
+        else: 0;
+    };
+}

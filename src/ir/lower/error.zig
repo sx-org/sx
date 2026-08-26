@@ -262,14 +262,26 @@ pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
     };
 }
 
-/// The interned member a `match` arm names on an error subject: a qualified
-/// `Set.X` resolves in the set it names, every other spelling in the channel
-/// `chan` in hand. Null when no member spelling reaches the pattern or the
-/// name is no member of the set it resolves against.
+/// The interned member a `match` arm names on an error subject. A
+/// field_access is a qualified `Set.X` and resolves in the set it names;
+/// `.X` and a bare identifier resolve in the channel `chan` in hand. Null
+/// when no member spelling reaches the pattern, the prefix names no error
+/// set, or the name is no member of the set it resolves against.
 pub fn errorArmMember(self: *Lowering, chan: TypeId, pattern: ?*const Node) ?u32 {
     const pat = pattern orelse return null;
-    if (qualifiedErrorMember(self, pat)) |qm|
-        return self.module.types.errorSetMemberId(qm.set, qm.member);
+    if (pat.data == .field_access) {
+        if (qualifiedErrorMember(self, pat)) |qm|
+            return self.module.types.errorSetMemberId(qm.set, qm.member);
+        const fa = pat.data.field_access;
+        // `error` parses as identifier "error"; `error.X` names no member.
+        if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) {
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, pat.span, "`error.{s}` is not a value — an error member belongs to the set that declares it", .{fa.field});
+                d.addHelpFmt(id, pat.span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ fa.field, fa.field });
+            }
+        }
+        return null;
+    }
     const name = errorArmMemberName(pat) orelse return null;
     return self.module.types.errorSetMemberId(chan, name);
 }
