@@ -485,6 +485,9 @@ pub const ExprTyper = struct {
                 // does, so a `:=`-inferred decl gets the real struct type,
                 // not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
+                    // An error member's brace group holds its payload, so the
+                    // literal IS a channel value of the set the head names.
+                    if (self.l.qualifiedErrorMember(te)) |qm| return qm.set;
                     // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
@@ -515,8 +518,12 @@ pub const ExprTyper = struct {
                             }
                         }
                     }
-                    const ty = self.l.resolveTypeWithBindings(te);
-                    if (ty != .unresolved) return ty;
+                    // A `.X{ … }` head names a variant, never a type — what it
+                    // builds is the contextual target's, settled below.
+                    if (te.data != .enum_literal) {
+                        const ty = self.l.resolveTypeWithBindings(te);
+                        if (ty != .unresolved) return ty;
+                    }
                 }
                 // A bare `.{ … }` adopts the contextual target only when the
                 // target is a shape the literal can actually BUILD (the same

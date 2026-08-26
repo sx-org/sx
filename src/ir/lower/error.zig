@@ -453,29 +453,109 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, owner_name: []const
     }
 }
 
+/// How an `==` operand names an error.
+const CompareOperand = struct {
+    /// The operand's OWN type — a value's channel, a `@Tag(E)` view's enum.
+    /// `.unresolved` for a shorthand, which takes the other operand's.
+    ty: TypeId,
+    /// The channel the operand's value lives in; null for a view and for a
+    /// shorthand.
+    set: ?TypeId,
+    /// The channel whose members decide comparability.
+    chan: ?TypeId,
+    /// The operand resolves against the type the other operand supplies.
+    shorthand: bool,
+    /// The operand carries a payload the comparison matches.
+    payload: bool,
+};
+
+fn classifyCompareOperand(self: *Lowering, node: *const Node) CompareOperand {
+    const spelled = raisedMember(self, node);
+    // A brace group holds the member's payload, so the spelling is a whole
+    // channel value; a shorthand takes its channel from the other operand.
+    if (spelled) |rm| if (rm.constructed) {
+        const set = if (rm.shorthand) null else rm.set;
+        return .{ .ty = set orelse .unresolved, .set = set, .chan = set, .shorthand = rm.shorthand, .payload = true };
+    };
+    const ty = self.inferExprType(node);
+    const set = liveChannelOf(self, ty);
+    // A `@Tag(E)` stands for E here: the members decide comparability, and the
+    // view contributes its tag word alone — as does a bare member spelling.
+    return .{
+        .ty = ty,
+        .set = set,
+        .chan = set orelse errorBehindTag(self, ty),
+        .shorthand = node.data == .enum_literal,
+        .payload = set != null and spelled == null,
+    };
+}
+
+fn channelCarries(self: *Lowering, chan: TypeId, member: u32) bool {
+    for (channelMembers(self, chan)) |m| {
+        if (m == member) return true;
+    }
+    return false;
+}
+
+/// Whether a member both channels carry declares a payload — the only case a
+/// comparison has more to match than the tag word.
+fn sharedMemberCarriesPayload(self: *Lowering, a: TypeId, b: TypeId) bool {
+    for (channelMembers(self, a)) |m| {
+        if (self.module.types.memberPayload(m) == .void) continue;
+        if (channelCarries(self, b, m)) return true;
+    }
+    return false;
+}
+
+/// `lv == rv` over two channel values: the tag words name the same member and
+/// that member's payload compares by its own type's rule. Each payload read
+/// sits behind the tag test that proves the member live, so a member's payload
+/// type is never read off a value carrying a different member.
+fn channelValueEquality(self: *Lowering, lv: Ref, rv: Ref, l_chan: TypeId, r_chan: TypeId, span: ast.Span) Ref {
+    const table = &self.module.types;
+    const tag_l = self.builder.enumTag(lv, .i32);
+    const tag_r = self.builder.enumTag(rv, .i32);
+    const merge_bb = self.freshBlockWithParams("erreq.merge", &.{.bool});
+    const same_bb = self.freshBlock("erreq.same");
+    self.builder.condBr(self.builder.cmpEq(tag_l, tag_r), same_bb, &.{}, merge_bb, &.{self.builder.constBool(false)});
+    self.builder.switchToBlock(same_bb);
+    for (channelMembers(self, l_chan)) |m| {
+        const payload = table.memberPayload(m);
+        if (payload == .void or !channelCarries(self, r_chan, m)) continue;
+        const live_bb = self.freshBlock("erreq.member");
+        const next_bb = self.freshBlock("erreq.next");
+        const is_m = self.builder.cmpEq(tag_l, self.builder.constInt(@intCast(m), .i32));
+        self.builder.condBr(is_m, live_bb, &.{}, next_bb, &.{});
+        self.builder.switchToBlock(live_bb);
+        const pl = self.builder.emit(.{ .enum_payload = .{ .base = lv, .field_index = m } }, payload);
+        const pr = self.builder.emit(.{ .enum_payload = .{ .base = rv, .field_index = m } }, payload);
+        const eq = self.lowerFieldEquality(pl, pr, payload, span) orelse self.builder.constBool(false);
+        self.builder.br(merge_bb, &.{eq});
+        self.builder.switchToBlock(next_bb);
+    }
+    // The live member declares no payload, so the matching tags settle it.
+    self.builder.br(merge_bb, &.{self.builder.constBool(true)});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, .bool);
+}
+
 /// Lower `==` / `!=` when an error value or a `@Tag(E)` is involved. Returns
 /// null when neither operand is error-related (general path runs). Both
 /// operands must be a member spelling, an error value, or a `@Tag(E)`;
 /// otherwise it's a type error (e.g. comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
-    const l_ty = self.inferExprType(bop.lhs);
-    const r_ty = self.inferExprType(bop.rhs);
-    const l_set = liveChannelOf(self, l_ty);
-    const r_set = liveChannelOf(self, r_ty);
-    // A `@Tag(E)` stands for E here: the members decide comparability, and a
-    // live operand contributes its tag word alone.
-    const l_chan = l_set orelse errorBehindTag(self, l_ty);
-    const r_chan = r_set orelse errorBehindTag(self, r_ty);
-    if (l_chan == null and r_chan == null) return null;
+    const l = classifyCompareOperand(self, bop.lhs);
+    const r = classifyCompareOperand(self, bop.rhs);
+    if (l.chan == null and r.chan == null) return null;
 
     // A contextual `.Name` shorthand is a member when the OTHER operand
     // supplies the type to resolve it in; with neither side error-related
     // there is nothing to resolve against and it stays an enum literal.
-    const l_dot = bop.lhs.data == .enum_literal and r_chan != null;
-    const r_dot = bop.rhs.data == .enum_literal and l_chan != null;
+    const l_dot = l.shorthand and r.chan != null;
+    const r_dot = r.shorthand and l.chan != null;
 
-    const l_ok = l_chan != null or l_dot;
-    const r_ok = r_chan != null or r_dot;
+    const l_ok = l.chan != null or l_dot;
+    const r_ok = r.chan != null or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
             const bad = if (!l_ok) bop.lhs else bop.rhs;
@@ -485,10 +565,10 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     }
 
     // Two channels compare only when one holds the other's members.
-    if (l_chan) |l| if (r_chan) |r| {
-        if (!errorSetValueRetypeIsLegal(self, l, r) and !errorSetValueRetypeIsLegal(self, r, l)) {
+    if (l.chan) |lc| if (r.chan) |rc| {
+        if (!errorSetValueRetypeIsLegal(self, lc, rc) and !errorSetValueRetypeIsLegal(self, rc, lc)) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(l), self.formatTypeName(r) });
+                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(lc), self.formatTypeName(rc) });
             }
             return self.builder.constBool(false);
         }
@@ -496,12 +576,24 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
 
     // A `.X` shorthand resolves in the other operand's OWN type — the channel
     // for a live value, the `@Tag(E)` enum for a view.
-    const ctx_ty: ?TypeId = if (l_dot) r_ty else if (r_dot) l_ty else (l_set orelse r_set);
+    const ctx_ty: ?TypeId = if (l_dot) r.ty else if (r_dot) l.ty else (l.set orelse r.set);
     const saved = self.target_type;
     if (ctx_ty) |ct| self.target_type = ct;
     const lv = self.lowerExpr(bop.lhs);
     const rv = self.lowerExpr(bop.rhs);
     self.target_type = saved;
+
+    // A bare member spelling and a `@Tag` view name the tag alone; two whole
+    // values match the live member's payload as well.
+    if (l.payload and r.payload) {
+        // A shorthand carries the other operand's channel.
+        if (l.set orelse r.set) |lc| if (r.set orelse l.set) |rc| {
+            if (sharedMemberCarriesPayload(self, lc, rc)) {
+                const eq = channelValueEquality(self, lv, rv, lc, rc, bop.lhs.span);
+                return if (bop.op == .eq) eq else self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool);
+            }
+        };
+    }
     return if (bop.op == .eq)
         self.builder.cmpEq(lv, rv)
     else
