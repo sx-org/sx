@@ -117,8 +117,36 @@ pub const GenericResolver = struct {
                 }
                 break :blk self.mangleParamList(head.items, f.params, f.ret);
             },
+            // The channel is part of a failable's identity: two callees that
+            // agree on the value slots and differ on the set they raise key to
+            // distinct monomorphs.
+            .failable => |f| std.fmt.allocPrint(self.l.alloc, "fl_{s}_{s}", .{
+                self.mangleTypeName(f.value),
+                self.mangleTypeName(f.err),
+            }) catch @panic("out of memory while mangling type"),
+            .error_set => |e| self.mangleErrorSet(e),
             else => @tagName(info),
         };
+    }
+
+    /// An error channel keys by its MEMBER SET. A member-less channel (`!`,
+    /// `!dyn`) is identified by its spelling instead, whose punctuation the key
+    /// carries as `_`.
+    fn mangleErrorSet(self: GenericResolver, e: types.TypeInfo.ErrorSetInfo) []const u8 {
+        var buf = std.ArrayList(u8).empty;
+        buf.appendSlice(self.l.alloc, "es") catch @panic("out of memory while mangling type");
+        if (e.tags.len == 0) {
+            for (self.l.module.types.getString(e.name)) |c| {
+                const safe = if (std.ascii.isAlphanumeric(c)) c else '_';
+                buf.append(self.l.alloc, safe) catch @panic("out of memory while mangling type");
+            }
+            return buf.items;
+        }
+        for (e.tags) |tag| {
+            const frag = std.fmt.allocPrint(self.l.alloc, "_{d}", .{tag}) catch @panic("out of memory while mangling type");
+            buf.appendSlice(self.l.alloc, frag) catch @panic("out of memory while mangling type");
+        }
+        return buf.items;
     }
 
     /// Append a `__n<id>` disambiguator to a nominal type's display name when its

@@ -1,0 +1,18 @@
+// A bare `!` on a callability bound asks only that the binding be failable, so
+// the callee's own channel joins the monomorph key: two sites of one generic
+// whose callees raise different sets each instantiate.
+
+@import "modules/std.sx";
+
+A :: error { X }
+B :: error { Y }
+
+fa :: () -> (i32, !A) { raise .X; }
+fb :: () -> (i32, !B) { raise .Y; }
+
+run :: (fn: $F/() -> ($R, !)) -> ($R, !) { return try fn(); }
+
+main :: () -> i32 {
+    print("a={} b={}\n", run(fa) catch { -1 }, run(fb) catch { -2 });
+    return 0;
+}
