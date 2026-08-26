@@ -120,7 +120,7 @@ pub const ErrorAnalysis = struct {
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
-    fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (self.l.raisedMember(rs.tag)) |rm| {
@@ -142,10 +142,11 @@ pub const ErrorAnalysis = struct {
             .try_expr => |te| {
                 if (te.operand.data == .call) {
                     self.contributeCallee(te.operand.data.call.callee, enclosing_fd, edges, dyn);
-                } else {
+                } else if (te.operand.data != .block) {
                     // A `try` on a non-call — a closure / fn-pointer value, a
                     // checked assertion (`av.(T)`) — escapes through a channel
-                    // no declaration names.
+                    // no declaration names. A `try { … }` boundary escapes
+                    // through the sites the recursion below collects.
                     dyn.* = true;
                 }
                 self.collectErrorSites(te.operand, tags, edges, dyn, enclosing_fd);
@@ -209,8 +210,12 @@ pub const ErrorAnalysis = struct {
                 self.collectErrorSites(ix.index, tags, edges, dyn, enclosing_fd);
             },
             .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn, enclosing_fd),
+            // A fallback absorbs exactly what it attempts: a boundary block
+            // owns every escape inside it, while a plain operand still leaks
+            // the `try`s nested in it. The handler body's own escapes forward.
             .catch_expr => |ce| {
-                self.collectErrorSites(ce.operand, tags, edges, dyn, enclosing_fd);
+                const attempted = Lowering.catchAttempted(&ce);
+                if (!attempted.boundary) self.collectErrorSites(attempted.node, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
             },
             .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),

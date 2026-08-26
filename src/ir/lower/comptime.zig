@@ -1494,6 +1494,12 @@ fn lowerComptimeCallArgsMode(
     self.inline_return_target = inline_exit;
     defer self.inline_return_target = saved_exit;
 
+    // The inlined body is its own failable body: a `raise` in it exits THAT
+    // function, not a `try { … }` boundary the call site happens to sit in.
+    const saved_boundary = self.error_boundary;
+    self.error_boundary = null;
+    defer self.error_boundary = saved_boundary;
+
     // `block_terminated` says the enclosing FUNCTION's control flow ended. The
     // enclosing function here is the callee, and control resumes in the caller
     // at the join — a `return` inside the inlined body must not make the

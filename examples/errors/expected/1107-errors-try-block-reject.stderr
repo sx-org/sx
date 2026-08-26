@@ -1,0 +1,23 @@
+error: `try` on a block needs a body that can fail; this one has no `try` or `raise`
+  --> examples/errors/1107-errors-try-block-reject.sx:20:10
+   |
+20 |     v := try { n + 1 };
+   |          ^^^^^^^^^^^^^
+
+error: error tag 'error.A' is not in caller's error set 'IoErr'
+  --> examples/errors/1107-errors-try-block-reject.sx:25:10
+   |
+25 |     v := try { try g(n); n };
+   |          ^^^^^^^^^^^^^^^^^^^
+
+error: `.Canceled` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.Canceled`)
+  --> examples/errors/1107-errors-try-block-reject.sx:30:27
+   |
+30 |     v := try { if n < 0 { raise .Canceled; } n } catch { 0 };
+   |                           ^^^^^^^^^^^^^^^^
+
+error: `try` is only valid inside a failable function (a return type with `!` or `!Named`)
+  --> examples/errors/1107-errors-try-block-reject.sx:36:12
+   |
+36 |     return try { try g(n); n };
+   |            ^^^^^^^^^^^^^^^^^^^

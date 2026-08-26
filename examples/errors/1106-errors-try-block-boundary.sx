@@ -1,0 +1,149 @@
+// `try { block }` is an error boundary of its own: the `try`s and `raise`s
+// inside it converge to the block's channel and exit there rather than through
+// the enclosing function, and the block's last expression is the success value.
+// `caught` therefore converges to IoErr alone and forwards into a `!IoErr`
+// return, while the uncaught boundary in `escapes` propagates FooError to its
+// caller. `catch` is that `try`'s own fallback, so `try g(-1) catch { … }` and
+// `g(-1) catch { … }` are the same expression; `must(-1) catch {}` absorbs.
+// A boundary is a cleanup boundary too — its `defer`s and `onfail`s run on
+// the way out — and the enclosing function need not be failable at all. The
+// boundary is the error exit a propagating `??` takes, and a `try { … }` is
+// itself a failable `??` operand. A block with no tail value is a pure
+// failable, so its `catch` stands as a statement. A nested boundary hands the
+// outer one back, so the `try` after it exits through the outer block. A
+// `catch` absorbs exactly what it attempts, so a `try` sitting in its operand
+// exits through the enclosing channel.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+
+g :: (n: i32) -> (i32, !FooError) {
+    if n < 0 { raise FooError.A; }
+    return n;
+}
+
+h :: (x: i32) -> (i32, !IoErr) {
+    if x == 9 { raise IoErr.Failed; }
+    return x;
+}
+
+must :: (n: i32) -> !FooError {
+    if n < 0 { raise FooError.A; }
+}
+
+caught :: (n: i32) -> (i32, !) {
+    v := try {
+        if n == 0 { raise FooError.A; }
+        try g(n);
+        5
+    } catch { -1 };
+    if n == 7 { raise IoErr.Failed; }
+    return v;
+}
+
+narrowed :: (n: i32) -> (i32, !IoErr) {
+    return caught(n);
+}
+
+escapes :: (n: i32) -> (i32, !FooError) {
+    return try { try g(n); n * 2 };
+}
+
+forwarded :: (n: i32) -> (i32, !) {
+    return h(try g(n)) catch { 0 };
+}
+
+boundary_arg :: (n: i32) -> i32 {
+    return try { h(try g(n)) catch { 0 } } catch { -1 };
+}
+
+with_defer :: (n: i32, seen: *i32) -> i32 {
+    return try {
+        defer { seen.* = seen.* + 1; }
+        try g(n);
+        n
+    } catch { -1 };
+}
+
+pure :: (n: i32) -> i32 {
+    try { try must(n); } catch {};
+    return 1;
+}
+
+nested :: (n: i32) -> i32 {
+    return try {
+        inner := try { try g(n); 2 } catch { 3 };
+        try g(n);
+        inner + 10
+    } catch { -1 };
+}
+
+parse :: (n: i32) -> (i32, i32, !FooError) {
+    if n < 0 { raise FooError.A; }
+    return .{n * 2, n + 1};
+}
+
+raise_tail :: () -> i32 {
+    return try { raise FooError.A; 5 } catch { -1 };
+}
+
+slots :: (n: i32) -> i32 {
+    v, b := try { try parse(n) } catch { .{0, 0} };
+    return v + b;
+}
+
+or_inside :: () -> i32 {
+    return try { try g(-1) ?? try g(-2) } catch { -1 };
+}
+
+or_operand :: (n: i32) -> i32 {
+    return try { try g(n); 5 } ?? 9;
+}
+
+with_onfail :: (n: i32, seen: *i32) -> i32 {
+    return try {
+        onfail { seen.* = seen.* + 1; }
+        try g(n);
+        n
+    } catch { -1 };
+}
+
+main :: () -> i32 {
+    print("caught_raise={}\n", caught(0) catch { -9 });
+    print("caught_try={}\n", caught(-1) catch { -9 });
+    print("caught_ok={}\n", caught(3) catch { -9 });
+    print("narrowed={}\n", narrowed(7) catch |e| { if e == IoErr.Failed { 70 } else { 71 } });
+    print("escapes_ok={}\n", escapes(4) catch { -9 });
+    print("escapes_err={}\n", escapes(-1) catch |e| { if e == FooError.A { 40 } else { 41 } });
+    print("forwarded_ok={}\n", forwarded(3) catch { -9 });
+    print("forwarded_absorbed={}\n", forwarded(9) catch { -9 });
+    print("forwarded_err={}\n", forwarded(-1) catch { -9 });
+    print("boundary_arg_ok={}\n", boundary_arg(3));
+    print("boundary_arg_err={}\n", boundary_arg(-1));
+
+    seen := 0;
+    print("defer_err={} seen={}\n", with_defer(-1, *seen), seen);
+    print("defer_ok={} seen={}\n", with_defer(6, *seen), seen);
+
+    print("pure={}\n", pure(-1));
+    print("nested_err={}\n", nested(-1));
+    print("nested_ok={}\n", nested(1));
+
+    print("raise_tail={}\n", raise_tail());
+    print("slots_ok={}\n", slots(5));
+    print("slots_err={}\n", slots(-1));
+    print("or_inside={}\n", or_inside());
+    print("or_operand={}\n", or_operand(-1));
+
+    seen_of := 0;
+    print("onfail_err={} seen={}\n", with_onfail(-1, *seen_of), seen_of);
+    seen_of = 0;
+    print("onfail_ok={} seen={}\n", with_onfail(6, *seen_of), seen_of);
+
+    print("marked={}\n", try g(-1) catch { -1 });
+    print("bare={}\n", g(-1) catch { -1 });
+    must(-1) catch {};
+    return 0;
+}
