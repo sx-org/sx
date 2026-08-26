@@ -3289,7 +3289,6 @@ pub const Lowering = struct {
     pub const isErasedAssertNode = lower_error.isErasedAssertNode;
     pub const desugarErasedAssert = lower_error.desugarErasedAssert;
     pub const coalesceChainSuccessType = lower_error.coalesceChainSuccessType;
-    pub const unwrapTryNode = lower_error.unwrapTryNode;
     pub const flattenCoalesceChain = lower_error.flattenCoalesceChain;
     pub const lowerFailableCoalesce = lower_error.lowerFailableCoalesce;
     pub const astChannelNode = lower_error.astChannelNode;

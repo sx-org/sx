@@ -120,7 +120,7 @@ pub const ErrorAnalysis = struct {
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
-    fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (self.l.raisedMember(rs.tag)) |rm| {
@@ -210,10 +210,14 @@ pub const ErrorAnalysis = struct {
                 self.collectErrorSites(ix.index, tags, edges, dyn, enclosing_fd);
             },
             .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn, enclosing_fd),
-            // The nearest fallback wins: the operand's failures land in this
-            // handler, so they reach no enclosing boundary. The body's own
-            // `raise e` forward does.
-            .catch_expr => |ce| self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd),
+            // A fallback absorbs exactly what it attempts: a boundary block
+            // owns every escape inside it, while a plain operand still leaks
+            // the `try`s nested in it. The handler body's own escapes forward.
+            .catch_expr => |ce| {
+                const attempted = Lowering.catchAttempted(&ce);
+                if (!attempted.boundary) self.collectErrorSites(attempted.node, tags, edges, dyn, enclosing_fd);
+                self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
+            },
             .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),
             .push_stmt => |p| {
                 self.collectErrorSites(p.context_expr, tags, edges, dyn, enclosing_fd);
@@ -224,12 +228,6 @@ pub const ErrorAnalysis = struct {
             // Stop at nested function boundaries; leaves contribute nothing.
             else => {},
         }
-    }
-
-    /// Every escape a `try { … }` boundary block routes to itself. A boundary
-    /// forwards no tail call: its tail expression is the success value.
-    pub fn collectBoundaryEscapes(self: ErrorAnalysis, block: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
-        self.collectErrorSites(block, tags, edges, dyn, enclosing_fd);
     }
 
     /// Every escape of a failable `body`: the tags it raises and the edges of

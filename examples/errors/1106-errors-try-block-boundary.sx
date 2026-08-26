@@ -10,7 +10,9 @@
 // boundary is the error exit a propagating `??` takes, and a `try { … }` is
 // itself a failable `??` operand. A block with no tail value is a pure
 // failable, so its `catch` stands as a statement. A nested boundary hands the
-// outer one back, so the `try` after it exits through the outer block.
+// outer one back, so the `try` after it exits through the outer block. A
+// `catch` absorbs exactly what it attempts, so a `try` sitting in its operand
+// still exits through the enclosing channel — the boundary's, under one.
 
 @import "modules/std.sx";
 
@@ -20,6 +22,11 @@ IoErr    :: error { Failed; Canceled }
 g :: (n: i32) -> (i32, !FooError) {
     if n < 0 { raise FooError.A; }
     return n;
+}
+
+h :: (x: i32) -> (i32, !IoErr) {
+    if x == 9 { raise IoErr.Failed; }
+    return x;
 }
 
 must :: (n: i32) -> !FooError {
@@ -42,6 +49,14 @@ narrowed :: (n: i32) -> (i32, !IoErr) {
 
 escapes :: (n: i32) -> (i32, !FooError) {
     return try { try g(n); n * 2 };
+}
+
+forwarded :: (n: i32) -> (i32, !) {
+    return h(try g(n)) catch { 0 };
+}
+
+boundary_arg :: (n: i32) -> i32 {
+    return try { h(try g(n)) catch { 0 } } catch { -1 };
 }
 
 with_defer :: (n: i32, seen: *i32) -> i32 {
@@ -102,6 +117,11 @@ main :: () -> i32 {
     print("narrowed={}\n", narrowed(7) catch |e| { if e == IoErr.Failed { 70 } else { 71 } });
     print("escapes_ok={}\n", escapes(4) catch { -9 });
     print("escapes_err={}\n", escapes(-1) catch |e| { if e == FooError.A { 40 } else { 41 } });
+    print("forwarded_ok={}\n", forwarded(3) catch { -9 });
+    print("forwarded_absorbed={}\n", forwarded(9) catch { -9 });
+    print("forwarded_err={}\n", forwarded(-1) catch { -9 });
+    print("boundary_arg_ok={}\n", boundary_arg(3));
+    print("boundary_arg_err={}\n", boundary_arg(-1));
 
     seen := 0;
     print("defer_err={} seen={}\n", with_defer(-1, *seen), seen);

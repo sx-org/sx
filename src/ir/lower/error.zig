@@ -1033,14 +1033,15 @@ pub fn catchAttempted(ce: *const ast.CatchExpr) Attempted {
 }
 
 /// The channel a `try { … }` block converges to: the flatten-merge of the
-/// static channel types of the `try`s and `raise`s that reach it.
+/// static channel types of the `try`s and `raise`s that reach it. A boundary
+/// forwards no tail call — its tail expression is the success value.
 fn tryBoundaryChannel(self: *Lowering, block: *const Node) TypeId {
     var tags = std.ArrayList(u32).empty;
     defer tags.deinit(self.alloc);
     var edges = std.ArrayList([]const u8).empty;
     defer edges.deinit(self.alloc);
     var dyn = false;
-    self.errorAnalysis().collectBoundaryEscapes(block, &tags, &edges, &dyn, self.current_fn_decl);
+    self.errorAnalysis().collectErrorSites(block, &tags, &edges, &dyn, self.current_fn_decl);
     for (edges.items) |callee| {
         for (self.calleeEscapeTags(callee)) |t| {
             if (!containsTag(tags.items, t)) tags.append(self.alloc, t) catch {};
@@ -1609,13 +1610,6 @@ pub fn coalesceChainSuccessType(self: *Lowering, nc: *const ast.NullCoalesce) Ty
     const ft = attemptType(self, attemptedExpr(lhs));
     const fset = self.errorChannelOf(ft) orelse return .unresolved;
     return if (ft == fset) .void else self.failableSuccessType(ft);
-}
-
-/// `try X` → `X` (the underlying failable); any other node unchanged. In a
-/// `??` chain the `try` marker's routing IS the chain, so the chain lowers
-/// the underlying failable directly rather than re-entering `lowerTry`.
-pub fn unwrapTryNode(node: *const Node) *const Node {
-    return if (node.data == .try_expr) node.data.try_expr.operand else node;
 }
 
 /// Flatten a failable `??` chain into its operands, left-to-right. `??` is
