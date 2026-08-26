@@ -52,7 +52,7 @@ pub const Id = enum(u16) {
     align_of,
     // ── std/core.sx — reflection ────────────────────────────────────────────
     type_of,
-    type_name,
+    @"@typeName",
     struct_field_count,
     variant_count,
     struct_field_name,
@@ -66,7 +66,9 @@ pub const Id = enum(u16) {
     variant_index,
     pointee_type,
     is_flags,
-    error_name,
+    @"@errorName",
+    @"@tag",
+    @"@errorPayload",
     vector_lanes,
     @"__sx_variant_tag_width",
     @"__sx_slice_len_info",
@@ -220,7 +222,9 @@ pub const entries = [_]Entry{
     .{ .id = .variant_index, .module = core, .name = "variant_index", .mode = .lower, .arity = 2, .ret = .i64 },
     .{ .id = .pointee_type, .module = core, .name = "pointee_type", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .is_flags, .module = core, .name = "is_flags", .mode = .lower, .arity = 1, .ret = .bool },
-    .{ .id = .error_name, .module = core, .name = "error_name", .mode = .lower, .arity = 1, .ret = .string },
+    .{ .id = .@"@errorName", .module = core, .name = "@errorName", .mode = .lower, .arity = 1, .ret = .string },
+    .{ .id = .@"@tag", .module = core, .name = "@tag", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@errorPayload", .module = core, .name = "@errorPayload", .mode = .lower, .arity = 1, .ret = .any },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_variant_tag_width", .module = core, .name = "__sx_variant_tag_width", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_slice_len_info", .module = core, .name = "__sx_slice_len_info", .mode = .lower, .arity = 1, .ret = .i64 },
@@ -243,7 +247,7 @@ pub const entries = [_]Entry{
 
     // ── reflection with a VM arm: the type arg may only be known at eval time
     // (e.g. `args[i]` inside a builder body, carrying a `.type_tag(TypeId)`).
-    .{ .id = .type_name, .module = core, .name = "type_name", .mode = .dual, .arity = 1, .ret = .string },
+    .{ .id = .@"@typeName", .module = core, .name = "@typeName", .mode = .dual, .arity = 1, .ret = .string },
     .{ .id = .type_info, .module = meta, .name = "type_info", .mode = .dual, .arity = 1 },
 
     // ── evaluate-only: the comptime VM services these itself (no lowering, no

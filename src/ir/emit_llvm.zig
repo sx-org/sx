@@ -268,6 +268,9 @@ pub const LLVMEmitter = struct {
     field_name_arrays: std.AutoHashMap(u32, c.LLVMValueRef),
     // The always-linked member-name table (member id → name); built once.
     tag_name_array: ?c.LLVMValueRef = null,
+    // The member-payload-type table (member id → TypeId); built on the first
+    // `error_payload_view` site.
+    tag_payload_type_array: ?c.LLVMValueRef = null,
 
     // Lazy global `[N x string]` indexed by TypeId.index(), holding
     // each type's display name. Built on the first dynamic
@@ -1961,6 +1964,7 @@ pub const LLVMEmitter = struct {
             .field_name_get => |fr| self.ops().emitFieldNameGet(fr),
             .field_value_get => |fr| self.ops().emitFieldValueGet(fr, func_idx),
             .error_tag_name_get => |u| self.ops().emitErrorTagNameGet(u),
+            .error_payload_view => |u| self.ops().emitErrorPayloadView(u),
 
             // ── Switch branch ────────────────────────────────────────
             .switch_br => |sw| self.ops().emitSwitchBr(sw, func_idx),
@@ -2186,6 +2190,11 @@ pub const LLVMEmitter = struct {
         const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
         const payload_llvm = c.LLVMTypeOf(payload);
         return self.channelOverPayload(channel, tag, self.spill(payload, "channel.pay"), c.LLVMABIAlignmentOfType(dl, payload_llvm), c.LLVMABISizeOfType(dl, payload_llvm));
+    }
+
+    /// The address of `channel_val`'s payload area, over a spilled copy.
+    pub fn channelPayloadAddr(self: *LLVMEmitter, channel: TypeId, channel_val: c.LLVMValueRef) c.LLVMValueRef {
+        return c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), self.spill(channel_val, "channel.view"), 1, "channel.area");
     }
 
     /// `channel_val`'s payload area read as `payload_llvm`.

@@ -42,7 +42,7 @@ main :: () -> i32 {
     c2, e2 := classify("bad");
     print("F1 bad: err nonzero = {}\n", e2.(i64) != 0);             // true (ordinal is program-global, not pinned)
     if e2 == .Nope { print("F1 bad: is Nope (ok)\n"); } else { print("F1 bad: not Nope (WRONG)\n"); }
-    print("F1 bad: tag name = {}\n", error_name(e2));               // Nope
+    print("F1 bad: tag name = {}\n", @errorName(e2));               // Nope
 
     // ── F2 success (comptime-param, inline path): error slot 0 at runtime ──
     c3, e3 := ct_pick(7, "red");

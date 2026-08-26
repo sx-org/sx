@@ -1,0 +1,23 @@
+error: error channels 'FooError' and 'BooError' do not compare — one channel must hold the other's members
+  --> examples/errors/1111-errors-tag-view-reject.sx:32:19
+   |
+32 |     print("{}\n", e == z);
+   |                   ^
+
+error: '@Tag(FooError)' is a tag view and carries no payload — raise a member of 'FooError' instead
+  --> examples/errors/1111-errors-tag-view-reject.sx:19:5
+   |
+19 |     raise t;
+   |     ^^^^^^^^
+
+error: '@Tag(FooError)' is a tag view — its members carry no payload to bind
+  --> examples/errors/1111-errors-tag-view-reject.sx:25:14
+   |
+25 |         case .D: |p| p;
+   |              ^^
+
+error: @Tag expects an error, enum, or tagged union; 'i64' is none
+  --> examples/errors/1111-errors-tag-view-reject.sx:35:19
+   |
+35 |     scalar : @Tag(i64) = 0;
+   |                   ^^^

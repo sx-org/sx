@@ -19,14 +19,14 @@ out :: (str: string) -> void {
 size_of :: ($T: Type) -> i64 intrinsic;
 align_of :: ($T: Type) -> i64 intrinsic;
 type_of :: (val: $T) -> Type intrinsic;
-type_name :: ($T: Type) -> string intrinsic;
+@typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
 // duals are the variant_* family below; arrays/vectors use `.len` and
 // native indexing instead.
 struct_field_count :: ($T: Type) -> i64 intrinsic;
 struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
-// folds at LOWER time, so it composes inside `type_eq` / `type_name` / any
+// folds at LOWER time, so it composes inside `type_eq` / `@typeName` / any
 // type-arg slot. Lives here beside its sibling reflection builtins (NOT in
 // `meta.sx`) because it declares no data types of its own — so it costs
 // nothing in the prelude — and both `map.sx`'s structural key hash and
@@ -49,7 +49,15 @@ variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
-error_name :: (e: $T) -> string intrinsic;
+// The MEMBER name an error value carries — `D`, not `FooError.D`. The owner
+// is `@typeName` of the error.
+@errorName :: (e: $T) -> string;
+// The tag-only view of an error, enum, or tagged-union value: `@Tag(T)`,
+// which compares but carries no payload and cannot be raised.
+@tag :: (val: $T) -> @Tag(T);
+// An error value's live payload as an `any` view — the `variant_payload`
+// sibling for error channels. A payload-free member views as `void`.
+@errorPayload :: (e: $T) -> any;
 // A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type

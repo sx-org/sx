@@ -24,9 +24,9 @@ main :: () -> i32 {
 
     h : Holder = ---;
     h.small = 31;
-    print("small={} name={}\n", h.small, type_name(Holder));
+    print("small={} name={}\n", h.small, @typeName(Holder));
 
-    print("widen={} name={}\n", widen(-2048), type_name(@int(12, .signed)));
+    print("widen={} name={}\n", widen(-2048), @typeName(@int(12, .signed)));
     print("sizes={} {}\n", size_of(@int(64, .unsigned)), size_of(MyInt));
 
     f := || -> @int(8, .signed) { 0 };

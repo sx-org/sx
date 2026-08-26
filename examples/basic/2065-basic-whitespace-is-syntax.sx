@@ -15,7 +15,7 @@ BoxI :: Box (i64);
 bump :: (p: * i64) { p.* = p.* + 1; }
 
 // a pack index is an index like any other, in an expression as in a type
-first_type :: (..$args) -> string => type_name($args [0]);
+first_type :: (..$args) -> string => @typeName($args [0]);
 
 // `else :` heads the default arm; the gap before the `:` says nothing
 kind :: (v: i64) -> string {

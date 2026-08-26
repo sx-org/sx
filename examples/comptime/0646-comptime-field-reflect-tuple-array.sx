@@ -15,7 +15,7 @@ NamT :: struct { a: i64; b: bool };
 main :: () -> i32 {
     // struct: named fields
     print("struct: fc={} fn=({},{}) ft0={}\n",
-        struct_field_count(S), struct_field_name(S, 0), struct_field_name(S, 1), type_name(struct_field_type(S, 0)));
+        struct_field_count(S), struct_field_name(S, 0), struct_field_name(S, 1), @typeName(struct_field_type(S, 0)));
 
     // enum: variant names (the variant_* family — struct_field_* rejects enums)
     print("enum: fc={} fn=({},{},{})\n",
@@ -25,7 +25,7 @@ main :: () -> i32 {
     pos := .{0, false};
     print("posproduct: fc={} ft=({},{}) fn0=[{}]\n",
         struct_field_count(type_of(pos)),
-        type_name(struct_field_type(type_of(pos), 0)), type_name(struct_field_type(type_of(pos), 1)),
+        @typeName(struct_field_type(type_of(pos), 0)), @typeName(struct_field_type(type_of(pos), 1)),
         struct_field_name(type_of(pos), 0));
 
     // named product: element labels recovered

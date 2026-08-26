@@ -723,7 +723,7 @@ pub const Server = struct {
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{
             .{ .label = "type_of", .detail = "(val: $T) -> Type" },
-            .{ .label = "type_name", .detail = "(T | tp: Type) -> string" },
+            .{ .label = "@typeName", .detail = "(T | tp: Type) -> string" },
             .{ .label = "type_info", .detail = "(T | tp: Type) -> TypeInfo — kind-first reflection (needs std/meta)" },
             .{ .label = "type_eq", .detail = "(A: Type, B: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
@@ -743,7 +743,9 @@ pub const Server = struct {
             .{ .label = "any_element", .detail = "(av: any, elem: Type, idx: i64) -> any — array/vector element view" },
             .{ .label = "raw_any_data", .detail = "(av: any) -> *void — the view's data pointer" },
             .{ .label = "raw_make_any", .detail = "(tp: Type, data: *void) -> any — assemble a view (unchecked)" },
-            .{ .label = "error_name", .detail = "(e: $T) -> string" },
+            .{ .label = "@errorName", .detail = "(e: $T) -> string" },
+            .{ .label = "@tag", .detail = "(val: $T) -> @Tag(T)" },
+            .{ .label = "@errorPayload", .detail = "(e: $T) -> any" },
             .{ .label = "size_of", .detail = "(T | tp: Type) -> i64" },
             .{ .label = "align_of", .detail = "(T | tp: Type) -> i64" },
             .{ .label = "malloc", .detail = "(size: i64) -> *void" },
@@ -1218,7 +1220,7 @@ pub const Server = struct {
         // Built-in function signatures
         const builtin_sigs = [_]struct { name: []const u8, label: []const u8, params: []const []const u8 }{
             .{ .name = "type_of", .label = "type_of(val: $T) -> Type", .params = &.{"val: $T"} },
-            .{ .name = "type_name", .label = "type_name($T: Type) -> string", .params = &.{"$T: Type"} },
+            .{ .name = "@typeName", .label = "@typeName($T: Type) -> string", .params = &.{"$T: Type"} },
             .{ .name = "struct_field_count", .label = "struct_field_count(T: Type) -> i64", .params = &.{"T: Type"} },
             .{ .name = "struct_field_name", .label = "struct_field_name(T: Type, idx: i64) -> string", .params = &.{ "T: Type", "idx: i64" } },
             .{ .name = "struct_field_type", .label = "struct_field_type(T: Type, idx: i64) -> Type", .params = &.{ "T: Type", "idx: i64" } },
@@ -1236,7 +1238,9 @@ pub const Server = struct {
             .{ .name = "raw_make_any", .label = "raw_make_any(tp: Type, data: *void) -> any", .params = &.{ "tp: Type", "data: *void" } },
             .{ .name = "type_info", .label = "type_info(T: Type) -> TypeInfo", .params = &.{"T: Type"} },
             .{ .name = "pointee_type", .label = "pointee_type(P: Type) -> Type", .params = &.{"P: Type"} },
-            .{ .name = "error_name", .label = "error_name(e: $T) -> string", .params = &.{"e: $T"} },
+            .{ .name = "@errorName", .label = "@errorName(e: $T) -> string", .params = &.{"e: $T"} },
+            .{ .name = "@tag", .label = "@tag(val: $T) -> @Tag(T)", .params = &.{"val: $T"} },
+            .{ .name = "@errorPayload", .label = "@errorPayload(e: $T) -> any", .params = &.{"e: $T"} },
             .{ .name = "size_of", .label = "size_of($T: Type) -> i64", .params = &.{"$T: Type"} },
             .{ .name = "align_of", .label = "align_of($T: Type) -> i64", .params = &.{"$T: Type"} },
             .{ .name = "malloc", .label = "malloc(size: i64) -> *void", .params = &.{"size: i64"} },

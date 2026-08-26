@@ -10,7 +10,7 @@ inner :: (args: []Type) -> string {
     s := "";
     i : i64 = 0;
     while i < args.len {
-        s = concat(s, type_name(args[i]));
+        s = concat(s, @typeName(args[i]));
         s = concat(s, " ");
         i = i + 1;
     }

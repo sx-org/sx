@@ -1,0 +1,38 @@
+// What a `@Tag(T)` view refuses. It carries no payload, so no `match` arm
+// binds one and no `raise` takes it as its operand. Two live channels compare
+// only when one holds the other's members. `@Tag` itself takes an error, enum,
+// or tagged union.
+
+@import "modules/std.sx";
+
+FooError :: error { A; D: i32 }
+BooError :: error { Z }
+
+boom :: (n: i64) -> (i64, !FooError) {
+    if n < 0 { raise .D{42}; }
+    raise FooError.A;
+}
+
+nope :: () -> (i64, !BooError) { raise BooError.Z; }
+
+rethrow :: (t: @Tag(FooError)) -> (i64, !FooError) {
+    raise t;
+}
+
+bound :: (t: @Tag(FooError)) -> i64 {
+    return match t {
+        case .A: 0;
+        case .D: |p| p;
+    };
+}
+
+main :: () -> i32 {
+    _, e := boom(-1);
+    _, z := nope();
+    print("{}\n", e == z);
+    print("{}\n", rethrow(@tag(e)) catch { -1 });
+    print("{}\n", bound(@tag(e)));
+    scalar : @Tag(i64) = 0;
+    print("{}\n", scalar);
+    return 0;
+}

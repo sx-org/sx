@@ -1736,7 +1736,9 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 const pat_name = Lowering.errorArmMemberName(arm.pattern) orelse "";
                 const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
                 const member = self.module.types.errorSetMemberId(subject_ty, pat_name);
-                const payload_ty = if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
+                const payload_ty = if (self.module.types.isTagOnlyChannel(subject_ty))
+                    TypeId.void
+                else if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
                 if (member == null) {
                     if (self.diagnostics) |diags| {
                         diags.addFmt(.err, bind_span, "error set '{s}' has no member '{s}'", .{ self.formatTypeName(subject_ty), pat_name });
@@ -1744,7 +1746,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
                 } else if (payload_ty == .void) {
                     if (self.diagnostics) |diags| {
-                        diags.addFmt(.err, bind_span, "'{s}' carries no payload to bind", .{pat_name});
+                        if (self.module.types.isTagOnlyChannel(subject_ty)) {
+                            diags.addFmt(.err, bind_span, "'{s}' is a tag view — its members carry no payload to bind", .{self.formatTypeName(subject_ty)});
+                        } else {
+                            diags.addFmt(.err, bind_span, "'{s}' carries no payload to bind", .{pat_name});
+                        }
                     }
                     arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
                 } else {

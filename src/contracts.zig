@@ -97,6 +97,10 @@ pub const entries = [_]Contract{
     .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
     .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
     .{ .name = "@printf", .module = "modules/std/core.sx" },
+    .{ .name = "@typeName", .module = "modules/std/core.sx" },
+    .{ .name = "@errorName", .module = "modules/std/core.sx" },
+    .{ .name = "@tag", .module = "modules/std/core.sx" },
+    .{ .name = "@errorPayload", .module = "modules/std/core.sx" },
     .{ .name = "@is_comptime", .module = "modules/std/core.sx" },
     .{ .name = "@va_start", .module = "modules/std/core.sx" },
     .{ .name = "@va_arg", .module = "modules/std/core.sx" },
@@ -170,6 +174,11 @@ pub const entries = [_]Contract{
         .spelling = "@Vector(N, T)",
     },
     .{
+        .name = "@Tag",
+        .kind = .compiler_formed,
+        .spelling = "@Tag(T)",
+    },
+    .{
         .name = "@Array",
         .kind = .compiler_formed,
         .spelling = "@Array(N, T)",
@@ -203,21 +212,31 @@ pub const slice_head = "@Slice";
 /// an N-bit integer, N in 1..=64. `@int(8, .signed)` IS `i8`.
 pub const int_head = "@int";
 
+/// The tag-only type constructor: `@Tag(T)` names T's tags without its
+/// payloads, for T an error, enum, or tagged union.
+pub const tag_head = "@Tag";
+
 /// True for a compiler-formed head that CONSTRUCTS a type from its arguments.
 pub fn isTypeConstructor(name: []const u8) bool {
     return std.mem.eql(u8, name, vector_head) or
         std.mem.eql(u8, name, array_head) or
         std.mem.eql(u8, name, slice_head) or
+        std.mem.eql(u8, name, tag_head) or
         std.mem.eql(u8, name, int_head);
 }
 
+/// How many arguments a compiler-formed type constructor takes.
+pub fn constructorArity(name: []const u8) usize {
+    return if (std.mem.eql(u8, name, tag_head)) 1 else 2;
+}
+
 /// True when argument `i` of the type constructor `name` is a TYPE rather than
-/// a compile-time value. `@Slice(T, Len)` takes types in both positions,
+/// a compile-time value. `@Slice(T, Len)` and `@Tag(T)` take types throughout,
 /// `@Vector(N, T)` / `@Array(N, T)` a count then a type, and `@int(N, .signed)`
 /// a width then a signedness choice — no type at all.
 pub fn takesTypeArg(name: []const u8, i: usize) bool {
     if (std.mem.eql(u8, name, int_head)) return false;
-    if (std.mem.eql(u8, name, slice_head)) return true;
+    if (std.mem.eql(u8, name, slice_head) or std.mem.eql(u8, name, tag_head)) return true;
     return i == 1;
 }
 

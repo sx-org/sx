@@ -1,0 +1,45 @@
+// `@tag(x)` is `@Tag(T)`: the member a value carries, with its payload area
+// dropped. It compares with a `.Member` shorthand, with another `@Tag`, and
+// with a live error value of the same channel. The printed owner is
+// `@typeName` of the error; `@errorName` is the member alone, and
+// `@errorPayload` views the live member's payload. An enum already IS its
+// tags, so `@Tag` of one is the enum itself; a tagged union views as the
+// payload-free enum over its variants.
+
+@import "modules/std.sx";
+
+FooError :: error {
+    A;
+    D: i32;
+}
+
+Color :: enum { red; green; blue; }
+Shape :: enum { circle: f32; none; }
+
+boom :: (n: i64) -> (i64, !FooError) {
+    if n < 0 { raise .D{42}; }
+    raise FooError.A;
+}
+
+main :: () -> i32 {
+    _, d := boom(-1);
+    _, a := boom(1);
+
+    print("owner={} view={}\n", @typeName(FooError), @typeName(@Tag(FooError)));
+    print("member={} {}\n", @errorName(d), @errorName(a));
+    print("payload={}\n", @errorPayload(d));
+
+    print("shorthand={} {}\n", @tag(d) == .D, @tag(a) == .A);
+    print("views={} {}\n", @tag(d) == @tag(d), @tag(d) == @tag(a));
+    print("value={}\n", d == @tag(d));
+
+    print("match={}\n", match @tag(d) {
+        case .A: 0;
+        case .D: 1;
+    });
+
+    s : Shape = .circle(2.0);
+    print("enum={} {}\n", @tag(Color.blue) == .blue, @typeName(@Tag(Color)));
+    print("union={} {}\n", @tag(s) == .circle, @typeName(@Tag(Shape)));
+    return 0;
+}

@@ -7,7 +7,7 @@
 // and `e == .X`) — not only via the `if !e` proof that the compiler can
 // fold away. It also exercises a non-zero ordinal (`.blue` = 2) so a value slot
 // that collapses to 0 is caught, and asserts the error PATH still carries the
-// right tag and `error_name`.
+// right tag and `@errorName`.
 
 @import "modules/std.sx";
 
@@ -36,7 +36,7 @@ main :: () -> i32 {
     c3, e3 := pick("xxx");
     print("error err nonzero = {}\n", e3.(i64) != 0);     // true (ordinal is program-global, not pinned)
     if e3 == .Nope { print("error: is Nope (ok)\n"); } else { print("error: not Nope (WRONG)\n"); }
-    print("error tag name = {}\n", error_name(e3));       // Nope
+    print("error tag name = {}\n", @errorName(e3));       // Nope
 
     return 0;
 }

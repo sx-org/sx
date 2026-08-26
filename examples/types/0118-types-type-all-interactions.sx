@@ -36,7 +36,7 @@ type_list :: (..$args) -> string {
     i : i64 = 0;
     while i < list.len {
         if i > 0 { s = concat(s, ", "); }
-        s = concat(s, type_name(list[i]));
+        s = concat(s, @typeName(list[i]));
         i = i + 1;
     }
     return concat(s, "]");
@@ -74,14 +74,14 @@ main :: () -> i32 {
     t = bool;
     print("t == bool:   {}\n", t == bool);
 
-    // ── 4. type_name on literals + variables ────────────────
-    print("=== 4. type_name ===\n");
-    print("type_name(i64):    {}\n", type_name(i64));
-    print("type_name(*u8):    {}\n", type_name(*u8));
-    print("type_name(Point):  {}\n", type_name(Point));
-    print("type_name(Color):  {}\n", type_name(Color));
+    // ── 4. @typeName on literals + variables ────────────────
+    print("=== 4. @typeName ===\n");
+    print("@typeName(i64):    {}\n", @typeName(i64));
+    print("@typeName(*u8):    {}\n", @typeName(*u8));
+    print("@typeName(Point):  {}\n", @typeName(Point));
+    print("@typeName(Color):  {}\n", @typeName(Color));
     t = f64;
-    print("type_name(t):      {}\n", type_name(t));
+    print("@typeName(t):      {}\n", @typeName(t));
 
     // ── 5. Print Type values directly ───────────────────────
     print("=== 5. print Type values ===\n");
@@ -131,14 +131,14 @@ main :: () -> i32 {
     h := TypeHolder{ t = i64 };
     print("h.t == i64:    {}\n", h.t == i64);
     print("h.t == string: {}\n", h.t == string);
-    print("type_name(h.t): {}\n", type_name(h.t));
+    print("@typeName(h.t): {}\n", @typeName(h.t));
 
     // ── 12. Compound type literals ──────────────────────────
     print("=== 12. compound literals ===\n");
-    print("type_name(*Point):    {}\n", type_name(*Point));
-    print("type_name([4]i32):    {}\n", type_name([4]i32));
-    print("type_name([]bool):    {}\n", type_name([]bool));
-    print("type_name(?f64):      {}\n", type_name(?f64));
+    print("@typeName(*Point):    {}\n", @typeName(*Point));
+    print("@typeName([4]i32):    {}\n", @typeName([4]i32));
+    print("@typeName([]bool):    {}\n", @typeName([]bool));
+    print("@typeName(?f64):      {}\n", @typeName(?f64));
 
     return 0;
 }
@@ -160,12 +160,12 @@ main :: () -> i32 {
 // t == string: false
 // after reassign t == string: true
 // t == bool:   true
-// === 4. type_name ===
-// type_name(i64):    i64
-// type_name(*u8):    *u8
-// type_name(Point):  Point
-// type_name(Color):  Color
-// type_name(t):      f64
+// === 4. @typeName ===
+// @typeName(i64):    i64
+// @typeName(*u8):    *u8
+// @typeName(Point):  Point
+// @typeName(Color):  Color
+// @typeName(t):      f64
 // === 5. print Type values ===
 // literal: i64
 // var:     string
@@ -197,9 +197,9 @@ main :: () -> i32 {
 // === 11. Type in struct field ===
 // h.t == i64:    true
 // h.t == string: false
-// type_name(h.t): i64
+// @typeName(h.t): i64
 // === 12. compound literals ===
-// type_name(*Point):    *Point
-// type_name([4]i32):    [4]i32
-// type_name([]bool):    []bool
-// type_name(?f64):      ?f64
+// @typeName(*Point):    *Point
+// @typeName([4]i32):    [4]i32
+// @typeName([]bool):    []bool
+// @typeName(?f64):      ?f64

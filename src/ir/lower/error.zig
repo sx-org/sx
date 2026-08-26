@@ -91,6 +91,56 @@ pub fn errorSetTypeOf(self: *Lowering, node: *const Node) ?TypeId {
     return if (self.module.types.get(t) == .error_set) t else null;
 }
 
+/// `@Tag(T)`: T's tags without its payloads. An error channel drops its
+/// payload area, a payload-free enum already IS its tags, and a tagged union
+/// views as the payload-free enum over its variants.
+pub fn tagOnlyChannelFor(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .error_set => self.module.types.tagOnlyChannel(ty),
+        .@"enum" => ty,
+        .tagged_union => self.module.types.unionTagEnum(ty),
+        else => null,
+    };
+}
+
+/// `tagOnlyChannelFor`, diagnosing the kinds that have no tag view.
+pub fn tagOnlyChannelOf(self: *Lowering, ty: TypeId, span: ast.Span) TypeId {
+    if (ty == .unresolved) return .unresolved;
+    if (tagOnlyChannelFor(self, ty)) |tag_ty| return tag_ty;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "@Tag expects an error, enum, or tagged union; '{s}' is none", .{self.formatTypeName(ty)});
+    }
+    return .unresolved;
+}
+
+/// `@tag(val)`: the tag-only view of an error, enum, or tagged-union value.
+pub fn lowerTagOf(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
+    const src = self.inferExprType(arg);
+    const tag_ty = tagOnlyChannelOf(self, src, span);
+    if (tag_ty == .unresolved) return self.builder.constUndef(.i32);
+    const val = self.lowerExpr(arg);
+    if (tag_ty == src) return val;
+    if (self.module.types.get(tag_ty) == .@"enum") {
+        return self.builder.enumTag(val, tag_ty);
+    }
+    return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src, .to = tag_ty } }, tag_ty);
+}
+
+/// `@errorPayload(e)`: the live member's payload as an `any` view over the
+/// channel's payload area.
+pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
+    const src = self.inferExprType(arg);
+    if (src.isBuiltin() or self.module.types.get(src) != .error_set) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "@errorPayload expects an error value; '{s}' is not one", .{self.formatTypeName(src)});
+        }
+        return self.builder.constInt(0, .any);
+    }
+    const val = self.lowerExpr(arg);
+    return self.builder.emit(.{ .error_payload_view = .{ .operand = val } }, .any);
+}
+
 /// The member NAME a `raise` operand names through the contextual `.X`
 /// shorthand, or null for a qualified, variable, or computed operand.
 pub fn literalTagName(node: *const Node) ?[]const u8 {
@@ -265,6 +315,16 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
         }
         return self.builder.constBool(false);
     }
+
+    // Two live channels compare only when one holds the other's members.
+    if (l_set) |l| if (r_set) |r| {
+        if (!errorSetValueRetypeIsLegal(self, l, r) and !errorSetValueRetypeIsLegal(self, r, l)) {
+            if (self.diagnostics) |diags| {
+                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(l), self.formatTypeName(r) });
+            }
+            return self.builder.constBool(false);
+        }
+    };
 
     // Lower both sides with the set type as context so a `.X` shorthand
     // resolves to it (and validates membership).
@@ -591,6 +651,18 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const err_set = exit.set;
     const inferred = self.channelIsOpen(err_set);
     const named = raisedMember(self, rs.tag);
+
+    // A `@Tag(T)` view names a member but carries no payload, so it cannot
+    // supply the value a channel raises.
+    if (named == null) {
+        const raised_ty = self.inferExprType(rs.tag);
+        if (self.module.types.isTagOnlyChannel(raised_ty)) {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "'{s}' is a tag view and carries no payload — raise a member of '{s}' instead", .{ self.formatTypeName(raised_ty), self.formatTypeName(err_set) });
+            }
+            return;
+        }
+    }
 
     // A `.X` shorthand resolves only against a channel already in hand. A
     // signature written bare `!` is not one: the channel is what its raises

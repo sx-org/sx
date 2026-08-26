@@ -337,6 +337,9 @@ pub const TypeInfo = union(enum) {
     pub const ErrorSetInfo = struct {
         name: StringId,
         tags: []const u32,
+        /// The `@Tag(T)` view: the same members, no payload area, and no
+        /// standing as a `raise` operand or a payload-binding match subject.
+        tag_only: bool = false,
     };
 };
 
@@ -1505,6 +1508,13 @@ pub const TypeTable = struct {
         return self.tags.payloadOf(member);
     }
 
+    /// The bytes the channel `es` reserves for a payload. A `@Tag(T)` view
+    /// reserves none whatever its members declare.
+    pub fn errorSetPayloadBytes(self: *const TypeTable, es: TypeInfo.ErrorSetInfo) usize {
+        if (es.tag_only) return 0;
+        return self.errorChannelPayloadBytes(es.tags);
+    }
+
     /// The bytes a channel over `tags` reserves for a payload: the widest
     /// declared member payload, 0 when every member is payload-free.
     pub fn errorChannelPayloadBytes(self: *const TypeTable, tags: []const u32) usize {
@@ -1522,7 +1532,7 @@ pub const TypeTable = struct {
         if (ty.isBuiltin()) return 0;
         const info = self.get(ty);
         if (info != .error_set) return 0;
-        return self.errorChannelPayloadBytes(info.error_set.tags);
+        return self.errorSetPayloadBytes(info.error_set);
     }
 
     /// Whether a channel over `ty` reserves payload bytes for its members.
@@ -1587,6 +1597,41 @@ pub const TypeTable = struct {
     /// Construct (and intern) an error channel from its member ids.
     pub fn errorSetType(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeId {
         return self.intern(self.errorSetInfo(spelling, member_ids));
+    }
+
+    /// `@Tag(set)`: the channel's members with its payload area dropped.
+    pub fn tagOnlyChannel(self: *TypeTable, set: TypeId) TypeId {
+        const es = self.get(set).error_set;
+        if (es.tag_only) return set;
+        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(es.name)}) catch unreachable;
+        defer self.alloc.free(spelling);
+        const name = self.internString(spelling);
+        return self.intern(.{ .error_set = .{ .name = name, .tags = es.tags, .tag_only = true } });
+    }
+
+    /// `@Tag(u)` for a tagged union: the payload-free enum over its variants,
+    /// carrying the union's tag type and values so the two agree at runtime.
+    pub fn unionTagEnum(self: *TypeTable, u: TypeId) TypeId {
+        const info = self.get(u).tagged_union;
+        const arena = self.slice_arena.allocator();
+        const variants = arena.alloc(StringId, info.fields.len) catch unreachable;
+        for (info.fields, variants) |f, *v| v.* = f.name;
+        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(info.name)}) catch unreachable;
+        defer self.alloc.free(spelling);
+        return self.intern(.{ .@"enum" = .{
+            .name = self.internString(spelling),
+            .variants = variants,
+            .explicit_values = info.explicit_tag_values,
+            .backing_type = info.tag_type,
+            .nominal_id = info.nominal_id,
+        } });
+    }
+
+    /// Whether `ty` is a `@Tag(T)` view rather than a live channel.
+    pub fn isTagOnlyChannel(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        const info = self.get(ty);
+        return info == .error_set and info.error_set.tag_only;
     }
 
     /// The spelling of the DYNAMIC channel. `!` is not legal in a type or
@@ -1658,7 +1703,7 @@ pub const TypeTable = struct {
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
-            .error_set => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
+            .error_set => |es| @intCast((4 + self.errorSetPayloadBytes(es) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
             // before codegen. Reaching runtime layout means a pack leaked.
@@ -1798,7 +1843,7 @@ pub const TypeTable = struct {
             .any => 2 * ptr_size, // {type_tag, data_ptr}
             .protocol => 3 * ptr_size, // {ctx, type_id, vtable}
             // The payload area aligns to 1, so the tag word alone pads the tail.
-            .error_set => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
+            .error_set => |es| (4 + self.errorSetPayloadBytes(es) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeSizeBytes(bt);
                 return 8;
@@ -2126,6 +2171,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
         // function of that set, and identifies a member-less channel alone.
         .error_set => |e| {
             h.update(std.mem.asBytes(&e.name));
+            h.update(std.mem.asBytes(&e.tag_only));
             for (e.tags) |t| h.update(std.mem.asBytes(&t));
         },
         .failable => |f| {
@@ -2192,7 +2238,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .protocol => |p| p.name == b.protocol.name,
         .error_set => |e| {
             const f = b.error_set;
-            if (e.name != f.name or e.tags.len != f.tags.len) return false;
+            if (e.name != f.name or e.tag_only != f.tag_only or e.tags.len != f.tags.len) return false;
             for (e.tags, f.tags) |et, ft| {
                 if (et != ft) return false;
             }

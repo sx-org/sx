@@ -1925,12 +1925,17 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
 pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node, span: ?ast.Span) ?TypeId {
     if (!contracts.isTypeConstructor(head)) return null;
     const table = &self.module.types;
-    if (args.len != 2) {
+    const arity = contracts.constructorArity(head);
+    if (args.len != arity) {
         if (self.diagnostics) |d| {
             const spelling = contracts.find(head).?.spelling;
-            d.addFmt(.err, span, "'{s}' takes two arguments — write '{s}'", .{ head, spelling });
+            const plural: []const u8 = if (arity == 1) "one argument" else "two arguments";
+            d.addFmt(.err, span, "'{s}' takes {s} — write '{s}'", .{ head, plural, spelling });
         }
         return .unresolved;
+    }
+    if (std.mem.eql(u8, head, contracts.tag_head)) {
+        return self.tagOnlyChannelOf(self.resolveTypeWithBindings(args[0]), args[0].span);
     }
     if (std.mem.eql(u8, head, contracts.vector_head)) {
         const length = self.resolveVectorLane(args[0]) orelse return .unresolved;

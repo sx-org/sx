@@ -46,7 +46,7 @@ main :: () -> i64 {
 
     print("{} {}\n", s.get(0), s.get(1));            // 42 2.500000
     print("{}\n", s.get(2));                          // Point{ x: 7, y: 9}
-    print("{}\n", type_name(type_of(s.get(2))));      // Point
+    print("{}\n", @typeName(type_of(s.get(2))));      // Point
 
     // The store COPIED the bytes: mutating the source does not reach it.
     a = 0;

@@ -289,7 +289,7 @@ slice_to_string :: (items: []$T) -> string {
 pointer_to_string :: (p: $T) -> string {
     addr : i64 = p.(i64);
     if addr == 0 { "null" } else {
-        concat(type_name(T), concat("@0x", int_to_hex_string(addr)))
+        concat(@typeName(T), concat("@0x", int_to_hex_string(addr)))
     }
 }
 
@@ -417,7 +417,7 @@ any_to_string :: (val: any) -> string {
                 result = r;
             }
         }
-        case error_set: { tagid : u32 = val.(@Any).data.(*u32).*; result = error_name(tagid); }
+        case error_set: { tagid : u32 = val.(@Any).data.(*u32).*; result = @errorName(tagid); }
         // Vectors walk by element VIEW like arrays; the lane count comes
         // from the lanes table (a vector's ABI size is pow2-rounded, so
         // size/elem_size would over-count e.g. 3 lanes as 4).
@@ -485,7 +485,7 @@ any_to_string :: (val: any) -> string {
             pw : [*]i64 = raw_any_data(val).([*]i64);
             addr := pw[0];
             if addr == 0 { result = "null"; }
-            else { result = concat(type_name(type), concat("@0x", int_to_hex_string(addr))); }
+            else { result = concat(@typeName(type), concat("@0x", int_to_hex_string(addr))); }
         }
         // Optionals classify their repr by size: pointer-like children
         // collapse into one word (null = zero word); everything else is
@@ -506,7 +506,7 @@ any_to_string :: (val: any) -> string {
             if present { result = any_to_string(raw_make_any(child, raw_any_data(val))); }
             else { result = "null"; }
         }
-        case type: result = type_name(val);
+        case type: result = @typeName(val);
     }
     result
 }
@@ -614,7 +614,7 @@ __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
 // reads it off the handle rather than off the site.
 __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
     if !conforms {
-        print("re-erasure failed: '{}' does not conform to '{}'\n", type_name(concrete), type_name(target));
+        print("re-erasure failed: '{}' does not conform to '{}'\n", @typeName(concrete), @typeName(target));
         c.exit(1);
     }
 }

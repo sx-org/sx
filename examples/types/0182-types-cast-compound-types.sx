@@ -21,5 +21,5 @@ main :: () {
     s : []i64 = arr.([]i64);    // array → slice
     print("e: {} {}\n", s.len, s[2]);
     t : Type = *i64;                // first-class compound Type value
-    print("f: {}\n", type_name(t));
+    print("f: {}\n", @typeName(t));
 }
