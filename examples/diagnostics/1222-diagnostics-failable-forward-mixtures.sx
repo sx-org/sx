@@ -1,5 +1,4 @@
-// Rejected failable-forward mixtures (`return callee(...)`), per specs.md
-// "Forwarding a failable result":
+// Rejected failable-forward mixtures (`return callee(...)`):
 // 1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 is required, so
 // the raw tag would land in the value slot;
 // 2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 are required;

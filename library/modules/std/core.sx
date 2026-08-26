@@ -390,7 +390,7 @@ Allocator :: interface {
 
 // The error channel async rides: a canceled task raises `.Canceled` out of
 // `await` or a suspend, a failed one `.Failed`.
-IoErr :: error { Canceled; Failed }
+IoErr :: error { Failed; Canceled }
 
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
