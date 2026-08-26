@@ -12,7 +12,7 @@ trace :: @import "modules/std/trace.sx";
 TErr :: error { Bad };
 
 leaf :: () -> !TErr {
-    raise error.Bad;
+    raise .Bad;
 }
 
 mid :: () -> !TErr {

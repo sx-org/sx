@@ -18,7 +18,7 @@ mval :: () -> (i64, i64, !E) { return 1, 2; }
 
 // A real error still propagates through the value-failable channel.
 fval :: (n: i64) -> (i64, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     n + 1
 }
 

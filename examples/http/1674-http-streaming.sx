@@ -184,7 +184,7 @@ main :: () -> i32 {
                     srv.tick(2) catch {};
                     n, re := socket.read_nb(c1, *rbuf[total], (cap - total));
                     if !re { total += n; }
-                    else if re == error.Closed { break; }
+                    else if re == .Closed { break; }
                     if chunked_complete(rbuf, total) { done = true; }
                     tries += 1;
                 }
@@ -223,7 +223,7 @@ main :: () -> i32 {
                         srv.tick(2) catch {};
                         n, re := socket.read_nb(c2, *rbuf[total], (cap - total));
                         if !re { total += n; }
-                        else if re == error.Closed { break; }
+                        else if re == .Closed { break; }
                         s := string{ ptr = rbuf, len = total };
                         if contains(s, "hello fixed body") { got = true; }
                         tries += 1;
@@ -252,7 +252,7 @@ main :: () -> i32 {
                         srv.tick(2) catch {};
                         n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
                         if !re { total += n; }
-                        else if re == error.Closed { break; }
+                        else if re == .Closed { break; }
                         if chunked_complete(rbuf, total) { done = true; }
                         tries += 1;
                     }
@@ -273,7 +273,7 @@ main :: () -> i32 {
                             srv.tick(2) catch {};
                             n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
                             if !re { total += n; }
-                            else if re == error.Closed { break; }
+                            else if re == .Closed { break; }
                             s := string{ ptr = rbuf, len = total };
                             if contains(s, "hello fixed body") { got = true; }
                             tries += 1;

@@ -91,28 +91,18 @@ pub fn errorSetTypeOf(self: *Lowering, node: *const Node) ?TypeId {
     return if (self.module.types.get(t) == .error_set) t else null;
 }
 
-/// True when `node` is an `error.X` tag literal (`field_access` whose
-/// object is the `error` keyword, parsed as identifier "error").
-pub fn isErrorTagLiteralNode(node: *const Node) bool {
-    if (node.data != .field_access) return false;
-    const obj = node.data.field_access.object;
-    return obj.data == .identifier and std.mem.eql(u8, obj.data.identifier.name, "error");
-}
-
-/// The tag NAME a `raise` operand names literally, in either spelling — the
-/// anonymous `error.X` or the contextual `.X` shorthand — or null for a
-/// variable / computed tag. In `raise` position a `.X` is unambiguously a tag,
-/// so the two spellings are interchangeable to every caller of this.
+/// The member NAME a `raise` operand names through the contextual `.X`
+/// shorthand, or null for a qualified, variable, or computed operand.
 pub fn literalTagName(node: *const Node) ?[]const u8 {
-    if (isErrorTagLiteralNode(node)) return node.data.field_access.field;
     if (node.data == .enum_literal) return node.data.enum_literal.name;
     return null;
 }
 
-/// The error set a qualified member spelling `Set.Member` names, read from its
-/// OBJECT node: a type name resolving to an error set, not shadowed by a value
-/// binding or a global value.
+/// The error set a qualified member spelling `Set.Member` or `ns.Set.Member`
+/// names, read from its OBJECT node: a type name resolving to an error set, not
+/// shadowed by a value binding or a global value.
 pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+    if (object.data == .field_access) return namespacedErrorSet(self, object);
     if (object.data != .identifier) return null;
     const name = object.data.identifier.name;
     if (self.scope) |s| {
@@ -121,6 +111,31 @@ pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
     if (self.program_index.global_names.contains(name)) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
     const ty = switch (self.selectNominalLeaf(name, from, false)) {
+        .resolved => |tid| tid,
+        else => return null,
+    };
+    if (ty.isBuiltin()) return null;
+    return if (self.module.types.get(ty) == .error_set) ty else null;
+}
+
+/// The error set a namespace-qualified prefix `ns.Set` names, resolved in the
+/// module the namespace targets.
+fn namespacedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+    const root = object.data.field_access.object;
+    if (root.data == .identifier) {
+        const name = root.data.identifier.name;
+        if (self.scope) |s| {
+            if (s.lookup(name) != null) return null;
+        }
+        if (self.program_index.global_names.contains(name)) return null;
+    }
+    const path = self.qualifiedTypeName(object) orelse return null;
+    defer self.alloc.free(path);
+    const sel = switch (self.qualifiedMemberVerdict(path)) {
+        .selected => |s| s,
+        else => return null,
+    };
+    const ty = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
         .resolved => |tid| tid,
         else => return null,
     };
@@ -226,35 +241,33 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList
     }
 }
 
-/// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
-/// Returns null when neither operand is error-related (general path runs).
-/// Both operands must be a tag (an `error.X` literal or an error-set value);
-/// otherwise it's a type error (e.g. comparing a tag to a raw integer).
+/// Lower `==` / `!=` when an error-set value is involved. Returns null when
+/// neither operand is error-related (general path runs). Both operands must be
+/// a member spelling or an error-set value; otherwise it's a type error (e.g.
+/// comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
     const l_set = self.errorSetTypeOf(bop.lhs);
     const r_set = self.errorSetTypeOf(bop.rhs);
-    const l_tag = isErrorTagLiteralNode(bop.lhs);
-    const r_tag = isErrorTagLiteralNode(bop.rhs);
-    if (l_set == null and r_set == null and !l_tag and !r_tag) return null;
+    if (l_set == null and r_set == null) return null;
 
-    // A contextual `.Name` shorthand is a tag when the OTHER operand supplies
-    // the set to type it from; with no set on either side there is nothing to
-    // resolve against and it stays an ordinary enum literal.
+    // A contextual `.Name` shorthand is a member when the OTHER operand
+    // supplies the set to type it from; with no set on either side there is
+    // nothing to resolve against and it stays an ordinary enum literal.
     const l_dot = bop.lhs.data == .enum_literal and r_set != null;
     const r_dot = bop.rhs.data == .enum_literal and l_set != null;
 
-    const l_ok = l_set != null or l_tag or l_dot;
-    const r_ok = r_set != null or r_tag or r_dot;
+    const l_ok = l_set != null or l_dot;
+    const r_ok = r_set != null or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id", .{});
+            const bad = if (!l_ok) bop.lhs else bop.rhs;
+            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
 
-    // Lower both sides with the set type as context so an `error.X` literal
-    // resolves to it (and validates membership). Two bare tag literals with
-    // no set context lower to global u32 ids (cross-set comparison is OK).
+    // Lower both sides with the set type as context so a `.X` shorthand
+    // resolves to it (and validates membership).
     const set_ty = l_set orelse r_set;
     const saved = self.target_type;
     if (set_ty) |st| self.target_type = st;
@@ -455,7 +468,7 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
         }
         if (found) continue;
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': tag 'error.{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
+            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': '{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
         }
     }
 }
@@ -560,7 +573,7 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
         }
         if (!found) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, span, "error tag 'error.{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.error_set.name) });
+                diags.addFmt(.err, span, "error member '{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.error_set.name) });
             }
         }
     }
@@ -593,9 +606,9 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     }
 
     // (2) Set check. Lowering EXPR with the function's error set as the
-    //     target type makes a literal `raise error.X` validate `X ∈ set`
-    //     inside lowerErrorTagLiteral (the inferred placeholder accepts any
-    //     tag). The variable form `raise e` is subset-checked below.
+    //     target type makes a literal `raise .X` validate `X ∈ set` inside
+    //     lowerErrorMemberShorthand (the inferred placeholder accepts any
+    //     member). The variable form `raise e` is subset-checked below.
     const saved_target = self.target_type;
     self.target_type = err_set;
     const tag_ref = self.lowerExpr(rs.tag);

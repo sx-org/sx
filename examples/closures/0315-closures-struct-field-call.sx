@@ -5,6 +5,8 @@
 // closure/fn-ptr field is called directly (and shadows a same-named method).
 @import "modules/std.sx";
 
+WorkErr :: error { Negative }
+
 CB :: struct {
     add: Closure(i64, i64) -> i64;   // closure field, with args
     fp:  (i64) -> i64;               // bare function-pointer field
@@ -25,7 +27,7 @@ main :: () -> i64 {
     b.add = |x: i64, y: i64| x + y;
     b.fp = triple;
     b.work = |n: i64| -> (i64, !) {
-        if n < 0 { raise error.Negative; }
+        if n < 0 { raise WorkErr.Negative; }
         n * 10
     };
 

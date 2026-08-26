@@ -1,0 +1,16 @@
+// `error.X` is not a value spelling. A member belongs to the set that declares
+// it, so it is named `Set.X`, or `.X` where the channel is already in hand.
+
+@import "modules/std.sx";
+
+Fault :: error { Broken }
+
+f :: () -> !Fault {
+    raise error.Broken;    // error: `error.X` names no value
+}
+
+main :: () -> i32 {
+    e := f();
+    if e == error.Broken { return 1; }   // error: same spelling on the compare
+    return 0;
+}

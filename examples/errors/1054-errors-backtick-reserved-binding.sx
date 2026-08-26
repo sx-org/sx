@@ -8,8 +8,8 @@
 E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
@@ -24,8 +24,8 @@ classify :: (n: i32) -> i32 {
 
 // `onfail` tag binding spelled `u8`, referenced in the cleanup body.
 cleanup :: (n: i32) -> !E {
-    onfail |`u8| { if `u8 == error.Bad { print("cleanup: bad\n"); } }
-    if n < 0 { raise error.Bad; }
+    onfail |`u8| { if `u8 == .Bad { print("cleanup: bad\n"); } }
+    if n < 0 { raise .Bad; }
     return;
 }
 

@@ -11,7 +11,7 @@
 Bad :: error { Nope }
 
 fails :: () -> (i64, !Bad) {
-    raise error.Nope;
+    raise .Nope;
 }
 
 // Refused: `try` needs a failable function to propagate INTO, and this callee
@@ -23,7 +23,7 @@ absorbing :: ($tag: string) {
 
 // Refused the same way: `raise` needs the same channel `try` does.
 raising :: ($tag: string) {
-    raise error.Nope;
+    raise .Nope;
 }
 
 // Refused the same way: `onfail` runs on an error exit, and a `-> void` callee

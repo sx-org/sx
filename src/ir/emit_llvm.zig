@@ -963,7 +963,7 @@ pub const LLVMEmitter = struct {
     /// resolved return trace from the thread-local buffer, and a help line.
     fn reportComptimeEscape(self: *LLVMEmitter, label: []const u8, tag: u32) void {
         const tname = self.ir_mod.types.tags.getName(tag);
-        std.debug.print("error: comptime `@run` ({s}) raised an unhandled error: error.{s}\n", .{ label, tname });
+        std.debug.print("error: comptime `@run` ({s}) raised an unhandled error: {s}\n", .{ label, tname });
         const n = sx_trace_len();
         if (n > 0) {
             std.debug.print("error return trace (most recent call last):\n", .{});

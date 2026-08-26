@@ -136,9 +136,9 @@ AcquireErr :: error { Acquire }
 
 // value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
-    if n < 0  { raise error.BadDigit; }
-    if n == 0 { raise error.Empty; }
-    if n > 99 { raise error.Overflow; }
+    if n < 0  { raise .BadDigit; }
+    if n == 0 { raise .Empty; }
+    if n > 99 { raise .Overflow; }
     return n * 2;
 }
 

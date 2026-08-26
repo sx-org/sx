@@ -4227,8 +4227,8 @@ pub const Parser = struct {
             },
 
             // An inline error set — a composition names its own members through
-            // this operand. Bare `error` heads a tag literal `error.X` (parsed
-            // as a field access); sema gives it meaning.
+            // this operand. Bare `error` reaches sema as an identifier, so the
+            // refused `error.X` spelling is named in the diagnostic.
             .kw_error => {
                 if (self.peekNext() == .l_brace) {
                     const members = try self.parseErrorSetBody();
@@ -7061,18 +7061,6 @@ test "catch without binding and unbraced body is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "raise error.X parses as raise_stmt over a field access" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const s = try e02FirstStmt(arena.allocator(), "f :: () { raise error.BadDigit; }");
-    try std.testing.expect(s.data == .raise_stmt);
-    try std.testing.expect(s.data.raise_stmt.tag.data == .field_access);
-    try std.testing.expectEqualStrings("BadDigit", s.data.raise_stmt.tag.data.field_access.field);
-    const obj = s.data.raise_stmt.tag.data.field_access.object;
-    try std.testing.expect(obj.data == .identifier);
-    try std.testing.expectEqualStrings("error", obj.data.identifier.name);
-}
-
 test "raise variable form" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -7121,21 +7109,21 @@ test "`then` delimits a result whose first token would continue the condition" {
 test "raise rejected in expression position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := 1 + raise .X; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { raise .X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { raise .X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 

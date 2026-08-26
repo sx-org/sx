@@ -10,8 +10,8 @@
 Broad  :: error { Wide; Extra }
 Other  :: error { Wide }
 
-broad_src :: () -> (i32, !Broad) { raise error.Extra; }
-wide_src  :: () -> (i32, !Broad) { raise error.Wide; }
+broad_src :: () -> (i32, !Broad) { raise .Extra; }
+wide_src  :: () -> (i32, !Broad) { raise .Wide; }
 
 take_broad :: (b: Broad) -> void { print("param: {}\n", b); }
 
@@ -30,12 +30,8 @@ main :: () -> i32 {
     forced : Other = xx xe;
     print("xx: {}\n", forced);
 
-    // The tag literal spelling is membership-checked against the set.
-    lit : Broad = error.Extra;
-    print("literal: {}\n", lit);
-
     // The contextual `.Name` shorthand types itself from the destination set
-    // and names the same member as `error.Name`.
+    // and is membership-checked against it.
     short : Broad = .Extra;
     print("shorthand decl: {}\n", short);
     take_broad(.Wide);
@@ -43,7 +39,6 @@ main :: () -> i32 {
     print("shorthand field: {}\n", sh.e);
     opt : ?Broad = .Wide;
     print("shorthand optional: {}\n", opt?!);
-    if short == error.Extra { print("spellings agree: {}\n", short == .Extra); }
     raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
     raises_wide() catch |e| { print("shorthand raise: {}\n", e); };
 

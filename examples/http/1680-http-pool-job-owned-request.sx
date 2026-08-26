@@ -182,7 +182,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             n, re := socket.read_nb(cb, *rbuf[b_total], (cap - b_total));
             if !re { b_total += n; }
-            else if re == error.Closed { got_b = true; }
+            else if re == .Closed { got_b = true; }
             b_resp := string{ ptr = rbuf, len = b_total };
             if contains(b_resp, "ok-b") { got_b = true; }
             t += 1;

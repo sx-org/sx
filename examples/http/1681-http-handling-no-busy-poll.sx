@@ -106,7 +106,7 @@ main :: () -> i32 {
             ticks += 1;
             n, re := socket.read_nb(ca, *rbuf[total], (cap - total));
             if !re { total += n; }
-            else if re == error.Closed { done = true; }
+            else if re == .Closed { done = true; }
             resp := string{ ptr = rbuf, len = total };
             if contains(resp, "slow-ok") and contains(resp, "fast-ok") { done = true; }
         }

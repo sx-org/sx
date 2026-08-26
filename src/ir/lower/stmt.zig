@@ -220,9 +220,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         return if (expressionDiverged(self, disposed)) .terminated else .no_value;
     }
     // An error leaf, or one not yet typed: the declared set IS its destination
-    // — both contextual spellings read it, `error.X` while lowering and `.X`
-    // from the target — so lower it once and dispose by what it ACTUALLY
-    // lowered to, never by the prediction.
+    // — the contextual `.X` spelling reads it from the target — so lower it
+    // once and dispose by what it ACTUALLY lowered to, never by the prediction.
     self.target_type = ret_ty;
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const maybe_val = self.tryLowerAsExpr(tail);
@@ -2378,9 +2377,6 @@ fn rhsNeedsTargetType(value: *const ast.Node) bool {
     return switch (value.data) {
         .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
-        // An `error.X` tag literal names the destination set's member, so it
-        // resolves against the field's type like the `.X` shorthand does.
-        .field_access => Lowering.isErrorTagLiteralNode(value),
         else => false,
     };
 }

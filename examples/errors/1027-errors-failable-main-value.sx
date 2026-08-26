@@ -9,8 +9,8 @@
 ParseErr :: error { Empty; BadDigit };
 
 inner :: (n: i32) -> (i32, !ParseErr) {
-    if n == 0 { raise error.Empty; }
-    if n < 0 { raise error.BadDigit; }
+    if n == 0 { raise .Empty; }
+    if n < 0 { raise .BadDigit; }
     return n * 2;
 }
 

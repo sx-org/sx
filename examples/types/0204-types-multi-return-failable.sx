@@ -14,7 +14,7 @@ CheckErr :: error { Negative }
 // Two values plus an error channel. The success values use the bare comma
 // `return` form; `raise` rides the error channel as usual.
 classify :: (n: i32) -> (doubled: i32, big: bool, !) {
-    if n < 0 { raise error.Negative; }
+    if n < 0 { raise CheckErr.Negative; }
     return doubled = n * 2, big = n > 10;
 }
 

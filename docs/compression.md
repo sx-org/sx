@@ -23,7 +23,7 @@ library. Its deterministic output is pinned to miniz 3.1.2 commit
 
 `compress.Options` selects a compression `level` from 0 through 10 and a
 `Strategy`. The default is level 6 with the default strategy. Invalid levels
-raise `error.InvalidOptions`; there is no C-style `-1` default or numeric flag
+raise `Error.InvalidOptions`; there is no C-style `-1` default or numeric flag
 word.
 
 DEFLATE, zlib, gzip, and ZIP reuse `compress.Error` directly:
@@ -96,7 +96,7 @@ while true {
     output_at += progress.produced;
     if progress.status == .done { break; }
     if progress.status == .need_output and output_at == destination.len {
-        raise error.OutputLimit;
+        raise .OutputLimit;
     }
 }
 compressed := destination[..output_at];
@@ -148,7 +148,7 @@ impl zip.Source for ArchiveSource {
 
     read_at :: (self: *ArchiveSource, offset: i64, output: string) ->
         (string, !Error) {
-        if offset < 0 or offset > self.bytes.len { raise error.InvalidData; }
+        if offset < 0 or offset > self.bytes.len { raise .InvalidData; }
         take := self.bytes.len - offset;
         if take > output.len { take = output.len; }
         i := 0;

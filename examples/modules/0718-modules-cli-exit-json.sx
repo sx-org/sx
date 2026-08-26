@@ -62,7 +62,7 @@ main :: () -> ! {
     // canonical `process.exit`.
     bad : []string = .["ci", "deploy", "--out", "x"];   // unknown command
     _, e := parse(bad, cmds, *d);
-    report("usage-error-raised", e == error.UnknownCommand);
+    report("usage-error-raised", e == .UnknownCommand);
     log.err("unknown command '{}' (argv index {})", d.token, d.index);
     exit_usage();                                       // -> _exit(EX_USAGE = 64)
 }

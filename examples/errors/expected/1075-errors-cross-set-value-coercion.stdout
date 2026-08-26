@@ -2,12 +2,10 @@ decl: Wide
 param: Wide
 field: Wide
 xx: Extra
-literal: Extra
 shorthand decl: Extra
 param: Wide
 shorthand field: Extra
 shorthand optional: Wide
-spellings agree: true
 shorthand return: Wide
 shorthand raise: Wide
 propagated: Wide

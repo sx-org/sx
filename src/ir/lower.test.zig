@@ -957,13 +957,11 @@ test "converge inferred error sets: empty -> warning, raising -> converged set" 
     stub_body.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = stub_stmts } } };
     const stub_fd = ast.FnDecl{ .name = "stub", .params = &.{}, .return_type = stub_rt, .body = stub_body };
 
-    // raiser :: () -> ! { raise error.Foo; }   — bare `!`, raises Foo.
+    // raiser :: () -> ! { raise .Foo; }   — bare `!`, raises Foo.
     const r_rt = alloc.create(Node) catch unreachable;
     r_rt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
-    const r_err = alloc.create(Node) catch unreachable;
-    r_err.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = "error" } } };
     const r_fa = alloc.create(Node) catch unreachable;
-    r_fa.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .field_access = .{ .object = r_err, .field = "Foo" } } };
+    r_fa.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .enum_literal = .{ .name = "Foo" } } };
     const r_raise = alloc.create(Node) catch unreachable;
     r_raise.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .raise_stmt = .{ .tag = r_fa } } };
     const r_body = alloc.create(Node) catch unreachable;
@@ -1006,16 +1004,14 @@ test "noreturn typing: divergence shapes + if-else unification + block propagati
         }
     };
 
-    // return; / break; / continue; / raise error.X  → noreturn
+    // return; / break; / continue; / raise .X  → noreturn
     const ret = mk.node(alloc, .{ .return_stmt = .{ .value = null } });
     defer alloc.destroy(ret);
     const brk = mk.node(alloc, .{ .break_expr = {} });
     defer alloc.destroy(brk);
     const cont = mk.node(alloc, .{ .continue_expr = {} });
     defer alloc.destroy(cont);
-    const err_id = mk.node(alloc, .{ .identifier = .{ .name = "error" } });
-    defer alloc.destroy(err_id);
-    const fa = mk.node(alloc, .{ .field_access = .{ .object = err_id, .field = "X" } });
+    const fa = mk.node(alloc, .{ .enum_literal = .{ .name = "X" } });
     defer alloc.destroy(fa);
     const raise = mk.node(alloc, .{ .raise_stmt = .{ .tag = fa } });
     defer alloc.destroy(raise);
@@ -3425,7 +3421,7 @@ test "inline exit: every inlined body form exits to its own destination, never t
         .{ .name = "F01", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { spin(); } n + 1 }" },
         .{ .name = "F11", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { spin(); } if n > 0 { return n + 1; } 0 }" },
         .{ .name = "F11n", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { return spin(); } if n > 0 { return n + 1; } 0 }" },
-        .{ .name = "Ferr", .dest = .value, .divergent_path = false, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n < 0 { raise error.Nope; } n + 1 }" },
+        .{ .name = "Ferr", .dest = .value, .divergent_path = false, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n < 0 { raise .Nope; } n + 1 }" },
 
         // Pure failable — the exit IS the error set, and a success exit carries
         // tag 0 whether the body fell off the end or wrote `return;`.
@@ -3434,7 +3430,7 @@ test "inline exit: every inlined body form exits to its own destination, never t
         .{ .name = "P01", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { spin(); } }" },
         .{ .name = "P11", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { spin(); } if n > 0 { return; } }" },
         .{ .name = "P11n", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { return spin(); } if n > 0 { return; } }" },
-        .{ .name = "Perr", .dest = .value, .divergent_path = false, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n < 0 { raise error.Nope; } }" },
+        .{ .name = "Perr", .dest = .value, .divergent_path = false, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n < 0 { raise .Nope; } }" },
 
         // `noreturn` — no slot, no join, and no placeholder to hold a result.
         .{ .name = "N00", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\"); } 11", .body = "c :: ($t: string) -> noreturn { }" },

@@ -17,7 +17,7 @@ sx_trace_len :: () -> u32 extern;
 E :: error { BadInput; Overflow }
 
 leaf :: (n: i32) -> !E {
-    if n < 0 { raise error.BadInput; }   // pushes frame 0
+    if n < 0 { raise .BadInput; }   // pushes frame 0
     return;
 }
 

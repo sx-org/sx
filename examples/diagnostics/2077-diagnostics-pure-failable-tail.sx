@@ -31,7 +31,7 @@ implicit_forward :: () -> !Named {
 
 // The same-set forward is the control — it is accepted and returns the tag.
 same_set :: () -> !Named {
-    error.Nope
+    .Nope
 }
 
 forward_same_set :: () -> !Named {
@@ -54,7 +54,7 @@ Bundle :: @JniClass("android/os/Bundle") extern {}
 
 SxApp :: @JniClass("co/swipelab/sxpurefailable/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) -> !Named {
-        raise error.Nope;
+        raise .Nope;
     }
     // The control: a native return Java CAN express is untouched.
     reading :: (self: *Self) -> i8 {

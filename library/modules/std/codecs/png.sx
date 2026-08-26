@@ -54,9 +54,9 @@ EncodeOptions :: struct {
 encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
     if image.width < 1 or image.width > 0x7fffffff or
        image.height < 1 or image.height > 0x7fffffff {
-        raise error.InvalidDimensions;
+        raise .InvalidDimensions;
     }
-    if options.level < 0 or options.level > 10 { raise error.InvalidCompressionLevel; }
+    if options.level < 0 or options.level > 10 { raise .InvalidCompressionLevel; }
 
     channels := 4;
     color_type := 6;
@@ -71,26 +71,26 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
         color_type = 2;
     }
 
-    if image.width > i64.max / channels { raise error.TooLarge; }
+    if image.width > i64.max / channels { raise .TooLarge; }
     row_bytes := image.width * channels;
 
     actual_stride := image.stride;
     if actual_stride == 0 { actual_stride = row_bytes; }
     // Negating the minimum signed integer is itself an overflow.
-    if actual_stride == i64.min { raise error.TooLarge; }
+    if actual_stride == i64.min { raise .TooLarge; }
     step := if actual_stride < 0 then 0 - actual_stride else actual_stride;
-    if step < row_bytes { raise error.InvalidStride; }
+    if step < row_bytes { raise .InvalidStride; }
 
     rows_after_first := image.height - 1;
     if rows_after_first > 0 and step > (i64.max - row_bytes) / rows_after_first {
-        raise error.TooLarge;
+        raise .TooLarge;
     }
     required_pixels := step * rows_after_first + row_bytes;
-    if image.pixels.len < required_pixels { raise error.PixelDataTooShort; }
+    if image.pixels.len < required_pixels { raise .PixelDataTooShort; }
 
-    if row_bytes == i64.max { raise error.TooLarge; }
+    if row_bytes == i64.max { raise .TooLarge; }
     filtered_row_bytes := row_bytes + 1;
-    if filtered_row_bytes > i64.max / image.height { raise error.TooLarge; }
+    if filtered_row_bytes > i64.max / image.height { raise .TooLarge; }
     filtered_len := filtered_row_bytes * image.height;
 
     result := png_encode_bytes(
@@ -105,9 +105,9 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
         options.level,
         alloc,
     ) catch |e| {
-        if e == error.AllocationFailed { raise error.AllocationFailed; }
-        if e == error.TooLarge { raise error.TooLarge; }
-        raise error.CompressionFailed;
+        if e == .AllocationFailed { raise .AllocationFailed; }
+        if e == .TooLarge { raise .TooLarge; }
+        raise .CompressionFailed;
     };
     result
 }
@@ -119,13 +119,13 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
 // `Image.pixels` is owned by `alloc`, tightly packed, top-down.
 decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
     d := png_decode_bytes(data, alloc) catch |e| {
-        if e == error.InvalidSignature { raise error.InvalidSignature; }
-        if e == error.TruncatedData { raise error.TruncatedData; }
-        if e == error.ChecksumMismatch { raise error.ChecksumMismatch; }
-        if e == error.UnsupportedFormat { raise error.UnsupportedFormat; }
-        if e == error.InvalidFilter { raise error.InvalidFilter; }
-        if e == error.AllocationFailed { raise error.AllocationFailed; }
-        raise error.DecompressionFailed;
+        if e == .InvalidSignature { raise .InvalidSignature; }
+        if e == .TruncatedData { raise .TruncatedData; }
+        if e == .ChecksumMismatch { raise .ChecksumMismatch; }
+        if e == .UnsupportedFormat { raise .UnsupportedFormat; }
+        if e == .InvalidFilter { raise .InvalidFilter; }
+        if e == .AllocationFailed { raise .AllocationFailed; }
+        raise .DecompressionFailed;
     };
     fmt : PixelFormat = .rgba;
     if d.channels == 1 { fmt = .gray; }

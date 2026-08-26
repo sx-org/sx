@@ -15,15 +15,15 @@
 Shape :: enum { circle: f64; rect: i64; }
 E :: error { Bad; Empty }
 
-must :: (n: i32) -> !E { if n == 0 { raise error.Empty; } return; }
+must :: (n: i32) -> !E { if n == 0 { raise .Empty; } return; }
 
 pack_mut :: (..xs: i64) {
     inline for x in xs { x = 999; }          // pack-element alias — immutable
 }
 
 fail_note :: () -> !E {
-    onfail |e| { e = error.Bad; }           // onfail binding — immutable
-    raise error.Empty;
+    onfail |e| { e = .Bad; }           // onfail binding — immutable
+    raise .Empty;
 }
 
 main :: () -> i32 {
@@ -50,7 +50,7 @@ main :: () -> i32 {
     }
 
     // 4. catch error binding
-    must(0) catch |e| { e = error.Bad; };
+    must(0) catch |e| { e = .Bad; };
 
     // 4b. onfail error binding (in fail_note above)
     fail_note() catch {};

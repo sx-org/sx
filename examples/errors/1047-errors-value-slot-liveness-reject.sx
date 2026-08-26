@@ -2,7 +2,7 @@
 // where its error is NOT proven absent is a compile error. Two unproven shapes:
 //
 //   (A) reading the value inside the `if err { … }` error path itself
-//   (B) reading the value after a bare tag-compare (`if err == error.X`), which
+//   (B) reading the value after a bare tag-compare (`if err == .X`), which
 //       narrows the tag but proves nothing about absence
 //
 // Each read is rejected with the liveness diagnostic; the program never runs (exit 1).
@@ -12,7 +12,7 @@
 E :: error { Bad }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return n * 10;
 }
 
@@ -26,7 +26,7 @@ bad_a :: () -> i32 {
 // (B) a tag-compare narrows which error, but does not prove there is none.
 bad_b :: () -> i32 {
     v, err := parse(5);
-    if err == error.Bad { return 1; }
+    if err == .Bad { return 1; }
     return v;                             // REJECTED: err not proven absent
 }
 

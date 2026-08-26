@@ -23,7 +23,7 @@ main :: () -> i32 {
 
     buf : [16]u8 = ---;
     n, e := socket.read_nb(a, *buf[0], 16);
-    if e != error.WouldBlock {
+    if e != .WouldBlock {
         print("empty pair read: expected WouldBlock\n");
         return 1;
     }
@@ -40,7 +40,7 @@ main :: () -> i32 {
 
     socket.close(b);
     cn, ce := socket.read_nb(a, *buf[0], 16);
-    if ce != error.Closed {
+    if ce != .Closed {
         print("read after peer close: expected Closed\n");
         return 1;
     }
@@ -60,7 +60,7 @@ main :: () -> i32 {
     if !socket.set_nonblocking(lfd) { print("listener set_nonblocking failed\n"); return 1; }
 
     afd, ae := socket.accept_nb(lfd);
-    if ae != error.WouldBlock {
+    if ae != .WouldBlock {
         print("empty backlog: expected WouldBlock\n");
         return 1;
     }
@@ -79,7 +79,7 @@ main :: () -> i32 {
     while got < 0 and tries < 1000 {
         c2, ae2 := socket.accept_nb(lfd);
         if !ae2 { got = c2; }
-        else if ae2 != error.WouldBlock { print("accept_nb fault\n"); return 1; }
+        else if ae2 != .WouldBlock { print("accept_nb fault\n"); return 1; }
         tries += 1;
     }
     if got < 0 { print("accept never produced the connection\n"); return 1; }

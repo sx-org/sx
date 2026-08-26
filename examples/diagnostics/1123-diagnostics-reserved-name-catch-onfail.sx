@@ -5,7 +5,7 @@
 E :: error { Bad }
 
 must :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

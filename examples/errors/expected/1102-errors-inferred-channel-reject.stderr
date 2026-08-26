@@ -28,7 +28,7 @@ error: a callable with a dynamic error channel does not fill a slot with an infe
 64 |     slot_dyn   : Closure(i32) -> (i32, !) = leak;
    |                                             ^^^^
 
-error: error tag 'error.A' is not in caller's error set 'IoErr'
+error: error member 'A' is not in caller's error set 'IoErr'
   --> examples/errors/1102-errors-inferred-channel-reject.sx:26:12
    |
 26 |     return inner(n);

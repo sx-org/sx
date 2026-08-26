@@ -3,11 +3,11 @@
 //
 //   Client.fetch(method, url, body, opts, buf, cap)
 //       — parse the URL (http/https, host, optional :port, path), open
-//         (https requires opts.tls — error.Tls without), send, receive,
+//         (https requires opts.tls — `ClientErr.Tls` without), send, receive,
 //         and follow redirects up to opts.max_redirects: 301/302/303
 //         switch to GET and drop the body; 307/308 keep method + body;
 //         a cross-host Location re-resolves and re-dials. Exceeding the
-//         cap is error.Redirect.
+//         cap is `ClientErr.Redirect`.
 //   ClientOpts.max_redirects (default 5; 0 = return the 3xx as-is)
 //   ClientPool
 //       — single-threaded keep-alive reuse keyed host:port:
@@ -20,10 +20,10 @@
 //   B. redirect chain /r1 → /r2 → /final (302s) lands 200 with the hop
 //      count visible to the server; 303 after POST arrives as a GET with
 //      no body; 307 after POST arrives as a POST with the body intact.
-//   C. a 302 loop errors with error.Redirect after max_redirects; with
+//   C. a 302 loop errors with `ClientErr.Redirect` after max_redirects; with
 //      max_redirects = 0 the 302 itself is returned un-followed.
 //   D. https fetch through opts.tls → 200; the SAME url without a dialer
-//      → error.Tls (never plaintext-to-a-TLS-port).
+//      → `ClientErr.Tls` (never plaintext-to-a-TLS-port).
 //   E. pooling: five pooled fetches ride ONE server connection
 //      (accepted_total == 1); after the server evicts the idle conn
 //      (short keep-alive timeout), the next pooled fetch transparently
@@ -156,7 +156,7 @@ run :: () -> i32 {
 
     // ── C. loop capped; max_redirects = 0 returns the 3xx ──
     _, e5 := http.Client.fetch("GET", "http://127.0.0.1:19027/loop", "", opts, *buf[0], 8192);
-    if e5 != error.Redirect { return teardown(14, *srv_a, *ta, *srv_b, *tb); }
+    if e5 != .Redirect { return teardown(14, *srv_a, *ta, *srv_b, *tb); }
     opts0 := opts;
     opts0.max_redirects = 0;
     r6, e6 := http.Client.fetch("GET", "http://127.0.0.1:19027/r1", "", opts0, *buf[0], 8192);
@@ -240,7 +240,7 @@ run :: () -> i32 {
     srv_t.close();
     tcc.deinit();
     ts.deinit();
-    if en != error.Tls { return teardown(35, *srv_a, *ta, *srv_b, *tb); }
+    if en != .Tls { return teardown(35, *srv_a, *ta, *srv_b, *tb); }
 
     return teardown(0, *srv_a, *ta, *srv_b, *tb);
 }

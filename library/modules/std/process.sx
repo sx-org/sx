@@ -167,6 +167,8 @@ Stdio :: enum {
     null;
 }
 
+SpawnErr :: error { EmptyArgv; Pipe; Fork }
+
 SpawnOpts :: struct {
     stdin:  Stdio = .inherit;
     stdout: Stdio = .inherit;
@@ -247,8 +249,8 @@ Child :: struct {
 // with no program, `Pipe` when wiring the fds fails, `Fork` when the fork
 // itself refuses; every fd already created is closed before the raise, so
 // a failed spawn leaks nothing.
-spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
-    if argv.len == 0 { raise error.EmptyArgv; }
+spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
+    if argv.len == 0 { raise .EmptyArgv; }
 
     // Marshalling happens HERE, in the parent — see THE FORK WINDOW below.
     vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
@@ -282,7 +284,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         if slot == 2 { mode = opts.stderr; }
         if mode == .pipe {
             fds : [2]i32 = ---;
-            if c.pipe(*fds) != 0 { raise error.Pipe; }
+            if c.pipe(*fds) != 0 { raise .Pipe; }
             // Both ends CLOEXEC immediately: a sibling spawn's exec then
             // drops them, so no run's pipe ends leak into another's child.
             // The dup2'd copies in the child do NOT carry the flag, which
@@ -290,7 +292,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
             if !set_cloexec(fds[0]) or !set_cloexec(fds[1]) {
                 c.close(fds[0]);
                 c.close(fds[1]);
-                raise error.Pipe;
+                raise .Pipe;
             }
             if slot == 0 {
                 child[0] = fds[0];
@@ -302,8 +304,8 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         }
         if mode == .null {
             fd := c.open("/dev/null", O_RDWR);
-            if fd < 0 { raise error.Pipe; }
-            if !set_cloexec(fd) { c.close(fd); raise error.Pipe; }
+            if fd < 0 { raise .Pipe; }
+            if !set_cloexec(fd) { c.close(fd); raise .Pipe; }
             child[slot] = fd;
         }
         slot += 1;
@@ -319,7 +321,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     while slot < 3 {
         if child[slot] >= 0 and child[slot] < 3 {
             lifted := c.fcntl(child[slot], F_DUPFD_CLOEXEC, 3);
-            if lifted < 0 { raise error.Pipe; }
+            if lifted < 0 { raise .Pipe; }
             c.close(child[slot]);
             child[slot] = lifted;
         }
@@ -327,7 +329,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     }
 
     pid := c.fork();
-    if pid < 0 { raise error.Fork; }
+    if pid < 0 { raise .Fork; }
     if pid == 0 {
         // ── THE FORK WINDOW — FROZEN ──────────────────────────────────
         // This block runs in a memory snapshot taken while other threads

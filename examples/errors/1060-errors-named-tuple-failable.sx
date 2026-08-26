@@ -8,7 +8,7 @@
 E :: error { Bad }
 
 two :: (n: i64) -> (x: i64, y: i64, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return .{x = n, y = n + 1};
 }
 

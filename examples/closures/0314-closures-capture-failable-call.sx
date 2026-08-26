@@ -8,6 +8,8 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
+WorkErr :: error { Bad }
+
 Box :: struct { run: Closure() -> void; }
 
 // `catch` path: the nested closure absorbs the worker's error.
@@ -34,7 +36,7 @@ mk_trier :: (worker: Closure() -> (i64, !)) -> Closure() -> (i64, !) {
 
 main :: () -> i64 {
     run_catch(|| -> (i64, !) { 7 });            // ok 7
-    run_catch(|| -> (i64, !) { raise error.Bad; }); // caught
+    run_catch(|| -> (i64, !) { raise WorkErr.Bad; }); // caught
 
     t := mk_trier(|| -> (i64, !) { 5 });
     r := t() catch { return 1; };

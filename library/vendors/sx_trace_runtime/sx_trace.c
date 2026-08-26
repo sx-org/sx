@@ -85,7 +85,7 @@ typedef struct { SxStr file; int32_t line; int32_t col; SxStr func; SxStr line_t
 // trace.sx's `to_string` — `func at file:line:col`.
 void sx_trace_report_unhandled(uint32_t tag, const char *name, size_t name_len) {
     (void)tag;
-    dprintf(2, "error: unhandled error reached main: error.%.*s\n",
+    dprintf(2, "error: unhandled error reached main: %.*s\n",
             (int)name_len, name ? name : "");
     uint32_t n = sx_trace_len();
     if (n == 0u) return;

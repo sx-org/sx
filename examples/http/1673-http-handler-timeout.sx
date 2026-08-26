@@ -144,7 +144,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             n, re := socket.read_nb(ca, *sbuf[sa_total], (cap - sa_total));
             if !re { sa_total += n; }
-            else if re == error.Closed {
+            else if re == .Closed {
                 slow_resp = string{ ptr = sbuf, len = sa_total };
                 break;
             }
@@ -177,7 +177,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             n, re := socket.read_nb(cb, *fbuf[fb_total], (cap - fb_total));
             if !re { fb_total += n; }
-            else if re == error.Closed {
+            else if re == .Closed {
                 fast_resp = string{ ptr = fbuf, len = fb_total };
                 break;
             }

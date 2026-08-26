@@ -156,7 +156,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
         srv.tick(1) catch {};
         n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
-        else if re == error.Closed { return total; }
+        else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
         he := -1;
         i := 0;
@@ -183,7 +183,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
         srv.tick(1) catch {};
         n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
-        else if re == error.Closed { return total; }
+        else if re == .Closed { return total; }
         if total >= 5
             and rbuf[total-5] == 48 and rbuf[total-4] == 13 and rbuf[total-3] == 10
             and rbuf[total-2] == 13 and rbuf[total-1] == 10 {
@@ -295,7 +295,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             n, re := socket.read_nb(c2, *rbuf[0], 16384);
             if !re { got += n; }
-            else if re == error.Closed { break; }
+            else if re == .Closed { break; }
             t += 1;
         }
         socket.close(c2);   // mid-stream disconnect

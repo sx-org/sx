@@ -10,7 +10,7 @@ error: `try` requires a failable expression; operand has type 'i32'
 26 |     try plain();               // error: operand has type i32 (not failable)
    |     ^^^^^^^^^^^
 
-error: error tag 'error.Yb' is not in caller's error set 'A'
+error: error member 'Yb' is not in caller's error set 'A'
   --> examples/errors/1005-errors-try-rejections.sx:32:5
    |
 32 |     try gb();                  // error: Yb not in caller's error set A

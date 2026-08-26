@@ -11,8 +11,8 @@
 E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
@@ -25,7 +25,7 @@ inc :: (n: i32) -> (i32, !E) {
 // value-carrying `try` in a pure-failable caller — propagates the tag.
 relay :: (n: i32) -> !E {
     v := try parse(n);
-    if v < 0 { raise error.Bad; }
+    if v < 0 { raise .Bad; }
     return;
 }
 
@@ -48,9 +48,9 @@ main :: () -> i32 {
     a, ea := inc(5);                      // parse(5)=10 → v=10 → 11
     if !ea { r = r + a; }                  // success → +11 (value live only when proven ok)
     b, eb := inc(-1);                      // parse(-1)=Bad → propagate {undef, Bad}
-    if eb == error.Bad { r = r + 4; }      // true → +4
+    if eb == .Bad { r = r + 4; }      // true → +4
     er := relay(3);                        // parse(3)=6 ok → relay ok
-    if er == error.Bad { r = r + 50; }     // false
+    if er == .Bad { r = r + 50; }     // false
     r = r + safe(7);                       // parse(7)=14 → +14
     r = r + safe(-1);                      // Bad → catch → 0
     r = r + classify(-1);                  // Bad → 1

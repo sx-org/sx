@@ -363,10 +363,10 @@ inline if OS == .linux or OS == .android or OS == .wasm {
             if c >= 0 { return c; }
             e := errno();
             if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
-            if is_wouldblock(e) { raise error.WouldBlock; }
-            raise error.Fault;
+            if is_wouldblock(e) { raise .WouldBlock; }
+            raise .Fault;
         }
-        raise error.Fault;
+        raise .Fault;
     }
 }
 
@@ -464,10 +464,10 @@ inline if OS == .macos or OS == .ios {
     // half-configured socket. Same error contract as accept_nb.
     accept_conn_nb :: (fd: i32) -> (i32, !SockErr) {
         c, ae := accept_nb(fd);
-        if ae == error.WouldBlock { raise error.WouldBlock; }
-        if ae { raise error.Fault; }
-        if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.close(c); raise error.Fault; }
-        if !set_nonblocking(c) { clib.close(c); raise error.Fault; }
+        if ae == .WouldBlock { raise .WouldBlock; }
+        if ae { raise .Fault; }
+        if fcntl(c, F_SETFD, FD_CLOEXEC) < 0 { clib.close(c); raise .Fault; }
+        if !set_nonblocking(c) { clib.close(c); raise .Fault; }
         return c;
     }
 }
@@ -529,10 +529,10 @@ accept_nb :: (fd: i32) -> (i32, !SockErr) {
         if c >= 0 { return c; }
         e := errno();
         if e == posix.EINTR or e == posix.ECONNABORTED { continue; }
-        if is_wouldblock(e) { raise error.WouldBlock; }
-        raise error.Fault;
+        if is_wouldblock(e) { raise .WouldBlock; }
+        raise .Fault;
     }
-    raise error.Fault;
+    raise .Fault;
 }
 
 // Read up to `cap` bytes. Returns the byte count (> 0); an orderly EOF
@@ -541,14 +541,14 @@ read_nb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !SockErr) {
     while true {
         n := clib.read(fd, buf, cap);
         if n > 0 { return n; }
-        if n == 0 { raise error.Closed; }
+        if n == 0 { raise .Closed; }
         e := errno();
         if e == posix.EINTR { continue; }
-        if is_wouldblock(e) { raise error.WouldBlock; }
-        if e == posix.ECONNRESET { raise error.Closed; }
-        raise error.Fault;
+        if is_wouldblock(e) { raise .WouldBlock; }
+        if e == posix.ECONNRESET { raise .Closed; }
+        raise .Fault;
     }
-    raise error.Fault;
+    raise .Fault;
 }
 
 // Write up to `len` bytes, returning how many the kernel took (possibly
@@ -559,9 +559,9 @@ write_nb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !SockErr) {
         if n >= 0 { return n; }
         e := errno();
         if e == posix.EINTR { continue; }
-        if is_wouldblock(e) { raise error.WouldBlock; }
-        if e == posix.EPIPE or e == posix.ECONNRESET { raise error.Closed; }
-        raise error.Fault;
+        if is_wouldblock(e) { raise .WouldBlock; }
+        if e == posix.EPIPE or e == posix.ECONNRESET { raise .Closed; }
+        raise .Fault;
     }
-    raise error.Fault;
+    raise .Fault;
 }

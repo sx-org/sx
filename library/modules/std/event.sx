@@ -110,7 +110,7 @@ Loop :: struct {
 
     init :: () -> (Loop, !EventErr) {
         e := ep.ep_create();
-        if e < 0 { raise error.Init; }
+        if e < 0 { raise .Init; }
         return Loop{ epfd = e, regs = .{}, own = context.allocator };
     }
 
@@ -162,7 +162,7 @@ Loop :: struct {
         idx := self.reg_index(fd);
         mask := ep.EPOLLIN | ep.EPOLLRDHUP;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLIN | ep.EPOLLRDHUP; }
-        if !self.apply_mask(fd, mask, udata) { raise error.Register; }
+        if !self.apply_mask(fd, mask, udata) { raise .Register; }
         return;
     }
     del_read :: (self: *Loop, fd: i32) {
@@ -175,7 +175,7 @@ Loop :: struct {
         idx := self.reg_index(fd);
         mask := ep.EPOLLOUT;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLOUT; }
-        if !self.apply_mask(fd, mask, udata) { raise error.Register; }
+        if !self.apply_mask(fd, mask, udata) { raise .Register; }
         return;
     }
     del_write :: (self: *Loop, fd: i32) {
@@ -192,10 +192,10 @@ Loop :: struct {
     add_wake :: (self: *Loop, udata: usize) -> !EventErr {
         if self.wake_fd < 0 {
             self.wake_fd = ep.eventfd(0, ep.EFD_CLOEXEC | ep.EFD_NONBLOCK);
-            if self.wake_fd < 0 { raise error.Register; }
+            if self.wake_fd < 0 { raise .Register; }
         }
         self.wake_udata = udata;
-        if !ep.ep_ctl(self.epfd, ep.EPOLL_CTL_ADD, self.wake_fd, ep.EPOLLIN) { raise error.Register; }
+        if !ep.ep_ctl(self.epfd, ep.EPOLL_CTL_ADD, self.wake_fd, ep.EPOLLIN) { raise .Register; }
         return;
     }
 
@@ -213,7 +213,7 @@ Loop :: struct {
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
         n := ep.ep_wait(self.epfd, .{ ptr = *raw[0], len = cap }, cap, timeout_ms);
-        if n < 0 { raise error.Wait; }
+        if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
             evr := raw[i];
@@ -248,7 +248,7 @@ Loop :: struct {
 
     init :: () -> (Loop, !EventErr) {
         q := kqb.kqueue();
-        if q < 0 { raise error.Init; }
+        if q < 0 { raise .Init; }
         return Loop{ kq = q };
     }
 
@@ -258,14 +258,14 @@ Loop :: struct {
     }
 
     add_read :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_ADD, udata)) { raise error.Register; }
+        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
     del_read :: (self: *Loop, fd: i32) {
         kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_DELETE, 0));
     }
     add_write :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_WRITE, kqb.EV_ADD, udata)) { raise error.Register; }
+        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_WRITE, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
     del_write :: (self: *Loop, fd: i32) {
@@ -278,7 +278,7 @@ Loop :: struct {
     // (kqueue EVFILT_USER here; the epoll twin maps to eventfd.)
     add_wake :: (self: *Loop, udata: usize) -> !EventErr {
         ch : kqb.Kevent = .{ ident = 0, filter = kqb.EVFILT_USER, flags = kqb.EV_ADD | kqb.EV_CLEAR, udata = udata };
-        if !kqb.kq_apply(self.kq, ch) { raise error.Register; }
+        if !kqb.kq_apply(self.kq, ch) { raise .Register; }
         return;
     }
 
@@ -295,7 +295,7 @@ Loop :: struct {
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
         n := kqb.kq_wait(self.kq, *raw[0], cap, timeout_ms);
-        if n < 0 { raise error.Wait; }
+        if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
             ev := raw[i];

@@ -7,8 +7,8 @@ error: `try` is only valid inside a failable function (a return type with `!` or
 error: `raise` is only valid inside a failable function (a return type with `!` or `!Named`)
   --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:26:5
    |
-26 |     raise error.Nope;
-   |     ^^^^^^^^^^^^^^^^^
+26 |     raise .Nope;
+   |     ^^^^^^^^^^^^
 
 error: `onfail` is only valid inside a failable function (a return type with `!` or `!Named`) — use `defer` for unconditional cleanup
   --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:32:5

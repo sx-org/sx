@@ -11,7 +11,7 @@
 E :: error { A };
 
 fa :: (n: i32) -> (i32, !E) {
-    if n == 0 { raise error.A; }
+    if n == 0 { raise .A; }
     return n;
 }
 

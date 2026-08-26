@@ -1,7 +1,7 @@
-error: unhandled error reached main: error.Empty
+error: unhandled error reached main: Empty
 error return trace (most recent call last):
   inner at 1026-errors-failable-main.sx:17:17
-        if n == 0 { raise error.Empty; }       // pushes a frame
+        if n == 0 { raise .Empty; }       // pushes a frame
                     ^
   main at 1026-errors-failable-main.sx:25:10
         w := try inner(0);                       // raises Empty → propagates to main

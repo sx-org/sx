@@ -13,11 +13,11 @@ MyErr :: error { Boom }
 BareErr :: error { Odd; Big }
 
 pure_cal :: (x: i64) -> !MyErr {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
 }
 
 val_cal :: (x: i64) -> (i64, !MyErr) {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
     return x;
 }
 

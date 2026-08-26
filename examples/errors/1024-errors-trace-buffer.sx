@@ -14,7 +14,7 @@ sx_trace_len :: () -> u32 extern;
 E :: error { Bad }
 
 fail :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }   // pushes a frame
+    if n < 0 { raise .Bad; }   // pushes a frame
     return;
 }
 

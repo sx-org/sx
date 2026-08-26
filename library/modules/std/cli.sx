@@ -236,7 +236,7 @@ os_args :: (buf: []string) -> []string {
 //
 //   - args[0] is the GROUP, args[1] the COMMAND. The (group, command)
 //     pair is matched against the caller's `commands` table; no match is
-//     `error.UnknownCommand`.
+//     `CliError.UnknownCommand`.
 //   - `--name VALUE` sets a value-taking flag to a VIEW of the next token;
 //     `--name` alone records a boolean flag's presence. Which is which is
 //     fixed by the matched command's `FlagSpec` list.
@@ -366,7 +366,7 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
     if args.len < 2 {
         diag.index = if args.len == 0 then -1 else 0;
         diag.token = if args.len == 0 then "" else args[0];
-        raise error.UnknownCommand;
+        raise .UnknownCommand;
     }
     group := args[0];
     command := args[1];
@@ -379,13 +379,13 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
     if ci < 0 {
         diag.index = 1;
         diag.token = command;
-        raise error.UnknownCommand;
+        raise .UnknownCommand;
     }
     spec := commands[ci].flags;
     if spec.len > 16 {
         diag.index = -1;
         diag.token = command;
-        raise error.TooManyFlags;
+        raise .TooManyFlags;
     }
 
     // ── Result skeleton ──
@@ -433,13 +433,13 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
         if si < 0 {
             diag.index = i;
             diag.token = tok;
-            raise error.UnknownFlag;
+            raise .UnknownFlag;
         }
         if spec[si].takes_value {
             if i + 1 >= args.len or is_long_flag(args[i + 1]) {
                 diag.index = i;
                 diag.token = tok;
-                raise error.MissingValue;
+                raise .MissingValue;
             }
             result.values[si].set = true;
             result.values[si].value = args[i + 1];   // VIEW into args
@@ -456,7 +456,7 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
         if spec[r].required and !result.values[r].set {
             diag.index = -1;
             diag.token = spec[r].name;
-            raise error.MissingRequired;
+            raise .MissingRequired;
         }
         r += 1;
     }

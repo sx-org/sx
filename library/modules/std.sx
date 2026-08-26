@@ -99,7 +99,7 @@ io_mod      :: @import "modules/std/io.sx";
 CBlockingIo :: io_mod.CBlockingIo;
 Future      :: io_mod.Future;
 FutureState :: io_mod.FutureState;
-IoErr       :: io_mod.IoErr;
+IoErr       :: core.IoErr;
 async       :: io_mod.async;
 await       :: io_mod.await;
 cancel      :: io_mod.cancel;

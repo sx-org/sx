@@ -5,7 +5,7 @@
 
 E :: error { Bad };
 
-f :: () -> (i64, !E) { raise error.Bad; }
+f :: () -> (i64, !E) { raise .Bad; }
 
 main :: () {
     v := f() catch e { 0 };

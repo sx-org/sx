@@ -166,9 +166,9 @@ open_source :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = c
 }
 
 open_file :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
-    if options.start < 0 { raise error.InvalidOptions; }
+    if options.start < 0 { raise .InvalidOptions; }
     if size := options.size {
-        if size < 0 { raise error.InvalidOptions; }
+        if size < 0 { raise .InvalidOptions; }
     }
     state := try std_zip_reader_file(path, options.start, options.size ?? 0, options.max_metadata, alloc);
     Reader{ state = state }
@@ -192,7 +192,7 @@ Writer :: struct {
     }
 
     init_file :: (path: [:0]u8, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
-        if options.reserve < 0 { raise error.InvalidOptions; }
+        if options.reserve < 0 { raise .InvalidOptions; }
         state := try std_zip_writer_file(path, options.reserve, options.zip64, alloc);
         Writer{ state = state }
     }

@@ -9,14 +9,14 @@
 E :: error { BadDigit; Empty; Overflow }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.BadDigit; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .BadDigit; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
 main :: () -> i32 {
-    a : E = error.BadDigit;
-    b : E = error.Overflow;
+    a : E = .BadDigit;
+    b : E = .Overflow;
     print("a={} b={}\n", a, b);              // a=BadDigit b=Overflow
 
     // A tag bound by `catch` interpolates too (diverging handler).

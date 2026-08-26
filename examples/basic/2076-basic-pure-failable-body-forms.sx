@@ -32,7 +32,7 @@ nothing :: (label: string) {
 }
 
 fails :: () -> !Failed {
-    error.Nope
+    .Nope
 }
 
 // ── Generic instance ───────────────────────────────────────────────────
@@ -60,7 +60,7 @@ pack_value :: (label: string, ..$args) -> !Failed {
 
 pack_error :: (label: string, ..$args) -> !Failed {
     print("pack-error {}\n", label);
-    error.Nope
+    .Nope
 }
 
 // ── Nested local functions ─────────────────────────────────────────────
@@ -86,7 +86,7 @@ run_locals :: () -> i32 {
         e
     }
     local_error :: () -> !Failed {
-        error.Nope
+        .Nope
     }
     local_mixed :: (b: bool) -> !Failed {
         defer print("local defer\n");
@@ -134,7 +134,7 @@ main :: () -> i32 {
     arrow_wide := || -> !Failed tick64("arrow");
     arrow_string := || -> !Failed name("arrow");
     arrow_void := || -> !Failed nothing("arrow");
-    arrow_error := || -> !Failed error.Nope;
+    arrow_error := || -> !Failed (.Nope);
     arrow_forward := || -> !Failed fails();
     arrow_value() catch { print("NOT REACHED arrow-value\n"); };
     arrow_wide() catch { print("NOT REACHED arrow-wide\n"); };

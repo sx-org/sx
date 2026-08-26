@@ -8,7 +8,7 @@
 // object. NUMBERS SPLIT BY SYNTAX: a bare integer is an `int` (i64,
 // exact across the whole range); a number carrying a fraction or an
 // exponent is a `float` (f64). The reader REJECTS an integer outside i64
-// and a float that overflows to infinity (`error.BadNumber`) rather than
+// and a float that overflows to infinity (`JsonParseError.BadNumber`) rather than
 // silently substituting a value.
 //
 // STABLE KEY ORDER: an object is NOT a hash map. It is an ORDERED list
@@ -158,7 +158,7 @@ EXP_LIMIT :: 100000000000000000;   // 10^17
 //
 // A single concrete output sink with two modes, chosen by `file`:
 //   - BUFFER mode (`file == null`): bytes land directly in the caller's
-//     `dst`; when `dst` fills, `put`/`put_byte` raise `error.Overflow`.
+//     `dst`; when `dst` fills, `put`/`put_byte` raise `JsonError.Overflow`.
 //     `pos` is the running byte count.
 //   - FILE mode (`file != null`): `dst` is a caller-provided STAGING
 //     buffer; when it fills it is flushed to `file` and reused, so peak
@@ -174,7 +174,7 @@ Sink :: struct {
 
     put_byte :: (self: *Sink, b: u8) -> !JsonError {
         if self.pos >= self.dst.len {
-            if self.file == null { raise error.Overflow; }
+            if self.file == null { raise .Overflow; }
             try self.flush();
         }
         self.dst[self.pos] = b;
@@ -196,7 +196,7 @@ Sink :: struct {
         if self.file == null { return; }
         if self.pos == 0 { return; }
         n := self.file.write(string{ ptr = *self.dst[0], len = self.pos });
-        if n != self.pos { raise error.Io; }
+        if n != self.pos { raise .Io; }
         self.pos = 0;
         return;
     }
@@ -326,7 +326,7 @@ emit_decimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
 // NaN or an infinity has no JSON spelling and raises.
 write_float :: (f: f64, sink: *Sink) -> !JsonError {
     bits := float_bits(f);
-    if is_non_finite(bits) { raise error.NonFinite; }
+    if is_non_finite(bits) { raise .NonFinite; }
     if bits < 0 { try sink.put_byte('-'); }   // the sign BIT, so -0.0 keeps its sign
     v := if bits < 0 then 0.0 - f else f;
     if v == 0.0 { try sink.put("0.0"); return; }
@@ -379,7 +379,7 @@ write_object :: (obj: Object, sink: *Sink) -> !JsonError {
 // ── Public entry points ──────────────────────────────────────────────
 
 // Serialize `v` into the caller-owned buffer `dst`. Returns the number of
-// bytes written. Raises `error.Overflow` if `dst` is too small (the
+// bytes written. Raises `JsonError.Overflow` if `dst` is too small (the
 // partial contents of `dst` are then undefined — nothing is truncated
 // silently). No allocation.
 write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
@@ -391,7 +391,7 @@ write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
 // Serialize `v` straight to an open `file`, staging through the caller-
 // owned `staging` buffer (which must be non-empty). No whole-document
 // string is ever held — peak extra memory is O(staging). Raises
-// `error.Io` on a short/failed write. No allocation.
+// `JsonError.Io` on a short/failed write. No allocation.
 write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
     sink := Sink{ dst = staging, file = file };
     try write_value(v, *sink);
@@ -459,7 +459,7 @@ hex_value :: (c: u8) -> (i64, !JsonParseError) {
     if c >= '0' and c <= '9'  { return (c.(i64)) - '0'; }        // '0'..'9'
     if c >= 'a' and c <= 'f' { return (c.(i64)) - 'a' + 10; }   // 'a'..'f'
     if c >= 'A' and c <= 'F'  { return (c.(i64)) - 'A' + 10; }   // 'A'..'F'
-    raise error.BadEscape;
+    raise .BadEscape;
 }
 
 // Encode code point `cp` (already validated 0..0x10FFFF, non-surrogate) as
@@ -507,10 +507,10 @@ Parser :: struct {
 
     // Consume an exact literal (`true` / `false` / `null`) or fail.
     expect_lit :: (self: *Parser, lit: string) -> !JsonParseError {
-        if self.pos + lit.len > self.src.len { raise error.UnexpectedEnd; }
+        if self.pos + lit.len > self.src.len { raise .UnexpectedEnd; }
         i := 0;
         while i < lit.len {
-            if self.src[self.pos + i] != lit[i] { raise error.UnexpectedToken; }
+            if self.src[self.pos + i] != lit[i] { raise .UnexpectedToken; }
             i += 1;
         }
         self.pos += lit.len;
@@ -520,7 +520,7 @@ Parser :: struct {
     // Read 4 hex digits at `i` (which must lie within [.., end)); returns
     // the 16-bit value. Fewer than 4 digits before `end` is a BadEscape.
     read_hex4 :: (self: *Parser, i: i64, end: i64) -> (i64, !JsonParseError) {
-        if i + 4 > end { raise error.BadEscape; }
+        if i + 4 > end { raise .BadEscape; }
         v := 0;
         k := 0;
         while k < 4 {
@@ -555,20 +555,20 @@ Parser :: struct {
                     if u >= 0xD800 and u <= 0xDBFF {
                         // high surrogate: require a following \uYYYY low surrogate
                         lpos := hpos + 4;
-                        if lpos + 2 > end { raise error.BadEscape; }
-                        if self.src[lpos] != '\\' or self.src[lpos + 1] != 'u' { raise error.BadEscape; }
+                        if lpos + 2 > end { raise .BadEscape; }
+                        if self.src[lpos] != '\\' or self.src[lpos + 1] != 'u' { raise .BadEscape; }
                         lo := try self.read_hex4(lpos + 2, end);
-                        if lo < 0xDC00 or lo > 0xDFFF { raise error.BadEscape; }
+                        if lo < 0xDC00 or lo > 0xDFFF { raise .BadEscape; }
                         cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
                         di += encode_utf8(cp, *out[di]);
                         i = lpos + 6;
                     } else {
-                        if u >= 0xDC00 and u <= 0xDFFF { raise error.BadEscape; }   // lone low surrogate
+                        if u >= 0xDC00 and u <= 0xDFFF { raise .BadEscape; }   // lone low surrogate
                         di += encode_utf8(u, *out[di]);
                         i = hpos + 4;
                     }
                 }
-                else { raise error.BadEscape; }
+                else { raise .BadEscape; }
             } else {
                 out[di] = c; di += 1; i += 1;
             }
@@ -591,16 +591,16 @@ Parser :: struct {
             if c == '\\' {             // backslash escapes the next byte
                 has_escape = true;
                 i += 1;
-                if i >= self.src.len { raise error.UnexpectedEnd; }
+                if i >= self.src.len { raise .UnexpectedEnd; }
             } else if c < ' ' {
                 // RFC 8259 §7: a raw control byte (U+0000..U+001F) must be
                 // escaped inside a string; an unescaped one is invalid JSON.
                 self.pos = i;
-                raise error.BadControlChar;
+                raise .BadControlChar;
             }
             i += 1;
         }
-        if i >= self.src.len { raise error.UnexpectedEnd; }   // unterminated
+        if i >= self.src.len { raise .UnexpectedEnd; }   // unterminated
         end := i;
         if !has_escape {
             self.pos = end + 1;
@@ -627,10 +627,10 @@ Parser :: struct {
         min_div10 := 0 - 922337203685477580;
         neg := false;
         if self.src[self.pos] == '-' { neg = true; self.pos += 1; }
-        if self.pos >= self.src.len { raise error.BadNumber; }       // '-' with no digit
+        if self.pos >= self.src.len { raise .BadNumber; }       // '-' with no digit
         dstart := self.pos;
         c0 := self.src[self.pos];
-        if c0 < '0' or c0 > '9' { raise error.BadNumber; }
+        if c0 < '0' or c0 > '9' { raise .BadNumber; }
         val : i64 = 0;            // the int form, in negative space
         overflowed := false;      // fatal for the int form, irrelevant to the float form
         sig : Significand = .{};  // the float form's significand
@@ -646,7 +646,7 @@ Parser :: struct {
             digits += 1;
             self.pos += 1;
         }
-        if self.src[dstart] == '0' and digits > 1 { raise error.BadNumber; }   // no leading zeros
+        if self.src[dstart] == '0' and digits > 1 { raise .BadNumber; }   // no leading zeros
         is_float := false;
         if self.pos < self.src.len and self.src[self.pos] == '.' {
             is_float = true;
@@ -659,7 +659,7 @@ Parser :: struct {
                 fdigits += 1;
                 self.pos += 1;
             }
-            if fdigits == 0 { raise error.BadNumber; }   // '.' with no digit after it
+            if fdigits == 0 { raise .BadNumber; }   // '.' with no digit after it
         }
         if self.pos < self.src.len and (self.src[self.pos] == 'e' or self.src[self.pos] == 'E') {
             is_float = true;
@@ -670,9 +670,9 @@ Parser :: struct {
                 if s == '+' { self.pos += 1; }
                 else if s == '-' { eneg = true; self.pos += 1; }
             }
-            if self.pos >= self.src.len { raise error.BadNumber; }
+            if self.pos >= self.src.len { raise .BadNumber; }
             e0 := self.src[self.pos];
-            if e0 < '0' or e0 > '9' { raise error.BadNumber; }   // exponent with no digit
+            if e0 < '0' or e0 > '9' { raise .BadNumber; }   // exponent with no digit
             ev : i64 = 0;
             while self.pos < self.src.len {
                 c := self.src[self.pos];
@@ -685,13 +685,13 @@ Parser :: struct {
         }
         if is_float {
             fv := to_f64(*sig, exp10);
-            if is_non_finite(float_bits(fv)) { raise error.BadNumber; }
+            if is_non_finite(float_bits(fv)) { raise .BadNumber; }
             if neg { fv = fv * (0.0 - 1.0); }   // scaled, not subtracted, so -0.0 keeps its sign
             return Value.float(fv);
         }
-        if overflowed { raise error.BadNumber; }
+        if overflowed { raise .BadNumber; }
         if !neg {
-            if val == i64_min { raise error.BadNumber; }   // |MIN| not representable as +i64
+            if val == i64_min { raise .BadNumber; }   // |MIN| not representable as +i64
             val = 0 - val;
         }
         return Value.int(val);
@@ -711,11 +711,11 @@ Parser :: struct {
             v := try self.parse_value();
             arr.append(v, self.alloc);
             self.skip_ws();
-            if self.pos >= self.src.len { raise error.UnexpectedEnd; }
+            if self.pos >= self.src.len { raise .UnexpectedEnd; }
             c := self.src[self.pos];
             if c == ',' { self.pos += 1; }                          // more
             else if c == ']' { self.pos += 1; loop = false; }       // done
-            else { raise error.UnexpectedToken; }
+            else { raise .UnexpectedToken; }
         }
         return Value.array(arr);
     }
@@ -733,21 +733,21 @@ Parser :: struct {
         loop := true;
         while loop {
             self.skip_ws();
-            if self.pos >= self.src.len { raise error.UnexpectedEnd; }
-            if self.src[self.pos] != '"' { raise error.UnexpectedToken; }   // key must be a string
+            if self.pos >= self.src.len { raise .UnexpectedEnd; }
+            if self.src[self.pos] != '"' { raise .UnexpectedToken; }   // key must be a string
             key := try self.parse_string();
             self.skip_ws();
-            if self.pos >= self.src.len { raise error.UnexpectedEnd; }
-            if self.src[self.pos] != ':' { raise error.UnexpectedToken; }
+            if self.pos >= self.src.len { raise .UnexpectedEnd; }
+            if self.src[self.pos] != ':' { raise .UnexpectedToken; }
             self.pos += 1;
             v := try self.parse_value();
             obj.put(key, v, self.alloc);
             self.skip_ws();
-            if self.pos >= self.src.len { raise error.UnexpectedEnd; }
+            if self.pos >= self.src.len { raise .UnexpectedEnd; }
             c := self.src[self.pos];
             if c == ',' { self.pos += 1; }                          // more
             else if c == '}' { self.pos += 1; loop = false; }      // done
-            else { raise error.UnexpectedToken; }
+            else { raise .UnexpectedToken; }
         }
         return Value.object(obj);
     }
@@ -755,7 +755,7 @@ Parser :: struct {
     // Parse any single value (after skipping leading whitespace).
     parse_value :: (self: *Parser) -> (Value, !JsonParseError) {
         self.skip_ws();
-        if self.pos >= self.src.len { raise error.UnexpectedEnd; }
+        if self.pos >= self.src.len { raise .UnexpectedEnd; }
         c := self.src[self.pos];
         if c == '{' { return try self.parse_object(); }
         if c == '['  { return try self.parse_array(); }
@@ -764,18 +764,18 @@ Parser :: struct {
         if c == 'f' { try self.expect_lit("false"); return Value.bool(false); }
         if c == 'n' { try self.expect_lit("null");  nv : Value = .null; return nv; }
         if c == '-' or (c >= '0' and c <= '9') { return try self.parse_number(); }   // '-' / digit
-        raise error.UnexpectedToken;
+        raise .UnexpectedToken;
     }
 }
 
 // Parse a complete JSON document from `src` into the value model, using
 // `alloc` for composite nodes and decoded (escaped) strings. Un-escaped
 // string values are VIEWS into `src` and are valid only while `src` lives.
-// Trailing non-whitespace after the value raises `error.TrailingGarbage`.
+// Trailing non-whitespace after the value raises `JsonParseError.TrailingGarbage`.
 parse :: (src: string, alloc: Allocator) -> (Value, !JsonParseError) {
     p := Parser{ src = src, alloc = alloc };
     v := try p.parse_value();
     p.skip_ws();
-    if p.pos != p.src.len { raise error.TrailingGarbage; }
+    if p.pos != p.src.len { raise .TrailingGarbage; }
     return v;
 }

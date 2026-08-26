@@ -1030,12 +1030,15 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         }
     }
 
-    // `error.X` — an error-tag literal. The `error` keyword in expression
-    // position parses as identifier "error", so `error.X` is a
-    // field access we intercept here. `error` is reserved, so this is
-    // unambiguous (no struct/pack can be named `error`).
+    // The `error` keyword in expression position parses as identifier
+    // "error", so `error.X` arrives here as a field access. It names no
+    // value: a member belongs to the set that declares it.
     if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) {
-        return self.lowerErrorTagLiteral(fa.field, span);
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "`error.{s}` is not a value — an error member belongs to the set that declares it", .{fa.field});
+            d.addHelpFmt(id, span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ fa.field, fa.field });
+        }
+        return self.builder.constUndef(.unresolved);
     }
 
     if (self.qualifiedErrorSet(fa.object)) |set_ty| {
@@ -1422,7 +1425,7 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
 }
 
 /// Numeric-limit accessor intercept (`<Type>.min`/`.max`/`.epsilon`/
-/// `.min_positive`/`.true_min`/`.inf`/`.nan`), a sibling of the `error.X` /
+/// `.min_positive`/`.true_min`/`.inf`/`.nan`), a sibling of the `Set.X` /
 /// `Struct.CONST` / pack-arity identifier-receiver intercepts in
 /// `lowerFieldAccess`. Folds the limit to a comptime const of the queried
 /// type via the shared `TypeResolver` logic (no second computor) + the
@@ -1999,12 +2002,11 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     const cs = self.builder.current_span;
     const span = ast.Span{ .start = cs.start, .end = cs.end };
 
-    // An error-set destination types `.Name` as that set's tag — the
-    // contextual parallel to `error.Name`, sharing its membership check and
-    // its optional wrapping (`lowerErrorTagLiteral` re-derives both from
-    // `self.target_type`, which still holds the un-unwrapped destination).
+    // An error-set destination types `.Name` as that set's member, membership
+    // checked and optional-wrapped from `self.target_type`, which still holds
+    // the un-unwrapped destination.
     if (!target.isBuiltin() and self.module.types.get(target) == .error_set) {
-        return self.lowerErrorTagLiteral(el.name, span);
+        return self.lowerErrorMemberShorthand(el.name, span);
     }
 
     // The destination must be a known enum / tagged union that carries the
@@ -2106,63 +2108,27 @@ pub fn emitBadEnumVariant(
     );
 }
 
-/// Lower an `error.X` tag literal. When the destination context
-/// (`target_type`) is an error set, or an optional wrapping one, the value is
-/// that set's member `X`, typed as the set; otherwise it is the anonymous
-/// owner's member as a raw `u32` id (per the spec's context rule).
-pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Span) Ref {
-    if (self.target_type) |t| {
-        if (!t.isBuiltin()) {
-            const info = self.module.types.get(t);
-            var error_set_ty: ?TypeId = null;
-            var optional_ty: ?TypeId = null;
-            switch (info) {
-                .error_set => error_set_ty = t,
-                .optional => |opt| {
-                    if (!opt.child.isBuiltin() and self.module.types.get(opt.child) == .error_set) {
-                        error_set_ty = opt.child;
-                        optional_ty = t;
-                    }
-                },
-                else => {},
-            }
-            if (error_set_ty) |set_ty| {
-                const member = self.module.types.errorSetMemberId(set_ty, tag_name) orelse blk: {
-                    // An open channel has no static member set, so it takes any
-                    // spelling.
-                    if (!self.channelIsOpen(set_ty)) {
-                        if (self.diagnostics) |diags| {
-                            const set_name = self.module.types.getString(self.module.types.get(set_ty).error_set.name);
-                            diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, set_name });
-                        }
-                    }
-                    break :blk self.anonymousErrorMember(tag_name);
-                };
-                const tag = self.builder.constInt(@as(i64, @intCast(member)), set_ty);
-                if (optional_ty) |opt_ty| return self.builder.optionalWrap(tag, opt_ty);
-                return tag;
-            }
-            // A NOMINAL non-error destination (struct / enum / union /
-            // tagged union): an error tag has no representation there — the
-            // raw-u32 fallback below would flow the member id into the
-            // aggregate's bytes and silently reinterpret it (`f(error.Fault)`
-            // into a struct-typed param reads back as the struct's first
-            // field). Per the spec's context rule the fallback
-            // exists for the UNTYPED / integer context only — reject the
-            // cross-kind destination loudly.
-            switch (info) {
-                .@"struct", .@"enum", .@"union", .tagged_union => {
-                    if (self.diagnostics) |diags| {
-                        diags.addFmt(.err, span, "error tag 'error.{s}' cannot be used where '{s}' is expected; an error tag is only an error-set value (or its raw u32 id in an integer context)", .{ tag_name, self.formatTypeName(t) });
-                    }
-                    // Diagnosed — hasErrors() aborts before codegen; the u32
-                    // below is never executed.
-                },
-                else => {},
+/// Lower a `.X` member shorthand against an error-set destination — the set's
+/// member `X`, typed as the set, wrapped when the destination is an optional
+/// over it. Only reached with such a destination in hand.
+pub fn lowerErrorMemberShorthand(self: *Lowering, tag_name: []const u8, span: ast.Span) Ref {
+    const t = self.target_type.?;
+    const info = self.module.types.get(t);
+    const optional_ty: ?TypeId = if (info == .optional) t else null;
+    const set_ty = if (info == .optional) info.optional.child else t;
+    const member = self.module.types.errorSetMemberId(set_ty, tag_name) orelse blk: {
+        // An open channel has no static member set, so it takes any spelling.
+        if (!self.channelIsOpen(set_ty)) {
+            if (self.diagnostics) |diags| {
+                const set_name = self.module.types.getString(self.module.types.get(set_ty).error_set.name);
+                diags.addFmt(.err, span, "error member '.{s}' is not in error set '{s}'", .{ tag_name, set_name });
             }
         }
-    }
-    return self.builder.constInt(@as(i64, @intCast(self.anonymousErrorMember(tag_name))), .u32);
+        break :blk self.anonymousErrorMember(tag_name);
+    };
+    const tag = self.builder.constInt(@as(i64, @intCast(member)), set_ty);
+    if (optional_ty) |opt_ty| return self.builder.optionalWrap(tag, opt_ty);
+    return tag;
 }
 
 /// The member `name` names with no set in hand — the anonymous owner's, which
@@ -5009,10 +4975,10 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // Error-set equality: an error-set value compares only with an
-    // `error.X` tag literal or another error-set value. Comparing to a raw
-    // integer is a type error (coerce with `xx`). `e == error.X` resolves
-    // X against e's set and validates membership.
+    // Error-set equality: an error-set value compares only with a member
+    // spelling or another error-set value. Comparing to a raw integer is a
+    // type error (coerce with `xx`). `e == .X` resolves X against e's set and
+    // validates membership.
     if (bop.op == .eq or bop.op == .neq) {
         if (self.tryLowerErrorSetEquality(bop)) |result| return result;
     }

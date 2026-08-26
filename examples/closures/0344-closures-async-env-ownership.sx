@@ -16,7 +16,7 @@ main :: () {
     ctx_held := 0;
     push .{ allocator = ctx } {
         n := 41;
-        f := context.io.async(||_{ n } -> (i64, !) n, a);
+        f := context.io.async(||_{ n } -> (i64, !IoErr) n, a);
         answer = await(f) catch { 0 };
         ctx_held = ctx.leak_count();
     }
@@ -28,7 +28,7 @@ main :: () {
     hits := 0;
     wrote := 0;
     push .{ allocator = ctx } {
-        g := context.io.async(||_{ hits } -> (i64, !) { hits = hits + 1; hits }, a);
+        g := context.io.async(||_{ hits } -> (i64, !IoErr) { hits = hits + 1; hits }, a);
         wrote = await(g) catch { 0 };
     }
     print("wrote {} outer {} level {} ctx holds {}\n",
@@ -39,7 +39,7 @@ main :: () {
     arena := Arena.init(base, 4096);
     before := gpa.alloc_count;
     k := 6;
-    h := context.io.async(||_{ k } -> (i64, !) k * 7, arena);
+    h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena);
     product := await(h) catch { 0 };
     print("arena {} gpa growth {}\n", product, gpa.alloc_count - before);
     arena.deinit();

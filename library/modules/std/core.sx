@@ -380,6 +380,10 @@ Allocator :: interface {
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 
+// The error channel async rides: a canceled task raises `.Canceled` out of
+// `await` or a suspend, a failed one `.Failed`.
+IoErr :: error { Canceled; Failed }
+
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
 // `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
@@ -392,7 +396,7 @@ Allocator :: interface {
 // (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
 //
 //   spawn_raw  — submit a task; opaque handle (fiber bootstrap).
-//   suspend_raw— suspend current fiber; `!` so cancel can raise out.
+//   suspend_raw— suspend current fiber; raises `IoErr.Canceled` on a cancel.
 //   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
@@ -429,7 +433,7 @@ Io :: interface {
     // `ready(park)` — called from a DIFFERENT context (the worker that completes
     // the awaited task) — knows which context to resume. Passed by pointer for
     // exactly that write-back. `ready`/`arm_timer` read the recorded handle.
-    suspend_raw :: (self: *Self, park: *ParkToken) -> !;
+    suspend_raw :: (self: *Self, park: *ParkToken) -> !IoErr.Canceled;
     ready :: (self: *Self, park: ParkToken);
     poll :: (self: *Self, deadline_ms: i64) -> i64;
     now_ms :: (self: *Self) -> i64;
