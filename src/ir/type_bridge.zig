@@ -822,16 +822,19 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
 }
 
 /// The member id `Set.Member` names, or null when the head is not an error
-/// set (declared or aliased) or the member is absent. The head is probed in
-/// the type table and the alias map before resolveName, which mints a stub
-/// for an unregistered name.
+/// set (declared or aliased) or the head carries no single member of that
+/// name. The head is probed in the type table and the alias map before
+/// resolveName, which mints a stub for an unregistered name.
 fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     const head = name[0..dot];
     _ = channelHeadErrorSet(head, table, inner) orelse return null;
     const set = inner.resolveName(head);
     if (set.isBuiltin() or table.get(set) != .@"error") return null;
-    return table.errorSetMemberId(set, name[dot + 1 ..]);
+    return switch (table.errorSetMember(set, name[dot + 1 ..])) {
+        .one => |m| m,
+        else => null,
+    };
 }
 
 fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?TypeId {

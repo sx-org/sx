@@ -2145,15 +2145,22 @@ pub fn lowerErrorMemberShorthand(self: *Lowering, tag_name: []const u8, span: as
     const info = self.module.types.get(t);
     const optional_ty: ?TypeId = if (info == .optional) t else null;
     const set_ty = if (info == .optional) info.optional.child else t;
-    const member = self.module.types.errorSetMemberId(set_ty, tag_name) orelse blk: {
-        // An open channel has no static member set, so it takes any spelling.
-        if (!self.channelIsOpen(set_ty)) {
-            if (self.diagnostics) |diags| {
-                const set_name = self.module.types.getString(self.module.types.get(set_ty).@"error".name);
-                diags.addFmt(.err, span, "error member '.{s}' is not in error set '{s}'", .{ tag_name, set_name });
+    const member = switch (self.module.types.errorSetMember(set_ty, tag_name)) {
+        .one => |id| id,
+        .none => blk: {
+            // An open channel has no static member set, so it takes any spelling.
+            if (!self.channelIsOpen(set_ty)) {
+                if (self.diagnostics) |diags| {
+                    const set_name = self.module.types.getString(self.module.types.get(set_ty).@"error".name);
+                    diags.addFmt(.err, span, "error member '.{s}' is not in error set '{s}'", .{ tag_name, set_name });
+                }
             }
-        }
-        break :blk self.anonymousErrorMember(tag_name);
+            break :blk self.anonymousErrorMember(tag_name);
+        },
+        .ambiguous => blk: {
+            self.emitAmbiguousMember(set_ty, tag_name, span);
+            break :blk self.anonymousErrorMember(tag_name);
+        },
     };
     const tag = self.builder.constInt(@as(i64, @intCast(member)), set_ty);
     if (optional_ty) |opt_ty| return self.builder.optionalWrap(tag, opt_ty);
@@ -2169,12 +2176,19 @@ pub fn anonymousErrorMember(self: *Lowering, name: []const u8) u32 {
 /// Lower a qualified error member `Set.Member` to its member id, typed as `Set`.
 /// Membership is `Set`'s, not the destination context's.
 pub fn lowerQualifiedErrorMember(self: *Lowering, set_ty: TypeId, member: []const u8, span: ast.Span) Ref {
-    const id = self.module.types.errorSetMemberId(set_ty, member) orelse blk: {
-        if (self.diagnostics) |diags| {
-            const info = self.module.types.get(set_ty).@"error";
-            diags.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ self.module.types.getString(info.name), member });
-        }
-        break :blk self.anonymousErrorMember(member);
+    const id = switch (self.module.types.errorSetMember(set_ty, member)) {
+        .one => |m| m,
+        .none => blk: {
+            if (self.diagnostics) |diags| {
+                const info = self.module.types.get(set_ty).@"error";
+                diags.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ self.module.types.getString(info.name), member });
+            }
+            break :blk self.anonymousErrorMember(member);
+        },
+        .ambiguous => blk: {
+            self.emitAmbiguousMember(set_ty, member, span);
+            break :blk self.anonymousErrorMember(member);
+        },
     };
     return self.builder.constInt(@as(i64, @intCast(id)), set_ty);
 }

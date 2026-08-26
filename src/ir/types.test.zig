@@ -425,8 +425,8 @@ test "errorSetType: u32 layout, owner display, identity is the member set" {
     try std.testing.expect(info == .@"error");
     try std.testing.expectEqual(@as(usize, 3), info.@"error".tags.len);
     try std.testing.expectEqual(set, table.errorSetType(.empty, &members));
-    try std.testing.expectEqual(members[0], table.errorSetMemberId(set, "BadDigit").?);
-    try std.testing.expect(table.errorSetMemberId(set, "Nope") == null);
+    try std.testing.expectEqual(members[0], table.errorSetMember(set, "BadDigit").one);
+    try std.testing.expect(table.errorSetMember(set, "Nope") == .none);
 }
 
 test "errorSetType: the channel sizes to its tag word plus its widest member payload" {
@@ -473,7 +473,7 @@ test "errorSetType: a shared member spelling does not merge two owners' sets" {
     });
 
     try std.testing.expect(narrow != broad);
-    try std.testing.expect(table.errorSetMemberId(narrow, "Wide").? != table.errorSetMemberId(broad, "Wide").?);
+    try std.testing.expect(table.errorSetMember(narrow, "Wide").one != table.errorSetMember(broad, "Wide").one);
 }
 
 test "errorSetType: members stored sorted, duplicates collapsed" {

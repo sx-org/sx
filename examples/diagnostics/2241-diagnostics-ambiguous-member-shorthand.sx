@@ -1,0 +1,28 @@
+// A channel composes sets, so two of them can intern the same member spelling.
+// `.X` names one live member or none: where the channel carries both, the
+// shorthand refuses and only the set declaring the one meant picks it.
+
+@import "modules/std.sx";
+
+A :: error { X: i64; Q };
+B :: error { X: i32; R };
+Both :: A | B;
+
+fail :: (n: i64) -> (i64, !Both) {
+    if n < 0 { raise .X{7}; }
+    if n == 0 { raise A.X{1}; }
+    return n;
+}
+
+read :: (e: Both) -> i64 {
+    if e == .X { return 1; }
+    return match e {
+        case .X: |w| 100 + w;
+        else:    0;
+    };
+}
+
+main :: () -> i32 {
+    print("v={}\n", fail(-1) catch |e| read(e));
+    return 0;
+}

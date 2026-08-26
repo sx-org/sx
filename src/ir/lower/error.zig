@@ -265,11 +265,30 @@ pub fn shorthandArmName(pattern: ?*const Node) ?[]const u8 {
 }
 
 /// The interned member a shorthand `.X` or bare-identifier `match` arm names in
-/// the channel `chan` in hand. Null when the channel carries no such member.
-/// A qualified `Set.X` arm resolves through `qualifyMatchArm` instead.
+/// the channel `chan` in hand. Null when the channel carries no such member, or
+/// carries two spelled alike. A qualified `Set.X` arm resolves through
+/// `qualifyMatchArm` instead.
 pub fn errorArmMember(self: *Lowering, chan: TypeId, pattern: ?*const Node) ?u32 {
     const name = shorthandArmName(pattern) orelse return null;
-    return self.module.types.errorSetMemberId(chan, name);
+    return switch (self.module.types.errorSetMember(chan, name)) {
+        .one => |id| id,
+        else => null,
+    };
+}
+
+/// Report a leaf spelling more than one member of `set` answers to.
+pub fn emitAmbiguousMember(self: *Lowering, set: TypeId, name: []const u8, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const table = &self.module.types;
+    var candidates = std.ArrayList(u32).empty;
+    defer candidates.deinit(self.alloc);
+    for (channelMembers(self, set)) |m| {
+        if (std.mem.eql(u8, table.getTagName(m), name)) candidates.append(self.alloc, m) catch unreachable;
+    }
+    const list = memberList(self, candidates.items);
+    defer self.alloc.free(list);
+    const id = d.addFmtId(.err, span, "'{s}' names more than one member: {s}", .{ name, list });
+    d.addHelpFmt(id, span, null, "write the set that declares the one you mean", .{});
 }
 
 /// `error.X` names no value — a member belongs to the set that declares it.
@@ -279,10 +298,10 @@ pub fn emitErrorKeywordMember(self: *Lowering, span: ast.Span, field: []const u8
     d.addHelpFmt(id, span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ field, field });
 }
 
-/// What a qualified `case Prefix.Leaf:` arm resolves to against the subject in
-/// hand. A refusal emits once, at the case-value pass; that arm registers no
-/// case and its body is skipped.
-pub const QualifiedArm = union(enum) {
+/// What a `case` arm resolves to against the subject in hand. A refusal emits
+/// once, at the case-value pass; that arm registers no case and its body is
+/// skipped.
+pub const ArmVerdict = union(enum) {
     /// `case_value` is what the switch dispatches on — a declared tag where the
     /// type spells one; `field_index` is the variant's ordinal, which is what a
     /// payload read indexes.
@@ -294,11 +313,13 @@ pub const QualifiedArm = union(enum) {
     bad_prefix,
     /// The prefix is an owner and declares no such leaf.
     bad_leaf,
+    /// More than one member of the set this carries answers to the leaf.
+    ambiguous: TypeId,
 };
 
 /// Resolve a qualified `case Prefix.Leaf:` arm against `subject_ty`. Pure: the
 /// capture-type query re-runs it, so emitting here would report twice.
-pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) QualifiedArm {
+pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) ArmVerdict {
     const fa = pat.data.field_access;
     // `error` parses as identifier "error", so the keyword is a pattern fact,
     // never a question about a type carrying that name.
@@ -310,7 +331,11 @@ pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) Qu
             // The prefix names the set that INTERNS the member, which a channel
             // composes rather than owns, so it need not be the subject.
             const set = qualifiedErrorSet(self, fa.object) orelse return .bad_prefix;
-            const id = table.errorSetMemberId(set, fa.field) orelse return .bad_leaf;
+            const id = switch (table.errorSetMember(set, fa.field)) {
+                .one => |m| m,
+                .none => return .bad_leaf,
+                .ambiguous => return .{ .ambiguous = set },
+            };
             return .{ .ok = .{ .case_value = id, .field_index = id, .payload = table.memberPayload(id) } };
         },
         .@"enum" => |e| {
@@ -359,11 +384,11 @@ fn armPrefixSpelling(self: *Lowering, object: *const Node) ?[]const u8 {
     };
 }
 
-/// Report a qualified arm the subject cannot take. The message names the
-/// prefix the arm spells.
-pub fn refuseQualifiedArm(self: *Lowering, verdict: QualifiedArm, subject_ty: TypeId, pat: *const Node) void {
+/// Report a qualified arm the subject cannot take.
+pub fn refuseQualifiedArm(self: *Lowering, verdict: ArmVerdict, subject_ty: TypeId, pat: *const Node) void {
     const fa = pat.data.field_access;
     if (verdict == .error_keyword) return emitErrorKeywordMember(self, pat.span, fa.field);
+    if (verdict == .ambiguous) return emitAmbiguousMember(self, verdict.ambiguous, fa.field, pat.span);
     const d = self.diagnostics orelse return;
     const owned = armPrefixSpelling(self, fa.object);
     defer if (owned) |p| self.alloc.free(p);
@@ -375,7 +400,7 @@ pub fn refuseQualifiedArm(self: *Lowering, verdict: QualifiedArm, subject_ty: Ty
         else => false,
     };
     switch (verdict) {
-        .ok, .error_keyword => unreachable,
+        .ok, .error_keyword, .ambiguous => unreachable,
         .bad_leaf => if (on_channel)
             d.addFmt(.err, pat.span, "error set '{s}' has no member '{s}'", .{ prefix, fa.field })
         else
@@ -683,8 +708,12 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
     const dst_info = self.module.types.get(dst);
     if (dst_info != .@"error") return;
     const src_info = self.module.types.get(qm.set).@"error";
-    // Non-membership in Set is diagnosed at the member read.
-    const tag = self.module.types.errorSetMemberId(qm.set, qm.member) orelse return;
+    // Non-membership in Set and an ambiguous spelling are both diagnosed at the
+    // member read.
+    const tag = switch (self.module.types.errorSetMember(qm.set, qm.member)) {
+        .one => |m| m,
+        else => return,
+    };
     if (containsTag(dst_info.@"error".tags, tag)) return;
     if (self.diagnostics) |diags| {
         diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.@"error".name) });
@@ -695,11 +724,18 @@ fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span
 /// over a copy of its declared payload, typed as `set_ty`.
 pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLiteral, set_ty: TypeId, member_name: []const u8, span: ast.Span) Ref {
     const table = &self.module.types;
-    const member = table.errorSetMemberId(set_ty, member_name) orelse {
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).@"error".name), member_name });
-        }
-        return self.builder.constUndef(set_ty);
+    const member = switch (table.errorSetMember(set_ty, member_name)) {
+        .one => |m| m,
+        .none => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).@"error".name), member_name });
+            }
+            return self.builder.constUndef(set_ty);
+        },
+        .ambiguous => {
+            emitAmbiguousMember(self, set_ty, member_name, span);
+            return self.builder.constUndef(set_ty);
+        },
     };
     const tag = self.builder.constInt(@intCast(member), set_ty);
     const payload_ty = table.memberPayload(member);
@@ -748,7 +784,10 @@ fn checkMemberPayloadConstructed(self: *Lowering, rm: RaisedMember, channel: Typ
     if (rm.constructed) return true;
     const set = rm.set orelse channel;
     if (set.isBuiltin() or self.module.types.get(set) != .@"error") return true;
-    const member = self.module.types.errorSetMemberId(set, rm.member) orelse return true;
+    const member = switch (self.module.types.errorSetMember(set, rm.member)) {
+        .one => |m| m,
+        else => return true,
+    };
     const payload_ty = self.module.types.memberPayload(member);
     if (payload_ty == .void) return true;
     if (self.diagnostics) |d| {

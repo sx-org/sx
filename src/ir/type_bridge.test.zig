@@ -168,7 +168,7 @@ test "resolveAstType: error_set_decl registers an error-set type + interns membe
     try std.testing.expect(info == .@"error");
     try std.testing.expectEqualStrings("ParseErr", table.getString(info.@"error".name));
     try std.testing.expectEqual(@as(usize, 2), info.@"error".tags.len);
-    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMemberId(id, "BadDigit").?));
+    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMember(id, "BadDigit").one));
     // Re-resolving the same decl dedups to the same TypeId.
     try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
 }
@@ -193,7 +193,7 @@ test "resolveAstType: twin inline error sets are distinct TypeIds" {
     const ia = type_bridge.resolveAstType(a, &table, null, null);
     const ib = type_bridge.resolveAstType(b, &table, null, null);
     try std.testing.expect(ia != ib);
-    try std.testing.expect(table.errorSetMemberId(ia, "A").? != table.errorSetMemberId(ib, "A").?);
+    try std.testing.expect(table.errorSetMember(ia, "A").one != table.errorSetMember(ib, "A").one);
 }
 
 // ── failable-signature error channel resolution ──
