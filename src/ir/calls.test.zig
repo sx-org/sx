@@ -86,7 +86,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         .{ .name = "@errorName", .want = .string },
         .{ .name = "@is_comptime", .want = .bool },
         .{ .name = "is_flags", .want = .bool },
-        .{ .name = "type_of", .want = .type_value },
+        .{ .name = "@typeOf", .want = .type_value },
         .{ .name = "struct_field_value", .want = .any },
         .{ .name = "__interp_print_frames", .want = .void },
         // A math builtin with a non-`f32` argument widens to `f64` (the int

@@ -16,8 +16,8 @@ the_sq : Sq = .{ n = 1 };
 standing : Marker = the_sq;
 
 main :: () {
-    print("ctx type   {}\n", type_of(context.mark) == Sq);
-    print("std type   {}\n", type_of(standing) == Sq);
+    print("ctx type   {}\n", @typeOf(context.mark) == Sq);
+    print("std type   {}\n", @typeOf(standing) == Sq);
     print("ctx id     {}\n", context.mark.(@Protocol).type_id == Sq);
 
     the_sq.n = 7;

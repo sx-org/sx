@@ -501,7 +501,7 @@ pub fn isCategoryWord(name: []const u8) bool {
     const words = [_][]const u8{
         "int",      "signed",  "unsigned", "float",  "bool",     "string",
         "void",     "type",    "struct",   "interface", "enum",  "union",
-        "slice",    "array",   "pointer",  "vector", "optional", "error_set",
+        "slice",    "array",   "pointer",  "vector", "optional", "error",
         "closure",
     };
     for (words) |w| if (std.mem.eql(u8, name, w)) return true;
@@ -568,7 +568,7 @@ pub const CallableNominal = struct {
 };
 
 /// The concrete `Type` word of a protocol value: the stamped slot 1 (§7.2,
-/// §7.3). Everything that reads a protocol value's RTTI — `type_of`, the
+/// §7.3). Everything that reads a protocol value's RTTI — `@typeOf`, the
 /// downcast, the type switch, `@Protocol`, the `any` bridge — goes through
 /// here.
 pub fn protocolTypeIdWord(self: *Lowering, value: Ref) Ref {

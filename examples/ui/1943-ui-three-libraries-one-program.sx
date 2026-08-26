@@ -23,7 +23,7 @@ main :: () -> i32 {
     fv : f.View = f.Label{ text = "fluent" };
 
     // Each set answers for the member it carries — three distinct `Label`s.
-    print("{} {} {}\n", type_of(cv), type_of(ev), type_of(fv));
+    print("{} {} {}\n", @typeOf(cv), @typeOf(ev), @typeOf(fv));
 
     // Three sets, each laid out on its own members.
     print("sets {} {} {}\n", size_of(c.View), size_of(e.View), size_of(f.View));

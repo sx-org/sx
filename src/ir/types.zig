@@ -160,7 +160,7 @@ pub const TypeInfo = union(enum) {
     pack: PackInfo,
     any,
     protocol: ProtocolInfo,
-    error_set: ErrorSetInfo,
+    @"error": ErrorSetInfo,
     noreturn,
     usize,
     isize,
@@ -444,6 +444,8 @@ pub const TagRegistry = struct {
     payloads: std.ArrayList(TypeId),
     /// owner → the owning declaration's spelling. Slot 0 is the anonymous owner.
     owner_names: std.ArrayList(StringId),
+    /// owner → the error its declaration interns to, parallel to `owner_names`.
+    owner_types: std.ArrayList(TypeId),
     /// owning declaration pointer → owner.
     owner_ids: std.AutoHashMap(*const anyopaque, u32),
     next_id: u32,
@@ -455,6 +457,7 @@ pub const TagRegistry = struct {
             .owners = std.ArrayList(u32).empty,
             .payloads = std.ArrayList(TypeId).empty,
             .owner_names = std.ArrayList(StringId).empty,
+            .owner_types = std.ArrayList(TypeId).empty,
             .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
@@ -462,6 +465,7 @@ pub const TagRegistry = struct {
         reg.owners.append(alloc, anonymous_owner) catch unreachable;
         reg.payloads.append(alloc, .void) catch unreachable;
         reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
+        reg.owner_types.append(alloc, .void) catch unreachable;
         return reg;
     }
 
@@ -471,6 +475,7 @@ pub const TagRegistry = struct {
         self.owners.deinit(alloc);
         self.payloads.deinit(alloc);
         self.owner_names.deinit(alloc);
+        self.owner_types.deinit(alloc);
         self.owner_ids.deinit();
         self.map.deinit();
     }
@@ -482,7 +487,9 @@ pub const TagRegistry = struct {
         if (!gop.found_existing) {
             gop.value_ptr.* = @intCast(self.owner_names.items.len);
             self.owner_names.append(alloc, name) catch unreachable;
+            self.owner_types.append(alloc, .void) catch unreachable;
         }
+        self.owner_names.items[gop.value_ptr.*] = name;
         return gop.value_ptr.*;
     }
 
@@ -520,6 +527,16 @@ pub const TagRegistry = struct {
     pub fn ownerName(self: *const TagRegistry, owner: u32) StringId {
         if (owner >= self.owner_names.items.len) return .empty;
         return self.owner_names.items[owner];
+    }
+
+    pub fn setOwnerType(self: *TagRegistry, owner: u32, ty: TypeId) void {
+        if (owner >= self.owner_types.items.len) return;
+        self.owner_types.items[owner] = ty;
+    }
+
+    pub fn ownerType(self: *const TagRegistry, owner: u32) TypeId {
+        if (owner >= self.owner_types.items.len) return .void;
+        return self.owner_types.items[owner];
     }
 };
 
@@ -703,7 +720,7 @@ pub const TypeTable = struct {
     /// Product of `field_ids`, or a failable when the last field is an error set.
     pub fn internFieldsAsProductOrFailable(self: *TypeTable, field_ids: []const TypeId, names: ?[]const StringId) TypeId {
         const n = field_ids.len;
-        if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .error_set) {
+        if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .@"error") {
             const err = field_ids[n - 1];
             const n_vals = n - 1;
             const value: TypeId = if (n_vals == 0)
@@ -858,7 +875,7 @@ pub const TypeTable = struct {
                 .@"union" => |u| u.name,
                 .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
-                .error_set => |e| e.name,
+                .@"error" => |e| e.name,
                 else => null,
             };
             if (n != null and n.? == name) return TypeId.fromIndex(@intCast(i));
@@ -1008,7 +1025,7 @@ pub const TypeTable = struct {
             .@"union" => |u| u.name,
             .tagged_union => |u| u.name,
             .@"enum" => |e| e.name,
-            .error_set => |e| e.name,
+            .@"error" => |e| e.name,
             .protocol => |p| p.name,
             else => null,
         };
@@ -1115,7 +1132,7 @@ pub const TypeTable = struct {
     /// reader. (A `tagged_union` is a payload-carrying enum; the sx metatype folds
     /// codes 2 and 3 onto its single `.enum` TypeInfo variant.)
     ///   0 other · 1 struct · 2 enum · 3 tagged_union
-    ///   5 union · 6 array · 7 vector · 8 error_set
+    ///   5 union · 6 array · 7 vector · 8 error
     pub fn kindCode(self: *const TypeTable, id: TypeId) i64 {
         if (id.index() >= self.infos.items.len) return 0;
         return switch (self.get(id)) {
@@ -1125,7 +1142,7 @@ pub const TypeTable = struct {
             .@"union" => 5,
             .array => 6,
             .vector => 7,
-            .error_set => 8,
+            .@"error" => 8,
             else => 0,
         };
     }
@@ -1188,7 +1205,7 @@ pub const TypeTable = struct {
                 .@"union" => |u| u.name,
                 .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
-                .error_set => |e| e.name,
+                .@"error" => |e| e.name,
                 else => null,
             };
             if (n != null and n.? == name) {
@@ -1509,6 +1526,27 @@ pub const TypeTable = struct {
         return self.tags.payloadOf(member);
     }
 
+    /// Bind the error `ty` its declaration `decl` interns to, so a live member
+    /// of it answers `.set` with that error.
+    pub fn setErrorOwnerType(self: *TypeTable, decl: *const anyopaque, ty: TypeId) void {
+        const owner = self.tags.owner_ids.get(decl) orelse return;
+        self.tags.setOwnerType(owner, ty);
+    }
+
+    /// The error that declares `member`; `.void` for a member named with no
+    /// set in hand.
+    pub fn memberOwnerType(self: *const TypeTable, member: u32) TypeId {
+        return self.tags.ownerType(self.tags.ownerOf(member));
+    }
+
+    /// `Owner.Member` — the spelling a live member renders as, owned by `alloc`.
+    pub fn memberQualifiedName(self: *const TypeTable, alloc: Allocator, member: u32) []const u8 {
+        const own = self.tags.ownerName(self.tags.ownerOf(member));
+        const name = self.getTagName(member);
+        if (own == .empty) return alloc.dupe(u8, name) catch unreachable;
+        return std.fmt.allocPrint(alloc, "{s}.{s}", .{ self.getString(own), name }) catch unreachable;
+    }
+
     /// The bytes a channel over `tags` reserves for a payload: the widest
     /// declared member payload, 0 when every member is payload-free.
     pub fn errorChannelPayloadBytes(self: *const TypeTable, tags: []const u32) usize {
@@ -1525,8 +1563,8 @@ pub const TypeTable = struct {
     pub fn channelPayloadBytes(self: *const TypeTable, ty: TypeId) usize {
         if (ty.isBuiltin()) return 0;
         const info = self.get(ty);
-        if (info != .error_set) return 0;
-        return self.errorChannelPayloadBytes(info.error_set.tags);
+        if (info != .@"error") return 0;
+        return self.errorChannelPayloadBytes(info.@"error".tags);
     }
 
     /// Whether a channel over `ty` reserves payload bytes for its members.
@@ -1539,8 +1577,8 @@ pub const TypeTable = struct {
     pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
         if (set.isBuiltin()) return null;
         const info = self.get(set);
-        if (info != .error_set) return null;
-        for (info.error_set.tags) |id| {
+        if (info != .@"error") return null;
+        for (info.@"error".tags) |id| {
             if (std.mem.eql(u8, self.getTagName(id), name)) return id;
         }
         return null;
@@ -1570,7 +1608,7 @@ pub const TypeTable = struct {
         return self.internString(spelling.items);
     }
 
-    /// The `.error_set` body over `member_ids`. Identity is the member set —
+    /// The error body over `member_ids`. Identity is the member set —
     /// sorted and deduped here — and the display spelling is derived from it.
     /// `spelling` names a MEMBER-LESS channel, which has no members to derive
     /// one from.
@@ -1585,7 +1623,7 @@ pub const TypeTable = struct {
         }
         const owned = sorted[0..n];
         const name = if (n == 0) spelling else self.errorSetDisplayName(owned);
-        return .{ .error_set = .{ .name = name, .tags = owned } };
+        return .{ .@"error" = .{ .name = name, .tags = owned } };
     }
 
     /// Construct (and intern) an error channel from its member ids.
@@ -1596,7 +1634,7 @@ pub const TypeTable = struct {
     /// `@Tag(e)` for an error: the payload-free enum over its members, each
     /// valued by its member id, so the enum IS the channel's tag word.
     pub fn errorTagEnum(self: *TypeTable, e: TypeId) TypeId {
-        const es = self.get(e).error_set;
+        const es = self.get(e).@"error";
         const arena = self.slice_arena.allocator();
         const variants = arena.alloc(StringId, es.tags.len) catch unreachable;
         const values = arena.alloc(i64, es.tags.len) catch unreachable;
@@ -1702,7 +1740,7 @@ pub const TypeTable = struct {
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
-            .error_set => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
+            .@"error" => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
             // before codegen. Reaching runtime layout means a pack leaked.
@@ -1842,7 +1880,7 @@ pub const TypeTable = struct {
             .any => 2 * ptr_size, // {type_tag, data_ptr}
             .protocol => 3 * ptr_size, // {ctx, type_id, vtable}
             // The payload area aligns to 1, so the tag word alone pads the tail.
-            .error_set => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
+            .@"error" => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeSizeBytes(bt);
                 return 8;
@@ -1895,7 +1933,7 @@ pub const TypeTable = struct {
             // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
             // the tag word.
             .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
-            .error_set => 4, // the tag word; a payload area does not raise it
+            .@"error" => 4, // the tag word; a payload area does not raise it
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeAlignBytes(bt);
                 return 8;
@@ -1960,7 +1998,7 @@ pub const TypeTable = struct {
                     .@"union" => |u| self.getString(u.name),
                     .tagged_union => |u| self.getString(u.name),
                     .protocol => |p| self.getString(p.name),
-                    .error_set => |e| self.getString(e.name),
+                    .@"error" => |e| self.getString(e.name),
                     else => "?",
                 };
             },
@@ -1981,7 +2019,7 @@ pub const TypeTable = struct {
             .@"union" => |u| self.getString(u.name),
             .tagged_union => |u| self.getString(u.name),
             .protocol => |p| self.getString(p.name),
-            .error_set => |e| self.getString(e.name),
+            .@"error" => |e| self.getString(e.name),
             .pointer => |p| blk: {
                 const inner = self.formatTypeName(alloc, p.pointee);
                 break :blk std.fmt.allocPrint(alloc, "*{s}", .{inner}) catch "*?";
@@ -2168,7 +2206,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
         .protocol => |p| h.update(std.mem.asBytes(&p.name)),
         // An error channel keys by its MEMBER SET; the derived spelling is a
         // function of that set, and identifies a member-less channel alone.
-        .error_set => |e| {
+        .@"error" => |e| {
             h.update(std.mem.asBytes(&e.name));
             for (e.tags) |t| h.update(std.mem.asBytes(&t));
         },
@@ -2234,8 +2272,8 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .@"union" => |u| u.name == b.@"union".name and u.nominal_id == b.@"union".nominal_id,
         .tagged_union => |u| u.name == b.tagged_union.name and u.nominal_id == b.tagged_union.nominal_id,
         .protocol => |p| p.name == b.protocol.name,
-        .error_set => |e| {
-            const f = b.error_set;
+        .@"error" => |e| {
+            const f = b.@"error";
             if (e.name != f.name or e.tags.len != f.tags.len) return false;
             for (e.tags, f.tags) |et, ft| {
                 if (et != ft) return false;

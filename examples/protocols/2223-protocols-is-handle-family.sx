@@ -1,7 +1,7 @@
 // Three doors onto one erased value, three answers. The HANDLE answers from
 // its static type — it is its own interface, no other interface, no concrete
 // type, and satisfies a constraint exactly when the bridge `impl C for I` is
-// visible. `type_of(h)` and an `any` over the same referent are runtime tags
+// visible. `@typeOf(h)` and an `any` over the same referent are runtime tags
 // naming the CONCRETE type, so they classify the referent instead: never
 // `interface`, and conformance through the per-pair table.
 @import "modules/std.sx";
@@ -20,8 +20,8 @@ main :: () {
     h : I = w;
     av : any = w;
 
-    print("is interface: {} {} {}\n", h is interface, av is interface, type_of(h) is interface);
+    print("is interface: {} {} {}\n", h is interface, av is interface, @typeOf(h) is interface);
     print("handle:       {} {} {} {}\n", h is I, h is Q, h is C, h is W);
-    print("referent:     {} {} {} {}\n", type_of(h) is I, type_of(h) is Q, av is Q, av is W);
+    print("referent:     {} {} {} {}\n", @typeOf(h) is I, @typeOf(h) is Q, av is Q, av is W);
     print("dispatch:     {} {}\n", h.a(), h.c());
 }

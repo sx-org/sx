@@ -429,7 +429,7 @@ pub const Reflection = struct {
             .function => vname = "function",
             .closure => vname = "closure",
             .protocol => vname = "protocol",
-            .error_set => vname = "error_set",
+            .@"error" => vname = "error",
             .pack => vname = "pack",
             .array => |a| {
                 vname = "array";
@@ -616,7 +616,7 @@ pub const Reflection = struct {
 
     /// The always-linked member-name table: a `[N x {ptr, i64}]` global of
     /// member names indexed by member id (the `TagRegistry` namespace; slot 0
-    /// is the reserved "" no-error name). `error_tag_name_get` GEPs into it at
+    /// is the reserved "" no-error name). `error_member_name_get` GEPs into it at
     /// the runtime member id. Built once per module. Always emitted (not trace-gated)
     /// so `{}` interpolation of an error tag works even in release builds.
     pub fn getOrBuildTagNameArray(self: Reflection) c.LLVMValueRef {
@@ -649,6 +649,58 @@ pub const Reflection = struct {
         c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
 
         self.e.tag_name_array = global;
+        return global;
+    }
+
+    /// The qualified-name table: a `[N x {ptr, i64}]` global of `Owner.Member`
+    /// spellings indexed by member id, parallel to the member-name table.
+    /// `error_name_get` GEPs into it at the runtime member id.
+    pub fn getOrBuildTagQualifiedNameArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_qualified_name_array) |g| return g;
+
+        const string_ty = self.e.getStringStructType();
+        const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
+
+        var field_vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer field_vals.deinit(self.e.alloc);
+        var id: u32 = 0;
+        while (id < n) : (id += 1) {
+            const q = self.e.ir_mod.types.memberQualifiedName(self.e.alloc, id);
+            defer self.e.alloc.free(q);
+            field_vals.append(self.e.alloc, self.buildStringConst(q)) catch unreachable;
+        }
+
+        const array_ty = c.LLVMArrayType(string_ty, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_qualified_names");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(string_ty, field_vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_qualified_name_array = global;
+        return global;
+    }
+
+    /// The owner table: an `[N x i64]` global of the TypeId each member's
+    /// declaring error interns to, indexed by member id. `error_owner_get`
+    /// GEPs into it at the runtime member id.
+    pub fn getOrBuildTagOwnerTypeArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_owner_type_array) |g| return g;
+
+        const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
+        var vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer vals.deinit(self.e.alloc);
+        var id: u32 = 0;
+        while (id < n) : (id += 1) {
+            vals.append(self.e.alloc, c.LLVMConstInt(self.e.cached_i64, self.e.ir_mod.types.memberOwnerType(id).index(), 0)) catch unreachable;
+        }
+
+        const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_owner_types");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(self.e.cached_i64, vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_owner_type_array = global;
         return global;
     }
 

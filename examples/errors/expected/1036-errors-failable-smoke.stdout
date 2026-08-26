@@ -1,10 +1,10 @@
-tag: BadDigit
+tag: SmokeErr.BadDigit
 parsed: 10
-got: BadDigit
+got: SmokeErr.BadDigit
 catch-expr: 100
 catch-match: 1
 or-default ok: 10
-  logged BadDigit
+  logged SmokeErr.BadDigit
 or-default err: -1
 or-value: 55
 or-chain: 16

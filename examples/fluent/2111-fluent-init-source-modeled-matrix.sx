@@ -56,7 +56,7 @@ form_any :: ufcs (value: $I/@Init(any)) {
 
 need_View :: ufcs (v: View) { print("need View {}\n", v.render()); }
 need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v?!.render()); }
-need_any :: ufcs (a: any) { print("need any {}\n", @typeName(type_of(a))); }
+need_any :: ufcs (a: any) { print("need any {}\n", @typeName(@typeOf(a))); }
 
 echo_View :: (v: View) -> View => v;
 

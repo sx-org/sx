@@ -35,5 +35,5 @@ main :: () {
     print("flags: color={} flags={}\n", is_flags(tc), is_flags(tf));
 
     av : any = Color.green;
-    print("any-tag: vc={} size={}\n", variant_count(type_of(av)), size_of(type_of(av)));
+    print("any-tag: vc={} size={}\n", variant_count(@typeOf(av)), size_of(@typeOf(av)));
 }

@@ -3,7 +3,7 @@
 // (`-> !E`), and value-failable tuple return (`-> (i32, !E)`) all resolve
 // through the forward struct stub, which the real `E :: error { ... }` decl
 // then adopts (re-keys) with full member identity intact.
-// `adoptsForwardStructStub` covers the error_set kind, so the adoption never
+// `adoptsForwardStructStub` covers the error kind, so the adoption never
 // falls into `updatePreservingKey`'s kind-stability assert.
 
 @import "modules/std.sx";

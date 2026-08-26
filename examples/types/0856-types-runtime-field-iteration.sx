@@ -26,10 +26,10 @@ describe :: (tp: Type) {
 }
 
 main :: () {
-    describe(type_of(Packet{ header = .{ magic = 1, flags = 2 }, name = "x", kind = -1 }));
-    describe(type_of(Color.red));
+    describe(@typeOf(Packet{ header = .{ magic = 1, flags = 2 }, name = "x", kind = -1 }));
+    describe(@typeOf(Color.red));
     av : any = Header{ magic = 7, flags = 9 };
-    describe(type_of(av));
+    describe(@typeOf(av));
     // parity: runtime answers == comptime folds
     tp : Type = Packet;
     print("parity: {} {} {}\n",

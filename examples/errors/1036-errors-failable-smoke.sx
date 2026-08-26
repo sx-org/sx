@@ -72,7 +72,7 @@ sm_wrap :: ($T: Type, f: Closure() -> (T, !SmokeErr)) -> (T, !SmokeErr) {
 }
 
 main :: () {
-    // a member as a typed value + {} interpolation renders the tag name
+    // a member as a typed value + {} interpolation renders owner and member
     e0 : SmokeErr = .BadDigit;
     print("tag: {}\n", e0);
 

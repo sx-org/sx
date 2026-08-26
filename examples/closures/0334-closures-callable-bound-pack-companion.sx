@@ -22,7 +22,7 @@ main :: () {
 
     c1 : Closure(i64) -> i64 = double;
     w1 := wrap(c1);
-    print("one {} size {}\n", w1(5), size_of(type_of(w1)));
+    print("one {} size {}\n", w1(5), size_of(@typeOf(w1)));
 
     c2 : Closure(i64, i64) -> i64 = add;
     print("two {}\n", wrap(c2)(3, 4));

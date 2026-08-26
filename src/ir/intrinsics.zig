@@ -51,7 +51,7 @@ pub const Id = enum(u16) {
     size_of,
     align_of,
     // ── std/core.sx — reflection ────────────────────────────────────────────
-    type_of,
+    @"@typeOf",
     @"@typeName",
     struct_field_count,
     variant_count,
@@ -208,7 +208,7 @@ pub const entries = [_]Entry{
     .{ .id = .align_of, .module = core, .name = "align_of", .mode = .lower, .arity = 1, .ret = .i64 },
 
     // ── reflection: folded at lowering when the type arg is static ──────────
-    .{ .id = .type_of, .module = core, .name = "type_of", .mode = .lower, .arity = 1, .ret = .type_value },
+    .{ .id = .@"@typeOf", .module = core, .name = "@typeOf", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .struct_field_count, .module = core, .name = "struct_field_count", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .variant_count, .module = core, .name = "variant_count", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .struct_field_name, .module = core, .name = "struct_field_name", .mode = .lower, .arity = 2, .ret = .string },

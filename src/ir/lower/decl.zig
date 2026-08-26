@@ -391,7 +391,7 @@ pub fn validateMainSignature(self: *Lowering) void {
             return;
         }
         // `-> (T, !)` — value-carrying failable. Accepted only for a single
-        // **integer** value slot (`{int, error_set}`): the wrapper extracts
+        // **integer** value slot (`{int, error}`): the wrapper extracts
         // the value + tag from the returned tuple, exits `value as u8` on
         // success / reports + exits 1 on error. Multi-value `-> (T1, T2, !)`
         // or a non-integer value slot stays rejected — there's no single
@@ -884,7 +884,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // channel resolved before its operands bind keeps a member-less placeholder.
     for (decls) |decl| {
         const esd = switch (topLevelTypeDecl(decl) orelse continue) {
-            .error_set => |e| e,
+            .@"error" => |e| e,
             else => continue,
         };
         self.reserveShadowErrorSetSlot(esd);
@@ -1873,7 +1873,7 @@ fn resolveErrorCompositionAliases(self: *Lowering, decls: []const *const Node) v
             const src = decl.source_file orelse self.main_file orelse continue;
             if (self.aliasResolvedInSource(src, cd.name)) continue;
             self.setCurrentSourceFile(decl.source_file);
-            const channel = self.composedChannel(cd.value) orelse continue;
+            const channel = self.composedChannel(cd.value, cd.name) orelse continue;
             self.putTypeAlias(decl.source_file, cd.name, channel);
             progressed = true;
         }

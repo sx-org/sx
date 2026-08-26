@@ -1,2 +1,2 @@
-comptime caught Bad
+comptime caught TErr.Bad
 --- build done ---

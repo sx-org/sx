@@ -300,7 +300,9 @@ pub const Op = union(enum) {
     // ── Reflection ─────────────────────────────────────────────────
     field_name_get: FieldReflect, // field_name(T, i) → string (runtime index)
     field_value_get: FieldReflect, // field_value(s, i) → Any (runtime struct + index)
-    error_tag_name_get: UnaryOp, // error_tag_name(e) → string (runtime tag id → name, via the always-linked tag-name table)
+    error_member_name_get: UnaryOp, // the member spelling a live error carries (member id → the always-linked member-name table)
+    error_name_get: UnaryOp, // `Owner.Member` — the spelling a live error renders as (member id → the qualified-name table)
+    error_owner_get: UnaryOp, // the error that declares the live member, as a Type (member id → the owner-type table)
     error_payload_view: UnaryOp, // error_payload(e) → any (the live member's payload area, typed through the member-payload-type table)
 
     // ── Terminators ─────────────────────────────────────────────────

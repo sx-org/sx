@@ -578,7 +578,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
-                // A RUNTIME Type argument (`t := type_of(av); if is_flags(t)`)
+                // A RUNTIME Type argument (`t := @typeOf(av); if is_flags(t)`)
                 // cannot const-fold — bail to the normal runtime lowering
                 // (the rt table read). Folding through resolveTypeArg here
                 // both emitted a spurious "unresolved type" diagnostic and
@@ -1233,7 +1233,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // member id, and `case .X` matches the subject channel's member `X`.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
-            break :blk self.module.types.get(subject_ty) == .error_set;
+            break :blk self.module.types.get(subject_ty) == .@"error";
         }
         break :blk false;
     };
@@ -1247,14 +1247,14 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // located diagnostic and bail — the arms are never lowered.
     //
     // Type-category matches get NO exemption here: a genuine type match's
-    // subject is a Type VALUE — a `type_of(...)` result or a
+    // subject is a Type VALUE — a `@typeOf(...)` result or a
     // `$T` binding — which types `.type_value` and passes the allowlist below
     // on its own. Exempting on `is_type_match` (a property of the PATTERNS,
     // not the subject) let a single `case U:` / `case string:` pattern token
     // over a runtime union/string VALUE re-open the exact invalid-IR hole
     // this gate closes; and a direct `Any` subject dispatched on its unboxed
     // VALUE instead of its type tag — the silently-wrong arm, exit 0. Both
-    // now diagnose: match on the `type_of(...)` result, not the value.
+    // diagnose: match on the `@typeOf(...)` result, not the value.
     if (!is_optional_match and !is_error_set_match) {
         const dispatchable = blk: {
             if (subject_ty.isBuiltin()) break :blk switch (subject_ty) {
@@ -1631,7 +1631,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
-                    } else if (ty_info == .error_set) {
+                    } else if (ty_info == .@"error") {
                         break :blk @intCast(self.module.types.errorSetMemberId(subject_ty, pat_name) orelse
                             self.anonymousErrorMember(pat_name));
                     }
@@ -1667,11 +1667,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // Switch on the subject. For a type match the subject IS the type-id word
     // (`.type_value` / an integer handle — the subject gate above rejects
     // anything else, incl. `.any`: a boxed Any's unboxed VALUE is not its type
-    // tag, so dispatching on it picked the silently-wrong arm; `type_of(a)`
+    // tag, so dispatching on it selects the silently-wrong arm; `@typeOf(a)`
     // is the correct spelling and yields `.type_value` directly).
     const tag = if (is_any_switch)
         // The type switch dispatches on the view's type_id word (field 1,
-        // the {data, type_id} layout) — exactly what `type_of(av)` reads —
+        // the {data, type_id} layout) — exactly what `@typeOf(av)` reads —
         // never on the payload.
         self.builder.structGet(subject, 1, .type_value)
     else if (is_type_match) subject else if (is_optional_match) self.builder.emit(.{ .optional_has_value = .{ .operand = subject } }, .bool) else if (is_error_set_match) subject else blk: {

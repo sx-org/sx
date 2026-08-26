@@ -271,6 +271,12 @@ pub const LLVMEmitter = struct {
     // The member-payload-type table (member id → TypeId); built on the first
     // `error_payload_view` site.
     tag_payload_type_array: ?c.LLVMValueRef = null,
+    // The qualified-name table (member id → `Owner.Member`); built on the first
+    // `error_name_get` site.
+    tag_qualified_name_array: ?c.LLVMValueRef = null,
+    // The owner table (member id → the declaring error's TypeId); built on the
+    // first `error_owner_get` site.
+    tag_owner_type_array: ?c.LLVMValueRef = null,
 
     // Lazy global `[N x string]` indexed by TypeId.index(), holding
     // each type's display name. Built on the first dynamic
@@ -897,7 +903,7 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .failable, .error_set => {},
+                .@"struct", .@"union", .tagged_union, .failable, .@"error" => {},
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -918,7 +924,7 @@ pub const LLVMEmitter = struct {
     fn comptimeErrChannel(self: *LLVMEmitter, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         switch (self.ir_mod.types.get(ty)) {
-            .error_set => return ty,
+            .@"error" => return ty,
             .failable => |f| return f.err,
             else => return null,
         }
@@ -1963,7 +1969,9 @@ pub const LLVMEmitter = struct {
             // ── Reflection ops ──────────────────────────────────────
             .field_name_get => |fr| self.ops().emitFieldNameGet(fr),
             .field_value_get => |fr| self.ops().emitFieldValueGet(fr, func_idx),
-            .error_tag_name_get => |u| self.ops().emitErrorTagNameGet(u),
+            .error_member_name_get => |u| self.ops().emitErrorMemberNameGet(u),
+            .error_name_get => |u| self.ops().emitErrorNameGet(u),
+            .error_owner_get => |u| self.ops().emitErrorOwnerGet(u),
             .error_payload_view => |u| self.ops().emitErrorPayloadView(u),
 
             // ── Switch branch ────────────────────────────────────────
@@ -3147,8 +3155,8 @@ pub const LLVMEmitter = struct {
     /// returns i32. `tag_val` is the `tag_ty` error channel (0 = "no error");
     /// `value` is the integer value slot for a value-carrying `-> (int, !)`
     /// main, or null for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
-    /// (success — exit code truncated to u8 downstream); else resolve the tag
-    /// name from the always-linked tag-name table, hand it + the tag to
+    /// (success — exit code truncated to u8 downstream); else resolve the
+    /// member's `Owner.Member` spelling, hand it + the tag to
     /// `sx_trace_report_unhandled` (prints the header + return trace to stderr),
     /// and `ret i32 1`.
     pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef, tag_ty: TypeId) void {
@@ -3165,9 +3173,9 @@ pub const LLVMEmitter = struct {
         const ok_ret = if (value) |v| self.coerceArg(v, self.cached_i32) else c.LLVMConstInt(self.cached_i32, 0, 0);
         _ = c.LLVMBuildRet(self.builder, ok_ret);
 
-        // Error: resolve the tag name, report to stderr, exit 1.
+        // Error: resolve the member spelling, report to stderr, exit 1.
         c.LLVMPositionBuilderAtEnd(self.builder, err_bb);
-        const global = self.reflection().getOrBuildTagNameArray();
+        const global = self.reflection().getOrBuildTagQualifiedNameArray();
         const idx = c.LLVMBuildZExt(self.builder, tag_i32, self.cached_i64, "main.tagidx");
         const string_ty = self.getStringStructType();
         const n: u32 = @intCast(self.ir_mod.types.tags.names.items.len);

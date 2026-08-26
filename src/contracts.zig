@@ -97,6 +97,7 @@ pub const entries = [_]Contract{
     .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
     .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
     .{ .name = "@printf", .module = "modules/std/core.sx" },
+    .{ .name = "@typeOf", .module = "modules/std/core.sx" },
     .{ .name = "@typeName", .module = "modules/std/core.sx" },
     .{ .name = "@errorName", .module = "modules/std/core.sx" },
     .{ .name = "@tag", .module = "modules/std/core.sx" },

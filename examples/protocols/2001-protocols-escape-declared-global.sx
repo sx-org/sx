@@ -58,5 +58,5 @@ main :: () {
     g_native.n = 41;
     print("{} {}\n", W.area(), N.area());
 
-    print("{}\n", @typeName(type_of(S)));
+    print("{}\n", @typeName(@typeOf(S)));
 }

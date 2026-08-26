@@ -124,7 +124,7 @@ pub const GenericResolver = struct {
                 self.mangleTypeName(f.value),
                 self.mangleTypeName(f.err),
             }) catch @panic("out of memory while mangling type"),
-            .error_set => |e| self.mangleErrorMembers(e),
+            .@"error" => |e| self.mangleErrorMembers(e),
             else => @tagName(info),
         };
     }
@@ -394,7 +394,7 @@ pub const GenericResolver = struct {
         // the error set of a value-failable `(… , !E)`) resolves to the SAME
         // TypeId the instance's real signature uses, not whatever a re-export
         // alias at the call site resolves it to. The pin is what keeps a
-        // re-exported generic value-failable's `!E` an `.error_set`, so the
+        // re-exported generic value-failable's `!E` an error, so the
         // planned call result carries a channel `errorChannelOf` can read.
         // The binding-building above
         // stays in the call-site context (its args are typed there).

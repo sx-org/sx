@@ -14,7 +14,7 @@ main :: () {
 
     // the raw pair mirrors the stable accessors
     r := av.(@Any);
-    print("tag: {}\n", r.type_id == type_of(av));
+    print("tag: {}\n", r.type_id == @typeOf(av));
     print("data: {}\n", r.data == raw_any_data(av));
     p : *i64 = xx r.data;
     print("payload: {}\n", p.*);

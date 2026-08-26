@@ -612,7 +612,7 @@ c := vstack(1.0) {
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
 - `string` — string of characters
-- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `size_of(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `type_of(av)`.
+- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `size_of(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
 ### Char Literals
@@ -983,7 +983,7 @@ always distinct types:
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
 b : struct { y: f64; } = .{ y = 2.5 };   // distinct type from a's — fine
-type_eq(type_of(a), type_of(.{ x = 3 }))  // true — same shape, same type
+type_eq(@typeOf(a), @typeOf(.{ x = 3 }))  // true — same shape, same type
 ```
 
 #### Field Access and Assignment
@@ -1368,7 +1368,7 @@ Show handle │ ctx *────┼─►referent  │ vtable *──┼─► 
 Slot 0 is the referent's address; slot 1 is the referent's concrete type
 id, stamped where the handle is built. The first two words are
 byte-identical to an `any` `{data, type_id}` — an interface handle *is*
-an `any` of its referent, extended with dispatch information. `type_of`,
+an `any` of its referent, extended with dispatch information. `@typeOf`,
 the downcast, the type switch, and `@Interface` all read this prefix.
 
 A handle **borrows**. The referent lives outside the handle, the handle
@@ -1494,9 +1494,9 @@ program's job.
 
 #### 6. Semantics
 
-##### 6.1 RTTI: `type_of`, downcast, type switch
+##### 6.1 RTTI: `@typeOf`, downcast, type switch
 
-Every handle answers `type_of` with its referent's concrete type id,
+Every handle answers `@typeOf` with its referent's concrete type id,
 read from slot 1. The downcast `p.(T)` and the type switch on a handle
 subject follow the same source: a runtime type_id compare. There is no
 implicit opening of a handle; the type switch is the opening construct.
@@ -1546,7 +1546,7 @@ handle copy of §5.2.
 
 `==`/`!=` are not defined on interface handles (compile error, as on
 `any`): two handles may reference one referent, equal bytes may be
-distinct referents. Compare `type_of`, downcast and compare concretely,
+distinct referents. Compare `@typeOf`, downcast and compare concretely,
 or define an interface method. Map keys follow from `==`: refused.
 
 ##### 6.6 Interfaces in aggregates, generics, statics, and the Context
@@ -1753,7 +1753,7 @@ per the referent:
 
 - A directly reified `Type` may name an **interface or a constraint**:
   `tv : Type = Show;` and `cv : Type = Ord;` are both valid. A `Type`
-  derived from a value (`type_of`) always tags the concrete referent.
+  derived from a value (`@typeOf`) always tags the concrete referent.
 - A reified constraint answers `@typeName`. `C is interface` is false,
   `C is struct` is false, and it matches no category.
 - Composites *containing* an interface type (`*Show`, `[]View`) are
@@ -4135,16 +4135,16 @@ denotes the member, and a set value is not any one member); call it through the
 membership bound instead.
 
 **What a set value answers about itself.** A slot is declared as the set and
-carries a member, so `type_of` answers the **member**: the tag word names it, and
+carries a member, so `@typeOf` answers the **member**: the tag word names it, and
 the set's own numbering turns that tag into the member's type. Writing another
 member into the same slot changes the answer — the answer was never the
 declaration.
 
 ```sx
 v: View = Label{ text = "label" };
-type_of(v);        // Label
+@typeOf(v);        // Label
 v = Panel{ title = "panel" };
-type_of(v);        // Panel
+@typeOf(v);        // Panel
 ```
 
 `v.(any)` is the raw polymorphic view a set has: the member's address **inside the
@@ -4220,7 +4220,7 @@ of the slot and is unmoved by that.
 
 **Unwritten slots.** A set-typed location left `---` has an undefined tag until
 formation or an `@Init.write` fills it, and consulting that tag — dispatch,
-`type_of`, a type switch, a downcast, `.(any)` — is **undefined behavior**. There is
+`@typeOf`, a type switch, a downcast, `.(any)` — is **undefined behavior**. There is
 no poison tag, no default-arm trap, and no dispatch-time check; writing before
 publishing is the discipline. The other way to reach a tag that means nothing is a
 wrong `xx` force from an `any` (`xx a : ?View` where the box holds something else),
@@ -4511,12 +4511,12 @@ reads the tag.)
 
 **An interface handle** answers from its **static** type. With `h : I = w`,
 `h is I` is true, and `h is Q` and `h is Concrete` are false — all three fold.
-`type_of(h)` is the door to the referent: it is a runtime `Type`, and asking it
+`@typeOf(h)` is the door to the referent: it is a runtime `Type`, and asking it
 classifies the concrete value behind the handle. `h is C` for a constraint `C`
 asks whether the handle's own interface conforms — true exactly when the bridge
 `impl C for I` is visible — and folds like the rest of the family.
 
-**An open-set value** follows the static-left-operand rule; `type_of(v)` reports
+**An open-set value** follows the static-left-operand rule; `@typeOf(v)` reports
 the member the slot carries.
 
 **A runtime `Type`** takes every description: tag identity (a concrete right
@@ -4533,7 +4533,7 @@ With `impl C for W` duplicated that way, `h : I = w` and `av : any = w`:
 
 ```sx
 W is C            // true  — site-local visibility
-type_of(h) is C   // false — the pair is not program-unique
+@typeOf(h) is C   // false — the pair is not program-unique
 av is C           // false — same table
 ```
 
@@ -4549,14 +4549,14 @@ answers from site-local visibility at either phase.
 | `unsigned` | the unsigned integers |
 | `float` | `f32`, `f64` |
 | `struct` | struct and tuple types |
-| `enum` | payload-less enums and tagged unions |
+| `enum` | payload-less enums and tagged unions; not `@Tag(E)` of an error |
 | `union` | untagged unions and tagged unions |
 | `slice` | `[]T` |
 | `array` | `[N]T` |
 | `pointer` | `*T`, `[*]T`, function pointers |
 | `vector` | `@Vector(N, T)` |
 | `optional` | `?T` |
-| `error_set` | declared and inferred error sets |
+| `error` | declared and inferred errors, and `@Tag(E)` of an error |
 | `closure` | `Closure(…) -> R` — the erased form only; a unique lambda is its env, so it answers `struct` |
 | `type` | `Type` |
 | `interface` | interface types |
@@ -4624,7 +4624,7 @@ match subject {
 Matches `subject` against each `case`. Patterns can be:
 - **Enum literals**: `.variant` — matches a specific enum variant.
 - **Integer/bool literals**: `42`, `true` — matches a specific value.
-- **Type categories**: `struct`, `enum`, `union` — matches all types in that category (used with `type_of` values).
+- **Type categories**: `struct`, `enum`, `union` — matches all types in that category (used with `@typeOf` values).
 
 `break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is what separates it from an `else` that chains an `if`.
 ```sx
@@ -4638,9 +4638,9 @@ match z {
 ```
 
 #### Type Category Matching
-When switching on a `Type` value (from `type_of`), category keywords match all registered types of that category:
+When switching on a `Type` value (from `@typeOf`), category keywords match all registered types of that category:
 ```sx
-type := type_of(val);
+type := @typeOf(val);
 match type {
     case unsigned: result = uint_to_string(xx val);
     case int:      result = int_to_string(xx val);
@@ -4648,7 +4648,7 @@ match type {
     case enum:     result = enum_walk_over_tables(type, val);
 }
 ```
-Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error_set`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
+Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
 
 > Note: `case enum:` matches payload-less enums AND tagged enums (enums
 > with payloads); `case union:` matches C-style untagged unions AND
@@ -4678,7 +4678,7 @@ match av {
     case ?i64: |o|  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
     case struct:    { walk_fields(av); }               // categories: tag SETS, no binding
     case int:       { print("{}\n", xx av); }          // xx width-dispatches over the set
-    else:           { print("{}\n", @typeName(type_of(av))); }   // av stays `any`
+    else:           { print("{}\n", @typeName(@typeOf(av))); }   // av stays `any`
 }
 ```
 
@@ -4688,7 +4688,7 @@ match av {
   `v := av.(T)` produces, with the tag pre-proven by the switch: no panic
   path. Works in value position.
 - **Category arms** (`int`, `signed`, `unsigned`, `float`, `struct`, `enum`,
-  `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error_set`,
+  `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error`,
   `closure`, `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
   read the value through the reflection views, or `xx av` in the
   `int`/`float` arms (per-tag width dispatch). `string`/`bool`/`void`
@@ -4712,7 +4712,7 @@ match av {
   claiming the directly reified interface tags under the same first-wins rule.
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match
-  on `type_of(av)` and as the static `inline match T { … }` fold in
+  on `@typeOf(av)` and as the static `inline match T { … }` fold in
   generic bodies.
 
 #### Inline Type Match (static pruning)
@@ -5618,7 +5618,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
 
 ### Type Introspection
-- `type_of(val: $T) -> Type` — returns the runtime type tag of a value
+- `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `struct_field_count($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variant_count`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
 - The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`match type_info(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
@@ -5631,7 +5631,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `@tag(x: $T) -> @Tag(T)` — the discriminant of an error-set, enum, or tagged-union value, payload dropped. `@Tag(T)` is a first-class type; see [§12 `@tag`](#tag) for its comparison, matching, and interpolation rules.
-- `@errorName(e: $T) -> string` — the MEMBER an error value carries (`"D"`), never the owner; `@typeName` of the error names the owner. Reads the always-linked member-name table at the value's member id.
+- `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
@@ -5643,9 +5643,9 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`type_of(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
-An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `type_of(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
+An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
 ### Type Conversion
 - Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
@@ -6681,6 +6681,23 @@ if e == t             { ... }   // an error value against a `@Tag` — tag only
 Comparability follows the same ⊆ rule on the channels. A `@Tag` is not a `raise`
 operand, and a `match` arm on a `@Tag` subject takes no `|p|` capture.
 
+### `.set` and `.name`
+
+An error value carries its member: `.set` is the error that declares it and
+`.name` that member's spelling. A `Type` answers `.name` with its own.
+
+```sx
+v := FooError.D{42};
+v.set.name;                       // "FooError"
+v.name;                           // "D"
+concat(v.set.name, concat(".", v.name));   // what `@errorName(v)` composes
+```
+
+Both read through the live member, so a `@Tag` of an error and an `any` viewing
+either answer the same way, and a member introduced by an inline
+`error { … }` operand answers with the composition that names it. Classify the
+value first — `match @typeOf(v) { case error: … }`.
+
 ### Matching
 
 `match` over an error value dispatches on the member. Covering every member is
@@ -6698,11 +6715,11 @@ match e {
 ### Interpolation
 
 `{}` on an error **value** prints the interning owner, the member, and the
-payload (`FooError.D{42}`); on a `@Tag` it prints owner and member alone
-(`FooError.D`, `IoErr.Failed`, `Shape.none`). A member introduced by an inline
-`error { … }` operand prints under the composition that names it. The import
-binding a set was reached through never appears. The name table is **always
-linked, release builds included**.
+payload (`FooError.D{42}`); on a `@Tag` of an error it prints owner and member
+alone (`FooError.D`). A member introduced by an inline `error { … }` operand
+prints under the composition that names it. The import binding a set was
+reached through never appears. The name table is **always linked, release
+builds included**.
 
 ### Cleanup
 

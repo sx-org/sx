@@ -3,7 +3,7 @@
 //
 // The facade re-exports by naming, and what it names IS what the package declared:
 // a member formed at the facade's spelling is a value of the very set the member
-// joined, so it dispatches, answers `type_of` with the member, measures the same,
+// joined, so it dispatches, answers `@typeOf` with the member, measures the same,
 // and satisfies a signature written inside the package in the set's own terms.
 @import "modules/std.sx";
 pkg :: @import "1632-modules-open-set-facade/facade.sx";
@@ -15,7 +15,7 @@ holds :: (x: $V/pkg.View) -> string => x.render();
 main :: () -> i32 {
     // Formed entirely through the facade.
     v: pkg.View = pkg.Label{ text = "through a facade" };
-    print("{} {}\n", v.render(), type_of(v));
+    print("{} {}\n", v.render(), @typeOf(v));
 
     // One set: the size the package measures inside itself is the size out here.
     print("size in {} out {}\n", pkg.size_here(), size_of(pkg.View));

@@ -39,13 +39,13 @@ main :: () {
     pr : @Protocol = xx sz;
     wc : *Widget = xx sz.(@Protocol).ctx;
     print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx == *w, pr.ctx == sz.(@Protocol).ctx);
-    print("default type_id: {}\n", sz.(@Protocol).type_id == type_of(sz));
+    print("default type_id: {}\n", sz.(@Protocol).type_id == @typeOf(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
     a : Allocator = ga;
     print("inline: {}\n", a.(@Protocol).ctx == *ga);
-    print("inline type_id: {}\n", a.(@Protocol).type_id == type_of(a));
+    print("inline type_id: {}\n", a.(@Protocol).type_id == @typeOf(a));
 
     // a real constructed value: passes through call args
     print("arg: {}\n", take_raw(a.(@Protocol)) == *ga);

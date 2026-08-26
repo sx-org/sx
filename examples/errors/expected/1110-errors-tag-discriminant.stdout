@@ -1,5 +1,5 @@
 owner=FooError view=@Tag(FooError)
-member=D A
+name=FooError.D FooError.A
 payload=42
 shorthand=true true
 views=true false

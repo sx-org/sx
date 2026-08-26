@@ -990,7 +990,7 @@ pub const UnknownTypeChecker = struct {
     /// Type-returning reflection builtins legal in a type position with
     /// VALUE arguments. Mirrors the lowering's comptime type-fn set.
     fn isTypeFnName(name: []const u8) bool {
-        const type_fns = [_][]const u8{ "type_of", "struct_field_type", "variant_type", "pointee_type" };
+        const type_fns = [_][]const u8{ "@typeOf", "struct_field_type", "variant_type", "pointee_type" };
         for (type_fns) |tf| if (std.mem.eql(u8, name, tf)) return true;
         return false;
     }
@@ -1109,7 +1109,7 @@ pub const UnknownTypeChecker = struct {
         // A composition (`Both :: FooError | BooError`) authors no set of its
         // own — it binds a name to the channel its operands merge into.
         if (self.index.type_alias_map.get(name)) |aliased| {
-            if (!aliased.isBuiltin() and self.types.get(aliased) == .error_set) return;
+            if (!aliased.isBuiltin() and self.types.get(aliased) == .@"error") return;
         }
         // A name that names a real (non-error-set) TYPE — a struct/enum/union,
         // a builtin, or a fabricated stub — is a type-in-error-position misuse.
