@@ -1,0 +1,7 @@
+struct 2 3 -4
+array 4 10 -20 30 -40
+slice 2 -20 30
+vector 3 1.000000 3.000000 2.000000
+narrow 4 1 2 3 4
+aliased 99
+static 3 -4

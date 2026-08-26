@@ -610,6 +610,10 @@ pub const BuiltinId = enum(u16) {
     rt_variant_count,
     rt_is_flags,
     rt_vector_lanes,
+    // The parts the type table counts for a tag: struct/union fields,
+    // enum/tagged-union variants, array elements, vector lanes. 0 for a kind
+    // whose count lives in the value (a fat pointer's header).
+    rt_member_count,
     // The tag-word byte width a runtime variant read loads (sign-encoded:
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,

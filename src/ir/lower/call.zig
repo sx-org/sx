@@ -2801,6 +2801,9 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@errorName",
         .@"@tag",
         .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3109,6 +3112,9 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@errorName",
         .@"@tag",
         .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3397,6 +3403,9 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@errorName",
         .@"@tag",
         .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3745,6 +3754,9 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@errorName",
         .@"@tag",
         .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3863,6 +3875,124 @@ fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
         .resolved => |t| t,
         else => null,
     };
+}
+
+/// The `__sx_slice_len_info` row for a boxed value's tag: nonzero exactly when
+/// the value is a fat pointer, whose count and buffer live in its header.
+fn boxedLenRow(self: *Lowering, recv: Ref) Ref {
+    const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
+    return self.builder.callBuiltin(.rt_slice_len_info, args, .i64);
+}
+
+/// The count a fat pointer's header carries: the word at the row's byte offset,
+/// masked to the row's bit width and sign-extended when the row says signed.
+fn boxedFatLen(self: *Lowering, recv: Ref, row: Ref) Ref {
+    const b = &self.builder;
+    const one = b.constInt(1, .i64);
+    const bits = b.emit(.{ .bit_and = .{ .lhs = row, .rhs = b.constInt(0xFF, .i64) } }, .i64);
+    const shifted_off = b.emit(.{ .shr = .{ .lhs = row, .rhs = b.constInt(16, .i64) } }, .i64);
+    const off = b.emit(.{ .bit_and = .{ .lhs = shifted_off, .rhs = b.constInt(0xFFFF, .i64) } }, .i64);
+    const shifted_sign = b.emit(.{ .shr = .{ .lhs = row, .rhs = b.constInt(8, .i64) } }, .i64);
+    const is_signed = b.emit(.{ .bit_and = .{ .lhs = shifted_sign, .rhs = one } }, .i64);
+
+    const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
+    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = off } }, self.module.types.ptrTo(.u8));
+    const word = b.load(at, .i64);
+
+    const top_bit = b.sub(bits, one, .i64);
+    const top = b.emit(.{ .shl = .{ .lhs = one, .rhs = top_bit } }, .i64);
+    const mask = b.emit(.{ .bit_or = .{ .lhs = b.sub(top, one, .i64), .rhs = top } }, .i64);
+    const count = b.emit(.{ .bit_and = .{ .lhs = word, .rhs = mask } }, .i64);
+    const sign = b.mul(is_signed, b.emit(.{ .bit_and = .{ .lhs = count, .rhs = top } }, .i64), .i64);
+    return b.sub(count, b.mul(b.constInt(2, .i64), sign, .i64), .i64);
+}
+
+/// The count the type table holds for a boxed value's tag: struct and union
+/// fields, enum and tagged-union variants, array elements, vector lanes.
+fn boxedTableCount(self: *Lowering, recv: Ref, _: Ref) Ref {
+    const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
+    return self.builder.callBuiltin(.rt_member_count, args, .i64);
+}
+
+/// The buffer a fat pointer's header names — the pointer word at its front.
+fn boxedHeaderBuffer(self: *Lowering, recv: Ref, _: Ref) Ref {
+    const header = self.builder.anyData(recv, self.module.types.ptrTo(.i64));
+    return self.builder.load(header, .i64);
+}
+
+/// The boxed storage itself, where an array's or vector's elements sit.
+fn boxedStorage(self: *Lowering, recv: Ref, _: Ref) Ref {
+    return self.builder.anyData(recv, .i64);
+}
+
+/// Merge two i64 readings of a boxed value through a stack slot, choosing by
+/// whether its tag says fat pointer. Both arms take `(recv, row)`.
+fn boxedFatMerge(
+    self: *Lowering,
+    recv: Ref,
+    comptime fat: fn (*Lowering, Ref, Ref) Ref,
+    comptime flat: fn (*Lowering, Ref, Ref) Ref,
+) Ref {
+    const row = boxedLenRow(self, recv);
+    const is_fat = self.builder.emit(.{ .cmp_ne = .{ .lhs = row, .rhs = self.builder.constInt(0, .i64) } }, .bool);
+    const slot = self.builder.alloca(.i64);
+    const fat_bb = self.freshBlock("view.fat");
+    const flat_bb = self.freshBlock("view.flat");
+    const merge_bb = self.freshBlock("view.merge");
+    self.builder.condBr(is_fat, fat_bb, &.{}, flat_bb, &.{});
+
+    self.builder.switchToBlock(fat_bb);
+    self.builder.store(slot, fat(self, recv, row));
+    self.builder.br(merge_bb, &.{});
+
+    self.builder.switchToBlock(flat_bb);
+    self.builder.store(slot, flat(self, recv, row));
+    self.builder.br(merge_bb, &.{});
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.load(slot, .i64);
+}
+
+/// `@len(v)` / `@field(v, i)` / `@elementAt(v, i)` — the boxed-value views. The
+/// receiver is an `any`, so its kind is a runtime tag: member rows and counts
+/// come from the reflection tables, and each view is `{member tag, interior
+/// address}` — the boxed storage is borrowed, never copied.
+fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
+    const entry = intrinsics.byId(id);
+    const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
+    if (c.args.len != entry.arity) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "{s} takes {d} argument{s}, got {d}", .{
+            entry.name, entry.arity, if (entry.arity == 1) @as([]const u8, "") else "s", c.args.len,
+        });
+        return sentinel;
+    }
+    const recv = blk: {
+        const recv_ty = self.inferExprType(c.args[0]);
+        const val = self.lowerExpr(c.args[0]);
+        break :blk if (recv_ty == .any) val else self.boxAnyOf(val, recv_ty, c.args[0]);
+    };
+    if (id == .@"@len") return boxedFatMerge(self, recv, boxedFatLen, boxedTableCount);
+
+    // The index lowers under its declared `i64` parameter, so an ambient `any`
+    // target does not leak into it.
+    const saved_target = self.target_type;
+    self.target_type = .i64;
+    const idx = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+
+    if (id == .@"@field") {
+        const args = self.alloc.dupe(Ref, &.{ recv, idx }) catch return sentinel;
+        const member_tag = self.builder.callBuiltin(.rt_member_type, args, .type_value);
+        const offset = self.builder.callBuiltin(.rt_field_offset, args, .i64);
+        const base = self.builder.anyData(recv, .i64);
+        return self.builder.makeAny(member_tag, self.builder.add(base, offset, .i64));
+    }
+    const elem_args = self.alloc.dupe(Ref, &.{ recv, self.builder.constInt(0, .i64) }) catch return sentinel;
+    const elem = self.builder.callBuiltin(.rt_member_type, elem_args, .type_value);
+    const size_args = self.alloc.dupe(Ref, &.{elem}) catch return sentinel;
+    const elem_size = self.builder.callBuiltin(.rt_size_of, size_args, .i64);
+    const stride = self.builder.mul(idx, elem_size, .i64);
+    return self.builder.makeAny(elem, self.builder.add(boxedFatMerge(self, recv, boxedHeaderBuffer, boxedStorage), stride, .i64));
 }
 
 /// Try to lower a call as a reflection intrinsic (expanded inline during
@@ -4172,6 +4302,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (c.args.len < 1) return self.builder.constInt(0, .any);
         return self.lowerErrorPayload(c.args[0], c.callee.span);
     }
+    if (intrinsics.findByName(name)) |id| switch (id) {
+        .@"@len", .@"@field", .@"@elementAt" => return lowerBoxedViewIntrinsic(self, id, c),
+        else => {},
+    };
     if (std.mem.eql(u8, name, "struct_field_value") or std.mem.eql(u8, name, "variant_payload")) {
         // struct_field_value(s, i) → field_value_get (structs/tuples/unions);
         // variant_payload(u, i) → the same instruction on an enum/tagged-union
