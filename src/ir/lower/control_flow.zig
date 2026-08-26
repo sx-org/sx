@@ -1406,8 +1406,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms) |_| arm_concrete.append(self.alloc, null) catch unreachable;
     var claimed = std.AutoHashMap(u64, void).init(self.alloc);
     defer claimed.deinit();
-    // A qualified `Prefix.Leaf` arm's verdict; null on every other spelling.
-    var arm_verdicts = std.ArrayList(?lower_error.QualifiedArm).empty;
+    // An error or qualified arm's verdict; null on every other spelling.
+    var arm_verdicts = std.ArrayList(?lower_error.ArmVerdict).empty;
     defer arm_verdicts.deinit(self.alloc);
     for (me.arms) |_| arm_verdicts.append(self.alloc, null) catch unreachable;
 
@@ -1594,6 +1594,29 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 }) catch unreachable,
                 else => lower_error.refuseQualifiedArm(self, verdict, subject_ty, pat),
             }
+        } else if (is_error_set_match) {
+            // A shorthand arm names a member of the channel in hand, which
+            // composes sets: two of them spelled alike leave the arm no member
+            // to dispatch on.
+            arm_tag_values.append(self.alloc, &.{}) catch unreachable;
+            const leaf = lower_error.shorthandArmName(pat) orelse "";
+            const member: u32 = switch (self.module.types.errorSetMember(subject_ty, leaf)) {
+                .one => |m| m,
+                // A spelling the channel does not carry takes the anonymous
+                // owner's member, which no case value can equal; the bind
+                // reports it.
+                .none => self.anonymousErrorMember(leaf),
+                .ambiguous => {
+                    arm_verdicts.items[i] = .{ .ambiguous = subject_ty };
+                    lower_error.emitAmbiguousMember(self, subject_ty, leaf, pat.span);
+                    continue;
+                },
+            };
+            cases.append(self.alloc, .{
+                .value = member,
+                .target = arm_blocks.items[i],
+                .args = &.{},
+            }) catch unreachable;
         } else if (is_optional_match) {
             // Optional match: .some → 1 (has_value=true), .none → 0
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
@@ -1612,8 +1635,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
             const case_val: u64 = blk: {
-                if (is_error_set_match) break :blk @intCast(lower_error.errorArmMember(self, subject_ty, pat) orelse
-                    self.anonymousErrorMember(lower_error.shorthandArmName(pat) orelse ""));
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
@@ -1714,11 +1735,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         // tags are all claimed, or a refused qualified arm. Lowering it emits
         // invalid IR — a runtime cast with no matching type, a payload read in
         // a block with no predecessor.
-        const refused_qualified = if (arm_verdicts.items[i]) |v| switch (v) {
+        const refused_arm = if (arm_verdicts.items[i]) |v| switch (v) {
             .ok => false,
             else => true,
         } else false;
-        if (arm.pattern != null and (refused_qualified or
+        if (arm.pattern != null and (refused_arm or
             (is_type_match and arm_tag_values.items[i].len == 0)))
         {
             self.builder.emitUnreachable();

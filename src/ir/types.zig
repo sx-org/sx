@@ -1572,16 +1572,26 @@ pub const TypeTable = struct {
         return self.channelPayloadBytes(ty) > 0;
     }
 
-    /// The id of the member `name` names in error set `set`, or null when the
-    /// set carries no such member.
-    pub fn errorSetMemberId(self: *const TypeTable, set: TypeId, name: []const u8) ?u32 {
-        if (set.isBuiltin()) return null;
+    /// What a name spells in an error set: one member, none, or — a channel
+    /// composes sets that may each intern the spelling — more than one.
+    pub const SetMember = union(enum) {
+        one: u32,
+        none,
+        ambiguous,
+    };
+
+    /// The member `name` names in error set `set`.
+    pub fn errorSetMember(self: *const TypeTable, set: TypeId, name: []const u8) SetMember {
+        if (set.isBuiltin()) return .none;
         const info = self.get(set);
-        if (info != .@"error") return null;
+        if (info != .@"error") return .none;
+        var found: ?u32 = null;
         for (info.@"error".tags) |id| {
-            if (std.mem.eql(u8, self.getTagName(id), name)) return id;
+            if (!std.mem.eql(u8, self.getTagName(id), name)) continue;
+            if (found != null) return .ambiguous;
+            found = id;
         }
-        return null;
+        return if (found) |id| .{ .one = id } else .none;
     }
 
     /// The spelling a channel holding `members` renders as: the owning
