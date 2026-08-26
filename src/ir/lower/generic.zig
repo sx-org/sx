@@ -14,6 +14,7 @@ const GenericResolver = generics_mod.GenericResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_decl = @import("decl.zig");
+const lower_error = @import("error.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -1178,23 +1179,25 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 /// binding guard diagnoses those at lowering.
 fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
     if (subject_ty.isBuiltin()) return null;
+    // The verdict the lowering binds from, re-queried — it is pure, so asking
+    // twice emits nothing.
+    if (pattern) |pat| {
+        if (pat.data == .field_access) return switch (lower_error.qualifyMatchArm(self, subject_ty, pat)) {
+            .ok => |ok| if (ok.payload == .void) null else ok.payload,
+            else => null,
+        };
+    }
     switch (self.module.types.get(subject_ty)) {
         .optional => |o| return o.child,
         .tagged_union => |tu| {
-            const pat = pattern orelse return null;
-            const pat_name = switch (pat.data) {
-                .enum_literal => |el| el.name,
-                .identifier => |id| id.name,
-                .field_access => |fa| fa.field,
-                else => return null,
-            };
+            const pat_name = lower_error.shorthandArmName(pattern) orelse return null;
             for (tu.fields) |f| {
                 if (std.mem.eql(u8, self.module.types.strings.get(f.name), pat_name)) return f.ty;
             }
             return null;
         },
         .@"error" => {
-            const member = Lowering.errorArmMember(self, subject_ty, pattern) orelse return null;
+            const member = lower_error.errorArmMember(self, subject_ty, pattern) orelse return null;
             const payload = self.module.types.memberPayload(member);
             return if (payload == .void) null else payload;
         },

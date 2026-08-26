@@ -1,0 +1,20 @@
+// A qualified `case` arm names a variant of the subject's own type; a prefix
+// naming another type refuses.
+
+@import "modules/std.sx";
+
+Color :: enum { red; green; blue; }
+
+Shape :: enum {
+    circle: f32;
+    dot;
+}
+
+main :: () -> i32 {
+    s := Shape.circle(2.0);
+    match s {
+        case Color.circle: |c| { print("c={}\n", c); }
+        case .dot:             { print("dot\n"); }
+    }
+    return 0;
+}
