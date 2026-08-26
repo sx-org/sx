@@ -262,6 +262,18 @@ pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
     };
 }
 
+/// The interned member a `match` arm names on an error subject: a qualified
+/// `Set.X` resolves in the set it names, every other spelling in the channel
+/// `chan` in hand. Null when no member spelling reaches the pattern or the
+/// name is no member of the set it resolves against.
+pub fn errorArmMember(self: *Lowering, chan: TypeId, pattern: ?*const Node) ?u32 {
+    const pat = pattern orelse return null;
+    if (qualifiedErrorMember(self, pat)) |qm|
+        return self.module.types.errorSetMemberId(qm.set, qm.member);
+    const name = errorArmMemberName(pat) orelse return null;
+    return self.module.types.errorSetMemberId(chan, name);
+}
+
 /// The channel a `|` composition in type position denotes, or null when an
 /// operand names no error set.
 pub fn composedChannel(self: *Lowering, node: *const Node, owner_name: []const u8) ?TypeId {

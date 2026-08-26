@@ -1193,8 +1193,7 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
             return null;
         },
         .@"error" => {
-            const name = Lowering.errorArmMemberName(pattern) orelse return null;
-            const member = self.module.types.errorSetMemberId(subject_ty, name) orelse return null;
+            const member = Lowering.errorArmMember(self, subject_ty, pattern) orelse return null;
             const payload = self.module.types.memberPayload(member);
             return if (payload == .void) null else payload;
         },

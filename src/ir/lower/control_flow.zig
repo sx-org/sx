@@ -1592,9 +1592,12 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
             const case_val: u64 = blk: {
+                if (is_error_set_match) break :blk @intCast(Lowering.errorArmMember(self, subject_ty, pat) orelse
+                    self.anonymousErrorMember(Lowering.errorArmMemberName(pat) orelse ""));
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
+                    .field_access => |fa| fa.field,
                     .int_literal => |il| break :blk @intCast(il.value),
                     .char_literal => |cl| break :blk @intCast(cl.value),
                     .bool_literal => |bl| break :blk @as(u64, if (bl.value) 1 else 0),
@@ -1631,9 +1634,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
-                    } else if (ty_info == .@"error") {
-                        break :blk @intCast(self.module.types.errorSetMemberId(subject_ty, pat_name) orelse
-                            self.anonymousErrorMember(pat_name));
                     }
                 }
                 break :blk @intCast(i);
@@ -1735,7 +1735,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 // out of the channel value.
                 const pat_name = Lowering.errorArmMemberName(arm.pattern) orelse "";
                 const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
-                const member = self.module.types.errorSetMemberId(subject_ty, pat_name);
+                const member = Lowering.errorArmMember(self, subject_ty, arm.pattern);
                 const payload_ty = if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
                 if (member == null) {
                     if (self.diagnostics) |diags| {
@@ -1761,6 +1761,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 const pat_name: []const u8 = if (arm.pattern) |arm_pat| switch (arm_pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
+                    .field_access => |fa| fa.field,
                     else => "",
                 } else "";
                 if (!subject_ty.isBuiltin()) {

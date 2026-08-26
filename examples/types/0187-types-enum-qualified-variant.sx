@@ -1,7 +1,8 @@
-// Qualified enum-variant construction: `EnumType.variant` for a payloadless
-// variant, the explicit twin of the leading-dot `.variant` form. Works for a
-// plain enum and for a payloadless variant of a tagged union; a payload-carrying
-// variant keeps its call form (`Shape.circle(2.0)`), unaffected.
+// Qualified enum-variant spelling: `EnumType.variant` for a payloadless variant,
+// the explicit twin of the leading-dot `.variant` form, in construction and in a
+// `case` arm. Works for a plain enum and for a payloadless variant of a tagged
+// union; a payload-carrying variant keeps its call form (`Shape.circle(2.0)`),
+// unaffected.
 
 @import "modules/std.sx";
 
@@ -16,9 +17,9 @@ main :: () {
     // Plain enum, qualified construction.
     c := Color.green;
     match c {
-        case .red:   { print("red\n"); }
-        case .green: { print("green\n"); }
-        case .blue:  { print("blue\n"); }
+        case Color.green: { print("green\n"); }
+        case .red:        { print("red\n"); }
+        case .blue:       { print("blue\n"); }
     }
 
     // Tagged union: payloadless variant qualified, payload variant via call.

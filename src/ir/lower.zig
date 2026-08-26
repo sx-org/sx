@@ -3250,6 +3250,7 @@ pub const Lowering = struct {
     pub const literalTagName = lower_error.literalTagName;
     pub const raisedMember = lower_error.raisedMember;
     pub const errorArmMemberName = lower_error.errorArmMemberName;
+    pub const errorArmMember = lower_error.errorArmMember;
     pub const lowerErrorMemberConstruction = lower_error.lowerErrorMemberConstruction;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;
