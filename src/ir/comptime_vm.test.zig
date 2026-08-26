@@ -431,7 +431,7 @@ test "comptime_vm exec: const_string length + str_eq/str_ne" {
     try std.testing.expectEqual(@as(i64, 3), toI64(try v.run(&fb.func, &.{})));
 }
 
-test "comptime_vm exec: error_tag_name_get maps a tag id to its name string" {
+test "comptime_vm exec: error_member_name_get maps a member id to its name string" {
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
@@ -444,7 +444,7 @@ test "comptime_vm exec: error_tag_name_get maps a tag id to its name string" {
     defer fb.deinit();
     const b0 = fb.block(&.{});
     const id = fb.add(b0, inst(.{ .const_int = @intCast(bad) }, .i64));
-    const name = fb.add(b0, inst(.{ .error_tag_name_get = .{ .operand = ref(id) } }, .string));
+    const name = fb.add(b0, inst(.{ .error_member_name_get = .{ .operand = ref(id) } }, .string));
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(name) } }, .void));
 
     var v = vm.Vm.init(alloc);

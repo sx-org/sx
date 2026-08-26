@@ -30,7 +30,7 @@ main :: () -> i32 {
     print("sizes={} {}\n", size_of(@int(64, .unsigned)), size_of(MyInt));
 
     f := || -> @int(8, .signed) { 0 };
-    print("lambda={}\n", type_eq(type_of(f()), i8));
+    print("lambda={}\n", type_eq(@typeOf(f()), i8));
 
     0
 }

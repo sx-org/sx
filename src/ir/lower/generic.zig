@@ -316,7 +316,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         },
         .call => |cl| {
             // Type-returning REFLECTION calls are static only when their own
-            // type argument is: `type_of(x)` with an `any`-typed operand
+            // type argument is: `@typeOf(x)` with an `any`-typed operand
             // answers the runtime TAG (freezing it statically said "any"
             // where the two-step form read "Point"), and
             // `struct_field_type(tp, i)` / `variant_type(tp, i)` /
@@ -324,7 +324,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
-                if (std.mem.eql(u8, cn, "type_of") and cl.args.len == 1) {
+                if (std.mem.eql(u8, cn, "@typeOf") and cl.args.len == 1) {
                     const aty = self.inferExprType(cl.args[0]);
                     // An `any` or PROTOCOL operand answers the runtime
                     // type_id word — freezing it statically would say
@@ -380,11 +380,11 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
         .pack_index_type_expr,
         => return true,
         .call => |cl| {
-            // `type_of(x)` resolves statically when `x`'s type is
-            // known — except an `any`/PROTOCOL operand, whose type_of is
+            // `@typeOf(x)` resolves statically when `x`'s type is
+            // known — except an `any`/PROTOCOL operand, whose `@typeOf` is
             // the runtime type_id word.
             if (cl.callee.data == .identifier and
-                std.mem.eql(u8, cl.callee.data.identifier.name, "type_of") and
+                std.mem.eql(u8, cl.callee.data.identifier.name, "@typeOf") and
                 cl.args.len == 1)
             {
                 const aty = self.inferExprType(cl.args[0]);
@@ -423,7 +423,7 @@ pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
 /// (e.g. `RaceResult(T)`). Such a call is type-shaped: `resolveTypeArg` resolves
 /// it via `resolveTypeCallWithBindings` -> `instantiateTypeFunction`. The static
 /// `isTypeShapedAstNode` only recognizes the type-returning BUILTINS
-/// (`field_type`/`pointee`/`type_of`) — it has no program index — so a user
+/// (`field_type`/`pointee`/`@typeOf`) — it has no program index — so a user
 /// type-fn call in a `$E: Type` argument slot would otherwise never be seen as a
 /// type and the param would fail to bind ("cannot infer generic type parameter").
 /// This lets a synthesized result type flow as a type argument, e.g.
@@ -574,14 +574,14 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
         },
         .call => |cl| {
-            // `type_of(x)` resolves to `inferExprType(x)` at lower
+            // `@typeOf(x)` resolves to `inferExprType(x)` at lower
             // time when `x`'s type is statically known (which it
             // is for any expression — type inference always
             // produces a concrete TypeId). Lets
-            // `type_of(a) == i64` fold the same as
+            // `@typeOf(a) == i64` fold the same as
             // `inferExprType(a) == i64`.
             if (cl.callee.data == .identifier and
-                std.mem.eql(u8, cl.callee.data.identifier.name, "type_of") and
+                std.mem.eql(u8, cl.callee.data.identifier.name, "@typeOf") and
                 cl.args.len == 1)
             {
                 const aty = self.inferExprType(cl.args[0]);
@@ -1110,7 +1110,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     }
 
     // Dynamic categories: scan TypeTable for matching types
-    const Category = enum { @"struct", @"enum", @"union", slice, array, pointer, vector, optional, error_set, closure };
+    const Category = enum { @"struct", @"enum", @"union", slice, array, pointer, vector, optional, @"error", closure };
     const cat: ?Category = if (std.mem.eql(u8, name, "struct"))
         .@"struct"
     else if (std.mem.eql(u8, name, "enum"))
@@ -1127,8 +1127,8 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         .vector
     else if (std.mem.eql(u8, name, "optional"))
         .optional
-    else if (std.mem.eql(u8, name, "error_set"))
-        .error_set
+    else if (std.mem.eql(u8, name, "error"))
+        .@"error"
     else if (std.mem.eql(u8, name, "closure"))
         .closure
     else
@@ -1141,14 +1141,16 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 // a struct in the type table, and only the interface word
                 // names it.
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
-                .@"enum" => info == .@"enum" or info == .tagged_union,
+                // A `@Tag(E)` discriminates an error, so it classifies with the
+                // error it reads and never as a plain enum.
+                .@"enum" => (info == .@"enum" and info.@"enum".error_of == null) or info == .tagged_union,
                 .@"union" => info == .@"union" or info == .tagged_union,
                 .slice => info == .slice,
                 .array => info == .array,
                 .pointer => info == .pointer or info == .many_pointer,
                 .vector => info == .vector,
                 .optional => info == .optional,
-                .error_set => info == .error_set,
+                .@"error" => info == .@"error" or (info == .@"enum" and info.@"enum".error_of != null),
                 .closure => info == .closure,
             };
             if (matches and !hasUnresolvedElement(info)) {
@@ -1190,7 +1192,7 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
             }
             return null;
         },
-        .error_set => {
+        .@"error" => {
             const name = Lowering.errorArmMemberName(pattern) orelse return null;
             const member = self.module.types.errorSetMemberId(subject_ty, name) orelse return null;
             const payload = self.module.types.memberPayload(member);
@@ -1353,7 +1355,7 @@ pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
         "int",      "signed",    "unsigned", "float", "struct",  "interface",
         "enum",     "union",     "slice",    "array", "pointer", "vector",
-        "optional", "error_set", "closure",  "type",  "Type",
+        "optional", "error", "closure",  "type",  "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1374,7 +1376,7 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
             const categories = [_][]const u8{
                 "int",   "signed",  "unsigned", "float",     "bool",     "string",    "void",
                 "type",  "Type",    "struct",   "interface", "enum",     "union",     "slice",
-                "array", "pointer", "vector",   "closure",   "optional", "error_set",
+                "array", "pointer", "vector",   "closure",   "optional", "error",
             };
             for (categories) |cat| {
                 if (std.mem.eql(u8, name, cat)) return true;

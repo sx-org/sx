@@ -81,7 +81,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             const target = self.target_type orelse .unresolved;
             if (!target.isBuiltin()) {
                 switch (self.module.types.get(target)) {
-                    .error_set => return self.lowerErrorMemberConstruction(sl, target, variant_name, span),
+                    .@"error" => return self.lowerErrorMemberConstruction(sl, target, variant_name, span),
                     .tagged_union => |tu| return self.lowerTaggedEnumLiteral(sl, variant_name, target, tu, span),
                     else => {},
                 }
@@ -377,7 +377,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     if (!aggregate_ok) {
         // TypeTable.formatTypeName (not Lowering's) — the latter falls back
         // to `@tagName` for function / error-set / protocol types, leaking
-        // internal spellings ('function', 'error_set') into the message.
+        // internal spellings ('function', 'error') into the message.
         if (self.diagnostics) |d|
             d.addFmt(.err, span, "cannot build a struct literal for non-struct type '{s}'", .{self.module.types.formatTypeName(self.alloc, ty)});
         return self.zeroValue(ty);
@@ -1905,7 +1905,40 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     return null;
 }
 
+/// The type `.set` and `.name` answer with: on a live error (or a `@Tag` of
+/// one, or an `any` viewing either) `.set` is the error that declares the live
+/// member and `.name` its spelling; on a `Type`, `.name` is the type's own.
+/// Null when the receiver carries neither. Shared by lowering and inference.
+pub fn errorViewFieldType(self: *Lowering, obj_ty: TypeId, field: []const u8) ?TypeId {
+    const is_name = std.mem.eql(u8, field, "name");
+    if (obj_ty == .type_value) return if (is_name) .string else null;
+    if (!is_name and !std.mem.eql(u8, field, "set")) return null;
+    const holds_member = obj_ty == .any or (!obj_ty.isBuiltin() and switch (self.module.types.get(obj_ty)) {
+        .@"error" => true,
+        .@"enum" => |e| e.error_of != null,
+        else => false,
+    });
+    if (!holds_member) return null;
+    return if (is_name) .string else .type_value;
+}
+
+/// `.set` / `.name` on `obj`. An `any` receiver reads the member word out of
+/// the view first; the registry tables answer from it either way.
+fn lowerErrorViewField(self: *Lowering, obj: Ref, obj_ty: TypeId, field: []const u8) ?Ref {
+    const ty = self.errorViewFieldType(obj_ty, field) orelse return null;
+    if (obj_ty == .type_value) {
+        const args = self.alloc.dupe(Ref, &.{obj}) catch return null;
+        return self.builder.callBuiltin(.type_name, args, .string);
+    }
+    const member = if (obj_ty == .any) self.builder.emit(.{ .unbox_any = .{ .operand = obj } }, .u32) else obj;
+    return if (ty == .string)
+        self.builder.emit(.{ .error_member_name_get = .{ .operand = member } }, .string)
+    else
+        self.builder.emit(.{ .error_owner_get = .{ .operand = member } }, .type_value);
+}
+
 pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: []const u8, span: ast.Span) Ref {
+    if (lowerErrorViewField(self, obj, obj_ty, field)) |r| return r;
     const field_name_id = self.module.types.internString(field);
 
     // Check if it's a union type
@@ -2005,7 +2038,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     // An error-set destination types `.Name` as that set's member, membership
     // checked and optional-wrapped from `self.target_type`, which still holds
     // the un-unwrapped destination.
-    if (!target.isBuiltin() and self.module.types.get(target) == .error_set) {
+    if (!target.isBuiltin() and self.module.types.get(target) == .@"error") {
         return self.lowerErrorMemberShorthand(el.name, span);
     }
 
@@ -2120,7 +2153,7 @@ pub fn lowerErrorMemberShorthand(self: *Lowering, tag_name: []const u8, span: as
         // An open channel has no static member set, so it takes any spelling.
         if (!self.channelIsOpen(set_ty)) {
             if (self.diagnostics) |diags| {
-                const set_name = self.module.types.getString(self.module.types.get(set_ty).error_set.name);
+                const set_name = self.module.types.getString(self.module.types.get(set_ty).@"error".name);
                 diags.addFmt(.err, span, "error member '.{s}' is not in error set '{s}'", .{ tag_name, set_name });
             }
         }
@@ -2142,7 +2175,7 @@ pub fn anonymousErrorMember(self: *Lowering, name: []const u8) u32 {
 pub fn lowerQualifiedErrorMember(self: *Lowering, set_ty: TypeId, member: []const u8, span: ast.Span) Ref {
     const id = self.module.types.errorSetMemberId(set_ty, member) orelse blk: {
         if (self.diagnostics) |diags| {
-            const info = self.module.types.get(set_ty).error_set;
+            const info = self.module.types.get(set_ty).@"error";
             diags.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ self.module.types.getString(info.name), member });
         }
         break :blk self.anonymousErrorMember(member);
@@ -3949,7 +3982,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         break :blk2 self.builder.emit(.{ .bool_not = .{ .operand = operand } }, .bool);
                     }
                     const int_like = self.isIntEx(oty) or
-                        (!oty.isBuiltin() and self.module.types.get(oty) == .error_set);
+                        (!oty.isBuiltin() and self.module.types.get(oty) == .@"error");
                     if (int_like) {
                         const zero = self.builder.constInt(0, oty);
                         break :blk2 self.builder.emit(.{ .cmp_eq = .{ .lhs = operand, .rhs = zero } }, .bool);
@@ -4713,7 +4746,7 @@ pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
 /// has_value i1 by the caller):
 ///   • bool / integers (signed/unsigned/usize/isize)
 ///   • integer-backed nominals: `enum` (incl. `enum flags`, e.g. `if p & .read`)
-///     and `error_set` (a u32 tag) — both reach condBr as a plain integer
+///     and an error (a u32 tag) — both reach condBr as a plain integer
 ///   • pointers: `*T` / `[*]T` / `cstring` (compared against null)
 ///   • `optional` — the caller emits `optional_has_value`
 /// Everything else (float, void, string, any, type_value, struct/union/tuple/
@@ -4726,7 +4759,7 @@ fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
     return switch (self.module.types.get(ty)) {
         .bool, .signed, .unsigned, .usize, .isize => true,
         .pointer, .many_pointer, .cstring => true,
-        .@"enum", .error_set => true,
+        .@"enum", .@"error" => true,
         .optional => true,
         else => false,
     };
@@ -4764,7 +4797,7 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
     const v = self.lowerExpr(node);
     if (ty == .unresolved) return v;
     return switch (self.module.types.get(ty)) {
-        .signed, .unsigned, .usize, .isize, .@"enum", .error_set => self.builder.emit(.{ .cmp_ne = .{
+        .signed, .unsigned, .usize, .isize, .@"enum", .@"error" => self.builder.emit(.{ .cmp_ne = .{
             .lhs = v,
             .rhs = self.builder.constInt(0, ty),
         } }, .bool),
@@ -4780,7 +4813,7 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
 /// `subject is target`. The target is a TYPE, so the answer is a
 /// classification, never a value comparison. Four subject shapes reach here:
 /// a static type reference (folded), an interface handle (a handle's referent
-/// is behind `type_of`, so the handle itself answers about the interface it
+/// is behind `@typeOf`, so the handle itself answers about the interface it
 /// carries), an `any` box (its tag, unpeeled), and a runtime `Type` value.
 /// Anything else is a statically-typed value and folds through its own type.
 pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
@@ -4790,7 +4823,7 @@ pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     const subject_ty = self.builder.getRefType(subject);
 
     // An interface HANDLE classifies as the interface it carries: the referent
-    // is reached through `type_of(h)`, not through the handle.
+    // is reached through `@typeOf(h)`, not through the handle.
     if (self.getProtocolInfo(subject_ty)) |_| return self.builder.constBool(staticAnswerOrFalse(self, subject_ty, bop.rhs));
 
     const tag: Ref = if (subject_ty == .type_value)
@@ -4921,7 +4954,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // Type-literal comparison fold: when both sides are type-shaped
     // AST nodes (`i64`, `*u8`, `?T`, `[3]f64`, etc.) OR resolve to
-    // a static TypeId at lower time (`type_of(x)` for any
+    // a static TypeId at lower time (`@typeOf(x)` for any
     // statically-typed `x`), resolve each and emit a `const_bool`.
     // Same semantic as `type_eq(A, B)` but using the standard `==`
     // operator — the user's intuition. Without the fold, both
@@ -4941,7 +4974,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `{tag, data-pointer}` — the only comparable words are the view
     // address (accidental pointer identity) — so there is no meaningful
     // language-level equality. Unbox to a typed value first, or compare
-    // `type_of(av)` for tag questions.
+    // `@typeOf(av)` for tag questions.
     if (bop.op == .eq or bop.op == .neq) {
         const lhs_ty = self.inferExprType(bop.lhs);
         const rhs_ty = self.inferExprType(bop.rhs);
@@ -4950,7 +4983,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             lhs_ty != .void and rhs_ty != .void)
         {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot compare an 'any' value with '{s}': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare 'type_of(av)' against a type", .{if (bop.op == .eq) "==" else "!="});
+                d.addFmt(.err, ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot compare an 'any' value with '{s}': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare '@typeOf(av)' against a type", .{if (bop.op == .eq) "==" else "!="});
             }
             return self.builder.constBool(false);
         }

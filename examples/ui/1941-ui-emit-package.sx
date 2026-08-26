@@ -19,7 +19,7 @@ main :: () -> i32 {
 
     print("children {}\n", stack.children.len);
     for *c in stack.children {
-        print("  {}\n", type_of(c.*));
+        print("  {}\n", @typeOf(c.*));
     }
 
     root : View = stack;

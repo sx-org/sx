@@ -92,7 +92,7 @@ pub fn errorSetTypeOf(self: *Lowering, node: *const Node) ?TypeId {
 /// `ty` when it is an error channel, else null.
 fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
-    return if (self.module.types.get(ty) == .error_set) ty else null;
+    return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
 /// `@Tag(T)`: T's discriminant. An error views as the payload-free enum over
@@ -101,7 +101,7 @@ fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
 pub fn tagTypeFor(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
-        .error_set => self.module.types.errorTagEnum(ty),
+        .@"error" => self.module.types.errorTagEnum(ty),
         .@"enum" => ty,
         .tagged_union => self.module.types.unionTagEnum(ty),
         else => null,
@@ -138,7 +138,7 @@ pub fn lowerTagOf(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
 /// channel's payload area.
 pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
     const src = self.inferExprType(arg);
-    if (src.isBuiltin() or self.module.types.get(src) != .error_set) {
+    if (src != .any and (src.isBuiltin() or self.module.types.get(src) != .@"error")) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, span, "@errorPayload expects an error value; '{s}' is not one", .{self.formatTypeName(src)});
         }
@@ -172,7 +172,7 @@ pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
         else => return null,
     };
     if (ty.isBuiltin()) return null;
-    return if (self.module.types.get(ty) == .error_set) ty else null;
+    return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
 /// The error set a namespace-qualified prefix `ns.Set` names, resolved in the
@@ -197,7 +197,7 @@ fn namespacedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
         else => return null,
     };
     if (ty.isBuiltin()) return null;
-    return if (self.module.types.get(ty) == .error_set) ty else null;
+    return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
 pub const QualifiedErrorMember = struct { set: TypeId, member: []const u8 };
@@ -264,28 +264,30 @@ pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
 
 /// The channel a `|` composition in type position denotes, or null when an
 /// operand names no error set.
-pub fn composedChannel(self: *Lowering, node: *const Node) ?TypeId {
+pub fn composedChannel(self: *Lowering, node: *const Node, owner_name: []const u8) ?TypeId {
     const table = &self.module.types;
     var members = std.ArrayList(u32).empty;
     defer members.deinit(table.alloc);
-    if (!collectChannelMembers(self, node, &members)) return null;
+    if (!collectChannelMembers(self, node, owner_name, &members)) return null;
     return table.errorSetType(.empty, members.items);
 }
 
 /// Append what each operand of a `|` composition contributes: a named set,
 /// a qualified member, or an inline `error { … }` whose members this
 /// declaration owns.
-fn collectChannelMembers(self: *Lowering, node: *const Node, out: *std.ArrayList(u32)) bool {
+fn collectChannelMembers(self: *Lowering, node: *const Node, owner_name: []const u8, out: *std.ArrayList(u32)) bool {
     const table = &self.module.types;
     switch (node.data) {
         .binary_op => |b| {
             if (b.op != .bit_or) return false;
-            if (!collectChannelMembers(self, b.lhs, out)) return false;
-            return collectChannelMembers(self, b.rhs, out);
+            if (!collectChannelMembers(self, b.lhs, owner_name, out)) return false;
+            return collectChannelMembers(self, b.rhs, owner_name, out);
         },
         .error_set_decl => {
-            const info = type_bridge.errorSetDeclInfo(&node.data.error_set_decl, table, self);
-            out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
+            const esd = &node.data.error_set_decl;
+            const info = type_bridge.errorSetDeclInfoOwned(esd, table, self, owner_name);
+            out.appendSlice(table.alloc, info.@"error".tags) catch unreachable;
+            table.setErrorOwnerType(@ptrCast(esd), table.intern(info));
             return true;
         },
         .identifier => |id| return type_bridge.channelOperandMembers(id.name, table, self, out),
@@ -368,7 +370,7 @@ pub fn effectiveReturnType(self: *Lowering) ?TypeId {
 pub fn errorChannelOf(self: *Lowering, ret_ty: TypeId) ?TypeId {
     if (ret_ty.isBuiltin()) return null;
     switch (self.module.types.get(ret_ty)) {
-        .error_set => return ret_ty,
+        .@"error" => return ret_ty,
         .failable => |f| return f.err,
         else => return null,
     }
@@ -413,7 +415,7 @@ fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
     if (members.len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
     // A merge over one owner's members renders as that owner's spelling, which
     // is another channel's name; the member list tells the two apart.
-    const name = self.module.types.get(c).error_set.name;
+    const name = self.module.types.get(c).@"error".name;
     if (self.module.types.findByName(name)) |other| {
         if (other != c) {
             const list = memberList(self, members);
@@ -428,7 +430,7 @@ fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
 fn channelMembers(self: *Lowering, set: TypeId) []const u32 {
     if (set.isBuiltin()) return &.{};
     const info = self.module.types.get(set);
-    return if (info == .error_set) info.error_set.tags else &.{};
+    return if (info == .@"error") info.@"error".tags else &.{};
 }
 
 /// The `Owner.Member` spellings of `members`, comma-joined. Owned by the caller.
@@ -462,8 +464,8 @@ fn channelIsWrittenInferred(self: *Lowering, err_set: TypeId) bool {
 fn channelSpelling(self: *Lowering, set: TypeId) ?[]const u8 {
     if (set.isBuiltin()) return null;
     const info = self.module.types.get(set);
-    if (info != .error_set or info.error_set.tags.len > 0) return null;
-    return self.module.types.getString(info.error_set.name);
+    if (info != .@"error" or info.@"error".tags.len > 0) return null;
+    return self.module.types.getString(info.@"error".name);
 }
 
 /// True for the bare-`!` placeholder a WRITTEN fn-type spelling carries
@@ -487,12 +489,12 @@ pub fn channelIsOpen(self: *Lowering, set: TypeId) bool {
 }
 
 /// Diagnose every tag of `src` that is not also a member of `dst` (the
-/// enclosing function's named error set). Both must be `.error_set` types.
+/// enclosing function's named error set). Both must be error types.
 pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
     if (src.isBuiltin()) return;
     const src_info = self.module.types.get(src);
-    if (src_info != .error_set) return;
-    self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
+    if (src_info != .@"error") return;
+    self.diagTagsNotInSet(src_info.@"error".tags, dst, span);
 }
 
 /// Whether an error-set value of `src` is a legal retype to `dst`: every
@@ -503,11 +505,11 @@ pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) boo
     if (src.isBuiltin() or dst.isBuiltin()) return false;
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
-    if (src_info != .error_set or dst_info != .error_set) return false;
+    if (src_info != .@"error" or dst_info != .@"error") return false;
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return true;
-    for (src_info.error_set.tags) |tag| {
+    for (src_info.@"error".tags) |tag| {
         var found = false;
-        for (dst_info.error_set.tags) |d| {
+        for (dst_info.@"error".tags) |d| {
             if (d == tag) {
                 found = true;
                 break;
@@ -527,13 +529,13 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
     if (src.isBuiltin() or dst.isBuiltin()) return;
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
-    if (src_info != .error_set or dst_info != .error_set) return;
+    if (src_info != .@"error" or dst_info != .@"error") return;
     if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return;
-    const src_name = self.module.types.getString(src_info.error_set.name);
-    const dst_name = self.module.types.getString(dst_info.error_set.name);
-    for (src_info.error_set.tags) |tag| {
+    const src_name = self.module.types.getString(src_info.@"error".name);
+    const dst_name = self.module.types.getString(dst_info.@"error".name);
+    for (src_info.@"error".tags) |tag| {
         var found = false;
-        for (dst_info.error_set.tags) |d| {
+        for (dst_info.@"error".tags) |d| {
             if (d == tag) {
                 found = true;
                 break;
@@ -551,13 +553,13 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
 fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span: ast.Span) void {
     if (dst.isBuiltin()) return;
     const dst_info = self.module.types.get(dst);
-    if (dst_info != .error_set) return;
-    const src_info = self.module.types.get(qm.set).error_set;
+    if (dst_info != .@"error") return;
+    const src_info = self.module.types.get(qm.set).@"error";
     // Non-membership in Set is diagnosed at the member read.
     const tag = self.module.types.errorSetMemberId(qm.set, qm.member) orelse return;
-    if (containsTag(dst_info.error_set.tags, tag)) return;
+    if (containsTag(dst_info.@"error".tags, tag)) return;
     if (self.diagnostics) |diags| {
-        diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.error_set.name) });
+        diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.@"error".name) });
     }
 }
 
@@ -567,7 +569,7 @@ pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLitera
     const table = &self.module.types;
     const member = table.errorSetMemberId(set_ty, member_name) orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).error_set.name), member_name });
+            d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).@"error".name), member_name });
         }
         return self.builder.constUndef(set_ty);
     };
@@ -617,7 +619,7 @@ fn memberPayloadValue(self: *Lowering, sl: *const ast.StructLiteral, payload_ty:
 fn checkMemberPayloadConstructed(self: *Lowering, rm: RaisedMember, channel: TypeId, span: ast.Span) bool {
     if (rm.constructed) return true;
     const set = rm.set orelse channel;
-    if (set.isBuiltin() or self.module.types.get(set) != .error_set) return true;
+    if (set.isBuiltin() or self.module.types.get(set) != .@"error") return true;
     const member = self.module.types.errorSetMemberId(set, rm.member) orelse return true;
     const payload_ty = self.module.types.memberPayload(member);
     if (payload_ty == .void) return true;
@@ -631,14 +633,14 @@ fn checkMemberPayloadConstructed(self: *Lowering, rm: RaisedMember, channel: Typ
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
-/// not a `.error_set` TypeId).
+/// not an error TypeId).
 pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, span: ast.Span) void {
     if (dst.isBuiltin()) return;
     const dst_info = self.module.types.get(dst);
-    if (dst_info != .error_set) return;
+    if (dst_info != .@"error") return;
     for (src_tags) |tag| {
         var found = false;
-        for (dst_info.error_set.tags) |d| {
+        for (dst_info.@"error".tags) |d| {
             if (d == tag) {
                 found = true;
                 break;
@@ -646,7 +648,7 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
         }
         if (!found) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, span, "error member '{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.error_set.name) });
+                diags.addFmt(.err, span, "error member '{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.@"error".name) });
             }
         }
     }
@@ -657,7 +659,7 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
 fn raisedChannel(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
-        .error_set => ty,
+        .@"error" => ty,
         .optional => |o| raisedChannel(self, o.child),
         else => null,
     };
@@ -753,7 +755,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
                 lowerFailableForwardReturn(self, ref, ret_ty, val_ty, vf.err, span);
                 return;
             },
-            .error_set => {
+            .@"error" => {
                 if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries 0 value slots, but the function returns {d}", .{n_vals});
                 return;
             },
@@ -838,7 +840,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
 fn diagNoStaticMemberSet(self: *Lowering, dst_err: TypeId, span: ast.Span) void {
     if (self.diagnostics) |d| {
         const dst_info = self.module.types.get(dst_err);
-        d.addFmt(.err, span, "cannot forward a bare-`!` result through the named error set '{s}' — the source channel has no static member set", .{self.module.types.getString(dst_info.error_set.name)});
+        d.addFmt(.err, span, "cannot forward a bare-`!` result through the named error set '{s}' — the source channel has no static member set", .{self.module.types.getString(dst_info.@"error".name)});
     }
 }
 
@@ -872,7 +874,7 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
     if (val_ty == ret_ty) return ref;
     if (!val_ty.isBuiltin()) {
         switch (self.module.types.get(val_ty)) {
-            .error_set => {
+            .@"error" => {
                 if (!checkForwardSetCompat(self, val_ty, ret_ty, span)) {
                     return self.builder.constInt(0, ret_ty);
                 }
@@ -1175,7 +1177,7 @@ fn attemptType(self: *Lowering, a: Attempted) TypeId {
 /// surrounding attempt or fallback then consumes.
 fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
     const chan = tryBoundaryChannel(self, block);
-    if (!self.channelIsOpen(chan) and self.module.types.get(chan).error_set.tags.len == 0) {
+    if (!self.channelIsOpen(chan) and self.module.types.get(chan).@"error".tags.len == 0) {
         if (self.diagnostics) |diags| {
             diags.addFmt(.err, span, "`try` on a block needs a body that can fail; this one has no `try` or `raise`", .{});
         }
@@ -1901,14 +1903,14 @@ pub fn declaredChannelTags(self: *Lowering, fd: *const ast.FnDecl) []const u32 {
     const ty = self.resolveType(node);
     if (ty.isBuiltin()) return &.{};
     const info = self.module.types.get(ty);
-    return if (info == .error_set) info.error_set.tags else &.{};
+    return if (info == .@"error") info.@"error".tags else &.{};
 }
 
 /// `ret` with its error channel replaced by `chan`.
 pub fn withErrorChannel(self: *Lowering, ret: TypeId, chan: TypeId) TypeId {
     if (ret.isBuiltin()) return ret;
     return switch (self.module.types.get(ret)) {
-        .error_set => chan,
+        .@"error" => chan,
         .failable => |f| self.module.types.internFailable(f.value, chan),
         else => ret,
     };

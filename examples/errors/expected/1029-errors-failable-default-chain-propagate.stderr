@@ -1,4 +1,4 @@
-error: unhandled error reached main: A
+error: unhandled error reached main: E.A
 error return trace (most recent call last):
   fa at 1029-errors-failable-default-chain-propagate.sx:14:17
         if n == 0 { raise .A; }

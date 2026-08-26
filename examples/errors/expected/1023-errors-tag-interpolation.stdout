@@ -1,2 +1,2 @@
-a=BadDigit b=Overflow
-parse failed with Empty
+a=E.BadDigit b=E.Overflow
+parse failed with E.Empty

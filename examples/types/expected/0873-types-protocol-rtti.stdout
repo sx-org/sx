@@ -4,7 +4,7 @@ r=2
 soft null
 soft r=2
 or w=9
-catch: mismatch
+catch: CastError.mismatch
 caught w=1
 ok w=3
 circle r=2

@@ -2783,7 +2783,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // non-static fallback), never routed through here; the atomics lower to
         // dedicated atomic ops. Listed exhaustively on purpose — a new intrinsic
         // must decide here rather than fall through a catch-all.
-        .type_of,
+        .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
         .variant_count,
@@ -3091,7 +3091,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
 
         .size_of,
         .align_of,
-        .type_of,
+        .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
         .variant_count,
@@ -3379,7 +3379,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@call_ptr",
         .size_of,
         .align_of,
-        .type_of,
+        .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
         .variant_count,
@@ -3727,7 +3727,7 @@ fn isReflectionCall(name: []const u8) bool {
     return switch (id) {
         .size_of,
         .align_of,
-        .type_of,
+        .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
         .variant_count,
@@ -4165,11 +4165,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.emit(.{ .trace_resolve = .{ .operand = arg } }, frame_ty);
     }
     if (std.mem.eql(u8, name, "@errorName")) {
-        // The member name alone: the error value's runtime member id read out
-        // of the always-linked member-name table.
+        // `Owner.Member` — the error value's runtime member id read out of the
+        // qualified-name table.
         if (c.args.len < 1) return self.builder.constString(self.module.types.internString(""));
         const e = self.lowerExpr(c.args[0]);
-        return self.builder.emit(.{ .error_tag_name_get = .{ .operand = e } }, .string);
+        return self.builder.emit(.{ .error_name_get = .{ .operand = e } }, .string);
     }
     if (std.mem.eql(u8, name, "@tag")) {
         if (c.args.len < 1) return self.builder.constUndef(.i32);
@@ -4318,8 +4318,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         return self.builder.makeAny(tp, data);
     }
-    if (std.mem.eql(u8, name, "type_of")) {
-        // type_of(val) — produce a Type value (`.type_value`, a bare i64 handle).
+    if (std.mem.eql(u8, name, "@typeOf")) {
+        // @typeOf(val) — produce a Type value (`.type_value`, a bare i64 handle).
         if (c.args.len < 1) return self.builder.constType(.void);
         const arg_ty = self.inferExprType(c.args[0]);
         if (arg_ty == .any) {
@@ -4556,7 +4556,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
 /// builtins. An argument denotes a type iff it is a spelled /
 /// compile-time type or generic type parameter (the `isStaticTypeArg`
 /// shapes), or a runtime `Type` value — which is `.type_value`-typed at
-/// runtime (`type_of(x)`, a `[]Type` element `list[i]`, a `Type`-typed
+/// runtime (`@typeOf(x)`, a `[]Type` element `list[i]`, a `Type`-typed
 /// local / field / param). Any other expression — a value of type
 /// i64 / f64 / bool / a struct — is NOT a type.
 pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {

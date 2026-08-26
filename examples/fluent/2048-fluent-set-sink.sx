@@ -56,7 +56,7 @@ main :: () -> i32 {
 
     // The elements are ordinary set values: they answer for the member they carry.
     first := sink.children.items[0];
-    print("first is a {}\n", type_of(first));
+    print("first is a {}\n", @typeOf(first));
     0
 }
 

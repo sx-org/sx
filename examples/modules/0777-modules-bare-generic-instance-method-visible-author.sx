@@ -19,6 +19,6 @@
 
 main :: () -> i32 {
     x := Box(i64).make(7);
-    print("size={} tag={}\n", size_of(type_of(x)), x.tag());
+    print("size={} tag={}\n", size_of(@typeOf(x)), x.tag());
     0
 }

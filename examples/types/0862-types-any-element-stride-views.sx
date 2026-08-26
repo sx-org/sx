@@ -24,7 +24,7 @@ main :: () -> i64 {
     print("{} {} {}\n", any_element(vv, f32, 0), any_element(vv, f32, 1), any_element(vv, f32, 2));
 
     // Runtime element Type: same composition through the size table.
-    et := type_of(arr[0]);
+    et := @typeOf(arr[0]);
     print("{}\n", any_element(av, et, 2));           // 30
 
     // Views alias the array's storage.

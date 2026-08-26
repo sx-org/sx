@@ -1,7 +1,7 @@
 // Comptime `@run` formatting of an `any` that holds a `Type`.
 //
 // `print("{}", at)` where `at: any` holds a `Type` value routes through
-// `format` → `any_to_string`, whose `type := type_of(val)` lowers (for an
+// `format` → `any_to_string`, whose `type := @typeOf(val)` lowers (for an
 // `.any` operand) to `struct_get(val, 0)` — reading the any-Type's tag.
 // At runtime a `Type` value is the aggregate `{ tag=.any, value=tid }`,
 // so the read works and the type's name prints. The comptime interpreter
@@ -14,7 +14,7 @@
 ct_probe :: () {
     print("before\n");
     x : u64 = 1;
-    t : Type = type_of(x);
+    t : Type = @typeOf(x);
     at : any = t;
     print("name={}\n", @typeName(at));
     print("unsigned={}\n", at is unsigned);

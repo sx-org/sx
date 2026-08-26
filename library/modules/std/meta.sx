@@ -86,7 +86,7 @@ TypeInfo :: enum {
     function;
     closure;
     protocol;
-    error_set;
+    error;
     pack;
     any;
     noreturn;

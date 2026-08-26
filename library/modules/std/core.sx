@@ -18,7 +18,7 @@ out :: (str: string) -> void {
 // `@sqrt` / `@sin` / `@cos` / `@floor` are declared in math/scalar.sx.
 size_of :: ($T: Type) -> i64 intrinsic;
 align_of :: ($T: Type) -> i64 intrinsic;
-type_of :: (val: $T) -> Type intrinsic;
+@typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
 // duals are the variant_* family below; arrays/vectors use `.len` and
@@ -49,8 +49,8 @@ variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
-// The MEMBER name an error value carries — `D`, not `FooError.D`. The owner
-// is `@typeName` of the error.
+// `FooError.D` for the member an error value carries — the composition
+// `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
 // The discriminant an error, enum, or tagged-union value carries: `@Tag(T)`,
 // the type over T's members alone.
@@ -325,7 +325,7 @@ raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> 
 raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
 raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
 raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-                                                                // 4 tuple 5 union 6 array 7 vector 8 error_set
+                                                                // 4 tuple 5 union 6 array 7 vector 8 error
 raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
 raw_field_count  :: (t: u32) -> i64 intrinsic;
 raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId

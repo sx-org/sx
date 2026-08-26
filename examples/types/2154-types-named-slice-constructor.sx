@@ -49,7 +49,7 @@ boxed :: () -> void {
 // A narrow slice minted inside a GENERIC body reads the same through `any`.
 show :: ($L: Type, a: *[4]u8) -> void {
     s : @Slice(u8, L) = a.*[0..];
-    print("generic {} {}\n", @typeName(type_of(s)), s);
+    print("generic {} {}\n", @typeName(@typeOf(s)), s);
 }
 
 COMPTIME_SUM :: @run total(@Array(3, u8).[7, 8, 9]);
@@ -64,20 +64,20 @@ main :: () -> i32 {
     a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
 
     b : Bytes = a[0..];
-    print("len={} lenty={} b0={} b3={}\n", b.len, @typeName(type_of(b.len)), b[0], b[3]);
+    print("len={} lenty={} b0={} b3={}\n", b.len, @typeName(@typeOf(b.len)), b[0], b[3]);
     print("ptr0={} total={}\n", b.ptr[0], total(a));
 
     wide : []u8 = b;
-    print("wide={} wty={}\n", wide.len, @typeName(type_of(wide)));
+    print("wide={} wty={}\n", wide.len, @typeName(@typeOf(wide)));
 
     h := head(b);
-    print("sub={} h0={} h1={}\n", @typeName(type_of(h)), h[0], h[1]);
+    print("sub={} h0={} h1={}\n", @typeName(@typeOf(h)), h[0], h[1]);
 
     hold : Holder = Holder{ data = b };
     print("field={} size={}\n", hold.data[2], size_of(Holder));
 
     s : string = "ab";
-    print("string={} slice={}\n", s.len, @typeName(type_of(a[0..])));
+    print("string={} slice={}\n", s.len, @typeName(@typeOf(a[0..])));
     print("comptime={}\n", COMPTIME_SUM);
 
     boxed();

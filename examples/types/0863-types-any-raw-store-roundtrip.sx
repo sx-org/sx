@@ -21,9 +21,9 @@ Store :: struct {
     count: i64;
 
     put :: (self: *Store, v: any) {
-        n := size_of(type_of(v));
+        n := size_of(@typeOf(v));
         c.memcpy(*self.buf[self.used], raw_any_data(v), n);
-        self.tags[self.count] = type_of(v);
+        self.tags[self.count] = @typeOf(v);
         self.offs[self.count] = self.used;
         self.lens[self.count] = n;
         self.used += n;
@@ -46,7 +46,7 @@ main :: () -> i64 {
 
     print("{} {}\n", s.get(0), s.get(1));            // 42 2.500000
     print("{}\n", s.get(2));                          // Point{ x: 7, y: 9}
-    print("{}\n", @typeName(type_of(s.get(2))));      // Point
+    print("{}\n", @typeName(@typeOf(s.get(2))));      // Point
 
     // The store COPIED the bytes: mutating the source does not reach it.
     a = 0;
@@ -56,8 +56,8 @@ main :: () -> i64 {
     // buffer and re-view them under the same tag.
     wire : [16]u8 = .[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     pv := s.get(2);
-    c.memcpy(*wire[0], raw_any_data(pv), size_of(type_of(pv)));
-    restored := raw_make_any(type_of(pv), *wire[0]);
+    c.memcpy(*wire[0], raw_any_data(pv), size_of(@typeOf(pv)));
+    restored := raw_make_any(@typeOf(pv), *wire[0]);
     print("{}\n", restored.(Point).y);           // 9
 
     // Field views compose over the reassembled view too.

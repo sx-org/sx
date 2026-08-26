@@ -8,7 +8,7 @@
 meta :: @import "modules/std/meta.sx";
 
 print_any :: (av: any) {
-    ti := type_info(type_of(av));
+    ti := type_info(@typeOf(av));
     match ti {
         case .struct: |si| {
             print("{");

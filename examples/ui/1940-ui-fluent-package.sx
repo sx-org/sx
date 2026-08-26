@@ -31,7 +31,7 @@ main :: () -> i32 {
 
     // The set answers for the member each element carries.
     for *c in stack.children {
-        print("  {}\n", type_of(c.*));
+        print("  {}\n", @typeOf(c.*));
     }
 
     // A container is itself a member, so it forms the set slot.

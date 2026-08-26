@@ -4,11 +4,11 @@ i64 == string: false
 *u8 == *u8:    true
 ?i64 == ?i64:  true
 ?i64 == ?i32:  false
-=== 2. type_of(value) == T ===
-type_of(a) == i64:    true
-type_of(b) == f64:    true
-type_of(s) == string: true
-type_of(a) == f64:    false
+=== 2. @typeOf(value) == T ===
+@typeOf(a) == i64:    true
+@typeOf(b) == f64:    true
+@typeOf(s) == string: true
+@typeOf(a) == f64:    false
 === 3. Type variable storage ===
 t == f64:    true
 t == string: false
@@ -23,7 +23,7 @@ t == bool:   true
 === 5. print Type values ===
 literal: i64
 var:     string
-type_of(b): f64
+@typeOf(b): f64
 === 6. generic dispatch ===
 describe(i64):    int64
 describe(string): text

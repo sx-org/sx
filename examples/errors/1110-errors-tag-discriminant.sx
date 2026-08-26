@@ -2,8 +2,8 @@
 // `@Tag(T)`, the type over T's members alone. It compares with a `.Member`
 // shorthand, with another `@Tag`, and with a live error value — tag only,
 // with comparability following the ⊆ rule on the channels. `@typeName` of an
-// error names the owner, `@errorName` the member alone, and `@errorPayload`
-// views a live member's payload.
+// error names the owner, `@errorName` composes owner and member, and
+// `@errorPayload` views a live member's payload.
 
 @import "modules/std.sx";
 
@@ -25,7 +25,7 @@ main :: () -> i32 {
     _, a := boom(1);
 
     print("owner={} view={}\n", @typeName(FooError), @typeName(@Tag(FooError)));
-    print("member={} {}\n", @errorName(d), @errorName(a));
+    print("name={} {}\n", @errorName(d), @errorName(a));
     print("payload={}\n", @errorPayload(d));
 
     t := @tag(d);

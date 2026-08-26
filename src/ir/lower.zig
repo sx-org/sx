@@ -776,7 +776,7 @@ pub const Lowering = struct {
     /// assembly so the primary diagnostics stand alone instead of cascading
     /// a field-not-found per use site.
     context_structural_error: bool = false,
-    /// Names declared as a BLOCK-LOCAL type (a `Foo :: struct/enum/union/error_set`
+    /// Names declared as a BLOCK-LOCAL type (a `Foo :: struct/enum/union/error`
     /// or bare type-decl statement inside a fn / init body), keyed by the DECLARING
     /// source. A local type registers into the global type table and CLOBBERS a
     /// same-name top-level entry (`registerStructDecl`'s `findByName … orelse intern`
@@ -3897,6 +3897,7 @@ pub const Lowering = struct {
     pub const diagnoseSwizzleOob = lower_expr.diagnoseSwizzleOob;
     pub const lowerSwizzleRead = lower_expr.lowerSwizzleRead;
     pub const lowerFieldAccessOnType = lower_expr.lowerFieldAccessOnType;
+    pub const errorViewFieldType = lower_expr.errorViewFieldType;
     pub const lowerEnumLiteral = lower_expr.lowerEnumLiteral;
     pub const lowerErrorMemberShorthand = lower_expr.lowerErrorMemberShorthand;
     pub const anonymousErrorMember = lower_expr.anonymousErrorMember;

@@ -49,7 +49,7 @@ main :: () {
 
     // A literal spelled through the alias carries the instantiation's type.
     b := BoxI{ v = 5 };
-    print("{} {}\n", @typeName(type_of(b)), @typeName(type_of(BoxI{ v = 6 })));
+    print("{} {}\n", @typeName(@typeOf(b)), @typeName(@typeOf(BoxI{ v = 6 })));
     //stdout: Box__i64 Box__i64
 
     b1 := Box(i64){ v = 1 };

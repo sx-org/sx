@@ -1,6 +1,6 @@
 // An instantiation spelling is legal wherever a type is expected, including a
 // type-switch arm (`case Buffer(f32):`, nested `case Buffer(Buffer(f32)):`) and
-// a type-value comparison (`type_of(x) == Buffer(f32)`). An arm that names a
+// a type-value comparison (`@typeOf(x) == Buffer(f32)`). An arm that names a
 // DIFFERENT instantiation of the same template does not match.
 @import "modules/std.sx";
 
@@ -22,7 +22,7 @@ main :: () {
     //stdout: f32 arm 7
 
     // Comparison position: identity of the interned instantiation.
-    print("{} {}\n", type_of(a) == Buffer(f32), type_of(a) == Buffer(i64));
+    print("{} {}\n", @typeOf(a) == Buffer(f32), @typeOf(a) == Buffer(i64));
     //stdout: true false
 
     // An `any` subject dispatches on the same tag; the i64 arm is live here and
@@ -50,6 +50,6 @@ main :: () {
     }
     //stdout: nested 9
 
-    print("{}\n", type_of(z) == Buffer(Buffer(f32)));
+    print("{}\n", @typeOf(z) == Buffer(Buffer(f32)));
     //stdout: true
 }

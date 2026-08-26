@@ -331,7 +331,7 @@ optional_to_string :: (o: $T) -> string {
 // boxed integer cannot go through it.
 any_int :: (av: any) -> i64 {
     p := av.(@Any).data;
-    n := size_of(type_of(av));
+    n := size_of(@typeOf(av));
     if n == 1 { return p.(*i8).*; }
     if n == 2 { return p.(*i16).*; }
     if n == 4 { return p.(*i32).*; }
@@ -340,7 +340,7 @@ any_int :: (av: any) -> i64 {
 
 any_uint :: (av: any) -> i64 {
     p := av.(@Any).data;
-    n := size_of(type_of(av));
+    n := size_of(@typeOf(av));
     if n == 1 { return p.(*u8).*; }
     if n == 2 { return p.(*u16).*; }
     if n == 4 { return p.(*u32).*; }
@@ -349,13 +349,13 @@ any_uint :: (av: any) -> i64 {
 
 any_float :: (av: any) -> f64 {
     p := av.(@Any).data;
-    if size_of(type_of(av)) == 4 { return p.(*f32).*; }
+    if size_of(@typeOf(av)) == 4 { return p.(*f32).*; }
     p.(*f64).*
 }
 
 any_to_string :: (val: any) -> string {
     result := "<?>";
-    type := type_of(val);
+    type := @typeOf(val);
     match type {
         case void: result = "";
         case int: {
@@ -417,7 +417,20 @@ any_to_string :: (val: any) -> string {
                 result = r;
             }
         }
-        case error_set: { tagid : u32 = val.(@Any).data.(*u32).*; result = @errorName(tagid); }
+        // An error renders as its owner and member — `.set` is the error that
+        // declares the live member, `.name` its spelling — then the payload as
+        // it constructs. A struct payload brings its own braces; a `@Tag`
+        // reserves no payload area, so it stops at the name.
+        case error: {
+            r := concat(val.set.name, concat(".", val.name));
+            p := @errorPayload(val);
+            match @typeOf(p) {
+                case void: {}
+                case struct: r = concat(r, any_to_string(p));
+                else: r = concat(r, concat("{", concat(any_to_string(p), "}")));
+            }
+            result = r;
+        }
         // Vectors walk by element VIEW like arrays; the lane count comes
         // from the lanes table (a vector's ABI size is pow2-rounded, so
         // size/elem_size would over-count e.g. 3 lanes as 4).
@@ -597,13 +610,13 @@ print :: ($fmt: string, ..$args) {
 CastError :: error { mismatch }
 
 __sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
-    if !type_eq(type_of(av), T) { raise .mismatch; }
+    if !type_eq(@typeOf(av), T) { raise .mismatch; }
     return av.(@Any).data.(*T).*;
 }
 
 __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
-    if !type_eq(type_of(av), T) {
-        print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
+    if !type_eq(@typeOf(av), T) {
+        print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
         c.exit(1);
     }
     return av.(@Any).data.(*T).*;
@@ -622,7 +635,7 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
 // The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
 // failure — the optional IS the check (comma-ok parity).
 __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
-    if !type_eq(type_of(av), T) { return null; }
+    if !type_eq(@typeOf(av), T) { return null; }
     v : T = av.(@Any).data.(*T).*;
     return v;
 }
@@ -638,7 +651,7 @@ __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
 // present payload goes down the error channel; null passes through.
 __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
     if av := o {
-        if !type_eq(type_of(av), T) { raise .mismatch; }
+        if !type_eq(@typeOf(av), T) { raise .mismatch; }
         v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
@@ -649,8 +662,8 @@ __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
 // Unconsumed form (`v := o?.(T);`): a present, mismatched payload panics.
 __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> ?T {
     if av := o {
-        if !type_eq(type_of(av), T) {
-            print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
+        if !type_eq(@typeOf(av), T) {
+            print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
             c.exit(1);
         }
         v : T = av.(@Any).data.(*T).*;
@@ -663,7 +676,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
 // Soft form (`o?.(?T)`): chain-null and mismatch-null CONFLATE.
 __sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
     if av := o {
-        if !type_eq(type_of(av), T) { return null; }
+        if !type_eq(@typeOf(av), T) { return null; }
         v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;

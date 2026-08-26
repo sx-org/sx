@@ -165,9 +165,9 @@ test "resolveAstType: error_set_decl registers an error-set type + interns membe
 
     const id = type_bridge.resolveAstType(node, &table, null, null);
     const info = table.get(id);
-    try std.testing.expect(info == .error_set);
-    try std.testing.expectEqualStrings("ParseErr", table.getString(info.error_set.name));
-    try std.testing.expectEqual(@as(usize, 2), info.error_set.tags.len);
+    try std.testing.expect(info == .@"error");
+    try std.testing.expectEqualStrings("ParseErr", table.getString(info.@"error".name));
+    try std.testing.expectEqual(@as(usize, 2), info.@"error".tags.len);
     try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMemberId(id, "BadDigit").?));
     // Re-resolving the same decl dedups to the same TypeId.
     try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
@@ -228,9 +228,9 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
 
     const ia = type_bridge.resolveAstType(a, &table, null, null);
     const ib = type_bridge.resolveAstType(b, &table, null, null);
-    try std.testing.expect(table.get(ia) == .error_set);
-    try std.testing.expectEqualStrings("!", table.getString(table.get(ia).error_set.name));
-    try std.testing.expectEqual(@as(usize, 0), table.get(ia).error_set.tags.len); // empty until the SCC convergence pass runs
+    try std.testing.expect(table.get(ia) == .@"error");
+    try std.testing.expectEqualStrings("!", table.getString(table.get(ia).@"error".name));
+    try std.testing.expectEqual(@as(usize, 0), table.get(ia).@"error".tags.len); // empty until the SCC convergence pass runs
     try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder
 }
 

@@ -1,7 +1,7 @@
 // A static conformance ask answers site-local impl visibility; a runtime one
 // reads the program-unique pairs of the re-erasure table. The two differ only
 // under the visibility-disjoint duplicate impls of §3: `W is C` sees exactly
-// this file's impl and answers true, while `type_of(h)` and an `any` over the
+// this file's impl and answers true, while `@typeOf(h)` and an `any` over the
 // same referent find the pair duplicated program-wide and answer false.
 //
 // `h is C` sits outside the split: it asks `I`'s conformance, not `W`'s.
@@ -18,6 +18,6 @@ main :: () {
     av : any = w;
 
     print("static:  {}\n", W is C);
-    print("runtime: {} {}\n", type_of(h) is C, av is C);
+    print("runtime: {} {}\n", @typeOf(h) is C, av is C);
     print("handle:  {}\n", h is C);
 }

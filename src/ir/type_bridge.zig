@@ -381,7 +381,7 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         // type-shaped operand it IS the pointer type (`describe(*Padded)`).
         .unary_op => |uop| uop.op == .address_of and isTypeShapedAstNode(uop.operand, table),
         // A call to a comptime type-query / projection builtin whose RESULT is a
-        // Type — `field_type(T, i)`, `pointee(P)`, `type_of(x)`. These are
+        // Type — `field_type(T, i)`, `pointee(P)`, `@typeOf(x)`. These are
         // type-shaped, so an arg / initializer like `field_type(T, i)` resolves
         // through `resolveTypeArg` (which routes `.call` to
         // `resolveTypeCallWithBindings`, folding the index — incl. an `inline for`
@@ -410,7 +410,7 @@ pub fn isTypeReturningBuiltinName(name: []const u8) bool {
     return std.mem.eql(u8, name, "struct_field_type") or
         std.mem.eql(u8, name, "variant_type") or
         std.mem.eql(u8, name, "pointee_type") or
-        std.mem.eql(u8, name, "type_of");
+        std.mem.eql(u8, name, "@typeOf");
 }
 
 fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
@@ -768,13 +768,20 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
     } };
 }
 
-/// The `.error_set` body of `Foo :: error { A, B }`. The declaration owns its
+/// The error body of `Foo :: error { A, B }`. The declaration owns its
 /// members, so two sets listing the same spelling own two different members,
 /// and each member carries the payload type it declares. The caller (lowering)
 /// rejects an empty set, so this only sees non-empty declarations.
 pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeInfo {
+    return errorSetDeclInfoOwned(esd, table, inner, esd.name);
+}
+
+/// `errorSetDeclInfo` with the owner spelling supplied: an inline `error { … }`
+/// operand of a composition is owned by that composition, so its members render
+/// under the composition's name.
+pub fn errorSetDeclInfoOwned(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype, owner_name: []const u8) TypeInfo {
     const alloc = table.alloc;
-    const name_id = table.internString(esd.name);
+    const name_id = table.internString(owner_name);
     const owner = table.internErrorOwner(@ptrCast(esd), name_id);
 
     var member_ids = std.ArrayList(u32).empty;
@@ -790,7 +797,9 @@ pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: 
 }
 
 pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeId {
-    return table.intern(errorSetDeclInfo(esd, table, inner));
+    const id = table.intern(errorSetDeclInfo(esd, table, inner));
+    table.setErrorOwnerType(@ptrCast(esd), id);
+    return id;
 }
 
 /// Append the members the channel operand `name` contributes to `out`: a named
@@ -807,8 +816,8 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
     const set = inner.resolveName(name);
     if (set.isBuiltin()) return false;
     const info = table.get(set);
-    if (info != .error_set) return false;
-    out.appendSlice(table.alloc, info.error_set.tags) catch unreachable;
+    if (info != .@"error") return false;
+    out.appendSlice(table.alloc, info.@"error".tags) catch unreachable;
     return true;
 }
 
@@ -821,17 +830,17 @@ fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?
     const head = name[0..dot];
     _ = channelHeadErrorSet(head, table, inner) orelse return null;
     const set = inner.resolveName(head);
-    if (set.isBuiltin() or table.get(set) != .error_set) return null;
+    if (set.isBuiltin() or table.get(set) != .@"error") return null;
     return table.errorSetMemberId(set, name[dot + 1 ..]);
 }
 
 fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?TypeId {
     if (table.findByName(table.internString(head))) |probe| {
-        if (probe.isBuiltin() or table.get(probe) != .error_set) return null;
+        if (probe.isBuiltin() or table.get(probe) != .@"error") return null;
         return probe;
     }
     const aliased = inner.aliasType(head) orelse return null;
-    if (aliased.isBuiltin() or table.get(aliased) != .error_set) return null;
+    if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
     return aliased;
 }
 

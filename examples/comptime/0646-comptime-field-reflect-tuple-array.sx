@@ -1,6 +1,6 @@
 // Comptime field reflection (`struct_field_count` / `struct_field_name` /
 // `struct_field_type`) over aggregate kinds — struct, enum, and a positional
-// anonymous product (`type_of(.{…})`).
+// anonymous product (`@typeOf(.{…})`).
 //
 // BOTH the name-array build and the GEP sizing are driven from one source of
 // truth (`memberCount`/`memberName`), so they cannot diverge and a
@@ -24,9 +24,9 @@ main :: () -> i32 {
     // positional product: element types, index names
     pos := .{0, false};
     print("posproduct: fc={} ft=({},{}) fn0=[{}]\n",
-        struct_field_count(type_of(pos)),
-        @typeName(struct_field_type(type_of(pos), 0)), @typeName(struct_field_type(type_of(pos), 1)),
-        struct_field_name(type_of(pos), 0));
+        struct_field_count(@typeOf(pos)),
+        @typeName(struct_field_type(@typeOf(pos), 0)), @typeName(struct_field_type(@typeOf(pos), 1)),
+        struct_field_name(@typeOf(pos), 0));
 
     // named product: element labels recovered
     print("namproduct: fc={} fn=({},{})\n",

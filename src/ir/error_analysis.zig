@@ -127,7 +127,7 @@ pub const ErrorAnalysis = struct {
                     if (rm.set) |set| {
                         // What a qualified member contributes is its STATIC TYPE —
                         // the whole set, not the one member named at the site.
-                        for (self.l.module.types.get(set).error_set.tags) |t| {
+                        for (self.l.module.types.get(set).@"error".tags) |t| {
                             if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
                         }
                     } else {

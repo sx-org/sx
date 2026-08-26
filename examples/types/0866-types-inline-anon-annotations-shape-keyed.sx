@@ -18,8 +18,8 @@ main :: () -> i64 {
     // anon-param signature of the same shape.
     c : struct { x: i64; } = .{ x = 2 };
     print("same={} lit={} g={}\n",
-        type_eq(type_of(a), type_of(c)),
-        type_eq(type_of(a), type_of(.{ x = 3 })),
+        type_eq(@typeOf(a), @typeOf(c)),
+        type_eq(@typeOf(a), @typeOf(.{ x = 3 })),
         g(a));
 
     // Inline unions: distinct shapes are distinct types.

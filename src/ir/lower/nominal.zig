@@ -267,6 +267,7 @@ fn internErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const decl_key: *const anyopaque = @ptrCast(esd);
     const info = type_bridge.errorSetDeclInfo(esd, table, self);
     const id = adoptableForwardStub(table, info) orelse table.intern(info);
+    table.setErrorOwnerType(decl_key, id);
     table.type_decl_tids.put(decl_key, id) catch {};
 }
 
@@ -285,7 +286,7 @@ pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) 
 /// struct shadow's reservation — is that declaration's, so the set interns its
 /// own instead.
 fn adoptableForwardStub(table: *types.TypeTable, info: types.TypeInfo) ?TypeId {
-    const cand = table.findByName(info.error_set.name) orelse return null;
+    const cand = table.findByName(info.@"error".name) orelse return null;
     if (!adoptsForwardStructStub(table.get(cand), info)) return null;
     if (table.isDeclSlot(cand)) return null;
     table.replaceKeyedInfo(cand, info);
@@ -404,7 +405,7 @@ const ShadowTypeDecl = union(enum) {
     @"struct": *const ast.StructDecl,
     @"enum": *const ast.EnumDecl,
     @"union": *const ast.UnionDecl,
-    error_set: *const ast.ErrorSetDecl,
+    @"error": *const ast.ErrorSetDecl,
     protocol: *const ast.ProtocolDecl,
 
     pub fn key(self: ShadowTypeDecl) *const anyopaque {
@@ -436,13 +437,13 @@ pub fn topLevelTypeDecl(decl: *const Node) ?ShadowTypeDecl {
         .struct_decl => .{ .@"struct" = &decl.data.struct_decl },
         .enum_decl => .{ .@"enum" = &decl.data.enum_decl },
         .union_decl => .{ .@"union" = &decl.data.union_decl },
-        .error_set_decl => .{ .error_set = &decl.data.error_set_decl },
+        .error_set_decl => .{ .@"error" = &decl.data.error_set_decl },
         .protocol_decl => .{ .protocol = &decl.data.protocol_decl },
         .const_decl => |cd| switch (cd.value.data) {
             .struct_decl => .{ .@"struct" = &cd.value.data.struct_decl },
             .enum_decl => .{ .@"enum" = &cd.value.data.enum_decl },
             .union_decl => .{ .@"union" = &cd.value.data.union_decl },
-            .error_set_decl => .{ .error_set = &cd.value.data.error_set_decl },
+            .error_set_decl => .{ .@"error" = &cd.value.data.error_set_decl },
             else => null,
         },
         else => null,
@@ -455,7 +456,7 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
         .@"struct" => |sd| self.reserveShadowStructSlot(sd),
         .@"enum" => |ed| self.reserveShadowEnumSlot(ed),
         .@"union" => |ud| self.reserveShadowUnionSlot(ud),
-        .error_set => |esd| self.reserveShadowErrorSetSlot(esd),
+        .@"error" => |esd| self.reserveShadowErrorSetSlot(esd),
         .protocol => |pd| self.reserveShadowProtocolSlot(pd),
     }
 }
@@ -496,7 +497,7 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
     // context — `type_resolver.resolveNamed` always stubs a struct), which the
     // `findByName` above then returns. Adopting a wrong-kind stub needs a
     // re-key, NOT the in-place `updatePreservingKey` body-fill — whose
-    // kind-stability assert trips on struct→enum/union/error_set.
+    // kind-stability assert trips on struct→enum/union/error.
     if (adoptsForwardStructStub(table.get(id), stamped))
         table.replaceKeyedInfo(id, stamped)
     else
@@ -508,14 +509,14 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
 /// TRUE when `existing` is a forward-reference STRUCT placeholder (empty
 /// fields — the stateless resolver's stub for an as-yet-unregistered name) and
 /// `incoming` is a NON-struct nominal (enum / union / tagged_union /
-/// error_set): the one case where `internNamedTypeDecl` must re-key the slot
+/// error): the one case where `internNamedTypeDecl` must re-key the slot
 /// rather than fill its body in place. A struct adopting its own struct stub
 /// is same-kind and stays on `updatePreservingKey`; a fresh-interned slot has
 /// no stub to adopt.
 pub fn adoptsForwardStructStub(existing: types.TypeInfo, incoming: types.TypeInfo) bool {
     if (existing != .@"struct" or existing.@"struct".fields.len != 0) return false;
     return switch (incoming) {
-        .@"enum", .@"union", .tagged_union, .error_set => true,
+        .@"enum", .@"union", .tagged_union, .@"error" => true,
         else => false,
     };
 }

@@ -1618,7 +1618,7 @@ fn isFunctionType(self: *Lowering, ty: TypeId) bool {
 
 fn isErrorSetType(self: *Lowering, ty: TypeId) bool {
     if (ty.isBuiltin()) return false;
-    return self.module.types.get(ty) == .error_set;
+    return self.module.types.get(ty) == .@"error";
 }
 
 /// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun

@@ -27,11 +27,11 @@ main :: () {
     print("{}\n", describe("s"));
 
     // The category match on a runtime Type value classifies the same way.
-    match type_of(cap) {
+    match @typeOf(cap) {
         case closure: print("ty: closure\n");
         else:         print("ty: other\n");
     }
-    match type_of(42) {
+    match @typeOf(42) {
         case closure: print("ty: closure\n");
         else:         print("ty: other\n");
     }

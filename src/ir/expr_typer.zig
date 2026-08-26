@@ -263,6 +263,7 @@ pub const ExprTyper = struct {
                         return if (is_opt_chain) self.l.module.types.optionalOf(mp_ty) else mp_ty;
                     }
                 }
+                if (self.l.errorViewFieldType(obj_ty, fa.field)) |t| return t;
                 if (!obj_ty.isBuiltin()) {
                     const field_name_id = self.l.module.types.internString(fa.field);
                     // Check union fields (tagged enum payloads) + promoted struct fields

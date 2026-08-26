@@ -27,13 +27,13 @@ main :: () {
 
     // runtime variant_value: ordinals, explicit values, flags
     cv : any = Color.green;
-    ct := type_of(cv);
+    ct := @typeOf(cv);
     print("rt vv color: {} {} {}\n", variant_value(ct, 0), variant_value(ct, 1), variant_value(ct, 2));
     pv : any = Prio.mid;
-    pt := type_of(pv);
+    pt := @typeOf(pv);
     print("rt vv prio: {} {} {}\n", variant_value(pt, 0), variant_value(pt, 1), variant_value(pt, 2));
     fv : any = Flag.B;
-    ft := type_of(fv);
+    ft := @typeOf(fv);
     print("rt vv flags: {} {} {} {}\n", variant_value(ft, 0), variant_value(ft, 1), variant_value(ft, 2), variant_value(ft, 3));
     print("rt is_flags: {} {}\n", is_flags(ft), is_flags(ct));
 
@@ -41,20 +41,20 @@ main :: () {
     print("rt vi color: {}\n", variant_index(ct, cv));
     print("rt vi prio: {}\n", variant_index(pt, pv));
     nv : any = Neg.minus;
-    nt := type_of(nv);
+    nt := @typeOf(nv);
     print("rt vi neg: {} (vv {})\n", variant_index(nt, nv), variant_value(nt, 0));
 
     // tagged union with payload + explicit tags
     w : Wire = .data(42);
     wv : any = w;
-    wt := type_of(wv);
+    wt := @typeOf(wv);
     print("rt vi wire: {}\n", variant_index(wt, wv));
     print("rt vn wire: {}\n", variant_name(wt, variant_index(wt, wv)));
 
     // variant_payload composes with a runtime index
     s : Shape = .circle(2.5);
     sv : any = s;
-    st := type_of(sv);
+    st := @typeOf(sv);
     si := variant_index(st, sv);
     print("shape idx: {} name: {}\n", si, variant_name(st, si));
     pl := variant_payload(sv, si);
@@ -63,7 +63,7 @@ main :: () {
     // layout-struct union: u32 tag narrower than the 8-byte header
     e : Ev = .key(7);
     ev : any = e;
-    et := type_of(ev);
+    et := @typeOf(ev);
     ei := variant_index(et, ev);
     print("ev idx: {} name: {} payload: {}\n", ei, variant_name(et, ei), variant_payload(ev, ei));
 

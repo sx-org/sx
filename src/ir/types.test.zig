@@ -422,8 +422,8 @@ test "errorSetType: u32 layout, owner display, identity is the member set" {
     try std.testing.expectEqualStrings("ParseErr", table.typeName(set));
     try std.testing.expectEqual(set, table.findByName(name).?);
     const info = table.get(set);
-    try std.testing.expect(info == .error_set);
-    try std.testing.expectEqual(@as(usize, 3), info.error_set.tags.len);
+    try std.testing.expect(info == .@"error");
+    try std.testing.expectEqual(@as(usize, 3), info.@"error".tags.len);
     try std.testing.expectEqual(set, table.errorSetType(.empty, &members));
     try std.testing.expectEqual(members[0], table.errorSetMemberId(set, "BadDigit").?);
     try std.testing.expect(table.errorSetMemberId(set, "Nope") == null);
@@ -487,7 +487,7 @@ test "errorSetType: members stored sorted, duplicates collapsed" {
     const a = table.internMember(owner, "A");
     const b = table.internMember(owner, "B");
     const set = table.errorSetType(.empty, &[_]u32{ c, a, b, a });
-    const stored = table.get(set).error_set.tags;
+    const stored = table.get(set).@"error".tags;
     try std.testing.expectEqual(@as(usize, 3), stored.len);
     try std.testing.expect(stored[0] < stored[1] and stored[1] < stored[2]);
 }
@@ -777,7 +777,7 @@ test "internNominal(.,0) interns identically to intern" {
         .{ .@"enum" = .{ .name = table.internString("E"), .variants = &variants } },
         .{ .@"union" = .{ .name = table.internString("U"), .fields = &f } },
         .{ .tagged_union = .{ .name = table.internString("T"), .fields = &f, .tag_type = .i64 } },
-        .{ .error_set = .{ .name = table.internString("Err"), .tags = &tags } },
+        .{ .@"error" = .{ .name = table.internString("Err"), .tags = &tags } },
     };
     for (cases) |info| {
         const old = table.intern(info); // structural path

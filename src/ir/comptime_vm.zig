@@ -1420,13 +1420,43 @@ pub const Vm = struct {
                 try self.writeField(table, addr + fieldOffset(table, fty, 4), sfields[4].ty, try self.makeStringValue(table, line_text));
                 return .{ .value = addr };
             },
-            // `error_tag_name(e)` — the runtime tag id (a word) → its name string via
-            // the always-linked tag-name table. Pure: builds a `{ptr,len}` string in
-            // comptime memory.
-            .error_tag_name_get => |u| {
+            // The member word a live error carries, read through the registry
+            // tables. Pure: each builds a `{ptr,len}` string in comptime memory,
+            // or hands back a `TypeId` handle.
+            .error_member_name_get => |u| {
                 const table = try self.requireTable();
                 const id: u32 = @intCast(frame.get(u.operand.index()));
                 return .{ .value = try self.makeStringValue(table, table.getTagName(id)) };
+            },
+            .error_name_get => |u| {
+                const table = try self.requireTable();
+                const id: u32 = @intCast(frame.get(u.operand.index()));
+                const q = table.memberQualifiedName(self.gpa, id);
+                defer self.gpa.free(q);
+                return .{ .value = try self.makeStringValue(table, q) };
+            },
+            .error_owner_get => |u| {
+                const table = try self.requireTable();
+                const id: u32 = @intCast(frame.get(u.operand.index()));
+                return .{ .value = @intCast(table.memberOwnerType(id).index()) };
+            },
+            // The live member's payload behind an `any` view. A channel is its
+            // member word plus the payload area it reserves, so a view sized to
+            // the word alone — a `@Tag` — has no area and views as `void`.
+            .error_payload_view => |u| {
+                const table = try self.requireTable();
+                if (ref_types[u.operand.index()] != .any)
+                    return self.failMsg("comptime VM: @errorPayload of an error value needs its payload area, which a comptime channel register does not carry");
+                const view = frame.get(u.operand.index());
+                const data = try self.machine.readWord(view, 8);
+                const tid = TypeId.fromIndex(@intCast(try self.machine.readWord(view + 8, 8)));
+                const member: u32 = @intCast(try self.machine.readWord(data, 4));
+                const has_area = table.typeSizeBytes(tid) > 4;
+                const payload = if (has_area) table.memberPayload(member) else .void;
+                const addr = self.machine.allocBytes(table.typeSizeBytes(.any), table.typeAlignBytes(.any));
+                try self.machine.writeWord(addr, 8, if (has_area) data + 4 else 0);
+                try self.machine.writeWord(addr + 8, 8, @intCast(payload.index()));
+                return .{ .value = addr };
             },
 
             // ── Calls ───────────────────────────────────────────
@@ -2419,7 +2449,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// queries, given the arg's IR type `aty` and its register word `w`. A
     /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, type_id@8 }` yields
     /// its type_id (the boxed value's runtime type), unless it == `type_value` — a
-    /// boxed Type (the `type_of(x)` shape) whose real id sits behind the data
+    /// boxed Type (the `@typeOf(x)` shape) whose real id sits behind the data
     /// pointer.
     fn reflectArgTypeId(self: *Vm, aty: TypeId, w: Reg) Error!TypeId {
         // A `TypeId` index is a u32; a word that doesn't fit is a garbage/mis-read
@@ -2703,7 +2733,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .function => vname = "function",
             .closure => vname = "closure",
             .protocol => vname = "protocol",
-            .error_set => vname = "error_set",
+            .@"error" => vname = "error",
             .pack => vname = "pack",
         }
 
@@ -3030,7 +3060,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// except an error channel, whose register holds only the leading tag word
     /// of a slot its payload area widens.
     fn wordBytes(table: *const types.TypeTable, ty: TypeId) usize {
-        if (!ty.isBuiltin() and table.get(ty) == .error_set) return 4;
+        if (!ty.isBuiltin() and table.get(ty) == .@"error") return 4;
         return table.typeSizeBytes(ty);
     }
 
@@ -3048,7 +3078,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return switch (table.get(ty)) {
             .pointer, .many_pointer, .function => .word,
             .@"enum" => .word, // payloadless enum: i64 (or its backing) — a word
-            .error_set => .word, // the error channel is a u32 tag id — a word
+            .@"error" => .word, // the error channel is a u32 tag id — a word
             // A tagged union is a `{ tag@0, [N x i8] payload@tag_size }` value held
             // by-address (like a struct) — same as the `enum_init` write path.
             .@"struct", .array, .slice, .tagged_union, .failable => .aggregate,

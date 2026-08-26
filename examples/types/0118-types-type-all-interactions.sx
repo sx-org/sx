@@ -54,15 +54,15 @@ main :: () -> i32 {
     print("?i64 == ?i64:  {}\n", ?i64 == ?i64);
     print("?i64 == ?i32:  {}\n", ?i64 == ?i32);
 
-    // ── 2. type_of(value) ───────────────────────────────────
-    print("=== 2. type_of(value) == T ===\n");
+    // ── 2. @typeOf(value) ───────────────────────────────────
+    print("=== 2. @typeOf(value) == T ===\n");
     a : i64 = 42;
     b : f64 = 3.14;
     s : string = "hi";
-    print("type_of(a) == i64:    {}\n", type_of(a) == i64);
-    print("type_of(b) == f64:    {}\n", type_of(b) == f64);
-    print("type_of(s) == string: {}\n", type_of(s) == string);
-    print("type_of(a) == f64:    {}\n", type_of(a) == f64);
+    print("@typeOf(a) == i64:    {}\n", @typeOf(a) == i64);
+    print("@typeOf(b) == f64:    {}\n", @typeOf(b) == f64);
+    print("@typeOf(s) == string: {}\n", @typeOf(s) == string);
+    print("@typeOf(a) == f64:    {}\n", @typeOf(a) == f64);
 
     // ── 3. Type variable storage + readback ─────────────────
     print("=== 3. Type variable storage ===\n");
@@ -88,7 +88,7 @@ main :: () -> i32 {
     print("literal: {}\n", i64);
     t = string;
     print("var:     {}\n", t);
-    print("type_of(b): {}\n", type_of(b));
+    print("@typeOf(b): {}\n", @typeOf(b));
 
     // ── 6. Generic dispatch via $T: Type ────────────────────
     print("=== 6. generic dispatch ===\n");
@@ -150,11 +150,11 @@ main :: () -> i32 {
 // *u8 == *u8:    true
 // ?i64 == ?i64:  true
 // ?i64 == ?i32:  false
-// === 2. type_of(value) == T ===
-// type_of(a) == i64:    true
-// type_of(b) == f64:    true
-// type_of(s) == string: true
-// type_of(a) == f64:    false
+// === 2. @typeOf(value) == T ===
+// @typeOf(a) == i64:    true
+// @typeOf(b) == f64:    true
+// @typeOf(s) == string: true
+// @typeOf(a) == f64:    false
 // === 3. Type variable storage ===
 // t == f64:    true
 // t == string: false
@@ -169,7 +169,7 @@ main :: () -> i32 {
 // === 5. print Type values ===
 // literal: i64
 // var:     string
-// type_of(b): f64
+// @typeOf(b): f64
 // === 6. generic dispatch ===
 // describe(i64):    int64
 // describe(string): text

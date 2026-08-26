@@ -722,7 +722,7 @@ pub const Server = struct {
         };
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{
-            .{ .label = "type_of", .detail = "(val: $T) -> Type" },
+            .{ .label = "@typeOf", .detail = "(val: $T) -> Type" },
             .{ .label = "@typeName", .detail = "(T | tp: Type) -> string" },
             .{ .label = "type_info", .detail = "(T | tp: Type) -> TypeInfo — kind-first reflection (needs std/meta)" },
             .{ .label = "type_eq", .detail = "(A: Type, B: Type) -> bool" },
@@ -1219,7 +1219,7 @@ pub const Server = struct {
 
         // Built-in function signatures
         const builtin_sigs = [_]struct { name: []const u8, label: []const u8, params: []const []const u8 }{
-            .{ .name = "type_of", .label = "type_of(val: $T) -> Type", .params = &.{"val: $T"} },
+            .{ .name = "@typeOf", .label = "@typeOf(val: $T) -> Type", .params = &.{"val: $T"} },
             .{ .name = "@typeName", .label = "@typeName($T: Type) -> string", .params = &.{"$T: Type"} },
             .{ .name = "struct_field_count", .label = "struct_field_count(T: Type) -> i64", .params = &.{"T: Type"} },
             .{ .name = "struct_field_name", .label = "struct_field_name(T: Type, idx: i64) -> string", .params = &.{ "T: Type", "idx: i64" } },

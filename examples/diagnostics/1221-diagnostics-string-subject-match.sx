@@ -14,7 +14,7 @@ main :: () {
     print("{}\n", y);
 
     // A type-CATEGORY pattern doesn't smuggle the string past the gate: the
-    // exemption is a property of the SUBJECT (a Type value — `type_of(...)`
+    // exemption is a property of the SUBJECT (a Type value — `@typeOf(...)`
     // / `$T`), never of the patterns.
     u := match s { case string: { 1 } else: { 0 } };
     print("{}\n", u);

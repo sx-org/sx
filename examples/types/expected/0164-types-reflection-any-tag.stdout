@@ -8,4 +8,4 @@ print(au)=7
 @typeName(at)=u64
 at is unsigned=false
 print(at)=u64
-type_of(x) is unsigned=true
+@typeOf(x) is unsigned=true

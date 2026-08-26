@@ -388,7 +388,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "pointer")) return info == .pointer or info == .many_pointer;
     if (std.mem.eql(u8, name, "vector")) return info == .vector;
     if (std.mem.eql(u8, name, "optional")) return info == .optional;
-    if (std.mem.eql(u8, name, "error_set")) return info == .error_set;
+    if (std.mem.eql(u8, name, "error")) return info == .@"error";
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {

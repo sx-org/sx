@@ -53,7 +53,7 @@ pub const BodyTail = union(enum) {
 /// body is lowered. `.value` belongs to expression positions, never to a body.
 pub fn bodyDemand(self: *Lowering, ret_ty: TypeId) TailDemand {
     if (ret_ty == .void or ret_ty == .noreturn) return .none;
-    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return .{ .error_only = ret_ty };
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error") return .{ .error_only = ret_ty };
     return .{ .return_value = ret_ty };
 }
 
@@ -188,7 +188,7 @@ fn tailIsKnownNonError(self: *Lowering, tail: *const Node) bool {
     const t = self.inferExprType(tail);
     if (t == .unresolved) return false;
     if (t.isBuiltin()) return true;
-    return self.module.types.get(t) != .error_set;
+    return self.module.types.get(t) != .@"error";
 }
 
 /// The tail of a PURE-failable body, per live control-flow path: an error leaf
@@ -239,7 +239,7 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         }
         return .poisoned;
     }
-    if (!val_ty.isBuiltin() and self.module.types.get(val_ty) == .error_set) {
+    if (!val_ty.isBuiltin() and self.module.types.get(val_ty) == .@"error") {
         emitImplicitErrorReturn(self, val, ret_ty, tail.span);
         return .{ .error_channel = val };
     }
@@ -408,7 +408,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
     // `return;`. Without it the slot keeps whatever it held and the caller
     // reads a garbage tag, reporting a phantom unhandled error.
     const carried: ?Ref = value orelse
-        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set)
+        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error")
             self.builder.constInt(0, ret_ty)
         else
             null;
@@ -1338,7 +1338,7 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
 fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
     const ret_ty: TypeId = self.effectiveReturnType() orelse return;
     if (ret_ty == .void or ret_ty == .noreturn or ret_ty == .unresolved) return;
-    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return;
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error") return;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "function returns '{s}' but this `return` carries no value — return a value of that type", .{self.formatTypeName(ret_ty)});
     }
@@ -1472,7 +1472,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             // Value-carrying failable `-> (T..., !)`: the user returns the
             // value part; the compiler appends the success error slot (0).
             self.lowerFailableSuccessReturn(ref, exit_ty, rs.value.?.span);
-        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .@"error") {
             // PURE failable (`-> !` / `-> !Named`, ret type IS the error set)
             // returning a value: the pure→pure forward path. Set compat is
             // checked; a value-carrying failable result is rejected (its
