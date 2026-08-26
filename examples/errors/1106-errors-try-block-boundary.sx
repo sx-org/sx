@@ -12,7 +12,7 @@
 // failable, so its `catch` stands as a statement. A nested boundary hands the
 // outer one back, so the `try` after it exits through the outer block. A
 // `catch` absorbs exactly what it attempts, so a `try` sitting in its operand
-// still exits through the enclosing channel — the boundary's, under one.
+// exits through the enclosing channel.
 
 @import "modules/std.sx";
 
