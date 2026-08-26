@@ -339,9 +339,9 @@ To ignore payloads, compare discriminants with `@tag`:
 if @tag(e) == .BadDigit { ... }    // any bad digit, whatever the byte
 ```
 
-`@tag(x)` works on error sets, enums, and tagged unions, and yields a
-`@Tag(T)` — a discriminant with the payload dropped. A `@Tag` is not
-something you can `raise`.
+`@tag(x)` works on error sets, enums, and tagged unions, and yields the
+discriminant — the payload dropped. A discriminant is not something you
+can `raise`, and it has no written spelling of its own.
 
 ---
 

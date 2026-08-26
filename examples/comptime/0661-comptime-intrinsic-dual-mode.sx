@@ -1,6 +1,6 @@
 // A `dual`-mode intrinsic is dispatched two ways: folded at lowering when the
 // type argument is statically resolvable, and serviced by the comptime VM when
-// it is not. `@typeName`, the `is unsigned` read, and `type_info` are the
+// it is not. `@typeName`, the `is unsigned` read, and `@typeInfo` are the
 // only three (see `ir/intrinsics.zig`).
 //
 // Both stages agree: the same intrinsic evaluated behind `@run` and at runtime

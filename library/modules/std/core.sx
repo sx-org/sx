@@ -27,11 +27,7 @@ struct_field_count :: ($T: Type) -> i64 intrinsic;
 struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
 // folds at LOWER time, so it composes inside `type_eq` / `@typeName` / any
-// type-arg slot. Lives here beside its sibling reflection builtins (NOT in
-// `meta.sx`) because it declares no data types of its own — so it costs
-// nothing in the prelude — and both `map.sx`'s structural key hash and
-// `meta.sx`'s DSL need it (each imports `core.sx` directly) rather than each
-// re-declaring the builtin locally.
+// type-arg slot.
 struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
 // The i-th field's byte offset within the struct (tuples: element offset).
 struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
@@ -52,9 +48,10 @@ variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// The discriminant an error, enum, or tagged-union value carries: `@Tag(T)`,
-// the type over T's members alone.
-@tag :: (val: $T) -> @Tag(T);
+// The discriminant an error, enum, or tagged-union value carries: the type
+// over T's members alone, with no payload area. It has no written spelling —
+// `@tag` is the only way to name it.
+@tag :: (val: $T) -> $D;
 // An error value's live payload as an `any` view — the `variant_payload`
 // sibling for error channels. A payload-free member views as `void`.
 @errorPayload :: (e: $T) -> any;
@@ -62,7 +59,7 @@ variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind
-// discrimination is type_info's job, like the count tables.
+// discrimination is `@typeInfo`'s job, like the count tables.
 vector_lanes :: ($T: Type) -> i64 intrinsic;
 // INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
 // variant read loads from a value of T, sign-encoded — negative means |w|
@@ -317,10 +314,8 @@ __sx_printf_f64 :: (f: f64) {
 // the compiler's own string pool and type table, so they exist only at `@run` /
 // constant-evaluation time and have no runtime form.
 //
-// Handles are bare `u32`s on purpose: a `StringId` / `TypeId` alias would be a
-// data type declared in the always-loaded prelude, interning into every module's
-// type table and shifting every `.ir` snapshot — the same cost the note below
-// keeps `TypeInfo` out for. Callers alias them locally where it aids reading.
+// Handles are bare `u32`s so they intern no extra prelude type. Callers alias
+// them locally where it aids reading.
 raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
 raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
 raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
@@ -333,13 +328,95 @@ raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
 raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
 raw_pointer_to        :: (t: Type) -> Type intrinsic;
 
-// The DATA-TYPE-carrying comptime metaprogramming (`declare` / `define` /
-// `type_info`, plus the `TypeInfo` / `EnumVariant` / … model they reflect INTO
-// and construct FROM) lives in the on-demand `modules/std/meta.sx`, NOT here —
-// declaring those data types in the always-loaded prelude would intern them
-// into every module's type table and shift every `.ir` snapshot. (The bare
-// `field_type` builtin above carries no data type, so it stays in the prelude.)
-// Import `modules/std/meta.sx` to construct or reflect types at comptime.
+// ── `@typeInfo`: the reflected type shape ────────────────────────────────────
+//
+// A type's whole shape as data. `@typeInfo` reflects a type INTO it; the
+// on-demand `modules/std/meta.sx` DSL (`declare` / `define`) constructs a NEW
+// nominal type FROM it. Sizes are not stored — `size_of(tp)` answers for any
+// kind.
+
+// One field of a struct or tuple: its name, its type, and its byte offset,
+// from the same layout walk the field accessors take. `define` ignores the
+// offset — a construction literal omits it.
+FieldInfo :: struct {
+    name: string;
+    type: Type;
+    offset: i64 = 0;
+}
+
+// One variant of an enum or tagged union. `payload = void` is a tagless
+// variant (e.g. `closed`); `value` is the discriminant the variant carries.
+VariantInfo :: struct {
+    name: string;
+    payload: Type;
+    value: i64 = 0;
+}
+
+// One arm of an untagged union. Arms overlay, so there is no offset to carry.
+ArmInfo :: struct {
+    name: string;
+    type: Type;
+}
+
+// One member of an error. `tag` is the interned `(owner, name)` pair and IS
+// the member's identity — two members compare by it. Owner, name, and payload
+// are lookups through that pair.
+MemberInfo :: struct {
+    tag: i64;
+    owner: Type;
+    name: string;
+    payload: Type;
+}
+
+// The per-kind shapes. The type's NAME travels in `declare(name)` rather than
+// in the shape, so `define` can register a forward type whose body references
+// itself.
+EnumInfo     :: struct { variants: []VariantInfo; }
+StructInfo   :: struct { fields: []FieldInfo; }
+UnionInfo    :: struct { arms: []ArmInfo; }
+ErrorInfo    :: struct { members: []MemberInfo; }
+IntInfo      :: struct { bits: i64; signed: bool; }
+FloatInfo    :: struct { bits: i64; }
+ArrayInfo    :: struct { elem: Type; len: i64; }
+VectorInfo   :: struct { elem: Type; lanes: i64; }
+SliceInfo    :: struct { elem: Type; }
+PointerInfo  :: struct { pointee: Type; }
+OptionalInfo :: struct { inner: Type; }
+
+// EXHAUSTIVE over the type table's kinds — a kind the compiler adds fails the
+// record builder until it is classified here; there is no catch-all. Only
+// `.enum` / `.struct` can be MINTED via `define`; every other variant is
+// reflect-only. `usize` and `isize` reflect as `.int`, at the target's pointer
+// width.
+TypeInfo :: enum {
+    enum: EnumInfo;
+    struct: StructInfo;
+    union: UnionInfo;
+    error: ErrorInfo;
+    int: IntInfo;
+    float: FloatInfo;
+    bool;
+    string;
+    cstring;
+    void;
+    array: ArrayInfo;
+    vector: VectorInfo;
+    slice: SliceInfo;
+    pointer: PointerInfo;
+    many_pointer: PointerInfo;
+    optional: OptionalInfo;
+    function;
+    closure;
+    protocol;
+    pack;
+    any;
+    noreturn;
+    type_value;
+}
+
+// A spelled type folds at compile time; a runtime `Type` value loads the
+// type's constant record, so kind-first dispatch reads the same either way.
+@typeInfo :: ($T: Type) -> TypeInfo;
 
 // One source descriptor for diagnostics and for library identity. A
 // compiler-maintained contract: the compiler recognizes THIS declaration by

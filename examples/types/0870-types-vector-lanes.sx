@@ -2,7 +2,7 @@
 // size tables cannot answer (ABI size is pow2-rounded: 3 lanes occupy 4).
 // Static arg folds at lower time; a runtime Type (e.g. an any's tag) reads
 // the `__sx_vector_lanes` table; a non-vector RUNTIME tag answers 0 (kind
-// discrimination is type_info's job, like the count tables); a static
+// discrimination is `@typeInfo`'s job, like the count tables); a static
 // non-vector is a compile error. Comptime VM answers from the same
 // TypeTable query, so static/dynamic/VM can never diverge.
 @import "modules/std.sx";

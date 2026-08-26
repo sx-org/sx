@@ -3,8 +3,8 @@
 // name `@errorName` composes. A composition's own inline members answer with
 // the composition. `{}` renders that name plus the payload as it constructs —
 // nothing for a void member, braces around a scalar, the struct's own braces
-// for a struct — and a `@Tag`, carrying no payload area, stops at the name.
-// `@Tag(E)` classifies as error, not enum.
+// for a struct — and a discriminant, carrying no payload area, stops at the
+// name. A discriminant classifies as error, not enum.
 
 @import "modules/std.sx";
 
@@ -58,6 +58,6 @@ main :: () -> i32 {
     print("struct={}\n", c);                                  // FooError.C{v: 1, at: 7}
     print("across={}\n", z);                                  // BooError.Z
     print("tag={} {}\n", @tag(d), @tag(a));                   // FooError.D FooError.A
-    print("k={} is_enum={}\n", tagKind(@tag(d)), @Tag(FooError) is enum);
+    print("k={}\n", tagKind(@tag(d)));
     return 0;
 }

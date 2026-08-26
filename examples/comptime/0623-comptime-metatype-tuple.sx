@@ -1,18 +1,18 @@
 // Comptime STRUCT metaprogramming for a positional product — `define`
-// constructs a struct whose fields are named `"0"` / `"1"`, and `type_info`
+// constructs a struct whose fields are named `"0"` / `"1"`, and `@typeInfo`
 // reflects it. Same two paths as 0622:
 //   1. Programmatic build: `define(declare("Pair"), .struct(.{ fields = … }))`.
-//   2. Round-trip: `define(declare("TripleCopy"), type_info(Triple))`.
+//   2. Round-trip: `define(declare("TripleCopy"), @typeInfo(Triple))`.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
 Pair :: define(declare("Pair"), .struct(.{ fields = .[
-    StructField{ name = "0", type = i64 },
-    StructField{ name = "1", type = f64 },
+    FieldInfo{ name = "0", type = i64 },
+    FieldInfo{ name = "1", type = f64 },
 ] }));
 
 Triple :: struct { a: i64; b: bool; c: f64 };
-TripleCopy :: define(declare("TripleCopy"), type_info(Triple));
+TripleCopy :: define(declare("TripleCopy"), @typeInfo(Triple));
 
 main :: () -> i32 {
     p : Pair = .{ 3, 2.5 };

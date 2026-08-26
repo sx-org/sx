@@ -316,7 +316,7 @@ pub const LLVMEmitter = struct {
     field_offset_ptrs_len: u32 = 0,
     member_value_ptrs: ?c.LLVMValueRef = null,
     member_value_ptrs_len: u32 = 0,
-    // Runtime type_info records — [N x ptr] master to per-type
+    // Runtime `@typeInfo` records — [N x ptr] master to per-type
     // TypeInfo constants (each its own global; bytes match the sx layout).
     type_info_records: ?c.LLVMValueRef = null,
     type_info_records_len: u32 = 0,

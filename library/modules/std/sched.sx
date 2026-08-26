@@ -37,7 +37,7 @@ c :: @import "modules/std/c.sx";
 @import "modules/std/atomic.sx";
 // `race` synthesizes its result type (a tagged-union mirroring the input tuple's
 // labels) and constructs the winner variant by runtime index — both need the
-// metatype WRITE side (`make_enum`/`make_variant`/`EnumVariant`/`struct_field_type`).
+// metatype WRITE side (`make_enum`/`make_variant`/`VariantInfo`/`struct_field_type`).
 // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
 // safe to pull in here.
 @import "modules/std/meta.sx";
@@ -1071,9 +1071,9 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // every `make_variant(RaceResult(T), …)` call, and the `-> RaceResult(T)` return
 // all name the SAME union.
 RaceResult :: ($T: Type) -> Type {
-    vs : [struct_field_count(T)]EnumVariant = ---;
+    vs : [struct_field_count(T)]VariantInfo = ---;
     inline for i in 0..struct_field_count(T) {
-        vs[i] = EnumVariant{
+        vs[i] = VariantInfo{
             name    = struct_field_name(T, i),                          // tuple label → variant name
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
         };

@@ -25,6 +25,25 @@ PinTarget       :: core.PinTarget;
 ParkToken       :: core.ParkToken;
 Into            :: core.Into;
 
+// --- The reflected type shape (`@typeInfo`) ---
+
+TypeInfo        :: core.TypeInfo;
+FieldInfo       :: core.FieldInfo;
+VariantInfo     :: core.VariantInfo;
+ArmInfo         :: core.ArmInfo;
+MemberInfo      :: core.MemberInfo;
+EnumInfo        :: core.EnumInfo;
+StructInfo      :: core.StructInfo;
+UnionInfo       :: core.UnionInfo;
+ErrorInfo       :: core.ErrorInfo;
+IntInfo         :: core.IntInfo;
+FloatInfo       :: core.FloatInfo;
+ArrayInfo       :: core.ArrayInfo;
+VectorInfo      :: core.VectorInfo;
+SliceInfo       :: core.SliceInfo;
+PointerInfo     :: core.PointerInfo;
+OptionalInfo    :: core.OptionalInfo;
+
 
 // --- Type system & reflection intrinsics ---
 // (no aliases: an intrinsic is a compiler feature, not a library export. The

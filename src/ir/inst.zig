@@ -626,14 +626,10 @@ pub const BuiltinId = enum(u16) {
     rt_member_type,
     rt_field_offset,
     rt_variant_value,
-    // (`declare` and `define` are plain sx over the `declare_type` /
-    // `register_type` compiler-API primitives in `modules/std/meta.sx`.)
-    // The comptime reflection INVERSE of `define`: read a type's variants
-    // (name + payload type) out of the type table and CONSTRUCT the same
-    // `.enum(EnumInfo{ variants })` value `define` decodes. Comptime-only
-    // (the interp builds the Value aggregate); emit bails (Type is
-    // comptime-only). `type_info($T)` round-trips through `define`.
-    type_info,
+    // Reflect a type INTO the prelude's `TypeInfo` value: read its shape out
+    // of the type table and construct the same value `define` decodes, so the
+    // two round-trip. A runtime `Type` loads the matching const record.
+    @"@typeInfo",
 };
 
 pub const ClosureCreate = struct {

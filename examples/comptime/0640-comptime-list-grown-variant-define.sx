@@ -1,5 +1,5 @@
 // Comptime type construction from a List grown at compile time: assemble the
-// variant set in a `List(EnumVariant)` via `.append` (which allocates + grows
+// variant set in a `List(VariantInfo)` via `.append` (which allocates + grows
 // its backing through the comptime `context.allocator`), then mint an enum from
 // the grown backing sliced to its length — `vs.items[0..vs.len]`. The comptime
 // VM evaluates the List growth, the slice, and `define`/`declare` end-to-end,
@@ -11,15 +11,15 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make_enum :: (name: string, variants: []EnumVariant) -> Type {
+make_enum :: (name: string, variants: []VariantInfo) -> Type {
     return define(declare(name), .enum(.{ variants = variants }));
 }
 
 build_color :: () -> Type {
-    vs : List(EnumVariant) = .{};
-    vs.append(EnumVariant{ name = "red",   payload = void });
-    vs.append(EnumVariant{ name = "green", payload = i64 });
-    vs.append(EnumVariant{ name = "blue",  payload = void });
+    vs : List(VariantInfo) = .{};
+    vs.append(VariantInfo{ name = "red",   payload = void });
+    vs.append(VariantInfo{ name = "green", payload = i64 });
+    vs.append(VariantInfo{ name = "blue",  payload = void });
     return make_enum("Color", vs.items[0..vs.len]);
 }
 

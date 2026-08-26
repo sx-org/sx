@@ -18,10 +18,10 @@ Big  :: struct { a: i64; b: i64; c: i64; d: i64; tag: bool; } // 40 bytes (large
 
 // A synthesized 4-variant tagged-union with complex, differently-sized payloads.
 R :: make_enum("R", .[
-    EnumVariant{ name = "v",   payload = Vec3   },
-    EnumVariant{ name = "s",   payload = string },
-    EnumVariant{ name = "big", payload = Big    },
-    EnumVariant{ name = "n",   payload = i64    },
+    VariantInfo{ name = "v",   payload = Vec3   },
+    VariantInfo{ name = "s",   payload = string },
+    VariantInfo{ name = "big", payload = Big    },
+    VariantInfo{ name = "n",   payload = i64    },
 ]);
 
 // Build the variant chosen by a RUNTIME index, in the matching unrolled arm —

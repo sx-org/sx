@@ -1842,7 +1842,7 @@ Design notes and rejected directions: `design/protocols.md` (appendix).
 
 A positional anonymous product is the type of `.{1, 2}`: an anonymous
 structural struct whose fields are named `"0"`, `"1"`, …. Field access is
-`t.0` / `t.1`. `type_info` on it is `.struct`. There is no writable type
+`t.0` / `t.1`. `@typeInfo` on it is `.struct`. There is no writable type
 spelling for a positional product other than `struct { ..P(Ts) }` (a pack
 spread as the struct's one field — see "Variadic Heterogeneous Type Packs").
 Named products are ordinary structs: `struct { x: A; y: B }`, accessed by
@@ -3127,7 +3127,7 @@ are not written onward.
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` | unchanged |
-| Two error values, or an error against `@Tag` / `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
+| Two error values, or an error against a discriminant / `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
 `any`, interface handles against a foreign type, and distinct structs are refused.
 
@@ -4549,14 +4549,14 @@ answers from site-local visibility at either phase.
 | `unsigned` | the unsigned integers |
 | `float` | `f32`, `f64` |
 | `struct` | struct and tuple types |
-| `enum` | payload-less enums and tagged unions; not `@Tag(E)` of an error |
+| `enum` | payload-less enums and tagged unions; not an error's discriminant |
 | `union` | untagged unions and tagged unions |
 | `slice` | `[]T` |
 | `array` | `[N]T` |
 | `pointer` | `*T`, `[*]T`, function pointers |
 | `vector` | `@Vector(N, T)` |
 | `optional` | `?T` |
-| `error` | declared and inferred errors, and `@Tag(E)` of an error |
+| `error` | declared and inferred errors, and an error's discriminant |
 | `closure` | `Closure(…) -> R` — the erased form only; a unique lambda is its env, so it answers `struct` |
 | `type` | `Type` |
 | `interface` | interface types |
@@ -5537,7 +5537,7 @@ fallback to a runtime symbol lookup.
 
 Each intrinsic is dispatched one of three ways. Most are handled at **lowering** —
 folded to a constant (`size_of`, `struct_field_count`), or lowered to dedicated IR ops
-(the atomics). Two — `@typeName` and `type_info` — are
+(the atomics). Two — `@typeName` and `@typeInfo` — are
 **dual**: folded at lowering when the type argument is statically resolvable, and
 serviced by the comptime evaluator when it is only known at evaluation time. The
 compiler-API surface (`raw_intern`, `raw_find_type`, the `BuildOptions` methods, …) is
@@ -5621,21 +5621,21 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `struct_field_count($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variant_count`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
-- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`match type_info(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
+- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `@typeInfo(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout) — kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
 - `struct_field_name($T: Type, idx: i64) -> string` — the name of the `idx`-th field of a struct/tuple (positional tuple elements have no name → `""`). Kind-gated like `struct_field_count`.
 - `struct_field_type($T: Type, idx: i64) -> Type` — the `idx`-th field's type. Kind-gated; also resolves in type position.
 - `struct_field_value(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variant_payload`.
 - `variant_count($E: Type) -> i64` / `variant_name($E: Type, idx: i64) -> string` / `variant_type($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `struct_field_*` builtin.
 - `variant_payload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `struct_field_value`).
 - `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * size_of(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
-- `@tag(x: $T) -> @Tag(T)` — the discriminant of an error-set, enum, or tagged-union value, payload dropped. `@Tag(T)` is a first-class type; see [§12 `@tag`](#tag) for its comparison, matching, and interpolation rules.
+- `@tag(x: $T)` — the discriminant of an error-set, enum, or tagged-union value, payload dropped. The discriminant is a first-class type with no written spelling — `@tag` is the only way to name it; see [§12 `@tag`](#tag) for its comparison, matching, and interpolation rules.
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
+- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
 - `type_eq($A: Type, $B: Type) -> bool` — structural TypeId equality (`type_eq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if type_eq(...)` is comptime-decidable
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`
@@ -5643,7 +5643,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
@@ -6668,18 +6668,18 @@ payload construction in that position is parenthesized (`if e == (.D{42}) { … 
 
 ### `@tag`
 
-`@tag(x) -> @Tag(T)` reads the discriminant of an error set, enum, or tagged
-union value, dropping the payload.
+`@tag(x)` reads the discriminant of an error set, enum, or tagged union value,
+dropping the payload. The discriminant type has no written spelling.
 
 ```sx
 t := @tag(e);
-if t == .D            { ... }   // `@Tag(T)` against a member — tag only
+if t == .D            { ... }   // a discriminant against a member — tag only
 if @tag(a) == @tag(b) { ... }   // tag only
-if e == t             { ... }   // an error value against a `@Tag` — tag only
+if e == t             { ... }   // an error value against a discriminant — tag only
 ```
 
-Comparability follows the same ⊆ rule on the channels. A `@Tag` is not a `raise`
-operand, and a `match` arm on a `@Tag` subject takes no `|p|` capture.
+Comparability follows the same ⊆ rule on the channels. A discriminant is not a
+`raise` operand, and a `match` arm on one takes no `|p|` capture.
 
 ### `.set` and `.name`
 
@@ -6693,7 +6693,7 @@ v.name;                           // "D"
 concat(v.set.name, concat(".", v.name));   // what `@errorName(v)` composes
 ```
 
-Both read through the live member, so a `@Tag` of an error and an `any` viewing
+Both read through the live member, so an error's discriminant and an `any` viewing
 either answer the same way, and a member introduced by an inline
 `error { … }` operand answers with the composition that names it. Classify the
 value first — `match @typeOf(v) { case error: … }`.
@@ -6715,7 +6715,7 @@ match e {
 ### Interpolation
 
 `{}` on an error **value** prints the interning owner, the member, and the
-payload (`FooError.D{42}`); on a `@Tag` of an error it prints owner and member
+payload (`FooError.D{42}`); on an error's discriminant it prints owner and member
 alone (`FooError.D`). A member introduced by an inline `error { … }` operand
 prints under the composition that names it. The import binding a set was
 reached through never appears. The name table is **always linked, release

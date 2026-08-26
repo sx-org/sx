@@ -1,7 +1,7 @@
 // Comptime slice over a non-string AGGREGATE: assemble a pool of candidate
 // variants in a local array, then mint an enum from a SUBSLICE of it. This
 // exercises the `subslice` op on an array VALUE (`dirs[0..2]`), yielding a
-// real `[]EnumVariant` the `define` decoder reads.
+// real `[]VariantInfo` the `define` decoder reads.
 //
 // `Axis` is built from only the first two of four directions, so `.south` /
 // `.west` are NOT variants of it.
@@ -10,10 +10,10 @@
 
 build_axis :: () -> Type {
     dirs := .[
-        EnumVariant{ name = "north", payload = void },
-        EnumVariant{ name = "east",  payload = i64 },   // carries a bearing
-        EnumVariant{ name = "south", payload = void },
-        EnumVariant{ name = "west",  payload = void },
+        VariantInfo{ name = "north", payload = void },
+        VariantInfo{ name = "east",  payload = i64 },   // carries a bearing
+        VariantInfo{ name = "south", payload = void },
+        VariantInfo{ name = "west",  payload = void },
     ];
     return make_enum("Axis", dirs[0..2]);   // first two only — a comptime subslice
 }

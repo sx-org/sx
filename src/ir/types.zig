@@ -198,7 +198,7 @@ pub const TypeInfo = union(enum) {
         explicit_values: ?[]const i64 = null, // for flags (power-of-2) or custom values
         backing_type: ?TypeId = null, // e.g. u32 for `enum u32 { ... }`
         nominal_id: u32 = 0, // stable nominal identity; 0 == structural
-        /// Set on `@Tag(E)` for an error `E`: the error this enum discriminates.
+        /// Set on the discriminant enum of an error `E`: the error it discriminates.
         /// Its variant values ARE `E`'s member ids, so the enum reads as the
         /// channel's tag word.
         error_of: ?TypeId = null,
@@ -864,6 +864,12 @@ pub const TypeTable = struct {
         _ = self.intern_map.remove(.{ .info = old });
         self.infos.items[idx] = info;
         self.intern_map.put(.{ .info = info }, id) catch unreachable;
+    }
+
+    /// The prelude's `TypeInfo` — the shape `@typeInfo` reflects a type into.
+    /// `.unresolved` only where the prelude is absent.
+    pub fn typeInfoType(self: *TypeTable) TypeId {
+        return self.findByName(self.internString("TypeInfo")) orelse .unresolved;
     }
 
     /// Find a named type (struct/union/enum) by its StringId name.
@@ -1641,8 +1647,8 @@ pub const TypeTable = struct {
         return self.intern(self.errorSetInfo(spelling, member_ids));
     }
 
-    /// `@Tag(e)` for an error: the payload-free enum over its members, each
-    /// valued by its member id, so the enum IS the channel's tag word.
+    /// The discriminant of an error: the payload-free enum over its members,
+    /// each valued by its member id, so the enum IS the channel's tag word.
     pub fn errorTagEnum(self: *TypeTable, e: TypeId) TypeId {
         const es = self.get(e).@"error";
         const arena = self.slice_arena.allocator();
@@ -1652,7 +1658,7 @@ pub const TypeTable = struct {
             v.* = self.internString(self.getTagName(member));
             val.* = @intCast(member);
         }
-        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(es.name)}) catch unreachable;
+        const spelling = std.fmt.allocPrint(self.alloc, "@tag({s})", .{self.getString(es.name)}) catch unreachable;
         defer self.alloc.free(spelling);
         return self.intern(.{ .@"enum" = .{
             .name = self.internString(spelling),
@@ -1663,14 +1669,15 @@ pub const TypeTable = struct {
         } });
     }
 
-    /// `@Tag(u)` for a tagged union: the payload-free enum over its variants,
-    /// carrying the union's tag type and values so the two agree at runtime.
+    /// The discriminant of a tagged union: the payload-free enum over its
+    /// variants, carrying the union's tag type and values so the two agree at
+    /// runtime.
     pub fn unionTagEnum(self: *TypeTable, u: TypeId) TypeId {
         const info = self.get(u).tagged_union;
         const arena = self.slice_arena.allocator();
         const variants = arena.alloc(StringId, info.fields.len) catch unreachable;
         for (info.fields, variants) |f, *v| v.* = f.name;
-        const spelling = std.fmt.allocPrint(self.alloc, "@Tag({s})", .{self.getString(info.name)}) catch unreachable;
+        const spelling = std.fmt.allocPrint(self.alloc, "@tag({s})", .{self.getString(info.name)}) catch unreachable;
         defer self.alloc.free(spelling);
         return self.intern(.{ .@"enum" = .{
             .name = self.internString(spelling),

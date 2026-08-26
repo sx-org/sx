@@ -1,0 +1,59 @@
+// `@typeInfo` of an error is `.error`, carrying one `MemberInfo` per member.
+// `tag` is the interned `(owner, name)` pair and IS the member's identity, so
+// the member a composition holds carries the tag its declaring set interned;
+// `owner`, `name`, and `payload` are lookups through it.
+
+@import "modules/std.sx";
+
+FooError :: error {
+    A;
+    D: i32;
+}
+
+BooError :: error { Z }
+
+Both :: FooError | BooError;
+
+members :: ($E: Type) -> string {
+    out := "";
+    match @typeInfo(E) {
+        case .error: |ei| {
+            for m in ei.members {
+                out = format("{}{}.{}:{} ", out, @typeName(m.owner), m.name, @typeName(m.payload));
+            }
+        }
+        else: {}
+    }
+    out
+}
+
+both_tag_of_d :: () -> i64 {
+    tag := 0;
+    match @typeInfo(Both) {
+        case .error: |ei| {
+            for m in ei.members {
+                if m.name == "D" { tag = m.tag; }
+            }
+        }
+        else: {}
+    }
+    tag
+}
+
+foo_tag_of_d :: () -> i64 {
+    tag := 0;
+    match @typeInfo(FooError) {
+        case .error: |ei| { tag = ei.members[1].tag; }
+        else: {}
+    }
+    tag
+}
+
+FOO      :: @run members(FooError);
+IDENTITY :: @run both_tag_of_d() == foo_tag_of_d();
+
+main :: () -> i32 {
+    print("foo={}\n", FOO);
+    print("identity={}\n", IDENTITY);
+    return 0;
+}

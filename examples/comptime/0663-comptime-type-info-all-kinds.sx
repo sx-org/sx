@@ -1,22 +1,21 @@
-// `type_info` is kind-first and EXHAUSTIVE: every type-table
+// `@typeInfo` is kind-first and EXHAUSTIVE: every type-table
 // kind reflects into its TypeInfo variant, not just enum/
-// struct/tuple. Also pins StructField.offset (from the same layout
-// walk the field accessors use) and the union arm (arms overlay at 0).
+// struct/tuple. Also pins FieldInfo.offset (from the same layout
+// walk the field accessors use) and the union arm.
 @import "modules/std.sx";
-meta :: @import "modules/std/meta.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }
 Overlay :: union { as_int: i64; as_bytes: [8]u8; }
 WithVec :: struct { v: @Vector(3, f32); }
 
 describe :: ($T: Type) -> string {
-    ti := type_info(T);
+    ti := @typeInfo(T);
     match ti {
         case .struct: |si| {
             return format("struct fields={} f1.name={} f1.off={}", si.fields.len, si.fields[1].name, si.fields[1].offset);
         }
         case .union: |ui| {
-            return format("union arms={} a1.off={}", ui.arms.len, ui.arms[1].offset);
+            return format("union arms={} a1={}", ui.arms.len, ui.arms[1].name);
         }
         case .int: |ii| { return format("int bits={} signed={}", ii.bits, ii.signed); }
         case .float: |fi| { return format("float bits={}", fi.bits); }
