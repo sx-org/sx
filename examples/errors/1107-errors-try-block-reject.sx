@@ -1,0 +1,45 @@
+// What a `try { … }` boundary refuses. A block whose body has no `try` or
+// `raise` is not a boundary. An uncaught boundary escapes to the enclosing
+// function, so its members must be live in that function's named channel. The
+// boundary's own channel is what its raises converge to, never one in hand, so
+// a `.Member` shorthand inside it must be qualified. With no `catch` above it
+// and no failable enclosing body, the boundary's failure has nowhere to go.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+
+g :: (n: i32) -> (i32, !FooError) {
+    if n < 0 { raise FooError.A; }
+    return n;
+}
+
+no_fail :: (n: i32) -> (i32, !IoErr) {
+    if n == 0 { raise IoErr.Failed; }
+    v := try { n + 1 };
+    return v;
+}
+
+escapes :: (n: i32) -> (i32, !IoErr) {
+    v := try { try g(n); n };
+    return v;
+}
+
+shorthand :: (n: i32) -> (i32, !) {
+    v := try { if n < 0 { raise .Canceled; } n } catch { 0 };
+    if n == 0 { raise IoErr.Failed; }
+    return v;
+}
+
+nowhere :: (n: i32) -> i32 {
+    return try { try g(n); n };
+}
+
+main :: () -> i32 {
+    print("{}\n", no_fail(1) catch { -1 });
+    print("{}\n", escapes(1) catch { -2 });
+    print("{}\n", shorthand(1) catch { -3 });
+    print("{}\n", nowhere(1));
+    return 0;
+}

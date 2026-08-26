@@ -77,7 +77,10 @@ pub const ExprTyper = struct {
             // pure-failable operand (`-> !` / `-> !Named`, whose type IS the
             // error set) has no value → `void`; a value-carrying `-> (T..., !)`
             // operand yields its value part (the lone value, or a value-tuple).
+            // A `try { … }` boundary's success value IS the block's tail, so
+            // the block types the whole expression.
             .try_expr => |te| blk: {
+                if (te.operand.data == .block) break :blk self.l.inferExprType(te.operand);
                 const op_ty = self.l.inferExprType(te.operand);
                 const channel = self.l.errorChannelOf(op_ty) orelse break :blk .unresolved;
                 if (op_ty == channel) break :blk .void;
@@ -86,7 +89,9 @@ pub const ExprTyper = struct {
             // `expr catch ...` strips the error channel → the success type
             // (void for a pure-failable LHS; the value part for value-carrying).
             .catch_expr => |ce| blk: {
-                const op_ty = self.l.inferExprType(ce.operand);
+                const attempted = Lowering.catchAttempted(&ce);
+                if (attempted.boundary) break :blk self.l.inferExprType(attempted.node);
+                const op_ty = self.l.inferExprType(attempted.node);
                 const channel = self.l.errorChannelOf(op_ty) orelse break :blk .unresolved;
                 if (op_ty == channel) break :blk .void;
                 break :blk self.l.failableSuccessType(op_ty);

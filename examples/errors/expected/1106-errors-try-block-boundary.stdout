@@ -1,0 +1,13 @@
+caught_raise=-1
+caught_try=-1
+caught_ok=5
+narrowed=70
+escapes_ok=8
+escapes_err=40
+defer_err=-1 seen=1
+defer_ok=6 seen=2
+pure=1
+nested_err=-1
+nested_ok=12
+marked=-1
+bare=-1

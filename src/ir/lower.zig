@@ -865,6 +865,9 @@ pub const Lowering = struct {
     /// and trips LLVM's "Terminator found in the middle of a basic
     /// block" verifier.
     inline_return_target: ?InlineExit = null,
+    /// The `try { … }` boundary in scope. A `raise` or a failing `try` under
+    /// it exits there instead of propagating to the function.
+    error_boundary: ?ErrorBoundary = null,
     /// Active pack-arg-node bindings during a comptime call's body lowering.
     /// Maps the pack-param name (e.g. `args`) to the slice of call-site
     /// argument AST nodes. `lowerIndexExpr` (and `inferExprType`) check
@@ -1034,6 +1037,11 @@ pub const Lowering = struct {
         },
     };
 
+    /// The innermost `try { … }` boundary: where a `raise`, or a `try` whose
+    /// operand failed, exits. `fail_bb` takes the error tag as its lone
+    /// parameter; `defer_base` is the cleanup floor the boundary owns.
+    pub const ErrorBoundary = struct { chan: TypeId, fail_bb: BlockId, defer_base: usize };
+
     /// Where a failable `??` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
@@ -1079,6 +1087,7 @@ pub const Lowering = struct {
         pack_param_count: ?std.StringHashMap(u32),
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
+        error_boundary: ?ErrorBoundary,
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
@@ -1103,6 +1112,7 @@ pub const Lowering = struct {
                 .pack_param_count = l.pack_param_count,
                 .pack_arg_types = l.pack_arg_types,
                 .inline_return_target = l.inline_return_target,
+                .error_boundary = l.error_boundary,
                 // Flow narrowing is lexical to one function body — a nested
                 // (closure / local-fn) lowering starts with a fresh, empty
                 // narrowing state and the outer state is restored after.
@@ -1133,6 +1143,7 @@ pub const Lowering = struct {
             l.pack_param_count = null;
             l.pack_arg_types = null;
             l.inline_return_target = null;
+            l.error_boundary = null;
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
@@ -1154,6 +1165,7 @@ pub const Lowering = struct {
             l.pack_param_count = g.pack_param_count;
             l.pack_arg_types = g.pack_arg_types;
             l.inline_return_target = g.inline_return_target;
+            l.error_boundary = g.error_boundary;
             l.narrowed.deinit();
             l.narrowed = g.narrowed;
             l.narrowed_refs.deinit();
@@ -1197,6 +1209,7 @@ pub const Lowering = struct {
         loop_defer_base: usize,
         build_scopes: std.ArrayList(lower_build_block.Scope),
         inline_return_target: ?InlineExit,
+        error_boundary: ?ErrorBoundary,
         current_fn_decl: ?*const ast.FnDecl,
         pending_callable_return: ?*const ast.Node,
         fixed_callable_ret: ?TypeId,
@@ -1216,6 +1229,7 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
                 .inline_return_target = l.inline_return_target,
+                .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
@@ -1226,6 +1240,7 @@ pub const Lowering = struct {
             l.loop_defer_base = 0;
             l.build_scopes = .empty;
             l.inline_return_target = null;
+            l.error_boundary = null;
             l.current_fn_decl = null;
             l.pending_callable_return = null;
             l.fixed_callable_ret = null;
@@ -1246,6 +1261,7 @@ pub const Lowering = struct {
             g.l.build_scopes.deinit(g.l.alloc);
             g.l.build_scopes = g.build_scopes;
             g.l.inline_return_target = g.inline_return_target;
+            g.l.error_boundary = g.error_boundary;
             g.l.current_fn_decl = g.current_fn_decl;
             g.l.pending_callable_return = g.pending_callable_return;
             g.l.fixed_callable_ret = g.fixed_callable_ret;
@@ -3259,6 +3275,7 @@ pub const Lowering = struct {
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;
+    pub const catchAttempted = lower_error.catchAttempted;
     pub const emitErrorReturn = lower_error.emitErrorReturn;
     pub const diagTryNotFailable = lower_error.diagTryNotFailable;
     pub const lowerCatch = lower_error.lowerCatch;
