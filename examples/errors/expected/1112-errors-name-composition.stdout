@@ -5,3 +5,4 @@ void=FooError.A scalar=FooError.D{42}
 struct=FooError.C{v: 1, at: 7}
 across=BooError.Z
 tag=FooError.D FooError.A
+k=error is_enum=false

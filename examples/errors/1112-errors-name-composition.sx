@@ -4,6 +4,7 @@
 // the composition. `{}` renders that name plus the payload as it constructs —
 // nothing for a void member, braces around a scalar, the struct's own braces
 // for a struct — and a `@Tag`, carrying no payload area, stops at the name.
+// `@Tag(E)` classifies as error, not enum.
 
 @import "modules/std.sx";
 
@@ -33,6 +34,16 @@ named :: (v: any) -> string {
     name
 }
 
+tagKind :: (t: $T) -> string {
+    k := "<?>";
+    inline match T {
+        case enum: k = "enum";
+        case error: k = "error";
+        else: k = "other";
+    }
+    k
+}
+
 main :: () -> i32 {
     _, a := boom(0);
     _, d := boom(1);
@@ -47,5 +58,6 @@ main :: () -> i32 {
     print("struct={}\n", c);                                  // FooError.C{v: 1, at: 7}
     print("across={}\n", z);                                  // BooError.Z
     print("tag={} {}\n", @tag(d), @tag(a));                   // FooError.D FooError.A
+    print("k={} is_enum={}\n", tagKind(@tag(d)), @Tag(FooError) is enum);
     return 0;
 }

@@ -4549,14 +4549,14 @@ answers from site-local visibility at either phase.
 | `unsigned` | the unsigned integers |
 | `float` | `f32`, `f64` |
 | `struct` | struct and tuple types |
-| `enum` | payload-less enums and tagged unions |
+| `enum` | payload-less enums and tagged unions; not `@Tag(E)` of an error |
 | `union` | untagged unions and tagged unions |
 | `slice` | `[]T` |
 | `array` | `[N]T` |
 | `pointer` | `*T`, `[*]T`, function pointers |
 | `vector` | `@Vector(N, T)` |
 | `optional` | `?T` |
-| `error` | declared and inferred errors |
+| `error` | declared and inferred errors, and `@Tag(E)` of an error |
 | `closure` | `Closure(…) -> R` — the erased form only; a unique lambda is its env, so it answers `struct` |
 | `type` | `Type` |
 | `interface` | interface types |

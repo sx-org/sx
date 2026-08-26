@@ -381,14 +381,14 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     // struct in the type table, and only the interface word names it.
     if (std.mem.eql(u8, name, "interface")) return isErasedProtocolType(self, tid);
     if (std.mem.eql(u8, name, "struct")) return info == .@"struct" and !info.@"struct".is_protocol;
-    if (std.mem.eql(u8, name, "enum")) return info == .@"enum" or info == .tagged_union;
+    if (std.mem.eql(u8, name, "enum")) return (info == .@"enum" and info.@"enum".error_of == null) or info == .tagged_union;
     if (std.mem.eql(u8, name, "union")) return info == .@"union" or info == .tagged_union;
     if (std.mem.eql(u8, name, "slice")) return info == .slice;
     if (std.mem.eql(u8, name, "array")) return info == .array;
     if (std.mem.eql(u8, name, "pointer")) return info == .pointer or info == .many_pointer;
     if (std.mem.eql(u8, name, "vector")) return info == .vector;
     if (std.mem.eql(u8, name, "optional")) return info == .optional;
-    if (std.mem.eql(u8, name, "error")) return info == .@"error";
+    if (std.mem.eql(u8, name, "error")) return info == .@"error" or (info == .@"enum" and info.@"enum".error_of != null);
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
