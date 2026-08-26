@@ -1,6 +1,4 @@
-// `@len`, `@field`, and `@elementAt` read a boxed value's parts in place. The
-// receiver's kind is a runtime tag, so ONE body walks every type: `@len` counts
-// the parts, `@field` views the i-th member, `@elementAt` the i-th element.
+// `@len`, `@field`, and `@elementAt` read a boxed value's parts in place.
 // Each view borrows the boxed storage — the walk copies nothing.
 
 @import "modules/std.sx";
@@ -29,7 +27,6 @@ elements :: (v: any) -> string {
     r
 }
 
-// The comptime VM walks the same views.
 STATIC :: @run members(Point{ x = 3, y = -4 });
 
 main :: () -> i32 {

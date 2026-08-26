@@ -3907,8 +3907,6 @@ fn boxedFatLen(self: *Lowering, recv: Ref, row: Ref) Ref {
     return b.sub(count, b.mul(b.constInt(2, .i64), sign, .i64), .i64);
 }
 
-/// The count the type table holds for a boxed value's tag: struct and union
-/// fields, enum and tagged-union variants, array elements, vector lanes.
 fn boxedTableCount(self: *Lowering, recv: Ref, _: Ref) Ref {
     const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
     return self.builder.callBuiltin(.rt_member_count, args, .i64);
@@ -3926,7 +3924,7 @@ fn boxedStorage(self: *Lowering, recv: Ref, _: Ref) Ref {
 }
 
 /// Merge two i64 readings of a boxed value through a stack slot, choosing by
-/// whether its tag says fat pointer. Both arms take `(recv, row)`.
+/// whether its tag says fat pointer.
 fn boxedFatMerge(
     self: *Lowering,
     recv: Ref,
@@ -3953,10 +3951,6 @@ fn boxedFatMerge(
     return self.builder.load(slot, .i64);
 }
 
-/// `@len(v)` / `@field(v, i)` / `@elementAt(v, i)` — the boxed-value views. The
-/// receiver is an `any`, so its kind is a runtime tag: member rows and counts
-/// come from the reflection tables, and each view is `{member tag, interior
-/// address}` — the boxed storage is borrowed, never copied.
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
