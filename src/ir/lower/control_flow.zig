@@ -1667,7 +1667,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // Switch on the subject. For a type match the subject IS the type-id word
     // (`.type_value` / an integer handle — the subject gate above rejects
     // anything else, incl. `.any`: a boxed Any's unboxed VALUE is not its type
-    // tag, so dispatching on it picked the silently-wrong arm; `@typeOf(a)`
+    // tag, so dispatching on it selects the silently-wrong arm; `@typeOf(a)`
     // is the correct spelling and yields `.type_value` directly).
     const tag = if (is_any_switch)
         // The type switch dispatches on the view's type_id word (field 1,
