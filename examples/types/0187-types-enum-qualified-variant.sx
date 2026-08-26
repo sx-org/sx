@@ -1,8 +1,7 @@
 // Qualified enum-variant spelling: `EnumType.variant` for a payloadless variant,
 // the explicit twin of the leading-dot `.variant` form, in construction and in a
 // `case` arm. Works for a plain enum and for a payloadless variant of a tagged
-// union; a payload-carrying variant keeps its call form (`Shape.circle(2.0)`),
-// unaffected.
+// union; a payload-carrying variant is built with its call form (`Shape.circle(2.0)`).
 
 @import "modules/std.sx";
 

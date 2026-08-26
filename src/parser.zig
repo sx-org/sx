@@ -4573,9 +4573,7 @@ pub const Parser = struct {
                 try self.parseTypeExpr()
             else
                 try self.parsePrimary(.bit_or); // .variant
-            // A qualified spelling (`case FooError.A:`) names the member or
-            // variant its leaf names — on an error channel carrying two members
-            // of that name, the set it names decides which.
+            // Qualified arm (`Set.Member`, `ns.Set.Member`): a field_access path.
             while (self.tokens.tag(self.tok) == .dot and self.peekNext() == .identifier and
                 (pattern.data == .identifier or pattern.data == .field_access))
             {
