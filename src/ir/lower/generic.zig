@@ -1179,8 +1179,6 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 /// binding guard diagnoses those at lowering.
 fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
     if (subject_ty.isBuiltin()) return null;
-    // The verdict the lowering binds from, re-queried — it is pure, so asking
-    // twice emits nothing.
     if (pattern) |pat| {
         if (pat.data == .field_access) return switch (lower_error.qualifyMatchArm(self, subject_ty, pat)) {
             .ok => |ok| if (ok.payload == .void) null else ok.payload,
