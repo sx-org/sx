@@ -1901,9 +1901,9 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     return null;
 }
 
-/// The type `.set` and `.name` answer with: on a live error (or a `@Tag` of
-/// one, or an `any` viewing either) `.set` is the error that declares the live
-/// member and `.name` its spelling; on a `Type`, `.name` is the type's own.
+/// The type `.set` and `.name` answer with: on a live error (or a `@tag` view
+/// of one, or an `any` viewing either) `.set` is the error that declares the
+/// live member and `.name` its spelling; on a `Type`, `.name` is the type's own.
 /// Null when the receiver carries neither. Shared by lowering and inference.
 pub fn errorViewFieldType(self: *Lowering, obj_ty: TypeId, field: []const u8) ?TypeId {
     const is_name = std.mem.eql(u8, field, "name");

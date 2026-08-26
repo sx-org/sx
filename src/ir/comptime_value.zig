@@ -105,9 +105,9 @@ pub const Value = union(enum) {
     }
 };
 
-/// Normalize a comptime value into the list of EnumVariant element values.
-/// A `[]EnumVariant` slice evaluates to a `{ data, len }` aggregate (`len` an
-/// int); a `[N]EnumVariant` array literal evaluates to the element aggregate
+/// Normalize a comptime value into the list of VariantInfo element values.
+/// A `[]VariantInfo` slice evaluates to a `{ data, len }` aggregate (`len` an
+/// int); a `[N]VariantInfo` array literal evaluates to the element aggregate
 /// directly. Returns null for any other shape (the caller bails loudly).
 pub fn decodeVariantElements(result: Value) ?[]const Value {
     const fields = switch (result) {
@@ -115,8 +115,8 @@ pub fn decodeVariantElements(result: Value) ?[]const Value {
         else => return null,
     };
     // Slice fat pointer `{ data, len }`: a 2-field aggregate whose 2nd field is
-    // an integer length. (A 2-VARIANT array can't collide — its 2nd field is an
-    // EnumVariant aggregate, so `asInt` is null.)
+    // an integer length. (A 2-VARIANT array can't collide — its 2nd field is a
+    // VariantInfo aggregate, so `asInt` is null.)
     if (fields.len == 2) {
         if (fields[1].asInt()) |len_i| {
             const len: usize = @intCast(len_i);

@@ -202,7 +202,7 @@ pub const CallResolver = struct {
                 };
                 return .{ .kind = .builtin, .return_type = rt, .target = .{ .builtin = bid } };
             }
-            // `@tag(x)` types as `@Tag(T)`, read off the argument — a shape the
+            // `@tag(x)` types as the argument's discriminant — a shape the
             // registry's fixed `ret` cannot carry.
             if (std.mem.eql(u8, bare_name, "@tag") and c.args.len == 1) {
                 const src = self.l.inferExprType(c.args[0]);
@@ -215,7 +215,7 @@ pub const CallResolver = struct {
             if (intrinsics.findByName(bare_name)) |id| {
                 if (intrinsics.byId(id).ret) |rt| return refl(bare_name, rt);
                 // A registry entry with no fixed `ret` computes its type from the
-                // arguments (math -> the arg's type, atomics -> T, type_info ->
+                // arguments (math -> the arg's type, atomics -> T, `@typeInfo` ->
                 // TypeInfo). `resolveBuiltin` above already answered for the math
                 // ids; the rest are not reachable as pack-fn callees, and guessing
                 // a type here would be exactly the silent default we don't write.

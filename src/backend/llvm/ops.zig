@@ -1947,11 +1947,11 @@ pub const Ops = struct {
                 const egep = c.LLVMBuildInBoundsGEP2(self.e.builder, elem_ty, per_type, &eindices, 1, "mi.gep");
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, egep, "mi.load"));
             },
-            .type_info => {
-                // Runtime type_info(tp): master [N x ptr] by tag → record ptr
+            .@"@typeInfo" => {
+                // Runtime `@typeInfo(tp)`: master [N x ptr] by tag → record ptr
                 // → load the whole record AS the sx TypeInfo LLVM type (bytes
                 // match by construction).
-                const tag = self.reflectArgTypeId(bi.args[0], "type_info");
+                const tag = self.reflectArgTypeId(bi.args[0], "@typeInfo");
                 const master = self.e.reflection().getOrBuildTypeInfoRecords(instruction.ty);
                 const master_len = self.e.type_info_records_len;
                 const master_ty = c.LLVMArrayType(self.e.cached_ptr, master_len);
@@ -2890,7 +2890,7 @@ pub const Ops = struct {
 
     /// The live member's payload behind an `any` view. A channel is its member
     /// word plus the payload area it reserves, so a view sized to the word
-    /// alone — a `@Tag` — has no area and views as `void`.
+    /// alone — a `@tag` view — has no area and views as `void`.
     fn emitAnyErrorPayloadView(self: Ops, u: UnaryOp) void {
         const av = self.e.resolveRef(u.operand);
         const data = c.LLVMBuildExtractValue(self.e.builder, av, 0, "aepv.data");

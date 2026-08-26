@@ -2778,7 +2778,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .align_of => .align_of,
 
         // No `call_builtin` form. The reflection intrinsics fold to a constant in
-        // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `type_info`
+        // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `@typeInfo`
         // DO have builtin ops but are emitted directly by their folds (as the
         // non-static fallback), never routed through here; the atomics lower to
         // dedicated atomic ops. Listed exhaustively on purpose — a new intrinsic
@@ -2807,7 +2807,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .atomic_load,
         .atomic_store,
         .atomic_fetch_add,
@@ -3115,7 +3115,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
         .@"@cos",
@@ -3403,7 +3403,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
         .@"@cos",
@@ -3751,7 +3751,7 @@ fn isReflectionCall(name: []const u8) bool {
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@is_comptime",
         .@"@error",
         .@"@env_type",
@@ -3895,40 +3895,33 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     // lowers; the sx `declare` calls `declare_type`, which returns that slot.
     // The `.enum(…)` arg to `define` infers `TypeInfo` from the sx fn's
     // declared param type via the ordinary call path's target-type threading.)
-    if (std.mem.eql(u8, name, "type_info")) {
-        // Comptime reflection-into-data: reflect a type INTO a `TypeInfo`
-        // value (the inverse of `define`'s decode). Resolve `$T` at lower
-        // time, then emit a `callBuiltin(.type_info, [const_type])` the
-        // interp executes against its type table — it reads the variants
-        // (name + payload) and constructs the same `.enum(EnumInfo{ … })`
-        // value `define` decodes, so the two round-trip. Result type is
-        // `TypeInfo`; the whole `define(declare(), type_info(T))` expr is
-        // comptime-evaluated, so this builtin never reaches codegen.
+    if (std.mem.eql(u8, name, "@typeInfo")) {
+        // Reflection-into-data: resolve `$T` at lower time, then emit a
+        // `callBuiltin(.@"@typeInfo", [const_type])` the interp executes
+        // against its type table, constructing the same value `define`
+        // decodes so the two round-trip.
         if (c.args.len != 1) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "type_info($T) takes one type argument", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@typeInfo($T) takes one type argument", .{});
             return Ref.none;
         }
-        const ti_ty = self.module.types.findByName(self.module.types.internString("TypeInfo")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "type_info needs `TypeInfo` in scope — import `modules/std/meta.sx`", .{});
-            return Ref.none;
-        };
+        const ti_ty = self.module.types.typeInfoType();
         if (!self.isStaticTypeArg(c.args[0])) {
             // Runtime Type: load the const record by tag.
             const tp = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{tp}) catch return Ref.none;
-            return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+            return self.builder.callBuiltin(.@"@typeInfo", args_owned, ti_ty);
         }
         const t = self.resolveTypeArg(c.args[0]);
         // Every type-table kind reflects (TypeInfo is exhaustive
         // over kinds; the VM's record builder classifies each and fails
         // loudly on an unclassified one). Only an unresolved arg rejects.
         if (t == .unresolved) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "type_info: unresolved type argument", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@typeInfo: unresolved type argument", .{});
             return Ref.none;
         }
         const type_ref = self.builder.constType(t);
         const args_owned = self.alloc.dupe(Ref, &.{type_ref}) catch return Ref.none;
-        return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+        return self.builder.callBuiltin(.@"@typeInfo", args_owned, ti_ty);
     }
     if (std.mem.eql(u8, name, "@env_type")) {
         if (self.persistArity(name, c)) |sentinel| return sentinel;
@@ -3984,7 +3977,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     if (std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count")) {
         // Runtime Type arg: tag-indexed count-table read. Kind gates
         // are a STATIC-arg feature; at runtime the table answers (a wrong-kind
-        // tag reads 0 — kind discrimination at runtime is type_info's job).
+        // tag reads 0 — kind discrimination at runtime is `@typeInfo`'s job).
         if (!self.isStaticTypeArg(c.args[0])) {
             const bi: inst_mod.BuiltinId = if (name[0] == 'v') .rt_variant_count else .rt_struct_field_count;
             const arg_ref = self.lowerExpr(c.args[0]);
@@ -4075,7 +4068,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // vector_lanes(T) → the lane COUNT. The one vector length the flat
         // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
         // occupy 4). Static arg folds; a runtime Type reads the lane table
-        // (non-vector tags answer 0 — kind discrimination is type_info's
+        // (non-vector tags answer 0 — kind discrimination is `@typeInfo`'s
         // job, same rule as the count tables). A static NON-vector is a
         // loud error: `.len` / struct_field_count are the right spellings.
         if (c.args.len < 1) return self.builder.constInt(0, .i64);

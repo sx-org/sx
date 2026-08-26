@@ -1142,8 +1142,8 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 // a struct in the type table, and only the interface word
                 // names it.
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
-                // A `@Tag(E)` discriminates an error, so it classifies with the
-                // error it reads and never as a plain enum.
+                // A discriminant enum stands for its error, so it classifies
+                // with the error it reads and never as a plain enum.
                 .@"enum" => (info == .@"enum" and info.@"enum".error_of == null) or info == .tagged_union,
                 .@"union" => info == .@"union" or info == .tagged_union,
                 .slice => info == .slice,
@@ -1928,17 +1928,11 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
 pub fn resolveFormedType(self: *Lowering, head: []const u8, args: []const *Node, span: ?ast.Span) ?TypeId {
     if (!contracts.isTypeConstructor(head)) return null;
     const table = &self.module.types;
-    const arity = contracts.constructorArity(head);
-    if (args.len != arity) {
+    if (args.len != contracts.constructor_arity) {
         if (self.diagnostics) |d| {
-            const spelling = contracts.find(head).?.spelling;
-            const plural: []const u8 = if (arity == 1) "one argument" else "two arguments";
-            d.addFmt(.err, span, "'{s}' takes {s} — write '{s}'", .{ head, plural, spelling });
+            d.addFmt(.err, span, "'{s}' takes two arguments — write '{s}'", .{ head, contracts.find(head).?.spelling });
         }
         return .unresolved;
-    }
-    if (std.mem.eql(u8, head, contracts.tag_head)) {
-        return self.tagTypeOf(self.resolveTypeWithBindings(args[0]), args[0].span);
     }
     if (std.mem.eql(u8, head, contracts.vector_head)) {
         const length = self.resolveVectorLane(args[0]) orelse return .unresolved;

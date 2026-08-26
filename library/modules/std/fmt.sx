@@ -419,7 +419,7 @@ any_to_string :: (val: any) -> string {
         }
         // An error renders as its owner and member — `.set` is the error that
         // declares the live member, `.name` its spelling — then the payload as
-        // it constructs. A struct payload brings its own braces; a `@Tag`
+        // it constructs. A struct payload brings its own braces; a discriminant
         // reserves no payload area, so it stops at the name.
         case error: {
             r := concat(val.set.name, concat(".", val.name));

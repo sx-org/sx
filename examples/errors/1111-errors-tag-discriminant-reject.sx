@@ -1,6 +1,6 @@
-// What a `@Tag(T)` refuses. It is the discriminant, not the error: it raises
+// What a discriminant refuses. It is the tag, not the error: it raises
 // nothing, binds no `|p|` in a match arm, and has no payload to view. Two
-// channels compare only when one holds the other's members, and `@Tag` itself
+// channels compare only when one holds the other's members, and `@tag` itself
 // takes an error, enum, or tagged union.
 
 @import "modules/std.sx";
@@ -15,15 +15,8 @@ boom :: (n: i64) -> (i64, !FooError) {
 
 nope :: () -> (i64, !BooError) { raise BooError.Z; }
 
-rethrow :: (t: @Tag(FooError)) -> (i64, !FooError) {
-    raise t;
-}
-
-bound :: (t: @Tag(FooError)) -> i64 {
-    return match t {
-        case .A: 0;
-        case .D: |p| p;
-    };
+rethrow :: (e: FooError) -> (i64, !FooError) {
+    raise @tag(e);
 }
 
 main :: () -> i32 {
@@ -31,9 +24,11 @@ main :: () -> i32 {
     _, z := nope();
     print("{}\n", e == z);
     print("{}", @errorPayload(@tag(e)));
-    print("{}\n", rethrow(@tag(e)) catch { -1 });
-    print("{}\n", bound(@tag(e)));
-    scalar : @Tag(i64) = 0;
-    print("{}\n", scalar);
+    print("{}\n", rethrow(e) catch { -1 });
+    print("{}\n", match @tag(e) {
+        case .A: 0;
+        case .D: |p| p;
+    });
+    print("{}\n", @tag(7));
     return 0;
 }

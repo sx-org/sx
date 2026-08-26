@@ -95,9 +95,9 @@ fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
     return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
-/// `@Tag(T)`: T's discriminant. An error views as the payload-free enum over
-/// its members, a payload-free enum already IS its discriminant, and a tagged
-/// union views as the enum over its variants.
+/// `@tag(v)`'s type: T's discriminant. An error views as the payload-free enum
+/// over its members, a payload-free enum already IS its discriminant, and a
+/// tagged union views as the enum over its variants.
 pub fn tagTypeFor(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
@@ -113,12 +113,12 @@ pub fn tagTypeOf(self: *Lowering, ty: TypeId, span: ast.Span) TypeId {
     if (ty == .unresolved) return .unresolved;
     if (tagTypeFor(self, ty)) |tag_ty| return tag_ty;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "@Tag expects an error, enum, or tagged union; '{s}' is none", .{self.formatTypeName(ty)});
+        d.addFmt(.err, span, "@tag expects an error, enum, or tagged union; '{s}' is none", .{self.formatTypeName(ty)});
     }
     return .unresolved;
 }
 
-/// The error a `@Tag(E)` discriminates, or null when `ty` is not one.
+/// The error a discriminant enum discriminates, or null when `ty` is not one.
 pub fn errorBehindTag(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty.isBuiltin()) return null;
     const info = self.module.types.get(ty);
@@ -455,7 +455,7 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, owner_name: []const
 
 /// How an `==` operand names an error.
 const CompareOperand = struct {
-    /// The operand's OWN type — a value's channel, a `@Tag(E)` view's enum.
+    /// The operand's OWN type — a value's channel, a `@tag` view's enum.
     /// `.unresolved` for a shorthand, which takes the other operand's.
     ty: TypeId,
     /// The channel the operand's value lives in; null for a view and for a
@@ -479,8 +479,9 @@ fn classifyCompareOperand(self: *Lowering, node: *const Node) CompareOperand {
     };
     const ty = self.inferExprType(node);
     const set = liveChannelOf(self, ty);
-    // A `@Tag(E)` stands for E here: the members decide comparability, and the
-    // view contributes its tag word alone — as does a bare member spelling.
+    // A `@tag` view stands for its error here: the members decide
+    // comparability, and the view contributes its tag word alone — as does a
+    // bare member spelling.
     return .{
         .ty = ty,
         .set = set,
@@ -539,9 +540,9 @@ fn channelValueEquality(self: *Lowering, lv: Ref, rv: Ref, l_chan: TypeId, r_cha
     return self.builder.blockParam(merge_bb, 0, .bool);
 }
 
-/// Lower `==` / `!=` when an error value or a `@Tag(E)` is involved. Returns
+/// Lower `==` / `!=` when an error value or a `@tag` view is involved. Returns
 /// null when neither operand is error-related (general path runs). Both
-/// operands must be a member spelling, an error value, or a `@Tag(E)`;
+/// operands must be a member spelling, an error value, or a `@tag` view;
 /// otherwise it's a type error (e.g. comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
     const l = classifyCompareOperand(self, bop.lhs);
@@ -575,7 +576,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     };
 
     // A `.X` shorthand resolves in the other operand's OWN type — the channel
-    // for a live value, the `@Tag(E)` enum for a view.
+    // for a live value, the discriminant enum for a view.
     const ctx_ty: ?TypeId = if (l_dot) r.ty else if (r_dot) l.ty else (l.set orelse r.set);
     const saved = self.target_type;
     if (ctx_ty) |ct| self.target_type = ct;
@@ -583,7 +584,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     const rv = self.lowerExpr(bop.rhs);
     self.target_type = saved;
 
-    // A bare member spelling and a `@Tag` view name the tag alone; two whole
+    // A bare member spelling and a `@tag` view name the tag alone; two whole
     // values match the live member's payload as well.
     if (l.payload and r.payload) {
         // A shorthand carries the other operand's channel.

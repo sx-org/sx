@@ -1,16 +1,15 @@
-// Runtime `type_info(tp)` in a real linked binary: the const __sx_type_infos
+// Runtime `@typeInfo(tp)` in a real linked binary: the const __sx_type_infos
 // records (one per TypeId, bytes matching the sx TypeInfo layout; master
 // [N x ptr] by tag) loaded and MATCHED at runtime — kind-first dispatch with
 // typed per-arm payloads (struct fields carry name+offset; enums their
 // variants).
 @import "modules/std.sx";
-meta :: @import "modules/std/meta.sx";
 Padded :: struct { a: u8; b: i64; c: u16; }
 Color  :: enum { red; green; blue; }
 Overlay :: union { as_int: i64; bytes: [8]u8; }
 
 kind_of :: (tp: Type) -> string {
-    ti := type_info(tp);
+    ti := @typeInfo(tp);
     match ti {
         case .struct: |si| { return format("struct n={} f1={}@{}", si.fields.len, si.fields[1].name, si.fields[1].offset); }
         case .enum: |ei| { return format("enum n={} v2={}", ei.variants.len, ei.variants[2].name); }

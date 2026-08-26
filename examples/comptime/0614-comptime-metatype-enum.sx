@@ -10,8 +10,8 @@
 @import "modules/std/meta.sx";
 
 E :: define(declare("E"), .enum(.{ variants = .[
-    EnumVariant{ name = "value",  payload = i64  },
-    EnumVariant{ name = "closed", payload = void },
+    VariantInfo{ name = "value",  payload = i64  },
+    VariantInfo{ name = "closed", payload = void },
 ] }));
 
 main :: () -> i32 {

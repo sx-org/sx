@@ -1,6 +1,6 @@
 // Comptime compiler API — type-kind + enum-value reflection readers.
 //
-// Completes the READ side the metatype needs to re-express `type_info(T)` as sx:
+// Completes the READ side the metatype needs to re-express `@typeInfo(T)` as sx:
 //
 //   raw_type_kind(t)            → a stable kind discriminant, to branch on the shape
 //                             (0 other · 1 struct · 2 enum · 3 tagged_union ·

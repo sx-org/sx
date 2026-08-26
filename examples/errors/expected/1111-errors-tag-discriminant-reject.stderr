@@ -1,29 +1,29 @@
 error: error channels 'FooError' and 'BooError' do not compare — one channel must hold the other's members
-  --> examples/errors/1111-errors-tag-discriminant-reject.sx:32:19
+  --> examples/errors/1111-errors-tag-discriminant-reject.sx:25:19
    |
-32 |     print("{}\n", e == z);
+25 |     print("{}\n", e == z);
    |                   ^
 
-error: @errorPayload expects an error value; '@Tag(FooError)' is not one
-  --> examples/errors/1111-errors-tag-discriminant-reject.sx:33:17
+error: @errorPayload expects an error value; '@tag(FooError)' is not one
+  --> examples/errors/1111-errors-tag-discriminant-reject.sx:26:17
    |
-33 |     print("{}", @errorPayload(@tag(e)));
+26 |     print("{}", @errorPayload(@tag(e)));
    |                 ^^^^^^^^^^^^^
 
-error: raise takes an error member or an error value; '@Tag(FooError)' is neither
+error: raise takes an error member or an error value; '@tag(FooError)' is neither
   --> examples/errors/1111-errors-tag-discriminant-reject.sx:19:5
    |
-19 |     raise t;
-   |     ^^^^^^^^
+19 |     raise @tag(e);
+   |     ^^^^^^^^^^^^^^
 
-error: this case pattern cannot bind a payload from subject type '@Tag(FooError)' — only tagged union (enum with payload) variants are bindable
-  --> examples/errors/1111-errors-tag-discriminant-reject.sx:25:14
+error: this case pattern cannot bind a payload from subject type '@tag(FooError)' — only tagged union (enum with payload) variants are bindable
+  --> examples/errors/1111-errors-tag-discriminant-reject.sx:30:14
    |
-25 |         case .D: |p| p;
+30 |         case .D: |p| p;
    |              ^^
 
-error: @Tag expects an error, enum, or tagged union; 'i64' is none
-  --> examples/errors/1111-errors-tag-discriminant-reject.sx:36:19
+error: @tag expects an error, enum, or tagged union; 'i64' is none
+  --> examples/errors/1111-errors-tag-discriminant-reject.sx:32:19
    |
-36 |     scalar : @Tag(i64) = 0;
-   |                   ^^^
+32 |     print("{}\n", @tag(7));
+   |                   ^^^^

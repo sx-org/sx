@@ -18,9 +18,9 @@ Box :: struct ($R: Type) { value: R; }
 // Mint a tagged-union mirroring a named tuple of `*Box(..)` handles:
 // variant name = tuple label, payload = the box's value type (`*Box(A)` -> `A`).
 ResultOf :: ($T: Type) -> Type {
-    vs : [struct_field_count(T)]EnumVariant = ---;
+    vs : [struct_field_count(T)]VariantInfo = ---;
     inline for i in 0..struct_field_count(T) {
-        vs[i] = EnumVariant{
+        vs[i] = VariantInfo{
             name    = struct_field_name(T, i),                          // folded to a const string
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Box(A) -> Box(A) -> A
         };

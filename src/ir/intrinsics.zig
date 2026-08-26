@@ -53,6 +53,7 @@ pub const Id = enum(u16) {
     // ── std/core.sx — reflection ────────────────────────────────────────────
     @"@typeOf",
     @"@typeName",
+    @"@typeInfo",
     struct_field_count,
     variant_count,
     struct_field_name,
@@ -87,7 +88,6 @@ pub const Id = enum(u16) {
     raw_variant_value,
     raw_pointer_to,
     // ── std/meta.sx ─────────────────────────────────────────────────────────
-    type_info,
     raw_declare_type,
     raw_register_type,
     // ── compiler.sx — the build-pipeline services (evaluate-only) ───────────
@@ -186,7 +186,7 @@ pub const Entry = struct {
     /// `null` means the handler computes it, and the reason is always that the
     /// result depends on an argument: the math intrinsics return their
     /// argument's type (`f32` in, `f32` out), the atomics return `T`, and
-    /// `type_info` returns the `TypeInfo` it must look up in the type table.
+    /// `@typeInfo` returns the `TypeInfo` it must look up in the type table.
     /// Callers that need a type for a null entry must ask the handler — there is
     /// no default to fall back on.
     ret: ?TypeId = null,
@@ -248,7 +248,7 @@ pub const entries = [_]Entry{
     // ── reflection with a VM arm: the type arg may only be known at eval time
     // (e.g. `args[i]` inside a builder body, carrying a `.type_tag(TypeId)`).
     .{ .id = .@"@typeName", .module = core, .name = "@typeName", .mode = .dual, .arity = 1, .ret = .string },
-    .{ .id = .type_info, .module = meta, .name = "type_info", .mode = .dual, .arity = 1 },
+    .{ .id = .@"@typeInfo", .module = core, .name = "@typeInfo", .mode = .dual, .arity = 1 },
 
     // ── evaluate-only: the comptime VM services these itself (no lowering, no
     // runtime form). `declare_type` / `register_type` mint into the type table;

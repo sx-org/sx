@@ -1,14 +1,13 @@
 // ONE compiled function walks ANY value — kind dispatch is a runtime
-// type_info match, struct fields are interior views (struct_field_value),
+// `@typeInfo` match, struct fields are interior views (struct_field_value),
 // array/vector elements are stride views (any_element), and the leaves feed
 // the tag-driven formatter. One erasure at the root; every inner step is view
 // math, zero copies.
 
 @import "modules/std.sx";
-meta :: @import "modules/std/meta.sx";
 
 print_any :: (av: any) {
-    ti := type_info(@typeOf(av));
+    ti := @typeInfo(@typeOf(av));
     match ti {
         case .struct: |si| {
             print("{");
