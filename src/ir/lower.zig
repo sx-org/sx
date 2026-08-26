@@ -3276,6 +3276,7 @@ pub const Lowering = struct {
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;
     pub const catchAttempted = lower_error.catchAttempted;
+    pub const errorExit = lower_error.errorExit;
     pub const emitErrorReturn = lower_error.emitErrorReturn;
     pub const diagTryNotFailable = lower_error.diagTryNotFailable;
     pub const lowerCatch = lower_error.lowerCatch;

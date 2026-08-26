@@ -801,6 +801,30 @@ pub fn buildFailableTuple(self: *Lowering, ret_ty: TypeId, value_refs: []const R
     return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, fields.items) catch unreachable } }, ret_ty);
 }
 
+/// Inverse of `extractSuccessValue`: `ret_ty`'s ABI slots from a success
+/// product, or undef per slot, plus `tag`.
+fn packFailableFromSuccess(self: *Lowering, ret_ty: TypeId, success: ?Ref, tag: Ref) Ref {
+    if (ret_ty.isBuiltin() or self.module.types.get(ret_ty) != .failable) return tag;
+    const f = self.module.types.get(ret_ty).failable;
+    const n = self.module.types.failableValueSlotCount(f);
+    var slots = std.ArrayList(Ref).empty;
+    defer slots.deinit(self.alloc);
+    if (n == 1) {
+        const slot_ty = self.module.types.failableValueSlotType(f, 0);
+        slots.append(self.alloc, success orelse self.builder.constUndef(slot_ty)) catch unreachable;
+    } else {
+        for (0..n) |i| {
+            const slot_ty = self.module.types.failableValueSlotType(f, i);
+            const v = if (success) |s|
+                emitProductGet(self, s, f.value, i, slot_ty)
+            else
+                self.builder.constUndef(slot_ty);
+            slots.append(self.alloc, v) catch unreachable;
+        }
+    }
+    return self.buildFailableTuple(ret_ty, slots.items, tag);
+}
+
 /// The success (value-part) type of a value-carrying failable
 /// `op_ty` (`-> (T..., !)`): the lone value type for a single-value
 /// failable, or the anonymous product of the value slots for a multi-value
@@ -993,13 +1017,19 @@ pub fn currentFunctionName(self: *Lowering) []const u8 {
 /// boundary block and `boundary` is set.
 pub const Attempted = struct { node: *const Node, boundary: bool };
 
+/// A `try { … }` is the boundary; any other `try` unwraps so the consumer
+/// is that `try`'s fallback.
+fn attemptedExpr(node: *const Node) Attempted {
+    if (node.data != .try_expr) return .{ .node = node, .boundary = false };
+    const inner = node.data.try_expr.operand;
+    return .{ .node = inner, .boundary = inner.data == .block };
+}
+
 /// The failable a `catch` handles. The nearest fallback wins, so a `try`
 /// directly under the handler routes there rather than to the enclosing
 /// boundary: `try foo() catch { 0 }` is `foo() catch { 0 }`.
 pub fn catchAttempted(ce: *const ast.CatchExpr) Attempted {
-    if (ce.operand.data != .try_expr) return .{ .node = ce.operand, .boundary = false };
-    const inner = ce.operand.data.try_expr.operand;
-    return .{ .node = inner, .boundary = inner.data == .block };
+    return attemptedExpr(ce.operand);
 }
 
 /// The channel a `try { … }` block converges to: the flatten-merge of the
@@ -1019,6 +1049,14 @@ fn tryBoundaryChannel(self: *Lowering, block: *const Node) TypeId {
     if (dyn) return self.module.types.dynErrorChannel();
     std.mem.sort(u32, tags.items, {}, std.sort.asc(u32));
     return self.module.types.errorSetType(.empty, tags.items);
+}
+
+fn attemptType(self: *Lowering, a: Attempted) TypeId {
+    if (!a.boundary) return self.inferExprType(a.node);
+    const chan = tryBoundaryChannel(self, a.node);
+    const succ = self.inferExprType(a.node);
+    if (succ == .void or succ == .noreturn) return chan;
+    return self.module.types.internFailable(succ, chan);
 }
 
 /// `try { … }` — the block is an error boundary of its own: the `try`s and
@@ -1043,18 +1081,18 @@ fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
     // tail must not make the enclosing body's later statements look dead.
     self.block_terminated = saved_terminated;
 
-    const succ_ty: TypeId = if (self.currentBlockHasTerminator()) .void else if (tail) |t| self.builder.getRefType(t) else .void;
+    const succ_ty: TypeId = if (tail) |t| self.builder.getRefType(t) else self.inferExprType(block);
     const ret_ty = if (succ_ty == .void or succ_ty == .noreturn) chan else self.module.types.internFailable(succ_ty, chan);
     const done_bb = self.freshBlockWithParams("tryblk.done", &.{ret_ty});
 
     if (!self.currentBlockHasTerminator()) {
         const ok = self.builder.constInt(0, chan);
-        self.builder.br(done_bb, &.{if (ret_ty == chan) ok else self.buildFailableTuple(ret_ty, &.{tail.?}, ok)});
+        self.builder.br(done_bb, &.{packFailableFromSuccess(self, ret_ty, tail, ok)});
     }
 
     self.builder.switchToBlock(fail_bb);
     const tag = self.builder.blockParam(fail_bb, 0, chan);
-    const failed = if (ret_ty == chan) tag else self.buildFailableTuple(ret_ty, &.{self.builder.constUndef(succ_ty)}, tag);
+    const failed = packFailableFromSuccess(self, ret_ty, null, tag);
     self.builder.br(done_bb, &.{failed});
 
     self.builder.switchToBlock(done_bb);
@@ -1077,11 +1115,11 @@ fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span) struct { ty: Type
 
 /// Where an error leaving the current position goes: the innermost
 /// `try { … }` boundary, else the enclosing function's own channel.
-const ErrorExit = struct { set: TypeId, ret_ty: TypeId, boundary: ?Lowering.ErrorBoundary };
+pub const ErrorExit = struct { set: TypeId, ret_ty: TypeId, boundary: ?Lowering.ErrorBoundary };
 
 /// The current error exit, or null when neither a boundary nor a failable
 /// function is in scope.
-fn errorExit(self: *Lowering) ?ErrorExit {
+pub fn errorExit(self: *Lowering) ?ErrorExit {
     if (self.error_boundary) |b| return .{ .set = b.chan, .ret_ty = b.chan, .boundary = b };
     const ret_ty = self.effectiveReturnType() orelse return null;
     const set = self.errorChannelOf(ret_ty) orelse return null;
@@ -1302,8 +1340,7 @@ pub fn lowerCatchOverChain(self: *Lowering, ce: *const ast.CatchExpr, span: ast.
     // The error tag reaching the handler is the final operand's. A
     // value-terminator last operand means the chain can't fail — nothing for
     // `catch` to absorb.
-    const last = unwrapTryNode(operands.items[operands.items.len - 1]);
-    const last_ty = self.inferExprType(last);
+    const last_ty = attemptType(self, attemptedExpr(operands.items[operands.items.len - 1]));
     const err_set = self.errorChannelOf(last_ty) orelse {
         if (self.diagnostics) |d| d.addFmt(.err, span, "`catch` here is redundant — the `??` chain already absorbs every failure via its value terminator", .{});
         return self.builder.constInt(0, .void);
@@ -1562,14 +1599,14 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
 }
 
 /// The success (value) type of a failable `??` chain: descend to the
-/// leftmost operand, unwrap any `try`, and take its failable success type
-/// (`void` for a pure-`-> !` chain). All operands share this type.
+/// leftmost operand and take its failable success type (`void` for a
+/// pure-`-> !` chain). All operands share this type.
 pub fn coalesceChainSuccessType(self: *Lowering, nc: *const ast.NullCoalesce) TypeId {
     var lhs = nc.lhs;
     while (lhs.data == .null_coalesce and self.coalesceIsFailable(&lhs.data.null_coalesce)) {
         lhs = lhs.data.null_coalesce.lhs;
     }
-    const ft = self.inferExprType(unwrapTryNode(lhs));
+    const ft = attemptType(self, attemptedExpr(lhs));
     const fset = self.errorChannelOf(ft) orelse return .unresolved;
     return if (ft == fset) .void else self.failableSuccessType(ft);
 }
@@ -1606,7 +1643,7 @@ fn flattenCoalesceOperand(self: *Lowering, node: *const Node, list: *std.ArrayLi
 /// a chain (`try a ?? try b ?? …`, possibly with a trailing value
 /// terminator). Left-to-right, short-circuit: each failable operand's
 /// failure routes to the next operand; the final operand either absorbs
-/// (value terminator) or propagates to the enclosing function. Each failed
+/// (value terminator) or propagates to the enclosing error exit. Each failed
 /// attempt pushes a trace frame; an absorbing resolution (any operand
 /// succeeding, or the value terminator) clears the buffer; total failure
 /// preserves the frames for the caller.
@@ -1626,8 +1663,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.chain_fail_target = null;
     defer self.chain_fail_target = fail_target;
 
-    // Success type from the first operand (a failable; unwrap any `try`).
-    const first_ty = self.inferExprType(unwrapTryNode(operands.items[0]));
+    const first_ty = attemptType(self, attemptedExpr(operands.items[0]));
     const first_set = self.errorChannelOf(first_ty) orelse {
         if (self.diagnostics) |d| d.addFmt(.err, span, "the left operand of a failable `??` must be failable; got '{s}'", .{self.formatTypeName(first_ty)});
         return self.builder.constInt(0, .void);
@@ -1642,19 +1678,13 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         return self.builder.constInt(0, .void);
     }
 
-    // Caller failability — only needed when the chain can propagate to the
-    // function (final operand is failable AND no absorbing consumer target).
-    var caller_ret: TypeId = .void;
-    var caller_set: TypeId = .void;
+    var exit: ?ErrorExit = null;
     if (!last_is_value and fail_target == null) {
-        const cret = self.effectiveReturnType();
-        const cset = if (cret) |r| self.errorChannelOf(r) else null;
-        if (cset == null) {
+        exit = errorExit(self);
+        if (exit == null) {
             if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`", .{});
             return self.builder.constInt(0, .void);
         }
-        caller_ret = cret.?;
-        caller_set = cset.?;
     }
 
     const merge_bb = if (has_value)
@@ -1677,10 +1707,9 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
             break;
         }
 
-        // Failable operand (`try X` marker or a bare failable). Lower the
-        // underlying failable; the `try` marker's routing IS the chain.
-        const underlying = unwrapTryNode(operand);
-        const op_ty = self.inferExprType(underlying);
+        const attempted = attemptedExpr(operand);
+        const attempt = lowerAttempt(self, attempted, operand.span);
+        const op_ty = attempt.ty;
         const op_set = self.errorChannelOf(op_ty) orelse {
             if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `??` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
             return self.builder.constInt(0, .void);
@@ -1688,10 +1717,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         const op_value_carrying = op_ty != op_set;
 
         // Widening applies only when the final failure escapes to the
-        // function (no absorbing consumer); a `catch` target absorbs it.
-        if (is_last and fail_target == null) self.checkEscapeWidening(underlying, op_set, caller_set, operand.span);
+        // error exit (no absorbing consumer); a `catch` target absorbs it.
+        if (is_last and fail_target == null) self.checkEscapeWidening(attempted.node, op_set, exit.?.set, operand.span);
 
-        const result = self.lowerExpr(underlying);
+        const result = attempt.ref;
         const err_val = if (op_value_carrying) self.extractErrorSlot(result, op_ty, op_set) else result;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
@@ -1715,7 +1744,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         // operand (same block — no function exit, so `onfail` does not
         // fire) or, for the final operand, resolve the total failure: to an
         // absorbing consumer (`catch`) if one set a target, else propagate
-        // to the caller.
+        // to the enclosing error exit.
         self.builder.switchToBlock(fail_bb);
         self.emitTracePush(self.placeholderTraceFrame());
         if (is_last) {
@@ -1723,8 +1752,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
                 const ec = self.coerceToType(err_val, self.builder.getRefType(err_val), t.set);
                 self.builder.br(t.bb, &.{ec});
             } else {
-                self.emitErrorCleanup(self.func_defer_base, err_val);
-                self.emitErrorReturn(caller_ret, caller_set, err_val);
+                emitErrorExit(self, exit.?, err_val);
             }
         }
         // else: fall through — the next operand is lowered in fail_bb.

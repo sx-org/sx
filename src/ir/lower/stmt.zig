@@ -3661,13 +3661,9 @@ pub fn lowerDefer(self: *Lowering, ds: *const ast.DeferStmt) void {
 /// emitted (interleaved with defers, reverse) at error exits by
 /// `emitErrorCleanup`, and discarded — never run — on a success exit.
 pub fn lowerOnFail(self: *Lowering, ofs: *const ast.OnFailStmt, span: ast.Span) void {
-    // `onfail` is only meaningful inside a failable function — a
-    // non-failable function never error-exits, so it could never fire.
-    const ret_ty = self.effectiveReturnType() orelse {
-        self.diagOnFailNotFailable(span);
-        return;
-    };
-    if (self.errorChannelOf(ret_ty) == null) {
+    // `onfail` runs only when an error leaves the current failable body
+    // (the enclosing function, or a `try { … }` boundary).
+    if (self.errorExit() == null) {
         self.diagOnFailNotFailable(span);
         return;
     }
