@@ -12,6 +12,7 @@ const BlockId = inst_mod.BlockId;
 
 const lower = @import("../lower.zig");
 const lower_stmt = @import("stmt.zig");
+const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ComptimeValue = Lowering.ComptimeValue;
@@ -1405,6 +1406,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms) |_| arm_concrete.append(self.alloc, null) catch unreachable;
     var claimed = std.AutoHashMap(u64, void).init(self.alloc);
     defer claimed.deinit();
+    // A qualified `Prefix.Leaf` arm's verdict; null on every other spelling.
+    var arm_verdicts = std.ArrayList(?lower_error.QualifiedArm).empty;
+    defer arm_verdicts.deinit(self.alloc);
+    for (me.arms) |_| arm_verdicts.append(self.alloc, null) catch unreachable;
 
     for (me.arms, 0..) |arm, i| {
         if (arm.pattern == null) {
@@ -1574,6 +1579,21 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     .args = &.{},
                 }) catch unreachable;
             }
+        } else if (pat.data == .field_access) {
+            // The one qualified-arm verdict, ahead of the optional split so
+            // every value subject reaches it: a dotted arm resolves or refuses
+            // here, never by its leaf or by its arm index.
+            arm_tag_values.append(self.alloc, &.{}) catch unreachable;
+            const verdict = lower_error.qualifyMatchArm(self, subject_ty, pat);
+            arm_verdicts.items[i] = verdict;
+            switch (verdict) {
+                .ok => |ok| cases.append(self.alloc, .{
+                    .value = @intCast(ok.case_value),
+                    .target = arm_blocks.items[i],
+                    .args = &.{},
+                }) catch unreachable,
+                else => lower_error.refuseQualifiedArm(self, verdict, subject_ty, pat),
+            }
         } else if (is_optional_match) {
             // Optional match: .some → 1 (has_value=true), .none → 0
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
@@ -1592,6 +1612,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
             const case_val: u64 = blk: {
+                if (is_error_set_match) break :blk @intCast(lower_error.errorArmMember(self, subject_ty, pat) orelse
+                    self.anonymousErrorMember(lower_error.shorthandArmName(pat) orelse ""));
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
@@ -1631,9 +1653,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
-                    } else if (ty_info == .@"error") {
-                        break :blk @intCast(self.module.types.errorSetMemberId(subject_ty, pat_name) orelse
-                            self.anonymousErrorMember(pat_name));
                     }
                 }
                 break :blk @intCast(i);
@@ -1691,10 +1710,17 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
 
-        // For type-match arms with empty tag lists, the arm is unreachable
-        // (no switch case targets it). Skip lowering to avoid invalid IR
-        // from runtime cast/dispatch with no matching types.
-        if (is_type_match and arm.pattern != null and arm_tag_values.items[i].len == 0) {
+        // An arm no switch case targets is unreachable: a type-match arm whose
+        // tags are all claimed, or a refused qualified arm. Lowering it emits
+        // invalid IR — a runtime cast with no matching type, a payload read in
+        // a block with no predecessor.
+        const refused_qualified = if (arm_verdicts.items[i]) |v| switch (v) {
+            .ok => false,
+            else => true,
+        } else false;
+        if (arm.pattern != null and (refused_qualified or
+            (is_type_match and arm_tag_values.items[i].len == 0)))
+        {
             self.builder.emitUnreachable();
             continue;
         }
@@ -1704,7 +1730,24 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         self.scope = &arm_scope;
 
         if (arm.capture) |capture_name| {
-            if (is_any_switch) {
+            if (arm_verdicts.items[i]) |verdict| {
+                // The skip above drops every refusal, so a stored verdict here
+                // is `ok`.
+                const ok = verdict.ok;
+                const leaf = arm.pattern.?.data.field_access.field;
+                if (ok.payload == .void) {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, arm.pattern.?.span, "'{s}' carries no payload to bind", .{leaf});
+                    }
+                    arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
+                } else {
+                    const payload = self.builder.emit(.{ .enum_payload = .{
+                        .base = subject,
+                        .field_index = ok.field_index,
+                    } }, ok.payload);
+                    arm_scope.put(capture_name, .{ .ref = payload, .ty = ok.payload, .is_alloca = false, .origin = .match_payload });
+                }
+            } else if (is_any_switch) {
                 // A concrete arm binds the typed value — exactly what
                 // `v := av.(T)` produces, with the tag pre-proven by the
                 // switch (no panic path). Category arms name a KIND (many
@@ -1733,9 +1776,9 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             } else if (is_error_set_match) {
                 // An arm binds the payload the member it names declares, read
                 // out of the channel value.
-                const pat_name = Lowering.errorArmMemberName(arm.pattern) orelse "";
+                const pat_name = lower_error.shorthandArmName(arm.pattern) orelse "";
                 const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
-                const member = self.module.types.errorSetMemberId(subject_ty, pat_name);
+                const member = lower_error.errorArmMember(self, subject_ty, arm.pattern);
                 const payload_ty = if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
                 if (member == null) {
                     if (self.diagnostics) |diags| {

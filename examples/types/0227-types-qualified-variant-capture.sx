@@ -1,0 +1,18 @@
+// A value-producing match types a payload capture from a qualified variant arm.
+
+@import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    dot;
+}
+
+main :: () -> i32 {
+    s := Shape.circle(2.0);
+    n := match s {
+        case Shape.circle: |r| r;
+        case .dot: return 0;
+    };
+    print("{}\n", n);
+    return 0;
+}

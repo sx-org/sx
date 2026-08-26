@@ -1031,13 +1031,9 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     // The `error` keyword in expression position parses as identifier
-    // "error", so `error.X` arrives here as a field access. It names no
-    // value: a member belongs to the set that declares it.
+    // "error", so `error.X` arrives here as a field access.
     if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) {
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, span, "`error.{s}` is not a value — an error member belongs to the set that declares it", .{fa.field});
-            d.addHelpFmt(id, span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ fa.field, fa.field });
-        }
+        self.emitErrorKeywordMember(span, fa.field);
         return self.builder.constUndef(.unresolved);
     }
 

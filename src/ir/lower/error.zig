@@ -155,11 +155,10 @@ pub fn literalTagName(node: *const Node) ?[]const u8 {
     return null;
 }
 
-/// The error set a qualified member spelling `Set.Member` or `ns.Set.Member`
-/// names, read from its OBJECT node: a type name resolving to an error set, not
-/// shadowed by a value binding or a global value.
-pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
-    if (object.data == .field_access) return namespacedErrorSet(self, object);
+/// The type a qualified prefix `Set`, `Enum`, or `ns.Set` names, read from its
+/// OBJECT node: a type name not shadowed by a value binding or a global value.
+pub fn armPrefixType(self: *Lowering, object: *const Node) ?TypeId {
+    if (object.data == .field_access) return namespacedPrefixType(self, object);
     if (object.data != .identifier) return null;
     const name = object.data.identifier.name;
     if (self.scope) |s| {
@@ -171,13 +170,12 @@ pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
         .resolved => |tid| tid,
         else => return null,
     };
-    if (ty.isBuiltin()) return null;
-    return if (self.module.types.get(ty) == .@"error") ty else null;
+    return if (ty.isBuiltin()) null else ty;
 }
 
-/// The error set a namespace-qualified prefix `ns.Set` names, resolved in the
-/// module the namespace targets.
-fn namespacedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+/// The type a namespace-qualified prefix `ns.Set` names, resolved in the module
+/// the namespace targets.
+fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
     const root = object.data.field_access.object;
     if (root.data == .identifier) {
         const name = root.data.identifier.name;
@@ -196,7 +194,13 @@ fn namespacedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
         .resolved => |tid| tid,
         else => return null,
     };
-    if (ty.isBuiltin()) return null;
+    return if (ty.isBuiltin()) null else ty;
+}
+
+/// The error set a qualified member spelling `Set.Member` or `ns.Set.Member`
+/// names, read from its OBJECT node.
+pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+    const ty = armPrefixType(self, object) orelse return null;
     return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
@@ -249,17 +253,141 @@ pub fn raisedMember(self: *Lowering, node: *const Node) ?RaisedMember {
     return .{ .set = null, .shorthand = head.data == .enum_literal, .member = name, .constructed = braced != null };
 }
 
-/// The member name a `match` arm's pattern names on an error-set subject, in
-/// any spelling — `.X`, `X`, `Set.X`. Null for an `else:` arm or a pattern no
-/// member spelling reaches.
-pub fn errorArmMemberName(pattern: ?*const Node) ?[]const u8 {
+/// The member name a shorthand `.X` or bare-identifier `match` arm spells, or
+/// null for an `else:` arm and for any other pattern.
+pub fn shorthandArmName(pattern: ?*const Node) ?[]const u8 {
     const pat = pattern orelse return null;
     return switch (pat.data) {
         .enum_literal => |el| el.name,
         .identifier => |id| id.name,
-        .field_access => |fa| fa.field,
         else => null,
     };
+}
+
+/// The interned member a shorthand `.X` or bare-identifier `match` arm names in
+/// the channel `chan` in hand. Null when the channel carries no such member.
+/// A qualified `Set.X` arm resolves through `qualifyMatchArm` instead.
+pub fn errorArmMember(self: *Lowering, chan: TypeId, pattern: ?*const Node) ?u32 {
+    const name = shorthandArmName(pattern) orelse return null;
+    return self.module.types.errorSetMemberId(chan, name);
+}
+
+/// `error.X` names no value — a member belongs to the set that declares it.
+pub fn emitErrorKeywordMember(self: *Lowering, span: ast.Span, field: []const u8) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, span, "`error.{s}` is not a value — an error member belongs to the set that declares it", .{field});
+    d.addHelpFmt(id, span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ field, field });
+}
+
+/// What a qualified `case Prefix.Leaf:` arm resolves to against the subject in
+/// hand. A refusal emits once, at the case-value pass; that arm registers no
+/// case and its body is skipped.
+pub const QualifiedArm = union(enum) {
+    /// `case_value` is what the switch dispatches on — a declared tag where the
+    /// type spells one; `field_index` is the variant's ordinal, which is what a
+    /// payload read indexes.
+    ok: struct { case_value: u64, field_index: u32, payload: TypeId },
+    /// `error.X` — the keyword names no set.
+    error_keyword,
+    /// The prefix names no type, or names one whose members this subject
+    /// cannot carry.
+    bad_prefix,
+    /// The prefix is an owner and declares no such leaf.
+    bad_leaf,
+};
+
+/// Resolve a qualified `case Prefix.Leaf:` arm against `subject_ty`. Pure: the
+/// capture-type query re-runs it, so emitting here would report twice.
+pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) QualifiedArm {
+    const fa = pat.data.field_access;
+    // `error` parses as identifier "error", so the keyword is a pattern fact,
+    // never a question about a type carrying that name.
+    if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) return .error_keyword;
+    if (subject_ty.isBuiltin()) return .bad_prefix;
+    const table = &self.module.types;
+    switch (table.get(subject_ty)) {
+        .@"error" => {
+            // The prefix names the set that INTERNS the member, which a channel
+            // composes rather than owns, so it need not be the subject.
+            const set = qualifiedErrorSet(self, fa.object) orelse return .bad_prefix;
+            const id = table.errorSetMemberId(set, fa.field) orelse return .bad_leaf;
+            return .{ .ok = .{ .case_value = id, .field_index = id, .payload = table.memberPayload(id) } };
+        },
+        .@"enum" => |e| {
+            if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
+            for (e.variants, 0..) |v, vi| {
+                if (!std.mem.eql(u8, table.strings.get(v), fa.field)) continue;
+                return .{ .ok = .{
+                    .case_value = declaredTagValue(e.explicit_values, vi),
+                    .field_index = @intCast(vi),
+                    .payload = .void,
+                } };
+            }
+            return .bad_leaf;
+        },
+        .tagged_union => |tu| {
+            if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
+            for (tu.fields, 0..) |f, vi| {
+                if (!std.mem.eql(u8, table.strings.get(f.name), fa.field)) continue;
+                return .{ .ok = .{
+                    .case_value = declaredTagValue(tu.explicit_tag_values, vi),
+                    .field_index = @intCast(vi),
+                    .payload = f.ty,
+                } };
+            }
+            return .bad_leaf;
+        },
+        else => return .bad_prefix,
+    }
+}
+
+/// The value variant `vi` dispatches on: the tag its type spells, else its
+/// ordinal.
+fn declaredTagValue(values: ?[]const i64, vi: usize) u64 {
+    if (values) |vals| {
+        if (vi < vals.len) return @bitCast(vals[vi]);
+    }
+    return @intCast(vi);
+}
+
+/// The prefix as the arm spells it, owned by the lowering allocator.
+fn armPrefixSpelling(self: *Lowering, object: *const Node) ?[]const u8 {
+    return switch (object.data) {
+        .identifier => |id| self.alloc.dupe(u8, id.name) catch null,
+        .field_access => self.qualifiedTypeName(object),
+        else => null,
+    };
+}
+
+/// Report a qualified arm the subject cannot take. The message names the
+/// prefix the arm spells.
+pub fn refuseQualifiedArm(self: *Lowering, verdict: QualifiedArm, subject_ty: TypeId, pat: *const Node) void {
+    const fa = pat.data.field_access;
+    if (verdict == .error_keyword) return emitErrorKeywordMember(self, pat.span, fa.field);
+    const d = self.diagnostics orelse return;
+    const owned = armPrefixSpelling(self, fa.object);
+    defer if (owned) |p| self.alloc.free(p);
+    const prefix = owned orelse "";
+    const subject = self.formatTypeName(subject_ty);
+    const on_channel = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .@"error";
+    const has_variants = !subject_ty.isBuiltin() and switch (self.module.types.get(subject_ty)) {
+        .@"enum", .tagged_union => true,
+        else => false,
+    };
+    switch (verdict) {
+        .ok, .error_keyword => unreachable,
+        .bad_leaf => if (on_channel)
+            d.addFmt(.err, pat.span, "error set '{s}' has no member '{s}'", .{ prefix, fa.field })
+        else
+            d.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ fa.field, prefix }),
+        .bad_prefix => if (on_channel) {
+            const id = d.addFmtId(.err, pat.span, "'{s}' names no error set", .{prefix});
+            d.addHelpFmt(id, pat.span, null, "a qualified arm names the set that declares the member — write `Set.{s}`, or `.{s}` where the channel already carries it", .{ fa.field, fa.field });
+        } else if (has_variants) {
+            const id = d.addFmtId(.err, pat.span, "'{s}' is not '{s}' — a qualified arm names a variant of the subject's own type", .{ prefix, subject });
+            d.addHelpFmt(id, pat.span, null, "write `.{s}` to name a variant of '{s}'", .{ fa.field, subject });
+        } else d.addFmt(.err, pat.span, "'{s}' declares no members a `case` arm could qualify — match it against a value", .{subject}),
+    }
 }
 
 /// The channel a `|` composition in type position denotes, or null when an

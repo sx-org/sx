@@ -4561,7 +4561,7 @@ pub const Parser = struct {
             const arm_start = self.tokens.start(self.tok);
             self.advance(); // skip 'case'
             // Allow keyword tokens (struct, enum, union) as type category names in match arms
-            const pattern: *Node = if (self.tokens.tag(self.tok) == .kw_struct or self.tokens.tag(self.tok) == .kw_enum or self.tokens.tag(self.tok) == .kw_union) blk: {
+            var pattern: *Node = if (self.tokens.tag(self.tok) == .kw_struct or self.tokens.tag(self.tok) == .kw_enum or self.tokens.tag(self.tok) == .kw_union) blk: {
                 const name = self.tokens.slice(self.tok);
                 self.advance();
                 break :blk try self.createNode(arm_start, .{ .identifier = .{ .name = name } });
@@ -4573,6 +4573,15 @@ pub const Parser = struct {
                 try self.parseTypeExpr()
             else
                 try self.parsePrimary(.bit_or); // .variant
+            // Qualified arm (`Set.Member`, `ns.Set.Member`): a field_access path.
+            while (self.tokens.tag(self.tok) == .dot and self.peekNext() == .identifier and
+                (pattern.data == .identifier or pattern.data == .field_access))
+            {
+                self.advance();
+                const field = self.tokens.slice(self.tok);
+                self.advance();
+                pattern = try self.createNode(pattern.span.start, .{ .field_access = .{ .object = pattern, .field = field } });
+            }
             try self.expect(.colon);
 
             // Optional payload capture: `|ident|`. An arm with no payload

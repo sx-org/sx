@@ -1,0 +1,10 @@
+error: 'Garbage' names no error set
+  --> examples/diagnostics/2240-diagnostics-qualified-arm-unresolved-prefix.sx:15:14
+   |
+15 |         case Garbage.Busy: |w| 100 + w;
+   |              ^^^^^^^^^^^^
+
+help: a qualified arm names the set that declares the member — write `Set.Busy`, or `.Busy` where the channel already carries it
+   |
+15 |         case Garbage.Busy: |w| 100 + w;
+   |              ^^^^^^^^^^^^

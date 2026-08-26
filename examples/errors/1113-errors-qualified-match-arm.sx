@@ -1,0 +1,33 @@
+// A `case Set.Member:` arm selects the member that pair interns, so a channel
+// carrying two members spelled `Busy` dispatches each to its own arm and binds
+// the payload its own set declares. The `.Member` shorthand reaches a member
+// the channel carries once.
+
+@import "modules/std.sx";
+
+Disk :: error { Busy: i64; Gone };
+Net  :: error { Busy: i32 };
+Both :: Disk | Net;
+
+fail :: (n: i64) -> (i64, !Both) {
+    if n < 0 { raise Disk.Busy{7}; }
+    if n == 0 { raise Net.Busy{9}; }
+    if n == 1 { raise Disk.Gone; }
+    return n;
+}
+
+read :: (e: Both) -> i64 {
+    return match e {
+        case Disk.Busy: |w| 100 + w;
+        case Net.Busy:  |w| 200 + w;
+        case .Gone:     300;
+    };
+}
+
+main :: () -> i32 {
+    print("disk={}\n", fail(-1) catch |e| read(e));
+    print("net={}\n", fail(0) catch |e| read(e));
+    print("gone={}\n", fail(1) catch |e| read(e));
+    print("ok={}\n", fail(5) catch { -1 });
+    return 0;
+}
