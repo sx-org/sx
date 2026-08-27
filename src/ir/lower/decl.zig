@@ -3727,10 +3727,11 @@ pub fn isCImportVisible(self: *Lowering, fn_name: []const u8) bool {
 /// Byte-identical adapter over `isVisible`.
 pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
     // The `__sx_` prefix is the compiler-reserved namespace: those calls are
-    // compiler REWRITES (assertion desugars → fmt.sx's __sx_cast_* runtime),
-    // synthesized at any lowering site — including inside std part-files that
-    // do not import the declaring module. A compiler indirection is exempt
-    // from the user-facing visibility gate, like UFCS rewrites.
+    // compiler REWRITES (chained-assertion desugars → fmt.sx's
+    // `__sx_chain_cast_*` runtime), synthesized at any lowering site —
+    // including inside std part-files that do not import the declaring module.
+    // A compiler indirection is exempt from the user-facing visibility gate,
+    // like UFCS rewrites.
     if (std.mem.startsWith(u8, name, "__sx_")) return true;
     // A registered `@` contract resolves program-wide, exactly as its type
     // counterparts do: the registry admits one canonical declaration of the

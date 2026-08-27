@@ -1390,7 +1390,7 @@ fn lowerNarrowingPanic(
     const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
     self.scope.?.put(owned, .{ .ref = view, .ty = .any, .is_alloca = false });
     const recv_id = self.synthNode(.{ .identifier = .{ .name = owned } }, span, source_file);
-    const callee = self.synthNode(.{ .identifier = .{ .name = "__sx_cast_or_panic" } }, span, source_file);
+    const callee = self.synthNode(.{ .identifier = .{ .name = "@cast" } }, span, source_file);
 
     if (type_node) |target| {
         const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(target) }) catch @panic("out of memory");

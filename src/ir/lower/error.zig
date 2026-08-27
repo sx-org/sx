@@ -1916,7 +1916,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
 
 /// Rewrite a DIRECT assertion operand of a graceful consumer (`try` /
 /// failable-`??` operand / `catch`) into the failable runtime call
-/// `__sx_cast_assert(av, T)` (std/fmt.sx) so the ordinary error-channel
+/// `@tryCast(av, T)` (std/fmt.sx) so the ordinary error-channel
 /// machinery consumes it. Looks through a `try` marker. Returns null for
 /// every other shape — including assertions NESTED inside the operand
 /// expression, which stay in the unconsumed (panic) form by design.
@@ -1951,7 +1951,7 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
                 self.refuseSetFromAny(target, node.span)) return null;
         }
     }
-    const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "__sx_cast_assert";
+    const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "@tryCast";
     const callee = self.alloc.create(Node) catch unreachable;
     callee.* = .{ .data = .{ .identifier = .{ .name = helper } }, .span = node.span, .source_file = node.source_file };
     // A protocol receiver reaches the helper as its {ctx, type_id} prefix

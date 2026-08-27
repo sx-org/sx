@@ -601,25 +601,35 @@ print :: ($fmt: string, ..$args) {
 }
 
 // ── Postfix-assertion runtime ───────────────────────────────────────────
-// `av.(T)` on a type-erased receiver is a CHECKED assertion. The compiler
-// rewrites the consumed forms (`try av.(T)`, `av.(T) ?? d`, `av.(T) catch`)
-// to `__sx_cast_assert` — graceful mismatch via the error channel — and the
-// unconsumed form (`v := av.(T);`) to `__sx_cast_or_panic` (Go/Odin panic
-// parity; the deliberate carve-out from the unconsumed-failable rule).
+// `av.(T)` on a type-erased receiver is a CHECKED assertion, and each of its
+// three temperaments has a spelled form here: `@tryCast` sends a mismatch down
+// the error channel (the consumed forms `try av.(T)`, `av.(T) ?? d`,
+// `av.(T) catch`), `@cast` panics on one (the unconsumed `v := av.(T);` —
+// Go/Odin parity, the carve-out from the unconsumed-failable rule), and
+// `@castOrNull` answers it with `null` (`av.(?T)`). The compiler rewrites the
+// postfix forms to these.
 
 CastError :: error { mismatch }
 
-__sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
+@tryCast :: (av: any, $T: Type) -> (T, !CastError) {
     if !@typeEq(@typeOf(av), T) { raise .mismatch; }
     return av.(@Any).data.(*T).*;
 }
 
-__sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
+@cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
     if !@typeEq(@typeOf(av), T) {
         print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
         c.exit(1);
     }
     return av.(@Any).data.(*T).*;
+}
+
+// Mismatch is a value (`null`), never a failure — the optional IS the check
+// (comma-ok parity).
+@castOrNull :: (av: any, $T: Type) -> ?T {
+    if !@typeEq(@typeOf(av), T) { return null; }
+    v : T = av.(@Any).data.(*T).*;
+    return v;
 }
 
 // `p.(Q)` between interfaces, unconsumed: an absent row stops the program. The
@@ -630,14 +640,6 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
         print("re-erasure failed: '{}' does not conform to '{}'\n", @typeName(concrete), @typeName(target));
         c.exit(1);
     }
-}
-
-// The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
-// failure — the optional IS the check (comma-ok parity).
-__sx_cast_maybe :: (av: any, $T: Type) -> ?T {
-    if !@typeEq(@typeOf(av), T) { return null; }
-    v : T = av.(@Any).data.(*T).*;
-    return v;
 }
 
 // ── Optional-chained assertions `o?.(T)` on a `?any` receiver ──────────

@@ -123,7 +123,9 @@ compiler implements — `@volatile_load` and `@volatile_store` (§Intrinsics,
 Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@is_comptime`
 (§Compile-time Evaluation, `@is_comptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over `@printf` and
-`@is_comptime`.
+`@is_comptime`. So are the postfix assertion's three temperaments —
+`@cast` / `@tryCast` / `@castOrNull` (§Postfix Cast), owned by
+`modules/std/fmt.sx`.
 
 `@printf($fmt: string, ..$args)` is an allocation-free formatted write to fd 1.
 `$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
@@ -3225,6 +3227,11 @@ On an **`any` receiver** the assertion has three temperaments:
   panic; the optional IS the check (comma-ok parity). The asserted type is
   the inner `T`, the result exactly `?T`, composing with the optional
   toolbox: `av.(?f64) ?? 9.5`, `if v := av.(?i64) { … }`, `== null`.
+
+Each temperament is also spelled: `@cast(av, T) -> T` panics,
+`@tryCast(av, T) -> (T, !CastError)` raises, `@castOrNull(av, T) -> ?T` answers
+`null`. The postfix forms rewrite to exactly these, and a spelled `@cast`
+reports its own call site.
 
 **`av.(@Any)` is the raw-view retrieval, not an assertion** — the one
 target exempt from the three temperaments: it answers the view's own
