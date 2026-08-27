@@ -47,10 +47,6 @@ pub const Parser = struct {
     /// True inside a juxtaposition's own brace group, where `,` ends an item
     /// the way `;` does. Cleared by every nested block.
     comma_separates_items: bool = false,
-    /// When true (set while parsing a `defer` body), a `raise` statement is
-    /// rejected — cleanup runs while the function is already exiting, so there
-    /// is nothing to propagate to. The error-flow pass extends this to the full
-    /// {try, return, break, continue} set.
     in_defer_body: bool = false,
     /// Set for the statement just parsed: true when it is an EXPRESSION
     /// statement, whose value the enclosing block can hand on (`endExprStatement`);
