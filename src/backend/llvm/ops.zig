@@ -1966,8 +1966,8 @@ pub const Ops = struct {
             },
             .rt_type_eq => {
                 // Runtime tag compare — Type is an i64 tag; no table.
-                const ta = self.reflectArgTypeId(bi.args[0], "type_eq");
-                const tb = self.reflectArgTypeId(bi.args[1], "type_eq");
+                const ta = self.reflectArgTypeId(bi.args[0], "@typeEq");
+                const tb = self.reflectArgTypeId(bi.args[1], "@typeEq");
                 self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntEQ, ta, tb, "rteq"));
             },
             else => {

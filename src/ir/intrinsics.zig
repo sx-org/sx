@@ -21,7 +21,7 @@
 //!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
-//!   * Keywords (`cast`, `type_eq`, `compile_error`, `__interp_print_frames`,
+//!   * Keywords (`cast`, `compile_error`, `__interp_print_frames`,
 //!     `__trace_resolve_frame`) — bare names the compiler recognizes without
 //!     any declaration.
 
@@ -73,6 +73,8 @@ pub const Id = enum(u16) {
     @"@len",
     @"@field",
     @"@elementAt",
+    @"@typeEq",
+    @"@unbox",
     vector_lanes,
     @"__sx_variant_tag_width",
     @"__sx_slice_len_info",
@@ -231,6 +233,8 @@ pub const entries = [_]Entry{
     .{ .id = .@"@len", .module = core, .name = "@len", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"@field", .module = core, .name = "@field", .mode = .lower, .arity = 2, .ret = .any },
     .{ .id = .@"@elementAt", .module = core, .name = "@elementAt", .mode = .lower, .arity = 2, .ret = .any },
+    .{ .id = .@"@typeEq", .module = core, .name = "@typeEq", .mode = .lower, .arity = 2, .ret = .bool },
+    .{ .id = .@"@unbox", .module = core, .name = "@unbox", .mode = .lower, .arity = 2 },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_variant_tag_width", .module = core, .name = "__sx_variant_tag_width", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_slice_len_info", .module = core, .name = "__sx_slice_len_info", .mode = .lower, .arity = 1, .ret = .i64 },
@@ -394,7 +398,7 @@ pub fn find(name: []const u8, source_file: ?[]const u8) ?*const Entry {
 /// `size_of` or it never got declared.
 ///
 /// Returns null for any name that is not a registered intrinsic, including the
-/// bare names the compiler recognizes without a declaration (`cast`, `type_eq`,
+/// bare names the compiler recognizes without a declaration (`cast`,
 /// `compile_error`, …). Those are keywords, handled by their own recognizers.
 pub fn findByName(name: []const u8) ?Id {
     for (&entries) |*e| {

@@ -481,7 +481,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
     // function/closure return type, never as a generic type argument.
     if (self.rejectMultiReturnValueType(node, "generic type argument")) return .unresolved;
     // Pack-index access in a type-arg slot (e.g. `type_name($args[0])`
-    // or `type_eq($args[i], i64)`). Same shape as the
+    // or `@typeEq($args[i], i64)`). Same shape as the
     // `resolveTypeWithBindings` arm — looks up the bound pack types
     // and returns the i-th. OOB and no-active-binding emit focused
     // diagnostics rather than silently defaulting to .i64 (the
@@ -1974,7 +1974,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // field_type($T, i) -> Type — comptime reflection (read a type's i-th
     // field / variant-payload / element type). A genuine type-table op, kept as
     // a compiler builtin (like type_name); folds at lower time so it composes
-    // inside type_eq / type_name / any type-arg slot.
+    // inside @typeEq / @typeName / any type-arg slot.
     if (std.mem.eql(u8, callee_name, "struct_field_type") or std.mem.eql(u8, callee_name, "variant_type")) {
         if (cl.args.len != 2) {
             if (self.diagnostics) |d|

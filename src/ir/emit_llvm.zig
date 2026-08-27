@@ -2875,7 +2875,7 @@ pub const LLVMEmitter = struct {
         return self.getRefIRType(arg_ref) orelse .unresolved;
     }
 
-    /// How a reflection builtin (`type_name` / `type_eq`) must read its `Type`
+    /// How a reflection builtin (`type_name` / `rt_type_eq`) must read its `Type`
     /// argument: boxed inside an `Any` aggregate (extract the value field) vs a
     /// bare i64 `TypeId` index. The IR-type lookup is must-succeed, so it routes
     /// through `argIRTypeOrFail`; a failed lookup surfaces as `.unresolved` —

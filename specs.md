@@ -983,7 +983,7 @@ always distinct types:
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
 b : struct { y: f64; } = .{ y = 2.5 };   // distinct type from a's — fine
-type_eq(@typeOf(a), @typeOf(.{ x = 3 }))  // true — same shape, same type
+@typeEq(@typeOf(a), @typeOf(.{ x = 3 }))  // true — same shape, same type
 ```
 
 #### Field Access and Assignment
@@ -4481,14 +4481,14 @@ category word. The keyword categories `struct` / `enum` / `union` are admitted
 there by the same special case that admits them as match-arm patterns; `type` is
 an ordinary identifier and already in the category vocabulary. A category word
 wins over a same-spelled type name — `x is int` asks the category. The right
-operand is never a runtime `Type` value (`type_eq(t1, t2)` asks that question)
+operand is never a runtime `Type` value (`@typeEq(t1, t2)` asks that question)
 and never a value expression.
 
-**`is` classifies; `==` and `type_eq` identify.** They are distinct questions.
+**`is` classifies; `==` and `@typeEq` identify.** They are distinct questions.
 Over the slice of right operands that are concrete descriptions they answer
 alike — there is no subtyping and no fits-rule — and that coincidence is a
 theorem about those operands, not the definition of either. Nothing is refused
-for the overlap. `t1 == t2` over two `Type` values is the tag compare `type_eq`
+for the overlap. `t1 == t2` over two `Type` values is the tag compare `@typeEq`
 spells, and it folds when both operands are static.
 
 #### Left operands
@@ -4520,7 +4520,7 @@ asks whether the handle's own interface conforms — true exactly when the bridg
 the member the slot carries.
 
 **A runtime `Type`** takes every description: tag identity (a concrete right
-operand — the same answer `type_eq` gives, and both spellings are legal),
+operand — the same answer `@typeEq` gives, and both spellings are legal),
 interface conformance through the per-pair table of §6.4, constraint conformance
 through a per-constraint conformer-tag set emitted only for constraints a
 runtime `is` reaches, set membership, and categories. `is interface` is true for
@@ -5549,9 +5549,8 @@ Dispatch is not the same as stage-availability. `@sqrt` and `atomic_load` are bo
 lowered. The evaluator interprets the atomic ops, and evaluates the `call_builtin`
 that `@sqrt` lowers to, so `@run @sqrt(x)` is a compile-time constant.
 
-Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
-`@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
-`f64`. And `type_eq` is recognized bare, declared nowhere.
+Language primitives are **not** intrinsics: `string`, `@Vector`, `@Array` and
+`@Slice` are resolved by name by the type system like `int` / `bool` / `f64`.
 
 ### Staging: functions belong to no stage
 
@@ -5636,14 +5635,14 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
-- `type_eq($A: Type, $B: Type) -> bool` — structural TypeId equality (`type_eq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if type_eq(...)` is comptime-decidable
+- `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`
 formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `@typeEq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 

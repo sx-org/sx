@@ -610,12 +610,12 @@ print :: ($fmt: string, ..$args) {
 CastError :: error { mismatch }
 
 __sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
-    if !type_eq(@typeOf(av), T) { raise .mismatch; }
+    if !@typeEq(@typeOf(av), T) { raise .mismatch; }
     return av.(@Any).data.(*T).*;
 }
 
 __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
-    if !type_eq(@typeOf(av), T) {
+    if !@typeEq(@typeOf(av), T) {
         print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
         c.exit(1);
     }
@@ -635,7 +635,7 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
 // The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
 // failure — the optional IS the check (comma-ok parity).
 __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
-    if !type_eq(@typeOf(av), T) { return null; }
+    if !@typeEq(@typeOf(av), T) { return null; }
     v : T = av.(@Any).data.(*T).*;
     return v;
 }
@@ -651,7 +651,7 @@ __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
 // present payload goes down the error channel; null passes through.
 __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
     if av := o {
-        if !type_eq(@typeOf(av), T) { raise .mismatch; }
+        if !@typeEq(@typeOf(av), T) { raise .mismatch; }
         v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
@@ -662,7 +662,7 @@ __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
 // Unconsumed form (`v := o?.(T);`): a present, mismatched payload panics.
 __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> ?T {
     if av := o {
-        if !type_eq(@typeOf(av), T) {
+        if !@typeEq(@typeOf(av), T) {
             print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
             c.exit(1);
         }
@@ -676,7 +676,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
 // Soft form (`o?.(?T)`): chain-null and mismatch-null CONFLATE.
 __sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
     if av := o {
-        if !type_eq(@typeOf(av), T) { return null; }
+        if !@typeEq(@typeOf(av), T) { return null; }
         v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;

@@ -35,5 +35,5 @@ main :: () {
     print("parity: {} {} {}\n",
         struct_field_offset(tp, 1) == struct_field_offset(Packet, 1),
         struct_field_name(tp, 2) == struct_field_name(Packet, 2),
-        type_eq(struct_field_type(tp, 0), struct_field_type(Packet, 0)));
+        @typeEq(struct_field_type(tp, 0), struct_field_type(Packet, 0)));
 }

@@ -1,0 +1,2 @@
+// The generic whose return type IS its callable binder.
+mk :: (f: $F/(i64) -> i64) -> F { return f; }

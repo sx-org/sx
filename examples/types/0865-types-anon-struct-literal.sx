@@ -25,7 +25,7 @@ main :: () -> i64 {
 
     // Structural identity: same shape → same type, cross-site.
     q := .{ x = 99, y = 0.5 };
-    print("{} {}\n", type_eq(@typeOf(p), @typeOf(q)), type_eq(@typeOf(t), @typeOf(p)));  // true false
+    print("{} {}\n", @typeEq(@typeOf(p), @typeOf(q)), @typeEq(@typeOf(t), @typeOf(p)));  // true false
 
     // Value spread splices positionally.
     u := .{ ..t, 3 };

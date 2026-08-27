@@ -603,7 +603,7 @@ pub const BuiltinId = enum(u16) {
     type_name,
     is_unsigned,
     // Runtime-Type scalar reflection: tag-indexed table reads
-    // (sizes/aligns/counts/flag-bits); type_eq is a plain tag compare.
+    // (sizes/aligns/counts/flag-bits); rt_type_eq is a plain tag compare.
     rt_size_of,
     rt_align_of,
     rt_struct_field_count,

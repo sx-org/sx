@@ -885,7 +885,7 @@ pub fn bareVisibleStructTemplate(self: *Lowering, name: []const u8) ?StructTempl
 /// fallback in each.
 /// The alias BINDS the instantiation's own TypeId — it does not mint a
 /// second nominal type. `BufF :: Buffer(f32)` and `Buffer(f32)` are the same
-/// interned type, so `type_eq`, a `case BufF:` arm, `v.(BufF)`, and an
+/// interned type, so `@typeEq`, a `case BufF:` arm, `v.(BufF)`, and an
 /// `impl … for BufF` head all agree with the instantiation spelling.
 pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl: *const StructTemplate, args: []const *const Node) void {
     const inst_id = self.instantiateGenericStruct(tmpl, args);

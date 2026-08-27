@@ -1537,7 +1537,7 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
 }
 
 // ── reflection-builtin arg-type lookup must fail loudly, never `.i64` ──
-// `reflectArgRepr` backs the `type_name` / `type_eq` reflection builtins, which read
+// `reflectArgRepr` backs the `type_name` / `rt_type_eq` reflection builtins, which read
 // their `Type` arg as a boxed `Any` aggregate (`.any` → extract value field) or a bare
 // i64 TypeId index. A ref it cannot resolve is a codegen invariant violation; it must
 // surface `.unresolved` (which the emit site hard-panics on) instead of a silent

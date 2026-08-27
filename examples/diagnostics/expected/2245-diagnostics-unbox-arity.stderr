@@ -1,0 +1,5 @@
+error: @unbox takes 2 arguments, got 1
+  --> examples/diagnostics/2245-diagnostics-unbox-arity.sx:8:19
+   |
+ 8 |     print("{}\n", @unbox(v));
+   |                   ^^^^^^

@@ -2,11 +2,11 @@
 // contract membership:
 //
 //   @typeName(T)     -> string  // display name of T
-//   type_eq(T1, T2)  -> bool    // structural TypeId equality
+//   @typeEq(T1, T2)  -> bool    // structural TypeId equality
 //   T is P           -> bool    // T has a reachable impl for P
 //
 // All three fold to compile-time constants and are accepted by
-// `tryConstBoolCondition`, so `inline if type_eq(...)` / `inline if T is P`
+// `tryConstBoolCondition`, so `inline if @typeEq(...)` / `inline if T is P`
 // collapse to a single branch at lower time — no runtime cost.
 //
 // `is` takes a contract in both shapes:
@@ -31,15 +31,15 @@ main :: () -> i32 {
     // @typeName — display names.
     print("{} {} {}\n", @typeName(i64), @typeName(string), @typeName(bool));
 
-    // type_eq — structural equality on TypeIds.
+    // @typeEq — structural equality on TypeIds.
     print("{} {} {} {}\n",
-        type_eq(i64, i64),
-        type_eq(i64, string),
-        type_eq(*i64, *i64),
-        type_eq(*i64, *i32));
+        @typeEq(i64, i64),
+        @typeEq(i64, string),
+        @typeEq(*i64, *i64),
+        @typeEq(*i64, *i32));
 
-    // inline-if folds type_eq at lower time.
-    inline if type_eq(i64, i64) {
+    // inline-if folds @typeEq at lower time.
+    inline if @typeEq(i64, i64) {
         print("inline-if folded: same\n");
     } else {
         print("inline-if folded: different\n");

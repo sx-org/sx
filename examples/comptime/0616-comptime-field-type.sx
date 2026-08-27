@@ -3,7 +3,7 @@
 // cannot express.
 // Reflect a struct's fields by name (`struct_field_name`) AND by type (`struct_field_type`),
 // and a tagged-union's variant payloads. It folds at lower time, so it composes
-// inside `type_eq` / `@typeName` / any type-arg slot.
+// inside `@typeEq` / `@typeName` / any type-arg slot.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
@@ -18,9 +18,9 @@ main :: () -> i32 {
     print("  1: {} : {}\n", struct_field_name(Point, 1), @typeName(struct_field_type(Point, 1)));
     print("  2: {} : {}\n", struct_field_name(Point, 2), @typeName(struct_field_type(Point, 2)));
 
-    // struct_field_type composes in a type-arg slot (type_eq folds at comptime).
-    print("field 0 is i64: {}\n", type_eq(struct_field_type(Point, 0), i64));
-    print("field 1 is f64: {}\n", type_eq(struct_field_type(Point, 1), f64));
+    // struct_field_type composes in a type-arg slot (@typeEq folds at comptime).
+    print("field 0 is i64: {}\n", @typeEq(struct_field_type(Point, 0), i64));
+    print("field 1 is f64: {}\n", @typeEq(struct_field_type(Point, 1), f64));
 
     // Tagged-union variant payloads (the tagless `quit` → void).
     print("Msg.num  payload: {}\n", @typeName(struct_field_type(Msg, 0)));

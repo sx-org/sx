@@ -41,8 +41,8 @@ size_of(i64):      8
 size_of(*u8):      8
 align_of(f64):     8
 struct_field_count(Point): 2
-type_eq(i64, i64):    true
-type_eq(i64, string): false
+@typeEq(i64, i64):    true
+@typeEq(i64, string): false
 === 10. ..$args walking ===
 type_list():            []
 type_list(1):           [i64]
