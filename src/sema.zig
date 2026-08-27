@@ -1411,14 +1411,6 @@ pub const Analyzer = struct {
                 try self.analyzeNode(ce.body);
                 self.popScope();
             },
-            .onfail_stmt => |os| {
-                try self.pushScope();
-                if (os.binding) |bname| {
-                    try self.addSymbol(bname, .variable, null, node.span);
-                }
-                try self.analyzeNode(os.body);
-                self.popScope();
-            },
             .push_stmt => |ps| {
                 // A `push .{ … }` literal patches Context fields: index its
                 // field names with owner "Context" (the anonymous literal
@@ -1960,9 +1952,6 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         .catch_expr => |ce| {
             if (findNodeAtOffset(ce.operand, offset)) |found| return found;
             if (findNodeAtOffset(ce.body, offset)) |found| return found;
-        },
-        .onfail_stmt => |os| {
-            if (findNodeAtOffset(os.body, offset)) |found| return found;
         },
         .push_stmt => |ps| {
             if (findNodeAtOffset(ps.context_expr, offset)) |found| return found;

@@ -78,7 +78,6 @@ pub const Node = struct {
         raise_stmt: RaiseStmt,
         try_expr: TryExpr,
         catch_expr: CatchExpr,
-        onfail_stmt: OnFailStmt,
         /// `@caller` — a marker legal only inside a parameter's default
         /// expression, where it resolves to the CALL site's `@SourceSite`. The
         /// node's `span`/`source_file` carry that site (rewritten during default
@@ -751,18 +750,6 @@ pub const CatchExpr = struct {
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
     /// (`` x catch |`i32| { … } ``) — exempt from the reserved-type-name check.
-    binding_is_raw: bool = false,
-    body: *Node,
-};
-
-/// `onfail [|e|] BODY` — cleanup run on error-exit of the enclosing block.
-/// The binding is optional. Body is a block (`onfail [|e|] { ... }`) or
-/// a bare expression (`onfail EXPR;`).
-pub const OnFailStmt = struct {
-    binding: ?[]const u8 = null,
-    binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
-    /// True when the binding was a backtick raw identifier
-    /// (`` onfail |`i32| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };

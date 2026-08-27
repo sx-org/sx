@@ -47,14 +47,10 @@ pub const Parser = struct {
     /// True inside a juxtaposition's own brace group, where `,` ends an item
     /// the way `;` does. Cleared by every nested block.
     comma_separates_items: bool = false,
-    /// When true (set while parsing an `onfail` body), a `raise` statement is
-    /// rejected — an error during cleanup has no propagation target. The
-    /// error-flow pass extends this to the full {try, return, break, continue} set.
-    in_onfail_body: bool = false,
     /// When true (set while parsing a `defer` body), a `raise` statement is
-    /// rejected — same reason as `onfail`: cleanup runs while the function is
-    /// already exiting, so there is nothing to propagate to. The error-flow pass
-    /// extends this to the full {try, return, break, continue} set.
+    /// rejected — cleanup runs while the function is already exiting, so there
+    /// is nothing to propagate to. The error-flow pass extends this to the full
+    /// {try, return, break, continue} set.
     in_defer_body: bool = false,
     /// Set for the statement just parsed: true when it is an EXPRESSION
     /// statement, whose value the enclosing block can hand on (`endExprStatement`);
@@ -3052,7 +3048,7 @@ pub const Parser = struct {
     pub fn parseStmt(self: *Parser) anyerror!*Node {
         // Default: a statement carries no value unless `expectSemicolonAfter`
         // marks it an expression statement. Non-expression statements (decls,
-        // return/raise, break/continue, defer/onfail) never set it, so they
+        // return/raise, break/continue, defer) never set it, so they
         // correctly leave the enclosing block value-less.
         self.last_stmt_produces_value = false;
         if (self.tokens.tag(self.tok) == .pipe) {
@@ -3209,9 +3205,9 @@ pub const Parser = struct {
         }
 
         // Defer statement: defer { body } | defer <expr>;
-        // A braced body parses as a full statement block (like `onfail`), so it
-        // supports every statement form (destructure, `catch`-statement, …); the
-        // bare-expression form keeps its trailing `;`.
+        // A braced body parses as a full statement block, so it supports every
+        // statement form (destructure, `catch`-statement, …); the bare-expression
+        // form keeps its trailing `;`.
         if (self.tokens.tag(self.tok) == .kw_defer) {
             const start = self.tokens.start(self.tok);
             self.advance();
@@ -3231,9 +3227,6 @@ pub const Parser = struct {
         // Raise statement: raise <expr>;
         if (self.tokens.tag(self.tok) == .kw_raise) {
             const start = self.tokens.start(self.tok);
-            if (self.in_onfail_body) {
-                return self.fail("`raise` is not allowed inside an `onfail` body — an error during cleanup has no propagation target");
-            }
             if (self.in_defer_body) {
                 return self.fail("`raise` is not allowed inside a `defer` body — an error during cleanup has no propagation target");
             }
@@ -3241,40 +3234,6 @@ pub const Parser = struct {
             const tag_expr = try self.parseExpr();
             try self.expectStatementEnd();
             return try self.createNode(start, .{ .raise_stmt = .{ .tag = tag_expr } });
-        }
-
-        // Onfail statement: `onfail { body }`, `onfail |e| { body }`, `onfail <expr>;`.
-        if (self.tokens.tag(self.tok) == .kw_onfail) {
-            const start = self.tokens.start(self.tok);
-            self.advance();
-            var binding: ?[]const u8 = null;
-            var binding_span: ?ast.Span = null;
-            var binding_is_raw = false;
-            if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .l_brace) {
-                return self.fail("the onfail error binding needs pipes: `onfail |e| { ... }`");
-            }
-            if (self.tokens.tag(self.tok) == .pipe) {
-                self.advance();
-                if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected an error binding name in `onfail |e|`");
-                }
-                binding = self.tokens.slice(self.tok);
-                binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
-                binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                self.advance();
-                try self.expect(.pipe);
-            }
-            const saved_onfail = self.in_onfail_body;
-            self.in_onfail_body = true;
-            defer self.in_onfail_body = saved_onfail;
-            const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
-                try self.parseBlock()
-            else blk: {
-                const e = try self.parseExpr();
-                try self.expectStatementEnd();
-                break :blk e;
-            };
-            return try self.createNode(start, .{ .onfail_stmt = .{ .binding = binding, .binding_span = binding_span, .binding_is_raw = binding_is_raw, .body = body } });
         }
 
         // Break statement: break;
@@ -4238,7 +4197,6 @@ pub const Parser = struct {
                 return try self.createNode(start, .{ .identifier = .{ .name = "error" } });
             },
             .kw_raise => return self.fail("`raise` is a statement and cannot appear in expression position"),
-            .kw_onfail => return self.fail("`onfail` is a statement and cannot appear in expression position"),
             .underscore_l_brace => return self.fail("`_{ … }` is a closure literal's env and follows its `|params|`; `.{ … }` is a struct literal"),
             else => {
                 return self.fail("unexpected token in expression");
@@ -4853,7 +4811,6 @@ pub const Parser = struct {
     const env_field_shape = "an env field is `n` or `n = expr`";
 
     const FunctionBoundary = struct {
-        onfail: bool,
         defer_body: bool,
         module: bool,
     };
@@ -4862,18 +4819,15 @@ pub const Parser = struct {
     /// flags and module expansion do not apply inside it.
     fn beginFunctionBoundary(self: *Parser) FunctionBoundary {
         const saved: FunctionBoundary = .{
-            .onfail = self.in_onfail_body,
             .defer_body = self.in_defer_body,
             .module = self.in_module_expansion,
         };
-        self.in_onfail_body = false;
         self.in_defer_body = false;
         self.in_module_expansion = false;
         return saved;
     }
 
     fn endFunctionBoundary(self: *Parser, saved: FunctionBoundary) void {
-        self.in_onfail_body = saved.onfail;
         self.in_defer_body = saved.defer_body;
         self.in_module_expansion = saved.module;
     }
@@ -5085,7 +5039,6 @@ pub const Parser = struct {
             .kw_raise,
             .kw_try,
             .kw_catch,
-            .kw_onfail,
             .kw_match,
             .kw_case,
             .kw_break,
@@ -5306,7 +5259,6 @@ pub const Parser = struct {
             .kw_raise,
             .kw_try,
             .kw_catch,
-            .kw_onfail,
             .kw_match,
             .kw_case,
             .kw_break,
@@ -5470,7 +5422,6 @@ pub const Parser = struct {
                 .kw_continue,
                 .kw_defer,
                 .kw_raise,
-                .kw_onfail,
                 .kw_if,
                 .kw_match,
                 .kw_for,
@@ -5678,26 +5629,14 @@ pub const Parser = struct {
         return self.fail(msg);
     }
 
-    /// A cleanup body is a `defer` or `onfail` body. Control-flow exits
-    /// (`raise` / `try` / `return` / `break` / `continue`) are banned inside one:
+    /// Reject a control-flow exit `kw` (e.g. "return") inside a `defer` body:
     /// cleanup runs while the block/function is already exiting, so there is
     /// nothing to propagate or transfer to. The ban is transitive through nested
     /// `catch` bodies and loops, but NOT through a nested closure or
     /// trailing-block body — those are their own function boundary.
-    fn inCleanupBody(self: *const Parser) bool {
-        return self.in_onfail_body or self.in_defer_body;
-    }
-
-    /// The cleanup-body phrase for diagnostics, with article (`onfail` takes
-    /// precedence when both are set, e.g. an `onfail` nested in a `defer`).
-    fn cleanupKind(self: *const Parser) []const u8 {
-        return if (self.in_onfail_body) "an `onfail`" else "a `defer`";
-    }
-
-    /// Reject a control-flow exit `kw` (e.g. "return") inside a cleanup body.
     fn rejectInCleanup(self: *Parser, comptime kw: []const u8) error{ParseError}!void {
-        if (self.inCleanupBody()) {
-            return self.failFmt("`" ++ kw ++ "` is not allowed inside {s} body — cleanup runs while the function is already exiting, so there is nothing to transfer control to", .{self.cleanupKind()});
+        if (self.in_defer_body) {
+            return self.fail("`" ++ kw ++ "` is not allowed inside a `defer` body — cleanup runs while the function is already exiting, so there is nothing to transfer control to");
         }
     }
 
@@ -6899,7 +6838,7 @@ test "round-trip print: bare inferred and named error types" {
     }
 }
 
-// ── raise / try / catch / onfail + precedence + pipe ──
+// ── raise / try / catch + precedence + pipe ──
 
 /// Parse `src` (a single `f :: () { ... }` decl) and return its body's first
 /// statement node.
@@ -7122,13 +7061,6 @@ test "raise rejected in expression position" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "raise rejected inside an onfail body" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { raise .X; } }");
-    try std.testing.expectError(error.ParseError, parser.parse());
-}
-
 test "raise rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -7143,24 +7075,10 @@ test "return rejected inside a defer body" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "try rejected inside an onfail body" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
-    try std.testing.expectError(error.ParseError, parser.parse());
-}
-
 test "break rejected inside a defer body (transitive through a loop)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "f :: () { defer { for i in 0..1 { break; } } }");
-    try std.testing.expectError(error.ParseError, parser.parse());
-}
-
-test "continue rejected inside an onfail body" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { onfail |e| { continue; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -7181,29 +7099,6 @@ test "control-flow legal after the cleanup body (flag restored)" {
     _ = try parser.parse();
 }
 
-test "onfail with binding and block body" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const s = try e02FirstStmt(arena.allocator(), "f :: () { onfail |e| { close(h); } }");
-    try std.testing.expect(s.data == .onfail_stmt);
-    try std.testing.expectEqualStrings("e", s.data.onfail_stmt.binding.?);
-    try std.testing.expect(s.data.onfail_stmt.body.data == .block);
-}
-
-test "onfail no-binding block vs bare-expression body" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const block_body = try e02FirstStmt(arena.allocator(), "f :: () { onfail { close(h); } }");
-    try std.testing.expect(block_body.data == .onfail_stmt);
-    try std.testing.expect(block_body.data.onfail_stmt.binding == null);
-    try std.testing.expect(block_body.data.onfail_stmt.body.data == .block);
-
-    const expr_body = try e02FirstStmt(arena.allocator(), "f :: () { onfail close(h); }");
-    try std.testing.expect(expr_body.data == .onfail_stmt);
-    try std.testing.expect(expr_body.data.onfail_stmt.binding == null);
-    try std.testing.expect(expr_body.data.onfail_stmt.body.data == .call);
-}
-
 test "`|>` is not an operator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -7211,7 +7106,7 @@ test "`|>` is not an operator" {
     try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x |> g; }"));
 }
 
-test "round-trip print: try / or precedence / raise / catch / onfail" {
+test "round-trip print: try / or precedence / raise / catch" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -7222,8 +7117,6 @@ test "round-trip print: try / or precedence / raise / catch / onfail" {
     try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch |e| bar(); }"), "foo() catch |e| bar()");
     try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch |e| { bar(); }; }"), "foo() catch |e| { bar(); }");
     try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch { bar(); }; }"), "foo() catch { bar(); }");
-    try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail close(h); }"), "onfail close(h)");
-    try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail |e| { close(h); } }"), "onfail |e| { close(h); }");
 }
 
 test "round-trip print: a match over the catch binding" {
@@ -7263,7 +7156,6 @@ test "?? value-terminator: parse(s) ?? 0" {
 test "full failable function parses end-to-end (every failable form)" {
     const source =
         \\parse :: (s: string) -> (i32, !ParseErr) {
-        \\    onfail |e| { cleanup(s); }
         \\    v := try inner(s) ?? 0;
         \\    w := other(s) catch |e2| { return 0; };
         \\    if bad(s) { raise error.BadDigit; }
@@ -7285,15 +7177,11 @@ test "full failable function parses end-to-end (every failable form)" {
     try std.testing.expectEqualStrings("ParseErr", fields[fields.len - 1].data.error_type_expr.operands[0]);
     // body statement kinds
     const stmts = decl.data.fn_decl.body.data.block.stmts;
-    try std.testing.expectEqual(@as(usize, 5), stmts.len);
-    try std.testing.expect(stmts[0].data == .onfail_stmt);
-    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .null_coalesce);
-    try std.testing.expect(stmts[2].data == .var_decl and stmts[2].data.var_decl.value.?.data == .catch_expr);
-    try std.testing.expect(stmts[3].data == .if_expr);
-    try std.testing.expect(stmts[4].data == .return_stmt);
-    // the onfail flag was restored: the raise inside the (separate) if-block is allowed
-    const then_block = stmts[3].data.if_expr.then_branch;
-    try std.testing.expect(then_block.data.block.stmts[0].data == .raise_stmt);
+    try std.testing.expectEqual(@as(usize, 4), stmts.len);
+    try std.testing.expect(stmts[0].data == .var_decl and stmts[0].data.var_decl.value.?.data == .null_coalesce);
+    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .catch_expr);
+    try std.testing.expect(stmts[2].data == .if_expr);
+    try std.testing.expect(stmts[3].data == .return_stmt);
 }
 
 test "parse Type{ fields } as a juxtaposition" {
