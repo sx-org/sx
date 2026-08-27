@@ -3884,8 +3884,62 @@ fn boxedLenRow(self: *Lowering, recv: Ref) Ref {
     return self.builder.callBuiltin(.rt_slice_len_info, args, .i64);
 }
 
-/// The count a fat pointer's header carries: the word at the row's byte offset,
-/// masked to the row's bit width and sign-extended when the row says signed.
+fn zextLoadI64(self: *Lowering, at: Ref, nbytes: u8) Ref {
+    const load_ty: TypeId = switch (nbytes) {
+        1 => .u8,
+        2 => .u16,
+        4 => .u32,
+        else => .u64,
+    };
+    const word = self.builder.load(at, load_ty);
+    return self.builder.widen(word, load_ty, .i64);
+}
+
+fn zextLoadWidthI64(self: *Lowering, at: Ref, w: Ref) Ref {
+    const b = &self.builder;
+    const slot = b.alloca(.i64);
+    const w1 = self.freshBlock("view.len.w1");
+    const nw1 = self.freshBlock("view.len.nw1");
+    const w2 = self.freshBlock("view.len.w2");
+    const nw2 = self.freshBlock("view.len.nw2");
+    const w4 = self.freshBlock("view.len.w4");
+    const w8 = self.freshBlock("view.len.w8");
+    const merge = self.freshBlock("view.len.merge");
+
+    const c1 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(1, .i64) } }, .bool);
+    b.condBr(c1, w1, &.{}, nw1, &.{});
+
+    b.switchToBlock(w1);
+    b.store(slot, zextLoadI64(self, at, 1));
+    b.br(merge, &.{});
+
+    b.switchToBlock(nw1);
+    const c2 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(2, .i64) } }, .bool);
+    b.condBr(c2, w2, &.{}, nw2, &.{});
+
+    b.switchToBlock(w2);
+    b.store(slot, zextLoadI64(self, at, 2));
+    b.br(merge, &.{});
+
+    b.switchToBlock(nw2);
+    const c4 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(4, .i64) } }, .bool);
+    b.condBr(c4, w4, &.{}, w8, &.{});
+
+    b.switchToBlock(w4);
+    b.store(slot, zextLoadI64(self, at, 4));
+    b.br(merge, &.{});
+
+    b.switchToBlock(w8);
+    b.store(slot, zextLoadI64(self, at, 8));
+    b.br(merge, &.{});
+
+    b.switchToBlock(merge);
+    return b.load(slot, .i64);
+}
+
+/// The count a fat pointer's header carries: the row's byte-width word at the
+/// row's offset, masked to the row's bit width and sign-extended when the row
+/// says signed.
 fn boxedFatLen(self: *Lowering, recv: Ref, row: Ref) Ref {
     const b = &self.builder;
     const one = b.constInt(1, .i64);
@@ -3897,7 +3951,8 @@ fn boxedFatLen(self: *Lowering, recv: Ref, row: Ref) Ref {
 
     const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
     const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = off } }, self.module.types.ptrTo(.u8));
-    const word = b.load(at, .i64);
+    const w = b.div(b.add(bits, b.constInt(7, .i64), .i64), b.constInt(8, .i64), .i64);
+    const word = zextLoadWidthI64(self, at, w);
 
     const top_bit = b.sub(bits, one, .i64);
     const top = b.emit(.{ .shl = .{ .lhs = one, .rhs = top_bit } }, .i64);
@@ -3912,10 +3967,10 @@ fn boxedTableCount(self: *Lowering, recv: Ref, _: Ref) Ref {
     return self.builder.callBuiltin(.rt_member_count, args, .i64);
 }
 
-/// The buffer a fat pointer's header names — the pointer word at its front.
+/// The buffer a fat pointer's header names — pointer_size bytes at its front.
 fn boxedHeaderBuffer(self: *Lowering, recv: Ref, _: Ref) Ref {
-    const header = self.builder.anyData(recv, self.module.types.ptrTo(.i64));
-    return self.builder.load(header, .i64);
+    const bytes = self.builder.anyData(recv, self.module.types.manyPtrTo(.u8));
+    return zextLoadI64(self, bytes, self.module.types.pointer_size);
 }
 
 /// The boxed storage itself, where an array's or vector's elements sit.
