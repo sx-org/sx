@@ -1,0 +1,89 @@
+// The byte sink of the prelude. `write` takes text, `flush` releases what an
+// impl held back. Neither answers: a sink out of memory stops the program, a
+// sink whose far end is gone drops the bytes, so no caller branches on a write.
+//
+// Consumers never import this file directly — std.sx re-exports every name
+// here.
+@import "modules/std/core.sx";
+c :: @import "modules/std/c.sx";
+
+Writer :: interface {
+    write :: (self: *Self, s: string) -> void;
+    flush :: (self: *Self) -> void { }
+}
+
+// Text accumulated on the heap. `finish` hands the bytes to the caller and
+// leaves the builder empty, so the built string outlives the builder without
+// a copy.
+StringBuilder :: struct {
+    bytes: []u8 = .[];   // `.len` is the live byte count, `cap` the allocation
+    cap: i64 = 0;
+    alloc: Allocator;
+
+    init :: (alloc: Allocator = context.allocator) -> StringBuilder {
+        .{ alloc = alloc }
+    }
+
+    // The only path that allocates. A refusal panics before any field is
+    // written, so the builder still owns its buffer; `write` has no site
+    // parameter to name, so the panic carries no location.
+    reserve :: (self: *StringBuilder, n: i64) {
+        if self.cap >= n { return; }
+        new_cap := if self.cap == 0 then 16 else self.cap;
+        while new_cap < n and new_cap <= i64.max / 2 { new_cap = new_cap * 2; }
+        if new_cap < n { new_cap = n; }
+        raw := self.alloc.alloc_bytes(new_cap);
+        if raw == null { @panic("StringBuilder: out of memory", @SourceSite{}); }
+        if self.bytes.len > 0 { c.memcpy(raw, self.bytes.ptr, self.bytes.len); }
+        if self.cap > 0 { self.alloc.dealloc_bytes(self.bytes.ptr); }
+        self.bytes.ptr = raw.([*]u8);
+        self.cap = new_cap;
+    }
+
+    finish :: (self: *StringBuilder) -> string {
+        s := string{ ptr = self.bytes.ptr, len = self.bytes.len };
+        self.bytes = .[];
+        self.cap = 0;
+        s
+    }
+}
+
+impl Writer for StringBuilder {
+    write :: (self: *StringBuilder, s: string) -> void {
+        if s.len == 0 { return; }
+        n := self.bytes.len + s.len;
+        // A wrapped sum names less than the write needs; no allocator funds i64.max.
+        self.reserve(if n < self.bytes.len then i64.max else n);
+        c.memcpy(*self.bytes.ptr[self.bytes.len], s.ptr, s.len);
+        self.bytes.len += s.len;
+    }
+}
+
+FdWriter :: struct {
+    fd: i32;
+
+    init :: (fd: i32) -> FdWriter { .{ fd = fd } }
+}
+
+impl Writer for FdWriter {
+    // A refused write — a pipe whose reader is gone — drops the rest of `s`.
+    write :: (self: *FdWriter, s: string) -> void {
+        off := 0;
+        while off < s.len {
+            n := c.write(self.fd, *s[off], s.len - off);
+            if n <= 0 { return; }
+            off += n.(i64);
+        }
+    }
+}
+
+// Write `n` items with `sep` between them; `body(i)` writes item `i`. The call
+// consumes `body` before returning, so a capturing lambda stays on the stack.
+write_each :: ufcs (w: Writer, n: i64, sep: string, body: $F/(i64) -> void) {
+    i := 0;
+    while i < n {
+        if i > 0 { w.write(sep); }
+        body(i);
+        i += 1;
+    }
+}
