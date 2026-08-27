@@ -2799,7 +2799,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .pointee_type,
         .is_flags,
         .@"@errorName",
-        .@"@tag",
         .@"@errorPayload",
         .@"@len",
         .@"@field",
@@ -3105,7 +3104,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .pointee_type,
         .is_flags,
         .@"@errorName",
-        .@"@tag",
         .@"@errorPayload",
         .@"@len",
         .@"@field",
@@ -3398,7 +3396,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .pointee_type,
         .is_flags,
         .@"@errorName",
-        .@"@tag",
         .@"@errorPayload",
         .@"@len",
         .@"@field",
@@ -3751,7 +3748,6 @@ fn isReflectionCall(name: []const u8) bool {
         .pointee_type,
         .is_flags,
         .@"@errorName",
-        .@"@tag",
         .@"@errorPayload",
         .@"@len",
         .@"@field",
@@ -4422,10 +4418,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         else
             raw;
         return self.builder.emit(.{ .error_name_get = .{ .operand = e } }, .string);
-    }
-    if (std.mem.eql(u8, name, "@tag")) {
-        if (c.args.len < 1) return self.builder.constUndef(.i32);
-        return self.lowerTagOf(c.args[0], c.callee.span);
     }
     if (std.mem.eql(u8, name, "@errorPayload")) {
         if (c.args.len < 1) return self.builder.constInt(0, .any);

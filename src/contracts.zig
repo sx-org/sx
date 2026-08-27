@@ -101,7 +101,6 @@ pub const entries = [_]Contract{
     .{ .name = "@typeName", .module = "modules/std/core.sx" },
     .{ .name = "@typeInfo", .module = "modules/std/core.sx" },
     .{ .name = "@errorName", .module = "modules/std/core.sx" },
-    .{ .name = "@tag", .module = "modules/std/core.sx" },
     .{ .name = "@errorPayload", .module = "modules/std/core.sx" },
     .{ .name = "@len", .module = "modules/std/core.sx" },
     .{ .name = "@field", .module = "modules/std/core.sx" },

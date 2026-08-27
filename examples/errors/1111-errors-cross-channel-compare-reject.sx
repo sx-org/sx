@@ -1,0 +1,21 @@
+// Two live errors compare only when one channel holds the other's members;
+// otherwise the comparison is a type error, not a constant `false`.
+
+@import "modules/std.sx";
+
+FooError :: error { A; D: i32 }
+BooError :: error { Z }
+
+boom :: (n: i64) -> (i64, !FooError) {
+    if n < 0 { raise .D{42}; }
+    raise FooError.A;
+}
+
+nope :: () -> (i64, !BooError) { raise BooError.Z; }
+
+main :: () -> i32 {
+    _, e := boom(-1);
+    _, z := nope();
+    print("{}\n", e == z);
+    return 0;
+}

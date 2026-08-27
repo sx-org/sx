@@ -2893,8 +2893,8 @@ pub const Ops = struct {
     }
 
     /// The live member's payload behind an `any` view. A channel is its member
-    /// word plus the payload area it reserves, so a view sized to the word
-    /// alone — a `@tag` view — has no area and views as `void`.
+    /// word plus the payload area it reserves, so a channel whose members are
+    /// all void has no area and views as `void`.
     fn emitAnyErrorPayloadView(self: Ops, u: UnaryOp) void {
         const av = self.e.resolveRef(u.operand);
         const data = c.LLVMBuildExtractValue(self.e.builder, av, 0, "aepv.data");

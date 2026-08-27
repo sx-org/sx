@@ -1142,16 +1142,14 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 // a struct in the type table, and only the interface word
                 // names it.
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
-                // A discriminant enum stands for its error, so it classifies
-                // with the error it reads and never as a plain enum.
-                .@"enum" => (info == .@"enum" and info.@"enum".error_of == null) or info == .tagged_union,
+                .@"enum" => info == .@"enum" or info == .tagged_union,
                 .@"union" => info == .@"union" or info == .tagged_union,
                 .slice => info == .slice,
                 .array => info == .array,
                 .pointer => info == .pointer or info == .many_pointer,
                 .vector => info == .vector,
                 .optional => info == .optional,
-                .@"error" => info == .@"error" or (info == .@"enum" and info.@"enum".error_of != null),
+                .@"error" => info == .@"error",
                 .closure => info == .closure,
             };
             if (matches and !hasUnresolvedElement(info)) {

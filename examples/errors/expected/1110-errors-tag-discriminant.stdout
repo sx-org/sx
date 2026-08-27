@@ -1,9 +1,0 @@
-owner=FooError
-name=FooError.D FooError.A
-payload=42
-shorthand=true true
-views=true false
-value=true
-match=1
-enum=true
-union=true

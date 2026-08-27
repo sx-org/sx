@@ -1440,8 +1440,8 @@ pub const Vm = struct {
                 return .{ .value = @intCast(table.memberOwnerType(id).index()) };
             },
             // The live member's payload behind an `any` view. A channel is its
-            // member word plus the payload area it reserves, so a view sized to
-            // the word alone — a `@tag` view — has no area and views as `void`.
+            // member word plus the payload area it reserves, so a channel whose
+            // members are all void has no area and views as `void`.
             .error_payload_view => |u| {
                 const table = try self.requireTable();
                 if (ref_types[u.operand.index()] != .any)

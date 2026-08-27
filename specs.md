@@ -5643,6 +5643,12 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
 - `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
+- `@unbox(v: any, $T: Type) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
+- The boxed-view family — `@len` / `@field` / `@elementAt` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW borrowing the receiver's storage (same borrow rules as `struct_field_value`), and an index past the count is undefined behavior.
+- `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum and tagged-union variants, array elements, vector lanes, and the count a slice's or string's header carries.
+- `@field(v: any, idx: i64) -> any` — the `idx`-th member at its offset; a tagged union's members share the payload offset.
+- `@elementAt(v: any, idx: i64) -> any` — the `idx`-th element of an array, vector, slice, or string, striding from the buffer a fat pointer names.
+- `@inner(v: any) -> ?any` — an optional's payload, `null` when it is absent.
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`
 formatter reads to print unsigned integers as unsigned decimal; it lowers to

@@ -95,45 +95,6 @@ fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
     return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
-/// `@tag(v)`'s type: T's discriminant. An error views as the payload-free enum
-/// over its members, a payload-free enum already IS its discriminant, and a
-/// tagged union views as the enum over its variants.
-pub fn tagTypeFor(self: *Lowering, ty: TypeId) ?TypeId {
-    if (ty.isBuiltin()) return null;
-    return switch (self.module.types.get(ty)) {
-        .@"error" => self.module.types.errorTagEnum(ty),
-        .@"enum" => ty,
-        .tagged_union => self.module.types.unionTagEnum(ty),
-        else => null,
-    };
-}
-
-/// `tagTypeFor`, diagnosing the kinds that have no discriminant.
-pub fn tagTypeOf(self: *Lowering, ty: TypeId, span: ast.Span) TypeId {
-    if (ty == .unresolved) return .unresolved;
-    if (tagTypeFor(self, ty)) |tag_ty| return tag_ty;
-    if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "@tag expects an error, enum, or tagged union; '{s}' is none", .{self.formatTypeName(ty)});
-    }
-    return .unresolved;
-}
-
-/// The error a discriminant enum discriminates, or null when `ty` is not one.
-pub fn errorBehindTag(self: *Lowering, ty: TypeId) ?TypeId {
-    if (ty.isBuiltin()) return null;
-    const info = self.module.types.get(ty);
-    return if (info == .@"enum") info.@"enum".error_of else null;
-}
-
-/// `@tag(val)`: the discriminant an error, enum, or tagged-union value carries.
-pub fn lowerTagOf(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
-    const src = self.inferExprType(arg);
-    const tag_ty = tagTypeOf(self, src, span);
-    if (tag_ty == .unresolved) return self.builder.constUndef(.i32);
-    const val = self.lowerExpr(arg);
-    return if (tag_ty == src) val else self.builder.enumTag(val, tag_ty);
-}
-
 /// `@errorPayload(e)`: the live member's payload as an `any` view over the
 /// channel's payload area.
 pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
@@ -455,14 +416,12 @@ fn collectChannelMembers(self: *Lowering, node: *const Node, owner_name: []const
 
 /// How an `==` operand names an error.
 const CompareOperand = struct {
-    /// The operand's OWN type — a value's channel, a `@tag` view's enum.
-    /// `.unresolved` for a shorthand, which takes the other operand's.
+    /// The operand's OWN type — a value's channel. `.unresolved` for a
+    /// shorthand, which takes the other operand's.
     ty: TypeId,
-    /// The channel the operand's value lives in; null for a view and for a
-    /// shorthand.
+    /// The channel the operand's value lives in, whose members decide
+    /// comparability; null for a shorthand.
     set: ?TypeId,
-    /// The channel whose members decide comparability.
-    chan: ?TypeId,
     /// The operand resolves against the type the other operand supplies.
     shorthand: bool,
     /// The operand carries a payload the comparison matches.
@@ -475,17 +434,14 @@ fn classifyCompareOperand(self: *Lowering, node: *const Node) CompareOperand {
     // channel value; a shorthand takes its channel from the other operand.
     if (spelled) |rm| if (rm.constructed) {
         const set = if (rm.shorthand) null else rm.set;
-        return .{ .ty = set orelse .unresolved, .set = set, .chan = set, .shorthand = rm.shorthand, .payload = true };
+        return .{ .ty = set orelse .unresolved, .set = set, .shorthand = rm.shorthand, .payload = true };
     };
     const ty = self.inferExprType(node);
     const set = liveChannelOf(self, ty);
-    // A `@tag` view stands for its error here: the members decide
-    // comparability, and the view contributes its tag word alone — as does a
-    // bare member spelling.
+    // A bare member spelling contributes its tag word alone.
     return .{
         .ty = ty,
         .set = set,
-        .chan = set orelse errorBehindTag(self, ty),
         .shorthand = node.data == .enum_literal,
         .payload = set != null and spelled == null,
     };
@@ -540,23 +496,23 @@ fn channelValueEquality(self: *Lowering, lv: Ref, rv: Ref, l_chan: TypeId, r_cha
     return self.builder.blockParam(merge_bb, 0, .bool);
 }
 
-/// Lower `==` / `!=` when an error value or a `@tag` view is involved. Returns
-/// null when neither operand is error-related (general path runs). Both
-/// operands must be a member spelling, an error value, or a `@tag` view;
-/// otherwise it's a type error (e.g. comparing a member to a raw integer).
+/// Lower `==` / `!=` when an error is involved. Returns null when neither
+/// operand is error-related (general path runs). Both operands must be a
+/// member spelling or an error value; otherwise it's a type error (e.g.
+/// comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
     const l = classifyCompareOperand(self, bop.lhs);
     const r = classifyCompareOperand(self, bop.rhs);
-    if (l.chan == null and r.chan == null) return null;
+    if (l.set == null and r.set == null) return null;
 
     // A contextual `.Name` shorthand is a member when the OTHER operand
     // supplies the type to resolve it in; with neither side error-related
     // there is nothing to resolve against and it stays an enum literal.
-    const l_dot = l.shorthand and r.chan != null;
-    const r_dot = r.shorthand and l.chan != null;
+    const l_dot = l.shorthand and r.set != null;
+    const r_dot = r.shorthand and l.set != null;
 
-    const l_ok = l.chan != null or l_dot;
-    const r_ok = r.chan != null or r_dot;
+    const l_ok = l.set != null or l_dot;
+    const r_ok = r.set != null or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
             const bad = if (!l_ok) bop.lhs else bop.rhs;
@@ -566,7 +522,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     }
 
     // Two channels compare only when one holds the other's members.
-    if (l.chan) |lc| if (r.chan) |rc| {
+    if (l.set) |lc| if (r.set) |rc| {
         if (!errorSetValueRetypeIsLegal(self, lc, rc) and !errorSetValueRetypeIsLegal(self, rc, lc)) {
             if (self.diagnostics) |diags| {
                 diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(lc), self.formatTypeName(rc) });
@@ -575,8 +531,6 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
         }
     };
 
-    // A `.X` shorthand resolves in the other operand's OWN type — the channel
-    // for a live value, the discriminant enum for a view.
     const ctx_ty: ?TypeId = if (l_dot) r.ty else if (r_dot) l.ty else (l.set orelse r.set);
     const saved = self.target_type;
     if (ctx_ty) |ct| self.target_type = ct;
@@ -584,8 +538,8 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     const rv = self.lowerExpr(bop.rhs);
     self.target_type = saved;
 
-    // A bare member spelling and a `@tag` view name the tag alone; two whole
-    // values match the live member's payload as well.
+    // A bare member spelling names the tag alone; two whole values match the
+    // live member's payload as well.
     if (l.payload and r.payload) {
         // A shorthand carries the other operand's channel.
         if (l.set orelse r.set) |lc| if (r.set orelse l.set) |rc| {

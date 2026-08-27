@@ -48,10 +48,6 @@ variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// The discriminant an error, enum, or tagged-union value carries: the type
-// over T's members alone, with no payload area. It has no written spelling —
-// `@tag` is the only way to name it.
-@tag :: (val: $T) -> $D;
 // An error value's live payload as an `any` view — the `variant_payload`
 // sibling for error channels. A payload-free member views as `void`.
 @errorPayload :: (e: $T) -> any;
