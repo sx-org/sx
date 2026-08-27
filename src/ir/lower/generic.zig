@@ -1882,41 +1882,27 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
 }
 
 /// Resolve a .call node that represents a type constructor (e.g., List(T), @Vector(N, T)).
-/// The `idx`-th member type of `t` for `field_type($T, i)`: a struct field,
-/// a tagged-union variant payload (`.void` for a tagless variant), a tuple
-/// element, a `union` field, the element type of an array/vector (index
-/// ignored — every element shares it), a slice's element (index 0 — the
-/// static length doesn't exist), or an optional's child (index 0). Matches
-/// what the runtime member-type tables answer for the same tags.
-/// Out-of-range or a memberless type diagnoses and poisons to
-/// `.unresolved` (never a silent default).
+/// The `idx`-th member type of `t` for `field_type($T, i)` — the diagnosing
+/// wrapper over `TypeTable.memberType`, so the static fold and the runtime
+/// member-type tables answer one query. A null answer diagnoses and poisons
+/// to `.unresolved` (never a silent default): out of range where the type
+/// does carry member types, memberless otherwise.
 pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) TypeId {
-    const oob = struct {
-        fn err(s: *Lowering, sp: ?ast.Span, i: usize, n: usize) TypeId {
-            if (s.diagnostics) |d|
-                d.addFmt(.err, sp, "field_type index {d} out of range ({d} field{s})", .{ i, n, if (n == 1) @as([]const u8, "") else "s" });
-            return .unresolved;
-        }
+    const table = &self.module.types;
+    if (table.memberType(t, @intCast(idx))) |ty| return ty;
+    const fields: ?i64 = blk: {
+        if (table.memberType(t, 0) != null) break :blk table.memberCount(t) orelse 1;
+        if (table.memberCount(t)) |n| if (n == 0) break :blk 0;
+        break :blk null;
     };
-    if (t.isBuiltin()) {
-        if (self.diagnostics) |d|
+    if (self.diagnostics) |d| {
+        if (fields) |n| {
+            d.addFmt(.err, span, "field_type index {d} out of range ({d} field{s})", .{ idx, n, if (n == 1) @as([]const u8, "") else "s" });
+        } else {
             d.addFmt(.err, span, "field_type: '{s}' has no fields", .{self.formatTypeName(t)});
-        return .unresolved;
+        }
     }
-    return switch (self.module.types.get(t)) {
-        .@"struct" => |s| if (idx < s.fields.len) s.fields[idx].ty else oob.err(self, span, idx, s.fields.len),
-        .tagged_union => |u| if (idx < u.fields.len) u.fields[idx].ty else oob.err(self, span, idx, u.fields.len),
-        .@"union" => |u| if (idx < u.fields.len) u.fields[idx].ty else oob.err(self, span, idx, u.fields.len),
-        .array => |a| if (idx < a.length) a.element else oob.err(self, span, idx, a.length),
-        .vector => |v| if (idx < v.length) v.element else oob.err(self, span, idx, v.length),
-        .slice => |sl| if (idx == 0) sl.element else oob.err(self, span, idx, 1),
-        .optional => |o| if (idx == 0) o.child else oob.err(self, span, idx, 1),
-        else => blk: {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, span, "field_type: '{s}' has no indexable fields", .{self.formatTypeName(t)});
-            break :blk .unresolved;
-        },
-    };
+    return .unresolved;
 }
 
 /// THE lowering of a compiler-formed type constructor. `head` is the `@` name

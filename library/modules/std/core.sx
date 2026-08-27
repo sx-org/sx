@@ -78,6 +78,19 @@ __sx_slice_len_info :: ($T: Type) -> i64 intrinsic;
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
 any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 
+// ── Boxed-value views: a value's parts, read in place ──────────────────────
+// The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
+// struct and union fields, enum and tagged-union variants, array elements,
+// vector lanes, and the count a slice's or string's header carries. `@field`
+// views the i-th member at its offset — a tagged union's members share the
+// payload offset. `@elementAt` views the i-th element of an array, vector,
+// slice, or string, striding from the buffer a fat pointer names. Each result
+// borrows the boxed storage, so it aliases later writes and copies nothing.
+// An index past the count is UB.
+@len :: (v: any) -> i64;
+@field :: (v: any, idx: i64) -> any;
+@elementAt :: (v: any, idx: i64) -> any;
+
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, type_id}` layout is private; these two are the stable contract
 // over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer

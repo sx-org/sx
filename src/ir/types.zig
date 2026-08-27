@@ -1053,10 +1053,10 @@ pub const TypeTable = struct {
     }
 
     /// Type of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// type, an array/vector element type, a slice's element (row 0 — the
-    /// static length doesn't exist), or an optional's child (row 0). Null for
-    /// a negative / out-of-range `idx` or a type with no member types (e.g. a
-    /// payloadless enum). Backs the `type_field_type` reader.
+    /// type, an array/vector element type, or row 0 as the slice element, the
+    /// string byte, or the optional child. Null for a negative / out-of-range
+    /// `idx` or a type with no member types (e.g. a payloadless enum). Backs
+    /// the `type_field_type` reader.
     pub fn memberType(self: *const TypeTable, id: TypeId, idx: i64) ?TypeId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -1067,6 +1067,7 @@ pub const TypeTable = struct {
             .array => |a| if (i < a.length) a.element else null,
             .vector => |v| if (i < v.length) v.element else null,
             .slice => |sl| if (i == 0) sl.element else null,
+            .string => if (i == 0) .u8 else null,
             .optional => |o| if (i == 0) o.child else null,
             else => null,
         };
@@ -1074,7 +1075,7 @@ pub const TypeTable = struct {
 
     /// Row count of the runtime member tables for `id` — `memberCount` where
     /// a count exists, plus ONE row for the kinds that answer a member TYPE
-    /// without a static count (slice element / optional child at row 0).
+    /// without a static count (slice element / string byte / optional child at row 0).
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
