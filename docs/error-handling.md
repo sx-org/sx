@@ -335,16 +335,6 @@ bad := e == 42;                    // ERROR
 A `{` directly after an `if` condition opens the body, so a payload
 construction there is parenthesized: `if e == (.BadDigit{'x'}) { ... }`.
 
-To ignore payloads, compare discriminants with `@tag`:
-
-```sx
-if @tag(e) == .BadDigit { ... }    // any bad digit, whatever the byte
-```
-
-`@tag(x)` works on error sets, enums, and tagged unions, and yields the
-discriminant — the payload dropped. A discriminant is not something you
-can `raise`, and it has no written spelling of its own.
-
 ---
 
 ## Reading an error
@@ -370,8 +360,7 @@ constructs — nothing for a void member, braces around a scalar, the
 struct's own braces for a struct — in every build, including release:
 
 ```sx
-log.warn("parse failed: {}", e);          // → "parse failed: ParseErr.BadDigit{120}"
-log.warn("parse failed: {}", @tag(e));    // → "parse failed: ParseErr.BadDigit"
+log.warn("parse failed: {}", e);   // → "parse failed: ParseErr.BadDigit{120}"
 ```
 
 `print` and `format` walk a value's `@typeInfo` and write the pieces to a
