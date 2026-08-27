@@ -364,8 +364,7 @@ log.warn("parse failed: {}", e);   // → "parse failed: ParseErr.BadDigit{120}"
 ```
 
 `print` and `format` walk a value's `@typeInfo` and write the pieces to a
-`Writer`; an error is one arm of that walk, the same path every other
-value takes.
+`Writer`; an error is one arm of that walk.
 
 To read the members of an error as a type, match its `@typeInfo`:
 
@@ -376,6 +375,7 @@ match @typeInfo(ParseErr) {
 }
 // Empty: void
 // BadDigit: u8
+// Overflow: ParseErr.Overflow
 ```
 
 `m.tag` is the interned `(owner, name)` pair — the member's identity — so

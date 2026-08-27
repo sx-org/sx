@@ -6698,7 +6698,7 @@ per member.
 
 ```sx
 name := match @typeInfo(FooError) {
-  case .error: |ei| ei.members[1].name;   // "D" — members in declaration order
+  case .error: |ei| ei.members[1].name;   // "B" — members in declaration order
   else:             "";
 };
 ```
