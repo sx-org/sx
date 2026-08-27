@@ -3,6 +3,7 @@
 // helpers they build on. Consumers never import this file directly —
 // std.sx re-exports every public name here.
 @import "modules/std/core.sx";
+@import "modules/std/writer.sx";
 c :: @import "modules/std/c.sx";
 
 // --- Slice & string allocation ---
@@ -524,8 +525,21 @@ any_to_string :: (val: any) -> string {
     result
 }
 
-build_format :: (fmt: string) -> string {
-    code := "result := \"\"; ";
+emit_segment :: (code: string, sink: string, start: i64, end: i64) -> string {
+    r := concat(code, sink);
+    r = concat(r, ".write(fmt[");
+    r = concat(r, int_to_string(start));
+    r = concat(r, "..");
+    r = concat(r, int_to_string(end));
+    concat(r, "]); ")
+}
+
+// The writes `fmt` spells, as statements against `sink` — the name of a
+// `Writer` in scope at the `@insert` site, alongside `fmt` and `args`. A
+// literal run goes out as a view into `fmt`, a `{}` as its argument's
+// rendering, and `{{` / `}}` carry one brace through.
+build_format :: (fmt: string, sink: string) -> string {
+    code := "";
     seg_start := 0;
     i := 0;
     arg_idx := 0;
@@ -533,25 +547,16 @@ build_format :: (fmt: string) -> string {
         if fmt[i] == '{' {
             if i + 1 < fmt.len {
                 if fmt[i + 1] == '}' {
-                    if i > seg_start {
-                        code = concat(code, "result = concat(result, substr(fmt, ");
-                        code = concat(code, int_to_string(seg_start));
-                        code = concat(code, ", ");
-                        code = concat(code, int_to_string(i - seg_start));
-                        code = concat(code, ")); ");
-                    }
-                    code = concat(code, "result = concat(result, any_to_string(args[");
+                    if i > seg_start { code = emit_segment(code, sink, seg_start, i); }
+                    code = concat(code, sink);
+                    code = concat(code, ".write(any_to_string(args[");
                     code = concat(code, int_to_string(arg_idx));
                     code = concat(code, "])); ");
                     arg_idx += 1;
                     i += 2;
                     seg_start = i;
                 } else if fmt[i + 1] == '{' {
-                    code = concat(code, "result = concat(result, substr(fmt, ");
-                    code = concat(code, int_to_string(seg_start));
-                    code = concat(code, ", ");
-                    code = concat(code, int_to_string(i - seg_start + 1));
-                    code = concat(code, ")); ");
+                    code = emit_segment(code, sink, seg_start, i + 1);
                     i += 2;
                     seg_start = i;
                 } else {
@@ -563,11 +568,7 @@ build_format :: (fmt: string) -> string {
         } else if fmt[i] == '}' {
             if i + 1 < fmt.len {
                 if fmt[i + 1] == '}' {
-                    code = concat(code, "result = concat(result, substr(fmt, ");
-                    code = concat(code, int_to_string(seg_start));
-                    code = concat(code, ", ");
-                    code = concat(code, int_to_string(i - seg_start + 1));
-                    code = concat(code, ")); ");
+                    code = emit_segment(code, sink, seg_start, i + 1);
                     i += 2;
                     seg_start = i;
                 } else {
@@ -580,24 +581,21 @@ build_format :: (fmt: string) -> string {
             i += 1;
         }
     }
-    if seg_start < fmt.len {
-        code = concat(code, "result = concat(result, substr(fmt, ");
-        code = concat(code, int_to_string(seg_start));
-        code = concat(code, ", ");
-        code = concat(code, int_to_string(fmt.len - seg_start));
-        code = concat(code, ")); ");
-    }
+    if seg_start < fmt.len { code = emit_segment(code, sink, seg_start, fmt.len); }
     code
 }
 
 format :: ($fmt: string, ..$args) -> string {
-    @insert build_format(fmt);
-    @insert "return result;";
+    sb := StringBuilder.init();
+    @insert build_format(fmt, "sb");
+    sb.flush();
+    return sb.finish();
 }
 
 print :: ($fmt: string, ..$args) {
-    @insert build_format(fmt);
-    @insert "out(result);";
+    w := FdWriter.init(1);
+    @insert build_format(fmt, "w");
+    w.flush();
 }
 
 // ── Postfix-assertion runtime ───────────────────────────────────────────
