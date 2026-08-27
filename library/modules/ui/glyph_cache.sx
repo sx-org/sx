@@ -40,8 +40,6 @@ dequantize_size :: (q: u16) -> f32 {
 
 // Pack (glyph_index, size_quantized) into a single u32 for fast comparison
 make_glyph_key :: (glyph_index: u16, size_quantized: u16) -> u32 {
-    // Both operands widen to the u32 key BEFORE the shift: a 16-bit shift of a
-    // u16 discards every bit of the glyph index.
     (glyph_index.(u32) << 16) | size_quantized.(u32)
 }
 

@@ -37,10 +37,13 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
     application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
         if g_uikit_plat != null {
             center := NSNotificationCenter.defaultCenter();
+            kb_name :: "UIKeyboardWillChangeFrameNotification";
+            name := NSString.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
+                kb_name.ptr, kb_name.len.(usize), NSUTF8StringEncoding, 0);
             center.addObserver_selector_name_object(
                 self,
                 sel_registerName("sxKeyboardWillChangeFrame:".ptr),
-                "UIKeyboardWillChangeFrameNotification".(*NSString),
+                name,
                 null);
         }
         return 1;
