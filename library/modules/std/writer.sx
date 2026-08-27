@@ -30,10 +30,8 @@ StringBuilder :: struct {
     reserve :: (self: *StringBuilder, n: i64) {
         if self.cap >= n { return; }
         new_cap := if self.cap == 0 then 16 else self.cap;
-        while new_cap < n {
-            if new_cap > i64.max / 2 { @panic("StringBuilder: out of memory", @SourceSite{}); }
-            new_cap = new_cap * 2;
-        }
+        while new_cap < n and new_cap <= i64.max / 2 { new_cap = new_cap * 2; }
+        if new_cap < n { new_cap = n; }
         raw := self.alloc.alloc_bytes(new_cap);
         if raw == null { @panic("StringBuilder: out of memory", @SourceSite{}); }
         if self.bytes.len > 0 { c.memcpy(raw, self.bytes.ptr, self.bytes.len); }
@@ -53,8 +51,9 @@ StringBuilder :: struct {
 impl Writer for StringBuilder {
     write :: (self: *StringBuilder, s: string) -> void {
         if s.len == 0 { return; }
-        if s.len > i64.max - self.bytes.len { @panic("StringBuilder: out of memory", @SourceSite{}); }
-        self.reserve(self.bytes.len + s.len);
+        n := self.bytes.len + s.len;
+        // A wrapped sum names less than the write needs; no allocator funds i64.max.
+        self.reserve(if n < self.bytes.len then i64.max else n);
         c.memcpy(*self.bytes.ptr[self.bytes.len], s.ptr, s.len);
         self.bytes.len += s.len;
     }
