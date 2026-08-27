@@ -92,16 +92,15 @@ slice_to_string    :: fmt.slice_to_string;
 pointer_to_string  :: fmt.pointer_to_string;
 optional_to_string :: fmt.optional_to_string;
 
-// --- String ops & allocation helpers ---
+// --- String ops ---
 
 concat      :: fmt.concat;
 substr      :: fmt.substr;
+last        :: fmt.last;
 path_join   :: fmt.path_join;
-alloc_string :: fmt.alloc_string;
 cstring_len  :: fmt.cstring_len;
 from_cstring :: fmt.from_cstring;
 to_cstring   :: fmt.to_cstring;
-alloc_slice :: fmt.alloc_slice;
 
 // fmt internals, re-exported only because they were always part of the
 // flat prelude surface.
@@ -131,6 +130,8 @@ cancel      :: io_mod.cancel;
 c       :: @import "modules/std/c.sx";
 posix   :: @import "modules/std/posix.sx";
 mem     :: @import "modules/std/mem.sx";
+alloc_string :: mem.alloc_string;
+alloc_slice  :: mem.alloc_slice;
 // Intentional allocator-prelude re-export. Static method heads obey the same
 // one-hop visibility boundary as every other type use; this own alias is what
 // makes bare `GPA.init()` part of the std facade rather than an accidental
