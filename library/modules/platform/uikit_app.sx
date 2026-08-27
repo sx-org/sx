@@ -40,7 +40,7 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
             center.addObserver_selector_name_object(
                 self,
                 sel_registerName("sxKeyboardWillChangeFrame:".ptr),
-                "UIKeyboardWillChangeFrameNotification",
+                "UIKeyboardWillChangeFrameNotification".(*NSString),
                 null);
         }
         return 1;
