@@ -573,7 +573,18 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
             // so `inline if V == T` prunes the dead branch whole.
             if (b.op != .eq and b.op != .neq) return null;
             if (!isStaticTypeRef(self, b.lhs) or !isStaticTypeRef(self, b.rhs)) return null;
-            const matched = self.resolveTypeArg(b.lhs) == self.resolveTypeArg(b.rhs);
+            // `isStaticTypeRef` clears a LOCAL shadow but not a runtime GLOBAL
+            // of the same spelling as a type, so this resolve is speculative:
+            // diagnostics stay quiet, and `.unresolved` on either side means
+            // a runtime value, not a type — fall through to normal `if`
+            // lowering instead of erroring or folding on two unresolved IDs.
+            const saved_diags = self.diagnostics;
+            self.diagnostics = null;
+            const lhs_ty = self.resolveTypeArg(b.lhs);
+            const rhs_ty = self.resolveTypeArg(b.rhs);
+            self.diagnostics = saved_diags;
+            if (lhs_ty == .unresolved or rhs_ty == .unresolved) return null;
+            const matched = lhs_ty == rhs_ty;
             return if (b.op == .eq) matched else !matched;
         },
         .call => |c| {

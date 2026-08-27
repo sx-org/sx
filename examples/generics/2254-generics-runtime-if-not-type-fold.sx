@@ -1,0 +1,43 @@
+// A runtime `if cond != const { }` inside a function that also constructs an
+// open-set member does not const-fold as a type-equality check just because
+// both operands are bare identifiers — the fold only applies to genuine
+// static type references (`inline if V == T`), and a runtime global with the
+// same shape must fall through to ordinary runtime lowering.
+@import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 64, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Slide :: @OpenVariant(View) {
+    pages: List(View) = .{};
+    dir: i64 = 0;
+    render :: (self: *Slide) -> string => "slide";
+}
+
+IDLE :: 0;
+ACTIVE :: 1;
+g_dir : i64 = IDLE;
+
+build_it :: () -> Slide {
+    t : f32 = 1.0;
+    if g_dir != IDLE {
+        t = 0.5;
+    }
+    pages := List(View){};
+    Slide{ pages = pages, dir = g_dir }
+}
+
+main :: () {
+    s := build_it();
+    print("{}\n", s.render());
+
+    g_dir = ACTIVE;
+    s2 := build_it();
+    print("{}\n", s2.dir);
+}
