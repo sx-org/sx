@@ -9,13 +9,13 @@ Box :: struct($T: Type) { v: T; }
 
 main :: () -> i32 {
     v : i2 = .{ x = 7 };
-    print("v={} name={} same={}\n", v.x, type_name(i2), type_eq(i2, @int(2, .signed)));
+    print("v={} name={} same={}\n", v.x, @typeName(i2), @typeEq(i2, @int(2, .signed)));
 
     u7 := 42;
     print("u7={}\n", u7);
 
     b : Box(i2) = .{ v = .{ x = 3 } };
     n : Box(@int(2, .signed)) = .{ v = -2 };
-    print("box={} formed={} same={}\n", b.v.x, n.v, type_eq(Box(i2), Box(@int(2, .signed))));
+    print("box={} formed={} same={}\n", b.v.x, n.v, @typeEq(Box(i2), Box(@int(2, .signed))));
     0
 }

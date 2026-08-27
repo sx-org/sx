@@ -5,14 +5,14 @@
 
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
-x :: @run parse(-1);            // error.Bad escapes → comptime diagnostic + halt
+x :: @run parse(-1);            // Bad escapes → comptime diagnostic + halt
 
 main :: () -> i32 { return x; }

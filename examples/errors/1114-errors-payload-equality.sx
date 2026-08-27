@@ -1,0 +1,34 @@
+// Two live errors compare tag AND payload: the same member carrying a
+// different payload is unequal. A member spelling names the tag alone; its
+// brace group puts the payload into the match as well.
+
+@import "modules/std.sx";
+
+ParseErr :: error {
+    Empty;
+    BadDigit: i32;
+    At: struct { line: i32; col: i64 };
+}
+
+boom :: (n: i64) -> (i64, !ParseErr) {
+    if n < 0  { raise .BadDigit{42}; }
+    if n == 0 { raise .BadDigit{7}; }
+    if n == 1 { raise .At{ line = 2, col = 9 }; }
+    if n == 2 { raise .At{ line = 2, col = 10 }; }
+    raise .Empty;
+}
+
+main :: () -> i32 {
+    _, d42 := boom(-1);
+    _, d7 := boom(0);
+    _, at9 := boom(1);
+    _, at10 := boom(2);
+    _, empty := boom(3);
+    _, empty2 := boom(4);
+
+    print("live={} {}\n", d42 == d42, d42 == d7);
+    print("spelling={} {} {}\n", d42 == .BadDigit, d42 == (.BadDigit{42}), d42 == (.BadDigit{7}));
+    print("struct={} {}\n", at9 == at9, at9 == at10);
+    print("payloadless={}\n", empty == empty2);
+    return 0;
+}

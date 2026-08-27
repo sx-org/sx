@@ -1,0 +1,39 @@
+// The qualified member spelling `Set.Member`: a member's identity is the pair,
+// so `Wide.Fault` and `Narrow.Fault` are two members that merely share a
+// spelling. The value's static type is `Set`.
+//
+// Into an inferred `!` the whole static type contributes, so `spread` converges
+// to Wide and only a caller set covering both members accepts it.
+
+@import "modules/std.sx";
+
+Wide   :: error { Fault; Extra }
+Narrow :: error { Fault }
+
+pick :: (n: i32) -> !Narrow {
+    if n < 0 { raise Narrow.Fault; }
+    return;
+}
+
+spread :: (n: i32) -> ! {
+    if n < 0 { raise Wide.Extra; }
+    return;
+}
+
+relay :: (n: i32) -> !Wide {
+    try spread(n);
+    return;
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+    e := pick(-1);
+    if e == Narrow.Fault { r = r + 4; }          // true  -> +4
+
+    t := Wide.Extra;
+    f := relay(-1);
+    if f == t { r = r + 16; }                     // true  -> +16
+
+    print("qualified: {}\n", r);                  // -> 20
+    return 0;
+}

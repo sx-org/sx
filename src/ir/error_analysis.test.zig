@@ -28,16 +28,15 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     var lowering = Lowering.init(&module);
     const ea = ErrorAnalysis{ .l = &lowering };
 
-    // raiser :: () -> ! { raise error.Foo; }
-    const r_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
-    const r_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
-    const r_fa = mk(alloc, .{ .field_access = .{ .object = r_err, .field = "Foo" } });
+    // raiser :: () -> ! { raise .Foo; }
+    const r_rt = mk(alloc, .{ .error_type_expr = .{} });
+    const r_fa = mk(alloc, .{ .enum_literal = .{ .name = "Foo" } });
     const r_raise = mk(alloc, .{ .raise_stmt = .{ .tag = r_fa } });
     const r_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{r_raise} } });
     const raiser_fd = ast.FnDecl{ .name = "raiser", .params = &.{}, .return_type = r_rt, .body = r_body };
 
     // caller :: () -> ! { try raiser(); }  — no direct raise; inherits {Foo}.
-    const c_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+    const c_rt = mk(alloc, .{ .error_type_expr = .{} });
     const c_callee = mk(alloc, .{ .identifier = .{ .name = "raiser" } });
     const c_call = mk(alloc, .{ .call = .{ .callee = c_callee, .args = &.{} } });
     const c_try = mk(alloc, .{ .try_expr = .{ .operand = c_call } });
@@ -49,7 +48,7 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
 
     ea.convergeInferredErrorSets();
 
-    const foo = module.types.internTag("Foo");
+    const foo = lowering.anonymousErrorMember("Foo");
     const raiser_set = lowering.inferred_error_sets.get("raiser") orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), raiser_set.len);
     try std.testing.expectEqual(foo, raiser_set[0]);
@@ -71,11 +70,10 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     var lowering = Lowering.init(&module);
     const ea = ErrorAnalysis{ .l = &lowering };
 
-    // host :: () { () -> ! { raise error.Bar; }; }  — a bare-`!` closure literal
+    // host :: () { () -> ! { raise .Bar; }; }  — a bare-`!` closure literal
     // sitting in `host`'s body; its raises union into the shape set.
-    const lam_rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
-    const l_err = mk(alloc, .{ .identifier = .{ .name = "error" } });
-    const l_fa = mk(alloc, .{ .field_access = .{ .object = l_err, .field = "Bar" } });
+    const lam_rt = mk(alloc, .{ .error_type_expr = .{} });
+    const l_fa = mk(alloc, .{ .enum_literal = .{ .name = "Bar" } });
     const l_raise = mk(alloc, .{ .raise_stmt = .{ .tag = l_fa } });
     const lam_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{l_raise} } });
     const lambda = mk(alloc, .{ .lambda = .{ .params = &.{}, .return_type = lam_rt, .body = lam_body } });
@@ -91,7 +89,7 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     var it = lowering.shape_inferred_sets.valueIterator();
     const tags = it.next().?.*;
     try std.testing.expectEqual(@as(usize, 1), tags.len);
-    try std.testing.expectEqual(module.types.internTag("Bar"), tags[0]);
+    try std.testing.expectEqual(lowering.anonymousErrorMember("Bar"), tags[0]);
 }
 
 test "error_analysis: empty-inferred warnings are emitted in source order, not hashmap order" {
@@ -115,7 +113,7 @@ test "error_analysis: empty-inferred warnings are emitted in source order, not h
     };
     var fds: [names.len]ast.FnDecl = undefined;
     for (&names, 0..) |name, i| {
-        const rt = mk(alloc, .{ .error_type_expr = .{ .name = null } });
+        const rt = mk(alloc, .{ .error_type_expr = .{} });
         // Ascending, distinct spans → source order is unambiguous.
         rt.span = .{ .start = @intCast((i + 1) * 100), .end = @intCast((i + 1) * 100 + 1) };
         const body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{} } });

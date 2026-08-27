@@ -8,14 +8,14 @@ Pt :: struct { x: i64; }
 
 main :: () -> i64 {
     a := i32.[1, 2, 3];
-    print("{}\n", type_name(type_of(a)));
+    print("{}\n", @typeName(@typeOf(a)));
     b := f32.[1.5, 2.5];
-    print("{}\n", type_name(type_of(b)));
+    print("{}\n", @typeName(@typeOf(b)));
     c := u8.[1, 2];
-    print("{}\n", type_name(type_of(c)));
+    print("{}\n", @typeName(@typeOf(c)));
     d := Pt.[Pt{ x = 1 }];
-    print("{}\n", type_name(type_of(d)));
+    print("{}\n", @typeName(@typeOf(d)));
     ok : [3]i32 = .[1, 2, 3];
-    print("{}\n", type_name(type_of(ok)));  // the annotated form stays
+    print("{}\n", @typeName(@typeOf(ok)));  // the annotated form stays
     return 0;
 }

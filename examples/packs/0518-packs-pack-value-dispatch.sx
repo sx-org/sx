@@ -4,10 +4,10 @@
 //
 // Two usage shapes covered here:
 //
-// 1. `type_name($args[0])` — the value-form Type goes through the
+// 1. `@typeName($args[0])` — the value-form Type goes through the
 //    reflection intrinsic, picking up the per-mono concrete type.
 //
-// 2. `inline if type_eq($args[0], i64) { ... }` — compile-time
+// 2. `inline if @typeEq($args[0], i64) { ... }` — compile-time
 //    branch over the pack element's type. The fold via
 //    `tryConstBoolCondition` reads $args[0] via `resolveTypeArg`, which
 //    walks `pack_arg_types`.
@@ -18,22 +18,22 @@
 
 @import "modules/std.sx";
 
-show :: (..$args) -> string => type_name($args[0]);
+show :: (..$args) -> string => @typeName($args[0]);
 
 describe :: (..$args) -> string {
-    inline if type_eq($args[0], i64) { return "got i64"; }
-    inline if type_eq($args[0], string) { return "got string"; }
-    inline if type_eq($args[0], bool) { return "got bool"; }
+    inline if @typeEq($args[0], i64) { return "got i64"; }
+    inline if @typeEq($args[0], string) { return "got string"; }
+    inline if @typeEq($args[0], bool) { return "got bool"; }
     return "got other";
 }
 
 main :: () -> i32 {
-    // type_name picks up the per-mono first-arg type.
+    // @typeName picks up the per-mono first-arg type.
     print("{}\n", show(42));         // i64
     print("{}\n", show("hi"));        // string
     print("{}\n", show(3.14));        // f64
 
-    // inline-if + type_eq picks the right branch per mono.
+    // inline-if + @typeEq picks the right branch per mono.
     print("{}\n", describe(42));      // got i64
     print("{}\n", describe("hello"));  // got string
     print("{}\n", describe(true));     // got bool

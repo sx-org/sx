@@ -111,7 +111,7 @@ context:
   current function → `{file, line, col, func}` (reusing the source map
   wired in for DWARF), **interns and builds the `Frame` global** in
   [`src/backend/llvm/reflection.zig`](../src/backend/llvm/reflection.zig)
-  (the same mechanism, in the same file, as the tag-name table), and yields
+  (the same mechanism, in the same file, as the member-name tables), and yields
   its address as the op's value. The lowerer feeds that value to a separate
   `sx_trace_push` call emitted through the normal call lowering.
 - **`interp`:** yields the packed `(func_id, span.start)` from its own
@@ -167,7 +167,7 @@ push-then-clear and leave no residue — the steady state mirrors Zig's.
 ```
 error return trace (most recent call last):
   parse at parse.sx:12:5
-     if !is_digit(s[0]) raise error.BadDigit;
+     if !is_digit(s[0]) raise .BadDigit;
                         ^
   run   at main.sx:20:9
      v := try parse(s);
@@ -250,7 +250,7 @@ both the trace path and the DWARF path.
 | [`src/core.zig`](../src/core.zig) | `Compilation`: owns `import_sources` (file→source map), constructs the emitter, calls `setDebugContext` + `emit`; re-enters the interpreter for `@run`/post-link |
 | [`src/ir/lower.zig`](../src/ir/lower.zig) | AST→IR. Stamps `Inst.span`; emits push/clear at failure/absorb sites; `tracesEnabled` gate; declares the `sx_trace_*` externs |
 | [`src/ir/emit_llvm.zig`](../src/ir/emit_llvm.zig) | IR→LLVM orchestrator. Owns `LLVMEmitter` + the source map (`setDebugContext`); dispatches the `.trace_frame` op and the DWARF passes to the helpers below |
-| [`src/backend/llvm/reflection.zig`](../src/backend/llvm/reflection.zig) | `Reflection`: builds the interned `Frame` table + the tag-name / type-name tables; yields the `.trace_frame` op's value (the `Frame` global's address) — the `sx_trace_push` call itself is emitted by `lower.zig` |
+| [`src/backend/llvm/reflection.zig`](../src/backend/llvm/reflection.zig) | `Reflection`: builds the interned `Frame` table + the member-name / type-name tables; yields the `.trace_frame` op's value (the `Frame` global's address) — the `sx_trace_push` call itself is emitted by `lower.zig` |
 | [`src/backend/llvm/debug.zig`](../src/backend/llvm/debug.zig) | `DebugInfo`: builds all DWARF metadata (compile unit, per-function subprograms, per-instruction `DILocation`) |
 | [`src/ir/interp.zig`](../src/ir/interp.zig) | Comptime IR interpreter. The `.trace_frame` op yields a packed `(func_id, span.start)`; the separate `sx_trace_push` call op runs as an extern call (dlsym); `.trace_resolve` recovers comptime frames |
 | [`src/errors.zig`](../src/errors.zig) | `SourceLoc.compute(source, offset) → {line, col}`; the `import_sources` map type |
@@ -388,12 +388,12 @@ symbolization is delegated to the platform debugger — sx ships none.
 
 | Artifact | Lookup | Size | Shipped in release? |
 |---|---|---|---|
-| **Tag-name table** | tag id → name string | tiny (per distinct tag) | **yes, always** — `{}` interpolation and the failable-`main` reporter's `error: unhandled error reached main: error.X` line need names even in release |
+| **Member-name tables** | member id → the member's spelling and its `Owner.Member` name | tiny (per distinct member) | **yes, always** — `{}` interpolation and the failable-`main` reporter's `error: unhandled error reached main: X` line need names even in release |
 | **`Frame` location table** | push site → `{file,line,col,func}` | small (interned strings; per push site) | **debug only** — rides the trace-mode gate |
 | **DWARF (`.debug_line` / `DISubprogram`)** | PC → file:line:col, for *debuggers* | larger (per source position) | **debug only**, strippable; consumed by `lldb`/`gdb`, never by the trace formatter |
 
-The tag-name table is always linked (it's how a tag renders as `BadDigit`
-in any build). The `Frame` table powers traces. DWARF is independent
+The member-name tables are always linked (they are how an error renders as
+`ParseErr.BadDigit` in any build). The `Frame` table powers traces. DWARF is independent
 debugger sugar.
 
 ---

@@ -49,7 +49,7 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
     raw : [5]u8 = ---;
     raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
-    return raises(string{ ptr = *raw[0], len = 5 }, error.BadControlChar, alloc);
+    return raises(string{ ptr = *raw[0], len = 5 }, .BadControlChar, alloc);
 }
 
 main :: () -> ! {
@@ -131,13 +131,13 @@ main :: () -> ! {
     report("uni-i3",  u[6] == 0x80);
 
     // ── 6. Malformed inputs each surface the right error variant ─────
-    report("err-truncated",     raises("{\"a\":",       error.UnexpectedEnd,   arena));
-    report("err-bad-escape",    raises("\"a\\xb\"",     error.BadEscape,       arena));
-    report("err-trailing-junk", raises("[1,2] x",       error.TrailingGarbage, arena));
-    report("err-bad-token",     raises("xyz",           error.UnexpectedToken, arena));
-    report("err-leading-zero",  raises("01",            error.BadNumber,       arena));
-    report("err-overflow",      raises("9223372036854775808", error.BadNumber, arena));
-    report("err-unterminated",  raises("\"abc",         error.UnexpectedEnd,   arena));
+    report("err-truncated",     raises("{\"a\":",       .UnexpectedEnd,   arena));
+    report("err-bad-escape",    raises("\"a\\xb\"",     .BadEscape,       arena));
+    report("err-trailing-junk", raises("[1,2] x",       .TrailingGarbage, arena));
+    report("err-bad-token",     raises("xyz",           .UnexpectedToken, arena));
+    report("err-leading-zero",  raises("01",            .BadNumber,       arena));
+    report("err-overflow",      raises("9223372036854775808", .BadNumber, arena));
+    report("err-unterminated",  raises("\"abc",         .UnexpectedEnd,   arena));
 
     // ── 7. RFC 8259 §7: unescaped control bytes (U+0000..U+001F) ──────
     // A RAW control byte inside a string is invalid JSON -> BadControlChar.

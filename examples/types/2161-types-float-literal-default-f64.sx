@@ -9,13 +9,13 @@
 
 f :: () -> f32 {
     x := 1.5;
-    print("f.x: {}\n", type_name(type_of(x)));
+    print("f.x: {}\n", @typeName(@typeOf(x)));
     0.0
 }
 
 g :: () -> f32 {
     x := 0.0;
-    print("g.x: {}\n", type_name(type_of(x)));
+    print("g.x: {}\n", @typeName(@typeOf(x)));
     0.0
 }
 
@@ -23,15 +23,15 @@ id :: (v: $T) -> T { v }
 
 d_host :: () -> i32 {
     a, b := .{1.5, 2.5};
-    print("a: {} b: {}\n", type_name(type_of(a)), type_name(type_of(b)));
+    print("a: {} b: {}\n", @typeName(@typeOf(a)), @typeName(@typeOf(b)));
     0
 }
 
 main :: () {
     f();
     g();
-    print("id: {}\n", type_name(type_of(id(1.5))));
+    print("id: {}\n", @typeName(@typeOf(id(1.5))));
     d_host();
     x := 3.14;
-    print("main.x: {}\n", type_name(type_of(x)));
+    print("main.x: {}\n", @typeName(@typeOf(x)));
 }

@@ -1,27 +1,27 @@
-// Rejected failable-forward mixtures (`return callee(...)`), per specs.md
-// "Forwarding a failable result":
+// Rejected failable-forward mixtures (`return callee(...)`):
 // 1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 is required, so
 // the raw tag would land in the value slot;
 // 2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 are required;
-// 3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error set is
-// not statically known at the forward site, so it cannot be proven ⊆ the named
-// set — destructure and re-raise instead.
+// 3. bare-`!` callee → NAMED-set caller: the callee's channel is the merge its
+// body converged to, and each of its members the named set cannot name is
+// reported.
 
 @import "modules/std.sx";
 
 MyErr :: error { Boom }
+BareErr :: error { Odd; Big }
 
 pure_cal :: (x: i64) -> !MyErr {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
 }
 
 val_cal :: (x: i64) -> (i64, !MyErr) {
-    if x < 0 { raise error.Boom; }
+    if x < 0 { raise .Boom; }
     return x;
 }
 
 bare_cal :: (x: i64) -> ! {
-    if x < 0 { raise error.Odd; }
+    if x < 0 { raise BareErr.Odd; }
 }
 
 // (1) pure → value-carrying: rejected (0 value slots vs 1)
@@ -31,11 +31,11 @@ f1 :: (x: i64) -> (i64, !) {
 
 // (2) value-carrying → pure: rejected (1 value slot vs 0)
 f2 :: (x: i64) -> ! {
-    if x > 100 { raise error.Big; }
+    if x > 100 { raise BareErr.Big; }
     return val_cal(x);
 }
 
-// (3) bare `!` → named set: rejected (inferred set unknown here)
+// (3) bare `!` → named set: rejected (BareErr ⊄ MyErr)
 f3 :: (x: i64) -> !MyErr {
     return bare_cal(x);
 }

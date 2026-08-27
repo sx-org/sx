@@ -2,7 +2,7 @@
 // its concrete type_id at slot 1 — {ctx, __type_id, vtable} / `inline`
 // {ctx, __type_id, fn_ptrs…} — so the value's first two words are an
 // `any` {data, type_id}. What that unlocks, all pinned here:
-//   - `type_of(p)` answers the CONCRETE type (never folds to the static
+//   - `@typeOf(p)` answers the CONCRETE type (never folds to the static
 //     protocol type — the any-operand rule extended);
 //   - the downcast `p.(T)` with the three assertion temperaments —
 //     unconsumed (panics on mismatch), soft `p.(?T)` (null), graceful
@@ -27,8 +27,8 @@ main :: () {
     s := c.(Drawable);
     t := q.(Drawable);
 
-    // type_of(p) — concrete, both values; dispatch unaffected
-    print("{} {}\n", type_name(type_of(s)), type_name(type_of(t)));
+    // @typeOf(p) — concrete, both values; dispatch unaffected
+    print("{} {}\n", @typeName(@typeOf(s)), @typeName(@typeOf(t)));
     print("{} {}\n", s.area(), t.area());
 
     // unconsumed downcast (tag matches — no panic path taken)
@@ -58,12 +58,12 @@ main :: () {
     }
 
     av : any = s;
-    print("view: {}\n", type_name(type_of(av)));
+    print("view: {}\n", @typeName(@typeOf(av)));
 
     // `inline` layout: same story through an Allocator value
     ga := GPA.init();
     a : Allocator = ga;
-    print("inline: {}\n", type_name(type_of(a)));
+    print("inline: {}\n", @typeName(@typeOf(a)));
     g := a.(GPA);
     _ = g;
 

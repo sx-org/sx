@@ -2778,13 +2778,13 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .align_of => .align_of,
 
         // No `call_builtin` form. The reflection intrinsics fold to a constant in
-        // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `type_info`
+        // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `@typeInfo`
         // DO have builtin ops but are emitted directly by their folds (as the
         // non-static fallback), never routed through here; the atomics lower to
         // dedicated atomic ops. Listed exhaustively on purpose — a new intrinsic
         // must decide here rather than fall through a catch-all.
-        .type_of,
-        .type_name,
+        .@"@typeOf",
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2798,14 +2798,20 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
+        .@"@inner",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .atomic_load,
         .atomic_store,
         .atomic_fetch_add,
@@ -2907,19 +2913,12 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     // An uninferrable TYPE param must diagnose here: monomorphizing with
     // it unbound stamps `.unresolved` through the body and trips the
     // emitter's sentinel panic instead of surfacing a source error.
-    // Comptime VALUE params (`$N: u32`) and `..$Ts` packs bind through
-    // their own dispatch and are exempt.
     for (fd.type_params) |tp| {
-        if (tp.is_variadic) continue;
-        if (tp.constraint.data != .type_expr) continue;
-        const cname = tp.constraint.data.type_expr.name;
-        const is_type_param = std.mem.eql(u8, cname, "Type") or
-            self.isProtocolConstraint(cname, fd.body.source_file);
-        if (is_type_param and !bindings.contains(tp.name)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
-            return Ref.none;
-        }
+        if (!self.genericResolver().bindsTypeArgument(tp, fd.body.source_file)) continue;
+        if (bindings.contains(tp.name)) continue;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
+        return Ref.none;
     }
 
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
@@ -3089,8 +3088,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
 
         .size_of,
         .align_of,
-        .type_of,
-        .type_name,
+        .@"@typeOf",
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3104,14 +3103,20 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
+        .@"@inner",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
         .@"@cos",
@@ -3375,8 +3380,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@call_ptr",
         .size_of,
         .align_of,
-        .type_of,
-        .type_name,
+        .@"@typeOf",
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3390,14 +3395,20 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
+        .@"@inner",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
         .@"@cos",
@@ -3707,12 +3718,12 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 
 /// Is `name` dispatched by `tryLowerReflectionCall`? Either a registered
 /// reflection intrinsic, or one of the bare KEYWORDS the compiler recognizes with
-/// no declaration at all (`type_eq`, …). The two are listed apart
+/// no declaration at all (`__interp_print_frames`, …). The two are listed apart
 /// because only the first group answers to the registry; conflating them makes a
 /// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "type_eq", "__interp_print_frames", "__trace_resolve_frame",
+        "__interp_print_frames", "__trace_resolve_frame",
     };
     for (keywords) |k| {
         if (std.mem.eql(u8, name, k)) return true;
@@ -3721,8 +3732,8 @@ fn isReflectionCall(name: []const u8) bool {
     return switch (id) {
         .size_of,
         .align_of,
-        .type_of,
-        .type_name,
+        .@"@typeOf",
+        .@"@typeName",
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3736,14 +3747,20 @@ fn isReflectionCall(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .error_name,
+        .@"@errorName",
+        .@"@errorPayload",
+        .@"@len",
+        .@"@field",
+        .@"@elementAt",
+        .@"@inner",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
-        .type_info,
+        .@"@typeInfo",
         .@"@is_comptime",
         .@"@error",
         .@"@env_type",
@@ -3857,6 +3874,247 @@ fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
     };
 }
 
+/// The packed length-word row of a boxed value's tag: nonzero exactly when the
+/// value is a fat pointer, whose count and buffer live in its header.
+fn boxedLenRow(self: *Lowering, recv: Ref) Ref {
+    const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
+    return self.builder.callBuiltin(.rt_slice_len_info, args, .i64);
+}
+
+fn zextLoadI64(self: *Lowering, at: Ref, nbytes: u8) Ref {
+    const load_ty: TypeId = switch (nbytes) {
+        1 => .u8,
+        2 => .u16,
+        4 => .u32,
+        else => .u64,
+    };
+    const word = self.builder.load(at, load_ty);
+    return self.builder.widen(word, load_ty, .i64);
+}
+
+fn zextLoadWidthI64(self: *Lowering, at: Ref, w: Ref) Ref {
+    const b = &self.builder;
+    const slot = b.alloca(.i64);
+    const w1 = self.freshBlock("view.len.w1");
+    const nw1 = self.freshBlock("view.len.nw1");
+    const w2 = self.freshBlock("view.len.w2");
+    const nw2 = self.freshBlock("view.len.nw2");
+    const w4 = self.freshBlock("view.len.w4");
+    const w8 = self.freshBlock("view.len.w8");
+    const merge = self.freshBlock("view.len.merge");
+
+    const c1 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(1, .i64) } }, .bool);
+    b.condBr(c1, w1, &.{}, nw1, &.{});
+
+    b.switchToBlock(w1);
+    b.store(slot, zextLoadI64(self, at, 1));
+    b.br(merge, &.{});
+
+    b.switchToBlock(nw1);
+    const c2 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(2, .i64) } }, .bool);
+    b.condBr(c2, w2, &.{}, nw2, &.{});
+
+    b.switchToBlock(w2);
+    b.store(slot, zextLoadI64(self, at, 2));
+    b.br(merge, &.{});
+
+    b.switchToBlock(nw2);
+    const c4 = b.emit(.{ .cmp_le = .{ .lhs = w, .rhs = b.constInt(4, .i64) } }, .bool);
+    b.condBr(c4, w4, &.{}, w8, &.{});
+
+    b.switchToBlock(w4);
+    b.store(slot, zextLoadI64(self, at, 4));
+    b.br(merge, &.{});
+
+    b.switchToBlock(w8);
+    b.store(slot, zextLoadI64(self, at, 8));
+    b.br(merge, &.{});
+
+    b.switchToBlock(merge);
+    return b.load(slot, .i64);
+}
+
+/// The count a fat pointer's header carries: the row's byte-width word at the
+/// row's offset, masked to the row's bit width and sign-extended when the row
+/// says signed.
+fn boxedFatLen(self: *Lowering, recv: Ref, row: Ref) Ref {
+    const b = &self.builder;
+    const one = b.constInt(1, .i64);
+    const bits = b.emit(.{ .bit_and = .{ .lhs = row, .rhs = b.constInt(0xFF, .i64) } }, .i64);
+    const shifted_off = b.emit(.{ .shr = .{ .lhs = row, .rhs = b.constInt(16, .i64) } }, .i64);
+    const off = b.emit(.{ .bit_and = .{ .lhs = shifted_off, .rhs = b.constInt(0xFFFF, .i64) } }, .i64);
+    const shifted_sign = b.emit(.{ .shr = .{ .lhs = row, .rhs = b.constInt(8, .i64) } }, .i64);
+    const is_signed = b.emit(.{ .bit_and = .{ .lhs = shifted_sign, .rhs = one } }, .i64);
+
+    const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
+    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = off } }, self.module.types.ptrTo(.u8));
+    const w = b.div(b.add(bits, b.constInt(7, .i64), .i64), b.constInt(8, .i64), .i64);
+    const word = zextLoadWidthI64(self, at, w);
+
+    const top_bit = b.sub(bits, one, .i64);
+    const top = b.emit(.{ .shl = .{ .lhs = one, .rhs = top_bit } }, .i64);
+    const mask = b.emit(.{ .bit_or = .{ .lhs = b.sub(top, one, .i64), .rhs = top } }, .i64);
+    const count = b.emit(.{ .bit_and = .{ .lhs = word, .rhs = mask } }, .i64);
+    const sign = b.mul(is_signed, b.emit(.{ .bit_and = .{ .lhs = count, .rhs = top } }, .i64), .i64);
+    return b.sub(count, b.mul(b.constInt(2, .i64), sign, .i64), .i64);
+}
+
+fn boxedTableCount(self: *Lowering, recv: Ref, _: Ref) Ref {
+    const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
+    return self.builder.callBuiltin(.rt_member_count, args, .i64);
+}
+
+/// The buffer a fat pointer's header names — pointer_size bytes at its front.
+fn boxedHeaderBuffer(self: *Lowering, recv: Ref, _: Ref) Ref {
+    const bytes = self.builder.anyData(recv, self.module.types.manyPtrTo(.u8));
+    return zextLoadI64(self, bytes, self.module.types.pointer_size);
+}
+
+/// The boxed storage itself, where an array's or vector's elements sit.
+fn boxedStorage(self: *Lowering, recv: Ref, _: Ref) Ref {
+    return self.builder.anyData(recv, .i64);
+}
+
+/// Merge two i64 readings of a boxed value through a stack slot, choosing by
+/// whether its tag says fat pointer.
+fn boxedFatMerge(
+    self: *Lowering,
+    recv: Ref,
+    comptime fat: fn (*Lowering, Ref, Ref) Ref,
+    comptime flat: fn (*Lowering, Ref, Ref) Ref,
+) Ref {
+    const row = boxedLenRow(self, recv);
+    const is_fat = self.builder.emit(.{ .cmp_ne = .{ .lhs = row, .rhs = self.builder.constInt(0, .i64) } }, .bool);
+    const slot = self.builder.alloca(.i64);
+    const fat_bb = self.freshBlock("view.fat");
+    const flat_bb = self.freshBlock("view.flat");
+    const merge_bb = self.freshBlock("view.merge");
+    self.builder.condBr(is_fat, fat_bb, &.{}, flat_bb, &.{});
+
+    self.builder.switchToBlock(fat_bb);
+    self.builder.store(slot, fat(self, recv, row));
+    self.builder.br(merge_bb, &.{});
+
+    self.builder.switchToBlock(flat_bb);
+    self.builder.store(slot, flat(self, recv, row));
+    self.builder.br(merge_bb, &.{});
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.load(slot, .i64);
+}
+
+/// The `any` an intrinsic reads its receiver through: the argument itself when
+/// it is already boxed, otherwise a view over its storage.
+fn boxedReceiver(self: *Lowering, arg: *const Node) Ref {
+    const ty = self.inferExprType(arg);
+    const val = self.lowerExpr(arg);
+    return if (ty == .any) val else self.boxAnyOf(val, ty, arg);
+}
+
+/// `@unbox(v, $T)` — the typed load of `v`'s boxed storage as `T`. No tag
+/// check: `T` names what the storage holds, and the load is the operation.
+fn lowerUnboxIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@unbox takes 2 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const target = if (self.isStaticTypeArg(c.args[1])) self.resolveTypeArg(c.args[1]) else TypeId.unresolved;
+    if (target == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@unbox expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    return self.builder.emit(.{ .unbox_any = .{ .operand = boxedReceiver(self, c.args[0]) } }, target);
+}
+
+fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
+    const entry = intrinsics.byId(id);
+    const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
+    if (c.args.len != entry.arity) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "{s} takes {d} argument{s}, got {d}", .{
+            entry.name, entry.arity, if (entry.arity == 1) @as([]const u8, "") else "s", c.args.len,
+        });
+        return sentinel;
+    }
+    const recv = boxedReceiver(self, c.args[0]);
+    if (id == .@"@len") return boxedFatMerge(self, recv, boxedFatLen, boxedTableCount);
+
+    // The index lowers under its declared `i64` parameter, so an ambient `any`
+    // target does not leak into it.
+    const saved_target = self.target_type;
+    self.target_type = .i64;
+    const idx = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+
+    if (id == .@"@field") {
+        const args = self.alloc.dupe(Ref, &.{ recv, idx }) catch return sentinel;
+        const member_tag = self.builder.callBuiltin(.rt_member_type, args, .type_value);
+        const offset = self.builder.callBuiltin(.rt_field_offset, args, .i64);
+        const base = self.builder.anyData(recv, .i64);
+        return self.builder.makeAny(member_tag, self.builder.add(base, offset, .i64));
+    }
+    const elem_args = self.alloc.dupe(Ref, &.{ recv, self.builder.constInt(0, .i64) }) catch return sentinel;
+    const elem = self.builder.callBuiltin(.rt_member_type, elem_args, .type_value);
+    const size_args = self.alloc.dupe(Ref, &.{elem}) catch return sentinel;
+    const elem_size = self.builder.callBuiltin(.rt_size_of, size_args, .i64);
+    const stride = self.builder.mul(idx, elem_size, .i64);
+    return self.builder.makeAny(elem, self.builder.add(boxedFatMerge(self, recv, boxedHeaderBuffer, boxedStorage), stride, .i64));
+}
+
+/// `@inner(v)` — the payload of a boxed optional as a `?any`. The two reprs
+/// answer presence differently, so the row picks the probe: a flag byte at the
+/// row's offset, or the leading pointer word. Either way the payload sits at
+/// the front of the boxed storage.
+fn lowerInnerIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    const b = &self.builder;
+    const opt_any = self.module.types.optionalOf(.any);
+    if (c.args.len != 1) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@inner takes 1 argument, got {d}", .{c.args.len});
+        return b.constNull(opt_any);
+    }
+    const recv = boxedReceiver(self, c.args[0]);
+    const child_args = self.alloc.dupe(Ref, &.{ recv, b.constInt(0, .i64) }) catch return b.constNull(opt_any);
+    const child = b.callBuiltin(.rt_member_type, child_args, .type_value);
+    const payload = b.makeAny(child, b.anyData(recv, .i64));
+
+    const row_args = self.alloc.dupe(Ref, &.{recv}) catch return b.constNull(opt_any);
+    const flag_off = b.callBuiltin(.rt_optional_flag, row_args, .i64);
+    const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
+    const probe = b.alloca(.i64);
+    const flagged = b.emit(.{ .cmp_ge = .{ .lhs = flag_off, .rhs = b.constInt(0, .i64) } }, .bool);
+    const flag_bb = self.freshBlock("inner.flag");
+    const sentinel_bb = self.freshBlock("inner.sentinel");
+    const probed_bb = self.freshBlock("inner.probed");
+    b.condBr(flagged, flag_bb, &.{}, sentinel_bb, &.{});
+
+    b.switchToBlock(flag_bb);
+    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = flag_off } }, self.module.types.ptrTo(.u8));
+    b.store(probe, zextLoadI64(self, at, 1));
+    b.br(probed_bb, &.{});
+
+    b.switchToBlock(sentinel_bb);
+    b.store(probe, zextLoadI64(self, bytes, self.module.types.pointer_size));
+    b.br(probed_bb, &.{});
+
+    b.switchToBlock(probed_bb);
+    const present = b.emit(.{ .cmp_ne = .{ .lhs = b.load(probe, .i64), .rhs = b.constInt(0, .i64) } }, .bool);
+    const slot = b.alloca(opt_any);
+    const some_bb = self.freshBlock("inner.some");
+    const none_bb = self.freshBlock("inner.none");
+    const merge_bb = self.freshBlock("inner.merge");
+    b.condBr(present, some_bb, &.{}, none_bb, &.{});
+
+    b.switchToBlock(some_bb);
+    b.store(slot, b.optionalWrap(payload, opt_any));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(none_bb);
+    b.store(slot, b.constNull(opt_any));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(merge_bb);
+    return b.load(slot, opt_any);
+}
+
 /// Try to lower a call as a reflection intrinsic (expanded inline during
 /// lowering). Returns null if the call is not one.
 ///
@@ -3887,40 +4145,33 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     // lowers; the sx `declare` calls `declare_type`, which returns that slot.
     // The `.enum(…)` arg to `define` infers `TypeInfo` from the sx fn's
     // declared param type via the ordinary call path's target-type threading.)
-    if (std.mem.eql(u8, name, "type_info")) {
-        // Comptime reflection-into-data: reflect a type INTO a `TypeInfo`
-        // value (the inverse of `define`'s decode). Resolve `$T` at lower
-        // time, then emit a `callBuiltin(.type_info, [const_type])` the
-        // interp executes against its type table — it reads the variants
-        // (name + payload) and constructs the same `.enum(EnumInfo{ … })`
-        // value `define` decodes, so the two round-trip. Result type is
-        // `TypeInfo`; the whole `define(declare(), type_info(T))` expr is
-        // comptime-evaluated, so this builtin never reaches codegen.
+    if (std.mem.eql(u8, name, "@typeInfo")) {
+        // Reflection-into-data: resolve `$T` at lower time, then emit a
+        // `callBuiltin(.@"@typeInfo", [const_type])` the interp executes
+        // against its type table, constructing the same value `define`
+        // decodes so the two round-trip.
         if (c.args.len != 1) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "type_info($T) takes one type argument", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@typeInfo($T) takes one type argument", .{});
             return Ref.none;
         }
-        const ti_ty = self.module.types.findByName(self.module.types.internString("TypeInfo")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "type_info needs `TypeInfo` in scope — import `modules/std/meta.sx`", .{});
-            return Ref.none;
-        };
+        const ti_ty = self.module.types.typeInfoType();
         if (!self.isStaticTypeArg(c.args[0])) {
             // Runtime Type: load the const record by tag.
             const tp = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{tp}) catch return Ref.none;
-            return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+            return self.builder.callBuiltin(.@"@typeInfo", args_owned, ti_ty);
         }
         const t = self.resolveTypeArg(c.args[0]);
         // Every type-table kind reflects (TypeInfo is exhaustive
         // over kinds; the VM's record builder classifies each and fails
         // loudly on an unclassified one). Only an unresolved arg rejects.
         if (t == .unresolved) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "type_info: unresolved type argument", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@typeInfo: unresolved type argument", .{});
             return Ref.none;
         }
         const type_ref = self.builder.constType(t);
         const args_owned = self.alloc.dupe(Ref, &.{type_ref}) catch return Ref.none;
-        return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
+        return self.builder.callBuiltin(.@"@typeInfo", args_owned, ti_ty);
     }
     if (std.mem.eql(u8, name, "@env_type")) {
         if (self.persistArity(name, c)) |sentinel| return sentinel;
@@ -3976,7 +4227,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     if (std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count")) {
         // Runtime Type arg: tag-indexed count-table read. Kind gates
         // are a STATIC-arg feature; at runtime the table answers (a wrong-kind
-        // tag reads 0 — kind discrimination at runtime is type_info's job).
+        // tag reads 0 — kind discrimination at runtime is `@typeInfo`'s job).
         if (!self.isStaticTypeArg(c.args[0])) {
             const bi: inst_mod.BuiltinId = if (name[0] == 'v') .rt_variant_count else .rt_struct_field_count;
             const arg_ref = self.lowerExpr(c.args[0]);
@@ -4016,8 +4267,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // Scalars and other fieldless types: 0 fields (a leaf).
         return self.builder.constInt(0, .i64);
     }
-    if (std.mem.eql(u8, name, "type_name")) {
-        // type_name(T):
+    if (std.mem.eql(u8, name, "@typeName")) {
+        // @typeName(T):
         //   - Statically resolvable arg (type expression, pack
         //     index, generic binding, etc.) → fold to const_string
         //     at lower time.
@@ -4040,11 +4291,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constString(self.module.types.internString(""));
         return self.builder.callBuiltin(.type_name, args_owned, .string);
     }
-    if (std.mem.eql(u8, name, "type_eq")) {
-        // type_eq(T1, T2) → const_bool — comptime TypeId equality.
+    if (std.mem.eql(u8, name, "@typeEq")) {
+        // @typeEq(T1, T2) → const_bool — comptime TypeId equality.
         // TypeIds are interned per structural shape so equality on
-        // them matches the user's intuition: `type_eq(i64, i64)` is
-        // true, `type_eq(*i64, *i64)` is true, distinct shapes are
+        // them matches the user's intuition: `@typeEq(i64, i64)` is
+        // true, `@typeEq(*i64, *i64)` is true, distinct shapes are
         // false. Pack-indexed types (`$args[0]`) resolve through
         // `resolveTypeArg` → `resolveTypeWithBindings`.
         if (c.args.len < 2) return self.builder.constBool(false);
@@ -4067,7 +4318,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // vector_lanes(T) → the lane COUNT. The one vector length the flat
         // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
         // occupy 4). Static arg folds; a runtime Type reads the lane table
-        // (non-vector tags answer 0 — kind discrimination is type_info's
+        // (non-vector tags answer 0 — kind discrimination is `@typeInfo`'s
         // job, same rule as the count tables). A static NON-vector is a
         // loud error: `.len` / struct_field_count are the right spellings.
         if (c.args.len < 1) return self.builder.constInt(0, .i64);
@@ -4156,13 +4407,28 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const arg = self.lowerExpr(c.args[0]);
         return self.builder.emit(.{ .trace_resolve = .{ .operand = arg } }, frame_ty);
     }
-    if (std.mem.eql(u8, name, "error_name")) {
-        // error_tag_name(e) → look the error-set value's runtime tag id up
-        // in the always-linked tag-name table. The value IS its u32 tag id.
+    if (std.mem.eql(u8, name, "@errorName")) {
+        // `Owner.Member` — the error value's runtime member id read out of the
+        // qualified-name table. An `any` receiver holds the member word in its
+        // boxed storage, so the read goes through the view first.
         if (c.args.len < 1) return self.builder.constString(self.module.types.internString(""));
-        const e = self.lowerExpr(c.args[0]);
-        return self.builder.emit(.{ .error_tag_name_get = .{ .operand = e } }, .string);
+        const raw = self.lowerExpr(c.args[0]);
+        const e = if (self.inferExprType(c.args[0]) == .any)
+            self.builder.emit(.{ .unbox_any = .{ .operand = raw } }, .u32)
+        else
+            raw;
+        return self.builder.emit(.{ .error_name_get = .{ .operand = e } }, .string);
     }
+    if (std.mem.eql(u8, name, "@errorPayload")) {
+        if (c.args.len < 1) return self.builder.constInt(0, .any);
+        return self.lowerErrorPayload(c.args[0], c.callee.span);
+    }
+    if (intrinsics.findByName(name)) |id| switch (id) {
+        .@"@len", .@"@field", .@"@elementAt" => return lowerBoxedViewIntrinsic(self, id, c),
+        .@"@inner" => return lowerInnerIntrinsic(self, c),
+        .@"@unbox" => return lowerUnboxIntrinsic(self, c),
+        else => {},
+    };
     if (std.mem.eql(u8, name, "struct_field_value") or std.mem.eql(u8, name, "variant_payload")) {
         // struct_field_value(s, i) → field_value_get (structs/tuples/unions);
         // variant_payload(u, i) → the same instruction on an enum/tagged-union
@@ -4302,8 +4568,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         return self.builder.makeAny(tp, data);
     }
-    if (std.mem.eql(u8, name, "type_of")) {
-        // type_of(val) — produce a Type value (`.type_value`, a bare i64 handle).
+    if (std.mem.eql(u8, name, "@typeOf")) {
+        // @typeOf(val) — produce a Type value (`.type_value`, a bare i64 handle).
         if (c.args.len < 1) return self.builder.constType(.void);
         const arg_ty = self.inferExprType(c.args[0]);
         if (arg_ty == .any) {
@@ -4521,18 +4787,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const ty = self.resolveTypeArg(c.args[0]);
         return self.builder.constInt(self.module.types.variantTagWidth(ty), .i64);
     }
-    if (std.mem.eql(u8, name, "__sx_slice_len_info")) {
-        // INTERNAL: the packed length-word row (fmt's runtime fat-pointer
-        // read). Static arg folds; runtime Type reads the row table.
-        if (c.args.len < 1) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            const arg_ref = self.lowerExpr(c.args[0]);
-            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_slice_len_info, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        return self.builder.constInt(self.module.types.sliceLenInfo(ty), .i64);
-    }
     return null;
 }
 
@@ -4540,7 +4794,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
 /// builtins. An argument denotes a type iff it is a spelled /
 /// compile-time type or generic type parameter (the `isStaticTypeArg`
 /// shapes), or a runtime `Type` value — which is `.type_value`-typed at
-/// runtime (`type_of(x)`, a `[]Type` element `list[i]`, a `Type`-typed
+/// runtime (`@typeOf(x)`, a `[]Type` element `list[i]`, a `Type`-typed
 /// local / field / param). Any other expression — a value of type
 /// i64 / f64 / bool / a struct — is NOT a type.
 pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {
@@ -4553,7 +4807,7 @@ pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {
 }
 
 /// Guard for the type-introspection builtins (`size_of`, `align_of`,
-/// `field_count`, `type_name`, `type_eq`, `type_is_unsigned`,
+/// `field_count`, `@typeName`, `@typeEq`, `type_is_unsigned`,
 /// `is_flags`): every argument must denote a type. A value argument is
 /// rejected with a diagnostic rather than silently reinterpreted as a
 /// TypeId index or sized via its `typeof`.
@@ -4617,13 +4871,13 @@ pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.S
 }
 
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
-    const arity: usize = if (std.mem.eql(u8, name, "type_eq"))
+    const arity: usize = if (std.mem.eql(u8, name, "@typeEq"))
         2
     else if (std.mem.eql(u8, name, "size_of") or
         std.mem.eql(u8, name, "align_of") or
         std.mem.eql(u8, name, "struct_field_count") or
         std.mem.eql(u8, name, "variant_count") or
-        std.mem.eql(u8, name, "type_name") or
+        std.mem.eql(u8, name, "@typeName") or
         std.mem.eql(u8, name, "is_flags"))
         1
     else
@@ -4659,15 +4913,15 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 }
 
 /// Result-typed placeholder returned after `reflectionTypeArgGuard`
-/// diagnoses a non-type argument: a string for `type_name`, a bool for
+/// diagnoses a non-type argument: a string for `@typeName`, a bool for
 /// the predicate builtins, an int for the size / count builtins. Never
 /// observed at runtime — the diagnostic already fails the build — but
 /// keeps the IR well-typed so lowering can finish and report every
 /// error in one pass.
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
-    if (std.mem.eql(u8, name, "type_name"))
+    if (std.mem.eql(u8, name, "@typeName"))
         return self.builder.constString(self.module.types.internString(""));
-    if (std.mem.eql(u8, name, "type_eq") or std.mem.eql(u8, name, "is_flags"))
+    if (std.mem.eql(u8, name, "@typeEq") or std.mem.eql(u8, name, "is_flags"))
         return self.builder.constBool(false);
     return self.builder.constInt(0, .i64);
 }

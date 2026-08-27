@@ -1,0 +1,6 @@
+i64 42
+Point 3 -4
+slice 2 -20 30
+other
+static Point 3 -4
+identity true false

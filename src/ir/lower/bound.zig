@@ -333,7 +333,20 @@ pub fn checkCallable(
     }
     const want_ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
     if (want_ret == .unresolved or want_ret == sig.ret) return;
+    if (channelOpenMatch(self, want_ret, sig.ret)) return;
     reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(sig.ret), self.formatTypeName(want_ret) });
+}
+
+/// A bare-`!` channel on the bound's return is a callability question, not a
+/// channel one: the binding answers it with any channel over the same value
+/// slots. A NAMED channel in the bound stays exact, like a `Closure` slot.
+fn channelOpenMatch(self: *Lowering, want_ret: TypeId, got_ret: TypeId) bool {
+    if (want_ret.isBuiltin() or got_ret.isBuiltin()) return false;
+    const want = self.module.types.get(want_ret);
+    const got = self.module.types.get(got_ret);
+    if (want != .failable or got != .failable) return false;
+    if (!self.channelIsOpen(want.failable.err)) return false;
+    return want.failable.value == got.failable.value;
 }
 
 /// The violation report for a callable, naming the binding by the signature it

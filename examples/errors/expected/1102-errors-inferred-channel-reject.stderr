@@ -1,0 +1,53 @@
+error: a callable with the error channel 'FooError.A | IoErr.Failed | IoErr.Canceled' does not fill a slot with the error channel 'IoErr' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:61:45
+   |
+61 |     canal : Closure(i32) -> (i32, !IoErr) = inner;
+   |                                             ^^^^^
+
+error: a callable with the error channel 'FooError.A | IoErr.Failed | IoErr.Canceled' does not fill a slot with an inferred error channel — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:62:45
+   |
+62 |     slot_bare  : Closure(i32) -> (i32, !) = inner;
+   |                                             ^^^^^
+
+error: error member 'Other.Nope' is not in caller's error set 'IoErr'
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:30:16
+   |
+30 |     if n < 0 { raise Other.Nope; }
+   |                ^^^^^^^^^^^^^^^^^
+
+error: a callable with the error channel 'IoErr' does not fill a slot with an inferred error channel — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:63:45
+   |
+63 |     slot_named : Closure(i32) -> (i32, !) = stray;
+   |                                             ^^^^^
+
+error: a callable with a dynamic error channel does not fill a slot with an inferred error channel — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:64:45
+   |
+64 |     slot_dyn   : Closure(i32) -> (i32, !) = leak;
+   |                                             ^^^^
+
+error: error member 'A' is not in caller's error set 'IoErr'
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:26:12
+   |
+26 |     return inner(n);
+   |            ^^^^^^^^
+
+error: `.A` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.A`)
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:35:16
+   |
+35 |     if n < 0 { raise .A; }
+   |                ^^^^^^^^^
+
+error: cannot forward a bare-`!` result through the named error set 'IoErr' — the source channel has no static member set
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:40:12
+   |
+40 |     return h(x);
+   |            ^^^^
+
+error: cannot forward a bare-`!` result through the named error set 'IoErr' — the source channel has no static member set
+  --> examples/errors/1102-errors-inferred-channel-reject.sx:57:12
+   |
+57 |     return wrap();
+   |            ^^^^^^

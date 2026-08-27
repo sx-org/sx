@@ -40,7 +40,7 @@ Keep :: struct {
     expression :: (self: *Keep, value: $I/@Init($V/Drawable)) {
         slot: V = ---;
         value.write(*slot);
-        print("  published {} as {}\n", slot.draw(), type_name(V));
+        print("  published {} as {}\n", slot.draw(), @typeName(V));
         self.n += 1;
         // Only a value that IS a `Drawable` can be kept as one without erasing
         // anything: that is the identity case, and this is where it shows.

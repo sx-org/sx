@@ -225,8 +225,8 @@ main :: () -> i32 {
     append_field(*api, *t, "%s", one);
     print("field_appendf={}\n", from_cstring(xx *t.text[0]));
 
-    print("vmprintf_type={}\n", type_name(VMPrintf));
-    print("snprintf_type={}\n", type_name(XVsnprintf));
-    print("appendf_type={}\n", type_name(StrVAppendF));
+    print("vmprintf_type={}\n", @typeName(VMPrintf));
+    print("snprintf_type={}\n", @typeName(XVsnprintf));
+    print("appendf_type={}\n", @typeName(StrVAppendF));
     return 0;
 }

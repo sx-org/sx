@@ -466,7 +466,7 @@ fn analyzeShapeStmt(self: *Lowering, stmt: *const Node, protocol: TypeId, facts:
         // Non-expression statements never become reached build values.
         .var_decl, .const_decl, .assignment, .multi_assign, .destructure_decl,
         .return_stmt, .raise_stmt, .break_expr, .continue_expr,
-        .defer_stmt, .onfail_stmt, .fn_decl, .struct_decl, .enum_decl, .union_decl,
+        .defer_stmt, .fn_decl, .struct_decl, .enum_decl, .union_decl,
         .error_set_decl, .protocol_decl, .impl_block, .push_stmt,
         => {},
         else => countStaticExpression(self, stmt, protocol, facts),

@@ -1,13 +1,11 @@
-decl: Wide
-param: Wide
-field: Wide
-xx: Extra
-literal: Extra
-shorthand decl: Extra
-param: Wide
-shorthand field: Extra
-shorthand optional: Wide
-spellings agree: true
-shorthand return: Wide
-shorthand raise: Wide
-propagated: Wide
+decl: Broad.Wide
+param: Broad.Wide
+field: Broad.Wide
+xx: Broad.Extra
+shorthand decl: Broad.Extra
+param: Broad.Wide
+shorthand field: Broad.Extra
+shorthand optional: Broad.Wide
+shorthand return: Broad.Wide
+shorthand raise: Broad.Wide
+propagated: Broad.Wide

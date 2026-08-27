@@ -1,29 +1,27 @@
-// Error-tag `{}` interpolation (tag-name table). Formatting an
-// error-set value with `{}` renders the tag NAME (`BadDigit`), not the raw id,
-// reusing the `any_to_string` dispatch (the `error_set` category → the
-// `error_name` builtin → the always-linked tag-name table indexed by global
-// tag id). Works for a bound tag, a re-raised/caught tag, and inside text.
+// `{}` on an error renders the owner and the member it carries (`E.BadDigit`),
+// not the raw member id. Works for a bound member, a caught one, and inside
+// text.
 
 @import "modules/std.sx";
 
-E :: error { BadDigit, Empty, Overflow }
+E :: error { BadDigit; Empty; Overflow }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.BadDigit; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .BadDigit; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
 main :: () -> i32 {
-    a : E = error.BadDigit;
-    b : E = error.Overflow;
-    print("a={} b={}\n", a, b);              // a=BadDigit b=Overflow
+    a : E = .BadDigit;
+    b : E = .Overflow;
+    print("a={} b={}\n", a, b);              // a=E.BadDigit b=E.Overflow
 
     // A tag bound by `catch` interpolates too (diverging handler).
     v := parse(0) catch |e| {
-        print("parse failed with {}\n", e);   // parse failed with Empty
+        print("parse failed with {}\n", e);   // parse failed with E.Empty
         return 0;
     };
-    print("v={}\n", v);                       // not reached (parse(0) raises Empty)
+    print("v={}\n", v);                       // not reached (parse(0) raises E.Empty)
     return 0;
 }

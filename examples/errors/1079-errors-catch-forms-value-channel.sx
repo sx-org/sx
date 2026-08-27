@@ -1,22 +1,22 @@
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 must :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
 main :: () -> i32 {
     r : i32 = 0;
 
-    must(-1) catch |e| { if e == error.Bad { r = r + 1; } };
+    must(-1) catch |e| { if e == .Bad { r = r + 1; } };
     must(3)  catch     { r = r + 100; };
 
     parse(-1) catch |e| { r = r + 2; 0 };

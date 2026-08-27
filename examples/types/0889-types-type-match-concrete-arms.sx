@@ -33,9 +33,9 @@ main :: () {
     o : ?i64 = 5;
     q : ?f64 = 1.5;
     s : []u8 = .[1, 2];
-    print("opt exact: {}\n", comp(type_of(o)));
-    print("opt category: {}\n", comp(type_of(q)));
-    print("slice: {}\n", comp(type_of(s)));
+    print("opt exact: {}\n", comp(@typeOf(o)));
+    print("opt category: {}\n", comp(@typeOf(q)));
+    print("slice: {}\n", comp(@typeOf(s)));
     print("string: {}\n", comp(string));
     print("neg: {}\n", comp(f32));
 }

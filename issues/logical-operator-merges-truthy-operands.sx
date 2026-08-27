@@ -1,13 +1,13 @@
 @import "modules/std.sx";
 
 Color :: enum { red; green; }
-E :: error { Bad, Worse }
+E :: error { Bad; Worse }
 
 LITERAL_OR :: @run (1 or 2);
 LITERAL_AND :: @run (0 and 1);
 
 may :: (n: i64) -> (i64, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return n;
 }
 

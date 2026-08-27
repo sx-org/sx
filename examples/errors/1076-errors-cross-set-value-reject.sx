@@ -1,15 +1,17 @@
-// Cross-set error-set VALUE rejections: a tag of `Broad` that is not a
-// member of `Narrow` cannot reach a `Narrow` slot implicitly. Both sets are
-// u32-backed, so these stores are same-width and the reinterpret guard lets
-// them through — the membership check is what rejects them.
+// Cross-set error-set VALUE rejections: a member of `Broad` cannot reach a
+// `Narrow` slot implicitly. A member's identity is the pair `(set, member)`, so
+// `Broad.Wide` is no more a member of `Narrow` than `Broad.Extra` is, even
+// though `Narrow` spells a member `Wide` too. Both sets are u32-backed, so these
+// stores are same-width and the reinterpret guard lets them through — the
+// membership check is what rejects them.
 // The positive cases live in `examples/errors/1075-errors-cross-set-value-coercion.sx`.
 
 @import "modules/std.sx";
 
 Narrow :: error { Wide }
-Broad  :: error { Wide, Extra }
+Broad  :: error { Wide; Extra }
 
-broad_src :: () -> (i32, !Broad) { raise error.Extra; }
+broad_src :: () -> (i32, !Broad) { raise .Extra; }
 
 take_narrow :: (n: Narrow) -> void { print("{}\n", n); }
 
@@ -18,14 +20,10 @@ Holder :: struct { e: Narrow; }
 main :: () -> i32 {
     v, be := broad_src();
 
-    narrowed : Narrow = be;      // error: Extra is not a member of Narrow
+    narrowed : Narrow = be;      // error: neither Broad member is in Narrow
     take_narrow(be);             // error: same, in argument position
     h := Holder{ e = be };      // error: same, in field-init position
 
-    lit : Narrow = error.Extra;  // error: tag literal not in Narrow
-
-    // The `.Name` shorthand is membership-checked by the same rule, and
-    // reports the same diagnostic as the `error.Name` spelling.
     short : Narrow = .Extra;     // error: Extra not in Narrow
     take_narrow(.Extra);         // error: same, in argument position
     hs := Holder{ e = .Extra }; // error: same, in field-init position

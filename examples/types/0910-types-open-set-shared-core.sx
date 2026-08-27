@@ -71,7 +71,7 @@ main :: () -> i32 {
     print("note {} weight {}\n", show(Note{ text = "a note" }), total(Weight{ n = 3 }));
 
     // Two sets, two numberings: each value answers with the member it carries.
-    print("members {} {}\n", type_of(drawn), type_of(measured));
+    print("members {} {}\n", @typeOf(drawn), @typeOf(measured));
 
     // The core is held by value, so each wrapper is a copy: writing through one
     // set's slot leaves the other's alone.

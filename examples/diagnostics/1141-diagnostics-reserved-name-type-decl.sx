@@ -9,7 +9,7 @@
 i8 :: struct { v: i64; }
 i16 :: enum { A; B; }
 u16 :: union { a: i32; b: f32; }
-u32 :: error { Bad, Empty }
+u32 :: error { Bad; Empty }
 u8 : i64 : 5;
 
 main :: () -> i32 {

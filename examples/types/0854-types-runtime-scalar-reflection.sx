@@ -1,6 +1,6 @@
 // The scalar reflection family accepts RUNTIME `Type` values: size_of /
 // align_of / struct_field_count / variant_count / is_flags read tag-indexed
-// tables; type_eq compares tags. Includes the parity pins: for each shape the
+// tables; @typeEq compares tags. Includes the parity pins: for each shape the
 // RUNTIME answer equals the COMPTIME fold (padded, nested, union — the layouts
 // most likely to diverge).
 @import "modules/std.sx";
@@ -31,9 +31,9 @@ main :: () {
     check("union-sfc", struct_field_count(to), struct_field_count(Overlay));
     check("color-vc", variant_count(tc), variant_count(Color));
 
-    print("eq={} neq={}\n", type_eq(tp, Padded), type_eq(tp, Nested));
+    print("eq={} neq={}\n", @typeEq(tp, Padded), @typeEq(tp, Nested));
     print("flags: color={} flags={}\n", is_flags(tc), is_flags(tf));
 
     av : any = Color.green;
-    print("any-tag: vc={} size={}\n", variant_count(type_of(av)), size_of(type_of(av)));
+    print("any-tag: vc={} size={}\n", variant_count(@typeOf(av)), size_of(@typeOf(av)));
 }

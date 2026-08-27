@@ -1,0 +1,16 @@
+// The postfix assertion's three temperaments, spelled: `@cast` panics on a
+// mismatch, `@tryCast` raises it, `@castOrNull` answers `null`. A spelled
+// `@cast` reports its own call site, not the assertion's.
+@import "modules/std.sx";
+
+main :: () {
+    n : any = 7;
+    f : any = 2.5;
+
+    print("cast {}\n", @cast(n, i64));
+    print("tryCast {} {}\n", @tryCast(n, i64) catch |e| -1, @tryCast(f, i64) catch |e| -1);
+    print("castOrNull {} {}\n", @castOrNull(n, i64) ?? -1, @castOrNull(f, i64) ?? -1);
+
+    v := @cast(f, i64);
+    print("unreached {}\n", v);
+}

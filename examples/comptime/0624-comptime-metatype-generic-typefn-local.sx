@@ -8,9 +8,9 @@
 
 make_status :: ($T: Type) -> Type {
     vs := .[
-        EnumVariant{ name = "ok",      payload = T },      // payload = the type arg
-        EnumVariant{ name = "pending", payload = void },
-        EnumVariant{ name = "failed",  payload = i64 },    // error code
+        VariantInfo{ name = "ok",      payload = T },      // payload = the type arg
+        VariantInfo{ name = "pending", payload = void },
+        VariantInfo{ name = "failed",  payload = i64 },    // error code
     ];
     return make_enum("Status", vs);
 }

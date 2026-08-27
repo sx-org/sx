@@ -78,14 +78,14 @@ typedef struct { SxStr file; int32_t line; int32_t col; SxStr func; SxStr line_t
 
 // The failable-`main` entry-point reporter (ERR step E4.2). Called by the
 // emitted main wrapper when an error reaches the function boundary: prints the
-// unhandled-error header (with the tag name passed in — the compiler resolves
-// it from the always-linked tag-name table) followed by the surviving trace
+// unhandled-error header (with the `Owner.Member` spelling passed in — the
+// compiler resolves it from the qualified-name table) followed by the surviving trace
 // frames, all to stderr. `name` is borrowed (a `string` slice, not NUL-
 // terminated), so `name_len` bounds the print. The frame format mirrors
 // trace.sx's `to_string` — `func at file:line:col`.
 void sx_trace_report_unhandled(uint32_t tag, const char *name, size_t name_len) {
     (void)tag;
-    dprintf(2, "error: unhandled error reached main: error.%.*s\n",
+    dprintf(2, "error: unhandled error reached main: %.*s\n",
             (int)name_len, name ? name : "");
     uint32_t n = sx_trace_len();
     if (n == 0u) return;

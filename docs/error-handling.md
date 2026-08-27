@@ -1,7 +1,7 @@
 # Error Handling in sx
 
-A guide to writing fallible code in sx — raising errors, propagating
-them, handling them, and cleaning up.
+A guide to writing fallible code in sx — declaring error sets, raising
+errors with payloads, propagating them, handling them, and cleaning up.
 
 ---
 
@@ -12,22 +12,23 @@ wrapped around them. A function that can fail adds a trailing `!` to its
 return type:
 
 ```sx
-parse_digit :: (s: string) -> (i32, !) {
-  if s.len == 0 raise error.Empty;
-  if !is_digit(s[0]) raise error.BadDigit;
+parse_digit :: (s: string) -> (i32, !ParseErr) {
+  if s.len == 0 raise .Empty;
+  if !is_digit(s[0]) raise .BadDigit{s[0]};
   return s[0] - '0';
 }
 ```
 
-The `(i32, !)` says "returns an `i32` on success, or an error." The `!`
-is one more slot in sx's normal multi-return — the error rides
-alongside the values, it doesn't replace them.
+The `(i32, !ParseErr)` says "returns an `i32` on success, or a `ParseErr`"
+— `ParseErr` being a declared error set (next section). The `!` is one
+more slot in sx's normal multi-return: the error rides alongside the
+values, it doesn't replace them.
 
 Three things to know up front:
 
-1. **Errors are tags, not data.** `error.BadDigit` is a lightweight
-   name (interned to an integer), not a struct with fields. To attach
-   context, log it; the tag itself is just an identity.
+1. **An error belongs to a set.** A member's identity is the pair
+   `(set, tag)`, so `ParseErr.Empty` and `IoErr.Empty` are two
+   different errors that happen to share a spelling.
 2. **You can't ignore an error by accident.** Every failable result
    must be explicitly propagated, handled, or absorbed — the compiler
    rejects code that silently drops an error.
@@ -38,68 +39,135 @@ Three things to know up front:
 
 ## Declaring what can go wrong
 
+### Named sets
+
+A set lists its members like an enum: `;`-separated, each optionally
+carrying a payload type.
+
+```sx
+ParseErr :: error {
+  Empty;                                 // no payload
+  BadDigit: u8;                          // one scalar
+  Overflow: struct { at: i64; got: u64 } // a struct
+};
+```
+
+Use the set in the signature and the contract is fixed:
+
+```sx
+parse_int :: (s: string) -> (i32, !ParseErr) { ... }
+```
+
+A member that isn't in `ParseErr` is a compile error at the `raise`, so a
+typo like `.BadDgit` never reaches a caller.
+
 ### Inferred sets — just write `!`
 
-The simplest failable function uses a bare `!`. The compiler figures
-out which error tags it can produce by looking at the body:
+A named function may leave its channel to the compiler. Bare `!` is the
+merge of the sets its body `try`s and `raise`s that reach that function:
 
 ```sx
-read_byte :: (r: *Reader) -> (u8, !) {
-  if r.at_end raise error.Eof;       // mints error.Eof on use
-  return r.next();
+read_line :: (r: *Reader) -> (string, !) {
+  b := try read_byte(r);            // read_byte is `!IoErr` → merges IoErr
+  if b == 0 raise ParseErr.Empty;   // static type ParseErr  → merges ParseErr
+  return collect(r, b);
 }
+// read_line's channel is IoErr | ParseErr
 ```
 
-Callers see `read_byte`'s error type as exactly the set of tags it can
-raise — here, `{ Eof }`.
-
-### Named sets — when you want an explicit contract
-
-For a stable, documented error contract, declare a named set and use it
-in the signature:
-
-```sx
-ParseErr :: error { Empty, BadDigit, Overflow };
-
-parse_int :: (s: string) -> (i32, !ParseErr) {
-  if s.len == 0   raise error.Empty;
-  if overflowed   raise error.Overflow;
-  ...
-}
-```
-
-With a named set, `raise error.X` is checked against the declaration —
-a typo like `error.BadDgit` is a compile error, because `BadDgit` isn't
-in `ParseErr`.
+There is no minting: every member comes from a declared set. The
+contribution is the **static type** of what you tried or raised, so
+`raise ParseErr.Empty` brings all of `ParseErr` along.
 
 > **Tip:** Use a named set when the error contract is part of your API.
 > Use bare `!` for internal helpers where the errors are an
-> implementation detail.
+> implementation detail. A function-type slot — a parameter, a field, a
+> `Closure`, a lambda — always writes its channel out.
+
+### Composing sets
+
+`|` builds a set from whole sets and from individual members:
+
+```sx
+Both :: ParseErr | IoErr;
+Soft :: IoErr.Canceled | ParseErr.Empty;
+```
+
+A channel can name one member directly — `-> !IoErr.Canceled` promises
+that a call fails only by cancellation.
 
 ---
 
 ## Raising an error
 
-`raise` ends the function with an error, like `return` ends it with a
-value:
+`raise` ends the enclosing failable body — the function or a `try { block }` —
+with an error, like `return` ends a function with a value:
 
 ```sx
-if denominator == 0 raise error.DivByZero;
+if denominator == 0 raise MathErr.DivByZero;
 ```
 
-`raise` is a statement — it can't appear inside an expression. You can
-raise a literal tag (`raise error.X`) or a tag held in a variable
-(`raise e`), which is handy for forwarding:
+Where the destination channel is already known, the `.Member` shorthand
+names it:
 
 ```sx
-v := parse(s) catch |e| {
-  if e == error.Recoverable return default;
-  raise e;                  // forward everything else
+parse_int :: (s: string) -> (i32, !ParseErr) {
+  if s.len == 0 raise .Empty;    // resolves in ParseErr
+  ...
+}
+```
+
+Inside an inferred channel — a named function's bare `!` or a
+`try { block }` — the channel is what the `raise` is *building*, so there
+is nothing to resolve against; qualify the member:
+
+```sx
+helper :: () -> ! {
+  raise .Empty;              // ERROR — inferred channel
+  raise ParseErr.Empty;      // OK
+}
+```
+
+`.Member` resolves when exactly one member of that name is live in the
+destination channel. Where a composition carries two, the shorthand
+refuses and the qualified form says which (`raise ParseErr.Empty`,
+`case png.Error.Empty:`).
+
+`raise` is a statement — it can't appear inside an expression. Inside a
+closure, `raise` ends **that closure**, not the function the closure was
+written in.
+
+---
+
+## Payloads
+
+A void member is written bare; a member with a payload carries it in
+braces:
+
+```sx
+raise .Empty;                       // void
+raise .BadDigit{s[0]};              // scalar
+raise .Overflow{ at = i, got = v }; // struct
+raise .Overflow{};                  // struct — every field takes its default
+```
+
+`.BadDigit` without braces and `.BadDigit{}` are both rejected: a member
+with a payload needs one, and an empty brace group only makes sense when
+the payload is a struct with defaults to fall back on.
+
+The payload is copied by value into the error channel. A static string
+placed in a payload stays live for the whole program, so it is safe to
+carry one out of the function that raised it.
+
+Read a payload by capturing it in a `match` arm:
+
+```sx
+v := parse_int(s) catch |e| match e {
+  case .BadDigit: |c| { log.warn("bad byte {}", c); -1 }
+  case .Empty:    0;
+  else:           raise e;
 };
 ```
-
-Inside a closure, `raise` ends **that closure**, not the function the
-closure was written in — a closure is its own failable function.
 
 ---
 
@@ -142,6 +210,30 @@ function can fail out.
 
 ---
 
+## `try { block }` — a local boundary
+
+`try` in front of a block turns that block into its own error boundary,
+with its own inferred channel. `raise` and inner `try`s inside target
+that block rather than the enclosing function, and the block's last
+expression is its success value:
+
+```sx
+cfg := try {
+  f    := try open(path);
+  defer close(f);
+  text := try read_all(f);
+  try parse_config(text)
+} catch |e| {
+  log.warn("config unreadable ({}), using defaults", e);
+  Config.default
+};
+```
+
+The enclosing function need not be failable at all — the boundary
+handles everything raised inside it.
+
+---
+
 ## Defaults and chains with `??`
 
 `??` provides a value when a failable call fails, or chains to another
@@ -178,7 +270,7 @@ v := try fetch_local(key) ?? try fetch_remote(key) ?? default_value;
 ## Handling with `catch`
 
 `catch` handles an error inline and produces a value (or diverts
-control). The bound name (`catch |e|`) is the error tag:
+control). The bound name (`catch |e|`) is the error:
 
 ```sx
 v := parse_int(s) catch |e| {
@@ -190,6 +282,10 @@ v := parse_int(s) catch |e| {
 The catch body either produces a value of the success type, or diverges
 (`return`, `raise`, `break`, `continue`, `unreachable`).
 
+`catch` is a `try` fallback of the same class as `??`, and the nearest
+fallback wins — so `try foo() catch { 0 }` and `foo() catch { 0 }` are
+the same expression.
+
 ### Ignore the error
 
 Omit the binding entirely (the body must be braced):
@@ -198,10 +294,7 @@ Omit the binding entirely (the body must be braced):
 flush(buf) catch { };              // attempt it; ignore any failure
 ```
 
-### Dispatch on the tag — `catch |e| match e { }`
-
-When you want to handle specific tags differently, the catch body is a
-`match` over the binding:
+### Dispatch on the member — `catch |e| match e { }`
 
 ```sx
 v := parse_int(s) catch |e| match e {
@@ -211,6 +304,9 @@ v := parse_int(s) catch |e| match e {
 };
 ```
 
+Covering every member of the channel is exhaustive; `else` is available
+either way. The binding keeps its full channel type inside an arm.
+
 ### Multi-value catch
 
 If the function returns multiple values, the catch body produces a
@@ -219,31 +315,79 @@ tuple:
 ```sx
 v, n := parse_pair(s) catch |e| {
   log.warn("parse failed: {}", e);
-  (0, 0)
+  .{0, 0}
 };
 ```
 
-### Comparing tags
+### Comparing errors
 
-Error tags compare with other tags and `error.X` literals — never with
-raw integers (tag ids are an internal detail):
+Two live errors compare when one channel is a subset of the other;
+otherwise the comparison is a type error rather than a quiet `false`.
+Comparing against a raw integer never works — an error is not a number.
 
 ```sx
-if e == error.Empty { ... }        // OK
-if e == 42 { ... }                 // ERROR — compare against a tag
+if e == .Empty { ... }             // member — tag only
+if e1 == e2    { ... }             // tag AND payload
+hit := e == .BadDigit{'x'};        // tag AND payload
+bad := e == 42;                    // ERROR
 ```
+
+A `{` directly after an `if` condition opens the body, so a payload
+construction there is parenthesized: `if e == (.BadDigit{'x'}) { ... }`.
 
 ---
 
-## Cleanup: `defer` and `onfail`
+## Reading an error
 
-Both register cleanup that runs when a block exits. The difference is
-*when*:
+An error value carries the member it was raised with. `.set` is the error
+that declares that member, `.name` is the member's spelling, and
+`@errorName` composes the two:
 
-- **`defer`** runs on **every** exit — success or failure.
-- **`onfail`** runs **only** when an error leaves the block.
+```sx
+v := ParseErr.BadDigit{'x'};
+v.set.name;         // "ParseErr"
+v.name;             // "BadDigit"
+@errorName(v);      // "ParseErr.BadDigit"
+@errorPayload(v);   // the payload as an `any` view — `void` for a void member
+```
 
-### Use `defer` for unconditional cleanup
+The set named is the one that interned the member, not the alias you
+reached it through: an imported `png.Error.Bad` still answers
+`Error.Bad`.
+
+Interpolating with `{}` writes that name plus the payload as the payload
+constructs — nothing for a void member, braces around a scalar, the
+struct's own braces for a struct — in every build, including release:
+
+```sx
+log.warn("parse failed: {}", e);   // → "parse failed: ParseErr.BadDigit{120}"
+```
+
+`print` and `format` walk a value's `@typeInfo` and write the pieces to a
+`Writer`; an error is one arm of that walk.
+
+To read the members of an error as a type, match its `@typeInfo`:
+
+```sx
+match @typeInfo(ParseErr) {
+  case .error: |ei| for m in ei.members { print("{}: {}\n", m.name, @typeName(m.payload)); }
+  else: {}
+}
+// Empty: void
+// BadDigit: u8
+// Overflow: ParseErr.Overflow
+```
+
+`m.tag` is the interned `(owner, name)` pair — the member's identity — so
+a composition's `BadDigit` and `ParseErr`'s own carry one tag. `m.owner`,
+`m.name`, and `m.payload` are lookups through it.
+
+---
+
+## Cleanup: `defer`
+
+`defer` registers cleanup that runs when the block exits — on every
+exit, success or failure.
 
 ```sx
 process_file :: (path: string) -> ! {
@@ -253,52 +397,88 @@ process_file :: (path: string) -> ! {
 }
 ```
 
-### Use `onfail` for "undo on failure" — when ownership transfers on success
+### "Undo on failure" — when ownership transfers on success
 
-The classic case is a constructor that hands the resource to its caller
-on success, but must clean up if a later step fails:
+A constructor hands its resource to the caller on success, but must
+clean up if a later step fails. Guard the `defer` with an ordinary `if`:
 
 ```sx
 make_handle :: () -> (Handle, !) {
   h := try sys_open();
-  onfail sys_close(h);             // close only if a LATER step fails
+  keep := false;
+  defer if !keep sys_close(h);     // close unless the handle is handed out
 
   try configure(h);
   try register(h);
-  return h;                        // success: onfail is skipped — caller owns h
+  keep = true;
+  return h;                        // success: nothing to close — caller owns h
 }
 ```
 
 If `configure` or `register` fails, `sys_close(h)` runs and the error
-propagates. On success, `onfail` is skipped — `h` belongs to the caller
-now. Using `defer` here would be a bug: it'd close the handle you just
-handed out.
+propagates. A plain `defer close(h)` here would be a bug: it'd close the
+handle you just handed out.
 
-`onfail` can bind the in-flight tag and is block-scoped — it fires when
-an error leaves *its* block, even if a caller later catches that error:
+To log the error that ended the block, destructure it and read the
+snapshot at exit:
 
 ```sx
-v := (try {
-  h := try open();
-  onfail close(h);                 // scoped to this block
-  try use(h);
-  42
-}) catch { default };
-// use() fails → close(h) runs (cleanup happens) → catch absorbs → default
+v, e := attempt();
+defer if e != null log.warn("attempt failed: {}", e);
 ```
 
 ### Cleanup that can itself fail
 
-Cleanup routines are often failable too. Inside a `defer`/`onfail` body
-you can't `try` or `raise` (cleanup can't propagate — you're already
-unwinding), so absorb the error locally:
+Cleanup routines are often failable too. Inside a `defer` body you can't
+`try` or `raise` (cleanup can't propagate — you're already unwinding), so
+absorb the error locally:
 
 ```sx
-onfail {
+defer {
   close(h) catch { };              // ignore a failed close
   flush(buf) catch |fe| { log.warn("flush failed: {}", fe); };
 }
 ```
+
+---
+
+## Passing failable functions around
+
+Two different rules apply, and the difference matters:
+
+- A **value** widens. `try`, `raise`, and `return` accept any error whose
+  members all live in the destination channel — `ParseErr ⊆ Both`,
+  `IoErr.Canceled ⊆ IoErr`.
+- A **slot** is exact. A `Closure` or function-pointer field holds
+  exactly the channel it declares.
+
+```sx
+Both :: ParseErr | IoErr;
+
+parse :: (s: string) -> (i32, !ParseErr) { ... }
+mixed :: (s: string) -> (i32, !)         { ... }   // infers ParseErr | IoErr
+
+slot : Closure((string) -> (i32, !Both));
+
+slot = parse;   // ERROR — `!ParseErr` is not `!Both`, subset or not
+slot = mixed;   // OK — mixed's inferred channel IS Both
+
+f :: (s: string) -> (i32, !Both) {
+  return parse(s);   // OK — a returned VALUE widens into Both
+}
+```
+
+There is no adapter behind a slot assignment: the channel matches or the
+assignment is rejected. Wrap the callee in a lambda with the slot's
+channel when you need to bridge:
+
+```sx
+slot = |s: string| -> (i32, !Both) try parse(s);
+```
+
+A generic bound written `$F/(string) -> ($R, !)` accepts any failable
+callee — it asks for callability, not for a particular set. Naming the
+set (`$F/(string) -> ($R, !Both)`) is exact, like a slot.
 
 ---
 
@@ -318,9 +498,9 @@ v := parse(s) catch |e| {
 
 ```
 error return trace (most recent call last):
-  parse_digit at parse.sx:12:5
-        c := s[i] or raise error.BadDigit;
-                     ^
+  parse_digit at parse.sx:12:25
+        if !is_digit(c) raise ParseErr.BadDigit{c};
+                        ^
   parse_int at parse.sx:34:13
         try parse_digit(s);
         ^
@@ -334,23 +514,6 @@ They cost nothing on the success path. Each frame's location comes from
 `Frame` metadata (file/line/col/func) baked in at the trace point — the
 trace resolves itself with no debug info. Separately, sx emits standard
 DWARF, so `lldb` / `gdb` work on sx binaries too.
-
-Interpolating a tag with `{}` prints its **name**, not a number — in
-every build, including release:
-
-```sx
-log.warn("parse failed: {}", e);     // → "parse failed: BadDigit"
-```
-
-For human-readable context, use `log` on the error path — the tag tells
-you *what* failed, the log tells you the *details*:
-
-```sx
-parse :: (s: string) -> (i32, !) {
-  onfail e { log.warn("parsing {}: {}", s, e); }
-  ...
-}
-```
 
 ---
 
@@ -366,7 +529,7 @@ main :: () -> (u8, !) { ... }      // exit code on success; 1 on error
 ```
 
 If a failable `main` exits via an error, sx prints the formatted trace
-and the tag to stderr and exits with code `1`.
+and the error to stderr and exits with code `1`.
 
 For explicit, shell-friendly exit codes anywhere in the program, call
 `process.exit`:
@@ -380,9 +543,28 @@ main :: () -> ! {
 }
 ```
 
-`process.exit` is a final stop: it does not run `defer`/`onfail` and does
-not propagate. Use it for deliberate termination, not for recoverable
-errors.
+`process.exit` is a final stop: it does not run `defer` and does not
+propagate. Use it for deliberate termination, not for recoverable errors.
+
+---
+
+## I/O errors
+
+The runtime's I/O channel is one set:
+
+```sx
+IoErr :: error { Failed; Canceled }
+```
+
+`Io.suspend_raw` is `-> !IoErr.Canceled` — it fails only by cancellation,
+and its channel says so. `await` is `-> ($R, !IoErr)`: a cancelled future
+raises `.Canceled`, a failed one `.Failed`. An async worker is a lambda,
+so it writes its channel out:
+
+```sx
+f := context.io.async(|| -> (i64, !IoErr) try compute(a, b));
+v := try await(f);
+```
 
 ---
 
@@ -393,9 +575,11 @@ errors.
 ```sx
 open_db :: (url: string) -> (Conn, !DbErr) {
   c := try connect(url);
-  onfail disconnect(c);
+  live := false;
+  defer if !live disconnect(c);
   try authenticate(c);
   try select_schema(c);
+  live = true;
   return c;                        // caller owns the live connection
 }
 ```
@@ -436,15 +620,18 @@ parse_config :: (src: string) -> (Config, !ParseErr) {
 ## Rules of thumb
 
 - **Add `!` when a function can fail.** Use a named set for public
-  contracts, bare `!` for internal helpers.
+  contracts, bare `!` for internal helpers; a function-type slot always
+  names its channel.
 - **`raise` to fail, `try` to propagate, `catch` to handle, `??` to
   fall back.**
 - **Every failable call needs a marker** (`try` / `catch` / `??` /
   destructure). If you forget, the compiler tells you exactly where.
-- **`defer` always runs; `onfail` runs only on error.** Reach for
-  `onfail` when success transfers ownership.
+- **Put the context in the payload** — a member with a payload carries
+  the offending byte, offset, or path with it.
+- **`defer` runs on every exit.** For "undo only on failure", guard it
+  with an `if` on a success flag.
 - **Cleanup can't propagate** — absorb failable cleanup with `catch` /
   `??`.
-- **Tags are identities, not data** — log for context; compare tags to
-  tags, never to raw integers.
+- **Values widen, slots don't** — a `Closure` field holds exactly the
+  channel it declares.
 - **Traces are free in release** (compiled out) and automatic in debug.

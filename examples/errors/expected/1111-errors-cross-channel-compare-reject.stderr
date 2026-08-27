@@ -1,0 +1,5 @@
+error: error channels 'FooError' and 'BooError' do not compare — one channel must hold the other's members
+  --> examples/errors/1111-errors-cross-channel-compare-reject.sx:19:19
+   |
+19 |     print("{}\n", e == z);
+   |                   ^

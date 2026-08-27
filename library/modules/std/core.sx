@@ -18,20 +18,16 @@ out :: (str: string) -> void {
 // `@sqrt` / `@sin` / `@cos` / `@floor` are declared in math/scalar.sx.
 size_of :: ($T: Type) -> i64 intrinsic;
 align_of :: ($T: Type) -> i64 intrinsic;
-type_of :: (val: $T) -> Type intrinsic;
-type_name :: ($T: Type) -> string intrinsic;
+@typeOf :: (val: $T) -> Type;
+@typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
 // duals are the variant_* family below; arrays/vectors use `.len` and
 // native indexing instead.
 struct_field_count :: ($T: Type) -> i64 intrinsic;
 struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
-// folds at LOWER time, so it composes inside `type_eq` / `type_name` / any
-// type-arg slot. Lives here beside its sibling reflection builtins (NOT in
-// `meta.sx`) because it declares no data types of its own — so it costs
-// nothing in the prelude — and both `map.sx`'s structural key hash and
-// `meta.sx`'s DSL need it (each imports `core.sx` directly) rather than each
-// re-declaring the builtin locally.
+// folds at LOWER time, so it composes inside `@typeEq` / `@typeName` / any
+// type-arg slot.
 struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
 // The i-th field's byte offset within the struct (tuples: element offset).
 struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
@@ -49,12 +45,17 @@ variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
-error_name :: (e: $T) -> string intrinsic;
+// `FooError.D` for the member an error value carries — the composition
+// `e.set.name`, `"."`, and `e.name` spell out.
+@errorName :: (e: $T) -> string;
+// An error value's live payload as an `any` view — the `variant_payload`
+// sibling for error channels. A payload-free member views as `void`.
+@errorPayload :: (e: $T) -> any;
 // A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind
-// discrimination is type_info's job, like the count tables.
+// discrimination is `@typeInfo`'s job, like the count tables.
 vector_lanes :: ($T: Type) -> i64 intrinsic;
 // INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
 // variant read loads from a value of T, sign-encoded — negative means |w|
@@ -63,15 +64,34 @@ vector_lanes :: ($T: Type) -> i64 intrinsic;
 // bytes at offset 0 (a backing-type union's header can be wider than the
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
-// INTERNAL (fmt's runtime fat-pointer read): T's length word packed into one
-// row — bits 0..7 its BIT width, bit 8 its signedness, bits 16..31 its byte
-// offset in the `{ptr, Len}` header. 0 for a kind that carries no fat
-// pointer. Accepts a runtime Type (row-table read).
-__sx_slice_len_info :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
 // `{ elem,  raw_any_data(av) + idx * size_of(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
 any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+
+// ── Boxed-value views: a value's parts, read in place ──────────────────────
+// The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
+// struct and union fields, enum and tagged-union variants, array elements,
+// vector lanes, and the count a slice's or string's header carries. `@field`
+// views the i-th member at its offset — a tagged union's members share the
+// payload offset. `@elementAt` views the i-th element of an array, vector,
+// slice, or string, striding from the buffer a fat pointer names. `@inner`
+// views an optional's payload, null when it is absent. Each result borrows the
+// boxed storage, so it aliases later writes and copies nothing. An index past
+// the count is UB.
+@len :: (v: any) -> i64;
+@field :: (v: any, idx: i64) -> any;
+@elementAt :: (v: any, idx: i64) -> any;
+@inner :: (v: any) -> ?any;
+
+// ── Type identity, and the typed read of boxed storage ─────────────────────
+// `@typeEq` is TypeId identity: types intern per structural shape, so it
+// answers on shape, and either side may be a runtime `Type`. `@unbox` reads an
+// `any`'s storage AS `T` — an unchecked typed load through the view, with no
+// tag check, so `T` must be the boxed type and a wider one overreads. The
+// checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
+@typeEq :: ($A: Type, $B: Type) -> bool;
+@unbox :: (v: any, $T: Type) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, type_id}` layout is private; these two are the stable contract
@@ -309,15 +329,13 @@ __sx_printf_f64 :: (f: f64) {
 // the compiler's own string pool and type table, so they exist only at `@run` /
 // constant-evaluation time and have no runtime form.
 //
-// Handles are bare `u32`s on purpose: a `StringId` / `TypeId` alias would be a
-// data type declared in the always-loaded prelude, interning into every module's
-// type table and shifting every `.ir` snapshot — the same cost the note below
-// keeps `TypeInfo` out for. Callers alias them locally where it aids reading.
+// Handles are bare `u32`s so they intern no extra prelude type. Callers alias
+// them locally where it aids reading.
 raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
 raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
 raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
 raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-                                                                // 4 tuple 5 union 6 array 7 vector 8 error_set
+                                                                // 4 tuple 5 union 6 array 7 vector 8 error
 raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
 raw_field_count  :: (t: u32) -> i64 intrinsic;
 raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
@@ -325,13 +343,95 @@ raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
 raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
 raw_pointer_to        :: (t: Type) -> Type intrinsic;
 
-// The DATA-TYPE-carrying comptime metaprogramming (`declare` / `define` /
-// `type_info`, plus the `TypeInfo` / `EnumVariant` / … model they reflect INTO
-// and construct FROM) lives in the on-demand `modules/std/meta.sx`, NOT here —
-// declaring those data types in the always-loaded prelude would intern them
-// into every module's type table and shift every `.ir` snapshot. (The bare
-// `field_type` builtin above carries no data type, so it stays in the prelude.)
-// Import `modules/std/meta.sx` to construct or reflect types at comptime.
+// ── `@typeInfo`: the reflected type shape ────────────────────────────────────
+//
+// A type's whole shape as data. `@typeInfo` reflects a type INTO it; the
+// on-demand `modules/std/meta.sx` DSL (`declare` / `define`) constructs a NEW
+// nominal type FROM it. Sizes are not stored — `size_of(tp)` answers for any
+// kind.
+
+// One field of a struct or tuple: its name, its type, and its byte offset,
+// from the same layout walk the field accessors take. `define` ignores the
+// offset — a construction literal omits it.
+FieldInfo :: struct {
+    name: string;
+    type: Type;
+    offset: i64 = 0;
+}
+
+// One variant of an enum or tagged union. `payload = void` is a tagless
+// variant (e.g. `closed`); `value` is the discriminant the variant carries.
+VariantInfo :: struct {
+    name: string;
+    payload: Type;
+    value: i64 = 0;
+}
+
+// One arm of an untagged union. Arms overlay, so there is no offset to carry.
+ArmInfo :: struct {
+    name: string;
+    type: Type;
+}
+
+// One member of an error. `tag` is the interned `(owner, name)` pair and IS
+// the member's identity — two members compare by it. Owner, name, and payload
+// are lookups through that pair.
+MemberInfo :: struct {
+    tag: i64;
+    owner: Type;
+    name: string;
+    payload: Type;
+}
+
+// The per-kind shapes. The type's NAME travels in `declare(name)` rather than
+// in the shape, so `define` can register a forward type whose body references
+// itself.
+EnumInfo     :: struct { variants: []VariantInfo; }
+StructInfo   :: struct { fields: []FieldInfo; }
+UnionInfo    :: struct { arms: []ArmInfo; }
+ErrorInfo    :: struct { members: []MemberInfo; }
+IntInfo      :: struct { bits: i64; signed: bool; }
+FloatInfo    :: struct { bits: i64; }
+ArrayInfo    :: struct { elem: Type; len: i64; }
+VectorInfo   :: struct { elem: Type; lanes: i64; }
+SliceInfo    :: struct { elem: Type; }
+PointerInfo  :: struct { pointee: Type; }
+OptionalInfo :: struct { inner: Type; }
+
+// EXHAUSTIVE over the type table's kinds — a kind the compiler adds fails the
+// record builder until it is classified here; there is no catch-all. Only
+// `.enum` / `.struct` can be MINTED via `define`; every other variant is
+// reflect-only. `usize` and `isize` reflect as `.int`, at the target's pointer
+// width.
+TypeInfo :: enum {
+    enum: EnumInfo;
+    struct: StructInfo;
+    union: UnionInfo;
+    error: ErrorInfo;
+    int: IntInfo;
+    float: FloatInfo;
+    bool;
+    string;
+    cstring;
+    void;
+    array: ArrayInfo;
+    vector: VectorInfo;
+    slice: SliceInfo;
+    pointer: PointerInfo;
+    many_pointer: PointerInfo;
+    optional: OptionalInfo;
+    function;
+    closure;
+    protocol;
+    pack;
+    any;
+    noreturn;
+    type_value;
+}
+
+// A spelled type folds at compile time; a runtime `Type` value loads the
+// type's constant record, so kind-first dispatch reads the same either way.
+@typeInfo :: ($T: Type) -> TypeInfo;
 
 // One source descriptor for diagnostics and for library identity. A
 // compiler-maintained contract: the compiler recognizes THIS declaration by
@@ -380,6 +480,10 @@ Allocator :: interface {
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 
+// The error channel async rides: a canceled task raises `.Canceled` out of
+// `await` or a suspend, a failed one `.Failed`.
+IoErr :: error { Failed; Canceled }
+
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
 // `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
@@ -392,7 +496,7 @@ Allocator :: interface {
 // (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
 //
 //   spawn_raw  — submit a task; opaque handle (fiber bootstrap).
-//   suspend_raw— suspend current fiber; `!` so cancel can raise out.
+//   suspend_raw— suspend current fiber; raises `IoErr.Canceled` on a cancel.
 //   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
@@ -429,7 +533,7 @@ Io :: interface {
     // `ready(park)` — called from a DIFFERENT context (the worker that completes
     // the awaited task) — knows which context to resume. Passed by pointer for
     // exactly that write-back. `ready`/`arm_timer` read the recorded handle.
-    suspend_raw :: (self: *Self, park: *ParkToken) -> !;
+    suspend_raw :: (self: *Self, park: *ParkToken) -> !IoErr.Canceled;
     ready :: (self: *Self, park: ParkToken);
     poll :: (self: *Self, deadline_ms: i64) -> i64;
     now_ms :: (self: *Self) -> i64;

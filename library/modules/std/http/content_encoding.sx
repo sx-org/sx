@@ -388,7 +388,7 @@ encode :: (data: string, encoding: Encoding, level: i64, alloc: Allocator) -> (s
     if encoding == .deflate {
         return zlib_codec.encode(data, .{ level = level }, alloc);
     }
-    raise error.Unsupported;
+    raise .Unsupported;
 }
 
 EncoderStorage :: union {
@@ -411,19 +411,19 @@ Encoder :: struct {
             result.storage.deflate = try zlib_codec.Encoder.init(.{ level = level }, alloc);
             return result;
         }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
         if self.encoding == .gzip { return self.storage.gzip.write(input, output); }
         if self.encoding == .deflate { return self.storage.deflate.write(input, output); }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
         if self.encoding == .gzip { return self.storage.gzip.finish(output); }
         if self.encoding == .deflate { return self.storage.deflate.finish(output); }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     deinit :: (self: *Encoder) {
@@ -453,19 +453,19 @@ Decoder :: struct {
             result.storage.deflate = try zlib_codec.Decoder.init(max_output, alloc);
             return result;
         }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
         if self.encoding == .gzip { return self.storage.gzip.read(input, output); }
         if self.encoding == .deflate { return self.storage.deflate.read(input, output); }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
         if self.encoding == .gzip { return self.storage.gzip.finish(output); }
         if self.encoding == .deflate { return self.storage.deflate.finish(output); }
-        raise error.Unsupported;
+        raise .Unsupported;
     }
 
     deinit :: (self: *Decoder) {
@@ -505,7 +505,7 @@ EncodedProducer :: struct {
 
     init :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
         input := alloc.alloc_bytes(SOURCE_PIECE);
-        if input == null { raise error.AllocationFailed; }
+        if input == null { raise .AllocationFailed; }
         encoder := Encoder.init(encoding, level, alloc) catch |e| {
             alloc.dealloc_bytes(input);
             raise e;
@@ -537,12 +537,12 @@ EncodedProducer :: struct {
             if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
             if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
             if progress.consumed > 0 { return EncodedProduceStep{ status = EncodedProduceStatus.pending }; }
-            raise error.InvalidData;
+            raise .InvalidData;
         }
 
         if !self.source_eof {
             n := self.source(self.source_ctx, self.source_off, self.input, SOURCE_PIECE);
-            if n < 0 or n > SOURCE_PIECE { raise error.Io; }
+            if n < 0 or n > SOURCE_PIECE { raise .Io; }
             if n > 0 {
                 self.source_off += n;
                 self.input_at = 0;
@@ -556,7 +556,7 @@ EncodedProducer :: struct {
         if progress.status == .done { self.finished = true; }
         if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     deinit :: (self: *EncodedProducer) {

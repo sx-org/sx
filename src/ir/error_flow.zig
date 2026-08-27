@@ -16,9 +16,9 @@ const Lowering = lower.Lowering;
 //    `if !err { … }` (proven inside) or `if err { return/raise }` (proven on
 //    the fall-through). Error-set `==`/tag-compares do NOT prove absence.
 //
-//  • Cleanup absorption: a bare failable call in a `defer`/`onfail`
-//    body (with no `catch` / `?? value`) is rejected — its error has nowhere
-//    to propagate (the block is already exiting). See `checkCleanupBody`.
+//  • Cleanup absorption: a bare failable call in a `defer` body (with no
+//    `catch` / `?? value`) is rejected — its error has nowhere to propagate
+//    (the block is already exiting). See `checkCleanupNode`.
 //
 // This is the diagnostic-only Pass 1e. A `*Lowering` facade (like
 // `ErrorAnalysis`/`CoercionResolver`): it reads AST decls + `ProgramIndex` and
@@ -268,19 +268,8 @@ pub const ErrorFlow = struct {
                 return false;
             },
             .defer_stmt => |ds| {
-                self.checkCleanupBody(ds.expr, "defer");
+                self.checkCleanupNode(ds.expr);
                 self.flowExpr(ds.expr, ctx, proven.*);
-                return false;
-            },
-            .onfail_stmt => |os| {
-                self.checkCleanupBody(os.body, "onfail");
-                // `onfail |name| { … }` — the error binding is a fresh
-                // declaration scoped to the cleanup body.
-                var body_proven = self.provenClone(proven.*);
-                const mark = ctx.shadow_undo.items.len;
-                if (os.binding) |bn| self.declareName(ctx, &body_proven, bn);
-                self.flowExpr(os.body, ctx, body_proven);
-                self.scopeExit(ctx, &body_proven, mark);
                 return false;
             },
             else => {
@@ -483,55 +472,51 @@ pub const ErrorFlow = struct {
         }
     }
 
-    /// A `defer`/`onfail` body runs while the block is already exiting, so
-    /// a bare failable call has nowhere to send its error. Reject any failable
+    /// A `defer` body runs while the block is already exiting, so a bare
+    /// failable call has nowhere to send its error. Reject any failable
     /// expression-statement that isn't absorbed locally by `catch` / `?? value`
     /// / a destructure binding. (Parser already bans `try`/`raise`/`return`/
     /// `break`/`continue` here, so the only escape route left for a failable is
     /// local absorption.) The check is transitive through nested blocks, `if`,
     /// loops, match arms, and `catch` handlers, but stops at a nested closure
     /// (its own function boundary).
-    fn checkCleanupBody(self: ErrorFlow, body: *const Node, kind: []const u8) void {
-        self.checkCleanupNode(body, kind);
-    }
-
-    fn checkCleanupNode(self: ErrorFlow, node: *const Node, kind: []const u8) void {
+    fn checkCleanupNode(self: ErrorFlow, node: *const Node) void {
         switch (node.data) {
-            .block => |b| for (b.stmts) |s| self.checkCleanupNode(s, kind),
+            .block => |b| for (b.stmts) |s| self.checkCleanupNode(s),
             .if_expr => |ie| {
-                self.cleanupReject(ie.condition, kind);
-                self.checkCleanupNode(ie.then_branch, kind);
-                if (ie.else_branch) |eb| self.checkCleanupNode(eb, kind);
+                self.cleanupReject(ie.condition);
+                self.checkCleanupNode(ie.then_branch);
+                if (ie.else_branch) |eb| self.checkCleanupNode(eb);
             },
             .while_expr => |we| {
-                self.cleanupReject(we.condition, kind);
-                self.checkCleanupNode(we.body, kind);
+                self.cleanupReject(we.condition);
+                self.checkCleanupNode(we.body);
             },
-            .for_expr => |fe| self.checkCleanupNode(fe.body, kind),
-            .match_expr => |me| for (me.arms) |arm| self.checkCleanupNode(arm.body, kind),
-            .push_stmt => |ps| self.checkCleanupNode(ps.body, kind),
+            .for_expr => |fe| self.checkCleanupNode(fe.body),
+            .match_expr => |me| for (me.arms) |arm| self.checkCleanupNode(arm.body),
+            .push_stmt => |ps| self.checkCleanupNode(ps.body),
             // A destructure binds the error slot → absorbed (explicit ownership).
             .destructure_decl => {},
-            .var_decl => |vd| if (vd.value) |v| self.cleanupReject(v, kind),
-            .const_decl => |cd| self.cleanupReject(cd.value, kind),
-            .assignment => |a| self.cleanupReject(a.value, kind),
+            .var_decl => |vd| if (vd.value) |v| self.cleanupReject(v),
+            .const_decl => |cd| self.cleanupReject(cd.value),
+            .assignment => |a| self.cleanupReject(a.value),
             // Closures are their own boundary; the parser-banned control-flow
             // exits are handled elsewhere; nested cleanup is independent.
-            .lambda, .return_stmt, .raise_stmt, .break_expr, .continue_expr, .defer_stmt, .onfail_stmt => {},
-            else => self.cleanupReject(node, kind),
+            .lambda, .return_stmt, .raise_stmt, .break_expr, .continue_expr, .defer_stmt => {},
+            else => self.cleanupReject(node),
         }
     }
 
     /// Reject `expr` if it is a bare (un-absorbed) failable in cleanup position.
     /// `catch` / `?? value` strip the error channel (so `exprIsFailable` is
     /// false for them); only a still-failable expression has an unhandled error.
-    fn cleanupReject(self: ErrorFlow, expr: *const Node, kind: []const u8) void {
+    fn cleanupReject(self: ErrorFlow, expr: *const Node) void {
         if (expr.data == .catch_expr) {
             // The operand is absorbed; the handler body still runs in cleanup.
-            self.checkCleanupNode(expr.data.catch_expr.body, kind);
+            self.checkCleanupNode(expr.data.catch_expr.body);
             return;
         }
         if (!self.l.exprIsFailable(expr)) return;
-        if (self.l.diagnostics) |d| d.addFmt(.err, expr.span, "a bare failable call in a `{s}` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`", .{kind});
+        if (self.l.diagnostics) |d| d.addFmt(.err, expr.span, "a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`", .{});
     }
 };

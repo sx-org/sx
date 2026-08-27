@@ -94,7 +94,7 @@ allocation_case :: (fail_at: i64) -> (bool, i64) {
     success := !failure;
     if !failure { failing.dealloc_bytes(encoded.ptr); }
     expected := if fail_at == 0 then success and failing.failures == 0
-                else !success and failure == error.AllocationFailed and failing.failures == 1;
+                else !success and failure == .AllocationFailed and failing.failures == 1;
     return expected and failing.live == 0 and gpa.alloc_count == 0, failing.sequence;
 }
 
@@ -170,20 +170,20 @@ main :: () -> i32 {
     tiny_bytes := string{ ptr = *tiny[0], len = tiny.len };
     tiny_short := string{ ptr = *tiny[0], len = 11 };
     base : png.Image = .{ pixels = tiny_bytes, width = 1, height = 1, format = .rgba };
-    if !raises(.{ pixels = tiny_bytes, width = 0, height = 1, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 7; }
-    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x80000000, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 8; }
-    if !raises(.{ pixels = tiny_bytes, width = 2, height = 2, format = .rgb, stride = 5 }, .{}, error.InvalidStride, gpa) { return 9; }
-    if !raises(.{ pixels = tiny_short, width = 2, height = 2, format = .rgb }, .{}, error.PixelDataTooShort, gpa) { return 10; }
-    if !raises(.{ pixels = tiny_bytes, width = 1, height = 2, format = .gray, stride = i64.min }, .{}, error.TooLarge, gpa) { return 11; }
-    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x7fffffff, format = .gray, stride = i64.max }, .{}, error.TooLarge, gpa) { return 12; }
-    if !raises(.{ pixels = "", width = 0x7fffffff, height = 0x7fffffff, format = .rgba }, .{}, error.TooLarge, gpa) { return 13; }
-    if !raises(base, .{ level = -1 }, error.InvalidCompressionLevel, gpa) { return 14; }
-    if !raises(base, .{ level = 11 }, error.InvalidCompressionLevel, gpa) { return 15; }
+    if !raises(.{ pixels = tiny_bytes, width = 0, height = 1, format = .gray }, .{}, .InvalidDimensions, gpa) { return 7; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x80000000, format = .gray }, .{}, .InvalidDimensions, gpa) { return 8; }
+    if !raises(.{ pixels = tiny_bytes, width = 2, height = 2, format = .rgb, stride = 5 }, .{}, .InvalidStride, gpa) { return 9; }
+    if !raises(.{ pixels = tiny_short, width = 2, height = 2, format = .rgb }, .{}, .PixelDataTooShort, gpa) { return 10; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 2, format = .gray, stride = i64.min }, .{}, .TooLarge, gpa) { return 11; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x7fffffff, format = .gray, stride = i64.max }, .{}, .TooLarge, gpa) { return 12; }
+    if !raises(.{ pixels = "", width = 0x7fffffff, height = 0x7fffffff, format = .rgba }, .{}, .TooLarge, gpa) { return 13; }
+    if !raises(base, .{ level = -1 }, .InvalidCompressionLevel, gpa) { return 14; }
+    if !raises(base, .{ level = 11 }, .InvalidCompressionLevel, gpa) { return 15; }
 
     // Dimensions above miniz's 65,535 helper ceiling reach pixel-length
     // validation rather than being rejected for the ceiling alone.
-    if !raises(.{ pixels = "", width = 65536, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 16; }
-    if !raises(.{ pixels = "", width = 0x7fffffff, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 17; }
+    if !raises(.{ pixels = "", width = 65536, height = 1, format = .gray }, .{}, .PixelDataTooShort, gpa) { return 16; }
+    if !raises(.{ pixels = "", width = 0x7fffffff, height = 1, format = .gray }, .{}, .PixelDataTooShort, gpa) { return 17; }
 
     // Fail every allocation in the path one at a time. Each failure must map
     // to png.Error.AllocationFailed and release all earlier allocations.

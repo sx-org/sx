@@ -1,0 +1,23 @@
+// A qualified error arm whose prefix names no error set refuses by that
+// prefix, not by the channel in hand.
+
+@import "modules/std.sx";
+
+Disk :: error { Busy: i64; Gone };
+
+fail :: (n: i64) -> (i64, !Disk) {
+    if n < 0 { raise Disk.Busy{7}; }
+    return n;
+}
+
+read :: (e: Disk) -> i64 {
+    return match e {
+        case Garbage.Busy: |w| 100 + w;
+        case .Gone:            300;
+    };
+}
+
+main :: () -> i32 {
+    print("v={}\n", fail(-1) catch |e| read(e));
+    return 0;
+}

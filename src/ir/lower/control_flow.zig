@@ -12,6 +12,7 @@ const BlockId = inst_mod.BlockId;
 
 const lower = @import("../lower.zig");
 const lower_stmt = @import("stmt.zig");
+const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ComptimeValue = Lowering.ComptimeValue;
@@ -578,7 +579,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
-                // A RUNTIME Type argument (`t := type_of(av); if is_flags(t)`)
+                // A RUNTIME Type argument (`t := @typeOf(av); if is_flags(t)`)
                 // cannot const-fold — bail to the normal runtime lowering
                 // (the rt table read). Folding through resolveTypeArg here
                 // both emitted a spurious "unresolved type" diagnostic and
@@ -594,7 +595,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     }
                     return false;
                 }
-                if (std.mem.eql(u8, cname, "type_eq") and c.args.len >= 2) {
+                if (std.mem.eql(u8, cname, "@typeEq") and c.args.len >= 2) {
                     if (!self.isStaticTypeArg(c.args[0]) or !self.isStaticTypeArg(c.args[1])) return null;
                     const a = self.resolveTypeArg(c.args[0]);
                     const b = self.resolveTypeArg(c.args[1]);
@@ -1145,6 +1146,29 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
+/// The value a type-switch category arm binds: the widened reading every tag
+/// in the set shares — `signed`/`unsigned` an i64, `float` an f64, `pointer` a
+/// `*void`. A category whose members have no common scalar reading binds the
+/// subject's own view, so the arm reads it through the reflection builtins.
+fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []const u64) struct { ref: Ref, ty: TypeId } {
+    const name: []const u8 = switch (pat.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => "",
+    };
+    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        return .{ .ref = self.lowerAnyToIntDispatch(subject, .i64, tags), .ty = .i64 };
+    }
+    if (std.mem.eql(u8, name, "float")) {
+        return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };
+    }
+    if (std.mem.eql(u8, name, "pointer")) {
+        const void_ptr_ty = self.module.types.ptrTo(.void);
+        return .{ .ref = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, void_ptr_ty), .ty = void_ptr_ty };
+    }
+    return .{ .ref = subject, .ty = .any };
+}
+
 pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
     const error_only = demand == .error_only;
@@ -1230,10 +1254,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         break :blk false;
     };
     // An error-set subject (`match e { case .X: ... }`): the value IS its u32
-    // tag id, and `case .X` matches the global tag id of `X`.
+    // member id, and `case .X` matches the subject channel's member `X`.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
-            break :blk self.module.types.get(subject_ty) == .error_set;
+            break :blk self.module.types.get(subject_ty) == .@"error";
         }
         break :blk false;
     };
@@ -1247,14 +1271,14 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // located diagnostic and bail — the arms are never lowered.
     //
     // Type-category matches get NO exemption here: a genuine type match's
-    // subject is a Type VALUE — a `type_of(...)` result or a
+    // subject is a Type VALUE — a `@typeOf(...)` result or a
     // `$T` binding — which types `.type_value` and passes the allowlist below
     // on its own. Exempting on `is_type_match` (a property of the PATTERNS,
     // not the subject) let a single `case U:` / `case string:` pattern token
     // over a runtime union/string VALUE re-open the exact invalid-IR hole
     // this gate closes; and a direct `Any` subject dispatched on its unboxed
     // VALUE instead of its type tag — the silently-wrong arm, exit 0. Both
-    // now diagnose: match on the `type_of(...)` result, not the value.
+    // diagnose: match on the `@typeOf(...)` result, not the value.
     if (!is_optional_match and !is_error_set_match) {
         const dispatchable = blk: {
             if (subject_ty.isBuiltin()) break :blk switch (subject_ty) {
@@ -1405,6 +1429,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms) |_| arm_concrete.append(self.alloc, null) catch unreachable;
     var claimed = std.AutoHashMap(u64, void).init(self.alloc);
     defer claimed.deinit();
+    // An error or qualified arm's verdict; null on every other spelling.
+    var arm_verdicts = std.ArrayList(?lower_error.ArmVerdict).empty;
+    defer arm_verdicts.deinit(self.alloc);
+    for (me.arms) |_| arm_verdicts.append(self.alloc, null) catch unreachable;
 
     for (me.arms, 0..) |arm, i| {
         if (arm.pattern == null) {
@@ -1574,6 +1602,44 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     .args = &.{},
                 }) catch unreachable;
             }
+        } else if (pat.data == .field_access) {
+            // The one qualified-arm verdict, ahead of the optional split so
+            // every value subject reaches it: a dotted arm resolves or refuses
+            // here, never by its leaf or by its arm index.
+            arm_tag_values.append(self.alloc, &.{}) catch unreachable;
+            const verdict = lower_error.qualifyMatchArm(self, subject_ty, pat);
+            arm_verdicts.items[i] = verdict;
+            switch (verdict) {
+                .ok => |ok| cases.append(self.alloc, .{
+                    .value = @intCast(ok.case_value),
+                    .target = arm_blocks.items[i],
+                    .args = &.{},
+                }) catch unreachable,
+                else => lower_error.refuseQualifiedArm(self, verdict, subject_ty, pat),
+            }
+        } else if (is_error_set_match) {
+            // A shorthand arm names a member of the channel in hand, which
+            // composes sets: two of them spelled alike leave the arm no member
+            // to dispatch on.
+            arm_tag_values.append(self.alloc, &.{}) catch unreachable;
+            const leaf = lower_error.shorthandArmName(pat) orelse "";
+            const member: u32 = switch (self.module.types.errorSetMember(subject_ty, leaf)) {
+                .one => |m| m,
+                // A spelling the channel does not carry takes the anonymous
+                // owner's member, which no case value can equal; the bind
+                // reports it.
+                .none => self.anonymousErrorMember(leaf),
+                .ambiguous => {
+                    arm_verdicts.items[i] = .{ .ambiguous = subject_ty };
+                    lower_error.emitAmbiguousMember(self, subject_ty, leaf, pat.span);
+                    continue;
+                },
+            };
+            cases.append(self.alloc, .{
+                .value = member,
+                .target = arm_blocks.items[i],
+                .args = &.{},
+            }) catch unreachable;
         } else if (is_optional_match) {
             // Optional match: .some → 1 (has_value=true), .none → 0
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
@@ -1631,9 +1697,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
-                    } else if (ty_info == .error_set) {
-                        // `case .X` matches the global tag id of `X`.
-                        break :blk @intCast(self.module.types.internTag(pat_name));
                     }
                 }
                 break :blk @intCast(i);
@@ -1667,11 +1730,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // Switch on the subject. For a type match the subject IS the type-id word
     // (`.type_value` / an integer handle — the subject gate above rejects
     // anything else, incl. `.any`: a boxed Any's unboxed VALUE is not its type
-    // tag, so dispatching on it picked the silently-wrong arm; `type_of(a)`
+    // tag, so dispatching on it selects the silently-wrong arm; `@typeOf(a)`
     // is the correct spelling and yields `.type_value` directly).
     const tag = if (is_any_switch)
         // The type switch dispatches on the view's type_id word (field 1,
-        // the {data, type_id} layout) — exactly what `type_of(av)` reads —
+        // the {data, type_id} layout) — exactly what `@typeOf(av)` reads —
         // never on the payload.
         self.builder.structGet(subject, 1, .type_value)
     else if (is_type_match) subject else if (is_optional_match) self.builder.emit(.{ .optional_has_value = .{ .operand = subject } }, .bool) else if (is_error_set_match) subject else blk: {
@@ -1691,10 +1754,17 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
 
-        // For type-match arms with empty tag lists, the arm is unreachable
-        // (no switch case targets it). Skip lowering to avoid invalid IR
-        // from runtime cast/dispatch with no matching types.
-        if (is_type_match and arm.pattern != null and arm_tag_values.items[i].len == 0) {
+        // An arm no switch case targets is unreachable: a type-match arm whose
+        // tags are all claimed, or a refused qualified arm. Lowering it emits
+        // invalid IR — a runtime cast with no matching type, a payload read in
+        // a block with no predecessor.
+        const refused_arm = if (arm_verdicts.items[i]) |v| switch (v) {
+            .ok => false,
+            else => true,
+        } else false;
+        if (arm.pattern != null and (refused_arm or
+            (is_type_match and arm_tag_values.items[i].len == 0)))
+        {
             self.builder.emitUnreachable();
             continue;
         }
@@ -1704,22 +1774,37 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         self.scope = &arm_scope;
 
         if (arm.capture) |capture_name| {
-            if (is_any_switch) {
+            if (arm_verdicts.items[i]) |verdict| {
+                // The skip above drops every refusal, so a stored verdict here
+                // is `ok`.
+                const ok = verdict.ok;
+                const leaf = arm.pattern.?.data.field_access.field;
+                if (ok.payload == .void) {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, arm.pattern.?.span, "'{s}' carries no payload to bind", .{leaf});
+                    }
+                    arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
+                } else {
+                    const payload = self.builder.emit(.{ .enum_payload = .{
+                        .base = subject,
+                        .field_index = ok.field_index,
+                    } }, ok.payload);
+                    arm_scope.put(capture_name, .{ .ref = payload, .ty = ok.payload, .is_alloca = false, .origin = .match_payload });
+                }
+            } else if (is_any_switch) {
                 // A concrete arm binds the typed value — exactly what
                 // `v := av.(T)` produces, with the tag pre-proven by the
-                // switch (no panic path). Category arms name a KIND (many
-                // types), so there is nothing single-typed to bind; the
-                // default arm keeps the subject as `any`.
+                // switch (no panic path). A category arm binds the reading
+                // its whole tag set shares.
                 if (arm_concrete.items[i]) |cty| {
                     const bound = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, cty);
                     arm_scope.put(capture_name, .{ .ref = bound, .ty = cty, .is_alloca = false, .origin = .match_payload });
+                } else if (arm.pattern) |cat_pat| {
+                    const bound = categoryCapture(self, cat_pat, subject, arm_tag_values.items[i]);
+                    arm_scope.put(capture_name, .{ .ref = bound.ref, .ty = bound.ty, .is_alloca = false, .origin = .match_payload });
                 } else {
                     if (self.diagnostics) |diags| {
-                        if (arm.pattern == null) {
-                            diags.addFmt(.err, me.subject.span, "an `else:` arm cannot bind — the subject keeps its `any` type there", .{});
-                        } else {
-                            diags.addFmt(.err, arm.pattern.?.span, "a category arm cannot bind a value — it names a kind, not one type; read the value through the reflection views instead", .{});
-                        }
+                        diags.addFmt(.err, me.subject.span, "an `else:` arm cannot bind — the subject keeps its `any` type there", .{});
                     }
                     const undef = self.builder.constUndef(.i64);
                     arm_scope.put(capture_name, .{ .ref = undef, .ty = .i64, .is_alloca = false, .origin = .match_payload });
@@ -1730,6 +1815,30 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 const child_ty = if (opt_info == .optional) opt_info.optional.child else .i64;
                 const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = subject } }, child_ty);
                 arm_scope.put(capture_name, .{ .ref = unwrapped, .ty = child_ty, .is_alloca = false, .origin = .match_payload });
+            } else if (is_error_set_match) {
+                // An arm binds the payload the member it names declares, read
+                // out of the channel value.
+                const pat_name = lower_error.shorthandArmName(arm.pattern) orelse "";
+                const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
+                const member = lower_error.errorArmMember(self, subject_ty, arm.pattern);
+                const payload_ty = if (member) |m| self.module.types.memberPayload(m) else TypeId.void;
+                if (member == null) {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, bind_span, "error set '{s}' has no member '{s}'", .{ self.formatTypeName(subject_ty), pat_name });
+                    }
+                    arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
+                } else if (payload_ty == .void) {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, bind_span, "'{s}' carries no payload to bind", .{pat_name});
+                    }
+                    arm_scope.put(capture_name, .{ .ref = self.builder.constUndef(.i64), .ty = .i64, .is_alloca = false, .origin = .match_payload });
+                } else {
+                    const payload = self.builder.emit(.{ .enum_payload = .{
+                        .base = subject,
+                        .field_index = member.?,
+                    } }, payload_ty);
+                    arm_scope.put(capture_name, .{ .ref = payload, .ty = payload_ty, .is_alloca = false, .origin = .match_payload });
+                }
             } else {
                 // Resolve actual variant index and payload type from the subject's type
                 var variant_idx: u32 = @intCast(i);

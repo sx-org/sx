@@ -127,7 +127,7 @@ client_decoder_allocation :: (packed: string) -> bool {
     failure := false;
     push .{ allocator = failing } {
         _, e := http.Client.recv(pair[0], *storage[0], storage.len);
-        failure = e == error.Allocation;
+        failure = e == .Allocation;
     }
     socket.close(pair[0]);
     sent and failure and failing.failures == 1 and failing.live == 0

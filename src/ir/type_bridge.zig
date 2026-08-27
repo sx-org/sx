@@ -50,6 +50,10 @@ const StatelessInner = struct {
     pub fn resolveName(self: StatelessInner, name: []const u8) TypeId {
         return resolveTypeName(name, self.table, self.alias_map, false);
     }
+    pub fn aliasType(self: StatelessInner, name: []const u8) ?TypeId {
+        const map = self.alias_map orelse return null;
+        return map.get(name);
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -246,7 +250,9 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         .enum_decl => |ed| resolveInlineEnum(&ed, table, si),
         .struct_decl => |sd| resolveInlineStruct(&sd, table, si),
         .union_decl => |ud| resolveInlineUnion(&ud, table, si),
-        .error_set_decl => |esd| resolveInlineErrorSet(&esd, table),
+        // The owner key must be the node's stable inner pointer, not the
+        // switch payload's copy.
+        .error_set_decl => internErrorSetDecl(&n.data.error_set_decl, table, si),
         .error_type_expr => |ete| resolveErrorType(&ete, table, si),
         // A bare spread element (`..Ts`) reaching here is BY DESIGN, not a caller
         // bug: `resolveClosurePackShape` / `resolveTupleSpreadShape` preserve a
@@ -375,7 +381,7 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         // type-shaped operand it IS the pointer type (`describe(*Padded)`).
         .unary_op => |uop| uop.op == .address_of and isTypeShapedAstNode(uop.operand, table),
         // A call to a comptime type-query / projection builtin whose RESULT is a
-        // Type — `field_type(T, i)`, `pointee(P)`, `type_of(x)`. These are
+        // Type — `field_type(T, i)`, `pointee(P)`, `@typeOf(x)`. These are
         // type-shaped, so an arg / initializer like `field_type(T, i)` resolves
         // through `resolveTypeArg` (which routes `.call` to
         // `resolveTypeCallWithBindings`, folding the index — incl. an `inline for`
@@ -404,7 +410,7 @@ pub fn isTypeReturningBuiltinName(name: []const u8) bool {
     return std.mem.eql(u8, name, "struct_field_type") or
         std.mem.eql(u8, name, "variant_type") or
         std.mem.eql(u8, name, "pointee_type") or
-        std.mem.eql(u8, name, "type_of");
+        std.mem.eql(u8, name, "@typeOf");
 }
 
 fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
@@ -762,56 +768,119 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
     } };
 }
 
-/// `Foo :: error { A, B }` → a registered `.error_set` type. Tag names are
-/// interned into the global tag pool; the set stores their (sorted) ids. The
-/// caller (lowering) is responsible for rejecting an empty set, so this only
-/// sees non-empty declarations.
-///
-/// INLINE / structural path ONLY: keeps the `findByName` short-circuit so an
-/// anonymous / re-resolved set re-uses an existing same-name slot. The
-/// declaration-side per-decl nominal path (`Lowering.registerErrorSetDecl`)
-/// builds the body via `buildErrorSetInfo` and interns under its own nominal id
-/// instead.
-fn resolveInlineErrorSet(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeId {
-    const name_id = table.internString(esd.name);
-
-    if (table.findByName(name_id)) |existing| return existing;
-
-    const info = buildErrorSetInfo(esd, table);
-    return table.intern(info);
+/// The error body of `Foo :: error { A, B }`. The declaration owns its
+/// members, so two sets listing the same spelling own two different members,
+/// and each member carries the payload type it declares. The caller (lowering)
+/// rejects an empty set, so this only sees non-empty declarations.
+pub fn errorSetDeclInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeInfo {
+    return errorSetDeclInfoOwned(esd, table, inner, esd.name);
 }
 
-/// Build the `.error_set` `TypeInfo` body for an error-set decl WITHOUT
-/// interning a top-level slot — the shared body-BUILDER behind both the
-/// structural inline path (`resolveInlineErrorSet`) and the stateful per-decl
-/// registration (`Lowering.registerErrorSetDecl`, which interns it under a
-/// per-decl nominal identity so two same-name top-level sets get DISTINCT
-/// TypeIds). Tags are interned into the global pool and stored sorted in the
-/// slice arena (mirrors `errorSetType`'s canonicalization).
-pub fn buildErrorSetInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeInfo {
+/// `errorSetDeclInfo` with the owner spelling supplied: an inline `error { … }`
+/// operand of a composition is owned by that composition, so its members render
+/// under the composition's name.
+pub fn errorSetDeclInfoOwned(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype, owner_name: []const u8) TypeInfo {
     const alloc = table.alloc;
-    const name_id = table.internString(esd.name);
+    const name_id = table.internString(owner_name);
+    const owner = table.internErrorOwner(@ptrCast(esd), name_id);
 
-    var tag_ids = std.ArrayList(u32).empty;
-    defer tag_ids.deinit(alloc);
-    for (esd.tag_names) |tn| {
-        tag_ids.append(alloc, table.internTag(tn)) catch unreachable;
+    var member_ids = std.ArrayList(u32).empty;
+    defer member_ids.deinit(alloc);
+    for (esd.tag_names, 0..) |tn, i| {
+        const member = table.internMember(owner, tn);
+        if (i < esd.tag_types.len) {
+            if (esd.tag_types[i]) |payload| table.setMemberPayload(member, inner.resolveInner(payload));
+        }
+        member_ids.append(alloc, member) catch unreachable;
     }
-    const owned = table.slice_arena.allocator().dupe(u32, tag_ids.items) catch unreachable;
-    std.mem.sort(u32, owned, {}, std.sort.asc(u32));
-    return .{ .error_set = .{ .name = name_id, .tags = owned } };
+    return table.errorSetInfo(name_id, member_ids.items);
 }
 
-/// The error channel of a failable signature: `!Named` → the declared error
-/// set (registered by `resolveInlineErrorSet`); bare `!` → a shared inferred
-/// placeholder set. The placeholder's members are refined per failable
-/// function by the whole-program SCC pass; every bare `!` resolves to the
-/// same empty inferred set, which is correct while no function raises.
+pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner: anytype) TypeId {
+    const id = table.intern(errorSetDeclInfo(esd, table, inner));
+    table.setErrorOwnerType(@ptrCast(esd), id);
+    return id;
+}
+
+/// Append the members the channel operand `name` contributes to `out`: a named
+/// set contributes every member it declares, `Set.Member` the one it names.
+/// False when the spelling names no error set.
+pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
+    if (qualifiedChannelMember(name, table, inner)) |member| {
+        out.append(table.alloc, member) catch unreachable;
+        return true;
+    }
+    if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+        if (channelHeadErrorSet(name[0..dot], table, inner) != null) return false;
+    }
+    const set = inner.resolveName(name);
+    if (set.isBuiltin()) return false;
+    const info = table.get(set);
+    if (info != .@"error") return false;
+    out.appendSlice(table.alloc, info.@"error".tags) catch unreachable;
+    return true;
+}
+
+/// The member id `Set.Member` names, or null when the head is not an error
+/// set (declared or aliased) or the head carries no single member of that
+/// name. The head is probed in the type table and the alias map before
+/// resolveName, which mints a stub for an unregistered name.
+fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+    const head = name[0..dot];
+    _ = channelHeadErrorSet(head, table, inner) orelse return null;
+    const set = inner.resolveName(head);
+    if (set.isBuiltin() or table.get(set) != .@"error") return null;
+    return switch (table.errorSetMember(set, name[dot + 1 ..])) {
+        .one => |m| m,
+        else => null,
+    };
+}
+
+fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?TypeId {
+    if (table.findByName(table.internString(head))) |probe| {
+        if (probe.isBuiltin() or table.get(probe) != .@"error") return null;
+        return probe;
+    }
+    const aliased = inner.aliasType(head) orelse return null;
+    if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
+    return aliased;
+}
+
+/// The error channel of a failable signature: `!Set` → that declared set
+/// (registered by `internErrorSetDecl`); `!Set.Member` → the singleton channel
+/// carrying that member; `!(A | B)` → the channel their members merge into. A
+/// bare `!` — and a composition whose operands do not all name a set — is a
+/// placeholder keyed by the channel's own spelling, refined per failable
+/// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
-    if (ete.name) |name| return inner.resolveName(name);
-    // `!` is not a legal type/identifier name, so this reserved StringId can
-    // never collide with a user-declared set.
-    const name_id = table.internString("!");
+    if (ete.namedSet()) |name| {
+        if (qualifiedChannelMember(name, table, inner)) |member| {
+            return table.errorSetType(.empty, &.{member});
+        }
+        // resolveName of the dotted spelling mints a struct used as the failable err.
+        const head_is_set = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot|
+            channelHeadErrorSet(name[0..dot], table, inner) != null
+        else
+            false;
+        if (!head_is_set) {
+            return inner.resolveName(name);
+        }
+    } else if (ete.operands.len > 0) compose: {
+        var members = std.ArrayList(u32).empty;
+        defer members.deinit(table.alloc);
+        for (ete.operands) |op| {
+            if (!channelOperandMembers(op, table, inner, &members)) break :compose;
+        }
+        return table.errorSetType(.empty, members.items);
+    }
+    // `!` and `|` are not legal type/identifier names, so a spelling built from
+    // them can never collide with a user-declared set.
+    const spelling = if (ete.operands.len == 0)
+        "!"
+    else
+        std.mem.join(table.alloc, " | ", ete.operands) catch return .unresolved;
+    const name_id = table.internString(spelling);
     if (table.findByName(name_id)) |existing| return existing;
     return table.errorSetType(name_id, &.{});
 }

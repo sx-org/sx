@@ -1,112 +1,29 @@
-// Comptime type metaprogramming — `declare` / `define` (construct a NEW nominal
-// type from data), plus `type_info` / `struct_field_type` (reflect a type → data) and
-// the data model they reflect INTO and construct FROM.
+// Comptime type metaprogramming — `declare` / `define`: construct a NEW nominal
+// type from the `TypeInfo` shape the prelude declares and `@typeInfo` reflects
+// into.
 //
-// This is a SEPARATE on-demand module rather than part of the prelude: its data
-// types would otherwise intern into every module's type table and shift every
-// `.ir` snapshot. Import it explicitly:  @import "modules/std/meta.sx";
+// This is a SEPARATE on-demand module rather than part of the prelude: only a
+// program that MINTS types needs it, and it builds its member list via `List`,
+// so it imports `list.sx` (and its `core.sx`) — the two part-files it actually
+// needs — NOT the whole `std.sx` facade. Importing the facade would drag
+// `map`/`fmt`/etc. into every meta importer's type table for no reason.
 //
-// `declare` / `define` are ordinary sx (over the `intrinsic` primitives
-// `raw_declare_type` / `raw_register_type`); `type_info` / `struct_field_type` are comptime-only
-// compiler builtins — reaching one at runtime is a hard error (the type must be
-// minted / reflected at compile time). `define` builds its member list via
-// `List`, so meta.sx imports `list.sx` (and its `core.sx`) — the two part-files
-// it actually needs (`List` + the core builtins, incl. `struct_field_type`), NOT the
-// whole `std.sx` facade. Importing the facade would drag `map`/`fmt`/etc. into
-// every meta importer's type table for no reason.
+// `declare` / `define` are ordinary sx over the `intrinsic` primitives
+// `raw_declare_type` / `raw_register_type`, which run at LOWERING time (when a
+// `-> Type` builder's result is first referenced), where the compiler can still
+// resolve references to the minted types.
 @import "modules/std/core.sx";
 @import "modules/std/list.sx";
 c :: @import "modules/std/c.sx";
 
-// One variant of a constructed enum: a name plus an optional payload type.
-// `payload = void` means a tagless variant (e.g. `closed`).
-EnumVariant :: struct {
-    name: string;
-    payload: Type;
-}
-
-// The shape of an enum/tagged-union being reflected or constructed. The type's
-// NAME is supplied to `declare(name)`, not here — `declare` needs it at compile
-// time to register the forward type so the body can reference itself (`*Name`).
-EnumInfo :: struct {
-    variants: []EnumVariant;
-}
-
-// One field of a reflected or constructed struct: name, type, and — on the
-// REFLECT side — its byte offset within the struct (write-side `define`
-// ignores it; the default keeps construction literals terse).
-StructField :: struct {
-    name: string;
-    type: Type;
-    offset: i64 = 0;
-}
-
-// The shape of a struct being reflected or constructed. As with `EnumInfo`, the
-// type's NAME travels in `declare(name)`, not here.
-StructInfo :: struct {
-    fields: []StructField;
-}
-
-// Per-kind payload shapes for the reflect side. `elem`/`pointee`/
-// `inner` carry the component type; sizes are NOT stored here — `size_of(tp)`
-// answers that for any tag.
-IntInfo      :: struct { bits: i64; signed: bool; }
-FloatInfo    :: struct { bits: i64; }
-ArrayInfo    :: struct { elem: Type; len: i64; }
-VectorInfo   :: struct { elem: Type; lanes: i64; }
-SliceInfo    :: struct { elem: Type; }
-PointerInfo  :: struct { pointee: Type; }
-OptionalInfo :: struct { inner: Type; }
-// Untagged-union arms overlay at offset 0 — the shape says so; no special case.
-UnionInfo    :: struct { arms: []StructField; }
-
-// The reflected/constructed type shape — a tagged union EXHAUSTIVE over the
-// type table's kinds (a kind the compiler adds fails the record builder until
-// classified; no catch-all). Only `.enum` / `.struct` can be MINTED via
-// `define`; every other variant is reflect-only. The first two variants
-// are ordinal-pinned (the write side keys on them).
-// Keyword-colliding variant names declare bare, like every other member
-// position.
-TypeInfo :: enum {
-    enum: EnumInfo;
-    struct: StructInfo;
-    union: UnionInfo;
-    int: IntInfo;
-    float: FloatInfo;
-    bool;
-    string;
-    cstring;
-    void;
-    array: ArrayInfo;
-    vector: VectorInfo;
-    slice: SliceInfo;
-    pointer: PointerInfo;
-    many_pointer: PointerInfo;
-    optional: OptionalInfo;
-    function;
-    closure;
-    protocol;
-    error_set;
-    pack;
-    any;
-    noreturn;
-    usize;
-    isize;
-    type_value;
-}
-
 // ── The low-level compiler-API type-construction primitives ──────────────────
 //
 // These `intrinsic` functions are the compiler's type-construction
-// primitives — serviced by `comptime_vm.callCompilerFn`. They run at LOWERING
-// time (when a `-> Type` builder's result is first referenced), where the
-// compiler can still resolve references to the minted types. The DSL's `declare` /
-// `define` below are ordinary sx written over them. (Declared here, not imported
-// from `modules/compiler.sx`, so `meta.sx` stays self-contained and doesn't
-// intern `compiler.sx`'s `List(string)` types into every importer's table.)
+// primitives — serviced by `comptime_vm.callCompilerFn`. Declared here, not
+// imported from `modules/compiler.sx`, so `meta.sx` does not intern
+// `compiler.sx`'s `List(string)` types into every importer's table.
 //
-// `raw_register_type`'s `Member` is the shared `{ name, ty }` shape it decodes (an
-// `EnumVariant`/`StructField` has the same two-field `{name, type}` layout). The
+// `raw_register_type`'s `Member` is the `{ name, ty }` shape it decodes. The
 // `kind` codes match the read-side `raw_type_kind`:
 //   1 struct · 2 enum (payloadless) · 3 tagged_union.
 Member :: struct { name: string; ty: Type; }
@@ -118,7 +35,7 @@ KIND_STRUCT       :: 1;
 KIND_ENUM         :: 2; // an ACTUAL payloadless enum
 KIND_TAGGED_UNION :: 3; // a payload-carrying enum
 
-// ── The metatype DSL: `declare` / `define` (sx); `type_info`/`struct_field_type` (builtins)
+// ── The metatype DSL ─────────────────────────────────────────────────────────
 //
 //   declare(name)        — mint a NEW empty (undefined) nominal type NAMED
 //                          `name`, returned as a `Type` handle. The compiler
@@ -132,22 +49,8 @@ KIND_TAGGED_UNION :: 3; // a payload-carrying enum
 //   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
 //                          RETURN the handle so the one-shot form chains:
 //                              List :: define(declare("List"), .enum(.{ variants = .[
-//                                  EnumVariant{ name = "cons", payload = *List },
-//                                  EnumVariant{ name = "nil",  payload = void } ] }));
-//                          Plain sx: it matches the `TypeInfo` union and calls
-//                          `raw_register_type` with the matching kind code, decoding
-//                          the variant/field/element list into `[]Member`.
-//   type_info($T)        — reflect a type INTO a `TypeInfo` value (the inverse of
-//                          `define`). Still a compiler builtin: building the
-//                          tagged-union value byte-compatibly is a compiler job.
-//   struct_field_type($T, idx)  — the i-th field / variant-payload / element type. A
-//                          compiler builtin that folds at LOWER time, so it
-//                          composes inside `type_eq` / `type_name` / any type-arg
-//                          slot — a property `raw_field_type` (a runtime value)
-//                          can't provide. Declared in `std/core.sx` (it carries
-//                          no data type, so it lives in the prelude) and reaches
-//                          here via the `core.sx` import above.
-type_info  :: ($T: Type) -> TypeInfo intrinsic;
+//                                  VariantInfo{ name = "cons", payload = *List },
+//                                  VariantInfo{ name = "nil",  payload = void } ] }));
 
 // `declare(name)` is plain sx over the `raw_declare_type` primitive: both mint (or
 // find) the same forward nominal slot — `declare` adds nothing but a name the
@@ -199,7 +102,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // and is one nominal type across sites (the type-fn identity path).
 
 // The GENERAL enum constructor: mint a nominal enum NAMED `name` from a variant
-// list passed as a VALUE (a `[]EnumVariant`), rather than a hardcoded literal.
+// list passed as a VALUE (a `[]VariantInfo`), rather than a hardcoded literal.
 // Because `variants` is an ordinary comptime value, a caller can ASSEMBLE it in
 // a local (conditionally, in a loop, from type args) before minting — see
 // `examples/0620`. `define` decodes the slice via `decodeVariantElements`. The
@@ -211,15 +114,15 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // (`E :: make_enum("E", .[ … ])`). A *generic* type-fn comptime-evaluates only
 // its return EXPRESSION, so build the list inline in the return there, not in a
 // preceding local.
-make_enum :: (name: string, variants: []EnumVariant) -> Type {
+make_enum :: (name: string, variants: []VariantInfo) -> Type {
     return define(declare(name), .enum(.{ variants = variants }));
 }
 
 // A blocking recv: a value, or the channel was closed (drained).
 RecvResult :: ($T: Type) -> Type {
     return define(declare("RecvResult"), .enum(.{ variants = .[
-        EnumVariant{ name = "value",  payload = T    },
-        EnumVariant{ name = "closed", payload = void },
+        VariantInfo{ name = "value",  payload = T    },
+        VariantInfo{ name = "closed", payload = void },
     ] }));
 }
 
@@ -227,9 +130,9 @@ RecvResult :: ($T: Type) -> Type {
 // a bool can't express.
 TryResult :: ($T: Type) -> Type {
     return define(declare("TryResult"), .enum(.{ variants = .[
-        EnumVariant{ name = "value",  payload = T    },
-        EnumVariant{ name = "empty",  payload = void },
-        EnumVariant{ name = "closed", payload = void },
+        VariantInfo{ name = "value",  payload = T    },
+        VariantInfo{ name = "empty",  payload = void },
+        VariantInfo{ name = "closed", payload = void },
     ] }));
 }
 

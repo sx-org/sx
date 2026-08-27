@@ -26,10 +26,10 @@ usleep :: (usec: i64) -> i32 extern libc;
 // (the overlap-safe memmove is clib.memmove — the shared libc surface.)
 
 HttpErr :: error {
-    Bind,    // socket/bind/listen failed for the configured address, or
+    Bind;    // socket/bind/listen failed for the configured address; or
              // bind_addr / unix_path was unusable
-    Loop,    // the readiness loop could not be created or waited on
-    Config,  // invalid Config combination (stream_request_body
+    Loop;    // the readiness loop could not be created or waited on
+    Config;  // invalid Config combination (stream_request_body
              // requires pool mode; unix_path with bind_addr or
              // reuse_port — see each field's doc)
 }
@@ -196,11 +196,11 @@ Config :: struct {
     // the listener's bind address — a NUMERIC literal ("127.0.0.1",
     // "::", "::1"); "" (default) binds v4 INADDR_ANY. The family follows
     // the literal (a v6 literal makes an AF_INET6 listener). A value that
-    // parses as neither family is error.Bind — never a fallback bind.
+    // parses as neither family is `HttpErr.Bind` — never a fallback bind.
     bind_addr: string = "";
     // non-empty = an AF_UNIX listener on this path (`port`,
     // `bind_addr` and `reuse_port` do not apply; combining with bind_addr
-    // or reuse_port is error.Config). THE PATH BELONGS TO THE SERVER —
+    // or reuse_port is `HttpErr.Config`). THE PATH BELONGS TO THE SERVER —
     // exclusively: whatever file is there is unlinked before bind (a
     // regular file included — point this at nothing you value), and
     // close()/stop() remove it. Corollary: two servers configured with
@@ -233,7 +233,7 @@ Config :: struct {
     // req.body is "" then) instead of accumulating the decoded body first.
     // POOL MODE ONLY — the reader BLOCKS the worker until the loop thread
     // feeds more bytes; an inline handler runs ON the loop thread, which
-    // must stay free to do that feeding, so init raises error.Config when
+    // must stay free to do that feeding, so init raises `HttpErr.Config` when
     // this is set with thread_pool_count == 0 (the fiber mode will lift
     // the restriction by yielding instead of blocking).
     // STREAMED REQUESTS ARE EXEMPT FROM max_body — bodies larger than any
@@ -253,7 +253,7 @@ Config :: struct {
     // COOPERATIVE: a compute-bound handler still stalls the whole server
     // exactly like inline mode — there is NO preemption and NO hard
     // handler timeout (stays advisory); the win is I/O-shaped waiting.
-    // Mutually exclusive with thread_pool_count > 0 (error.Config). The
+    // Mutually exclusive with thread_pool_count > 0 (`HttpErr.Config`). The
     // runner's state must outlive the Server; its deinit is the caller's,
     // after Server.close. Handlers must not call the scheduler's own
     // sleep/fd-wait (the server drives fibers with a non-blocking poll).
@@ -1589,19 +1589,19 @@ Server :: struct {
 
     init :: (cfg: Config, handler: (*Request, *Response, usize) -> void, ctx: usize) -> (Server, !HttpErr) {
         if cfg.compress_level < 0 or cfg.compress_level > 10 or cfg.compress_min_size < 0 {
-            raise error.Config;
+            raise .Config;
         }
         // fibers and a worker pool are mutually exclusive dispatch
         // models — configuring both is ambiguous, never silently resolved.
         if cfg.fibers != null and cfg.thread_pool_count > 0 {
-            raise error.Config;
+            raise .Config;
         }
         // the streaming body reader WAITS for the loop to feed it —
         // a pool worker blocks on a cond, a fiber suspends. Plain
         // inline mode has neither (the handler runs ON the feeding
         // thread); fail loudly, never silently accumulate.
         if cfg.stream_request_body and cfg.thread_pool_count <= 0 and cfg.fibers == null {
-            raise error.Config;
+            raise .Config;
         }
         // the listener address — AF_UNIX on a path, or TCP on the
         // family bind_addr picks ("" is v4 INADDR_ANY).
@@ -1609,30 +1609,30 @@ Server :: struct {
         if cfg.unix_path.len > 0 {
             // Port sharing and bind addresses are meaningless on a path —
             // configuring them together is ambiguous, never resolved.
-            if cfg.reuse_port or cfg.bind_addr.len > 0 { raise error.Config; }
+            if cfg.reuse_port or cfg.bind_addr.len > 0 { raise .Config; }
             ua, uok := socket.addr_unix(cfg.unix_path);
-            if !uok { raise error.Bind; }   // empty / overflows sun_path
+            if !uok { raise .Bind; }   // empty / overflows sun_path
             lfd = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0);
-            if lfd < 0 { raise error.Bind; }
-            if !socket.set_cloexec(lfd) { socket.close(lfd); raise error.Bind; }
+            if lfd < 0 { raise .Bind; }
+            if !socket.set_cloexec(lfd) { socket.close(lfd); raise .Bind; }
             // The path belongs to the server (documented contract): a
             // stale socket file from a previous run would fail the bind —
             // remove it. A path we cannot unlink fails at bind, loud.
             unlink_path(cfg.unix_path);
-            if socket.bind_to(lfd, *ua) != 0 { socket.close(lfd); raise error.Bind; }
-            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise error.Bind; }
-            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise error.Bind; }
+            if socket.bind_to(lfd, *ua) != 0 { socket.close(lfd); raise .Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
+            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise .Bind; }
         } else {
             btext := if cfg.bind_addr.len > 0 then cfg.bind_addr else "0.0.0.0";
             ba, bok := socket.parse_addr(btext, cfg.port);
-            if !bok { raise error.Bind; }   // not a numeric address literal
+            if !bok { raise .Bind; }   // not a numeric address literal
             fam := socket.addr_family(*ba);
             lfd = socket.socket(fam, socket.SOCK_STREAM, 0);
-            if lfd < 0 { raise error.Bind; }
+            if lfd < 0 { raise .Bind; }
             // the listener must not leak into fork/exec'd children (an
             // inherited listener keeps the port bound after Server.close).
             // Conn fds get CLOEXEC at accept (accept_conn_nb).
-            if !socket.set_cloexec(lfd) { socket.close(lfd); raise error.Bind; }
+            if !socket.set_cloexec(lfd) { socket.close(lfd); raise .Bind; }
             one : i32 = 1;
             socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
             // opt-in port sharing. A refused setsockopt is a hard Bind
@@ -1641,7 +1641,7 @@ Server :: struct {
             if cfg.reuse_port {
                 if socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEPORT, *one, 4) != 0 {
                     socket.close(lfd);
-                    raise error.Bind;
+                    raise .Bind;
                 }
             }
             // a v6 listener gets IPV6_V6ONLY set EXPLICITLY from the
@@ -1652,19 +1652,19 @@ Server :: struct {
                 v6only : i32 = if cfg.ipv6_only then 1 else 0;
                 if socket.setsockopt(lfd, socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, *v6only, 4) != 0 {
                     socket.close(lfd);
-                    raise error.Bind;
+                    raise .Bind;
                 }
             }
-            if socket.bind_to(lfd, *ba) != 0 { socket.close(lfd); raise error.Bind; }
-            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise error.Bind; }
-            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise error.Bind; }
+            if socket.bind_to(lfd, *ba) != 0 { socket.close(lfd); raise .Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise .Bind; }
+            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise .Bind; }
         }
 
         lp, le := event.Loop.init();
-        if le { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+        if le { close_listener(lfd, cfg.unix_path); raise .Loop; }
         are := false;
         lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
-        if are { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+        if are { close_listener(lfd, cfg.unix_path); raise .Loop; }
         // Register the wake channel unconditionally: stop() wakes the loop
         // through it (eventfd/EVFILT_USER write is atomic, so stop() is
         // safe from another thread or a signal-ish context), and run()'s
@@ -1672,7 +1672,7 @@ Server :: struct {
         // The pooled path reuses the same channel for completions.
         swe := false;
         lp.add_wake(WAKE_UDATA) catch { swe = true; };
-        if swe { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+        if swe { close_listener(lfd, cfg.unix_path); raise .Loop; }
 
         oa := context.allocator;
         slots : [*]Conn = oa.alloc(Conn, cfg.max_conn).ptr;
@@ -1699,7 +1699,7 @@ Server :: struct {
                 oa.dealloc_bytes(slots);
                 oa.dealloc_bytes(dh);
                 close_listener(lfd, cfg.unix_path);
-                raise error.Loop;
+                raise .Loop;
             }
             // Max completions pending between two drains: every conn has at
             // most ONE job in flight, and within one tick's serve storm the
@@ -1727,7 +1727,7 @@ Server :: struct {
                 oa.dealloc_bytes(slots);
                 oa.dealloc_bytes(dh);
                 close_listener(lfd, cfg.unix_path);
-                raise error.Loop;
+                raise .Loop;
             }
             ps.pool = pool;
         }
@@ -1998,7 +1998,7 @@ Server :: struct {
 
         evs : [64]event.Event = ---;
         n, werr := self.loop.wait(.{ ptr = *evs[0], len = 64 }, wait_ms);
-        if werr { raise error.Loop; }
+        if werr { raise .Loop; }
 
         k : i64 = 0;
         while k < n {
@@ -2703,7 +2703,7 @@ Server :: struct {
                 }
             }
             nq, re := self.conn_read(slot, *c.read_buf[c.read_len], c.read_cap - c.read_len);
-            if re == error.WouldBlock { return; }
+            if re == .WouldBlock { return; }
             if re {
                 self.emit(EventKind.READ_FAULT, slot, 0);
                 self.conn_close(slot);   // faults + releases the channel
@@ -2784,16 +2784,16 @@ Server :: struct {
     // socket.*_nb directly, so a connection is transport-agnostic:
     // plaintext, or TLS app-data once cfg.tls negotiated the session.
     // The (i64, !) contract is IDENTICAL to socket.read_nb/write_nb
-    // — error.WouldBlock to pause (re-arm), error.Closed/Fault to drop —
+    // — `SockErr.WouldBlock` to pause (re-arm), `SockErr.Closed`/`Fault` to drop —
     // so the callers stay unchanged. The TLS branch maps the abstract
     // TlsStep onto the same channel; a TlsStep.Closed (clean close_notify)
-    // is error.Closed exactly like a plaintext EOF.
+    // is `SockErr.Closed` exactly like a plaintext EOF.
     //
     // CROSS-DIRECTION WANTS: a DATA-phase TLS
     // read may return WantWrite (the session must flush a pending record
     // before it can deliver plaintext) and a write may return WantRead (the
     // session needs a peer message first) — renegotiation / ticket-flush
-    // shaped flows. Both surface to the callers as error.WouldBlock
+    // shaped flows. Both surface to the callers as `SockErr.WouldBlock`
     // (the same pause/re-arm contract), but the wanted DIRECTION is
     // tracked on the Conn so the ready loop drives the OPPOSITE readiness:
     //   read-want-write  → conn_read arms the write watch here (readability
@@ -2844,7 +2844,7 @@ Server :: struct {
             if step == TlsStep.Done {
                 self.tls_rd_want_clear(slot);
                 if n > 0 { return n; }
-                raise error.Closed;                                        // 0 bytes done == EOF
+                raise socket.SockErr.Closed;                // 0 bytes done == EOF
             }
             if step == TlsStep.WantWrite {
                 // cross-arm the write watch — only writability can
@@ -2854,21 +2854,21 @@ Server :: struct {
                 if !c.write_armed {
                     awe := false;
                     self.loop.add_write(c.fd, slot.(usize)) catch { awe = true; };
-                    if awe { raise error.Closed; }
+                    if awe { raise socket.SockErr.Closed; }
                     c.write_armed = true;
                 }
-                raise error.WouldBlock;
+                raise socket.SockErr.WouldBlock;
             }
             if step == TlsStep.WantRead {
                 self.tls_rd_want_clear(slot);
-                raise error.WouldBlock;
+                raise socket.SockErr.WouldBlock;
             }
             self.tls_rd_want_clear(slot);
-            raise error.Closed;                                            // Closed (close_notify) / Fatal → drop
+            raise socket.SockErr.Closed;                    // Closed (close_notify) / Fatal → drop
         }
         nq, re := socket.read_nb(c.fd, buf, cap);
-        if re == error.WouldBlock { raise error.WouldBlock; }
-        if re { raise error.Closed; }                                      // Closed / Fault → drop
+        if re == .WouldBlock { raise socket.SockErr.WouldBlock; }
+        if re { raise socket.SockErr.Closed; }              // Closed / Fault → drop
         return nq;
     }
 
@@ -2879,7 +2879,7 @@ Server :: struct {
             if step == TlsStep.Done {
                 c.tls_wr_want_read = false;
                 if n > 0 { return n; }
-                raise error.WouldBlock;                                    // 0 written → retry on writable
+                raise socket.SockErr.WouldBlock;            // 0 written → retry on writable
             }
             if step == TlsStep.WantRead {
                 // the write needs READABILITY. Drop the write watch —
@@ -2892,18 +2892,18 @@ Server :: struct {
                     self.loop.del_write(c.fd);
                     c.write_armed = false;
                 }
-                raise error.WouldBlock;
+                raise socket.SockErr.WouldBlock;
             }
             if step == TlsStep.WantWrite {
                 c.tls_wr_want_read = false;
-                raise error.WouldBlock;
+                raise socket.SockErr.WouldBlock;
             }
             c.tls_wr_want_read = false;
-            raise error.Closed;                                            // Closed / Fatal → drop
+            raise socket.SockErr.Closed;                    // Closed / Fatal → drop
         }
         nq, we := socket.write_nb(c.fd, buf, len);
-        if we == error.WouldBlock { raise error.WouldBlock; }
-        if we { raise error.Closed; }                                      // Closed / Fault → drop
+        if we == .WouldBlock { raise socket.SockErr.WouldBlock; }
+        if we { raise socket.SockErr.Closed; }              // Closed / Fault → drop
         return nq;
     }
 
@@ -2980,7 +2980,7 @@ Server :: struct {
                 }
             }
             nq, re := self.conn_read(slot, *c.read_buf[c.read_len], c.read_cap - c.read_len);
-            if re == error.WouldBlock { break; }
+            if re == .WouldBlock { break; }
             if re {   // Closed or Fault — peer reset / EOF mid-request
                 self.emit(EventKind.READ_FAULT, slot, 0);
                 self.conn_close(slot);
@@ -4062,7 +4062,7 @@ Server :: struct {
         while true {
             while c.out_sent < c.out_len {
                 nq, we := self.conn_write(slot, *c.out_buf[c.out_sent], c.out_len - c.out_sent);
-                if we == error.WouldBlock {
+                if we == .WouldBlock {
                     // a TLS write that wants READABILITY must not arm
                     // the write watch (conn_write already dropped it) — the
                     // read watch delivers the retry.
@@ -4202,7 +4202,7 @@ Server :: struct {
         scratch : [4096]u8 = ---;
         while true {
             nq, re := socket.read_nb(c.fd, *scratch[0], 4096);
-            if re == error.WouldBlock { return; }   // the socket is drained
+            if re == .WouldBlock { return; }   // the socket is drained
             if re {                                 // EOF / reset: done
                 self.conn_close(slot);
                 return;

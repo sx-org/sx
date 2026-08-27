@@ -74,7 +74,15 @@ pub const Ops = struct {
             c.LLVMConstInt(ty, @bitCast(val), 1)
         else if (kind == c.LLVMPointerTypeKind)
             c.LLVMConstNull(ty)
-        else
+        else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) blk: {
+            // A channel constant carries the value in its tag word over a
+            // zeroed payload area.
+            var elems = [_]c.LLVMValueRef{
+                c.LLVMConstInt(c.LLVMStructGetTypeAtIndex(ty, 0), @bitCast(val), 1),
+                c.LLVMConstNull(c.LLVMStructGetTypeAtIndex(ty, 1)),
+            };
+            break :blk c.LLVMConstStructInContext(self.e.context, &elems, 2, 0);
+        } else
             // void or other non-integer type: emit i64 0 as unused placeholder
             c.LLVMConstInt(c.LLVMInt64TypeInContext(self.e.context), 0, 0);
         self.e.mapRef(llvm_val);
@@ -790,6 +798,10 @@ pub const Ops = struct {
             }
         } else if (from_kind == c.LLVMIntegerTypeKind and to_kind == c.LLVMPointerTypeKind) {
             self.e.mapRef(c.LLVMBuildIntToPtr(self.e.builder, operand, to_ty, "itp"));
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.to)) {
+            self.e.mapRef(self.e.channelRetype(operand, conv.from, conv.to));
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(conv.from)) {
+            self.e.mapRef(self.e.coerceArg(self.e.channelTag(operand, conv.from), to_ty));
         } else {
             self.e.mapRef(c.LLVMBuildBitCast(self.e.builder, operand, to_ty, "bitcast"));
         }
@@ -1757,14 +1769,14 @@ pub const Ops = struct {
     /// `type_name` / `type_is_unsigned` must operate on. A reflection
     /// builtin reads an `Any`'s runtime TYPE-TAG, never its raw payload:
     ///   - `.bare`: a `Type` value (a `.type_value` arg) — a bare i64 `TypeId`
-    ///     index (e.g. `type_of(x)` directly) → the value itself.
+    ///     index (e.g. `@typeOf(x)` directly) → the value itself.
     ///   - `.boxed`: an `Any` aggregate `{ tag, value }`. When the tag is
     ///     `.type_value`, the box carries a *Type value* (a `Type` boxed into an
     ///     `Any`, `{ .type_value, tid }`) → the TypeId is the payload.
     ///     Otherwise the box carries a *runtime value* whose type IS the tag
     ///     → use the tag as the TypeId. This is what makes `type_name(av)`
     ///     for `av : Any = 6` report `i64` (the held value's type), while
-    ///     `type_name(type_of(x))` still names the held type.
+    ///     `type_name(@typeOf(x))` still names the held type.
     /// `.unresolved` is a hard tripwire: a type-resolution failure reached
     /// emission without a diagnostic.
     fn reflectArgTypeId(self: Ops, arg_ref: Ref, comptime label: []const u8) c.LLVMValueRef {
@@ -1868,7 +1880,7 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, gep, "tiu.load");
                 self.e.mapRef(result);
             },
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width, .rt_slice_len_info => {
+            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
@@ -1879,8 +1891,10 @@ pub const Ops = struct {
                     .rt_variant_count => .var_count,
                     .rt_is_flags => .flags,
                     .rt_vector_lanes => .lanes,
+                    .rt_member_count => .member_count,
                     .rt_variant_tag_width => .tag_width,
                     .rt_slice_len_info => .slice_len_info,
+                    .rt_optional_flag => .optional_flag,
                     else => unreachable,
                 };
                 const tid_idx = self.reflectArgTypeId(bi.args[0], "runtime reflection");
@@ -1893,8 +1907,10 @@ pub const Ops = struct {
                     .var_count => self.e.variant_count_array_len,
                     .flags => self.e.is_flags_array_len,
                     .lanes => self.e.vector_lanes_array_len,
+                    .member_count => self.e.member_count_array_len,
                     .tag_width => self.e.variant_tag_width_array_len,
                     .slice_len_info => self.e.slice_len_info_array_len,
+                    .optional_flag => self.e.optional_flag_array_len,
                 };
                 const arr_ty = c.LLVMArrayType(elem_ty, arr_len);
                 const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
@@ -1935,11 +1951,11 @@ pub const Ops = struct {
                 const egep = c.LLVMBuildInBoundsGEP2(self.e.builder, elem_ty, per_type, &eindices, 1, "mi.gep");
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, egep, "mi.load"));
             },
-            .type_info => {
-                // Runtime type_info(tp): master [N x ptr] by tag → record ptr
+            .@"@typeInfo" => {
+                // Runtime `@typeInfo(tp)`: master [N x ptr] by tag → record ptr
                 // → load the whole record AS the sx TypeInfo LLVM type (bytes
                 // match by construction).
-                const tag = self.reflectArgTypeId(bi.args[0], "type_info");
+                const tag = self.reflectArgTypeId(bi.args[0], "@typeInfo");
                 const master = self.e.reflection().getOrBuildTypeInfoRecords(instruction.ty);
                 const master_len = self.e.type_info_records_len;
                 const master_ty = c.LLVMArrayType(self.e.cached_ptr, master_len);
@@ -1952,8 +1968,8 @@ pub const Ops = struct {
             },
             .rt_type_eq => {
                 // Runtime tag compare — Type is an i64 tag; no table.
-                const ta = self.reflectArgTypeId(bi.args[0], "type_eq");
-                const tb = self.reflectArgTypeId(bi.args[1], "type_eq");
+                const ta = self.reflectArgTypeId(bi.args[0], "@typeEq");
+                const tb = self.reflectArgTypeId(bi.args[1], "@typeEq");
                 self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntEQ, ta, tb, "rteq"));
             },
             else => {
@@ -2209,6 +2225,9 @@ pub const Ops = struct {
             } else {
                 self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, ei.tag, 0));
             }
+        } else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) {
+            const tag = c.LLVMConstInt(self.e.cached_i32, ei.tag, 0);
+            self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, self.e.resolveRef(ei.payload)));
         } else {
             // Tagged union with payload — { header, payload_bytes }
             const union_ty = self.e.toLLVMType(instruction.ty);
@@ -2256,6 +2275,12 @@ pub const Ops = struct {
 
     pub fn emitEnumPayload(self: Ops, instruction: *const Inst, fa: FieldAccess) void {
         const base = self.e.resolveRef(fa.base);
+        if (self.e.getRefIRType(fa.base)) |base_ir_ty| {
+            if (self.e.ir_mod.types.isPayloadCarryingChannel(base_ir_ty)) {
+                self.e.mapRef(self.e.channelPayload(base_ir_ty, base, self.e.toLLVMType(instruction.ty)));
+                return;
+            }
+        }
         const result_ty = self.e.toLLVMType(instruction.ty);
         const base_ty = c.LLVMTypeOf(base);
         const base_kind = c.LLVMGetTypeKind(base_ty);
@@ -2646,15 +2671,15 @@ pub const Ops = struct {
         //   `-> (int, !)` → `val` is a `{value, tag}` tuple; extract both.
         if (self.e.current_func_is_main) {
             const rinfo = self.e.ir_mod.types.get(func.ret);
-            if (rinfo == .error_set) {
-                self.e.emitFailableMainRet(null, val);
+            if (rinfo == .@"error") {
+                self.e.emitFailableMainRet(null, val, func.ret);
                 self.e.advanceRefCounter();
                 return;
             }
             if (rinfo == .failable and self.e.ir_mod.types.failableValueSlotCount(rinfo.failable) == 1) {
                 const value = c.LLVMBuildExtractValue(self.e.builder, val, 0, "main.ret.val");
                 const tag = c.LLVMBuildExtractValue(self.e.builder, val, 1, "main.ret.tag");
-                self.e.emitFailableMainRet(value, tag);
+                self.e.emitFailableMainRet(value, tag, rinfo.failable.err);
                 self.e.advanceRefCounter();
                 return;
             }
@@ -2709,7 +2734,7 @@ pub const Ops = struct {
     }
 
     pub fn emitCondBr(self: Ops, cbr: CondBranch, func_idx: u32) void {
-        var cond = self.e.resolveRef(cbr.cond);
+        var cond = self.e.channelTag(self.e.resolveRef(cbr.cond), self.e.getRefIRType(cbr.cond));
         const then_bb = self.e.getBlock(func_idx, cbr.then_target);
         const else_bb = self.e.getBlock(func_idx, cbr.else_target);
         // Coerce condition to i1 if needed (e.g., loaded bool stored as i64)
@@ -2830,27 +2855,115 @@ pub const Ops = struct {
         self.e.emitFieldValueGet(fr, func_idx);
     }
 
-    pub fn emitErrorTagNameGet(self: Ops, u: UnaryOp) void {
-        // Tag id → name: GEP into the always-linked tag-name table at
-        // the runtime tag id (the error-set value, a u32). Out-of-range
-        // ids can't occur — ids come from the same registry the table
-        // is built from — so no bounds branch is needed.
-        const global = self.e.reflection().getOrBuildTagNameArray();
-        const tag_raw = self.e.resolveRef(u.operand);
-        const idx = c.LLVMBuildZExt(self.e.builder, tag_raw, self.e.cached_i64, "etn.idx");
+    /// The live member id an error operand carries, widened to the index a
+    /// registry table is GEPed at. Out-of-range ids can't occur — ids come from
+    /// the same registry the tables are built from — so no bounds branch.
+    fn memberIndex(self: Ops, operand: Ref) c.LLVMValueRef {
+        const raw = self.e.channelTag(self.e.resolveRef(operand), self.e.getRefIRType(operand));
+        return c.LLVMBuildZExt(self.e.builder, raw, self.e.cached_i64, "member.idx");
+    }
+
+    /// The `{ptr, len}` string `global` holds at the operand's member id.
+    fn emitMemberString(self: Ops, u: UnaryOp, global: c.LLVMValueRef, name: [*:0]const u8) void {
         const string_ty = self.e.getStringStructType();
         const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
         const array_ty = c.LLVMArrayType(string_ty, n);
         const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
-        var indices = [2]c.LLVMValueRef{ zero, idx };
-        const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, "etn.gep");
-        const result = c.LLVMBuildLoad2(self.e.builder, string_ty, gep, "etn.load");
+        var indices = [2]c.LLVMValueRef{ zero, self.memberIndex(u.operand) };
+        const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, name);
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, string_ty, gep, name));
+    }
+
+    pub fn emitErrorMemberNameGet(self: Ops, u: UnaryOp) void {
+        self.emitMemberString(u, self.e.reflection().getOrBuildTagNameArray(), "emn");
+    }
+
+    pub fn emitErrorNameGet(self: Ops, u: UnaryOp) void {
+        self.emitMemberString(u, self.e.reflection().getOrBuildTagQualifiedNameArray(), "eqn");
+    }
+
+    pub fn emitErrorOwnerGet(self: Ops, u: UnaryOp) void {
+        const global = self.e.reflection().getOrBuildTagOwnerTypeArray();
+        const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
+        const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+        const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+        var indices = [2]c.LLVMValueRef{ zero, self.memberIndex(u.operand) };
+        const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, "eow.gep");
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, gep, "eow.load"));
+    }
+
+    /// The live member's payload behind an `any` view. A channel is its member
+    /// word plus the payload area it reserves, so a channel whose members are
+    /// all void has no area and views as `void`.
+    fn emitAnyErrorPayloadView(self: Ops, u: UnaryOp) void {
+        const av = self.e.resolveRef(u.operand);
+        const data = c.LLVMBuildExtractValue(self.e.builder, av, 0, "aepv.data");
+        const tid = c.LLVMBuildExtractValue(self.e.builder, av, 1, "aepv.tid");
+        const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+        const word = c.LLVMConstInt(self.e.cached_i64, 4, 0);
+
+        const ptr = c.LLVMBuildIntToPtr(self.e.builder, data, self.e.cached_ptr, "aepv.ptr");
+        const raw = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i32, ptr, "aepv.word");
+        const member = c.LLVMBuildZExt(self.e.builder, raw, self.e.cached_i64, "aepv.member");
+
+        const sizes = self.e.reflection().getOrBuildScalarTable(.size);
+        const size_arr = c.LLVMArrayType(self.e.cached_i64, self.e.type_size_array_len);
+        var size_idx = [2]c.LLVMValueRef{ zero, tid };
+        const size_gep = c.LLVMBuildInBoundsGEP2(self.e.builder, size_arr, sizes, &size_idx, 2, "aepv.sgep");
+        const size = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, size_gep, "aepv.size");
+        const has_area = c.LLVMBuildICmp(self.e.builder, c.LLVMIntUGT, size, word, "aepv.area");
+
+        const ptypes = self.e.reflection().getOrBuildTagPayloadTypeArray();
+        const ptype_arr = c.LLVMArrayType(self.e.cached_i64, @intCast(self.e.ir_mod.types.tags.payloads.items.len));
+        var ptype_idx = [2]c.LLVMValueRef{ zero, member };
+        const ptype_gep = c.LLVMBuildInBoundsGEP2(self.e.builder, ptype_arr, ptypes, &ptype_idx, 2, "aepv.pgep");
+        const declared = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, ptype_gep, "aepv.ptype");
+
+        const void_tid = c.LLVMConstInt(self.e.cached_i64, TypeId.void.index(), 0);
+        const type_id = c.LLVMBuildSelect(self.e.builder, has_area, declared, void_tid, "aepv.t");
+        const area = c.LLVMBuildSelect(self.e.builder, has_area, c.LLVMBuildAdd(self.e.builder, data, word, "aepv.area.addr"), zero, "aepv.d");
+
+        var result = c.LLVMGetUndef(self.e.getAnyStructType());
+        result = c.LLVMBuildInsertValue(self.e.builder, result, area, 0, "aepv.ins.d");
+        result = c.LLVMBuildInsertValue(self.e.builder, result, type_id, 1, "aepv.ins.t");
+        self.e.mapRef(result);
+    }
+
+    pub fn emitErrorPayloadView(self: Ops, u: UnaryOp) void {
+        if (self.e.getRefIRType(u.operand) == TypeId.any) return self.emitAnyErrorPayloadView(u);
+        // The live member's payload as an `any`: its TypeId out of the
+        // member-payload-type table at the runtime member id, over the address
+        // of the channel's payload area. A payload-free channel reserves no
+        // area, so the view is `void` over a null address.
+        const chan = self.e.getRefIRType(u.operand);
+        const val = self.e.resolveRef(u.operand);
+        const no_area = if (chan) |ch| !self.e.ir_mod.types.isPayloadCarryingChannel(ch) else true;
+        const type_id = if (no_area)
+            c.LLVMConstInt(self.e.cached_i64, TypeId.void.index(), 0)
+        else blk: {
+            const tag = self.e.channelTag(val, chan);
+            const idx = c.LLVMBuildZExt(self.e.builder, tag, self.e.cached_i64, "epv.idx");
+            const global = self.e.reflection().getOrBuildTagPayloadTypeArray();
+            const n: u32 = @intCast(self.e.ir_mod.types.tags.payloads.items.len);
+            const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+            const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+            var indices = [2]c.LLVMValueRef{ zero, idx };
+            const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, "epv.gep");
+            break :blk c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, gep, "epv.type");
+        };
+        const data = if (!no_area)
+            c.LLVMBuildPtrToInt(self.e.builder, self.e.channelPayloadAddr(chan.?, val), self.e.cached_i64, "epv.data")
+        else
+            c.LLVMConstInt(self.e.cached_i64, 0, 0);
+        var result = c.LLVMGetUndef(self.e.getAnyStructType());
+        result = c.LLVMBuildInsertValue(self.e.builder, result, data, 0, "epv.d");
+        result = c.LLVMBuildInsertValue(self.e.builder, result, type_id, 1, "epv.t");
         self.e.mapRef(result);
     }
 
     // ── Switch branch ──────────────────────────────────────
     pub fn emitSwitchBr(self: Ops, sw: SwitchBranch, func_idx: u32) void {
-        const operand = self.e.resolveRef(sw.operand);
+        const operand = self.e.channelTag(self.e.resolveRef(sw.operand), self.e.getRefIRType(sw.operand));
         const default_bb = self.e.getBlock(func_idx, sw.default);
         const switch_inst = c.LLVMBuildSwitch(self.e.builder, operand, default_bb, @intCast(sw.cases.len));
         for (sw.cases) |case| {

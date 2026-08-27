@@ -94,7 +94,7 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { size, alignment, sf_count, var_count, flags, lanes, tag_width, slice_len_info };
+    pub const ScalarTableKind = enum { size, alignment, sf_count, var_count, flags, lanes, member_count, tag_width, slice_len_info, optional_flag };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
@@ -104,8 +104,10 @@ pub const Reflection = struct {
             .var_count => .{ &self.e.variant_count_array, &self.e.variant_count_array_len },
             .flags => .{ &self.e.is_flags_array, &self.e.is_flags_array_len },
             .lanes => .{ &self.e.vector_lanes_array, &self.e.vector_lanes_array_len },
+            .member_count => .{ &self.e.member_count_array, &self.e.member_count_array_len },
             .tag_width => .{ &self.e.variant_tag_width_array, &self.e.variant_tag_width_array_len },
             .slice_len_info => .{ &self.e.slice_len_info_array, &self.e.slice_len_info_array_len },
+            .optional_flag => .{ &self.e.optional_flag_array, &self.e.optional_flag_array_len },
         };
         if (slot.*) |g| return g;
 
@@ -150,9 +152,11 @@ pub const Reflection = struct {
                     }
                     break :blk 0;
                 },
+                .member_count => @intCast(tt.memberCount(tid) orelse 0),
                 // Sign-encoded (negative = sign-extend); the i64 bit pattern.
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
+                .optional_flag => @bitCast(tt.optionalFlagOffset(tid)),
             };
             vals.append(self.e.alloc, c.LLVMConstInt(elem_ty, v, 0)) catch unreachable;
         }
@@ -166,8 +170,10 @@ pub const Reflection = struct {
             .var_count => "__sx_variant_counts",
             .flags => "__sx_type_flag_bits",
             .lanes => "__sx_vector_lanes",
+            .member_count => "__sx_member_counts",
             .tag_width => "__sx_variant_tag_widths",
             .slice_len_info => "__sx_slice_len_infos",
+            .optional_flag => "__sx_optional_flags",
         };
         const global = c.LLVMAddGlobal(self.e.llvm_module, arr_ty, gname);
         c.LLVMSetInitializer(global, arr_init);
@@ -268,7 +274,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    // ── Runtime `type_info(tp)` const records ────────────────
+    // ── Runtime `@typeInfo(tp)` const records ────────────────
     //
     // One constant per TypeId whose BYTES match the sx `TypeInfo` tagged
     // union (tag word at 0, payload at tag_size — buildTypeInfo's layout
@@ -276,7 +282,7 @@ pub const Reflection = struct {
     // own global typed per its kind's payload shape (padding arrays place
     // members at exact offsets); the runtime arm loads the record THROUGH
     // the opaque pointer as the sx TypeInfo LLVM type — valid because the
-    // bytes match. Kinds are classified BY NAME against the module's
+    // bytes match. Kinds are classified BY NAME against the prelude's
     // TypeInfo declaration, mirroring the comptime VM's buildTypeInfo, so
     // the two sources cannot disagree on variant numbering.
 
@@ -384,9 +390,12 @@ pub const Reflection = struct {
                 .cstring => vname = "cstring",
                 .any => vname = "any",
                 .noreturn => vname = "noreturn",
-                .usize => vname = "usize",
-                .isize => vname = "isize",
                 .type_value, .unresolved => vname = "type_value",
+                .usize, .isize => {
+                    vname = "int";
+                    placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
+                    placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i8, @intFromBool(tid == .isize), 0), .size = 1 }) catch unreachable;
+                },
                 .f32, .f64 => {
                     vname = "float";
                     const bits: u64 = if (tid == .f32) 32 else 64;
@@ -423,14 +432,22 @@ pub const Reflection = struct {
             .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
-            .usize => vname = "usize",
-            .isize => vname = "isize",
             .type_value, .unresolved => vname = "type_value",
+            .usize, .isize => {
+                vname = "int";
+                placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
+                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i8, @intFromBool(tt.get(tid) == .isize), 0), .size = 1 }) catch unreachable;
+            },
             .function => vname = "function",
             .closure => vname = "closure",
             .protocol => vname = "protocol",
-            .error_set => vname = "error_set",
             .pack => vname = "pack",
+            .@"error" => |e| {
+                vname = "error";
+                const arr = self.memberElems(tt, ti, "error", tid, e.tags.len);
+                placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
+                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(e.tags.len), 0), .size = 8 }) catch unreachable;
+            },
             .array => |a| {
                 vname = "array";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(a.element), .size = 8 }) catch unreachable;
@@ -459,10 +476,12 @@ pub const Reflection = struct {
             },
             .failable => vname = "void",
             .@"enum" => |e| {
-                vname = "enum";
-                const arr = self.memberElems(tt, ti, "enum", tid, e.variants.len);
+                const members = tt.reflectedErrorMembers(tid);
+                const count = if (members) |m| m.len else e.variants.len;
+                vname = if (members != null) "error" else "enum";
+                const arr = self.memberElems(tt, ti, vname, tid, count);
                 placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
-                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(e.variants.len), 0), .size = 8 }) catch unreachable;
+                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(count), 0), .size = 8 }) catch unreachable;
             },
             .tagged_union => |u| {
                 vname = "enum";
@@ -495,10 +514,14 @@ pub const Reflection = struct {
         return self.constGlobal(rec, "ti.rec");
     }
 
-    /// Per-member element array for enum/struct/union payload slices:
-    /// EnumVariant {name: string, payload: Type} or StructField {name, type,
-    /// offset} — element layout read from the MODULE's declarations via the
-    /// sx offset walk so meta.sx changes can't drift from this emitter.
+    /// One word of a member element, tagged by how it is written. A `text`
+    /// occupies the element's two string words.
+    const Word = union(enum) { text: []const u8, ty: TypeId, num: i64 };
+
+    /// Per-member element array for an enum/struct/union/error payload slice.
+    /// A row fills the element struct's fields in declaration order, and the
+    /// element layout is read from the prelude's declaration via the sx offset
+    /// walk, so the emitter and the declaration cannot drift.
     fn memberElems(self: Reflection, tt: anytype, ti: anytype, family: []const u8, tid: TypeId, count: usize) c.LLVMValueRef {
         // Find the payload struct + its slice elem type from the TypeInfo decl.
         var elem_sx: TypeId = .void;
@@ -508,42 +531,52 @@ pub const Reflection = struct {
             elem_sx = tt.get(pay.fields[0].ty).slice.element;
             break;
         }
-        const einfo = tt.get(elem_sx).@"struct";
         const esize = tt.typeSizeBytes(elem_sx);
-        const is3 = einfo.fields.len == 3;
+        const is_error = std.mem.eql(u8, family, "error");
+        const err_tags: []const u32 = if (is_error) tt.reflectedErrorMembers(tid).? else &.{};
 
         var elems = std.ArrayList(c.LLVMValueRef).empty;
         defer elems.deinit(self.e.alloc);
         var m: usize = 0;
-        var run_off: usize = 0;
         while (m < count) : (m += 1) {
+            var buf: [4]Word = undefined;
+            const row: []const Word = if (is_error) blk: {
+                const member = err_tags[m];
+                buf[0] = .{ .num = @intCast(member) };
+                buf[1] = .{ .ty = tt.memberOwnerType(member) };
+                buf[2] = .{ .text = tt.getTagName(member) };
+                buf[3] = .{ .ty = tt.memberPayload(member) };
+                break :blk buf[0..4];
+            } else blk: {
+                buf[0] = .{ .text = tt.getString(tt.memberName(tid, @intCast(m)) orelse StringId.empty) };
+                buf[1] = .{ .ty = tt.memberType(tid, @intCast(m)) orelse TypeId.void };
+                if (std.mem.eql(u8, family, "union")) break :blk buf[0..2];
+                buf[2] = .{ .num = if (std.mem.eql(u8, family, "struct"))
+                    @intCast(tt.memberOffsetBytes(tid, @intCast(m)) orelse 0)
+                else
+                    tt.memberValue(tid, @intCast(m)) orelse @intCast(m) };
+                break :blk buf[0..3];
+            };
+
             var pl = std.ArrayList(Placed).empty;
             defer pl.deinit(self.e.alloc);
-            const nm = tt.memberName(tid, @intCast(m)) orelse StringId.empty;
-            const sc = self.constStr(tt.getString(nm));
-            const name_off = sxFieldOffset(tt, elem_sx, 0);
-            pl.append(self.e.alloc, .{ .off = name_off, .val = sc[0], .size = 8 }) catch unreachable;
-            pl.append(self.e.alloc, .{ .off = name_off + 8, .val = sc[1], .size = 8 }) catch unreachable;
-            const mt = tt.memberType(tid, @intCast(m)) orelse TypeId.void;
-            pl.append(self.e.alloc, .{ .off = sxFieldOffset(tt, elem_sx, 1), .val = self.tyWord(mt), .size = 8 }) catch unreachable;
-            if (is3) {
-                var v: u64 = 0;
-                const info = tt.get(tid);
-                if (info == .@"struct") {
-                    const fty = info.@"struct".fields[m].ty;
-                    run_off = std.mem.alignForward(usize, run_off, tt.typeAlignBytes(fty));
-                    v = @intCast(run_off);
-                    run_off += tt.typeSizeBytes(fty);
+            for (row, 0..) |word, f| {
+                const off = sxFieldOffset(tt, elem_sx, f);
+                switch (word) {
+                    .text => |t| {
+                        const sc = self.constStr(t);
+                        pl.append(self.e.alloc, .{ .off = off, .val = sc[0], .size = 8 }) catch unreachable;
+                        pl.append(self.e.alloc, .{ .off = off + 8, .val = sc[1], .size = 8 }) catch unreachable;
+                    },
+                    .ty => |t| pl.append(self.e.alloc, .{ .off = off, .val = self.tyWord(t), .size = 8 }) catch unreachable,
+                    .num => |n| pl.append(self.e.alloc, .{ .off = off, .val = c.LLVMConstInt(self.e.cached_i64, @bitCast(n), 0), .size = 8 }) catch unreachable,
                 }
-                pl.append(self.e.alloc, .{ .off = sxFieldOffset(tt, elem_sx, 2), .val = c.LLVMConstInt(self.e.cached_i64, v, 0), .size = 8 }) catch unreachable;
             }
             elems.append(self.e.alloc, self.packRecord(pl.items, esize)) catch unreachable;
         }
         // Uniform packed-struct elems -> array global.
         const ety = if (elems.items.len > 0) c.LLVMTypeOf(elems.items[0]) else self.e.cached_i8;
-        const arr_ty = c.LLVMArrayType(ety, @intCast(elems.items.len));
         const arr_init = c.LLVMConstArray(ety, elems.items.ptr, @intCast(elems.items.len));
-        _ = arr_ty;
         return self.constGlobal(arr_init, "ti.members");
     }
 
@@ -614,10 +647,10 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// The always-linked tag-name table: a `[N x {ptr, i64}]` global of tag
-    /// names indexed by global tag id (the `TagRegistry` namespace; slot 0 is
-    /// the reserved "" no-error name). `error_tag_name_get` GEPs into it at the
-    /// runtime tag id. Built once per module. Always emitted (not trace-gated)
+    /// The always-linked member-name table: a `[N x {ptr, i64}]` global of
+    /// member names indexed by member id (the `TagRegistry` namespace; slot 0
+    /// is the reserved "" no-error name). `error_member_name_get` GEPs into it at
+    /// the runtime member id. Built once per module. Always emitted (not trace-gated)
     /// so `{}` interpolation of an error tag works even in release builds.
     pub fn getOrBuildTagNameArray(self: Reflection) c.LLVMValueRef {
         if (self.e.tag_name_array) |g| return g;
@@ -649,6 +682,83 @@ pub const Reflection = struct {
         c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
 
         self.e.tag_name_array = global;
+        return global;
+    }
+
+    /// The qualified-name table: a `[N x {ptr, i64}]` global of `Owner.Member`
+    /// spellings indexed by member id, parallel to the member-name table.
+    /// `error_name_get` GEPs into it at the runtime member id.
+    pub fn getOrBuildTagQualifiedNameArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_qualified_name_array) |g| return g;
+
+        const string_ty = self.e.getStringStructType();
+        const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
+
+        var field_vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer field_vals.deinit(self.e.alloc);
+        var id: u32 = 0;
+        while (id < n) : (id += 1) {
+            const q = self.e.ir_mod.types.memberQualifiedName(self.e.alloc, id);
+            defer self.e.alloc.free(q);
+            field_vals.append(self.e.alloc, self.buildStringConst(q)) catch unreachable;
+        }
+
+        const array_ty = c.LLVMArrayType(string_ty, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_qualified_names");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(string_ty, field_vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_qualified_name_array = global;
+        return global;
+    }
+
+    /// The owner table: an `[N x i64]` global of the TypeId each member's
+    /// declaring error interns to, indexed by member id. `error_owner_get`
+    /// GEPs into it at the runtime member id.
+    pub fn getOrBuildTagOwnerTypeArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_owner_type_array) |g| return g;
+
+        const n: u32 = @intCast(self.e.ir_mod.types.tags.names.items.len);
+        var vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer vals.deinit(self.e.alloc);
+        var id: u32 = 0;
+        while (id < n) : (id += 1) {
+            vals.append(self.e.alloc, c.LLVMConstInt(self.e.cached_i64, self.e.ir_mod.types.memberOwnerType(id).index(), 0)) catch unreachable;
+        }
+
+        const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_owner_types");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(self.e.cached_i64, vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_owner_type_array = global;
+        return global;
+    }
+
+    /// The member-payload-type table: an `[N x i64]` global of member payload
+    /// TypeIds indexed by member id, parallel to the member-name table.
+    /// `error_payload_view` GEPs into it at the runtime member id to type the
+    /// view it hands back.
+    pub fn getOrBuildTagPayloadTypeArray(self: Reflection) c.LLVMValueRef {
+        if (self.e.tag_payload_type_array) |g| return g;
+
+        const payloads = self.e.ir_mod.types.tags.payloads.items;
+        var vals = std.ArrayList(c.LLVMValueRef).empty;
+        defer vals.deinit(self.e.alloc);
+        for (payloads) |ty| {
+            vals.append(self.e.alloc, c.LLVMConstInt(self.e.cached_i64, ty.index(), 0)) catch unreachable;
+        }
+
+        const n: u32 = @intCast(payloads.len);
+        const array_ty = c.LLVMArrayType(self.e.cached_i64, n);
+        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "tag_payload_types");
+        c.LLVMSetInitializer(global, c.LLVMConstArray(self.e.cached_i64, vals.items.ptr, n));
+        c.LLVMSetGlobalConstant(global, 1);
+        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
+
+        self.e.tag_payload_type_array = global;
         return global;
     }
 

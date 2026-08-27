@@ -1,45 +1,37 @@
-// Error-set VALUE membership across two named sets. The subset rule the
-// error channel applies to `raise` / `try` / a forwarded failable also
-// governs a plain value crossing into a differently-typed error-set slot:
-// `A` coerces to `B` only when every tag of `A` is a member of `B`.
-//
-// Both sets are u32-backed, so a cross-set store is same-width and invisible
-// to the width-based reinterpret guard; the membership check is what sees it.
+// Error-set VALUE membership. A member's identity is the pair `(set, member)`,
+// so an error-set value reaches a differently-typed slot only when every member
+// it can carry is a member of the destination — two sets that merely share a
+// member spelling do not.
 //
 // The rejections live in `examples/errors/1076-errors-cross-set-value-reject.sx`.
 
 @import "modules/std.sx";
 
-Narrow :: error { Wide }
-Broad  :: error { Wide, Extra }
+Broad  :: error { Wide; Extra }
+Other  :: error { Wide }
 
-narrow_src :: () -> (i32, !Narrow) { raise error.Wide; }
-broad_src  :: () -> (i32, !Broad)  { raise error.Extra; }
+broad_src :: () -> (i32, !Broad) { raise .Extra; }
+wide_src  :: () -> (i32, !Broad) { raise .Wide; }
 
 take_broad :: (b: Broad) -> void { print("param: {}\n", b); }
 
 Holder :: struct { e: Broad; }
 
 main :: () -> i32 {
-    // Narrow ⊆ Broad — every widening position is legal.
-    v, ne := narrow_src();
-    widened : Broad = ne;
-    print("decl: {}\n", widened);
-    take_broad(ne);
-    h := Holder{ e = ne };
+    v, be := wide_src();
+    same : Broad = be;
+    print("decl: {}\n", same);
+    take_broad(be);
+    h := Holder{ e = be };
     print("field: {}\n", h.e);
 
-    // `xx` stays the escape hatch for a deliberate narrowing.
-    w, be := broad_src();
-    forced : Narrow = xx be;
+    // `xx` is the escape hatch for a deliberate cross-set store.
+    w, xe := broad_src();
+    forced : Other = xx xe;
     print("xx: {}\n", forced);
 
-    // The tag literal spelling is membership-checked against the set.
-    lit : Broad = error.Extra;
-    print("literal: {}\n", lit);
-
     // The contextual `.Name` shorthand types itself from the destination set
-    // in every position `error.Name` does, and means exactly the same tag.
+    // and is membership-checked against it.
     short : Broad = .Extra;
     print("shorthand decl: {}\n", short);
     take_broad(.Wide);
@@ -47,11 +39,10 @@ main :: () -> i32 {
     print("shorthand field: {}\n", sh.e);
     opt : ?Broad = .Wide;
     print("shorthand optional: {}\n", opt?!);
-    if short == error.Extra { print("spellings agree: {}\n", short == .Extra); }
     raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
     raises_wide() catch |e| { print("shorthand raise: {}\n", e); };
 
-    // Propagation through a wider channel keeps working.
+    // A `try` through a same-set channel.
     x := via_broad() catch |e| { print("propagated: {}\n", e); return 0; };
     return 0;
 }
@@ -61,9 +52,9 @@ raises_shorthand :: () -> !Broad {
     return .Wide;
 }
 
-// `try` on a Narrow callee escaping through a Broad channel: Narrow ⊆ Broad.
+// `try` on a Broad callee escaping through a Broad channel.
 via_broad :: () -> (i32, !Broad) {
-    n := try narrow_src();
+    n := try wide_src();
     return n;
 }
 

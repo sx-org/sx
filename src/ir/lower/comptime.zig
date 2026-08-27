@@ -388,7 +388,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "pointer")) return info == .pointer or info == .many_pointer;
     if (std.mem.eql(u8, name, "vector")) return info == .vector;
     if (std.mem.eql(u8, name, "optional")) return info == .optional;
-    if (std.mem.eql(u8, name, "error_set")) return info == .error_set;
+    if (std.mem.eql(u8, name, "error")) return info == .@"error";
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
@@ -1459,10 +1459,10 @@ fn lowerComptimeCallArgsMode(
     }
 
     // Pin the lowering to the metaprogram's OWN module for the body (and
-    // its return type + anything it `@insert`s, e.g. `build_format` / `out`
-    // / `emit` inside `std.print` / `log.*`), so those bare names resolve
-    // in the defining module's visibility context rather than the call
-    // site's. The call-site ARGS above are deliberately lowered
+    // its return type + anything it `@insert`s, e.g. `build_format` /
+    // `any_to_string` inside `std.print` / `log.*`), so those bare names
+    // resolve in the defining module's visibility context rather than the
+    // call site's. The call-site ARGS above are deliberately lowered
     // BEFORE this, in the caller's context. Mirrors `lowerFunctionBodyInto`,
     // which switches to `func.source_file`. The defining path is stamped on
     // the body node by `resolveImports`; a sourceless body keeps the
@@ -1493,6 +1493,12 @@ fn lowerComptimeCallArgsMode(
     const saved_exit = self.inline_return_target;
     self.inline_return_target = inline_exit;
     defer self.inline_return_target = saved_exit;
+
+    // The inlined body is its own failable body: a `raise` in it exits THAT
+    // function, not a `try { … }` boundary the call site happens to sit in.
+    const saved_boundary = self.error_boundary;
+    self.error_boundary = null;
+    defer self.error_boundary = saved_boundary;
 
     // `block_terminated` says the enclosing FUNCTION's control flow ended. The
     // enclosing function here is the callee, and control resumes in the caller

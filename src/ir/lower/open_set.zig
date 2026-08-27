@@ -1009,7 +1009,7 @@ fn numberMembers(self: *Lowering, set: *Set) void {
     }
 }
 
-/// The set's `tag → member Type` table: what `type_of`, the `any` view, and the
+/// The set's `tag → member Type` table: what `@typeOf`, the `any` view, and the
 /// type switch read to recover the active member's type from a slot's tag word.
 /// Created EMPTY at the first site that reads it — a site lowers long before the
 /// numbering exists — and filled here, at the freeze, one row per member in tag
@@ -1275,7 +1275,7 @@ pub fn slotAddress(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const No
 
 /// The `Type` of the member the slot at `slot_addr` carries: its tag word, read
 /// through the set's own numbering. Everything that answers what a set value IS —
-/// `type_of`, the `any` view — goes through here.
+/// `@typeOf`, the `any` view — goes through here.
 pub fn memberTypeId(self: *Lowering, set_ty: TypeId, slot_addr: Ref) Ref {
     const set = setOf(self, set_ty) orelse return self.builder.constType(set_ty);
     const table = &self.module.types;
@@ -1390,7 +1390,7 @@ fn lowerNarrowingPanic(
     const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
     self.scope.?.put(owned, .{ .ref = view, .ty = .any, .is_alloca = false });
     const recv_id = self.synthNode(.{ .identifier = .{ .name = owned } }, span, source_file);
-    const callee = self.synthNode(.{ .identifier = .{ .name = "__sx_cast_or_panic" } }, span, source_file);
+    const callee = self.synthNode(.{ .identifier = .{ .name = "@cast" } }, span, source_file);
 
     if (type_node) |target| {
         const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(target) }) catch @panic("out of memory");

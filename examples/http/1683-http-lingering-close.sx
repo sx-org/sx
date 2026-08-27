@@ -86,7 +86,7 @@ main :: () -> i32 {
         while fsent < JUNK_LEN and t < 400 {
             n, we := socket.write_nb(ca, *junk[fsent], (JUNK_LEN - fsent));
             if !we { fsent += n; wb = 0; }
-            else if we == error.WouldBlock {
+            else if we == .WouldBlock {
                 // The server drains + discards, so the burst always
                 // completes; a server that stops reading jams its kernel
                 // queue — either way the 431 has fired long before this.
@@ -163,7 +163,7 @@ main :: () -> i32 {
             while true {
                 n, re := socket.read_nb(cb, *rbuf[btotal], (cap - btotal));
                 if !re { btotal += n; got += n; continue; }
-                if re == error.Closed { bdone = true; }
+                if re == .Closed { bdone = true; }
                 break;
             }
             if got > 0 { stall = 0; } else { stall += 1; }

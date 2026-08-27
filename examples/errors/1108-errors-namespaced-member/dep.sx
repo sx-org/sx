@@ -1,0 +1,6 @@
+Error :: error { Disk; Net }
+
+fails :: (n: i32) -> (i32, !Error) {
+    if n < 0 { raise .Disk; }
+    return n;
+}

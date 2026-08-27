@@ -34,7 +34,7 @@ invisible :: ($tag: string, n: i64) -> i64 {
 
 recover :: (n: i64) -> (i64, !Bad) {
     if n > 5 { return n; }
-    raise error.Nope;
+    raise .Nope;
 }
 
 lambda :: ($tag: string, n: i64) -> i64 {

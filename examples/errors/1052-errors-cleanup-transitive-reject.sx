@@ -1,9 +1,8 @@
-// The cleanup-absorption check is TRANSITIVE: a bare,
-// un-absorbed failable call is rejected no matter how deeply it is nested
-// inside a `defer` / `onfail` body's control flow — through `if` (both
-// branches), nested blocks, and loops. 1049 covers the direct-body case; this
-// pins the recursive arms of `checkCleanupNode` (`.if_expr`, `.block`,
-// `.while_expr`).
+// The cleanup-absorption check is TRANSITIVE: a bare, un-absorbed failable
+// call is rejected no matter how deeply it is nested inside a `defer` body's
+// control flow — through `if` (both branches), nested blocks, and loops. 1049
+// covers the direct-body case; this pins the recursive arms of
+// `checkCleanupNode` (`.if_expr`, `.block`, `.while_expr`).
 //
 // Three bare failables, three rejections; the program never runs (exit 1).
 
@@ -11,7 +10,7 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 
 work :: (n: i32) -> !E {
     defer {
@@ -21,12 +20,12 @@ work :: (n: i32) -> !E {
             { failing(); }          // REJECTED: nested block in the else-branch
         }
     }
-    onfail {
+    defer {
         while n > 0 {
             failing();              // REJECTED: nested in the `while` body
         }
     }
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

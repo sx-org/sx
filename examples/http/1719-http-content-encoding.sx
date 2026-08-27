@@ -228,7 +228,7 @@ malformed_response_fails :: (wire: string) -> bool {
     storage : [4096]u8 = ---;
     _, e := http.Client.recv(pair[0], *storage[0], storage.len);
     socket.close(pair[0]);
-    e == error.Recv
+    e == .Recv
 }
 
 exact_capacity_decodes :: (plain: string, packed: string) -> bool {
@@ -260,7 +260,7 @@ faulted_stream_rejected :: (port: i64, path: string, headers: string,
     if se { http.Client.close_conn(*conn); return false; }
     _, re := http.Client.recv_on(*conn, storage, cap);
     http.Client.close_conn(*conn);
-    re == error.Recv
+    re == .Recv
 }
 
 run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
@@ -464,7 +464,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         if try_send { ok = false; }
         else {
             _, short_error := http.Client.recv_on(*short_conn, storage, 4096);
-            if short_error != error.TooLarge { ok = false; }
+            if short_error != .TooLarge { ok = false; }
         }
         http.Client.close_conn(*short_conn);
     }
@@ -478,7 +478,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         if bad_send { ok = false; }
         else {
             _, bad_error := http.Client.recv_on(*bad_conn, storage, BODY_LEN + 4096);
-            if bad_error != error.Recv { ok = false; }
+            if bad_error != .Recv { ok = false; }
         }
         http.Client.close_conn(*bad_conn);
     }

@@ -1,0 +1,47 @@
+// Conditional cleanup is a `defer` in front of an `if`, not a form of its own:
+// the guard is evaluated at block exit, so a flag the success path sets keeps
+// the undo work on the failure path alone. To act on the error itself,
+// destructure it and read the snapshot at exit.
+
+@import "modules/std.sx";
+
+E :: error { Bad }
+
+open :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise .Bad; }
+    return n;
+}
+
+register :: (n: i32) -> !E {
+    if n > 99 { raise .Bad; }
+    return;
+}
+
+make :: (n: i32) -> (i32, !E) {
+    h := try open(n);
+    keep := false;
+    defer if !keep print("close {}\n", h);
+
+    try register(h);
+    keep = true;
+    return h;
+}
+
+// The destructured `e` is a plain local, so the guard reads it at exit.
+probe :: (n: i32) -> i32 {
+    v, e := open(n);
+    defer if e print("probe failed: {}\n", e);
+    if e { return -1; }
+    return v;
+}
+
+main :: () -> i32 {
+    print("[handed out]\n");
+    a := make(7);
+    print("[rolled back]\n");
+    b := make(200);
+    print("[snapshot]\n");
+    print("probe ok: {}\n", probe(4));
+    print("probe err: {}\n", probe(-1));
+    return 0;
+}

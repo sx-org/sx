@@ -1,28 +1,28 @@
 // Failable `-> !` main entry-point wrapper. A pure-failable
 // main that lets an error reach the function boundary exits 1 and prints the
-// unhandled-error header (with the tag name, via the always-linked tag-name
-// table) plus the return trace to stderr — never the raw tag id as the
-// exit code with no diagnostic. A successful run (no escaping error) exits 0.
+// unhandled-error header (naming the owner and the member) plus the return
+// trace to stderr — never the raw tag id as the exit code with no diagnostic.
+// A successful run (no escaping error) exits 0.
 //
 // The header + trace go to stderr, and the test runner merges stderr+stdout,
 // so the snapshot shows them interleaved with the `print` (stdout) lines.
-// Frame locations are placeholders; the count, the ordering and the tag name
-// carry the meaning.
+// Frame locations are placeholders; the count, the ordering and the member
+// spelling carry the meaning.
 
 @import "modules/std.sx";
 
-ParseErr :: error { Empty, BadDigit };
+ParseErr :: error { Empty; BadDigit };
 
 inner :: (n: i32) -> (i32, !ParseErr) {
-    if n == 0 { raise error.Empty; }       // pushes a frame
-    if n < 0 { raise error.BadDigit; }
+    if n == 0 { raise .Empty; }       // pushes a frame
+    if n < 0 { raise .BadDigit; }
     return n * 2;
 }
 
 main :: () -> !ParseErr {
     v := try inner(5);                       // succeeds → v = 10
     print("v = {}\n", v);
-    w := try inner(0);                       // raises Empty → propagates to main
+    w := try inner(0);                       // raises ParseErr.Empty → propagates to main
     print("w = {}\n", w);                    // never reached
     return;
 }

@@ -227,7 +227,7 @@ match shape {
 match av {
     case i64: |v| print("int {}\n", v);
     case []u8: |b| print("{} bytes\n", b.len);
-    else: print("{}\n", type_name(type_of(av)));
+    else: print("{}\n", @typeName(type_of(av)));
 }
 
 if 0 <= x <= 100 { … }
@@ -338,12 +338,12 @@ main :: () {
 
 ## Runtime Reflection
 
-`Type` is a runtime tag (`type_of(x)`). `size_of` / `type_info` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `type_eq` ask identity.
+`Type` is a runtime tag (`type_of(x)`). `size_of` / `@typeInfo` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `@typeEq` ask identity.
 
 ```sx
 describe :: (tp: Type) {
-    print("{} (size {})\n", type_name(tp), size_of(tp));
-    match type_info(tp) {
+    print("{} (size {})\n", @typeName(tp), size_of(tp));
+    match @typeInfo(tp) {
         case .struct: |si| { for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); } }
         else: {}
     }

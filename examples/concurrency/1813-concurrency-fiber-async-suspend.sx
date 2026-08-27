@@ -45,14 +45,14 @@ main :: () -> i64 {
     push .{ io = s } {
         ps.spawn(||_{ ps, pl } {
             // Worker A yields mid-body so B interleaves before A completes.
-            a := context.io.async(||_{ ps, pl } -> (i64, !) {
+            a := context.io.async(||_{ ps, pl } -> (i64, !IoErr) {
                 rec(pl, 1);
                 ps.yield_now();   // suspend A; B (already spawned) runs to completion
                 rec(pl, 3);
                 42
             });
             // Worker B runs straight through (no yield).
-            b := context.io.async(||_{ pl } -> (i64, !) {
+            b := context.io.async(||_{ pl } -> (i64, !IoErr) {
                 rec(pl, 2);
                 100
             });
@@ -65,7 +65,7 @@ main :: () -> i64 {
 
             // Cancel case: cancel before the worker runs; `await` raises .Canceled
             // off the sticky flag, the `or` default (-99) is taken.
-            c := context.io.async(|| -> (i64, !) 7);
+            c := context.io.async(|| -> (i64, !IoErr) 7);
             c.cancel();
             rec(pl, c.await() ?? { -99 });
         });

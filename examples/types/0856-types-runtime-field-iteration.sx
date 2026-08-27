@@ -12,10 +12,10 @@ Packet  :: struct { header: Header; name: string; kind: i16; }
 Color   :: enum { red; green; blue; }
 
 describe :: (tp: Type) {
-    print("{} (size {}, align {})\n", type_name(tp), size_of(tp), align_of(tp));
+    print("{} (size {}, align {})\n", @typeName(tp), size_of(tp), align_of(tp));
     i := 0;
     while i < struct_field_count(tp) {
-        print("  +{} {}: {}\n", struct_field_offset(tp, i), struct_field_name(tp, i), type_name(struct_field_type(tp, i)));
+        print("  +{} {}: {}\n", struct_field_offset(tp, i), struct_field_name(tp, i), @typeName(struct_field_type(tp, i)));
         i += 1;
     }
     j := 0;
@@ -26,14 +26,14 @@ describe :: (tp: Type) {
 }
 
 main :: () {
-    describe(type_of(Packet{ header = .{ magic = 1, flags = 2 }, name = "x", kind = -1 }));
-    describe(type_of(Color.red));
+    describe(@typeOf(Packet{ header = .{ magic = 1, flags = 2 }, name = "x", kind = -1 }));
+    describe(@typeOf(Color.red));
     av : any = Header{ magic = 7, flags = 9 };
-    describe(type_of(av));
+    describe(@typeOf(av));
     // parity: runtime answers == comptime folds
     tp : Type = Packet;
     print("parity: {} {} {}\n",
         struct_field_offset(tp, 1) == struct_field_offset(Packet, 1),
         struct_field_name(tp, 2) == struct_field_name(Packet, 2),
-        type_eq(struct_field_type(tp, 0), struct_field_type(Packet, 0)));
+        @typeEq(struct_field_type(tp, 0), struct_field_type(Packet, 0)));
 }

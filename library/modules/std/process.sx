@@ -1,5 +1,5 @@
 @import "modules/std/core.sx";   // @SourceSite
-@import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
+@import "modules/std/fmt.sx";    // print, concat, substr, to_cstring, from_cstring
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 posix :: @import "modules/std/posix.sx";
@@ -167,6 +167,8 @@ Stdio :: enum {
     null;
 }
 
+SpawnErr :: error { EmptyArgv; Pipe; Fork }
+
 SpawnOpts :: struct {
     stdin:  Stdio = .inherit;
     stdout: Stdio = .inherit;
@@ -247,8 +249,8 @@ Child :: struct {
 // with no program, `Pipe` when wiring the fds fails, `Fork` when the fork
 // itself refuses; every fd already created is closed before the raise, so
 // a failed spawn leaks nothing.
-spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
-    if argv.len == 0 { raise error.EmptyArgv; }
+spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
+    if argv.len == 0 { raise .EmptyArgv; }
 
     // Marshalling happens HERE, in the parent — see THE FORK WINDOW below.
     vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
@@ -265,11 +267,12 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     // Child hands back.
     child  : [3]i32 = .[-1, -1, -1];
     parent : [3]i32 = .[-1, -1, -1];
-    onfail {
+    handed_off := false;
+    defer {
         s := 0;
         while s < 3 {
             if child[s] >= 0 { c.close(child[s]); }
-            if parent[s] >= 0 { c.close(parent[s]); }
+            if !handed_off and parent[s] >= 0 { c.close(parent[s]); }
             s += 1;
         }
         free_argv(vec, argv.len);
@@ -282,7 +285,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         if slot == 2 { mode = opts.stderr; }
         if mode == .pipe {
             fds : [2]i32 = ---;
-            if c.pipe(*fds) != 0 { raise error.Pipe; }
+            if c.pipe(*fds) != 0 { raise .Pipe; }
             // Both ends CLOEXEC immediately: a sibling spawn's exec then
             // drops them, so no run's pipe ends leak into another's child.
             // The dup2'd copies in the child do NOT carry the flag, which
@@ -290,7 +293,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
             if !set_cloexec(fds[0]) or !set_cloexec(fds[1]) {
                 c.close(fds[0]);
                 c.close(fds[1]);
-                raise error.Pipe;
+                raise .Pipe;
             }
             if slot == 0 {
                 child[0] = fds[0];
@@ -302,8 +305,8 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         }
         if mode == .null {
             fd := c.open("/dev/null", O_RDWR);
-            if fd < 0 { raise error.Pipe; }
-            if !set_cloexec(fd) { c.close(fd); raise error.Pipe; }
+            if fd < 0 { raise .Pipe; }
+            if !set_cloexec(fd) { c.close(fd); raise .Pipe; }
             child[slot] = fd;
         }
         slot += 1;
@@ -319,7 +322,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     while slot < 3 {
         if child[slot] >= 0 and child[slot] < 3 {
             lifted := c.fcntl(child[slot], F_DUPFD_CLOEXEC, 3);
-            if lifted < 0 { raise error.Pipe; }
+            if lifted < 0 { raise .Pipe; }
             c.close(child[slot]);
             child[slot] = lifted;
         }
@@ -327,7 +330,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     }
 
     pid := c.fork();
-    if pid < 0 { raise error.Fork; }
+    if pid < 0 { raise .Fork; }
     if pid == 0 {
         // ── THE FORK WINDOW — FROZEN ──────────────────────────────────
         // This block runs in a memory snapshot taken while other threads
@@ -345,13 +348,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         // ── end fork window ───────────────────────────────────────────
     }
 
-    slot = 0;
-    while slot < 3 {
-        if child[slot] >= 0 { c.close(child[slot]); }
-        slot += 1;
-    }
-    free_argv(vec, argv.len);
-
+    handed_off = true;
     return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
 }
 
@@ -388,7 +385,7 @@ free_argv :: (vec: [*]?cstring, n: i64) {
 // (`c.exit`).
 
 // Stop the process immediately with exit code `code`. Does NOT unwind:
-// no `defer` / `onfail` cleanup runs, no error-trace frames are pushed —
+// no `defer` cleanup runs, no error-trace frames are pushed —
 // it's the POSIX `_exit(2)` syscall. At comptime (`@run`) it terminates the
 // COMPILER with the same code after printing a diagnostic naming the call site
 // (`site` defaults to `@caller`); in compiled code the `@is_comptime()`

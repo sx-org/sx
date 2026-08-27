@@ -18,7 +18,7 @@ render_one :: (v: $V/pkg.View) -> string => v.render();
 main :: () -> i32 {
     // The set as an annotation, and a member through the same name.
     v: pkg.View = pkg.Label{ text = "through a name" };
-    print("{} {}\n", v.render(), type_of(v));
+    print("{} {}\n", v.render(), @typeOf(v));
 
     // The set as a TYPE ARGUMENT, and its size measured inside its own module and
     // out here: one set, one layout.

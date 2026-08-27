@@ -1,53 +1,65 @@
-error: cannot coerce error set 'Broad' to 'Narrow': tag 'error.Extra' is not a member of 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:21:5
+error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:5
    |
-21 |     narrowed : Narrow = be;      // error: Extra is not a member of Narrow
+23 |     narrowed : Narrow = be;      // error: neither Broad member is in Narrow
    |     ^^^^^^^^^^^^^^^^^^^^^^^
 
-error: cannot coerce error set 'Broad' to 'Narrow': tag 'error.Extra' is not a member of 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:22:5
+error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:5
    |
-22 |     take_narrow(be);             // error: same, in argument position
+23 |     narrowed : Narrow = be;      // error: neither Broad member is in Narrow
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:24:5
+   |
+24 |     take_narrow(be);             // error: same, in argument position
    |     ^^^^^^^^^^^^^^^
 
-error: cannot coerce error set 'Broad' to 'Narrow': tag 'error.Extra' is not a member of 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:23:10
+error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:24:5
    |
-23 |     h := Holder{ e = be };      // error: same, in field-init position
+24 |     take_narrow(be);             // error: same, in argument position
+   |     ^^^^^^^^^^^^^^^
+
+error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:25:10
+   |
+25 |     h := Holder{ e = be };      // error: same, in field-init position
    |          ^^^^^^^^^^^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:25:20
+error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:25:10
    |
-25 |     lit : Narrow = error.Extra;  // error: tag literal not in Narrow
-   |                    ^^^^^^^^^^^
+25 |     h := Holder{ e = be };      // error: same, in field-init position
+   |          ^^^^^^^^^^^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:29:22
+error: error member '.Extra' is not in error set 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:27:22
    |
-29 |     short : Narrow = .Extra;     // error: Extra not in Narrow
+27 |     short : Narrow = .Extra;     // error: Extra not in Narrow
    |                      ^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:30:17
+error: error member '.Extra' is not in error set 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:28:17
    |
-30 |     take_narrow(.Extra);         // error: same, in argument position
+28 |     take_narrow(.Extra);         // error: same, in argument position
    |                 ^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:31:23
+error: error member '.Extra' is not in error set 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:29:23
    |
-31 |     hs := Holder{ e = .Extra }; // error: same, in field-init position
+29 |     hs := Holder{ e = .Extra }; // error: same, in field-init position
    |                       ^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:32:17
+error: error member '.Extra' is not in error set 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:30:17
    |
-32 |     if short == .Extra { return 1; }  // error: same, in comparison position
+30 |     if short == .Extra { return 1; }  // error: same, in comparison position
    |                 ^^^^^^
 
-error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:39:11
+error: error member '.Extra' is not in error set 'Narrow'
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:37:11
    |
-39 |     raise .Extra;                // error: Extra not in Narrow
+37 |     raise .Extra;                // error: Extra not in Narrow
    |           ^^^^^^

@@ -131,7 +131,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
         srv.tick(5) catch {};
         n, re := socket.read_nb(fd, *scratch[total], (cap - total));
         if !re { total += n; }
-        else if re == error.Closed { return string{ ptr = scratch, len = total }; }
+        else if re == .Closed { return string{ ptr = scratch, len = total }; }
         if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }

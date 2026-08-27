@@ -1,0 +1,10 @@
+error: 'Color' is not 'Shape' — a qualified arm names a variant of the subject's own type
+  --> examples/diagnostics/2240-diagnostics-qualified-arm-foreign-prefix.sx:16:14
+   |
+16 |         case Color.circle: |c| { print("c={}\n", c); }
+   |              ^^^^^^^^^^^^
+
+help: write `.circle` to name a variant of 'Shape'
+   |
+16 |         case Color.circle: |c| { print("c={}\n", c); }
+   |              ^^^^^^^^^^^^

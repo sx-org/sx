@@ -21,7 +21,7 @@ main :: () {
     // Reflection — same fold.
     print("struct_field_count(P) = {}\n", struct_field_count(P));
     print("struct_field_name(P,0)= {}\n", struct_field_name(P, 0));
-    print("type_name(P)   = {}\n", type_name(P));
+    print("@typeName(P)   = {}\n", @typeName(P));
     print("is_flags(E)    = {}\n", is_flags(E));
     print("variant_index    = {}\n", variant_index(E, E.Y));
 }

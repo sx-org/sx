@@ -128,21 +128,23 @@ gen_val :: () -> string {
     return "print(\"insert-gen: {}\\n\", 42);";
 }
 
-// --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
+// --- Error handling (failable functions: sets, raise/try/catch/or) ---
 
-SmokeErr :: error { Empty, BadDigit, Overflow }
+SmokeErr :: error { Empty; BadDigit; Overflow }
+CheckErr :: error { NotReady }
+AcquireErr :: error { Acquire }
 
 // value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
-    if n < 0  { raise error.BadDigit; }
-    if n == 0 { raise error.Empty; }
-    if n > 99 { raise error.Overflow; }
+    if n < 0  { raise .BadDigit; }
+    if n == 0 { raise .Empty; }
+    if n > 99 { raise .Overflow; }
     return n * 2;
 }
 
-// pure failable, inferred set (ad-hoc tag minted into `!`)
+// pure failable, inferred set
 sm_check :: (ok: bool) -> ! {
-    if !ok { raise error.NotReady; }
+    if !ok { raise CheckErr.NotReady; }
     return;
 }
 
@@ -161,11 +163,13 @@ sm_or_default :: (n: i32) -> i32 {
     };
 }
 
-// `onfail` + `defer` interleave: cleanup runs only on the error path
+// guarded + plain `defer` interleave: the rollback runs only on the error path
 sm_acquire :: (fail: bool) -> (i32, !) {
-    defer  print("  smoke defer A\n");
-    onfail print("  smoke onfail B\n");
-    if fail { raise error.Acquire; }
+    handed := false;
+    defer print("  smoke defer A\n");
+    defer if !handed print("  smoke rollback B\n");
+    if fail { raise AcquireErr.Acquire; }
+    handed = true;
     return 7;
 }
 

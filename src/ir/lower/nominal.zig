@@ -217,7 +217,6 @@ pub fn ensurePlainStructMethodLowered(self: *Lowering, method: PlainStructMethod
     return fid;
 }
 
-/// Register a struct declaration's fields and methods in the IR type table.
 /// Register a `Foo :: error { A, B }` declaration as an error-set type.
 /// Rejects an empty set here (sema gate) since type_bridge has no
 /// diagnostics; non-empty sets are interned via type_bridge.
@@ -229,19 +228,69 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
         }
         return;
     }
-    // Per-decl nominal identity — the error-set twin of `registerEnumDecl`.
-    // A GENUINE same-name shadow already reserved its DISTINCT slot up-front in
-    // `scanDecls` (the first at id 0, the rest at nonzero ids): reuse that id. A
-    // single-author name keeps id 0. The body is built by the shared
-    // `type_bridge.buildErrorSetInfo`; `internNamedTypeDecl` interns it under
-    // the computed nominal id and records `decl_key → TypeId` so a local
-    // `Foo :: error { Boom }` does not collapse onto a same-name imported set.
+    internErrorSetSlot(self, &node.data.error_set_decl);
+    registerPayloadShapes(self, &node.data.error_set_decl);
+}
+
+/// Name each member's inline payload struct after the member, and record the
+/// field defaults it declares, so `.Member{ … }` reads as that struct's own
+/// literal — empty braces included.
+fn registerPayloadShapes(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
+    if (esd.tag_types.len != esd.tag_names.len) return;
+    for (esd.tag_types, esd.tag_names) |maybe_payload, tag_name| {
+        const payload = maybe_payload orelse continue;
+        if (payload.data != .struct_decl) continue;
+        const ty = self.resolveInner(payload);
+        qualifyAnonType(self, &self.module.types, ty, esd.name, tag_name);
+        const declared = payload.data.struct_decl.field_defaults;
+        var any = false;
+        for (declared) |d| any = any or d != null;
+        if (!any) continue;
+        const defaults = self.alloc.alloc(?*const Node, declared.len) catch return;
+        for (declared, defaults) |d, *slot| {
+            slot.* = d;
+            // A default lowers wherever a literal leaves its field out, so it
+            // carries the declaring source to resolve its bare names over.
+            if (d) |n| {
+                if (n.source_file == null) n.source_file = self.current_source_file;
+            }
+        }
+        self.struct_defaults_by_tid.put(ty, defaults) catch {};
+    }
+}
+
+/// Intern `esd`'s member set and record the `decl_key → TypeId` so a
+/// reference selects this author (`namedRefTid`) rather than first-author
+/// name lookup.
+fn internErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const table = &self.module.types;
-    const name_id = table.internString(esd.name);
-    const decl_key: *const anyopaque = @ptrCast(&node.data.error_set_decl);
-    const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
-    const info = type_bridge.buildErrorSetInfo(&node.data.error_set_decl, table);
-    _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    const decl_key: *const anyopaque = @ptrCast(esd);
+    const info = type_bridge.errorSetDeclInfo(esd, table, self);
+    const id = adoptableForwardStub(table, info) orelse table.intern(info);
+    table.setErrorOwnerType(decl_key, id);
+    table.type_decl_tids.put(decl_key, id) catch {};
+}
+
+/// Give a GENUINE same-name ERROR-SET shadow author its slot before any
+/// signature resolves, so a forward reference from `f :: (e: E)` binds the
+/// querying module's own author instead of whichever same-name type interned
+/// first.
+pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
+    if (esd.tag_names.len == 0) return; // the empty-set diagnostic is registration's
+    internErrorSetSlot(self, esd);
+}
+
+/// The forward-reference stub a signature naming this set before it registered
+/// left under the spelling: that slot BECOMES the set, so both spellings
+/// address one TypeId. A slot another declaration already claims — a same-name
+/// struct shadow's reservation — is that declaration's, so the set interns its
+/// own instead.
+fn adoptableForwardStub(table: *types.TypeTable, info: types.TypeInfo) ?TypeId {
+    const cand = table.findByName(info.@"error".name) orelse return null;
+    if (!adoptsForwardStructStub(table.get(cand), info)) return null;
+    if (table.isDeclSlot(cand)) return null;
+    table.replaceKeyedInfo(cand, info);
+    return cand;
 }
 
 /// The `nominal_id` stamped on a nominal `TypeInfo` (0 for non-nominal /
@@ -253,7 +302,6 @@ pub fn nominalIdOf(info: types.TypeInfo) u32 {
         .@"enum" => |e| e.nominal_id,
         .@"union" => |u| u.nominal_id,
         .tagged_union => |u| u.nominal_id,
-        .error_set => |e| e.nominal_id,
         else => 0,
     };
 }
@@ -268,7 +316,6 @@ pub fn stampNominalId(info: types.TypeInfo, nid: u32) types.TypeInfo {
         .@"enum" => |*e| e.nominal_id = nid,
         .@"union" => |*u| u.nominal_id = nid,
         .tagged_union => |*u| u.nominal_id = nid,
-        .error_set => |*e| e.nominal_id = nid,
         else => {},
     }
     return out;
@@ -331,23 +378,6 @@ pub fn reserveShadowUnionSlot(self: *Lowering, ud: *const ast.UnionDecl) void {
     table.type_decl_tids.put(decl_key, reserved) catch {};
 }
 
-/// Reserve a GENUINE same-name ERROR-SET shadow author's DISTINCT nominal slot
-/// up-front — the error-set twin of `reserveShadowStructSlot`. The reserved
-/// slot is an empty `.error_set` (its body — the tag id list — is not part of the
-/// intern key, only name + nominal id), so `internNamedTypeDecl` later fills the
-/// real tags via `updatePreservingKey`. Without this, a local `Foo :: error { ... }`
-/// declared after a same-name imported set would collapse onto the imported
-/// TypeId via the `findByName` first-author fallback.
-pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
-    const table = &self.module.types;
-    const decl_key: *const anyopaque = @ptrCast(esd);
-    if (table.type_decl_tids.contains(decl_key)) return;
-    const name_id = table.internString(esd.name);
-    const nominal_id = self.shadowNominalId(name_id);
-    const reserved = table.internNominal(.{ .error_set = .{ .name = name_id, .tags = &.{} } }, nominal_id);
-    table.type_decl_tids.put(decl_key, reserved) catch {};
-}
-
 /// Reserve a nullary protocol shadow as the protocol-backed struct slot that
 /// `registerProtocolDecl` will later fill. Parameterized protocols are
 /// compile-time templates and deliberately have no runtime TypeId.
@@ -375,7 +405,7 @@ const ShadowTypeDecl = union(enum) {
     @"struct": *const ast.StructDecl,
     @"enum": *const ast.EnumDecl,
     @"union": *const ast.UnionDecl,
-    error_set: *const ast.ErrorSetDecl,
+    @"error": *const ast.ErrorSetDecl,
     protocol: *const ast.ProtocolDecl,
 
     pub fn key(self: ShadowTypeDecl) *const anyopaque {
@@ -407,13 +437,13 @@ pub fn topLevelTypeDecl(decl: *const Node) ?ShadowTypeDecl {
         .struct_decl => .{ .@"struct" = &decl.data.struct_decl },
         .enum_decl => .{ .@"enum" = &decl.data.enum_decl },
         .union_decl => .{ .@"union" = &decl.data.union_decl },
-        .error_set_decl => .{ .error_set = &decl.data.error_set_decl },
+        .error_set_decl => .{ .@"error" = &decl.data.error_set_decl },
         .protocol_decl => .{ .protocol = &decl.data.protocol_decl },
         .const_decl => |cd| switch (cd.value.data) {
             .struct_decl => .{ .@"struct" = &cd.value.data.struct_decl },
             .enum_decl => .{ .@"enum" = &cd.value.data.enum_decl },
             .union_decl => .{ .@"union" = &cd.value.data.union_decl },
-            .error_set_decl => .{ .error_set = &cd.value.data.error_set_decl },
+            .error_set_decl => .{ .@"error" = &cd.value.data.error_set_decl },
             else => null,
         },
         else => null,
@@ -426,7 +456,7 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
         .@"struct" => |sd| self.reserveShadowStructSlot(sd),
         .@"enum" => |ed| self.reserveShadowEnumSlot(ed),
         .@"union" => |ud| self.reserveShadowUnionSlot(ud),
-        .error_set => |esd| self.reserveShadowErrorSetSlot(esd),
+        .@"error" => |esd| self.reserveShadowErrorSetSlot(esd),
         .protocol => |pd| self.reserveShadowProtocolSlot(pd),
     }
 }
@@ -467,7 +497,7 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
     // context — `type_resolver.resolveNamed` always stubs a struct), which the
     // `findByName` above then returns. Adopting a wrong-kind stub needs a
     // re-key, NOT the in-place `updatePreservingKey` body-fill — whose
-    // kind-stability assert trips on struct→enum/union/error_set.
+    // kind-stability assert trips on struct→enum/union/error.
     if (adoptsForwardStructStub(table.get(id), stamped))
         table.replaceKeyedInfo(id, stamped)
     else
@@ -479,14 +509,14 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
 /// TRUE when `existing` is a forward-reference STRUCT placeholder (empty
 /// fields — the stateless resolver's stub for an as-yet-unregistered name) and
 /// `incoming` is a NON-struct nominal (enum / union / tagged_union /
-/// error_set): the one case where `internNamedTypeDecl` must re-key the slot
+/// error): the one case where `internNamedTypeDecl` must re-key the slot
 /// rather than fill its body in place. A struct adopting its own struct stub
 /// is same-kind and stays on `updatePreservingKey`; a fresh-interned slot has
 /// no stub to adopt.
 pub fn adoptsForwardStructStub(existing: types.TypeInfo, incoming: types.TypeInfo) bool {
     if (existing != .@"struct" or existing.@"struct".fields.len != 0) return false;
     return switch (incoming) {
-        .@"enum", .@"union", .tagged_union, .error_set => true,
+        .@"enum", .@"union", .tagged_union, .@"error" => true,
         else => false,
     };
 }
@@ -762,24 +792,26 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolv
 }
 
 /// Report a const-alias cycle once. `cycle` is the closed loop's decls in
-/// walk order (first element = re-visited decl). Keyed by the cycle's
-/// minimum decl address so every entry point into the same loop — each
-/// member decl's own registration probe, plus any use-site probe — shares
-/// one diagnostic.
+/// walk order (first element = re-visited decl). Both the once-only key and
+/// the reported rotation are the loop's minimum decl address, so every entry
+/// point into the same loop — each member decl's own registration probe, plus
+/// any use-site probe — shares one diagnostic and one message.
 fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void {
     const diags = self.diagnostics orelse return;
-    var key: usize = std.math.maxInt(usize);
-    for (cycle) |cd| key = @min(key, @intFromPtr(cd));
-    const gop = self.alias_cycle_diagnosed.getOrPut(key) catch return;
+    var head: usize = 0;
+    for (cycle, 0..) |cd, i| {
+        if (@intFromPtr(cd) < @intFromPtr(cycle[head])) head = i;
+    }
+    const gop = self.alias_cycle_diagnosed.getOrPut(@intFromPtr(cycle[head])) catch return;
     if (gop.found_existing) return;
     var names: std.ArrayList(u8) = .empty;
     defer names.deinit(self.alloc);
-    for (cycle) |cd| {
-        names.appendSlice(self.alloc, cd.name) catch @panic("out of memory");
+    for (0..cycle.len) |i| {
+        names.appendSlice(self.alloc, cycle[(head + i) % cycle.len].name) catch @panic("out of memory");
         names.appendSlice(self.alloc, " -> ") catch @panic("out of memory");
     }
-    names.appendSlice(self.alloc, cycle[0].name) catch @panic("out of memory");
-    diags.addFmt(.err, cycle[0].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
+    names.appendSlice(self.alloc, cycle[head].name) catch @panic("out of memory");
+    diags.addFmt(.err, cycle[head].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
 }
 
 /// The fn decl a const ALIAS chain terminates at, or null when `cd` is not
@@ -853,7 +885,7 @@ pub fn bareVisibleStructTemplate(self: *Lowering, name: []const u8) ?StructTempl
 /// fallback in each.
 /// The alias BINDS the instantiation's own TypeId — it does not mint a
 /// second nominal type. `BufF :: Buffer(f32)` and `Buffer(f32)` are the same
-/// interned type, so `type_eq`, a `case BufF:` arm, `v.(BufF)`, and an
+/// interned type, so `@typeEq`, a `case BufF:` arm, `v.(BufF)`, and an
 /// `impl … for BufF` head all agree with the instantiation spelling.
 pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl: *const StructTemplate, args: []const *const Node) void {
     const inst_id = self.instantiateGenericStruct(tmpl, args);

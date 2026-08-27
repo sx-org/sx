@@ -5,4 +5,4 @@ guard !e: c = 0
 blue: err int = 0, c = 2
 error err nonzero = true
 error: is Nope (ok)
-error tag name = Nope
+error tag name = E.Nope

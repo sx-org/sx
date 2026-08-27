@@ -31,7 +31,7 @@ nothing :: (label: string) {
 }
 
 fails :: () -> !Failed {
-    error.Nope
+    .Nope
 }
 
 // ── No explicit `return` in the body ───────────────────────────────────
@@ -54,7 +54,7 @@ ct_compound :: ($label: string) -> !Failed {
 
 ct_error :: ($label: string) -> !Failed {
     print("ct-error {}\n", label);
-    error.Nope
+    .Nope
 }
 
 ct_forward :: ($label: string) -> !Failed {
@@ -87,7 +87,7 @@ ct_ret_value :: ($label: string, n: i32) -> !Failed {
 ct_ret_error :: ($label: string, n: i32) -> !Failed {
     if n < 0 { return; }
     print("ct-ret-error {}\n", label);
-    error.Nope
+    .Nope
 }
 
 ct_ret_early :: ($label: string, n: i32) -> !Failed {
@@ -100,7 +100,7 @@ ct_ret_early :: ($label: string, n: i32) -> !Failed {
 
 ct_ret_raise :: ($label: string, n: i32) -> !Failed {
     if n < 0 {
-        raise error.Nope;
+        raise .Nope;
     }
     tick(label)
 }

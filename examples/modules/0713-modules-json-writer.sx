@@ -13,7 +13,7 @@
 //      whole-document string is ever held).
 //
 // Both must yield byte-for-byte the same pinned document, with keys in
-// INSERTION ORDER. A too-small buffer must raise `error.Overflow` rather
+// INSERTION ORDER. A too-small buffer must raise `JsonError.Overflow` rather
 // than truncate. The model is built through an explicit Arena allocator
 // and freed in one `deinit`; the writer path allocates nothing.
 
@@ -84,7 +84,7 @@ main :: () -> ! {
     // 2. A buffer that is one byte too small must raise Overflow.
     tight : []u8 = string{ ptr = *buf[256], len = EXPECT.len - 1 };
     _, oerr := write_to_buffer(root, tight);
-    report("overflow-raised", oerr == error.Overflow);
+    report("overflow-raised", oerr == .Overflow);
 
     // 3. Stream to a file through a tiny staging buffer (forces flushes);
     //    read it back and assert it equals the same document. Write into the

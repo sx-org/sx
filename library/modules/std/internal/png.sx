@@ -7,6 +7,16 @@
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
 
+DecodeErr :: error {
+    TruncatedData;
+    InvalidSignature;
+    ChecksumMismatch;
+    UnsupportedFormat;
+    InvalidFilter;
+    DecompressionFailed;
+    AllocationFailed;
+}
+
 private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
 
 private png_write_chunk :: (out: *ByteWriter, kind: string, payload: string) {
@@ -31,7 +41,7 @@ png_encode_bytes :: (
     alloc: Allocator,
 ) -> (string, !Error) {
     filtered_raw := alloc.alloc_bytes(filtered_len);
-    if filtered_raw == null { raise error.AllocationFailed; }
+    if filtered_raw == null { raise .AllocationFailed; }
     filtered := string{ ptr = filtered_raw, len = filtered_len };
     filtered_row_bytes := row_bytes + 1;
 
@@ -67,12 +77,12 @@ png_encode_bytes :: (
 
     if compressed.len > i64.max - 45 {
         alloc.dealloc_bytes(compressed.ptr);
-        raise error.TooLarge;
+        raise .TooLarge;
     }
     output_len := compressed.len + 45;
     if idat_chunks > (i64.max - output_len) / 12 {
         alloc.dealloc_bytes(compressed.ptr);
-        raise error.TooLarge;
+        raise .TooLarge;
     }
     output_len += idat_chunks * 12;
 
@@ -80,7 +90,7 @@ png_encode_bytes :: (
     if !out.ensure_capacity(output_len) {
         alloc.dealloc_bytes(compressed.ptr);
         out.deinit();
-        raise error.AllocationFailed;
+        raise .AllocationFailed;
     }
 
     out.put(137); out.put('P'); out.put('N'); out.put('G');
@@ -114,7 +124,7 @@ png_encode_bytes :: (
 
     if out.failed {
         out.deinit();
-        raise error.AllocationFailed;
+        raise .AllocationFailed;
     }
     out.take()
 }
@@ -145,12 +155,12 @@ private paeth :: (a: i64, b: i64, c: i64) -> i64 {
 // 8-bit, non-interlaced, color types 0/2/4/6 (what `png_encode_bytes`
 // emits, plus filters 1-4 for files written by other encoders). Every
 // chunk CRC is verified; anything outside this envelope rejects loudly.
-png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
-    if data.len < 8 { raise error.TruncatedData; }
+png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr) {
+    if data.len < 8 { raise .TruncatedData; }
     sig : [8]u8 = .[137, 80, 78, 71, 13, 10, 26, 10];
     si := 0;
     while si < 8 {
-        if data[si] != sig[si] { raise error.InvalidSignature; }
+        if data[si] != sig[si] { raise .InvalidSignature; }
         si += 1;
     }
 
@@ -165,28 +175,28 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
     // sum the IDAT payload.
     off := 8;
     while off < data.len {
-        if off + 12 > data.len { raise error.TruncatedData; }
+        if off + 12 > data.len { raise .TruncatedData; }
         len := png_u32be(data, off);
-        if len < 0 or off + 12 + len > data.len { raise error.TruncatedData; }
+        if len < 0 or off + 12 + len > data.len { raise .TruncatedData; }
         kind := data[off + 4..off + 8];
         payload := data[off + 8..off + 8 + len];
         expect := png_u32be(data, off + 8 + len);
         actual := crc32(kind);
         actual = crc32(payload, actual);
-        if (actual & 0xffffffff) != expect { raise error.ChecksumMismatch; }
+        if (actual & 0xffffffff) != expect { raise .ChecksumMismatch; }
         if kind == "IHDR" {
-            if len != 13 { raise error.UnsupportedFormat; }
+            if len != 13 { raise .UnsupportedFormat; }
             width = png_u32be(payload, 0);
             height = png_u32be(payload, 4);
             bit := payload[8].(i64);
             ct := payload[9].(i64);
-            if bit != 8 or payload[10] != 0 or payload[11] != 0 { raise error.UnsupportedFormat; }
-            if payload[12] != 0 { raise error.UnsupportedFormat; }   // Adam7
+            if bit != 8 or payload[10] != 0 or payload[11] != 0 { raise .UnsupportedFormat; }
+            if payload[12] != 0 { raise .UnsupportedFormat; }   // Adam7
             if ct == 0 { channels = 1; }
             else if ct == 2 { channels = 3; }
             else if ct == 4 { channels = 2; }
             else if ct == 6 { channels = 4; }
-            else { raise error.UnsupportedFormat; }                  // palette etc.
+            else { raise .UnsupportedFormat; }                  // palette etc.
             saw_ihdr = true;
         } else if kind == "IDAT" {
             idat_total += len;
@@ -196,12 +206,12 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
         }
         off += 12 + len;
     }
-    if !saw_ihdr or !saw_iend or width < 1 or height < 1 { raise error.TruncatedData; }
+    if !saw_ihdr or !saw_iend or width < 1 or height < 1 { raise .TruncatedData; }
 
     // Pass 2: concatenate the zlib stream.
-    if idat_total < 1 { raise error.TruncatedData; }
+    if idat_total < 1 { raise .TruncatedData; }
     idat_raw := alloc.alloc_bytes(idat_total);
-    if idat_raw == null { raise error.AllocationFailed; }
+    if idat_raw == null { raise .AllocationFailed; }
     idat := string{ ptr = idat_raw, len = idat_total };
     at := 0;
     off = 8;
@@ -225,18 +235,18 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
     need := filtered_row_bytes * height;
     filtered := decompress_exact(idat, need, alloc) catch |e| {
         alloc.dealloc_bytes(idat_raw);
-        raise error.DecompressionFailed;
+        raise .DecompressionFailed;
     };
     alloc.dealloc_bytes(idat_raw);
     if filtered.len != need {
         alloc.dealloc_bytes(filtered.ptr);
-        raise error.TruncatedData;
+        raise .TruncatedData;
     }
 
     out_raw := alloc.alloc_bytes(row_bytes * height);
     if out_raw == null {
         alloc.dealloc_bytes(filtered.ptr);
-        raise error.AllocationFailed;
+        raise .AllocationFailed;
     }
     out := string{ ptr = out_raw, len = row_bytes * height };
 
@@ -247,7 +257,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
         if f < 0 or f > 4 {
             alloc.dealloc_bytes(filtered.ptr);
             alloc.dealloc_bytes(out_raw);
-            raise error.InvalidFilter;
+            raise .InvalidFilter;
         }
         c := 0;
         while c < row_bytes {

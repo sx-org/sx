@@ -1,0 +1,32 @@
+error: 'X' names more than one member: A.X, B.X
+  --> examples/diagnostics/2241-diagnostics-ambiguous-member-shorthand.sx:12:22
+   |
+12 |     if n < 0 { raise .X{7}; }
+   |                      ^^^^^
+
+help: write the set that declares the one you mean
+   |
+12 |     if n < 0 { raise .X{7}; }
+   |                      ^^^^^
+
+error: 'X' names more than one member: A.X, B.X
+  --> examples/diagnostics/2241-diagnostics-ambiguous-member-shorthand.sx:18:13
+   |
+18 |     if e == .X { return 1; }
+   |             ^^
+
+help: write the set that declares the one you mean
+   |
+18 |     if e == .X { return 1; }
+   |             ^^
+
+error: 'X' names more than one member: A.X, B.X
+  --> examples/diagnostics/2241-diagnostics-ambiguous-member-shorthand.sx:20:14
+   |
+20 |         case .X: |w| 100 + w;
+   |              ^^
+
+help: write the set that declares the one you mean
+   |
+20 |         case .X: |w| 100 + w;
+   |              ^^

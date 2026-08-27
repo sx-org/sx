@@ -1,5 +1,5 @@
 // An empty-vtable interface (no methods) erases. The handle carries
-// {ctx, __type_id}, so type_of, the checked downcast, the type switch, and
+// {ctx, __type_id}, so @typeOf, the checked downcast, the type switch, and
 // the @Protocol view all work with zero dispatchable methods.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
@@ -13,7 +13,7 @@ main :: () {
     sq := Sq{ side = 4 };
 
     m := sq.(Marker);
-    print("marker type: {}\n", type_of(m) == Sq);
+    print("marker type: {}\n", @typeOf(m) == Sq);
     print("marker raw:  {}\n", m.(@Protocol).type_id == Sq);
 
     back := m.(Sq);
@@ -26,5 +26,5 @@ main :: () {
 
     sq9 := Sq{ side = 9 };
     mo := sq9.(Marker);
-    print("erased {}\n", type_of(mo) is Marker);
+    print("erased {}\n", @typeOf(mo) is Marker);
 }

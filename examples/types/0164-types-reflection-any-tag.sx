@@ -3,12 +3,12 @@
 //
 // An `any` is both a type AND a value: it can hold a runtime *value*
 // (whose runtime tag names the value's type) or a *Type value* (the
-// `{ .any, tid }` shape `type_of` / a `Type` literal produce). A
+// `{ .any, tid }` shape `@typeOf` / a `Type` literal produce). A
 // reflection builtin must branch on the tag:
 // - holds a value   → report the type OF that value (the tag).
 // - holds a Type     → name the held type (the payload).
 //
-// `type_name` and `is` read the runtime tag, not the any's payload as a
+// `@typeName` and `is` read the runtime tag, not the any's payload as a
 // TypeId index.
 
 @import "modules/std.sx";
@@ -16,26 +16,26 @@
 main :: () {
     // any holding a VALUE — reflection names the value's type.
     av : any = 6;                 // 6 is i64
-    print("type_name(av)={}\n", type_name(av));
+    print("@typeName(av)={}\n", @typeName(av));
     print("av is unsigned={}\n", av is unsigned);
     print("print(av)={}\n", av);  // formatter already used the tag
 
     u : u32 = 7;
     au : any = u;
-    print("type_name(au)={}\n", type_name(au));
+    print("@typeName(au)={}\n", @typeName(au));
     print("au is unsigned={}\n", au is unsigned);
     print("print(au)={}\n", au);
 
     sv : any = "hi";
-    print("type_name(sv)={}\n", type_name(sv));
+    print("@typeName(sv)={}\n", @typeName(sv));
 
     // any holding a TYPE value — reflection names the held type.
     x : u64 = 9;
-    at : any = type_of(x);
-    print("type_name(at)={}\n", type_name(at));
+    at : any = @typeOf(x);
+    print("@typeName(at)={}\n", @typeName(at));
     print("at is unsigned={}\n", at is unsigned);
     print("print(at)={}\n", at);
 
     // A direct runtime Type value is unchanged.
-    print("type_of(x) is unsigned={}\n", type_of(x) is unsigned);
+    print("@typeOf(x) is unsigned={}\n", @typeOf(x) is unsigned);
 }

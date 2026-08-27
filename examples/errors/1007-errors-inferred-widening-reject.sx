@@ -9,9 +9,10 @@
 @import "modules/std.sx";
 
 A :: error { Bar }
+D :: error { Foo }
 
 deep :: () -> ! {
-    raise error.Foo;                 // deep's inferred set = {Foo}
+    raise D.Foo;                     // deep's inferred set = {Foo}
 }
 
 via :: () -> ! {

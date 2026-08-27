@@ -53,7 +53,7 @@ pub const BodyTail = union(enum) {
 /// body is lowered. `.value` belongs to expression positions, never to a body.
 pub fn bodyDemand(self: *Lowering, ret_ty: TypeId) TailDemand {
     if (ret_ty == .void or ret_ty == .noreturn) return .none;
-    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return .{ .error_only = ret_ty };
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error") return .{ .error_only = ret_ty };
     return .{ .return_value = ret_ty };
 }
 
@@ -188,7 +188,7 @@ fn tailIsKnownNonError(self: *Lowering, tail: *const Node) bool {
     const t = self.inferExprType(tail);
     if (t == .unresolved) return false;
     if (t.isBuiltin()) return true;
-    return self.module.types.get(t) != .error_set;
+    return self.module.types.get(t) != .@"error";
 }
 
 /// The tail of a PURE-failable body, per live control-flow path: an error leaf
@@ -220,9 +220,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         return if (expressionDiverged(self, disposed)) .terminated else .no_value;
     }
     // An error leaf, or one not yet typed: the declared set IS its destination
-    // — both contextual spellings read it, `error.X` while lowering and `.X`
-    // from the target — so lower it once and dispose by what it ACTUALLY
-    // lowered to, never by the prediction.
+    // — the contextual `.X` spelling reads it from the target — so lower it
+    // once and dispose by what it ACTUALLY lowered to, never by the prediction.
     self.target_type = ret_ty;
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const maybe_val = self.tryLowerAsExpr(tail);
@@ -240,7 +239,7 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         }
         return .poisoned;
     }
-    if (!val_ty.isBuiltin() and self.module.types.get(val_ty) == .error_set) {
+    if (!val_ty.isBuiltin() and self.module.types.get(val_ty) == .@"error") {
         emitImplicitErrorReturn(self, val, ret_ty, tail.span);
         return .{ .error_channel = val };
     }
@@ -409,7 +408,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
     // `return;`. Without it the slot keeps whatever it held and the caller
     // reads a garbage tag, reporting a phantom unhandled error.
     const carried: ?Ref = value orelse
-        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set)
+        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error")
             self.builder.constInt(0, ret_ty)
         else
             null;
@@ -469,7 +468,7 @@ fn retPureFailable(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) vo
 /// An implicit ERROR tail is exactly `return <error>;` — it unwinds this
 /// function's defers and takes the same exit, wherever in the body it stands.
 fn emitImplicitErrorReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
-    emitReturnDefers(self, self.func_defer_base);
+    emitDefers(self, self.func_defer_base);
     retPureFailable(self, ref, ret_ty, span);
 }
 
@@ -650,7 +649,6 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         .raise_stmt => |rs| self.lowerRaise(&rs, node.span),
         .assignment => |asgn| self.lowerAssignment(&asgn, self.init_formation_writes.get(node)),
         .defer_stmt => |ds| self.lowerDefer(&ds),
-        .onfail_stmt => |ofs| self.lowerOnFail(&ofs, node.span),
         .push_stmt => |ps| self.lowerPush(&ps),
         .multi_assign => |ma| self.lowerMultiAssign(&ma),
         .destructure_decl => |dd| self.lowerDestructureDecl(&dd),
@@ -1339,7 +1337,7 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
 fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
     const ret_ty: TypeId = self.effectiveReturnType() orelse return;
     if (ret_ty == .void or ret_ty == .noreturn or ret_ty == .unresolved) return;
-    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return;
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .@"error") return;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "function returns '{s}' but this `return` carries no value — return a value of that type", .{self.formatTypeName(ret_ty)});
     }
@@ -1456,7 +1454,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // Emit ALL pending defers for THIS function in LIFO order before the exit.
     // An inlined body drains only to its own base, so a caller defer that
     // happens to precede the inline call does not fire here.
-    emitReturnDefers(self, self.func_defer_base);
+    emitDefers(self, self.func_defer_base);
 
     // The exit is typed by the body being lowered — the INLINED fn's declared
     // return type while inlining, the real function's otherwise. Neither
@@ -1473,7 +1471,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             // Value-carrying failable `-> (T..., !)`: the user returns the
             // value part; the compiler appends the success error slot (0).
             self.lowerFailableSuccessReturn(ref, exit_ty, rs.value.?.span);
-        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .@"error") {
             // PURE failable (`-> !` / `-> !Named`, ret type IS the error set)
             // returning a value: the pure→pure forward path. Set compat is
             // checked; a value-carrying failable result is rejected (its
@@ -1752,7 +1750,7 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
         },
         .range_index => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{ verb, name }),
         .match_payload => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{ verb, name }),
-        .catch_err => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
+        .catch_err => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a catch error binding is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
         .pack_elem_alias => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a pack-element alias is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
         .other => d.addFmt(.err, span, "cannot {s} '{s}' — it names a binding with no storable location; copy it into a `:=` local to mutate", .{ verb, name }),
     }
@@ -3650,121 +3648,45 @@ fn emitPointerCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment
 
 pub fn lowerDefer(self: *Lowering, ds: *const ast.DeferStmt) void {
     // Push deferred expression onto the stack — emitted at every block exit, LIFO.
-    self.defer_stack.append(self.alloc, .{ .body = ds.expr, .is_onfail = false }) catch {};
+    self.defer_stack.append(self.alloc, ds.expr) catch {};
 }
 
-/// `onfail [e] BODY` — cleanup that runs only when an error
-/// leaves the enclosing block. Recorded on the shared cleanup stack;
-/// emitted (interleaved with defers, reverse) at error exits by
-/// `emitErrorCleanup`, and discarded — never run — on a success exit.
-pub fn lowerOnFail(self: *Lowering, ofs: *const ast.OnFailStmt, span: ast.Span) void {
-    // `onfail` is only meaningful inside a failable function — a
-    // non-failable function never error-exits, so it could never fire.
-    const ret_ty = self.effectiveReturnType() orelse {
-        self.diagOnFailNotFailable(span);
-        return;
-    };
-    if (self.errorChannelOf(ret_ty) == null) {
-        self.diagOnFailNotFailable(span);
-        return;
-    }
-    self.defer_stack.append(self.alloc, .{ .body = ofs.body, .is_onfail = true, .binding = ofs.binding }) catch {};
-}
-
-pub fn diagOnFailNotFailable(self: *Lowering, span: ast.Span) void {
-    if (self.diagnostics) |diags| {
-        diags.addFmt(.err, span, "`onfail` is only valid inside a failable function (a return type with `!` or `!Named`) — use `defer` for unconditional cleanup", .{});
-    }
-}
-
-/// Emit pending success cleanups for one RETURN edge without mutating the
-/// lowering-time stack. A return inside one branch (notably a `catch` handler)
-/// terminates only that CFG edge; sibling/success edges are lowered afterward
-/// and still own every cleanup registered before the branch. Truncating here
-/// erased those entries globally, so a later `catch { return ... }` made
-/// earlier defers disappear from the runtime success path.
-fn emitReturnDefers(self: *Lowering, base: usize) void {
-    if (base > self.defer_stack.items.len) return;
+/// Emit cleanups from `base`..current in reverse (LIFO) order. Does NOT
+/// truncate: a return or error exit terminates only its own CFG edge, and the
+/// sibling/success edges lowered afterward still own every cleanup registered
+/// before the branch.
+pub fn emitDefers(self: *Lowering, base: usize) void {
     const stack = self.defer_stack.items;
     var i = stack.len;
     while (i > base) {
         i -= 1;
-        if (!stack[i].is_onfail) self.lowerCleanupBody(stack[i].body);
+        self.lowerCleanupBody(stack[i]);
     }
 }
 
-/// Emit cleanups from saved_len..current in reverse (LIFO) order on a
-/// SUCCESS exit: only `defer` entries run; `onfail` entries are skipped
-/// (and discarded by the truncation). Truncates the stack to saved_len.
+/// Emit cleanups from saved_len..current in reverse (LIFO) order on a block
+/// exit, then truncate the stack to saved_len.
 pub fn emitBlockDefers(self: *Lowering, saved_len: usize) void {
     // A return that already emitted every defer leaves the stack shorter.
     if (saved_len > self.defer_stack.items.len) return;
-    if (self.currentBlockHasTerminator()) {
-        // Block already terminated (e.g., by return) — cleanups were already emitted
-        self.defer_stack.shrinkRetainingCapacity(saved_len);
-        return;
-    }
-    const stack = self.defer_stack.items;
-    var i = stack.len;
-    while (i > saved_len) {
-        i -= 1;
-        if (!stack[i].is_onfail) self.lowerCleanupBody(stack[i].body);
-    }
+    if (!self.currentBlockHasTerminator()) self.emitDefers(saved_len);
     self.defer_stack.shrinkRetainingCapacity(saved_len);
 }
 
 /// Emit pending `defer` cleanups for a `break`/`continue` exit: everything
-/// registered since the innermost loop's body began, in LIFO order. `onfail`
-/// entries are skipped (a break is a success exit). The stack is NOT
-/// truncated — the same entries still belong to the fall-through lowering
-/// path after the branch that contains the break; the enclosing block scopes
-/// truncate as usual.
+/// registered since the innermost loop's body began, in LIFO order. The stack
+/// is NOT truncated — the same entries still belong to the fall-through
+/// lowering path after the branch that contains the break; the enclosing block
+/// scopes truncate as usual.
 pub fn emitLoopExitDefers(self: *Lowering) void {
-    const stack = self.defer_stack.items;
-    var i = stack.len;
-    while (i > self.loop_defer_base) {
-        i -= 1;
-        if (!stack[i].is_onfail) self.lowerCleanupBody(stack[i].body);
-    }
+    self.emitDefers(self.loop_defer_base);
 }
 
-/// Run a `defer`/`onfail` cleanup body for its side effects (void context).
+/// Run a `defer` cleanup body for its side effects (void context).
 /// A braced body lowers as statements (NOT as a value): nothing demands a
 /// cleanup body's tail, so its value is discarded.
 pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
     if (body.data == .block) self.lowerBlock(body) else _ = self.lowerExpr(body);
-}
-
-/// Emit cleanups from `base`..current in reverse order on an ERROR exit
-/// (raise / try-propagation): BOTH `defer` and `onfail` entries run,
-/// interleaved in reverse declaration order. `err_tag` is the in-flight
-/// error tag, bound to each `onfail |e|`'s binding. Does not truncate — the
-/// terminating `ret` + the unwinding block-scope `emitBlockDefers` (which
-/// then see the terminator and skip) leave the stack consistent.
-pub fn emitErrorCleanup(self: *Lowering, base: usize, err_tag: Ref) void {
-    if (base > self.defer_stack.items.len) return;
-    const tag_ty = self.builder.getRefType(err_tag);
-    const stack = self.defer_stack.items;
-    var i = stack.len;
-    while (i > base) {
-        i -= 1;
-        const entry = stack[i];
-        if (entry.is_onfail) {
-            if (entry.binding) |name| {
-                var ofscope = Scope.init(self.alloc, self.scope);
-                const saved = self.scope;
-                self.scope = &ofscope;
-                ofscope.put(name, .{ .ref = err_tag, .ty = tag_ty, .is_alloca = false, .origin = .catch_err });
-                self.lowerCleanupBody(entry.body);
-                self.scope = saved;
-                ofscope.deinit();
-            } else {
-                self.lowerCleanupBody(entry.body);
-            }
-        } else {
-            self.lowerCleanupBody(entry.body);
-        }
-    }
 }
 
 pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {

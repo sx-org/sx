@@ -1,0 +1,20 @@
+// A reserved/builtin type name is rejected as the error-tag binding of a
+// `catch` (`u8`), reported at the binding's declaration.
+@import "modules/std.sx";
+
+E :: error { Bad }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise .Bad; }
+    return;
+}
+
+classify :: (n: i32) -> !E {
+    must(n) catch |u8| { return; };
+    return;
+}
+
+main :: () -> i32 {
+    classify(-1) catch {};
+    return 0;
+}

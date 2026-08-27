@@ -78,15 +78,15 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         // Reflection builtins (resolved by callee name, outside the
         // `resolveBuiltin` table) — each must keep its own result tag so a
         // pack-fn caller boxes the value with the right type.
-        .{ .name = "type_name", .want = .string },
-        .{ .name = "type_eq", .want = .bool },
+        .{ .name = "@typeName", .want = .string },
+        .{ .name = "@typeEq", .want = .bool },
         .{ .name = "struct_field_count", .want = .i64 },
         .{ .name = "variant_index", .want = .i64 },
         .{ .name = "struct_field_name", .want = .string },
-        .{ .name = "error_name", .want = .string },
+        .{ .name = "@errorName", .want = .string },
         .{ .name = "@is_comptime", .want = .bool },
         .{ .name = "is_flags", .want = .bool },
-        .{ .name = "type_of", .want = .type_value },
+        .{ .name = "@typeOf", .want = .type_value },
         .{ .name = "struct_field_value", .want = .any },
         .{ .name = "__interp_print_frames", .want = .void },
         // A math builtin with a non-`f32` argument widens to `f64` (the int
@@ -156,11 +156,11 @@ test "plan: builtin and reflection carry kind + target" {
     try std.testing.expectEqual(BuiltinId.size_of, so.target.builtin);
     try std.testing.expectEqual(TypeId.i64, so.return_type);
 
-    var tn_callee = node(.{ .identifier = .{ .name = "type_name" } });
+    var tn_callee = node(.{ .identifier = .{ .name = "@typeName" } });
     var tn_call = node(.{ .call = .{ .callee = &tn_callee, .args = &args } });
     const tn = cr.plan(&tn_call.data.call);
     try std.testing.expectEqual(CallPlan.Kind.reflection, tn.kind);
-    try std.testing.expectEqualStrings("type_name", tn.target.named);
+    try std.testing.expectEqualStrings("@typeName", tn.target.named);
     try std.testing.expectEqual(TypeId.string, tn.return_type);
 }
 

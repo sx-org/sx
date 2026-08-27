@@ -21,8 +21,13 @@ pub fn printNode(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll(d.name);
             try writer.writeAll(" :: error {");
             for (d.tag_names, 0..) |tag, i| {
-                try writer.writeAll(if (i == 0) " " else ", ");
+                try writer.writeAll(if (i == 0) " " else "; ");
                 try writer.writeAll(tag);
+                const payload = if (i < d.tag_types.len) d.tag_types[i] else null;
+                if (payload) |p| {
+                    try writer.writeAll(": ");
+                    try printType(p, writer);
+                }
             }
             if (d.tag_names.len > 0) try writer.writeByte(' ');
             try writer.writeByte('}');
@@ -93,16 +98,6 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll("raise ");
             try printExpr(r.tag, writer);
         },
-        .onfail_stmt => |o| {
-            try writer.writeAll("onfail");
-            if (o.binding) |bnd| {
-                try writer.writeAll(" |");
-                try writer.writeAll(bnd);
-                try writer.writeByte('|');
-            }
-            try writer.writeByte(' ');
-            try printExpr(o.body, writer);
-        },
         .return_stmt => |r| {
             try writer.writeAll("return");
             if (r.value) |v| {
@@ -140,7 +135,12 @@ pub fn printType(node: *const Node, writer: Writer) anyerror!void {
         .type_expr => |t| try writer.writeAll(t.name),
         .error_type_expr => |e| {
             try writer.writeByte('!');
-            if (e.name) |n| try writer.writeAll(n);
+            if (e.operands.len > 1) try writer.writeByte('(');
+            for (e.operands, 0..) |set, i| {
+                if (i > 0) try writer.writeAll(" | ");
+                try writer.writeAll(set);
+            }
+            if (e.operands.len > 1) try writer.writeByte(')');
         },
         .pointer_type_expr => |p| {
             try writer.writeByte('*');

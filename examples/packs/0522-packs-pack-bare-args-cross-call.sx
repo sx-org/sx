@@ -31,7 +31,7 @@ describe :: (args: []Type) -> string {
     i : i64 = 0;
     while i < args.len {
         if i > 0 { s = concat(s, ", "); }
-        s = concat(s, type_name(args[i]));
+        s = concat(s, @typeName(args[i]));
         i = i + 1;
     }
     return concat(s, "]");

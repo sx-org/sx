@@ -300,7 +300,10 @@ pub const Op = union(enum) {
     // ── Reflection ─────────────────────────────────────────────────
     field_name_get: FieldReflect, // field_name(T, i) → string (runtime index)
     field_value_get: FieldReflect, // field_value(s, i) → Any (runtime struct + index)
-    error_tag_name_get: UnaryOp, // error_tag_name(e) → string (runtime tag id → name, via the always-linked tag-name table)
+    error_member_name_get: UnaryOp, // the member spelling a live error carries (member id → the always-linked member-name table)
+    error_name_get: UnaryOp, // `Owner.Member` — the spelling a live error renders as (member id → the qualified-name table)
+    error_owner_get: UnaryOp, // the error that declares the live member, as a Type (member id → the owner-type table)
+    error_payload_view: UnaryOp, // error_payload(e) → any (the live member's payload area, typed through the member-payload-type table)
 
     // ── Terminators ─────────────────────────────────────────────────
     br: Branch,
@@ -600,13 +603,17 @@ pub const BuiltinId = enum(u16) {
     type_name,
     is_unsigned,
     // Runtime-Type scalar reflection: tag-indexed table reads
-    // (sizes/aligns/counts/flag-bits); type_eq is a plain tag compare.
+    // (sizes/aligns/counts/flag-bits); rt_type_eq is a plain tag compare.
     rt_size_of,
     rt_align_of,
     rt_struct_field_count,
     rt_variant_count,
     rt_is_flags,
     rt_vector_lanes,
+    // The parts the type table counts for a tag: struct/union fields,
+    // enum/tagged-union variants, array elements, vector lanes. 0 for a kind
+    // whose count lives in the value (a fat pointer's header).
+    rt_member_count,
     // The tag-word byte width a runtime variant read loads (sign-encoded:
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,
@@ -614,6 +621,9 @@ pub const BuiltinId = enum(u16) {
     // runtime fat-pointer read needs. Internal — serves fmt's
     // `__sx_any_len_word`.
     rt_slice_len_info,
+    // The byte offset of an optional's has_value flag, or -1 when its null
+    // state is the leading pointer word. Serves `@inner`'s presence probe.
+    rt_optional_flag,
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
@@ -623,14 +633,10 @@ pub const BuiltinId = enum(u16) {
     rt_member_type,
     rt_field_offset,
     rt_variant_value,
-    // (`declare` and `define` are plain sx over the `declare_type` /
-    // `register_type` compiler-API primitives in `modules/std/meta.sx`.)
-    // The comptime reflection INVERSE of `define`: read a type's variants
-    // (name + payload type) out of the type table and CONSTRUCT the same
-    // `.enum(EnumInfo{ variants })` value `define` decodes. Comptime-only
-    // (the interp builds the Value aggregate); emit bails (Type is
-    // comptime-only). `type_info($T)` round-trips through `define`.
-    type_info,
+    // Reflect a type INTO the prelude's `TypeInfo` value: read its shape out
+    // of the type table and construct the same value `define` decodes, so the
+    // two round-trip. A runtime `Type` loads the matching const record.
+    @"@typeInfo",
 };
 
 pub const ClosureCreate = struct {

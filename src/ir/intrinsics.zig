@@ -21,7 +21,7 @@
 //!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
-//!   * Keywords (`cast`, `type_eq`, `compile_error`, `__interp_print_frames`,
+//!   * Keywords (`cast`, `compile_error`, `__interp_print_frames`,
 //!     `__trace_resolve_frame`) — bare names the compiler recognizes without
 //!     any declaration.
 
@@ -51,8 +51,9 @@ pub const Id = enum(u16) {
     size_of,
     align_of,
     // ── std/core.sx — reflection ────────────────────────────────────────────
-    type_of,
-    type_name,
+    @"@typeOf",
+    @"@typeName",
+    @"@typeInfo",
     struct_field_count,
     variant_count,
     struct_field_name,
@@ -66,10 +67,16 @@ pub const Id = enum(u16) {
     variant_index,
     pointee_type,
     is_flags,
-    error_name,
+    @"@errorName",
+    @"@errorPayload",
+    @"@len",
+    @"@field",
+    @"@elementAt",
+    @"@inner",
+    @"@typeEq",
+    @"@unbox",
     vector_lanes,
     @"__sx_variant_tag_width",
-    @"__sx_slice_len_info",
     any_element,
     raw_any_data,
     raw_make_any,
@@ -85,7 +92,6 @@ pub const Id = enum(u16) {
     raw_variant_value,
     raw_pointer_to,
     // ── std/meta.sx ─────────────────────────────────────────────────────────
-    type_info,
     raw_declare_type,
     raw_register_type,
     // ── compiler.sx — the build-pipeline services (evaluate-only) ───────────
@@ -181,12 +187,13 @@ pub const Entry = struct {
     arity: u8,
     /// The return type, when it is fixed regardless of the arguments.
     ///
-    /// `null` means the handler computes it, and the reason is always that the
-    /// result depends on an argument: the math intrinsics return their
-    /// argument's type (`f32` in, `f32` out), the atomics return `T`, and
-    /// `type_info` returns the `TypeInfo` it must look up in the type table.
-    /// Callers that need a type for a null entry must ask the handler — there is
-    /// no default to fall back on.
+    /// `null` means the handler computes it, for one of two reasons: the result
+    /// depends on an argument — the math intrinsics return their argument's type
+    /// (`f32` in, `f32` out), the atomics return `T`, `@typeInfo` returns the
+    /// `TypeInfo` it must look up in the type table — or the result is a type
+    /// this field cannot spell, since only a builtin `TypeId` is a comptime
+    /// value (`@inner` returns an interned `?any`). Callers that need a type for
+    /// a null entry must ask the handler — there is no default to fall back on.
     ret: ?TypeId = null,
 };
 
@@ -206,7 +213,7 @@ pub const entries = [_]Entry{
     .{ .id = .align_of, .module = core, .name = "align_of", .mode = .lower, .arity = 1, .ret = .i64 },
 
     // ── reflection: folded at lowering when the type arg is static ──────────
-    .{ .id = .type_of, .module = core, .name = "type_of", .mode = .lower, .arity = 1, .ret = .type_value },
+    .{ .id = .@"@typeOf", .module = core, .name = "@typeOf", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .struct_field_count, .module = core, .name = "struct_field_count", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .variant_count, .module = core, .name = "variant_count", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .struct_field_name, .module = core, .name = "struct_field_name", .mode = .lower, .arity = 2, .ret = .string },
@@ -220,10 +227,16 @@ pub const entries = [_]Entry{
     .{ .id = .variant_index, .module = core, .name = "variant_index", .mode = .lower, .arity = 2, .ret = .i64 },
     .{ .id = .pointee_type, .module = core, .name = "pointee_type", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .is_flags, .module = core, .name = "is_flags", .mode = .lower, .arity = 1, .ret = .bool },
-    .{ .id = .error_name, .module = core, .name = "error_name", .mode = .lower, .arity = 1, .ret = .string },
+    .{ .id = .@"@errorName", .module = core, .name = "@errorName", .mode = .lower, .arity = 1, .ret = .string },
+    .{ .id = .@"@errorPayload", .module = core, .name = "@errorPayload", .mode = .lower, .arity = 1, .ret = .any },
+    .{ .id = .@"@len", .module = core, .name = "@len", .mode = .lower, .arity = 1, .ret = .i64 },
+    .{ .id = .@"@field", .module = core, .name = "@field", .mode = .lower, .arity = 2, .ret = .any },
+    .{ .id = .@"@elementAt", .module = core, .name = "@elementAt", .mode = .lower, .arity = 2, .ret = .any },
+    .{ .id = .@"@inner", .module = core, .name = "@inner", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@typeEq", .module = core, .name = "@typeEq", .mode = .lower, .arity = 2, .ret = .bool },
+    .{ .id = .@"@unbox", .module = core, .name = "@unbox", .mode = .lower, .arity = 2 },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_variant_tag_width", .module = core, .name = "__sx_variant_tag_width", .mode = .lower, .arity = 1, .ret = .i64 },
-    .{ .id = .@"__sx_slice_len_info", .module = core, .name = "__sx_slice_len_info", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .any_element, .module = core, .name = "any_element", .mode = .lower, .arity = 3, .ret = .any },
     .{ .id = .raw_any_data, .module = core, .name = "raw_any_data", .mode = .lower, .arity = 1 },
     .{ .id = .raw_make_any, .module = core, .name = "raw_make_any", .mode = .lower, .arity = 2, .ret = .any },
@@ -243,8 +256,8 @@ pub const entries = [_]Entry{
 
     // ── reflection with a VM arm: the type arg may only be known at eval time
     // (e.g. `args[i]` inside a builder body, carrying a `.type_tag(TypeId)`).
-    .{ .id = .type_name, .module = core, .name = "type_name", .mode = .dual, .arity = 1, .ret = .string },
-    .{ .id = .type_info, .module = meta, .name = "type_info", .mode = .dual, .arity = 1 },
+    .{ .id = .@"@typeName", .module = core, .name = "@typeName", .mode = .dual, .arity = 1, .ret = .string },
+    .{ .id = .@"@typeInfo", .module = core, .name = "@typeInfo", .mode = .dual, .arity = 1 },
 
     // ── evaluate-only: the comptime VM services these itself (no lowering, no
     // runtime form). `declare_type` / `register_type` mint into the type table;
@@ -384,7 +397,7 @@ pub fn find(name: []const u8, source_file: ?[]const u8) ?*const Entry {
 /// `size_of` or it never got declared.
 ///
 /// Returns null for any name that is not a registered intrinsic, including the
-/// bare names the compiler recognizes without a declaration (`cast`, `type_eq`,
+/// bare names the compiler recognizes without a declaration (`cast`,
 /// `compile_error`, …). Those are keywords, handled by their own recognizers.
 pub fn findByName(name: []const u8) ?Id {
     for (&entries) |*e| {

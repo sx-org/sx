@@ -18,5 +18,5 @@ classify :: (t: Type) -> string {
 }
 
 main :: () {
-    print("{}\n", classify(type_of(Point{ x = 1, y = 2 })));
+    print("{}\n", classify(@typeOf(Point{ x = 1, y = 2 })));
 }

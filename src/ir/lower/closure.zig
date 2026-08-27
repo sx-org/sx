@@ -3,7 +3,6 @@ const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
-const type_bridge = @import("../type_bridge.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -362,7 +361,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     const ret_ty = blk: {
         if (lam.return_type) |rt| {
             const errors_before = if (self.diagnostics) |d| d.errorCount() else 0;
-            const declared = type_bridge.resolveAstType(rt, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+            const declared = self.resolveTypeWithBindings(rt);
             if (unreportedUnboundBinder(self, rt, errors_before)) |binder| {
                 if (self.diagnostics) |d| {
                     d.addFmt(.err, rt.span, "lambda return type cannot be generic; a lambda is a value, so give '${s}' a concrete type", .{binder});
@@ -1158,10 +1157,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             self.collectCaptures(ce.operand, param_names, captures);
             const bound: []const []const u8 = if (ce.binding) |b| &.{b} else &.{};
             collectCapturesNested(self, ce.body, param_names, captures, bound);
-        },
-        .onfail_stmt => |os| {
-            const bound: []const []const u8 = if (os.binding) |b| &.{b} else &.{};
-            collectCapturesNested(self, os.body, param_names, captures, bound);
         },
         .raise_stmt => |rs| {
             self.collectCaptures(rs.tag, param_names, captures);

@@ -14,7 +14,7 @@ impl Noted for Cube { size :: (self: *Cube) -> i64 { self.side } }
 
 Holder :: struct { seen: any; }
 
-named :: (v: any) -> string { type_name(type_of(v)) }
+named :: (v: any) -> string { @typeName(@typeOf(v)) }
 returned :: (s: Sized) -> any { s }
 
 main :: () {
@@ -48,6 +48,6 @@ main :: () {
     // A value boxed DIRECTLY and the same value boxed VIA a protocol handle
     // are the same view: same type word, same contents.
     dv : any = c;
-    print("direct {} same {}\n", named(dv), type_of(av) == type_of(dv));
+    print("direct {} same {}\n", named(dv), @typeOf(av) == @typeOf(dv));
     print("agree {} {} {}\n", dv.(Cube).side, av.(Cube).side, nv.(Cube).side);
 }

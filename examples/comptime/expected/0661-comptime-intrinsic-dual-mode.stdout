@@ -1,4 +1,4 @@
-type_name         ct=P rt=P
+@typeName         ct=P rt=P
 is unsigned       ct=true rt=true
 is unsigned       ct=false rt=false
 size_of           ct=16 rt=16

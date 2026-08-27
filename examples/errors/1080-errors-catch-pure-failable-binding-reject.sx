@@ -1,9 +1,9 @@
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 must :: (n: i32) -> !E {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return;
 }
 

@@ -307,7 +307,6 @@ fn walk(self: *Lowering, node: *const Node) void {
             walk(self, ce.operand);
             walk(self, ce.body);
         },
-        .onfail_stmt => |os| walk(self, os.body),
         .force_unwrap => |fu| walk(self, fu.operand),
         .null_coalesce => |nc| {
             walk(self, nc.lhs);

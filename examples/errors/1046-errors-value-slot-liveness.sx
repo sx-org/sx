@@ -8,16 +8,16 @@
 //   • `if err { … } else { … v … }`  — proven in the else branch
 //   • `!err and <reads v>`          — short-circuit keeps the proof
 //
-// A bare tag-compare (`if err == error.X`) proves NOTHING about absence — see the
+// A bare tag-compare (`if err == .X`) proves NOTHING about absence — see the
 // rejection in 1047.
 
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 10;
 }
 

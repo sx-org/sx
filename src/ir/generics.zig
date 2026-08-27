@@ -117,8 +117,36 @@ pub const GenericResolver = struct {
                 }
                 break :blk self.mangleParamList(head.items, f.params, f.ret);
             },
+            // The channel is part of a failable's identity: two callees that
+            // agree on the value slots and differ on the set they raise key to
+            // distinct monomorphs.
+            .failable => |f| std.fmt.allocPrint(self.l.alloc, "fl_{s}_{s}", .{
+                self.mangleTypeName(f.value),
+                self.mangleTypeName(f.err),
+            }) catch @panic("out of memory while mangling type"),
+            .@"error" => |e| self.mangleErrorMembers(e),
             else => @tagName(info),
         };
+    }
+
+    /// An error keys by its MEMBERS. A member-less channel (`!`, `!dyn`) is
+    /// identified by its spelling instead, whose punctuation the key carries as
+    /// `_`.
+    fn mangleErrorMembers(self: GenericResolver, e: types.TypeInfo.ErrorSetInfo) []const u8 {
+        var buf = std.ArrayList(u8).empty;
+        buf.appendSlice(self.l.alloc, "er") catch @panic("out of memory while mangling type");
+        if (e.tags.len == 0) {
+            for (self.l.module.types.getString(e.name)) |c| {
+                const safe = if (std.ascii.isAlphanumeric(c)) c else '_';
+                buf.append(self.l.alloc, safe) catch @panic("out of memory while mangling type");
+            }
+            return buf.items;
+        }
+        for (e.tags) |tag| {
+            const frag = std.fmt.allocPrint(self.l.alloc, "_{d}", .{tag}) catch @panic("out of memory while mangling type");
+            buf.appendSlice(self.l.alloc, frag) catch @panic("out of memory while mangling type");
+        }
+        return buf.items;
     }
 
     /// Append a `__n<id>` disambiguator to a nominal type's display name when its
@@ -245,6 +273,16 @@ pub const GenericResolver = struct {
         return true;
     }
 
+    /// Whether `tp` is a TYPE parameter a call must bind — constrained by
+    /// `Type` or by a protocol. Comptime VALUE params (`$N: u32`) and `..$Ts`
+    /// packs bind through their own dispatch, so they answer false.
+    pub fn bindsTypeArgument(self: GenericResolver, tp: ast.StructTypeParam, source: ?[]const u8) bool {
+        if (tp.is_variadic) return false;
+        if (tp.constraint.data != .type_expr) return false;
+        const cname = tp.constraint.data.type_expr.name;
+        return std.mem.eql(u8, cname, "Type") or self.l.isProtocolConstraint(cname, source);
+    }
+
     pub fn buildTypeBindings(
         self: GenericResolver,
         fd: *const ast.FnDecl,
@@ -351,6 +389,16 @@ pub const GenericResolver = struct {
         var tmp_bindings = self.buildTypeBindings(fd, c.args);
         defer tmp_bindings.deinit();
 
+        // A TYPE param the arguments leave unbound resolves as `.unresolved`:
+        // its return leaf names the template's own parameter, which has no
+        // declaration to find, and the call path owns the `cannot infer`
+        // diagnostic for it.
+        for (fd.type_params) |tp| {
+            if (!self.bindsTypeArgument(tp, fd.body.source_file)) continue;
+            if (tmp_bindings.contains(tp.name)) continue;
+            tmp_bindings.put(tp.name, .unresolved) catch {};
+        }
+
         // Resolve return type with whatever bindings we built. Even an
         // empty `tmp_bindings` is a valid input — non-generic literal
         // return types (e.g. `walk(..$args) -> string`) still need to
@@ -366,7 +414,7 @@ pub const GenericResolver = struct {
         // the error set of a value-failable `(… , !E)`) resolves to the SAME
         // TypeId the instance's real signature uses, not whatever a re-export
         // alias at the call site resolves it to. The pin is what keeps a
-        // re-exported generic value-failable's `!E` an `.error_set`, so the
+        // re-exported generic value-failable's `!E` an error, so the
         // planned call result carries a channel `errorChannelOf` can read.
         // The binding-building above
         // stays in the call-site context (its args are typed there).

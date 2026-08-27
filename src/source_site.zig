@@ -654,7 +654,6 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, c.operand);
             try walk(b, c.body);
         },
-        .onfail_stmt => |o| try walk(b, o.body),
         .force_unwrap => |f| try walk(b, f.operand),
         .null_coalesce => |n| {
             try walk(b, n.lhs);

@@ -73,7 +73,15 @@ pub const TypeLowering = struct {
             .f64 => self.e.cached_f64,
             .void => self.e.cached_void,
             .bool => self.e.cached_i1,
-            .error_set => self.e.cached_i32, // u32 tag id on the error channel
+            .@"error" => |es| {
+                const payload_bytes = self.e.ir_mod.types.errorChannelPayloadBytes(es.tags);
+                if (payload_bytes == 0) return self.e.cached_i32;
+                var field_types: [2]c.LLVMTypeRef = .{
+                    self.e.cached_i32,
+                    c.LLVMArrayType2(self.e.cached_i8, @intCast(payload_bytes)),
+                };
+                return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
+            },
             .string => self.e.getStringStructType(),
             .cstring => self.e.cached_ptr,
             .pointer, .many_pointer, .function => self.e.cached_ptr,
@@ -84,18 +92,9 @@ pub const TypeLowering = struct {
                 break :blk c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
             .optional => |opt| {
-                // ?*T / ?fn → bare pointer (null = none)
-                const child_info = self.e.ir_mod.types.get(opt.child);
-                if (child_info == .pointer or child_info == .many_pointer or child_info == .function or child_info == .cstring) {
-                    return self.e.cached_ptr;
-                }
-                if (child_info == .closure) {
-                    return self.e.getClosureStructType();
-                }
-                // ?Protocol → protocol struct (ctx ptr = field 0 is null when none).
-                if (child_info == .@"struct" and child_info.@"struct".is_protocol) {
-                    return self.toLLVMType(opt.child);
-                }
+                // A sentinel-shaped optional IS its child: the child's own
+                // leading pointer word is null when none.
+                if (self.e.ir_mod.types.optionalIsSentinel(opt.child)) return self.toLLVMType(opt.child);
                 // ?T → { T, i1 }
                 var field_types: [2]c.LLVMTypeRef = .{
                     self.fieldLLVMType(opt.child),

@@ -1,0 +1,8 @@
+signed -7
+signed 900000
+unsigned 4000000000
+float 1.500000
+float 2.250000
+pointer true
+struct 41
+other

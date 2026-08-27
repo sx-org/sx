@@ -1,21 +1,23 @@
 // Comptime `@run` of a failable composes with the handlers exactly as at
 // runtime: `catch` absorbs, `or` terminates, a successful bare `@run` yields the
-// value (error channel stripped), and an `onfail` in the evaluated body still
+// value (error channel stripped), and a `defer` in the evaluated body still
 // runs during comptime unwinding.
 
 @import "modules/std.sx";
 
-E :: error { Bad, Empty }
+E :: error { Bad; Empty }
 
 parse :: (n: i32) -> (i32, !E) {
-    if n < 0  { raise error.Bad; }
-    if n == 0 { raise error.Empty; }
+    if n < 0  { raise .Bad; }
+    if n == 0 { raise .Empty; }
     return n * 2;
 }
 
 guard :: (ok: bool) -> !E {
-    onfail print("comptime cleanup\n");
-    if !ok { raise error.Bad; }
+    done := false;
+    defer if !done print("comptime cleanup\n");
+    if !ok { raise .Bad; }
+    done = true;
     return;
 }
 
@@ -23,7 +25,7 @@ ok_v   :: @run parse(5);            // success → 10 (value, error stripped)
 caught :: @run parse(-1) catch |e| 99; // Bad   → 99
 ored   :: @run parse(0) ?? 55;       // Empty → 55
 
-@run guard(false) catch |e| {};       // onfail fires during the comptime unwind
+@run guard(false) catch |e| {};       // the cleanup fires during the comptime unwind
 
 main :: () -> i32 {
     print("ok={} caught={} ored={}\n", ok_v, caught, ored);

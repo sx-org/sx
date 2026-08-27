@@ -1,17 +1,17 @@
 error: a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`
-  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:19:13
+  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:18:13
    |
-19 |             failing();              // REJECTED: nested in the `if` then-branch
+18 |             failing();              // REJECTED: nested in the `if` then-branch
    |             ^^^^^^^^^
 
 error: a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`
-  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:21:15
+  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:20:15
    |
-21 |             { failing(); }          // REJECTED: nested block in the else-branch
+20 |             { failing(); }          // REJECTED: nested block in the else-branch
    |               ^^^^^^^^^
 
-error: a bare failable call in a `onfail` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`
-  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:26:13
+error: a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`
+  --> examples/errors/1052-errors-cleanup-transitive-reject.sx:25:13
    |
-26 |             failing();              // REJECTED: nested in the `while` body
+25 |             failing();              // REJECTED: nested in the `while` body
    |             ^^^^^^^^^

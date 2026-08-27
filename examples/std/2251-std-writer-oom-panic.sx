@@ -1,0 +1,20 @@
+// A `Writer` never answers, so a `StringBuilder` that cannot fund its buffer
+// stops the program instead of reporting.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+NoMemory :: struct {}
+
+impl Allocator for NoMemory {
+    alloc_bytes :: (self: *NoMemory, size: i64) -> *void { null }
+    dealloc_bytes :: (self: *NoMemory, ptr: *void) { }
+}
+
+main :: () -> i32 {
+    refuse := NoMemory{};
+    sb := StringBuilder.init(refuse);
+    w : Writer = sb;
+    w.write("never lands");
+    return 0;
+}

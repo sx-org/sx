@@ -23,18 +23,18 @@ private TINFL_FLAG_COMPUTE_ADLER32 : i64 = 8;
 
 // miniz's public bound is intentionally conservative.
 compress_bound :: (source_len: i64) -> (i64, !Error) {
-    if source_len < 0 or source_len > 83848836698679778 { raise error.TooLarge; }
+    if source_len < 0 or source_len > 83848836698679778 { raise .TooLarge; }
     ratio_bound := 128 + (source_len * 110) / 100;
     block_bound := 128 + source_len + ((source_len / (31 * 1024)) + 1) * 5;
     if ratio_bound > block_bound then ratio_bound else block_bound
 }
 
 validate_options :: (options: Options) -> !Error {
-    if options.level < 0 or options.level > 10 { raise error.InvalidOptions; }
+    if options.level < 0 or options.level > 10 { raise .InvalidOptions; }
 }
 
 validate_output_limit :: (max_output: i64) -> !Error {
-    if max_output < 0 { raise error.InvalidArgument; }
+    if max_output < 0 { raise .InvalidArgument; }
 }
 
 // -----------------------------------------------------------------------------
@@ -1077,7 +1077,7 @@ private build_huffman_into :: (h: *Huffman, lengths: string, allow_single: bool 
     max_len := 0;
     while i < lengths.len {
         len := lengths[i].(i64);
-        if len > 15 { raise error.InvalidData; }
+        if len > 15 { raise .InvalidData; }
         h.counts[len] += 1;
         if len > 0 {
             nonzero += 1;
@@ -1092,17 +1092,17 @@ private build_huffman_into :: (h: *Huffman, lengths: string, allow_single: bool 
     // valid. No other alphabet may be empty.
     if h.counts[0].(i64) == lengths.len {
         if allow_empty { return; }
-        raise error.InvalidData;
+        raise .InvalidData;
     }
     left := 1;
     len := 1;
     while len <= 15 {
         left = (left << 1) - h.counts[len].(i64);
-        if left < 0 { raise error.InvalidData; }
+        if left < 0 { raise .InvalidData; }
         len += 1;
     }
     if left > 0 and !(allow_single and nonzero == 1 and max_len == 1) {
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     offsets : [16]i32 = ---;
@@ -1283,10 +1283,10 @@ private StoredDeflater :: struct {
     }
 
     step :: (self: *StoredDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
-        if self.buffer.ptr == null { raise error.AllocationFailed; }
+        if self.buffer.ptr == null { raise .AllocationFailed; }
         if finish { self.finishing = true; }
         if self.phase == .done {
-            if input.len > 0 { raise error.Finished; }
+            if input.len > 0 { raise .Finished; }
             return Progress{ consumed = 0, produced = 0, status = .done };
         }
         consumed := 0;
@@ -1313,7 +1313,7 @@ private StoredDeflater :: struct {
                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
             }
             if self.phase == .header {
-                if self.block_final and input.len - consumed > 0 { raise error.Finished; }
+                if self.block_final and input.len - consumed > 0 { raise .Finished; }
                 while self.header_at < 5 and produced < output.len {
                     output.ptr[produced] = self.header[self.header_at];
                     self.header_at += 1;
@@ -1324,7 +1324,7 @@ private StoredDeflater :: struct {
                 continue;
             }
             if self.phase == .payload {
-                if self.block_final and input.len - consumed > 0 { raise error.Finished; }
+                if self.block_final and input.len - consumed > 0 { raise .Finished; }
                 take := self.buffered - self.payload_at;
                 if take > output.len - produced { take = output.len - produced; }
                 n := 0;
@@ -1345,11 +1345,11 @@ private StoredDeflater :: struct {
                 continue;
             }
         }
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     end :: (self: *StoredDeflater) -> !Error {
-        if self.phase != .done { raise error.UnexpectedEnd; }
+        if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
 
@@ -2263,27 +2263,27 @@ Deflater :: struct {
     }
 
     step :: (self: *Deflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
-        if self.allocation_failed { raise error.AllocationFailed; }
+        if self.allocation_failed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or (self.block_final and (self.phase == .pending_bits or self.phase == .flush_final))) {
-            raise error.Finished;
+            raise .Finished;
         }
         progress := self.step_unchecked(input, output, finish);
-        if self.allocation_failed { raise error.AllocationFailed; }
+        if self.allocation_failed { raise .AllocationFailed; }
         progress
     }
 
     step_flush :: (self: *Deflater, input: string, output: string, mode: Flush) -> (Progress, !Error) {
-        if self.allocation_failed { raise error.AllocationFailed; }
+        if self.allocation_failed { raise .AllocationFailed; }
         if input.len > 0 and (self.phase == .done or (self.block_final and (self.phase == .pending_bits or self.phase == .flush_final))) {
-            raise error.Finished;
+            raise .Finished;
         }
         progress := self.step_flush_unchecked(input, output, mode);
-        if self.allocation_failed { raise error.AllocationFailed; }
+        if self.allocation_failed { raise .AllocationFailed; }
         progress
     }
 
     end :: (self: *Deflater) -> !Error {
-        if self.phase != .done { raise error.UnexpectedEnd; }
+        if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
 
@@ -2408,22 +2408,22 @@ ZlibDeflater :: struct {
     }
 
     step :: (self: *ZlibDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
-        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise error.Finished; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
+        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise .Finished; }
         progress := self.step_unchecked(input, output, finish);
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
         progress
     }
 
     step_flush :: (self: *ZlibDeflater, input: string, output: string, mode: Flush) -> (Progress, !Error) {
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
-        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise error.Finished; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
+        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise .Finished; }
         progress := self.step_flush_unchecked(input, output, mode);
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
         progress
     }
 
-    end :: (self: *ZlibDeflater) -> !Error { if self.phase != .done { raise error.UnexpectedEnd; } }
+    end :: (self: *ZlibDeflater) -> !Error { if self.phase != .done { raise .UnexpectedEnd; } }
 }
 
 GzipOptions :: struct {
@@ -2446,28 +2446,28 @@ private contains_zero :: (data: string) -> bool {
 }
 
 private validate_gzip_options :: (options: GzipOptions) -> !Error {
-    if options.mtime < 0 or options.mtime > 0xffffffff { raise error.InvalidData; }
-    if options.extra.len > 65535 { raise error.TooLarge; }
-    if contains_zero(options.filename) or contains_zero(options.comment) { raise error.InvalidData; }
+    if options.mtime < 0 or options.mtime > 0xffffffff { raise .InvalidData; }
+    if options.extra.len > 65535 { raise .TooLarge; }
+    if contains_zero(options.filename) or contains_zero(options.comment) { raise .InvalidData; }
 }
 
 gzip_header_overhead :: (options: GzipOptions) -> (i64, !Error) {
     try validate_gzip_options(options);
     overhead : i64 = 18;
     if options.extra.len > 0 {
-        if options.extra.len > i64.max - overhead - 2 { raise error.TooLarge; }
+        if options.extra.len > i64.max - overhead - 2 { raise .TooLarge; }
         overhead += 2 + options.extra.len;
     }
     if options.filename.len > 0 {
-        if options.filename.len > i64.max - overhead - 1 { raise error.TooLarge; }
+        if options.filename.len > i64.max - overhead - 1 { raise .TooLarge; }
         overhead += options.filename.len + 1;
     }
     if options.comment.len > 0 {
-        if options.comment.len > i64.max - overhead - 1 { raise error.TooLarge; }
+        if options.comment.len > i64.max - overhead - 1 { raise .TooLarge; }
         overhead += options.comment.len + 1;
     }
     if options.header_crc {
-        if overhead > i64.max - 2 { raise error.TooLarge; }
+        if overhead > i64.max - 2 { raise .TooLarge; }
         overhead += 2;
     }
     overhead
@@ -2523,7 +2523,7 @@ GzipDeflater :: struct {
     init_options :: (level: i64, strategy: Strategy, options: GzipOptions, alloc: Allocator = context.allocator) -> (GzipDeflater, !Error) {
         try validate_gzip_options(options);
         state := GzipDeflater.init_strategy(level, strategy, alloc);
-        if state.raw.allocation_failed { state.deinit(); raise error.AllocationFailed; }
+        if state.raw.allocation_failed { state.deinit(); raise .AllocationFailed; }
 
         flags := 0;
         if options.text { flags |= 1; }
@@ -2557,7 +2557,7 @@ GzipDeflater :: struct {
             if tail.failed {
                 tail.deinit();
                 state.deinit();
-                raise error.AllocationFailed;
+                raise .AllocationFailed;
             }
             state.header_tail = tail.take();
         }
@@ -2647,14 +2647,14 @@ GzipDeflater :: struct {
     }
 
     step :: (self: *GzipDeflater, input: string, output: string, finish: bool = false) -> (Progress, !Error) {
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
-        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise error.Finished; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
+        if input.len > 0 and (self.phase == .done or self.phase == .trailer or (self.phase == .body and self.raw.block_final and (self.raw.phase == .pending_bits or self.raw.phase == .flush_final))) { raise .Finished; }
         progress := self.step_unchecked(input, output, finish);
-        if self.raw.allocation_failed { raise error.AllocationFailed; }
+        if self.raw.allocation_failed { raise .AllocationFailed; }
         progress
     }
 
-    end :: (self: *GzipDeflater) -> !Error { if self.phase != .done { raise error.UnexpectedEnd; } }
+    end :: (self: *GzipDeflater) -> !Error { if self.phase != .done { raise .UnexpectedEnd; } }
 }
 
 private InflatePhase :: enum {
@@ -2863,7 +2863,7 @@ Inflater :: struct {
             self.decode_len += 1;
         }
         self.reset_decode();
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     decode_direct :: (self: *Inflater, input: string, consumed: *i64, tree: *Huffman) -> (i64, !Error) {
@@ -2881,7 +2881,7 @@ Inflater :: struct {
             return symbol;
         }
         symbol, available := try self.decode(input, consumed, tree);
-        if !available { raise error.UnexpectedEnd; }
+        if !available { raise .UnexpectedEnd; }
         symbol
     }
 
@@ -2897,7 +2897,7 @@ Inflater :: struct {
     }
 
     finish_dynamic_trees :: (self: *Inflater) -> !Error {
-        if self.dynamic_lengths[256] == 0 { raise error.InvalidData; }
+        if self.dynamic_lengths[256] == 0 { raise .InvalidData; }
         try build_huffman_into(*self.lit_tree, string{ ptr = *self.dynamic_lengths[0], len = self.hlit });
         try build_huffman_into(*self.dist_tree, string{ ptr = *self.dynamic_lengths[self.hlit], len = self.hdist }, true, true);
         // A complete literal/length tree spans 32768 units at 15-bit
@@ -2923,12 +2923,11 @@ Inflater :: struct {
     }
 
     step :: (self: *Inflater, input: string, output: string) -> (Progress, !Error) {
-        if self.window.ptr == null and self.direct_output.ptr == null { self.remember_failure(0, 0); raise error.AllocationFailed; }
-        if self.max_output < 0 { self.remember_failure(0, 0); raise error.OutputLimit; }
+        if self.window.ptr == null and self.direct_output.ptr == null { self.remember_failure(0, 0); raise .AllocationFailed; }
+        if self.max_output < 0 { self.remember_failure(0, 0); raise .OutputLimit; }
         consumed := 0;
         produced := 0;
         defer { self.last_consumed = consumed; self.last_produced = produced; }
-        onfail { self.last_consumed = consumed; self.last_produced = produced; }
         while true {
             if self.phase == .done {
                 if self.direct_output.ptr != null and self.bit_count >= 8 {
@@ -2971,7 +2970,7 @@ Inflater :: struct {
                     self.phase = .dynamic_counts;
                 } else {
                     self.remember_failure(consumed, produced);
-                    raise error.InvalidData;
+                    raise .InvalidData;
                 }
                 continue;
             }
@@ -2986,8 +2985,8 @@ Inflater :: struct {
             if self.phase == .stored_inverse {
                 inverse, available := self.take_bits(input, *consumed, 16);
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
-                if ((self.stored_length ^ inverse) & 0xffff) != 0xffff { self.remember_failure(consumed, produced); raise error.InvalidData; }
-                if self.stored_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                if ((self.stored_length ^ inverse) & 0xffff) != 0xffff { self.remember_failure(consumed, produced); raise .InvalidData; }
+                if self.stored_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                 if self.stored_length == 0 {
                     self.phase = if self.final_block then .done else .block_header;
                 } else {
@@ -3050,7 +3049,7 @@ Inflater :: struct {
                 self.hlit = (counts & 31) + 257;
                 self.hdist = ((counts >> 5) & 31) + 1;
                 self.hclen = ((counts >> 10) & 15) + 4;
-                if self.hlit > 286 or self.hdist > 32 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                if self.hlit > 286 or self.hdist > 32 { self.remember_failure(consumed, produced); raise .InvalidData; }
                 i := 0;
                 while i < 19 { self.code_lengths[i] = 0; i += 1; }
                 self.dynamic_at = 0;
@@ -3091,7 +3090,7 @@ Inflater :: struct {
                     self.previous_length = symbol;
                     self.dynamic_at += 1;
                 } else if symbol == 16 {
-                    if self.dynamic_at == 0 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                    if self.dynamic_at == 0 { self.remember_failure(consumed, produced); raise .InvalidData; }
                     self.phase = .dynamic_repeat_16;
                 } else if symbol == 17 {
                     self.phase = .dynamic_repeat_17;
@@ -3099,7 +3098,7 @@ Inflater :: struct {
                     self.phase = .dynamic_repeat_18;
                 } else {
                     self.remember_failure(consumed, produced);
-                    raise error.InvalidData;
+                    raise .InvalidData;
                 }
                 continue;
             }
@@ -3114,7 +3113,7 @@ Inflater :: struct {
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
                 repeat := base + extra;
                 total := self.hlit + self.hdist;
-                if self.dynamic_at + repeat > total { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                if self.dynamic_at + repeat > total { self.remember_failure(consumed, produced); raise .InvalidData; }
                 n := 0;
                 while n < repeat {
                     self.dynamic_lengths[self.dynamic_at] = value.(u8);
@@ -3268,7 +3267,7 @@ Inflater :: struct {
                                     self.bit_buffer = self.bit_buffer >> second_length;
                                     self.bit_count -= second_length;
                                     if self.total_output >= self.max_output {
-                                        self.remember_failure(consumed, produced); raise error.OutputLimit;
+                                        self.remember_failure(consumed, produced); raise .OutputLimit;
                                     }
                                     output.ptr[produced] = first_symbol.(u8);
                                     produced += 1;
@@ -3276,7 +3275,7 @@ Inflater :: struct {
                                     if self.history_len < 32768 { self.history_len += 1; }
                                     if second_symbol < 256 {
                                         if self.total_output >= self.max_output {
-                                            self.remember_failure(consumed, produced); raise error.OutputLimit;
+                                            self.remember_failure(consumed, produced); raise .OutputLimit;
                                         }
                                         output.ptr[produced] = second_symbol.(u8);
                                         produced += 1;
@@ -3287,7 +3286,7 @@ Inflater :: struct {
                                     symbol = second_symbol;
                                 } else {
                                     if self.total_output >= self.max_output {
-                                        self.remember_failure(consumed, produced); raise error.OutputLimit;
+                                        self.remember_failure(consumed, produced); raise .OutputLimit;
                                     }
                                     output.ptr[produced] = first_symbol.(u8);
                                     produced += 1;
@@ -3306,7 +3305,7 @@ Inflater :: struct {
                             };
                         }
                         if symbol < 256 {
-                            if self.total_output >= self.max_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                            if self.total_output >= self.max_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                             output.ptr[produced] = symbol.(u8);
                             produced += 1;
                             self.total_output += 1;
@@ -3317,28 +3316,28 @@ Inflater :: struct {
                             self.phase = if self.final_block then .done else .block_header;
                             break;
                         }
-                        if symbol < 257 or symbol > 285 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                        if symbol < 257 or symbol > 285 { self.remember_failure(consumed, produced); raise .InvalidData; }
                         li := symbol - 257;
                         length := LENGTH_BASE[li];
                         extra_bits := LENGTH_EXTRA[li];
                         if extra_bits > 0 {
                             extra, has_extra := self.take_bits(input, *consumed, extra_bits);
-                            if !has_extra { self.remember_failure(consumed, produced); raise error.UnexpectedEnd; }
+                            if !has_extra { self.remember_failure(consumed, produced); raise .UnexpectedEnd; }
                             length += extra;
                         }
                         dist_symbol := self.decode_direct(input, *consumed, *self.dist_tree) catch |e| {
                             self.remember_failure(consumed, produced); raise e;
                         };
-                        if dist_symbol > 29 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                        if dist_symbol > 29 { self.remember_failure(consumed, produced); raise .InvalidData; }
                         distance := DIST_BASE[dist_symbol];
                         dist_bits := DIST_EXTRA[dist_symbol];
                         if dist_bits > 0 {
                             dist_extra, has_dist_extra := self.take_bits(input, *consumed, dist_bits);
-                            if !has_dist_extra { self.remember_failure(consumed, produced); raise error.UnexpectedEnd; }
+                            if !has_dist_extra { self.remember_failure(consumed, produced); raise .UnexpectedEnd; }
                             distance += dist_extra;
                         }
-                        if distance <= 0 or distance > self.history_len { self.remember_failure(consumed, produced); raise error.InvalidData; }
-                        if length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                        if distance <= 0 or distance > self.history_len { self.remember_failure(consumed, produced); raise .InvalidData; }
+                        if length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                         global_at := self.total_output;
                         copied := 0;
                         if distance == 1 {
@@ -3368,7 +3367,7 @@ Inflater :: struct {
                 } else if symbol == 256 {
                     self.phase = if self.final_block then .done else .block_header;
                 } else {
-                    if symbol < 257 or symbol > 285 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                    if symbol < 257 or symbol > 285 { self.remember_failure(consumed, produced); raise .InvalidData; }
                     li := symbol - 257;
                     self.match_length = LENGTH_BASE[li];
                     self.pending_extra_bits = LENGTH_EXTRA[li];
@@ -3377,7 +3376,7 @@ Inflater :: struct {
                 continue;
             }
             if self.phase == .literal {
-                if self.total_output >= self.max_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                if self.total_output >= self.max_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
                 self.put_history(output, *produced, self.pending_literal);
                 self.phase = .symbol;
@@ -3395,13 +3394,13 @@ Inflater :: struct {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
-                if symbol > 29 { self.remember_failure(consumed, produced); raise error.InvalidData; }
+                if symbol > 29 { self.remember_failure(consumed, produced); raise .InvalidData; }
                 self.match_distance = DIST_BASE[symbol];
                 self.pending_extra_bits = DIST_EXTRA[symbol];
                 self.phase = if self.pending_extra_bits > 0 then .distance_extra else .match_copy;
                 if self.phase == .match_copy {
-                    if self.match_distance <= 0 or self.match_distance > self.history_len { self.remember_failure(consumed, produced); raise error.InvalidData; }
-                    if self.match_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                    if self.match_distance <= 0 or self.match_distance > self.history_len { self.remember_failure(consumed, produced); raise .InvalidData; }
+                    if self.match_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                 }
                 continue;
             }
@@ -3409,8 +3408,8 @@ Inflater :: struct {
                 extra, available := self.take_bits(input, *consumed, self.pending_extra_bits);
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.match_distance += extra;
-                if self.match_distance <= 0 or self.match_distance > self.history_len { self.remember_failure(consumed, produced); raise error.InvalidData; }
-                if self.match_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
+                if self.match_distance <= 0 or self.match_distance > self.history_len { self.remember_failure(consumed, produced); raise .InvalidData; }
+                if self.match_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise .OutputLimit; }
                 self.phase = .match_copy;
                 continue;
             }
@@ -3454,11 +3453,11 @@ Inflater :: struct {
             }
         }
         self.remember_failure(consumed, produced);
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     end :: (self: *Inflater) -> !Error {
-        if self.phase != .done { raise error.UnexpectedEnd; }
+        if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
 
@@ -3545,15 +3544,15 @@ ZlibInflater :: struct {
                 flg := self.header[1].(i64);
                 if (cmf & 15) != 8 or (cmf >> 4) > 7 {
                     self.last_consumed = consumed; self.last_produced = produced;
-                    raise error.Unsupported;
+                    raise .Unsupported;
                 }
                 if ((cmf << 8) + flg) % 31 != 0 {
                     self.last_consumed = consumed; self.last_produced = produced;
-                    raise error.InvalidData;
+                    raise .InvalidData;
                 }
                 if (flg & 0x20) != 0 {
                     self.last_consumed = consumed; self.last_produced = produced;
-                    raise error.Unsupported;
+                    raise .Unsupported;
                 }
                 self.phase = .body;
                 continue;
@@ -3587,17 +3586,17 @@ ZlibInflater :: struct {
                 expected := (self.trailer[0].(i64) << 24) | (self.trailer[1].(i64) << 16) | (self.trailer[2].(i64) << 8) | self.trailer[3].(i64);
                 if self.checksum != expected {
                     self.last_consumed = consumed; self.last_produced = produced;
-                    raise error.ChecksumMismatch;
+                    raise .ChecksumMismatch;
                 }
                 self.phase = .done;
                 continue;
             }
         }
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     end :: (self: *ZlibInflater) -> !Error {
-        if self.phase != .done { raise error.UnexpectedEnd; }
+        if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
 
@@ -3666,7 +3665,7 @@ private TinflDecompressor :: struct {
         if (self.flags & TINFL_FLAG_PARSE_ZLIB_HEADER) != 0 {
             progress = self.framed.step(input, output) catch |e| {
                 failed = true;
-                if e == error.ChecksumMismatch { failure = .adler_mismatch; }
+                if e == .ChecksumMismatch { failure = .adler_mismatch; }
                 Progress{ consumed = self.framed.last_consumed, produced = self.framed.last_produced, status = .need_input }
             };
         } else {
@@ -3699,11 +3698,11 @@ private TinflDecompressor :: struct {
 }
 
 private tinfl_error :: (status: TinflStatus) -> Error {
-    if status == .adler_mismatch { return error.ChecksumMismatch; }
-    if status == .has_more_output { return error.OutputLimit; }
-    if status == .needs_more_input or status == .cannot_make_progress { return error.UnexpectedEnd; }
-    if status == .bad_param { return error.InvalidData; }
-    error.InvalidData
+    if status == .adler_mismatch { return .ChecksumMismatch; }
+    if status == .has_more_output { return .OutputLimit; }
+    if status == .needs_more_input or status == .cannot_make_progress { return .UnexpectedEnd; }
+    if status == .bad_param { return .InvalidData; }
+    .InvalidData
 }
 
 // tinfl_decompress_mem_to_mem equivalent. `parse_zlib_header` selects RFC
@@ -3738,13 +3737,13 @@ inflate_into :: (data: string, output: string, parse_zlib_header: bool = false, 
             // window to finish; a second request proves real exhaustion.
             if !probed_full_output { probed_full_output = true; continue; }
             state.deinit();
-            raise error.OutputLimit;
+            raise .OutputLimit;
         }
         if progress.produced > 0 { probed_full_output = false; }
         state.deinit();
         raise tinfl_error(progress.status);
     }
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 private GzipInflatePhase :: enum {
@@ -3854,7 +3853,7 @@ GzipInflater :: struct {
         produced := 0;
         while true {
             if self.phase == .done {
-                if input.len - consumed > 0 { raise error.InvalidData; }
+                if input.len - consumed > 0 { raise .InvalidData; }
                 return Progress{ consumed = consumed, produced = produced, status = .done };
             }
             if self.phase == .between_members {
@@ -3876,10 +3875,10 @@ GzipInflater :: struct {
                     self.header_checksum = crc32(input[start..consumed], self.header_checksum);
                 }
                 if self.fixed_at < 10 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
-                if self.fixed[0] != 0x1f or self.fixed[1] != 0x8b { raise error.InvalidData; }
-                if self.fixed[2] != 8 { raise error.Unsupported; }
+                if self.fixed[0] != 0x1f or self.fixed[1] != 0x8b { raise .InvalidData; }
+                if self.fixed[2] != 8 { raise .Unsupported; }
                 self.flags = self.fixed[3].(i64);
-                if (self.flags & 0xe0) != 0 { raise error.InvalidData; }
+                if (self.flags & 0xe0) != 0 { raise .InvalidData; }
                 if (self.flags & 4) != 0 { self.phase = .extra_length; }
                 else { self.after_extra(); }
                 continue;
@@ -3930,7 +3929,7 @@ GzipInflater :: struct {
                 }
                 if self.header_crc_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
                 expected := self.header_crc_bytes[0].(i64) | (self.header_crc_bytes[1].(i64) << 8);
-                if (self.header_checksum & 0xffff) != expected { raise error.ChecksumMismatch; }
+                if (self.header_checksum & 0xffff) != expected { raise .ChecksumMismatch; }
                 self.phase = .body;
                 continue;
             }
@@ -3960,7 +3959,7 @@ GzipInflater :: struct {
                 if self.trailer_at < 8 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
                 expected_crc := self.trailer[0].(i64) | (self.trailer[1].(i64) << 8) | (self.trailer[2].(i64) << 16) | (self.trailer[3].(i64) << 24);
                 expected_size := self.trailer[4].(i64) | (self.trailer[5].(i64) << 8) | (self.trailer[6].(i64) << 16) | (self.trailer[7].(i64) << 24);
-                if self.member_checksum != expected_crc or self.member_size != expected_size { raise error.ChecksumMismatch; }
+                if self.member_checksum != expected_crc or self.member_size != expected_size { raise .ChecksumMismatch; }
                 if consumed < input.len {
                     self.start_member();
                     continue;
@@ -3970,11 +3969,11 @@ GzipInflater :: struct {
                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
             }
         }
-        raise error.InvalidData;
+        raise .InvalidData;
     }
 
     end :: (self: *GzipInflater) -> !Error {
-        if self.phase != .done { raise error.UnexpectedEnd; }
+        if self.phase != .done { raise .UnexpectedEnd; }
     }
 }
 
@@ -3987,20 +3986,21 @@ inflate_with_consumed :: (data: string, max_output: i64, alloc: Allocator) -> (s
     state := Inflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     direct := max_output > 0 and max_output <= DIRECT_INFLATE_LIMIT;
     if direct {
-        if !out.ensure_capacity(max_output) { raise error.AllocationFailed; }
+        if !out.ensure_capacity(max_output) { raise .AllocationFailed; }
         state.direct_output = .{ ptr = out.bytes.items.ptr, len = max_output };
         state.direct_fast = true;
     }
     input_at := 0;
     while true {
         remaining := max_output - out.bytes.len;
-        if remaining < 0 { state.deinit(); raise error.OutputLimit; }
+        if remaining < 0 { state.deinit(); raise .OutputLimit; }
         chunk := if direct then remaining else 8192;
         if chunk > remaining { chunk = remaining; }
-        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
+        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise .AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
         if chunk > 0 { output = string{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
@@ -4008,20 +4008,20 @@ inflate_with_consumed :: (data: string, max_output: i64, alloc: Allocator) -> (s
         progress := try state.step(input, output);
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
-        if progress.status == .done { return out.take(), input_at; }
+        if progress.status == .done { taken = true; return out.take(), input_at; }
         if progress.status == .need_input {
             if input_at >= data.len {
                 out.deinit();
                 state.deinit();
-                raise error.UnexpectedEnd;
+                raise .UnexpectedEnd;
             }
         } else if progress.status == .need_output and remaining == 0 {
             out.deinit();
             state.deinit();
-            raise error.OutputLimit;
+            raise .OutputLimit;
         }
     }
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 // -----------------------------------------------------------------------------
@@ -4036,7 +4036,7 @@ compress :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator
 // clamp to its hidden level-10 mode.
 private compress_checked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
     result := compress(data, level, alloc);
-    if result.ptr == null { raise error.AllocationFailed; }
+    if result.ptr == null { raise .AllocationFailed; }
     result
 }
 
@@ -4081,10 +4081,6 @@ compress_path :: (data: string, level: i64, strategy: Strategy, path: DeflatePat
 compress_into :: (data: string, output: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
     state := ZlibDeflater.init(level, alloc);
     defer state.deinit();
-    // Keep explicit failure cleanup alongside the ordinary defer. This is
-    // idempotent and covers an error raised after tdefl has materialized a
-    // pending block into its allocator-backed buffer.
-    onfail state.deinit();
     input_at := 0;
     output_at := 0;
     while true {
@@ -4098,12 +4094,12 @@ compress_into :: (data: string, output: string, level: i64 = -1, alloc: Allocato
         if progress.status == .done { return output[..output_at]; }
         if progress.status == .need_output and output_at >= output.len {
             state.deinit();
-            raise error.OutputLimit;
+            raise .OutputLimit;
         }
         if progress.status == .need_input and input_at >= data.len { continue; }
     }
     state.deinit();
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 // Strict framing helper for callers that require exactly one zlib stream.
@@ -4111,7 +4107,7 @@ decompress_exact :: (data: string, max_output: i64 = 1073741824, alloc: Allocato
     result, consumed := try decompress_with_consumed(data, max_output, alloc);
     if consumed != data.len {
         alloc.dealloc_bytes(result.ptr);
-        raise error.InvalidData;
+        raise .InvalidData;
     }
     result
 }
@@ -4127,19 +4123,20 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
         ZlibInflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     if direct {
-        if !out.ensure_capacity(max_output) { raise error.AllocationFailed; }
+        if !out.ensure_capacity(max_output) { raise .AllocationFailed; }
         state.raw.direct_output = .{ ptr = out.bytes.items.ptr, len = max_output };
         state.raw.direct_fast = true;
     }
     input_at := 0;
     while true {
         remaining := max_output - out.bytes.len;
-        if remaining < 0 { state.deinit(); raise error.OutputLimit; }
+        if remaining < 0 { state.deinit(); raise .OutputLimit; }
         chunk := if direct then remaining else 8192;
         if chunk > remaining { chunk = remaining; }
-        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
+        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise .AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
         if chunk > 0 { output = string{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
@@ -4148,20 +4145,21 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
         if progress.status == .done {
+            taken = true;
             return out.take(), input_at;
         }
         if progress.status == .need_input and input_at >= data.len {
             out.deinit();
             state.deinit();
-            raise error.UnexpectedEnd;
+            raise .UnexpectedEnd;
         }
         if progress.status == .need_output and remaining == 0 {
             out.deinit();
             state.deinit();
-            raise error.OutputLimit;
+            raise .OutputLimit;
         }
     }
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 // Fixed-destination equivalent of mz_uncompress2. Trailing bytes are left
@@ -4169,7 +4167,6 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
 decompress_into_with_consumed :: (data: string, output: string, alloc: Allocator = context.allocator) -> (i64, i64, !Error) {
     state := ZlibInflater.init(output.len, alloc);
     defer state.deinit();
-    onfail state.deinit();
     input_at := 0;
     output_at := 0;
     while true {
@@ -4184,11 +4181,11 @@ decompress_into_with_consumed :: (data: string, output: string, alloc: Allocator
         input_at += progress.consumed;
         output_at += progress.produced;
         if progress.status == .done { return output_at, input_at; }
-        if progress.status == .need_output and output_at >= output.len { state.deinit(); raise error.OutputLimit; }
-        if progress.status == .need_input and input_at >= data.len { state.deinit(); raise error.UnexpectedEnd; }
+        if progress.status == .need_output and output_at >= output.len { state.deinit(); raise .OutputLimit; }
+        if progress.status == .need_input and input_at >= data.len { state.deinit(); raise .UnexpectedEnd; }
     }
     state.deinit();
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 // -----------------------------------------------------------------------------
@@ -4198,7 +4195,7 @@ gzip_compress_options_strategy :: (data: string, options: GzipOptions, level: i6
     try validate_gzip_options(options);
 
     raw := deflate_strategy(data, level, strategy, alloc);
-    if raw.ptr == null { raise error.AllocationFailed; }
+    if raw.ptr == null { raise .AllocationFailed; }
     out := ByteWriter.init(alloc);
     out.put(0x1f);
     out.put(0x8b);
@@ -4230,7 +4227,7 @@ gzip_compress_options_strategy :: (data: string, options: GzipOptions, level: i6
     out.put_u32le(crc32(data));
     out.put_u32le(data.len & 0xffffffff);
     alloc.dealloc_bytes(raw.ptr);
-    if out.failed { out.deinit(); raise error.AllocationFailed; }
+    if out.failed { out.deinit(); raise .AllocationFailed; }
     out.take()
 }
 
@@ -4238,14 +4235,15 @@ gzip_decompress :: (data: string, max_output: i64 = 1073741824, alloc: Allocator
     state := GzipInflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     input_at := 0;
     while true {
         remaining := max_output - out.bytes.len;
-        if remaining < 0 { state.deinit(); raise error.OutputLimit; }
+        if remaining < 0 { state.deinit(); raise .OutputLimit; }
         chunk := 8192;
         if chunk > remaining { chunk = remaining; }
-        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
+        if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise .AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
         if chunk > 0 { output = string{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
@@ -4253,19 +4251,19 @@ gzip_decompress :: (data: string, max_output: i64 = 1073741824, alloc: Allocator
         progress := try state.step(input, output, true);
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
-        if progress.status == .done { return out.take(); }
+        if progress.status == .done { taken = true; return out.take(); }
         if progress.status == .need_input and input_at >= data.len {
             out.deinit();
             state.deinit();
-            raise error.UnexpectedEnd;
+            raise .UnexpectedEnd;
         }
         if progress.status == .need_output and remaining == 0 {
             out.deinit();
             state.deinit();
-            raise error.OutputLimit;
+            raise .OutputLimit;
         }
     }
-    raise error.InvalidData;
+    raise .InvalidData;
 }
 
 // Internal RFC 1950 name used by the PNG engine.

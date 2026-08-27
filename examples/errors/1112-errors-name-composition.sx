@@ -1,0 +1,50 @@
+// An error value carries its member: `.set` is the error that declares it and
+// `.name` its spelling, so `v.set.name + "." + v.name` is the owner-qualified
+// name `@errorName` composes. A composition's own inline members answer with
+// the composition. `{}` renders that name plus the payload as it constructs —
+// nothing for a void member, braces around a scalar, the struct's own braces
+// for a struct.
+
+@import "modules/std.sx";
+
+FooError :: error {
+    A;
+    D: i32;
+    C: struct { v: i32; at: i64 };
+}
+
+BooError :: error { Z }
+
+Both :: FooError | BooError | error { Extra };
+
+boom :: (n: i64) -> (i64, !Both) {
+    if n == 0 { raise FooError.A; }
+    if n == 1 { raise FooError.D{42}; }
+    if n == 2 { raise FooError.C{ v = 1, at = 7 }; }
+    if n == 3 { raise BooError.Z; }
+    raise Both.Extra;
+}
+
+named :: (v: any) -> string {
+    name := "<?>";
+    match @typeOf(v) {
+        case error: name = concat(v.set.name, concat(".", v.name));
+    }
+    name
+}
+
+main :: () -> i32 {
+    _, a := boom(0);
+    _, d := boom(1);
+    _, c := boom(2);
+    _, z := boom(3);
+    _, x := boom(4);
+
+    print("fields={} {}\n", d.set.name, d.name);              // FooError D
+    print("composed={} {}\n", named(d), @errorName(d));       // FooError.D FooError.D
+    print("extra={} {}\n", x.set.name, @errorName(x));        // Both Both.Extra
+    print("void={} scalar={}\n", a, d);                       // FooError.A FooError.D{42}
+    print("struct={}\n", c);                                  // FooError.C{v: 1, at: 7}
+    print("across={}\n", z);                                  // BooError.Z
+    return 0;
+}

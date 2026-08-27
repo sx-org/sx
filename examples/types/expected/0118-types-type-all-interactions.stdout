@@ -4,26 +4,26 @@ i64 == string: false
 *u8 == *u8:    true
 ?i64 == ?i64:  true
 ?i64 == ?i32:  false
-=== 2. type_of(value) == T ===
-type_of(a) == i64:    true
-type_of(b) == f64:    true
-type_of(s) == string: true
-type_of(a) == f64:    false
+=== 2. @typeOf(value) == T ===
+@typeOf(a) == i64:    true
+@typeOf(b) == f64:    true
+@typeOf(s) == string: true
+@typeOf(a) == f64:    false
 === 3. Type variable storage ===
 t == f64:    true
 t == string: false
 after reassign t == string: true
 t == bool:   true
-=== 4. type_name ===
-type_name(i64):    i64
-type_name(*u8):    *u8
-type_name(Point):  Point
-type_name(Color):  Color
-type_name(t):      f64
+=== 4. @typeName ===
+@typeName(i64):    i64
+@typeName(*u8):    *u8
+@typeName(Point):  Point
+@typeName(Color):  Color
+@typeName(t):      f64
 === 5. print Type values ===
 literal: i64
 var:     string
-type_of(b): f64
+@typeOf(b): f64
 === 6. generic dispatch ===
 describe(i64):    int64
 describe(string): text
@@ -41,8 +41,8 @@ size_of(i64):      8
 size_of(*u8):      8
 align_of(f64):     8
 struct_field_count(Point): 2
-type_eq(i64, i64):    true
-type_eq(i64, string): false
+@typeEq(i64, i64):    true
+@typeEq(i64, string): false
 === 10. ..$args walking ===
 type_list():            []
 type_list(1):           [i64]
@@ -51,9 +51,9 @@ type_list(true, 3.14):  [bool, f64]
 === 11. Type in struct field ===
 h.t == i64:    true
 h.t == string: false
-type_name(h.t): i64
+@typeName(h.t): i64
 === 12. compound literals ===
-type_name(*Point):    *Point
-type_name([4]i32):    [4]i32
-type_name([]bool):    []bool
-type_name(?f64):      ?f64
+@typeName(*Point):    *Point
+@typeName([4]i32):    [4]i32
+@typeName([]bool):    []bool
+@typeName(?f64):      ?f64

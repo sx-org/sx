@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
+const type_bridge = @import("../type_bridge.zig");
 const inst_mod = @import("../inst.zig");
 const mod_mod = @import("../module.zig");
 const errors = @import("../../errors.zig");
@@ -85,64 +86,469 @@ pub fn placeholderTraceFrame(self: *Lowering) Ref {
 /// The named error-set TypeId of `node`'s type, or null if not an
 /// error-set-typed expression.
 pub fn errorSetTypeOf(self: *Lowering, node: *const Node) ?TypeId {
-    const t = self.inferExprType(node);
-    if (t.isBuiltin()) return null;
-    return if (self.module.types.get(t) == .error_set) t else null;
+    return liveChannelOf(self, self.inferExprType(node));
 }
 
-/// True when `node` is an `error.X` tag literal (`field_access` whose
-/// object is the `error` keyword, parsed as identifier "error").
-pub fn isErrorTagLiteralNode(node: *const Node) bool {
-    if (node.data != .field_access) return false;
-    const obj = node.data.field_access.object;
-    return obj.data == .identifier and std.mem.eql(u8, obj.data.identifier.name, "error");
+/// `ty` when it is an error channel, else null.
+fn liveChannelOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return if (self.module.types.get(ty) == .@"error") ty else null;
 }
 
-/// The tag NAME a `raise` operand names literally, in either spelling — the
-/// anonymous `error.X` or the contextual `.X` shorthand — or null for a
-/// variable / computed tag. In `raise` position a `.X` is unambiguously a tag,
-/// so the two spellings are interchangeable to every caller of this.
+/// `@errorPayload(e)`: the live member's payload as an `any` view over the
+/// channel's payload area.
+pub fn lowerErrorPayload(self: *Lowering, arg: *const Node, span: ast.Span) Ref {
+    const src = self.inferExprType(arg);
+    if (src != .any and (src.isBuiltin() or self.module.types.get(src) != .@"error")) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "@errorPayload expects an error value; '{s}' is not one", .{self.formatTypeName(src)});
+        }
+        return self.builder.constInt(0, .any);
+    }
+    const val = self.lowerExpr(arg);
+    return self.builder.emit(.{ .error_payload_view = .{ .operand = val } }, .any);
+}
+
+/// The member NAME a `raise` operand names through the contextual `.X`
+/// shorthand, or null for a qualified, variable, or computed operand.
 pub fn literalTagName(node: *const Node) ?[]const u8 {
-    if (isErrorTagLiteralNode(node)) return node.data.field_access.field;
     if (node.data == .enum_literal) return node.data.enum_literal.name;
     return null;
 }
 
-/// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
-/// Returns null when neither operand is error-related (general path runs).
-/// Both operands must be a tag (an `error.X` literal or an error-set value);
-/// otherwise it's a type error (e.g. comparing a tag to a raw integer).
+/// The type a qualified prefix `Set`, `Enum`, or `ns.Set` names, read from its
+/// OBJECT node: a type name not shadowed by a value binding or a global value.
+pub fn armPrefixType(self: *Lowering, object: *const Node) ?TypeId {
+    if (object.data == .field_access) return namespacedPrefixType(self, object);
+    if (object.data != .identifier) return null;
+    const name = object.data.identifier.name;
+    if (self.scope) |s| {
+        if (s.lookup(name) != null) return null;
+    }
+    if (self.program_index.global_names.contains(name)) return null;
+    const from = self.current_source_file orelse self.main_file orelse return null;
+    const ty = switch (self.selectNominalLeaf(name, from, false)) {
+        .resolved => |tid| tid,
+        else => return null,
+    };
+    return if (ty.isBuiltin()) null else ty;
+}
+
+/// The type a namespace-qualified prefix `ns.Set` names, resolved in the module
+/// the namespace targets.
+fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
+    const root = object.data.field_access.object;
+    if (root.data == .identifier) {
+        const name = root.data.identifier.name;
+        if (self.scope) |s| {
+            if (s.lookup(name) != null) return null;
+        }
+        if (self.program_index.global_names.contains(name)) return null;
+    }
+    const path = self.qualifiedTypeName(object) orelse return null;
+    defer self.alloc.free(path);
+    const sel = switch (self.qualifiedMemberVerdict(path)) {
+        .selected => |s| s,
+        else => return null,
+    };
+    const ty = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+        .resolved => |tid| tid,
+        else => return null,
+    };
+    return if (ty.isBuiltin()) null else ty;
+}
+
+/// The error set a qualified member spelling `Set.Member` or `ns.Set.Member`
+/// names, read from its OBJECT node.
+pub fn qualifiedErrorSet(self: *Lowering, object: *const Node) ?TypeId {
+    const ty = armPrefixType(self, object) orelse return null;
+    return if (self.module.types.get(ty) == .@"error") ty else null;
+}
+
+pub const QualifiedErrorMember = struct { set: TypeId, member: []const u8 };
+
+/// `Set.Member` read as a whole node, or null when `node` is not one.
+pub fn qualifiedErrorMember(self: *Lowering, node: *const Node) ?QualifiedErrorMember {
+    if (node.data != .field_access) return null;
+    const fa = node.data.field_access;
+    const set = self.qualifiedErrorSet(fa.object) orelse return null;
+    return .{ .set = set, .member = fa.field };
+}
+
+/// A member named at a `raise`, over every spelling of it.
+pub const RaisedMember = struct {
+    /// The set a qualified spelling names; null when the member resolves in
+    /// the channel in hand.
+    set: ?TypeId,
+    /// The `.X` spelling, which resolves ONLY against a channel in hand.
+    shorthand: bool,
+    member: []const u8,
+    /// The spelling carries a brace group, so it builds the member's payload.
+    constructed: bool,
+};
+
+/// The head a brace group is written against, or null when `node` carries no
+/// brace group. A `raise` operand reaches error analysis before its statement
+/// settles, so both readings of the juxtaposition answer.
+fn bracedHead(node: *const Node) ?*const Node {
+    return switch (node.data) {
+        .struct_literal => |sl| sl.type_expr,
+        .juxtaposition => |jx| jx.expr,
+        else => null,
+    };
+}
+
+/// The member a `raise` operand names — `.X`, `Set.X`, or either with a
+/// payload brace group — or null when the operand is a live error value.
+pub fn raisedMember(self: *Lowering, node: *const Node) ?RaisedMember {
+    const braced = bracedHead(node);
+    const head = braced orelse node;
+    if (qualifiedErrorMember(self, head)) |qm|
+        return .{ .set = qm.set, .shorthand = false, .member = qm.member, .constructed = braced != null };
+    const name = if (braced == null)
+        literalTagName(head) orelse return null
+    else if (head.data == .enum_literal)
+        head.data.enum_literal.name
+    else
+        return null;
+    return .{ .set = null, .shorthand = head.data == .enum_literal, .member = name, .constructed = braced != null };
+}
+
+/// The member name a shorthand `.X` or bare-identifier `match` arm spells, or
+/// null for an `else:` arm and for any other pattern.
+pub fn shorthandArmName(pattern: ?*const Node) ?[]const u8 {
+    const pat = pattern orelse return null;
+    return switch (pat.data) {
+        .enum_literal => |el| el.name,
+        .identifier => |id| id.name,
+        else => null,
+    };
+}
+
+/// The interned member a shorthand `.X` or bare-identifier `match` arm names in
+/// the channel `chan` in hand. Null when the channel carries no such member, or
+/// carries two spelled alike. A qualified `Set.X` arm resolves through
+/// `qualifyMatchArm` instead.
+pub fn errorArmMember(self: *Lowering, chan: TypeId, pattern: ?*const Node) ?u32 {
+    const name = shorthandArmName(pattern) orelse return null;
+    return switch (self.module.types.errorSetMember(chan, name)) {
+        .one => |id| id,
+        else => null,
+    };
+}
+
+/// Report a leaf spelling more than one member of `set` answers to.
+pub fn emitAmbiguousMember(self: *Lowering, set: TypeId, name: []const u8, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const table = &self.module.types;
+    var candidates = std.ArrayList(u32).empty;
+    defer candidates.deinit(self.alloc);
+    for (channelMembers(self, set)) |m| {
+        if (std.mem.eql(u8, table.getTagName(m), name)) candidates.append(self.alloc, m) catch unreachable;
+    }
+    const list = memberList(self, candidates.items);
+    defer self.alloc.free(list);
+    const id = d.addFmtId(.err, span, "'{s}' names more than one member: {s}", .{ name, list });
+    d.addHelpFmt(id, span, null, "write the set that declares the one you mean", .{});
+}
+
+/// `error.X` names no value — a member belongs to the set that declares it.
+pub fn emitErrorKeywordMember(self: *Lowering, span: ast.Span, field: []const u8) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, span, "`error.{s}` is not a value — an error member belongs to the set that declares it", .{field});
+    d.addHelpFmt(id, span, null, "write `Set.{s}`, or `.{s}` where the channel is already in hand", .{ field, field });
+}
+
+/// What a `case` arm resolves to against the subject in hand. A refusal emits
+/// once, at the case-value pass; that arm registers no case and its body is
+/// skipped.
+pub const ArmVerdict = union(enum) {
+    /// `case_value` is what the switch dispatches on — a declared tag where the
+    /// type spells one; `field_index` is the variant's ordinal, which is what a
+    /// payload read indexes.
+    ok: struct { case_value: u64, field_index: u32, payload: TypeId },
+    /// `error.X` — the keyword names no set.
+    error_keyword,
+    /// The prefix names no type, or names one whose members this subject
+    /// cannot carry.
+    bad_prefix,
+    /// The prefix is an owner and declares no such leaf.
+    bad_leaf,
+    /// More than one member of the set this carries answers to the leaf.
+    ambiguous: TypeId,
+};
+
+/// Resolve a qualified `case Prefix.Leaf:` arm against `subject_ty`. Pure: the
+/// capture-type query re-runs it, so emitting here would report twice.
+pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) ArmVerdict {
+    const fa = pat.data.field_access;
+    // `error` parses as identifier "error", so the keyword is a pattern fact,
+    // never a question about a type carrying that name.
+    if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) return .error_keyword;
+    if (subject_ty.isBuiltin()) return .bad_prefix;
+    const table = &self.module.types;
+    switch (table.get(subject_ty)) {
+        .@"error" => {
+            // The prefix names the set that INTERNS the member, which a channel
+            // composes rather than owns, so it need not be the subject.
+            const set = qualifiedErrorSet(self, fa.object) orelse return .bad_prefix;
+            const id = switch (table.errorSetMember(set, fa.field)) {
+                .one => |m| m,
+                .none => return .bad_leaf,
+                .ambiguous => return .{ .ambiguous = set },
+            };
+            return .{ .ok = .{ .case_value = id, .field_index = id, .payload = table.memberPayload(id) } };
+        },
+        .@"enum" => |e| {
+            if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
+            for (e.variants, 0..) |v, vi| {
+                if (!std.mem.eql(u8, table.strings.get(v), fa.field)) continue;
+                return .{ .ok = .{
+                    .case_value = declaredTagValue(e.explicit_values, vi),
+                    .field_index = @intCast(vi),
+                    .payload = .void,
+                } };
+            }
+            return .bad_leaf;
+        },
+        .tagged_union => |tu| {
+            if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
+            for (tu.fields, 0..) |f, vi| {
+                if (!std.mem.eql(u8, table.strings.get(f.name), fa.field)) continue;
+                return .{ .ok = .{
+                    .case_value = declaredTagValue(tu.explicit_tag_values, vi),
+                    .field_index = @intCast(vi),
+                    .payload = f.ty,
+                } };
+            }
+            return .bad_leaf;
+        },
+        else => return .bad_prefix,
+    }
+}
+
+/// The value variant `vi` dispatches on: the tag its type spells, else its
+/// ordinal.
+fn declaredTagValue(values: ?[]const i64, vi: usize) u64 {
+    if (values) |vals| {
+        if (vi < vals.len) return @bitCast(vals[vi]);
+    }
+    return @intCast(vi);
+}
+
+/// The prefix as the arm spells it, owned by the lowering allocator.
+fn armPrefixSpelling(self: *Lowering, object: *const Node) ?[]const u8 {
+    return switch (object.data) {
+        .identifier => |id| self.alloc.dupe(u8, id.name) catch null,
+        .field_access => self.qualifiedTypeName(object),
+        else => null,
+    };
+}
+
+/// Report a qualified arm the subject cannot take.
+pub fn refuseQualifiedArm(self: *Lowering, verdict: ArmVerdict, subject_ty: TypeId, pat: *const Node) void {
+    const fa = pat.data.field_access;
+    if (verdict == .error_keyword) return emitErrorKeywordMember(self, pat.span, fa.field);
+    if (verdict == .ambiguous) return emitAmbiguousMember(self, verdict.ambiguous, fa.field, pat.span);
+    const d = self.diagnostics orelse return;
+    const owned = armPrefixSpelling(self, fa.object);
+    defer if (owned) |p| self.alloc.free(p);
+    const prefix = owned orelse "";
+    const subject = self.formatTypeName(subject_ty);
+    const on_channel = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .@"error";
+    const has_variants = !subject_ty.isBuiltin() and switch (self.module.types.get(subject_ty)) {
+        .@"enum", .tagged_union => true,
+        else => false,
+    };
+    switch (verdict) {
+        .ok, .error_keyword, .ambiguous => unreachable,
+        .bad_leaf => if (on_channel)
+            d.addFmt(.err, pat.span, "error set '{s}' has no member '{s}'", .{ prefix, fa.field })
+        else
+            d.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ fa.field, prefix }),
+        .bad_prefix => if (on_channel) {
+            const id = d.addFmtId(.err, pat.span, "'{s}' names no error set", .{prefix});
+            d.addHelpFmt(id, pat.span, null, "a qualified arm names the set that declares the member — write `Set.{s}`, or `.{s}` where the channel already carries it", .{ fa.field, fa.field });
+        } else if (has_variants) {
+            const id = d.addFmtId(.err, pat.span, "'{s}' is not '{s}' — a qualified arm names a variant of the subject's own type", .{ prefix, subject });
+            d.addHelpFmt(id, pat.span, null, "write `.{s}` to name a variant of '{s}'", .{ fa.field, subject });
+        } else d.addFmt(.err, pat.span, "'{s}' declares no members a `case` arm could qualify — match it against a value", .{subject}),
+    }
+}
+
+/// The channel a `|` composition in type position denotes, or null when an
+/// operand names no error set.
+pub fn composedChannel(self: *Lowering, node: *const Node, owner_name: []const u8) ?TypeId {
+    const table = &self.module.types;
+    var members = std.ArrayList(u32).empty;
+    defer members.deinit(table.alloc);
+    if (!collectChannelMembers(self, node, owner_name, &members)) return null;
+    return table.errorSetType(.empty, members.items);
+}
+
+/// Append what each operand of a `|` composition contributes: a named set,
+/// a qualified member, or an inline `error { … }` whose members this
+/// declaration owns.
+fn collectChannelMembers(self: *Lowering, node: *const Node, owner_name: []const u8, out: *std.ArrayList(u32)) bool {
+    const table = &self.module.types;
+    switch (node.data) {
+        .binary_op => |b| {
+            if (b.op != .bit_or) return false;
+            if (!collectChannelMembers(self, b.lhs, owner_name, out)) return false;
+            return collectChannelMembers(self, b.rhs, owner_name, out);
+        },
+        .error_set_decl => {
+            const esd = &node.data.error_set_decl;
+            const info = type_bridge.errorSetDeclInfoOwned(esd, table, self, owner_name);
+            out.appendSlice(table.alloc, info.@"error".tags) catch unreachable;
+            table.setErrorOwnerType(@ptrCast(esd), table.intern(info));
+            return true;
+        },
+        .identifier => |id| return type_bridge.channelOperandMembers(id.name, table, self, out),
+        .field_access => {
+            const path = self.qualifiedTypeName(node) orelse return false;
+            defer self.alloc.free(path);
+            return type_bridge.channelOperandMembers(path, table, self, out);
+        },
+        else => return false,
+    }
+}
+
+/// How an `==` operand names an error.
+const CompareOperand = struct {
+    /// The operand's OWN type — a value's channel. `.unresolved` for a
+    /// shorthand, which takes the other operand's.
+    ty: TypeId,
+    /// The channel the operand's value lives in, whose members decide
+    /// comparability; null for a shorthand.
+    set: ?TypeId,
+    /// The operand resolves against the type the other operand supplies.
+    shorthand: bool,
+    /// The operand carries a payload the comparison matches.
+    payload: bool,
+};
+
+fn classifyCompareOperand(self: *Lowering, node: *const Node) CompareOperand {
+    const spelled = raisedMember(self, node);
+    // A brace group holds the member's payload, so the spelling is a whole
+    // channel value; a shorthand takes its channel from the other operand.
+    if (spelled) |rm| if (rm.constructed) {
+        const set = if (rm.shorthand) null else rm.set;
+        return .{ .ty = set orelse .unresolved, .set = set, .shorthand = rm.shorthand, .payload = true };
+    };
+    const ty = self.inferExprType(node);
+    const set = liveChannelOf(self, ty);
+    // A bare member spelling contributes its tag word alone.
+    return .{
+        .ty = ty,
+        .set = set,
+        .shorthand = node.data == .enum_literal,
+        .payload = set != null and spelled == null,
+    };
+}
+
+fn channelCarries(self: *Lowering, chan: TypeId, member: u32) bool {
+    for (channelMembers(self, chan)) |m| {
+        if (m == member) return true;
+    }
+    return false;
+}
+
+/// Whether a member both channels carry declares a payload — the only case a
+/// comparison has more to match than the tag word.
+fn sharedMemberCarriesPayload(self: *Lowering, a: TypeId, b: TypeId) bool {
+    for (channelMembers(self, a)) |m| {
+        if (self.module.types.memberPayload(m) == .void) continue;
+        if (channelCarries(self, b, m)) return true;
+    }
+    return false;
+}
+
+/// `lv == rv` over two channel values: the tag words name the same member and
+/// that member's payload compares by its own type's rule. Each payload read
+/// sits behind the tag test that proves the member live, so a member's payload
+/// type is never read off a value carrying a different member.
+fn channelValueEquality(self: *Lowering, lv: Ref, rv: Ref, l_chan: TypeId, r_chan: TypeId, span: ast.Span) Ref {
+    const table = &self.module.types;
+    const tag_l = self.builder.enumTag(lv, .i32);
+    const tag_r = self.builder.enumTag(rv, .i32);
+    const merge_bb = self.freshBlockWithParams("erreq.merge", &.{.bool});
+    const same_bb = self.freshBlock("erreq.same");
+    self.builder.condBr(self.builder.cmpEq(tag_l, tag_r), same_bb, &.{}, merge_bb, &.{self.builder.constBool(false)});
+    self.builder.switchToBlock(same_bb);
+    for (channelMembers(self, l_chan)) |m| {
+        const payload = table.memberPayload(m);
+        if (payload == .void or !channelCarries(self, r_chan, m)) continue;
+        const live_bb = self.freshBlock("erreq.member");
+        const next_bb = self.freshBlock("erreq.next");
+        const is_m = self.builder.cmpEq(tag_l, self.builder.constInt(@intCast(m), .i32));
+        self.builder.condBr(is_m, live_bb, &.{}, next_bb, &.{});
+        self.builder.switchToBlock(live_bb);
+        const pl = self.builder.emit(.{ .enum_payload = .{ .base = lv, .field_index = m } }, payload);
+        const pr = self.builder.emit(.{ .enum_payload = .{ .base = rv, .field_index = m } }, payload);
+        const eq = self.lowerFieldEquality(pl, pr, payload, span) orelse self.builder.constBool(false);
+        self.builder.br(merge_bb, &.{eq});
+        self.builder.switchToBlock(next_bb);
+    }
+    // The live member declares no payload, so the matching tags settle it.
+    self.builder.br(merge_bb, &.{self.builder.constBool(true)});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, .bool);
+}
+
+/// Lower `==` / `!=` when an error is involved. Returns null when neither
+/// operand is error-related (general path runs). Both operands must be a
+/// member spelling or an error value; otherwise it's a type error (e.g.
+/// comparing a member to a raw integer).
 pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref {
-    const l_set = self.errorSetTypeOf(bop.lhs);
-    const r_set = self.errorSetTypeOf(bop.rhs);
-    const l_tag = isErrorTagLiteralNode(bop.lhs);
-    const r_tag = isErrorTagLiteralNode(bop.rhs);
-    if (l_set == null and r_set == null and !l_tag and !r_tag) return null;
+    const l = classifyCompareOperand(self, bop.lhs);
+    const r = classifyCompareOperand(self, bop.rhs);
+    if (l.set == null and r.set == null) return null;
 
-    // A contextual `.Name` shorthand is a tag when the OTHER operand supplies
-    // the set to type it from; with no set on either side there is nothing to
-    // resolve against and it stays an ordinary enum literal.
-    const l_dot = bop.lhs.data == .enum_literal and r_set != null;
-    const r_dot = bop.rhs.data == .enum_literal and l_set != null;
+    // A contextual `.Name` shorthand is a member when the OTHER operand
+    // supplies the type to resolve it in; with neither side error-related
+    // there is nothing to resolve against and it stays an enum literal.
+    const l_dot = l.shorthand and r.set != null;
+    const r_dot = r.shorthand and l.set != null;
 
-    const l_ok = l_set != null or l_tag or l_dot;
-    const r_ok = r_set != null or r_tag or r_dot;
+    const l_ok = l.set != null or l_dot;
+    const r_ok = r.set != null or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id", .{});
+            const bad = if (!l_ok) bop.lhs else bop.rhs;
+            diags.addFmt(.err, bad.span, "an error-set value compares only with a `.X` shorthand, a `Set.X` member, or another error-set value; coerce with `xx` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
 
-    // Lower both sides with the set type as context so an `error.X` literal
-    // resolves to it (and validates membership). Two bare tag literals with
-    // no set context lower to global u32 ids (cross-set comparison is OK).
-    const set_ty = l_set orelse r_set;
+    // Two channels compare only when one holds the other's members.
+    if (l.set) |lc| if (r.set) |rc| {
+        if (!errorSetValueRetypeIsLegal(self, lc, rc) and !errorSetValueRetypeIsLegal(self, rc, lc)) {
+            if (self.diagnostics) |diags| {
+                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(lc), self.formatTypeName(rc) });
+            }
+            return self.builder.constBool(false);
+        }
+    };
+
+    const ctx_ty: ?TypeId = if (l_dot) r.ty else if (r_dot) l.ty else (l.set orelse r.set);
     const saved = self.target_type;
-    if (set_ty) |st| self.target_type = st;
+    if (ctx_ty) |ct| self.target_type = ct;
     const lv = self.lowerExpr(bop.lhs);
     const rv = self.lowerExpr(bop.rhs);
     self.target_type = saved;
+
+    // A bare member spelling names the tag alone; two whole values match the
+    // live member's payload as well.
+    if (l.payload and r.payload) {
+        // A shorthand carries the other operand's channel.
+        if (l.set orelse r.set) |lc| if (r.set orelse l.set) |rc| {
+            if (sharedMemberCarriesPayload(self, lc, rc)) {
+                const eq = channelValueEquality(self, lv, rv, lc, rc, bop.lhs.span);
+                return if (bop.op == .eq) eq else self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool);
+            }
+        };
+    }
     return if (bop.op == .eq)
         self.builder.cmpEq(lv, rv)
     else
@@ -164,48 +570,172 @@ pub fn effectiveReturnType(self: *Lowering) ?TypeId {
 pub fn errorChannelOf(self: *Lowering, ret_ty: TypeId) ?TypeId {
     if (ret_ty.isBuiltin()) return null;
     switch (self.module.types.get(ret_ty)) {
-        .error_set => return ret_ty,
+        .@"error" => return ret_ty,
         .failable => |f| return f.err,
         else => return null,
     }
 }
 
-/// True for the bare-`!` inferred placeholder error set (reserved name "!").
-pub fn isInferredErrorSet(self: *Lowering, set: TypeId) bool {
-    if (set.isBuiltin()) return false;
+/// The return type a `Closure` or function-pointer slot calls through, seen
+/// past an optional wrapper, or null when `slot` is neither.
+pub fn slotReturnType(self: *Lowering, slot: TypeId) ?TypeId {
+    if (slot.isBuiltin()) return null;
+    return switch (self.module.types.get(slot)) {
+        .closure => |c| c.ret,
+        .function => |f| f.ret,
+        .optional => |o| slotReturnType(self, o.child),
+        else => null,
+    };
+}
+
+/// Refuse a callable whose error channel is not the slot's own: a `Closure` or
+/// function-pointer slot calls through exactly the channel it names, so a
+/// merely-narrower channel — or none at all — cannot fill it.
+pub fn checkSlotChannel(self: *Lowering, value_ret: TypeId, slot_ret: TypeId, span: ast.Span) bool {
+    const have = self.errorChannelOf(value_ret);
+    const want = self.errorChannelOf(slot_ret);
+    if (have == want) return true;
+    if (self.diagnostics) |diags| {
+        const have_phrase = channelPhrase(self, have);
+        defer self.alloc.free(have_phrase);
+        const want_phrase = channelPhrase(self, want);
+        defer self.alloc.free(want_phrase);
+        diags.addFmt(.err, span, "a callable with {s} does not fill a slot with {s} — a `Closure` or function-pointer slot takes exactly its own channel", .{ have_phrase, want_phrase });
+    }
+    return false;
+}
+
+/// How the message names `channel`. A member-less channel has only its
+/// identity to name. Owned by the caller.
+fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
+    const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
+    if (channelIsPlaceholder(self, c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
+    if (channelIsDyn(self, c)) return self.alloc.dupe(u8, "a dynamic error channel") catch unreachable;
+    const members = channelMembers(self, c);
+    if (members.len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
+    // A merge over one owner's members renders as that owner's spelling, which
+    // is another channel's name; the member list tells the two apart.
+    const name = self.module.types.get(c).@"error".name;
+    if (self.module.types.findByName(name)) |other| {
+        if (other != c) {
+            const list = memberList(self, members);
+            defer self.alloc.free(list);
+            return std.fmt.allocPrint(self.alloc, "the error channel '{s}' ({s})", .{ self.module.types.getString(name), list }) catch unreachable;
+        }
+    }
+    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
+}
+
+/// The members `set` carries, empty when `set` is not an error channel.
+fn channelMembers(self: *Lowering, set: TypeId) []const u32 {
+    if (set.isBuiltin()) return &.{};
     const info = self.module.types.get(set);
-    if (info != .error_set) return false;
-    return std.mem.eql(u8, self.module.types.getString(info.error_set.name), "!");
+    return if (info == .@"error") info.@"error".tags else &.{};
+}
+
+/// The `Owner.Member` spellings of `members`, comma-joined. Owned by the caller.
+fn memberList(self: *Lowering, members: []const u32) []const u8 {
+    var buf = std.ArrayList(u8).empty;
+    for (members, 0..) |m, i| {
+        if (i > 0) buf.appendSlice(self.alloc, ", ") catch unreachable;
+        const owner = self.module.types.tags.ownerName(self.module.types.tags.ownerOf(m));
+        if (owner != .empty) {
+            buf.appendSlice(self.alloc, self.module.types.getString(owner)) catch unreachable;
+            buf.append(self.alloc, '.') catch unreachable;
+        }
+        buf.appendSlice(self.alloc, self.module.types.getTagName(m)) catch unreachable;
+    }
+    return buf.toOwnedSlice(self.alloc) catch unreachable;
+}
+
+/// True when the enclosing signature's channel is written bare `!` — an open
+/// channel, or a merge materialised from the raises of a declaration whose
+/// return type is written `!`.
+fn channelIsWrittenInferred(self: *Lowering, err_set: TypeId) bool {
+    if (self.channelIsOpen(err_set)) return true;
+    // A `try { … }` boundary's channel is what its raises converge to.
+    if (self.error_boundary != null) return true;
+    const fd = self.current_fn_decl orelse return false;
+    return astChannelIsInferred(fd.return_type);
+}
+
+/// The reserved spelling a MEMBER-LESS channel is identified by, or null when
+/// `set` is not one.
+fn channelSpelling(self: *Lowering, set: TypeId) ?[]const u8 {
+    if (set.isBuiltin()) return null;
+    const info = self.module.types.get(set);
+    if (info != .@"error" or info.@"error".tags.len > 0) return null;
+    return self.module.types.getString(info.@"error".name);
+}
+
+/// True for the bare-`!` placeholder a WRITTEN fn-type spelling carries
+/// (reserved name "!").
+pub fn channelIsPlaceholder(self: *Lowering, set: TypeId) bool {
+    const spelling = channelSpelling(self, set) orelse return false;
+    return std.mem.eql(u8, spelling, "!");
+}
+
+/// True for the channel of a declaration whose body escapes through a channel
+/// that cannot be named.
+pub fn channelIsDyn(self: *Lowering, set: TypeId) bool {
+    const spelling = channelSpelling(self, set) orelse return false;
+    return std.mem.eql(u8, spelling, types.TypeTable.dyn_channel_spelling);
+}
+
+/// True for a channel with NO STATIC MEMBER SET. It absorbs any tag as a
+/// destination, and cannot be shown ⊆ a named set as a source.
+pub fn channelIsOpen(self: *Lowering, set: TypeId) bool {
+    return channelIsPlaceholder(self, set) or channelIsDyn(self, set);
 }
 
 /// Diagnose every tag of `src` that is not also a member of `dst` (the
-/// enclosing function's named error set). Both must be `.error_set` types.
+/// enclosing function's named error set). Both must be error types.
 pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
     if (src.isBuiltin()) return;
     const src_info = self.module.types.get(src);
-    if (src_info != .error_set) return;
-    self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
+    if (src_info != .@"error") return;
+    self.diagTagsNotInSet(src_info.@"error".tags, dst, span);
 }
 
-/// An error-set VALUE crossing between two named sets is legal only when
-/// every tag of `src` is a member of `dst` — the same subset rule the error
-/// channel applies to `raise` and to a forwarded failable. Both sets are
-/// u32-backed, so the width-based reinterpret guard in `coerce.zig` classifies
-/// the pair as a legitimate same-width passthrough and lets a foreign tag land
-/// in the destination slot, where no `error.X` literal of that set can ever
-/// name it. The inferred bare-`!` placeholder absorbs any tag on either side.
+/// Whether an error-set value of `src` is a legal retype to `dst`: every
+/// source tag id is in `dst`, or an inferred bare-`!` on either side absorbs
+/// any tag.
+pub fn errorSetValueRetypeIsLegal(self: *Lowering, src: TypeId, dst: TypeId) bool {
+    if (src == dst) return true;
+    if (src.isBuiltin() or dst.isBuiltin()) return false;
+    const src_info = self.module.types.get(src);
+    const dst_info = self.module.types.get(dst);
+    if (src_info != .@"error" or dst_info != .@"error") return false;
+    if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return true;
+    for (src_info.@"error".tags) |tag| {
+        var found = false;
+        for (dst_info.@"error".tags) |d| {
+            if (d == tag) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/// Diagnose every tag of `src` that the destination set `dst` cannot name.
+/// Membership is the implicit gate on an error-set value coercion; a pair it
+/// refuses is unmodeled, so no `error.X` literal of `dst` could name the tag
+/// that lands in the slot.
 pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
     if (src == dst) return;
     if (src.isBuiltin() or dst.isBuiltin()) return;
     const src_info = self.module.types.get(src);
     const dst_info = self.module.types.get(dst);
-    if (src_info != .error_set or dst_info != .error_set) return;
-    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return;
-    const src_name = self.module.types.getString(src_info.error_set.name);
-    const dst_name = self.module.types.getString(dst_info.error_set.name);
-    for (src_info.error_set.tags) |tag| {
+    if (src_info != .@"error" or dst_info != .@"error") return;
+    if (self.channelIsOpen(src) or self.channelIsOpen(dst)) return;
+    const src_name = self.module.types.getString(src_info.@"error".name);
+    const dst_name = self.module.types.getString(dst_info.@"error".name);
+    for (src_info.@"error".tags) |tag| {
         var found = false;
-        for (dst_info.error_set.tags) |d| {
+        for (dst_info.@"error".tags) |d| {
             if (d == tag) {
                 found = true;
                 break;
@@ -213,22 +743,118 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
         }
         if (found) continue;
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': tag 'error.{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
+            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': '{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
         }
     }
+}
+
+/// Diagnose a qualified member `qm` that the named destination set `dst` does
+/// not carry.
+fn checkMemberInSet(self: *Lowering, qm: QualifiedErrorMember, dst: TypeId, span: ast.Span) void {
+    if (dst.isBuiltin()) return;
+    const dst_info = self.module.types.get(dst);
+    if (dst_info != .@"error") return;
+    const src_info = self.module.types.get(qm.set).@"error";
+    // Non-membership in Set and an ambiguous spelling are both diagnosed at the
+    // member read.
+    const tag = switch (self.module.types.errorSetMember(qm.set, qm.member)) {
+        .one => |m| m,
+        else => return,
+    };
+    if (containsTag(dst_info.@"error".tags, tag)) return;
+    if (self.diagnostics) |diags| {
+        diags.addFmt(.err, span, "error member '{s}.{s}' is not in caller's error set '{s}'", .{ self.module.types.getString(src_info.name), qm.member, self.module.types.getString(dst_info.@"error".name) });
+    }
+}
+
+/// The channel value `Set.Member{ … }` / `.Member{ … }` builds: `member`'s tag
+/// over a copy of its declared payload, typed as `set_ty`.
+pub fn lowerErrorMemberConstruction(self: *Lowering, sl: *const ast.StructLiteral, set_ty: TypeId, member_name: []const u8, span: ast.Span) Ref {
+    const table = &self.module.types;
+    const member = switch (table.errorSetMember(set_ty, member_name)) {
+        .one => |m| m,
+        .none => {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "error set '{s}' has no member '{s}'", .{ table.getString(table.get(set_ty).@"error".name), member_name });
+            }
+            return self.builder.constUndef(set_ty);
+        },
+        .ambiguous => {
+            emitAmbiguousMember(self, set_ty, member_name, span);
+            return self.builder.constUndef(set_ty);
+        },
+    };
+    const tag = self.builder.constInt(@intCast(member), set_ty);
+    const payload_ty = table.memberPayload(member);
+    if (payload_ty == .void) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "'{s}' carries no payload, and a brace group holds one", .{member_name});
+            d.addHelpFmt(id, span, null, "write '.{s}'", .{member_name});
+        }
+        return tag;
+    }
+    const payload = memberPayloadValue(self, sl, payload_ty, member_name, span) orelse return tag;
+    return self.builder.enumInit(member, payload, set_ty);
+}
+
+/// The payload a member's brace group holds. A struct payload takes the struct
+/// literal's own rules, empty braces included; every other payload is the one
+/// value in the braces, so empty braces name nothing to carry.
+fn memberPayloadValue(self: *Lowering, sl: *const ast.StructLiteral, payload_ty: TypeId, member_name: []const u8, span: ast.Span) ?Ref {
+    const table = &self.module.types;
+    if (!payload_ty.isBuiltin() and table.get(payload_ty) == .@"struct") {
+        const inner: ast.StructLiteral = .{ .struct_name = null, .type_expr = null, .field_inits = sl.field_inits };
+        const saved = self.target_type;
+        self.target_type = payload_ty;
+        defer self.target_type = saved;
+        return self.lowerStructLiteral(&inner, span);
+    }
+    if (sl.field_inits.len != 1 or (sl.field_inits[0].name != null and !sl.field_inits[0].was_shorthand)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "'{s}' carries a payload of type '{s}' — write the one value in the braces ('.{s}{{ … }}')", .{ member_name, self.formatTypeName(payload_ty), member_name });
+        }
+        return null;
+    }
+    const value_node = sl.field_inits[0].value;
+    const saved = self.target_type;
+    self.target_type = payload_ty;
+    const val = self.lowerExpr(value_node);
+    self.target_type = saved;
+    const src_ty = self.builder.getRefType(val);
+    if (self.refuseVoidElement(src_ty, payload_ty, null, 0, value_node.span)) return self.zeroValue(payload_ty);
+    return self.coerceToType(val, src_ty, payload_ty);
+}
+
+/// Diagnose a member spelled bare where it declares a payload: the channel
+/// value carries that payload, and only a brace group supplies one.
+fn checkMemberPayloadConstructed(self: *Lowering, rm: RaisedMember, channel: TypeId, span: ast.Span) bool {
+    if (rm.constructed) return true;
+    const set = rm.set orelse channel;
+    if (set.isBuiltin() or self.module.types.get(set) != .@"error") return true;
+    const member = switch (self.module.types.errorSetMember(set, rm.member)) {
+        .one => |m| m,
+        else => return true,
+    };
+    const payload_ty = self.module.types.memberPayload(member);
+    if (payload_ty == .void) return true;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' carries a payload of type '{s}', and this names it bare", .{ rm.member, self.formatTypeName(payload_ty) });
+        d.addHelpFmt(id, span, null, "construct it — '.{s}{{ … }}'", .{rm.member});
+    }
+    return false;
 }
 
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
-/// not a `.error_set` TypeId).
+/// not an error TypeId).
 pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, span: ast.Span) void {
     if (dst.isBuiltin()) return;
     const dst_info = self.module.types.get(dst);
-    if (dst_info != .error_set) return;
+    if (dst_info != .@"error") return;
     for (src_tags) |tag| {
         var found = false;
-        for (dst_info.error_set.tags) |d| {
+        for (dst_info.@"error".tags) |d| {
             if (d == tag) {
                 found = true;
                 break;
@@ -236,39 +862,76 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
         }
         if (!found) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, span, "error tag 'error.{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.error_set.name) });
+                diags.addFmt(.err, span, "error member '{s}' is not in caller's error set '{s}'", .{ self.module.types.getTagName(tag), self.module.types.getString(dst_info.@"error".name) });
             }
         }
     }
 }
 
-/// `raise EXPR;` — terminate the enclosing failable function via the error
-/// channel. A pure-failable return (`-> !` / `-> !Named`, whose return type
-/// IS the error set) emits `ret(EXPR)`; a value-carrying one
-/// (`-> (T..., !)`) returns the tuple `{undef value slots..., EXPR}`.
+/// The channel a `raise` operand carries, seen past an optional wrapper — a
+/// destructured error slot raises as it stands.
+fn raisedChannel(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .@"error" => ty,
+        .optional => |o| raisedChannel(self, o.child),
+        else => null,
+    };
+}
+
+/// `raise EXPR;` — terminate the enclosing failable body via the error
+/// channel: the innermost `try { … }` boundary, else the function itself.
 pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) void {
-    // (1) `raise` is legal only inside a failable function.
-    const ret_ty = self.effectiveReturnType() orelse {
+    // (1) `raise` is legal only inside a failable body — a function, or a
+    //     `try { … }` boundary.
+    const exit = errorExit(self) orelse {
         self.diagRaiseNotFailable(span);
         return;
     };
-    const err_set = self.errorChannelOf(ret_ty) orelse {
-        self.diagRaiseNotFailable(span);
-        return;
-    };
-    const inferred = self.isInferredErrorSet(err_set);
+    const err_set = exit.set;
+    const inferred = self.channelIsOpen(err_set);
+    const named = raisedMember(self, rs.tag);
+
+    // (1b) The operand names a member or carries a channel — nothing else
+    //      supplies the value a channel raises.
+    if (named == null) {
+        const raised_ty = self.inferExprType(rs.tag);
+        if (raised_ty != .unresolved and raisedChannel(self, raised_ty) == null) {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "raise takes an error member or an error value; '{s}' is neither", .{self.formatTypeName(raised_ty)});
+            }
+            return;
+        }
+    }
+
+    // A `.X` shorthand resolves only against a channel already in hand. A
+    // signature written bare `!` is not one: the channel is what its raises
+    // converge to, so `.X` has nothing to name a member in.
+    if (named) |rm| {
+        if (rm.shorthand and channelIsWrittenInferred(self, err_set)) {
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "`.{s}` needs an error channel in hand, and the enclosing `!` is inferred — qualify the member (`Set.{s}`)", .{ rm.member, rm.member });
+            }
+            return;
+        }
+        if (!checkMemberPayloadConstructed(self, rm, err_set, span)) return;
+    }
 
     // (2) Set check. Lowering EXPR with the function's error set as the
-    //     target type makes a literal `raise error.X` validate `X ∈ set`
-    //     inside lowerErrorTagLiteral (the inferred placeholder accepts any
-    //     tag). The variable form `raise e` is subset-checked below.
+    //     target type makes a literal `raise .X` validate `X ∈ set` inside
+    //     lowerErrorMemberShorthand (the inferred placeholder accepts any
+    //     member). The variable form `raise e` is subset-checked below.
     const saved_target = self.target_type;
     self.target_type = err_set;
     const tag_ref = self.lowerExpr(rs.tag);
     self.target_type = saved_target;
 
-    if (!inferred and literalTagName(rs.tag) == null) {
-        if (self.errorSetTypeOf(rs.tag)) |src_set| {
+    if (!inferred) {
+        if (named) |rm| {
+            // A qualified member carries its whole set as its static type, but
+            // only the member itself lands in the channel.
+            if (rm.set) |set| checkMemberInSet(self, .{ .set = set, .member = rm.member }, err_set, span);
+        } else if (self.errorSetTypeOf(rs.tag)) |src_set| {
             self.checkErrorSetSubset(src_set, err_set, span);
         }
     }
@@ -277,31 +940,12 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     //     Before cleanup, so the frame records the raise site itself.
     self.emitTracePush(self.placeholderTraceFrame());
 
-    // (4) Emit the failure return. Pure-failable: the return type IS the
-    //     error set, so return the tag value directly. Step (2)'s subset rule
-    //     owns the set relationship here, so the tag move into the channel
-    //     bypasses the implicit value-coercion membership guard.
-    if (ret_ty == err_set) {
-        const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
-        self.emitErrorCleanup(self.func_defer_base, coerced);
-        self.emitBodyExit(coerced, err_set, .return_like);
-    } else {
-        // Value-carrying `-> (T..., !)`: the error path leaves the value
-        // slots undefined and carries the tag in the error slot.
-        const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
-        self.emitErrorCleanup(self.func_defer_base, coerced_tag);
-        const f = self.module.types.get(ret_ty).failable;
-        const n = self.module.types.failableValueSlotCount(f);
-        var slots = std.ArrayList(Ref).empty;
-        defer slots.deinit(self.alloc);
-        for (0..n) |i| {
-            slots.append(self.alloc, self.builder.constUndef(self.module.types.failableValueSlotType(f, i))) catch unreachable;
-        }
-        const tup = self.buildFailableTuple(ret_ty, slots.items, coerced_tag);
-        self.emitTupleRet(ret_ty, tup);
-    }
+    // (4) Take the failure exit. Step (2)'s subset rule owns the set
+    //     relationship here, so the tag move into the channel bypasses the
+    //     implicit value-coercion membership guard.
+    const tag_ty = self.builder.getRefType(tag_ref);
+    const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
+    emitErrorExit(self, exit, coerced);
 }
 
 /// Return a value-carrying failable function's success tuple
@@ -325,7 +969,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
                 lowerFailableForwardReturn(self, ref, ret_ty, val_ty, vf.err, span);
                 return;
             },
-            .error_set => {
+            .@"error" => {
                 if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries 0 value slots, but the function returns {d}", .{n_vals});
                 return;
             },
@@ -370,14 +1014,12 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
 
 /// `return callee(...)` forwarding a failable tuple whose ERROR SET differs
 /// from the enclosing function's (`(T, !Concrete)` → `(T, !)`, or concrete →
-/// concrete). Error tags are GLOBAL ids (TypeTable.TagRegistry; 0 = "no
-/// error"), so every error set shares one runtime repr — a u32 tag — and a
-/// legal forward re-packs the value slots plus the raw tag, no translation.
+/// concrete). Error members are ids in one pool (TypeTable.TagRegistry; 0 = "no
+/// error"), so a legal forward re-packs the value slots and carries the source
+/// tag word into the destination channel's shape.
 /// Legality mirrors `raise`'s subset rule (specs.md "Error sets"): the open
-/// bare `!` absorbs any concrete set; a NAMED caller set requires the
-/// callee's set ⊆ caller's (each escapee diagnosed); a bare-`!` CALLEE has no
-/// statically-known tag set (its placeholder TypeId carries no tags), so it
-/// cannot be proven ⊆ a named set — rejected, destructure + re-raise instead.
+/// bare `!` absorbs any concrete set; a NAMED caller set requires the callee's
+/// set ⊆ caller's, each escapee diagnosed.
 fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty: TypeId, src_err: TypeId, span: ast.Span) void {
     const dst = self.module.types.get(ret_ty).failable;
     const src = self.module.types.get(val_ty).failable;
@@ -401,25 +1043,31 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
             fv;
         vals.append(self.alloc, cf) catch unreachable;
     }
-    const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, err_ty);
-    const tup = self.buildFailableTuple(ret_ty, vals.items, tag);
+    const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, src.err);
+    const coerced_tag = if (src.err != err_ty) self.coerceExplicit(tag, src.err, err_ty) else tag;
+    const tup = self.buildFailableTuple(ret_ty, vals.items, coerced_tag);
     self.emitTupleRet(ret_ty, tup);
 }
 
-/// The shared error-set compatibility rule for a failable FORWARD (`return
-/// callee()` across sets), mirroring `raise`'s subset rule (specs.md "Error
-/// sets"): the open bare `!` absorbs any concrete set; a NAMED caller set
-/// requires the callee's set ⊆ caller's (each escapee diagnosed, but the
-/// shape-correct lowering continues — the build aborts via hasErrors); a
-/// bare-`!` CALLEE has no statically-known tag set (its placeholder TypeId
-/// carries no tags), so it cannot be proven ⊆ a named set — rejected
-/// (returns false), destructure + re-raise instead.
+/// Diagnose a source whose channel is open: it has no static member set, so it
+/// cannot be shown ⊆ a named destination.
+fn diagNoStaticMemberSet(self: *Lowering, dst_err: TypeId, span: ast.Span) void {
+    if (self.diagnostics) |d| {
+        const dst_info = self.module.types.get(dst_err);
+        d.addFmt(.err, span, "cannot forward a bare-`!` result through the named error set '{s}' — the source channel has no static member set", .{self.module.types.getString(dst_info.@"error".name)});
+    }
+}
+
+/// The error-set rule for a failable FORWARD (`return callee()` across sets),
+/// mirroring `raise`'s: the open bare `!` absorbs any concrete set; a NAMED
+/// caller set requires the callee's set ⊆ caller's, each escapee diagnosed
+/// while the shape-correct lowering continues (the build aborts via hasErrors).
+/// An open source has no static member set, so the pack is aborted.
 fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span: ast.Span) bool {
     if (src_err == dst_err) return true;
-    if (self.isInferredErrorSet(dst_err)) return true;
-    if (self.isInferredErrorSet(src_err)) {
-        const dst_info = self.module.types.get(dst_err);
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward a bare-`!` failable result through the named error set '{s}' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e {{ raise error.X; }} return v;`)", .{self.module.types.getString(dst_info.error_set.name)});
+    if (self.channelIsOpen(dst_err)) return true;
+    if (self.channelIsOpen(src_err)) {
+        diagNoStaticMemberSet(self, dst_err, span);
         return false;
     }
     self.checkErrorSetSubset(src_err, dst_err, span);
@@ -429,8 +1077,8 @@ fn checkForwardSetCompat(self: *Lowering, src_err: TypeId, dst_err: TypeId, span
 /// The returned value of a PURE failable's `return EXPR;` (`-> !` /
 /// `-> !Named`, whose return type IS the error set), coerced for the ret.
 /// A pure→pure forward (`return check();`, EXPR's type is another error
-/// set) applies the shared set-compat rule — tags are global ids in one
-/// shared u32 repr, so the re-type IS the whole coercion. A value-carrying
+/// set) applies the shared set-compat rule, then retypes the tag word into the
+/// destination channel. A value-carrying
 /// failable result (`return inner();` where inner is `-> (T, !E)`) is
 /// REJECTED per the arity rule (its value slots have nowhere to go — the
 /// old coerce path silently truncated the tuple, returning the VALUE bits
@@ -440,13 +1088,13 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
     if (val_ty == ret_ty) return ref;
     if (!val_ty.isBuiltin()) {
         switch (self.module.types.get(val_ty)) {
-            .error_set => {
+            .@"error" => {
                 if (!checkForwardSetCompat(self, val_ty, ret_ty, span)) {
-                    // Rejected (diagnosed): a typed placeholder keeps the ret
-                    // well-formed; the build aborts via hasErrors.
                     return self.builder.constInt(0, ret_ty);
                 }
-                return self.coerceToType(ref, val_ty, ret_ty);
+                // `checkForwardSetCompat` is the membership gate, so the
+                // coercion skips the implicit preamble's.
+                return self.coerceExplicit(ref, val_ty, ret_ty);
             },
             .failable => |vf| {
                 const n = self.module.types.failableValueSlotCount(vf);
@@ -476,6 +1124,30 @@ pub fn buildFailableTuple(self: *Lowering, ret_ty: TypeId, value_refs: []const R
     fields.appendSlice(self.alloc, value_refs) catch unreachable;
     fields.append(self.alloc, tag) catch unreachable;
     return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, fields.items) catch unreachable } }, ret_ty);
+}
+
+/// Inverse of `extractSuccessValue`: `ret_ty`'s ABI slots from a success
+/// product, or undef per slot, plus `tag`.
+fn packFailableFromSuccess(self: *Lowering, ret_ty: TypeId, success: ?Ref, tag: Ref) Ref {
+    if (ret_ty.isBuiltin() or self.module.types.get(ret_ty) != .failable) return tag;
+    const f = self.module.types.get(ret_ty).failable;
+    const n = self.module.types.failableValueSlotCount(f);
+    var slots = std.ArrayList(Ref).empty;
+    defer slots.deinit(self.alloc);
+    if (n == 1) {
+        const slot_ty = self.module.types.failableValueSlotType(f, 0);
+        slots.append(self.alloc, success orelse self.builder.constUndef(slot_ty)) catch unreachable;
+    } else {
+        for (0..n) |i| {
+            const slot_ty = self.module.types.failableValueSlotType(f, i);
+            const v = if (success) |s|
+                emitProductGet(self, s, f.value, i, slot_ty)
+            else
+                self.builder.constUndef(slot_ty);
+            slots.append(self.alloc, v) catch unreachable;
+        }
+    }
+    return self.buildFailableTuple(ret_ty, slots.items, tag);
 }
 
 /// The success (value-part) type of a value-carrying failable
@@ -665,28 +1337,156 @@ pub fn currentFunctionName(self: *Lowering) []const u8 {
     return self.module.types.getString(self.module.functions.items[@intFromEnum(fid)].name);
 }
 
-/// `try X` — a fallible attempt whose failure target is function
-/// propagation. Evaluates X, then branches on its error tag: the failure
-/// path runs the function's cleanups and returns the caller's failure
-/// carrying that tag; the success path continues with X's value — the value
-/// part for a value-carrying callee, `void` for a pure-failable one.
+/// What an attempt (`try`) or an inline fallback (`catch`) consumes. `node` is
+/// the failable expression itself, except at a `try { … }`, where it is the
+/// boundary block and `boundary` is set.
+pub const Attempted = struct { node: *const Node, boundary: bool };
+
+/// A `try { … }` is the boundary; any other `try` unwraps so the consumer
+/// is that `try`'s fallback.
+fn attemptedExpr(node: *const Node) Attempted {
+    if (node.data != .try_expr) return .{ .node = node, .boundary = false };
+    const inner = node.data.try_expr.operand;
+    return .{ .node = inner, .boundary = inner.data == .block };
+}
+
+/// The failable a `catch` handles. The nearest fallback wins, so a `try`
+/// directly under the handler routes there rather than to the enclosing
+/// boundary: `try foo() catch { 0 }` is `foo() catch { 0 }`.
+pub fn catchAttempted(ce: *const ast.CatchExpr) Attempted {
+    return attemptedExpr(ce.operand);
+}
+
+/// The channel a `try { … }` block converges to: the flatten-merge of the
+/// static channel types of the `try`s and `raise`s that reach it. A boundary
+/// forwards no tail call — its tail expression is the success value.
+fn tryBoundaryChannel(self: *Lowering, block: *const Node) TypeId {
+    var tags = std.ArrayList(u32).empty;
+    defer tags.deinit(self.alloc);
+    var edges = std.ArrayList([]const u8).empty;
+    defer edges.deinit(self.alloc);
+    var dyn = false;
+    self.errorAnalysis().collectErrorSites(block, &tags, &edges, &dyn, self.current_fn_decl);
+    for (edges.items) |callee| {
+        for (self.calleeEscapeTags(callee)) |t| {
+            if (!containsTag(tags.items, t)) tags.append(self.alloc, t) catch {};
+        }
+    }
+    if (dyn) return self.module.types.dynErrorChannel();
+    std.mem.sort(u32, tags.items, {}, std.sort.asc(u32));
+    return self.module.types.errorSetType(.empty, tags.items);
+}
+
+fn attemptType(self: *Lowering, a: Attempted) TypeId {
+    if (!a.boundary) return self.inferExprType(a.node);
+    const chan = tryBoundaryChannel(self, a.node);
+    const succ = self.inferExprType(a.node);
+    if (succ == .void or succ == .noreturn) return chan;
+    return self.module.types.internFailable(succ, chan);
+}
+
+/// `try { … }` — the block is an error boundary of its own: the `try`s and
+/// `raise`s inside exit HERE, not through the enclosing function, and the
+/// block's tail is the success value. Yields the block's failable, which the
+/// surrounding attempt or fallback then consumes.
+fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
+    const chan = tryBoundaryChannel(self, block);
+    if (!self.channelIsOpen(chan) and self.module.types.get(chan).@"error".tags.len == 0) {
+        if (self.diagnostics) |diags| {
+            diags.addFmt(.err, span, "`try` on a block needs a body that can fail; this one has no `try` or `raise`", .{});
+        }
+    }
+
+    const fail_bb = self.freshBlockWithParams("tryblk.fail", &.{chan});
+    const saved_boundary = self.error_boundary;
+    self.error_boundary = .{ .chan = chan, .fail_bb = fail_bb, .defer_base = self.defer_stack.items.len };
+    const saved_terminated = self.block_terminated;
+    const tail = self.lowerBlockValue(block);
+    self.error_boundary = saved_boundary;
+    // Control resumes at the join whatever the block did, so a `raise` at its
+    // tail must not make the enclosing body's later statements look dead.
+    self.block_terminated = saved_terminated;
+
+    const succ_ty: TypeId = if (tail) |t| self.builder.getRefType(t) else self.inferExprType(block);
+    const ret_ty = if (succ_ty == .void or succ_ty == .noreturn) chan else self.module.types.internFailable(succ_ty, chan);
+    const done_bb = self.freshBlockWithParams("tryblk.done", &.{ret_ty});
+
+    if (!self.currentBlockHasTerminator()) {
+        const ok = self.builder.constInt(0, chan);
+        self.builder.br(done_bb, &.{packFailableFromSuccess(self, ret_ty, tail, ok)});
+    }
+
+    self.builder.switchToBlock(fail_bb);
+    const tag = self.builder.blockParam(fail_bb, 0, chan);
+    const failed = packFailableFromSuccess(self, ret_ty, null, tag);
+    self.builder.br(done_bb, &.{failed});
+
+    self.builder.switchToBlock(done_bb);
+    return self.builder.blockParam(done_bb, 0, ret_ty);
+}
+
+/// The failable an attempt consumes, evaluated. A `try { … }` boundary is
+/// lowered here rather than typed first: its success type is the block's tail,
+/// which only the block's own lowering settles. `.none` marks a non-failable
+/// operand — the caller diagnoses it and nothing was lowered.
+fn lowerAttempt(self: *Lowering, a: Attempted, span: ast.Span) struct { ty: TypeId, ref: Ref } {
+    if (a.boundary) {
+        const ref = lowerTryBoundary(self, a.node, span);
+        return .{ .ty = self.builder.getRefType(ref), .ref = ref };
+    }
+    const ty = self.inferExprType(a.node);
+    if (self.errorChannelOf(ty) == null) return .{ .ty = ty, .ref = .none };
+    return .{ .ty = ty, .ref = self.lowerExpr(a.node) };
+}
+
+/// Where an error leaving the current position goes: the innermost
+/// `try { … }` boundary, else the enclosing function's own channel.
+pub const ErrorExit = struct { set: TypeId, ret_ty: TypeId, boundary: ?Lowering.ErrorBoundary };
+
+/// The current error exit, or null when neither a boundary nor a failable
+/// function is in scope.
+pub fn errorExit(self: *Lowering) ?ErrorExit {
+    if (self.error_boundary) |b| return .{ .set = b.chan, .ret_ty = b.chan, .boundary = b };
+    const ret_ty = self.effectiveReturnType() orelse return null;
+    const set = self.errorChannelOf(ret_ty) orelse return null;
+    return .{ .set = set, .ret_ty = ret_ty, .boundary = null };
+}
+
+/// Leave the current failable body carrying `err`: cleanups, then the
+/// boundary's fail edge or the function's failure return.
+fn emitErrorExit(self: *Lowering, exit: ErrorExit, err: Ref) void {
+    const b = exit.boundary orelse {
+        self.emitDefers(self.func_defer_base);
+        self.emitErrorReturn(exit.ret_ty, exit.set, err);
+        return;
+    };
+    const ety = self.builder.getRefType(err);
+    const coerced = if (ety != b.chan) self.coerceExplicit(err, ety, b.chan) else err;
+    self.emitDefers(b.defer_base);
+    self.builder.br(b.fail_bb, &.{coerced});
+}
+
+/// `try X` — a fallible attempt. Evaluates X, then branches on its error tag:
+/// the failure path takes the enclosing error exit carrying that tag; the
+/// success path continues with X's value — the value part for a value-carrying
+/// callee, `void` for a pure-failable one.
 pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     // A direct assertion operand (`try av.(T)`) desugars to the failable
     // runtime call and consumes through the ordinary machinery below.
     const operand = self.desugarErasedAssert(operand_in) orelse operand_in;
-    // (1) `try` is legal only inside a failable function.
-    const caller_ret = self.effectiveReturnType() orelse {
+    const attempted: Attempted = .{ .node = operand, .boundary = operand.data == .block };
+    // (1) `try` is legal only where a failure has somewhere to go — a failable
+    //     function, or a `try { … }` boundary.
+    const exit = errorExit(self) orelse {
         self.diagTryNotFailable(span);
         return self.builder.constInt(0, .void);
     };
-    const caller_set = self.errorChannelOf(caller_ret) orelse {
-        self.diagTryNotFailable(span);
-        return self.builder.constInt(0, .void);
-    };
+    const caller_set = exit.set;
 
     // (2) The operand must be failable. This is the sole failable-operand
     //     check (the parser imposes none).
-    const op_ty = self.inferExprType(operand);
+    const attempt = lowerAttempt(self, attempted, span);
+    const op_ty = attempt.ty;
     const callee_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
             diags.addFmt(.err, span, "`try` requires a failable expression; operand has type '{s}'", .{self.formatTypeName(op_ty)});
@@ -704,10 +1504,9 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     //     whole-program SCC — no check here.
     self.checkEscapeWidening(operand, callee_set, caller_set, span);
 
-    // (4) Lower: evaluate the operand, then branch on its error tag (which
-    //     is the bare result for a pure callee, or the last tuple slot for
-    //     a value-carrying one).
-    const result = self.lowerExpr(operand);
+    // (4) Branch on the operand's error tag — the bare result for a pure
+    //     callee, the last tuple slot for a value-carrying one.
+    const result = attempt.ref;
     const err_val = if (callee_value_carrying)
         self.extractErrorSlot(result, op_ty, callee_set)
     else
@@ -720,14 +1519,12 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     self.builder.condBr(is_err, prop_bb, &.{}, ok_bb, &.{});
 
     // Propagation: push a trace frame (this `try` failure escapes to the
-    // caller), run the function's cleanups (defers + onfails,
-    // since this is an error exit), then return the caller's failure
+    // caller), run the function's cleanups, then return the caller's failure
     // carrying this tag (pure caller → `ret(tag)`; value-carrying →
     // `ret {undef…, tag}`).
     self.builder.switchToBlock(prop_bb);
     self.emitTracePush(self.placeholderTraceFrame());
-    self.emitErrorCleanup(self.func_defer_base, err_val);
-    self.emitErrorReturn(caller_ret, caller_set, err_val);
+    emitErrorExit(self, exit, err_val);
 
     // Success: a value-carrying callee yields its value part (the lone
     // value, or a value-tuple); a pure-failable callee has no value (void).
@@ -778,14 +1575,13 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
 /// `catch` consumes the error locally, so — unlike `try` / `raise` — it needs
 /// no failable *enclosing* function.
 pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) Ref {
+    var attempted = catchAttempted(ce_in);
     // A direct assertion operand (`av.(T) catch …`) desugars to the
     // failable runtime call; the ordinary paths below consume it.
-    var ce_rewritten: ast.CatchExpr = undefined;
-    const ce: *const ast.CatchExpr = if (self.desugarErasedAssert(ce_in.operand)) |dsg| blk: {
-        ce_rewritten = ce_in.*;
-        ce_rewritten.operand = @constCast(dsg);
-        break :blk &ce_rewritten;
-    } else ce_in;
+    if (self.desugarErasedAssert(attempted.node)) |dsg| attempted.node = dsg;
+    var ce_rewritten = ce_in.*;
+    ce_rewritten.operand = @constCast(attempted.node);
+    const ce: *const ast.CatchExpr = &ce_rewritten;
     // A failable `??` chain operand (`(try a ?? try b) catch |e| …`) routes
     // its total failure to the catch handler — not the function — via the
     // chain-fail target. A chain's value type is non-failable
@@ -796,7 +1592,8 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         return self.lowerCatchOverChain(ce, span);
     }
 
-    const op_ty = self.inferExprType(ce.operand);
+    const attempt = lowerAttempt(self, attempted, span);
+    const op_ty = attempt.ty;
     const err_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
             diags.addFmt(.err, span, "`catch` requires a failable expression; operand has type '{s}'", .{self.formatTypeName(op_ty)});
@@ -806,7 +1603,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // Pure-failable LHS (`-> !`): no success value. Run the body on the
     // error path; both paths fall through to a value-less merge.
     if (op_ty == err_set) {
-        const err_val = self.lowerExpr(ce.operand);
+        const err_val = attempt.ref;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
         const handle_bb = self.freshBlock("catch.handle");
@@ -833,7 +1630,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     // the handler body's value. The paths merge through a block-parameter
     // (phi).
     const succ_ty = self.failableSuccessType(op_ty);
-    const result = self.lowerExpr(ce.operand);
+    const result = attempt.ref;
     const err_val = self.extractErrorSlot(result, op_ty, err_set);
     const succ_val = self.extractSuccessValue(result, op_ty, succ_ty);
     const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_set) } }, .bool);
@@ -868,8 +1665,7 @@ pub fn lowerCatchOverChain(self: *Lowering, ce: *const ast.CatchExpr, span: ast.
     // The error tag reaching the handler is the final operand's. A
     // value-terminator last operand means the chain can't fail — nothing for
     // `catch` to absorb.
-    const last = unwrapTryNode(operands.items[operands.items.len - 1]);
-    const last_ty = self.inferExprType(last);
+    const last_ty = attemptType(self, attemptedExpr(operands.items[operands.items.len - 1]));
     const err_set = self.errorChannelOf(last_ty) orelse {
         if (self.diagnostics) |d| d.addFmt(.err, span, "`catch` here is redundant — the `??` chain already absorbs every failure via its value terminator", .{});
         return self.builder.constInt(0, .void);
@@ -970,25 +1766,22 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
 }
 
 /// Widening at an escape (function-propagation) site: the escaping set must
-/// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
-/// via the whole-program SCC — no check. A bare-`!` callee carries
-/// no tags on its placeholder TypeId, so check its SCC-converged set.
+/// be ⊆ the caller's named set. An open caller absorbs everything — no check.
+/// A dynamic callee has no static member set. A closure/fn-type SLOT widens
+/// against the shape-keyed union.
 /// Shared by `try` propagation and a failable `??` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {
-    if (self.isInferredErrorSet(caller_set)) return;
-    if (!self.isInferredErrorSet(callee_set)) {
+    if (self.channelIsOpen(caller_set)) return;
+    if (!self.channelIsOpen(callee_set)) {
         self.checkErrorSetSubset(callee_set, caller_set, span);
         return;
     }
-    // Bare-`!` callee: either a named top-level function (its converged set
-    // is name-keyed) or a closure/fn-type SLOT (its set is shape-keyed,
-    // shared program-wide by value-signature).
-    if (callTargetName(callee_node)) |nm| {
-        if (self.inferred_error_sets.get(nm)) |tags| {
-            self.diagTagsNotInSet(tags, caller_set, span);
-            return;
-        }
+    if (self.channelIsDyn(callee_set)) {
+        diagNoStaticMemberSet(self, caller_set, span);
+        return;
     }
+    // Placeholder callee: a closure/fn-type SLOT, whose set is shape-keyed,
+    // shared program-wide by value-signature.
     if (self.shapeKeyOfCallee(callee_node)) |key| {
         if (self.shape_inferred_sets.get(key)) |tags| {
             self.diagTagsNotInSet(tags, caller_set, span);
@@ -1076,7 +1869,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
 
 /// Rewrite a DIRECT assertion operand of a graceful consumer (`try` /
 /// failable-`??` operand / `catch`) into the failable runtime call
-/// `__sx_cast_assert(av, T)` (std/fmt.sx) so the ordinary error-channel
+/// `@tryCast(av, T)` (std/fmt.sx) so the ordinary error-channel
 /// machinery consumes it. Looks through a `try` marker. Returns null for
 /// every other shape — including assertions NESTED inside the operand
 /// expression, which stay in the unconsumed (panic) form by design.
@@ -1111,7 +1904,7 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
                 self.refuseSetFromAny(target, node.span)) return null;
         }
     }
-    const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "__sx_cast_assert";
+    const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "@tryCast";
     const callee = self.alloc.create(Node) catch unreachable;
     callee.* = .{ .data = .{ .identifier = .{ .name = helper } }, .span = node.span, .source_file = node.source_file };
     // A protocol receiver reaches the helper as its {ctx, type_id} prefix
@@ -1131,23 +1924,16 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
 }
 
 /// The success (value) type of a failable `??` chain: descend to the
-/// leftmost operand, unwrap any `try`, and take its failable success type
-/// (`void` for a pure-`-> !` chain). All operands share this type.
+/// leftmost operand and take its failable success type (`void` for a
+/// pure-`-> !` chain). All operands share this type.
 pub fn coalesceChainSuccessType(self: *Lowering, nc: *const ast.NullCoalesce) TypeId {
     var lhs = nc.lhs;
     while (lhs.data == .null_coalesce and self.coalesceIsFailable(&lhs.data.null_coalesce)) {
         lhs = lhs.data.null_coalesce.lhs;
     }
-    const ft = self.inferExprType(unwrapTryNode(lhs));
+    const ft = attemptType(self, attemptedExpr(lhs));
     const fset = self.errorChannelOf(ft) orelse return .unresolved;
     return if (ft == fset) .void else self.failableSuccessType(ft);
-}
-
-/// `try X` → `X` (the underlying failable); any other node unchanged. In a
-/// `??` chain the `try` marker's routing IS the chain, so the chain lowers
-/// the underlying failable directly rather than re-entering `lowerTry`.
-pub fn unwrapTryNode(node: *const Node) *const Node {
-    return if (node.data == .try_expr) node.data.try_expr.operand else node;
 }
 
 /// Flatten a failable `??` chain into its operands, left-to-right. `??` is
@@ -1175,7 +1961,7 @@ fn flattenCoalesceOperand(self: *Lowering, node: *const Node, list: *std.ArrayLi
 /// a chain (`try a ?? try b ?? …`, possibly with a trailing value
 /// terminator). Left-to-right, short-circuit: each failable operand's
 /// failure routes to the next operand; the final operand either absorbs
-/// (value terminator) or propagates to the enclosing function. Each failed
+/// (value terminator) or propagates to the enclosing error exit. Each failed
 /// attempt pushes a trace frame; an absorbing resolution (any operand
 /// succeeding, or the value terminator) clears the buffer; total failure
 /// preserves the frames for the caller.
@@ -1195,8 +1981,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     self.chain_fail_target = null;
     defer self.chain_fail_target = fail_target;
 
-    // Success type from the first operand (a failable; unwrap any `try`).
-    const first_ty = self.inferExprType(unwrapTryNode(operands.items[0]));
+    const first_ty = attemptType(self, attemptedExpr(operands.items[0]));
     const first_set = self.errorChannelOf(first_ty) orelse {
         if (self.diagnostics) |d| d.addFmt(.err, span, "the left operand of a failable `??` must be failable; got '{s}'", .{self.formatTypeName(first_ty)});
         return self.builder.constInt(0, .void);
@@ -1211,19 +1996,13 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         return self.builder.constInt(0, .void);
     }
 
-    // Caller failability — only needed when the chain can propagate to the
-    // function (final operand is failable AND no absorbing consumer target).
-    var caller_ret: TypeId = .void;
-    var caller_set: TypeId = .void;
+    var exit: ?ErrorExit = null;
     if (!last_is_value and fail_target == null) {
-        const cret = self.effectiveReturnType();
-        const cset = if (cret) |r| self.errorChannelOf(r) else null;
-        if (cset == null) {
+        exit = errorExit(self);
+        if (exit == null) {
             if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`", .{});
             return self.builder.constInt(0, .void);
         }
-        caller_ret = cret.?;
-        caller_set = cset.?;
     }
 
     const merge_bb = if (has_value)
@@ -1246,10 +2025,9 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
             break;
         }
 
-        // Failable operand (`try X` marker or a bare failable). Lower the
-        // underlying failable; the `try` marker's routing IS the chain.
-        const underlying = unwrapTryNode(operand);
-        const op_ty = self.inferExprType(underlying);
+        const attempted = attemptedExpr(operand);
+        const attempt = lowerAttempt(self, attempted, operand.span);
+        const op_ty = attempt.ty;
         const op_set = self.errorChannelOf(op_ty) orelse {
             if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `??` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
             return self.builder.constInt(0, .void);
@@ -1257,10 +2035,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
         const op_value_carrying = op_ty != op_set;
 
         // Widening applies only when the final failure escapes to the
-        // function (no absorbing consumer); a `catch` target absorbs it.
-        if (is_last and fail_target == null) self.checkEscapeWidening(underlying, op_set, caller_set, operand.span);
+        // error exit (no absorbing consumer); a `catch` target absorbs it.
+        if (is_last and fail_target == null) self.checkEscapeWidening(attempted.node, op_set, exit.?.set, operand.span);
 
-        const result = self.lowerExpr(underlying);
+        const result = attempt.ref;
         const err_val = if (op_value_carrying) self.extractErrorSlot(result, op_ty, op_set) else result;
         const err_ty = self.builder.getRefType(err_val);
         const is_err = self.builder.emit(.{ .cmp_ne = .{ .lhs = err_val, .rhs = self.builder.constInt(0, err_ty) } }, .bool);
@@ -1280,11 +2058,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
             self.builder.br(merge_bb, &.{});
         }
 
-        // Failure: push a trace frame, then either route to the next
-        // operand (same block — no function exit, so `onfail` does not
-        // fire) or, for the final operand, resolve the total failure: to an
-        // absorbing consumer (`catch`) if one set a target, else propagate
-        // to the caller.
+        // Failure: push a trace frame, then either route to the next operand
+        // (same block — no function exit) or, for the final operand, resolve
+        // the total failure: to an absorbing consumer (`catch`) if one set a
+        // target, else propagate to the enclosing error exit.
         self.builder.switchToBlock(fail_bb);
         self.emitTracePush(self.placeholderTraceFrame());
         if (is_last) {
@@ -1292,8 +2069,7 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
                 const ec = self.coerceToType(err_val, self.builder.getRefType(err_val), t.set);
                 self.builder.br(t.bb, &.{ec});
             } else {
-                self.emitErrorCleanup(self.func_defer_base, err_val);
-                self.emitErrorReturn(caller_ret, caller_set, err_val);
+                emitErrorExit(self, exit.?, err_val);
             }
         }
         // else: fall through — the next operand is lowered in fail_bb.
@@ -1305,39 +2081,71 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
 
 // ── whole-program inferred-error-set convergence ──────────
 
-/// The bare callee name of a call expression (`g(...)` → "g"), or null if
-/// the node isn't a direct call to a named function. Convergence resolves only
-/// the bare identifier (top-level functions); UFCS / mangled-local callees
-/// aren't tracked by the SCC.
-pub fn callTargetName(node: *const Node) ?[]const u8 {
-    if (node.data != .call) return null;
-    const callee = node.data.call.callee;
-    return if (callee.data == .identifier) callee.data.identifier.name else null;
-}
-
-/// True when `rt` is a pure bare-`!` failable return (`-> !`, the inferred
-/// set) — NOT `!Named` and NOT a value-carrying `-> (T..., !)` tuple.
-pub fn astIsPureBareInferred(rt: ?*const Node) bool {
-    const n = rt orelse return false;
-    return n.data == .error_type_expr and n.data.error_type_expr.name == null;
-}
-
-/// The named-set name of a pure `-> !Named` return (`"Named"`), or null for
-/// bare-`!`, value-carrying, or non-failable returns.
-pub fn astPureNamedSet(rt: ?*const Node) ?[]const u8 {
+/// The `!` node of a return type's error channel: the return type itself
+/// (`-> !Set`), or the trailing slot of a failable result list
+/// (`-> (T, !Set)`, `-> (A, B, !Set)`). Null for a non-failable return.
+pub fn astChannelNode(rt: ?*const Node) ?*const Node {
     const n = rt orelse return null;
-    if (n.data != .error_type_expr) return null;
-    return n.data.error_type_expr.name;
+    const slots: []const *Node = switch (n.data) {
+        .error_type_expr => return n,
+        .tuple_type_expr => |t| t.field_types,
+        .return_type_expr => |r| r.field_types,
+        else => return null,
+    };
+    if (slots.len == 0) return null;
+    const last = slots[slots.len - 1];
+    return if (last.data == .error_type_expr) last else null;
 }
 
-/// The declared tags of a named error set, by name; null if not a
-/// registered error set.
-pub fn namedSetTags(self: *Lowering, name: []const u8) ?[]const u32 {
-    const sid = self.module.types.internString(name);
-    const tid = self.module.types.findByName(sid) orelse return null;
-    if (tid.isBuiltin()) return null;
-    const info = self.module.types.get(tid);
-    return if (info == .error_set) info.error_set.tags else null;
+/// True when a signature's error channel is written bare `!`.
+pub fn astChannelIsInferred(rt: ?*const Node) bool {
+    const n = astChannelNode(rt) orelse return false;
+    return n.data.error_type_expr.operands.len == 0;
+}
+
+/// The members a declaration's WRITTEN channel carries. Empty for a bare `!`,
+/// whose members are the convergence's result rather than its input. The
+/// channel spelling resolves in the declaring module, which is not the ambient
+/// one during a whole-program pass.
+pub fn declaredChannelTags(self: *Lowering, fd: *const ast.FnDecl) []const u32 {
+    const node = astChannelNode(fd.return_type) orelse return &.{};
+    const saved = self.current_source_file;
+    defer self.setCurrentSourceFile(saved);
+    self.setCurrentSourceFile(fd.body.source_file orelse saved);
+    const ty = self.resolveType(node);
+    if (ty.isBuiltin()) return &.{};
+    const info = self.module.types.get(ty);
+    return if (info == .@"error") info.@"error".tags else &.{};
+}
+
+/// `ret` with its error channel replaced by `chan`.
+pub fn withErrorChannel(self: *Lowering, ret: TypeId, chan: TypeId) TypeId {
+    if (ret.isBuiltin()) return ret;
+    return switch (self.module.types.get(ret)) {
+        .@"error" => chan,
+        .failable => |f| self.module.types.internFailable(f.value, chan),
+        else => ret,
+    };
+}
+
+/// Give a bare-`!` declaration the channel its body converged to: the interned
+/// flatten-merge of `members` becomes the declaration's channel TypeId, on the
+/// already-declared signature and on every later re-resolution of it.
+pub fn materialiseInferredChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, members: []const u32) void {
+    installChannel(self, fd, name, self.module.types.errorSetType(.empty, members));
+}
+
+/// Give a bare-`!` declaration whose escapes name no static member set the
+/// DYNAMIC channel.
+pub fn materialiseDynChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
+    installChannel(self, fd, name, self.module.types.dynErrorChannel());
+}
+
+fn installChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, chan: TypeId) void {
+    self.inferred_channels.put(fd, chan) catch return;
+    const fid = self.resolveFuncByName(name) orelse return;
+    const func = self.module.getFunctionMut(fid);
+    func.ret = withErrorChannel(self, func.ret, chan);
 }
 
 /// Whole-program inferred-error-set convergence. Thin delegation to the
@@ -1368,7 +2176,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     const rt_node = lam.return_type orelse return; // no annotation → non-failable infer
     const ret = self.resolveType(rt_node);
     const es = self.errorChannelOf(ret) orelse return; // not failable
-    if (!self.isInferredErrorSet(es)) return; // `!Named` → its own set, not the inferred union
+    if (!self.channelIsPlaceholder(es)) return; // `!Named` → its own set, not the inferred union
 
     var ptys = std.ArrayList(TypeId).empty;
     defer ptys.deinit(self.alloc);
@@ -1382,10 +2190,9 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     defer tags.deinit(self.alloc);
     var edges = std.ArrayList([]const u8).empty;
     defer edges.deinit(self.alloc);
-    // `dyn` (opaque-error-channel `try`) is irrelevant to closure-shape set
-    // widening — that signal only gates the top-level "drop the `!`" warning.
+    // `dyn` is irrelevant to closure-shape widening: a shape node unions tags.
     var dyn_unused = false;
-    self.errorAnalysis().collectErrorSites(lam.body, &tags, &edges, &dyn_unused);
+    self.errorAnalysis().collectEscapes(lam.body, &tags, &edges, &dyn_unused, null);
     for (edges.items) |callee| {
         for (self.calleeEscapeTags(callee)) |t| {
             if (!containsTag(tags.items, t)) tags.append(self.alloc, t) catch {};
@@ -1394,13 +2201,26 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
     self.unionShapeTags(key, tags.items);
 }
 
+/// The declaration a `try g()` / `return g()` edge names, seen from the module
+/// the edge is WRITTEN in — two imported modules may each author `g`, and the
+/// name-keyed winner is not what the spelling means at every site. Null when no
+/// single author is visible there.
+pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*const ast.FnDecl {
+    if (from) |file| {
+        switch (self.selectCallableAuthor(name, file, .any_body)) {
+            .func => |f| return f.decl,
+            .ambiguous, .not_callable => return null,
+            .none => {},
+        }
+    }
+    return self.program_index.fn_ast_map.get(name);
+}
+
 /// The escape tags of a callee referenced by name from a `try g()` edge:
-/// a bare-`!` callee's converged set, or a `-> !Named` callee's declared set.
+/// a bare-`!` callee's converged set, or a named callee's written one.
 pub fn calleeEscapeTags(self: *Lowering, callee: []const u8) []const u32 {
     if (self.inferred_error_sets.get(callee)) |t| return t;
-    if (self.program_index.fn_ast_map.get(callee)) |cfd| {
-        if (astPureNamedSet(cfd.return_type)) |nm| return self.namedSetTags(nm) orelse &.{};
-    }
+    if (edgeCalleeDecl(self, callee, self.current_source_file)) |cfd| return declaredChannelTags(self, cfd);
     return &.{};
 }
 

@@ -1,0 +1,15 @@
+// `{}` reads an enum value's variant out of the runtime value table. A tag the
+// table does not list names no variant, so the walk stops the program.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+Color :: enum u8 { red; green; blue }
+
+Bits :: union { hue: Color; raw: u8 }
+
+main :: () -> i32 {
+    print("{}\n", Bits{ raw = 2 }.hue);
+    print("{}\n", Bits{ raw = 7 }.hue);
+    return 0;
+}

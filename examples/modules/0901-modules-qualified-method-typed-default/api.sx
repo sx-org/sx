@@ -10,7 +10,7 @@ Writer :: struct {
     init :: () -> Writer { Writer{ total = 0 } }
 
     add :: (self: *Writer, value: i64, options: Options = .{}) -> ApiError {
-        if options.amount < 0 { raise error.Bad; }
+        if options.amount < 0 { raise .Bad; }
         self.total += value + options.amount;
     }
 }

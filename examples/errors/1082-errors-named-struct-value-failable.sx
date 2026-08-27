@@ -6,7 +6,7 @@ E :: error { Bad }
 Box :: struct { n: i64; k: i64; }
 
 make :: (n: i64) -> (Box, !E) {
-    if n < 0 { raise error.Bad; }
+    if n < 0 { raise .Bad; }
     return Box{ n = n, k = n + 1 };
 }
 

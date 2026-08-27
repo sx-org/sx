@@ -67,7 +67,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         while true {
             n, re := socket.read_nb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
-            if re == error.Closed { done = true; }
+            if re == .Closed { done = true; }
             break;
         }
         if got > 0 { stall = 0; } else { stall += 1; }

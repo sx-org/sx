@@ -160,7 +160,7 @@ pub const TypeInfo = union(enum) {
     pack: PackInfo,
     any,
     protocol: ProtocolInfo,
-    error_set: ErrorSetInfo,
+    @"error": ErrorSetInfo,
     noreturn,
     usize,
     isize,
@@ -328,14 +328,15 @@ pub const TypeInfo = union(enum) {
         };
     };
 
-    /// A declared error set `Foo :: error { A, B }`. `tags` are GLOBAL tag
-    /// ids from the TypeTable's `TagRegistry` (sorted, canonical). Identity is
-    /// the `name` (like an enum). Runtime layout is u32 — the error channel's
-    /// tag value; id 0 is reserved for "no error".
+    /// An error channel. `tags` are qualified member ids from the TypeTable's
+    /// `TagRegistry` (sorted, deduped) and ARE the set's identity; `name` is the
+    /// spelling derived from them, and only a MEMBER-LESS channel (a bare `!`,
+    /// an unresolved composition) is identified by that spelling instead.
+    /// Runtime layout is `{ qualified_tag: u32, widest member payload }` — the
+    /// tag is the channel's member id, and id 0 is "no error".
     pub const ErrorSetInfo = struct {
         name: StringId,
-        tags: []const u32, // sorted global tag ids
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
+        tags: []const u32,
     };
 };
 
@@ -403,48 +404,135 @@ pub const StringPool = struct {
 };
 
 // ── TagRegistry ─────────────────────────────────────────────────────────
-// Global error-tag pool: tag name → u32 id, monotonic, id 0 reserved for
-// "no error". Tag identity is the name, program-wide — two declared sets that
-// list the same tag share its id (the design's global-flat tag identity). A
-// separate namespace from StringPool so tag ids stay dense (compact id→name
-// table for `{}` interpolation + traces).
+// Error-member pool: (owning declaration, member name) → u32 id, monotonic,
+// id 0 reserved for "no error". A member's identity is the PAIR, so
+// `FooError.A` and `BooError.A` are two different members. Owner 0 is the
+// anonymous owner — the member spelling written with no set in hand. A
+// separate namespace from StringPool so ids stay dense (compact id→name table
+// for `{}` interpolation + traces).
 
 pub const TagRegistry = struct {
-    /// tag name → id. Keys point to owned allocations in `names`.
-    map: std.StringHashMap(u32),
-    /// id → tag name. Index 0 is the reserved "" (no-error) slot.
+    /// The anonymous owner: a member named without a set to own it.
+    pub const anonymous_owner: u32 = 0;
+
+    const Key = struct { owner: u32, name: []const u8 };
+
+    const KeyContext = struct {
+        pub fn hash(_: KeyContext, k: Key) u64 {
+            var h = std.hash.Wyhash.init(0);
+            h.update(std.mem.asBytes(&k.owner));
+            h.update(k.name);
+            return h.final();
+        }
+        pub fn eql(_: KeyContext, a: Key, b: Key) bool {
+            return a.owner == b.owner and std.mem.eql(u8, a.name, b.name);
+        }
+    };
+
+    /// (owner, member name) → id. Key names point to owned allocations in `names`.
+    map: std.HashMap(Key, u32, KeyContext, 80),
+    /// id → member name. Index 0 is the reserved "" (no-error) slot.
     names: std.ArrayList([]const u8),
+    /// id → owning set, parallel to `names`.
+    owners: std.ArrayList(u32),
+    /// id → the member's declared payload type, parallel to `names`. `.void` is
+    /// a payload-free member.
+    payloads: std.ArrayList(TypeId),
+    /// owner → the owning declaration's spelling. Slot 0 is the anonymous owner.
+    owner_names: std.ArrayList(StringId),
+    /// owner → the error its declaration interns to, parallel to `owner_names`.
+    owner_types: std.ArrayList(TypeId),
+    /// owning declaration pointer → owner.
+    owner_ids: std.AutoHashMap(*const anyopaque, u32),
     next_id: u32,
 
     pub fn init(alloc: Allocator) TagRegistry {
         var reg = TagRegistry{
-            .map = std.StringHashMap(u32).init(alloc),
+            .map = std.HashMap(Key, u32, KeyContext, 80).init(alloc),
             .names = std.ArrayList([]const u8).empty,
+            .owners = std.ArrayList(u32).empty,
+            .payloads = std.ArrayList(TypeId).empty,
+            .owner_names = std.ArrayList(StringId).empty,
+            .owner_types = std.ArrayList(TypeId).empty,
+            .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
         reg.names.append(alloc, "") catch unreachable; // slot 0
+        reg.owners.append(alloc, anonymous_owner) catch unreachable;
+        reg.payloads.append(alloc, .void) catch unreachable;
+        reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
+        reg.owner_types.append(alloc, .void) catch unreachable;
         return reg;
     }
 
     pub fn deinit(self: *TagRegistry, alloc: Allocator) void {
         for (self.names.items[1..]) |n| alloc.free(@constCast(n));
         self.names.deinit(alloc);
+        self.owners.deinit(alloc);
+        self.payloads.deinit(alloc);
+        self.owner_names.deinit(alloc);
+        self.owner_types.deinit(alloc);
+        self.owner_ids.deinit();
         self.map.deinit();
     }
 
-    pub fn intern(self: *TagRegistry, alloc: Allocator, name: []const u8) u32 {
-        if (self.map.get(name)) |id| return id;
+    /// The owner id of the declaration at `decl`, allocating one on first sight.
+    /// `name` is its spelling, which a set of its members renders as.
+    pub fn internOwner(self: *TagRegistry, alloc: Allocator, decl: *const anyopaque, name: StringId) u32 {
+        const gop = self.owner_ids.getOrPut(decl) catch unreachable;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = @intCast(self.owner_names.items.len);
+            self.owner_names.append(alloc, name) catch unreachable;
+            self.owner_types.append(alloc, .void) catch unreachable;
+        }
+        self.owner_names.items[gop.value_ptr.*] = name;
+        return gop.value_ptr.*;
+    }
+
+    pub fn intern(self: *TagRegistry, alloc: Allocator, owner: u32, name: []const u8) u32 {
+        if (self.map.get(.{ .owner = owner, .name = name })) |id| return id;
         const id = self.next_id;
         self.next_id += 1;
         const owned = alloc.dupe(u8, name) catch unreachable;
         self.names.append(alloc, owned) catch unreachable;
-        self.map.put(owned, id) catch unreachable;
+        self.owners.append(alloc, owner) catch unreachable;
+        self.payloads.append(alloc, .void) catch unreachable;
+        self.map.put(.{ .owner = owner, .name = owned }, id) catch unreachable;
         return id;
     }
 
     pub fn getName(self: *const TagRegistry, id: u32) []const u8 {
         if (id >= self.names.items.len) return "";
         return self.names.items[id];
+    }
+
+    pub fn setPayload(self: *TagRegistry, id: u32, ty: TypeId) void {
+        self.payloads.items[id] = ty;
+    }
+
+    pub fn payloadOf(self: *const TagRegistry, id: u32) TypeId {
+        if (id >= self.payloads.items.len) return .void;
+        return self.payloads.items[id];
+    }
+
+    pub fn ownerOf(self: *const TagRegistry, id: u32) u32 {
+        if (id >= self.owners.items.len) return anonymous_owner;
+        return self.owners.items[id];
+    }
+
+    pub fn ownerName(self: *const TagRegistry, owner: u32) StringId {
+        if (owner >= self.owner_names.items.len) return .empty;
+        return self.owner_names.items[owner];
+    }
+
+    pub fn setOwnerType(self: *TagRegistry, owner: u32, ty: TypeId) void {
+        if (owner >= self.owner_types.items.len) return;
+        self.owner_types.items[owner] = ty;
+    }
+
+    pub fn ownerType(self: *const TagRegistry, owner: u32) TypeId {
+        if (owner >= self.owner_types.items.len) return .void;
+        return self.owner_types.items[owner];
     }
 };
 
@@ -628,7 +716,7 @@ pub const TypeTable = struct {
     /// Product of `field_ids`, or a failable when the last field is an error set.
     pub fn internFieldsAsProductOrFailable(self: *TypeTable, field_ids: []const TypeId, names: ?[]const StringId) TypeId {
         const n = field_ids.len;
-        if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .error_set) {
+        if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .@"error") {
             const err = field_ids[n - 1];
             const n_vals = n - 1;
             const value: TypeId = if (n_vals == 0)
@@ -731,7 +819,7 @@ pub const TypeTable = struct {
         return id;
     }
 
-    /// Intern a nominal type (struct/enum/union/tagged_union/error_set) under a
+    /// Intern a nominal type (struct/enum/union/tagged_union) under a
     /// stable nominal identity. `nominal_id` folds into the intern key so two
     /// authors that share a display name still get distinct TypeIds. With
     /// `nominal_id == 0` this is byte-identical to `intern` (structural keying),
@@ -744,7 +832,6 @@ pub const TypeTable = struct {
             .@"enum" => |*e| e.nominal_id = nominal_id,
             .@"union" => |*u| u.nominal_id = nominal_id,
             .tagged_union => |*u| u.nominal_id = nominal_id,
-            .error_set => |*e| e.nominal_id = nominal_id,
             else => std.debug.assert(nominal_id == 0),
         }
         return self.intern(stamped);
@@ -775,6 +862,12 @@ pub const TypeTable = struct {
         self.intern_map.put(.{ .info = info }, id) catch unreachable;
     }
 
+    /// The prelude's `TypeInfo` — the shape `@typeInfo` reflects a type into.
+    /// `.unresolved` only where the prelude is absent.
+    pub fn typeInfoType(self: *TypeTable) TypeId {
+        return self.findByName(self.internString("TypeInfo")) orelse .unresolved;
+    }
+
     /// Find a named type (struct/union/enum) by its StringId name.
     /// Returns the TypeId if found, null otherwise.
     pub fn findByName(self: *const TypeTable, name: StringId) ?TypeId {
@@ -784,12 +877,22 @@ pub const TypeTable = struct {
                 .@"union" => |u| u.name,
                 .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
-                .error_set => |e| e.name,
+                .@"error" => |e| e.name,
                 else => null,
             };
             if (n != null and n.? == name) return TypeId.fromIndex(@intCast(i));
         }
         return null;
+    }
+
+    /// True when `id` is some declaration's registered slot — as opposed to a
+    /// forward-reference stub, which no declaration has claimed yet.
+    pub fn isDeclSlot(self: *const TypeTable, id: TypeId) bool {
+        var it = self.type_decl_tids.valueIterator();
+        while (it.next()) |claimed| {
+            if (claimed.* == id) return true;
+        }
+        return false;
     }
 
     /// True when `ty` IS the C-variadic cursor. Its storage is the target's
@@ -924,7 +1027,7 @@ pub const TypeTable = struct {
             .@"union" => |u| u.name,
             .tagged_union => |u| u.name,
             .@"enum" => |e| e.name,
-            .error_set => |e| e.name,
+            .@"error" => |e| e.name,
             .protocol => |p| p.name,
             else => null,
         };
@@ -946,10 +1049,10 @@ pub const TypeTable = struct {
     }
 
     /// Type of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// type, an array/vector element type, a slice's element (row 0 — the
-    /// static length doesn't exist), or an optional's child (row 0). Null for
-    /// a negative / out-of-range `idx` or a type with no member types (e.g. a
-    /// payloadless enum). Backs the `type_field_type` reader.
+    /// type, an array/vector element type, or row 0 as the slice element, the
+    /// string byte, or the optional child. Null for a negative / out-of-range
+    /// `idx` or a type with no member types (e.g. a payloadless enum). Backs
+    /// the `type_field_type` reader.
     pub fn memberType(self: *const TypeTable, id: TypeId, idx: i64) ?TypeId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -960,6 +1063,7 @@ pub const TypeTable = struct {
             .array => |a| if (i < a.length) a.element else null,
             .vector => |v| if (i < v.length) v.element else null,
             .slice => |sl| if (i == 0) sl.element else null,
+            .string => if (i == 0) .u8 else null,
             .optional => |o| if (i == 0) o.child else null,
             else => null,
         };
@@ -967,7 +1071,7 @@ pub const TypeTable = struct {
 
     /// Row count of the runtime member tables for `id` — `memberCount` where
     /// a count exists, plus ONE row for the kinds that answer a member TYPE
-    /// without a static count (slice element / optional child at row 0).
+    /// without a static count (slice element / string byte / optional child at row 0).
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
@@ -1031,7 +1135,7 @@ pub const TypeTable = struct {
     /// reader. (A `tagged_union` is a payload-carrying enum; the sx metatype folds
     /// codes 2 and 3 onto its single `.enum` TypeInfo variant.)
     ///   0 other · 1 struct · 2 enum · 3 tagged_union
-    ///   5 union · 6 array · 7 vector · 8 error_set
+    ///   5 union · 6 array · 7 vector · 8 error
     pub fn kindCode(self: *const TypeTable, id: TypeId) i64 {
         if (id.index() >= self.infos.items.len) return 0;
         return switch (self.get(id)) {
@@ -1041,7 +1145,7 @@ pub const TypeTable = struct {
             .@"union" => 5,
             .array => 6,
             .vector => 7,
-            .error_set => 8,
+            .@"error" => 8,
             else => 0,
         };
     }
@@ -1104,7 +1208,7 @@ pub const TypeTable = struct {
                 .@"union" => |u| u.name,
                 .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
-                .error_set => |e| e.name,
+                .@"error" => |e| e.name,
                 else => null,
             };
             if (n != null and n.? == name) {
@@ -1243,12 +1347,35 @@ pub const TypeTable = struct {
     /// `lenWordOf` packed into one row: bits 0..7 the count's BIT width,
     /// bit 8 its signedness, bits 16..31 its byte offset in the header.
     /// 0 for a kind that carries no fat pointer. Feeds the
-    /// `__sx_slice_len_infos` runtime table and its static fold.
+    /// `__sx_slice_len_infos` runtime table.
     pub fn sliceLenInfo(self: *const TypeTable, id: TypeId) i64 {
         const lw = self.lenWordOf(id) orelse return 0;
         return @as(i64, lw.bits) |
             (@as(i64, @intFromBool(lw.signed)) << 8) |
             (@as(i64, @intCast(lw.offset)) << 16);
+    }
+
+    /// True when `?child` needs no separate has_value flag: its null state is
+    /// the child's own leading pointer word.
+    pub fn optionalIsSentinel(self: *const TypeTable, child: TypeId) bool {
+        if (child.index() >= self.infos.items.len) return false;
+        return switch (self.get(child)) {
+            .pointer, .many_pointer, .function, .cstring, .closure => true,
+            .@"struct" => |s| s.is_protocol,
+            else => false,
+        };
+    }
+
+    /// Byte offset of an optional's has_value flag, or -1 when its null state
+    /// is the leading pointer word. Feeds the `__sx_optional_flags` runtime
+    /// table, which `@inner` probes; -1 for a non-optional kind.
+    pub fn optionalFlagOffset(self: *const TypeTable, id: TypeId) i64 {
+        if (id.index() >= self.infos.items.len) return -1;
+        const info = self.get(id);
+        if (info != .optional) return -1;
+        const child = info.optional.child;
+        if (self.optionalIsSentinel(child)) return -1;
+        return @intCast(self.typeSizeBytes(child));
     }
 
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
@@ -1401,22 +1528,163 @@ pub const TypeTable = struct {
         return self.intern(.{ .pack = .{ .elements = owned } });
     }
 
-    /// Intern an error-tag name into the global tag pool, returning its id.
-    pub fn internTag(self: *TypeTable, name: []const u8) u32 {
-        return self.tags.intern(self.alloc, name);
+    /// The owner id of the error-set declaration at `decl`, spelled `name`.
+    pub fn internErrorOwner(self: *TypeTable, decl: *const anyopaque, name: StringId) u32 {
+        return self.tags.internOwner(self.alloc, decl, name);
     }
 
-    /// Look up a tag name from its global id.
+    pub fn internMember(self: *TypeTable, owner: u32, name: []const u8) u32 {
+        return self.tags.intern(self.alloc, owner, name);
+    }
+
+    /// Look up a member's name from its id.
     pub fn getTagName(self: *const TypeTable, id: u32) []const u8 {
         return self.tags.getName(id);
     }
 
-    /// Construct (and intern) a named error-set type. `tag_ids` are global tag
-    /// ids (from `internTag`); they are sorted here for canonical storage.
-    pub fn errorSetType(self: *TypeTable, name: StringId, tag_ids: []const u32) TypeId {
-        const owned = self.slice_arena.allocator().dupe(u32, tag_ids) catch unreachable;
-        std.mem.sort(u32, owned, {}, std.sort.asc(u32));
-        return self.intern(.{ .error_set = .{ .name = name, .tags = owned } });
+    /// Record the payload type `Member: T` declares.
+    pub fn setMemberPayload(self: *TypeTable, member: u32, payload: TypeId) void {
+        self.tags.setPayload(member, payload);
+    }
+
+    /// A member's declared payload type; `.void` when it carries none.
+    pub fn memberPayload(self: *const TypeTable, member: u32) TypeId {
+        return self.tags.payloadOf(member);
+    }
+
+    /// Bind the error `ty` its declaration `decl` interns to, so a live member
+    /// of it answers `.set` with that error.
+    pub fn setErrorOwnerType(self: *TypeTable, decl: *const anyopaque, ty: TypeId) void {
+        const owner = self.tags.owner_ids.get(decl) orelse return;
+        self.tags.setOwnerType(owner, ty);
+    }
+
+    /// The error that declares `member`; `.void` for a member named with no
+    /// set in hand.
+    pub fn memberOwnerType(self: *const TypeTable, member: u32) TypeId {
+        return self.tags.ownerType(self.tags.ownerOf(member));
+    }
+
+    /// `Owner.Member` — the spelling a live member renders as, owned by `alloc`.
+    pub fn memberQualifiedName(self: *const TypeTable, alloc: Allocator, member: u32) []const u8 {
+        const own = self.tags.ownerName(self.tags.ownerOf(member));
+        const name = self.getTagName(member);
+        if (own == .empty) return alloc.dupe(u8, name) catch unreachable;
+        return std.fmt.allocPrint(alloc, "{s}.{s}", .{ self.getString(own), name }) catch unreachable;
+    }
+
+    /// The bytes a channel over `tags` reserves for a payload: the widest
+    /// declared member payload, 0 when every member is payload-free.
+    pub fn errorChannelPayloadBytes(self: *const TypeTable, tags: []const u32) usize {
+        var widest: usize = 0;
+        for (tags) |m| {
+            const sz = self.typeSizeBytes(self.memberPayload(m));
+            if (sz > widest) widest = sz;
+        }
+        return widest;
+    }
+
+    /// The payload bytes the channel `ty` reserves, 0 when `ty` is no channel
+    /// at all or every member of it is payload-free.
+    pub fn channelPayloadBytes(self: *const TypeTable, ty: TypeId) usize {
+        if (ty.isBuiltin()) return 0;
+        const info = self.get(ty);
+        if (info != .@"error") return 0;
+        return self.errorChannelPayloadBytes(info.@"error".tags);
+    }
+
+    /// Whether a channel over `ty` reserves payload bytes for its members.
+    pub fn isPayloadCarryingChannel(self: *const TypeTable, ty: TypeId) bool {
+        return self.channelPayloadBytes(ty) > 0;
+    }
+
+    /// What a name spells in an error set: one member, none, or — a channel
+    /// composes sets that may each intern the spelling — more than one.
+    pub const SetMember = union(enum) {
+        one: u32,
+        none,
+        ambiguous,
+    };
+
+    /// The member `name` names in error set `set`.
+    pub fn errorSetMember(self: *const TypeTable, set: TypeId, name: []const u8) SetMember {
+        if (set.isBuiltin()) return .none;
+        const info = self.get(set);
+        if (info != .@"error") return .none;
+        var found: ?u32 = null;
+        for (info.@"error".tags) |id| {
+            if (!std.mem.eql(u8, self.getTagName(id), name)) continue;
+            if (found != null) return .ambiguous;
+            found = id;
+        }
+        return if (found) |id| .{ .one = id } else .none;
+    }
+
+    /// The spelling a channel holding `members` renders as: the owning
+    /// declaration's name when every member shares one owner, else the
+    /// `|`-joined `Owner.Member` list.
+    pub fn errorSetDisplayName(self: *TypeTable, members: []const u32) StringId {
+        const owner = self.tags.ownerOf(members[0]);
+        var single = owner != TagRegistry.anonymous_owner;
+        for (members[1..]) |m| {
+            if (self.tags.ownerOf(m) != owner) single = false;
+        }
+        if (single) return self.tags.ownerName(owner);
+        var spelling = std.ArrayList(u8).empty;
+        defer spelling.deinit(self.alloc);
+        for (members, 0..) |m, i| {
+            if (i > 0) spelling.appendSlice(self.alloc, " | ") catch unreachable;
+            const own = self.tags.ownerName(self.tags.ownerOf(m));
+            if (own != .empty) {
+                spelling.appendSlice(self.alloc, self.getString(own)) catch unreachable;
+                spelling.append(self.alloc, '.') catch unreachable;
+            }
+            spelling.appendSlice(self.alloc, self.getTagName(m)) catch unreachable;
+        }
+        return self.internString(spelling.items);
+    }
+
+    /// The error body over `member_ids`. Identity is the member set —
+    /// sorted and deduped here — and the display spelling is derived from it.
+    /// `spelling` names a MEMBER-LESS channel, which has no members to derive
+    /// one from.
+    pub fn errorSetInfo(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeInfo {
+        const sorted = self.slice_arena.allocator().dupe(u32, member_ids) catch unreachable;
+        std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
+        var n: usize = 0;
+        for (sorted) |m| {
+            if (n > 0 and sorted[n - 1] == m) continue;
+            sorted[n] = m;
+            n += 1;
+        }
+        const owned = sorted[0..n];
+        const name = if (n == 0) spelling else self.errorSetDisplayName(owned);
+        return .{ .@"error" = .{ .name = name, .tags = owned } };
+    }
+
+    /// Construct (and intern) an error channel from its member ids.
+    pub fn errorSetType(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeId {
+        return self.intern(self.errorSetInfo(spelling, member_ids));
+    }
+
+    /// The members `id` reflects as an error, or null when it is not one.
+    pub fn reflectedErrorMembers(self: *const TypeTable, id: TypeId) ?[]const u32 {
+        if (id.isBuiltin() or id.index() >= self.infos.items.len) return null;
+        return switch (self.get(id)) {
+            .@"error" => |e| e.tags,
+            else => null,
+        };
+    }
+
+    /// The spelling of the DYNAMIC channel. `!` is not legal in a type or
+    /// identifier name, so this cannot collide with a user-declared set — nor
+    /// with the bare-`!` placeholder a written fn-type spelling carries.
+    pub const dyn_channel_spelling = "!dyn";
+
+    /// The channel of a declaration whose body escapes through a channel that
+    /// cannot be named: member-less, identified by its spelling alone.
+    pub fn dynErrorChannel(self: *TypeTable) TypeId {
+        return self.errorSetType(self.internString(dyn_channel_spelling), &.{});
     }
 
     /// Size in bytes for a type (pointer-sized = 8 on 64-bit).
@@ -1477,7 +1745,7 @@ pub const TypeTable = struct {
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
-            .error_set => 4, // u32 tag id on the error channel
+            .@"error" => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
             // before codegen. Reaching runtime layout means a pack leaked.
@@ -1616,7 +1884,8 @@ pub const TypeTable = struct {
             },
             .any => 2 * ptr_size, // {type_tag, data_ptr}
             .protocol => 3 * ptr_size, // {ctx, type_id, vtable}
-            .error_set => 4, // u32 tag id
+            // The payload area aligns to 1, so the tag word alone pads the tail.
+            .@"error" => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeSizeBytes(bt);
                 return 8;
@@ -1669,7 +1938,7 @@ pub const TypeTable = struct {
             // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
             // the tag word.
             .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
-            .error_set => 4, // u32 tag id
+            .@"error" => 4, // the tag word; a payload area does not raise it
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeAlignBytes(bt);
                 return 8;
@@ -1734,7 +2003,7 @@ pub const TypeTable = struct {
                     .@"union" => |u| self.getString(u.name),
                     .tagged_union => |u| self.getString(u.name),
                     .protocol => |p| self.getString(p.name),
-                    .error_set => |e| self.getString(e.name),
+                    .@"error" => |e| self.getString(e.name),
                     else => "?",
                 };
             },
@@ -1755,7 +2024,7 @@ pub const TypeTable = struct {
             .@"union" => |u| self.getString(u.name),
             .tagged_union => |u| self.getString(u.name),
             .protocol => |p| self.getString(p.name),
-            .error_set => |e| self.getString(e.name),
+            .@"error" => |e| self.getString(e.name),
             .pointer => |p| blk: {
                 const inner = self.formatTypeName(alloc, p.pointee);
                 break :blk std.fmt.allocPrint(alloc, "*{s}", .{inner}) catch "*?";
@@ -1940,9 +2209,11 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             if (u.nominal_id != 0) h.update(std.mem.asBytes(&u.nominal_id));
         },
         .protocol => |p| h.update(std.mem.asBytes(&p.name)),
-        .error_set => |e| {
+        // An error channel keys by its MEMBER SET; the derived spelling is a
+        // function of that set, and identifies a member-less channel alone.
+        .@"error" => |e| {
             h.update(std.mem.asBytes(&e.name));
-            if (e.nominal_id != 0) h.update(std.mem.asBytes(&e.nominal_id));
+            for (e.tags) |t| h.update(std.mem.asBytes(&t));
         },
         .failable => |f| {
             h.update(std.mem.asBytes(&f.value));
@@ -2006,7 +2277,14 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .@"union" => |u| u.name == b.@"union".name and u.nominal_id == b.@"union".nominal_id,
         .tagged_union => |u| u.name == b.tagged_union.name and u.nominal_id == b.tagged_union.nominal_id,
         .protocol => |p| p.name == b.protocol.name,
-        .error_set => |e| e.name == b.error_set.name and e.nominal_id == b.error_set.nominal_id,
+        .@"error" => |e| {
+            const f = b.@"error";
+            if (e.name != f.name or e.tags.len != f.tags.len) return false;
+            for (e.tags, f.tags) |et, ft| {
+                if (et != ft) return false;
+            }
+            return true;
+        },
         .failable => |f| f.value == b.failable.value and f.err == b.failable.err,
         .pack => |p| {
             const q = b.pack;

@@ -18,7 +18,7 @@ sum :: (row: @Array(3, i32)) -> i32 {
 }
 
 main :: () -> i32 {
-    print("same={} name={}\n", type_eq(Named, Punct), type_name(Named));
+    print("same={} name={}\n", @typeEq(Named, Punct), @typeName(Named));
 
     a : @Array(5, i32) = ---;
     a[0] = 3;

@@ -1,2 +1,2 @@
-[stdout] caught BadInput
+[stdout] caught E.BadInput
 [stdout] recovered; trace buffer now empty (len 0)

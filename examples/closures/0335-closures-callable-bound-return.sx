@@ -11,13 +11,13 @@ double :: (x: i64) -> i64 { return x * 2; }
 
 main :: () {
     f := factory();
-    print("named {} size {}\n", f(5), size_of(type_of(f)));
+    print("named {} size {}\n", f(5), size_of(@typeOf(f)));
 
     g := boxed();
-    print("lambda {} size {}\n", g(5), size_of(type_of(g)));
+    print("lambda {} size {}\n", g(5), size_of(@typeOf(g)));
 
     e := empty();
-    print("unique {} size {}\n", e(5), size_of(type_of(e)));
+    print("unique {} size {}\n", e(5), size_of(@typeOf(e)));
 
     print("same {} {}\n", twice(true)(5), twice(false)(5));
     print("both {} {}\n", either(true)(5), either(false)(5));

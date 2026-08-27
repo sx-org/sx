@@ -1,4 +1,4 @@
-// Variadic heterogeneous type packs. `type_name(<dynamic-arg>)` where the
+// Variadic heterogeneous type packs. `@typeName(<dynamic-arg>)` where the
 // argument is NOT a static type expression (e.g. `list[i]` indexing into a
 // `$args`-derived `[]Type` slice) must not fold to "i64" through
 // `resolveTypeArg`'s catch-all `else => .i64`.
@@ -20,7 +20,7 @@ walk :: (..$args) -> string {
     s := "";
     i : i64 = 0;
     while i < list.len {
-        s = concat(s, type_name(list[i]));
+        s = concat(s, @typeName(list[i]));
         i = i + 1;
     }
     return s;

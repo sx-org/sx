@@ -1,5 +1,5 @@
 struct fields=3 f1.name=b f1.off=8
-union arms=2 a1.off=0
+union arms=2 a1=as_bytes
 int bits=16 signed=true
 int bits=32 signed=false
 float bits=32

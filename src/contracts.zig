@@ -97,6 +97,17 @@ pub const entries = [_]Contract{
     .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
     .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
     .{ .name = "@printf", .module = "modules/std/core.sx" },
+    .{ .name = "@typeOf", .module = "modules/std/core.sx" },
+    .{ .name = "@typeName", .module = "modules/std/core.sx" },
+    .{ .name = "@typeInfo", .module = "modules/std/core.sx" },
+    .{ .name = "@errorName", .module = "modules/std/core.sx" },
+    .{ .name = "@errorPayload", .module = "modules/std/core.sx" },
+    .{ .name = "@len", .module = "modules/std/core.sx" },
+    .{ .name = "@field", .module = "modules/std/core.sx" },
+    .{ .name = "@elementAt", .module = "modules/std/core.sx" },
+    .{ .name = "@inner", .module = "modules/std/core.sx" },
+    .{ .name = "@typeEq", .module = "modules/std/core.sx" },
+    .{ .name = "@unbox", .module = "modules/std/core.sx" },
     .{ .name = "@is_comptime", .module = "modules/std/core.sx" },
     .{ .name = "@va_start", .module = "modules/std/core.sx" },
     .{ .name = "@va_arg", .module = "modules/std/core.sx" },
@@ -110,6 +121,10 @@ pub const entries = [_]Contract{
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
     .{ .name = "@error", .module = "modules/std/core.sx" },
+    // Their bodies render a mismatch through the allocating formatter, so fmt owns them.
+    .{ .name = "@cast", .module = "modules/std/fmt.sx" },
+    .{ .name = "@tryCast", .module = "modules/std/fmt.sx" },
+    .{ .name = "@castOrNull", .module = "modules/std/fmt.sx" },
     .{ .name = "@sqrt", .module = "modules/math/scalar.sx" },
     .{ .name = "@sin", .module = "modules/math/scalar.sx" },
     .{ .name = "@cos", .module = "modules/math/scalar.sx" },
@@ -211,8 +226,11 @@ pub fn isTypeConstructor(name: []const u8) bool {
         std.mem.eql(u8, name, int_head);
 }
 
+/// How many arguments every compiler-formed type constructor takes.
+pub const constructor_arity = 2;
+
 /// True when argument `i` of the type constructor `name` is a TYPE rather than
-/// a compile-time value. `@Slice(T, Len)` takes types in both positions,
+/// a compile-time value. `@Slice(T, Len)` takes types throughout,
 /// `@Vector(N, T)` / `@Array(N, T)` a count then a type, and `@int(N, .signed)`
 /// a width then a signedness choice — no type at all.
 pub fn takesTypeArg(name: []const u8, i: usize) bool {

@@ -453,9 +453,8 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
     };
 }
 
-/// A `{ name: string, ty: Type }` member decoded from comptime memory — the shared
-/// shape of a compiler-API `Member`, a metatype `EnumVariant { name, payload }`,
-/// and a `StructField { name, type }` (all 2-field `{ string, Type }` structs).
+/// A `{ name: string, ty: Type }` member decoded from comptime memory — the
+/// shape of the compiler-API `Member` that `raw_register_type` takes.
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
 /// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
@@ -1420,13 +1419,43 @@ pub const Vm = struct {
                 try self.writeField(table, addr + fieldOffset(table, fty, 4), sfields[4].ty, try self.makeStringValue(table, line_text));
                 return .{ .value = addr };
             },
-            // `error_tag_name(e)` — the runtime tag id (a word) → its name string via
-            // the always-linked tag-name table. Pure: builds a `{ptr,len}` string in
-            // comptime memory.
-            .error_tag_name_get => |u| {
+            // The member word a live error carries, read through the registry
+            // tables. Pure: each builds a `{ptr,len}` string in comptime memory,
+            // or hands back a `TypeId` handle.
+            .error_member_name_get => |u| {
                 const table = try self.requireTable();
                 const id: u32 = @intCast(frame.get(u.operand.index()));
                 return .{ .value = try self.makeStringValue(table, table.getTagName(id)) };
+            },
+            .error_name_get => |u| {
+                const table = try self.requireTable();
+                const id: u32 = @intCast(frame.get(u.operand.index()));
+                const q = table.memberQualifiedName(self.gpa, id);
+                defer self.gpa.free(q);
+                return .{ .value = try self.makeStringValue(table, q) };
+            },
+            .error_owner_get => |u| {
+                const table = try self.requireTable();
+                const id: u32 = @intCast(frame.get(u.operand.index()));
+                return .{ .value = @intCast(table.memberOwnerType(id).index()) };
+            },
+            // The live member's payload behind an `any` view. A channel is its
+            // member word plus the payload area it reserves, so a channel whose
+            // members are all void has no area and views as `void`.
+            .error_payload_view => |u| {
+                const table = try self.requireTable();
+                if (ref_types[u.operand.index()] != .any)
+                    return self.failMsg("comptime VM: @errorPayload of an error value needs its payload area, which a comptime channel register does not carry");
+                const view = frame.get(u.operand.index());
+                const data = try self.machine.readWord(view, 8);
+                const tid = TypeId.fromIndex(@intCast(try self.machine.readWord(view + 8, 8)));
+                const member: u32 = @intCast(try self.machine.readWord(data, 4));
+                const has_area = table.typeSizeBytes(tid) > 4;
+                const payload = if (has_area) table.memberPayload(member) else .void;
+                const addr = self.machine.allocBytes(table.typeSizeBytes(.any), table.typeAlignBytes(.any));
+                try self.machine.writeWord(addr, 8, if (has_area) data + 4 else 0);
+                try self.machine.writeWord(addr + 8, 8, @intCast(payload.index()));
+                return .{ .value = addr };
             },
 
             // ── Calls ───────────────────────────────────────────
@@ -2419,7 +2448,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// queries, given the arg's IR type `aty` and its register word `w`. A
     /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, type_id@8 }` yields
     /// its type_id (the boxed value's runtime type), unless it == `type_value` — a
-    /// boxed Type (the `type_of(x)` shape) whose real id sits behind the data
+    /// boxed Type (the `@typeOf(x)` shape) whose real id sits behind the data
     /// pointer.
     fn reflectArgTypeId(self: *Vm, aty: TypeId, w: Reg) Error!TypeId {
         // A `TypeId` index is a u32; a word that doesn't fit is a garbage/mis-read
@@ -2477,7 +2506,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width, .rt_slice_len_info => {
+            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2514,8 +2543,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                         }
                         break :blk 0;
                     },
+                    .rt_member_count => @as(Reg, @intCast(table.memberCount(tid) orelse 0)),
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
                     .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
+                    .rt_optional_flag => @as(Reg, @bitCast(table.optionalFlagOffset(tid))),
                     else => unreachable,
                 };
             },
@@ -2533,17 +2564,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 };
             },
             .rt_type_eq => {
-                if (bi.args.len < 2) return self.failMsg("comptime type_eq: expected two arguments");
+                if (bi.args.len < 2) return self.failMsg("comptime @typeEq: expected two arguments");
                 const ta = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 const tb = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[1]), frame.get(bi.args[1].index()));
                 return @as(Reg, @intFromBool(ta == tb));
             },
-            // type_info($T) → reflect a type INTO a TypeInfo VALUE (the inverse of
-            // define's decode). The arg folded to a `const_type` (a `.type_value`
-            // word = the source TypeId); build the value in comptime memory.
-            .type_info => {
+            // `@typeInfo($T)` → reflect a type INTO a TypeInfo VALUE (the inverse
+            // of define's decode). The arg folded to a `const_type` (a
+            // `.type_value` word = the source TypeId); build it in comptime memory.
+            .@"@typeInfo" => {
                 const table = try self.requireTable();
-                if (bi.args.len != 1) return self.failMsg("comptime type_info: expected (Type)");
+                if (bi.args.len != 1) return self.failMsg("comptime @typeInfo: expected (Type)");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.buildTypeInfo(table, ins_ty, tid);
             },
@@ -2563,41 +2594,60 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
     }
 
-    /// Reflect type `tid` INTO a `TypeInfo` VALUE built in comptime memory — the inverse
-    /// of the sx `define` (which calls `register_type`). The
-    /// element/struct layouts come from the `result_ty` (= the metatype `TypeInfo`
-    /// tagged union): variant tag `t` → payload struct `EnumInfo`/`StructInfo`/
-    /// `TupleInfo` (one slice field) → the slice element (`EnumVariant`/`StructField`/
-    /// `Type`). The member shapes: a tagged-union/struct field and an
-    /// enum variant reflect as `{ name, ty }` (a payloadless variant carries `void`);
-    /// tuple elements are bare positional `Type`s. `define(declare(n), type_info(T))`
+    /// One word of a TypeInfo member element, tagged by how it is written.
+    const Word = union(enum) { text: []const u8, ty: TypeId, num: i64 };
+
+    /// The `MemberInfo` words of error member `m`: its interned identity, then
+    /// the owner / name / payload that identity looks up.
+    fn errorRow(table: *const types.TypeTable, m: u32) [4]Word {
+        return .{
+            .{ .num = @intCast(m) },
+            .{ .ty = table.memberOwnerType(m) },
+            .{ .text = table.getTagName(m) },
+            .{ .ty = table.memberPayload(m) },
+        };
+    }
+
+    /// Reflect type `tid` INTO a `TypeInfo` VALUE built in comptime memory — the
+    /// inverse of the sx `define` (which calls `register_type`). Layouts come
+    /// from `result_ty` (the prelude's `TypeInfo`): the variant is found BY NAME,
+    /// its payload struct by field index, and a member slice's element words in
+    /// the element struct's own field order. `define(declare(n), @typeInfo(T))`
     /// round-trips to a byte-identical nominal copy.
     fn buildTypeInfo(self: *Vm, table: *const types.TypeTable, result_ty: TypeId, tid: TypeId) Error!Reg {
         if (result_ty.isBuiltin() or table.get(result_ty) != .tagged_union)
-            return self.failMsg("comptime type_info: result type is not the TypeInfo tagged union");
+            return self.failMsg("comptime @typeInfo: result type is not the TypeInfo tagged union");
         const ti = table.get(result_ty).tagged_union;
         if (ti.backing_type != null)
-            return self.failMsg("comptime type_info: TypeInfo result is a backing_type tagged union (unexpected layout)");
+            return self.failMsg("comptime @typeInfo: TypeInfo result is a backing_type tagged union (unexpected layout)");
         if (tid == .unresolved)
-            return self.failMsg("comptime type_info: unresolved type");
+            return self.failMsg("comptime @typeInfo: unresolved type");
 
-        // Decode tid into its TypeInfo variant NAME + a payload writer. The
-        // variant is found BY NAME in the result type (never by ordinal), so
-        // meta.sx can grow/reorder reflect-only variants freely. EXHAUSTIVE
-        // over the type-table kinds — a new kind fails here until classified.
+        // Decode tid into its TypeInfo variant NAME + a payload writer.
+        // EXHAUSTIVE over the type-table kinds — a new kind fails here until
+        // classified.
         const Payload = union(enum) {
             none,
             int: struct { bits: i64, signed: bool },
             float: struct { bits: i64 },
             elem_len: struct { elem: TypeId, len: i64 }, // array/vector
             one_type: TypeId, // slice/pointer/many_pointer/optional
-            named2: []const NamedMember, // EnumVariant {name, payload}
-            named3: []const NamedMember, // StructField {name, type, offset}
+            rows: []const []const Word, // one element struct per member
         };
-        var pairs = std.ArrayList(NamedMember).empty;
-        defer pairs.deinit(self.gpa);
-        const oom = "comptime type_info: out of memory";
+        var rows = std.ArrayList([]const Word).empty;
+        defer {
+            for (rows.items) |r| self.gpa.free(r);
+            rows.deinit(self.gpa);
+        }
+        const oom = "comptime @typeInfo: out of memory";
+        const Row = struct {
+            fn push(vm: *Vm, list: *std.ArrayList([]const Word), words: []const Word) Error!void {
+                const owned = vm.gpa.dupe(Word, words) catch return vm.failMsg(oom);
+                list.append(vm.gpa, owned) catch return vm.failMsg(oom);
+            }
+        };
 
+        const ptr_bits: i64 = @intCast(table.typeSizeBytes(.usize) * 8);
         var vname: []const u8 = undefined;
         var payload: Payload = .none;
         if (tid.isBuiltin()) {
@@ -2608,9 +2658,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 .cstring => vname = "cstring",
                 .any => vname = "any",
                 .noreturn => vname = "noreturn",
-                .usize => vname = "usize",
-                .isize => vname = "isize",
                 .type_value => vname = "type_value",
+                .usize, .isize => {
+                    vname = "int";
+                    payload = .{ .int = .{ .bits = ptr_bits, .signed = tid == .isize } };
+                },
                 .f32 => {
                     vname = "float";
                     payload = .{ .float = .{ .bits = 32 } };
@@ -2627,7 +2679,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     vname = "int";
                     payload = .{ .int = .{ .bits = @intCast(table.typeSizeBytes(tid) * 8), .signed = false } };
                 },
-                else => return self.failMsg("comptime type_info: unclassified builtin type"),
+                else => return self.failMsg("comptime @typeInfo: unclassified builtin type"),
             }
         } else switch (table.get(tid)) {
             .signed => |w| {
@@ -2637,6 +2689,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .unsigned => |w| {
                 vname = "int";
                 payload = .{ .int = .{ .bits = w, .signed = false } };
+            },
+            .usize, .isize => {
+                vname = "int";
+                payload = .{ .int = .{ .bits = ptr_bits, .signed = table.get(tid) == .isize } };
             },
             .f32 => {
                 vname = "float";
@@ -2652,28 +2708,51 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
-            .usize => vname = "usize",
-            .isize => vname = "isize",
             .type_value, .unresolved => vname = "type_value",
             .tagged_union => |u| {
                 vname = "enum";
-                for (u.fields) |f| pairs.append(self.gpa, .{ .name = f.name, .ty = f.ty }) catch return self.failMsg(oom);
-                payload = .{ .named2 = pairs.items };
+                for (u.fields, 0..) |f, i| try Row.push(self, &rows, &.{
+                    .{ .text = table.getString(f.name) },
+                    .{ .ty = f.ty },
+                    .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
+                });
+                payload = .{ .rows = rows.items };
             },
             .@"enum" => |e| {
-                vname = "enum";
-                for (e.variants) |v| pairs.append(self.gpa, .{ .name = v, .ty = .void }) catch return self.failMsg(oom);
-                payload = .{ .named2 = pairs.items };
+                if (table.reflectedErrorMembers(tid)) |members| {
+                    vname = "error";
+                    for (members) |m| try Row.push(self, &rows, &errorRow(table, m));
+                } else {
+                    vname = "enum";
+                    for (e.variants, 0..) |v, i| try Row.push(self, &rows, &.{
+                        .{ .text = table.getString(v) },
+                        .{ .ty = .void },
+                        .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
+                    });
+                }
+                payload = .{ .rows = rows.items };
             },
             .@"struct" => |st| {
                 vname = "struct";
-                for (st.fields) |f| pairs.append(self.gpa, .{ .name = f.name, .ty = f.ty }) catch return self.failMsg(oom);
-                payload = .{ .named3 = pairs.items };
+                for (st.fields, 0..) |f, i| try Row.push(self, &rows, &.{
+                    .{ .text = table.getString(f.name) },
+                    .{ .ty = f.ty },
+                    .{ .num = @intCast(fieldOffset(table, tid, @intCast(i))) },
+                });
+                payload = .{ .rows = rows.items };
             },
             .@"union" => |u| {
                 vname = "union";
-                for (u.fields) |f| pairs.append(self.gpa, .{ .name = f.name, .ty = f.ty }) catch return self.failMsg(oom);
-                payload = .{ .named3 = pairs.items };
+                for (u.fields) |f| try Row.push(self, &rows, &.{
+                    .{ .text = table.getString(f.name) },
+                    .{ .ty = f.ty },
+                });
+                payload = .{ .rows = rows.items };
+            },
+            .@"error" => |e| {
+                vname = "error";
+                for (e.tags) |m| try Row.push(self, &rows, &errorRow(table, m));
+                payload = .{ .rows = rows.items };
             },
             .failable => vname = "void",
             .array => |a| {
@@ -2703,7 +2782,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .function => vname = "function",
             .closure => vname = "closure",
             .protocol => vname = "protocol",
-            .error_set => vname = "error_set",
             .pack => vname = "pack",
         }
 
@@ -2712,7 +2790,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             for (ti.fields, 0..) |f, i| {
                 if (std.mem.eql(u8, table.getString(f.name), vname)) break :blk @intCast(i);
             }
-            return self.failMsg("comptime type_info: TypeInfo has no variant for this kind");
+            return self.failMsg("comptime @typeInfo: TypeInfo has no variant for this kind");
         };
         const payload_ty = ti.fields[tag].ty;
 
@@ -2739,12 +2817,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 pinfo = try self.allocZeroed(table, payload_ty);
                 try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, t.index()));
             },
-            .named2 => |mems| {
-                pinfo = try self.buildMembersPayload(table, payload_ty, .name_ty, &.{}, mems, tid);
-            },
-            .named3 => |mems| {
-                pinfo = try self.buildMembersPayload(table, payload_ty, .name_ty_offset, &.{}, mems, tid);
-            },
+            .rows => |rs| pinfo = try self.buildMembersPayload(table, payload_ty, rs),
         }
 
         // TypeInfo { tag, payload }.
@@ -2768,54 +2841,44 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     fn writePayloadField(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, base: Addr, idx: u32, val: Reg) Error!void {
         if (payload_ty.isBuiltin() or table.get(payload_ty) != .@"struct" or table.get(payload_ty).@"struct".fields.len <= idx)
-            return self.failMsg("comptime type_info: payload shape mismatch (meta.sx TypeInfo drifted from the record builder)");
+            return self.failMsg("comptime @typeInfo: payload shape mismatch (the prelude TypeInfo drifted from the record builder)");
         const fty = table.get(payload_ty).@"struct".fields[idx].ty;
         try self.writeField(table, base + fieldOffset(table, payload_ty, idx), fty, val);
     }
 
-    const MemberShape = enum { bare_types, name_ty, name_ty_offset };
-
-    /// Build a `{ <slice> }` info payload whose slice elements are bare Type
-    /// words (tuple), `{name, payload}` (EnumVariant), or `{name, type,
-    /// offset}` (StructField — offsets from the SAME layout walk the field
-    /// accessors use).
-    fn buildMembersPayload(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, shape: MemberShape, elems: []const TypeId, mems: []const NamedMember, src_ty: TypeId) Error!Addr {
+    /// Build a `{ <slice> }` info payload from one word row per member. A row
+    /// fills the element struct's fields in declaration order, so the element
+    /// shape and the row width must agree.
+    fn buildMembersPayload(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, rows: []const []const Word) Error!Addr {
         if (payload_ty.isBuiltin() or table.get(payload_ty) != .@"struct" or table.get(payload_ty).@"struct".fields.len != 1)
-            return self.failMsg("comptime type_info: TypeInfo payload is not a single-slice info struct");
+            return self.failMsg("comptime @typeInfo: TypeInfo payload is not a single-slice info struct");
         const slice_field_ty = table.get(payload_ty).@"struct".fields[0].ty;
         if (slice_field_ty.isBuiltin() or table.get(slice_field_ty) != .slice)
-            return self.failMsg("comptime type_info: info struct field is not a slice");
+            return self.failMsg("comptime @typeInfo: info struct field is not a slice");
         const elem_ty = table.get(slice_field_ty).slice.element;
+        if (elem_ty.isBuiltin() or table.get(elem_ty) != .@"struct")
+            return self.failMsg("comptime @typeInfo: member element is not an info struct");
+        const elem_fields = table.get(elem_ty).@"struct".fields;
         const elem_size: Addr = @intCast(table.typeSizeBytes(elem_ty));
-        const count = if (shape == .bare_types) elems.len else mems.len;
 
-        const data = self.machine.allocBytes(@intCast(elem_size * @as(Addr, @intCast(@max(count, 1)))), table.typeAlignBytes(elem_ty));
-        if (shape == .bare_types) {
-            for (elems, 0..) |ety, i| try self.writeField(table, data + @as(Addr, @intCast(i)) * elem_size, elem_ty, @as(Reg, ety.index()));
-        } else {
-            const want_fields: usize = if (shape == .name_ty_offset) 3 else 2;
-            if (elem_ty.isBuiltin() or table.get(elem_ty) != .@"struct" or table.get(elem_ty).@"struct".fields.len != want_fields)
-                return self.failMsg("comptime type_info: member element shape mismatch (meta.sx drifted from the record builder)");
-            const name_fty = table.get(elem_ty).@"struct".fields[0].ty; // string
-            const name_off = fieldOffset(table, elem_ty, 0);
-            const ty_off = fieldOffset(table, elem_ty, 1);
-            for (mems, 0..) |m, i| {
-                const elem = data + @as(Addr, @intCast(i)) * elem_size;
-                @memset(try self.machine.bytes(elem, @intCast(elem_size)), 0);
-                const name_val = try self.makeStringValue(table, table.getString(m.name));
-                try self.writeField(table, elem + name_off, name_fty, name_val);
-                try self.writeField(table, elem + ty_off, .type_value, @as(Reg, m.ty.index()));
-                if (shape == .name_ty_offset) {
-                    const off_off = fieldOffset(table, elem_ty, 2);
-                    // Untagged-union arms all overlay at 0; struct fields get
-                    // the layout walk's offsets.
-                    const foff: i64 = if (table.get(src_ty) == .@"union") 0 else @intCast(fieldOffset(table, src_ty, @intCast(i)));
-                    try self.writeField(table, elem + off_off, .i64, @as(Reg, @bitCast(foff)));
-                }
+        const data = self.machine.allocBytes(@intCast(elem_size * @as(Addr, @intCast(@max(rows.len, 1)))), table.typeAlignBytes(elem_ty));
+        for (rows, 0..) |row, i| {
+            if (row.len != elem_fields.len)
+                return self.failMsg("comptime @typeInfo: member element shape mismatch (the prelude TypeInfo drifted from the record builder)");
+            const elem = data + @as(Addr, @intCast(i)) * elem_size;
+            @memset(try self.machine.bytes(elem, @intCast(elem_size)), 0);
+            for (row, 0..) |word, f| {
+                const fty = elem_fields[f].ty;
+                const val: Reg = switch (word) {
+                    .text => |t| try self.makeStringValue(table, t),
+                    .ty => |t| @as(Reg, t.index()),
+                    .num => |n| @as(Reg, @bitCast(n)),
+                };
+                try self.writeField(table, elem + fieldOffset(table, elem_ty, @intCast(f)), fty, val);
             }
         }
 
-        const slice = try self.makeSlice(table, slice_field_ty, data, @intCast(count));
+        const slice = try self.makeSlice(table, slice_field_ty, data, @intCast(rows.len));
         const pinfo = try self.allocZeroed(table, payload_ty);
         try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 0), slice_field_ty, slice);
         return pinfo;
@@ -3026,6 +3089,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
+    /// The bytes a word-kind value occupies at its address: the type's size,
+    /// except an error channel, whose register holds only the leading tag word
+    /// of a slot its payload area widens.
+    fn wordBytes(table: *const types.TypeTable, ty: TypeId) usize {
+        if (!ty.isBuiltin() and table.get(ty) == .@"error") return 4;
+        return table.typeSizeBytes(ty);
+    }
+
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {
         switch (ty) {
             .bool, .i8, .u8, .i16, .u16, .i32, .u32, .f32, .i64, .u64, .f64, .usize, .isize, .cstring => return .word,
@@ -3040,7 +3111,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return switch (table.get(ty)) {
             .pointer, .many_pointer, .function => .word,
             .@"enum" => .word, // payloadless enum: i64 (or its backing) — a word
-            .error_set => .word, // the error channel is a u32 tag id — a word
+            .@"error" => .word, // the error channel is a u32 tag id — a word
             // A tagged union is a `{ tag@0, [N x i8] payload@tag_size }` value held
             // by-address (like a struct) — same as the `enum_init` write path.
             .@"struct", .array, .slice, .tagged_union, .failable => .aggregate,
@@ -3132,7 +3203,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         return switch (kindOf(table, ty)) {
             .word => {
-                const sz = table.typeSizeBytes(ty);
+                const sz = wordBytes(table, ty);
                 const raw = try self.machine.readWord(addr, sz);
                 return if (isSignedInt(ty) and sz < 8) signExtendWord(raw, sz) else raw;
             },
@@ -3159,7 +3230,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.machine.writeWord(addr, 4, bits);
         }
         switch (kindOf(table, ty)) {
-            .word => try self.machine.writeWord(addr, table.typeSizeBytes(ty), val),
+            .word => try self.machine.writeWord(addr, wordBytes(table, ty), val),
             .aggregate => {
                 const n = table.typeSizeBytes(ty);
                 if (n == 0) return;
@@ -3274,7 +3345,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Materialize `text` into comptime memory as a `string` VALUE — NUL-terminated
     /// bytes + a `{ptr, len}` fat pointer (len excludes the NUL). Shared by
-    /// `text_of` and `type_info`'s variant/field-name construction.
+    /// `text_of` and `@typeInfo`'s variant/field-name construction.
     fn makeStringValue(self: *Vm, table: *const types.TypeTable, text: []const u8) Error!Reg {
         const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
         if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);

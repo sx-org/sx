@@ -1,0 +1,4 @@
+cast 7
+tryCast 7 -1
+castOrNull 7 -1
+type assertion failed at 2247-errors-cast-spelled-temperaments.sx:14: expected i64, got f64

@@ -6,30 +6,27 @@ const ast = @import("ast.zig");
 const Node = ast.Node;
 const Parser = @import("parser.zig").Parser;
 
-// The comptime type-metaprogramming surface in `library/modules/std/meta.sx`
-// must PARSE — the data types as struct/enum decls, and the four comptime builtins
-// (`declare` / `define` / `type_info` / `field_type`) as bodyless `intrinsic`
-// consts. Mirrors the exact spellings in meta.sx.
+// The comptime type-metaprogramming surface must PARSE — the data types as
+// struct/enum decls, and bodyless `intrinsic` consts.
 test "parser: comptime type-metaprogramming surface parses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\EnumVariant :: struct {
+        \\VariantInfo :: struct {
         \\    name: string;
         \\    payload: Type;
         \\}
         \\EnumInfo :: struct {
         \\    name: string;
-        \\    variants: []EnumVariant;
+        \\    variants: []VariantInfo;
         \\}
         \\TypeInfo :: enum {
         \\    `enum: EnumInfo;
         \\}
         \\declare    :: () -> Type intrinsic;
         \\define     :: (handle: Type, info: TypeInfo) -> Type intrinsic;
-        \\type_info  :: ($T: Type) -> TypeInfo intrinsic;
         \\field_type :: ($T: Type, idx: i64) -> Type intrinsic;
         \\
     ;
@@ -38,7 +35,7 @@ test "parser: comptime type-metaprogramming surface parses" {
 
     try std.testing.expect(root.data == .root);
     const decls = root.data.root.decls;
-    try std.testing.expectEqual(@as(usize, 7), decls.len);
+    try std.testing.expectEqual(@as(usize, 6), decls.len);
 
     const Found = struct {
         // A top-level `Name :: struct/enum {…}` parses to a `.struct_decl` /
@@ -55,7 +52,7 @@ test "parser: comptime type-metaprogramming surface parses" {
     };
 
     // Data types: struct / struct / enum, parsed as their decl nodes directly.
-    const ev = Found.byName(decls, "EnumVariant") orelse return error.MissingDecl;
+    const ev = Found.byName(decls, "VariantInfo") orelse return error.MissingDecl;
     try std.testing.expect(ev.data == .struct_decl);
     const ei = Found.byName(decls, "EnumInfo") orelse return error.MissingDecl;
     try std.testing.expect(ei.data == .struct_decl);
@@ -71,7 +68,7 @@ test "parser: comptime type-metaprogramming surface parses" {
     // Builtins: the `(params) -> Ret intrinsic;` form parses as a `.fn_decl`
     // (the `->` triggers the function-def path) whose body is a `intrinsic`
     // marker — same shape as the existing reflection builtins in core.sx.
-    for ([_][]const u8{ "declare", "define", "type_info", "field_type" }) |bn| {
+    for ([_][]const u8{ "declare", "define", "field_type" }) |bn| {
         const d = Found.byName(decls, bn) orelse return error.MissingDecl;
         try std.testing.expect(d.data == .fn_decl);
         try std.testing.expect(d.data.fn_decl.body.data == .intrinsic_expr);
@@ -2001,7 +1998,7 @@ test "enum variant name starts point at each variant" {
 test "error tag name starts point at each tag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const src: [:0]const u8 = "ParseErr :: error { BadDigit, Overflow };";
+    const src: [:0]const u8 = "ParseErr :: error { BadDigit; Overflow };";
     var parser = try Parser.init(arena.allocator(), src);
     const root = try parser.parse();
     const esd = root.data.root.decls[0].data.error_set_decl;
@@ -2033,13 +2030,11 @@ test "empty member lists have empty name-start arrays" {
         \\S :: struct {}
         \\E :: enum {}
         \\U :: union {}
-        \\Er :: error {}
     );
     const decls = (try parser.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 0), decls[0].data.struct_decl.field_name_starts.len);
     try std.testing.expectEqual(@as(usize, 0), decls[1].data.enum_decl.variant_name_starts.len);
     try std.testing.expectEqual(@as(usize, 0), decls[2].data.union_decl.field_name_starts.len);
-    try std.testing.expectEqual(@as(usize, 0), decls[3].data.error_set_decl.tag_name_starts.len);
 }
 
 test "a struct-body typed constant adds no field name start" {

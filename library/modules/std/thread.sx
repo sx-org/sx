@@ -40,8 +40,8 @@ c :: @import "modules/std/c.sx";
 // / `c.CondBuf` below.
 
 ThreadErr :: error {
-    Spawn,    // pthread_create refused
-    Init,     // mutex/cond/pool initialization failed
+    Spawn;    // pthread_create refused
+    Init;     // mutex/cond/pool initialization failed
 }
 
 // ── Mutex / Cond (in-place; see MOVE SEMANTICS above) ────────────────
@@ -93,7 +93,7 @@ Thread :: struct {
     // Context before touching default-conv sx code (examples/1636).
     spawn :: (entry: (*void) -> *void abi(.c), arg: *void) -> (Thread, !ThreadErr) {
         t : Thread = .{};
-        if c.pthread_create(*t.handle, null, entry, arg) != 0 { raise error.Spawn; }
+        if c.pthread_create(*t.handle, null, entry, arg) != 0 { raise .Spawn; }
         return t;
     }
     join :: (self: *Thread) {
@@ -141,8 +141,8 @@ Pool :: struct {
         // Free-before-raise: nothing past `p` is allocated yet, so the
         // mutex-setup failure only needs to release `p`. The cond-setup
         // failure additionally tears down the already-init'd mutex.
-        if !p.mu.setup() { alloc.dealloc_bytes(p); raise error.Init; }
-        if !p.nonempty.setup() { p.mu.destroy(); alloc.dealloc_bytes(p); raise error.Init; }
+        if !p.mu.setup() { alloc.dealloc_bytes(p); raise .Init; }
+        if !p.nonempty.setup() { p.mu.destroy(); alloc.dealloc_bytes(p); raise .Init; }
         p.tasks = alloc.alloc(PoolTask, backlog).ptr;
         p.cap = backlog;
         p.threads = alloc.alloc(usize, workers).ptr;
@@ -153,7 +153,7 @@ Pool :: struct {
                 // join what started, then fail loudly
                 p.count = i;
                 p.shutdown();
-                raise error.Spawn;
+                raise .Spawn;
             }
             i += 1;
         }

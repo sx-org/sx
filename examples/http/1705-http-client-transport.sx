@@ -156,7 +156,7 @@ run :: () -> i32 {
     }
     http.Client.close_conn(*conn_c);
     // The same chunked response into a buffer that cannot
-    // hold it must be error.TooLarge — the grow-and-retry signal — never
+    // hold it must be `ClientErr.TooLarge` — the grow-and-retry signal — never
     // "malformed framing".
     conn_c2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
     if ec2 { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
@@ -165,7 +165,7 @@ run :: () -> i32 {
     _, rce2 := http.Client.recv_on(*conn_c2, bc, 4096);
     http.Client.close_conn(*conn_c2);
     context.allocator.dealloc_bytes(bc);
-    if rce2 != error.TooLarge { srv.stop(); t.join(); return 19; }
+    if rce2 != .TooLarge { srv.stop(); t.join(); return 19; }
 
     // ── B. unix-socket dialing (fresh server on a path) ──
     fs.create_dir_all(".sx-tmp");

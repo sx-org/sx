@@ -39,52 +39,52 @@ main :: () {
     print("alignof-i64: {}\n", align_of(i64));
     print("alignof-struct: {}\n", align_of(Point));
 
-    // type_of + category matching
+    // @typeOf + category matching
     tv := 42;
-    ttype := type_of(tv);
+    ttype := @typeOf(tv);
     match ttype {
         case int: print("typeof: int\n");
         case float: print("typeof: float\n");
         else: print("typeof: other\n");
     }
 
-    // type_of — float
+    // @typeOf — float
     tf := 3.14;
-    match type_of(tf) {
+    match @typeOf(tf) {
         case float: print("typeof-float: float\n");
         else: print("typeof-float: other\n");
     }
 
-    // type_of — string
+    // @typeOf — string
     ts := "hello";
-    match type_of(ts) {
+    match @typeOf(ts) {
         case string: print("typeof-string: string\n");
         else: print("typeof-string: other\n");
     }
 
-    // type_of — bool
+    // @typeOf — bool
     tb := true;
-    match type_of(tb) {
+    match @typeOf(tb) {
         case bool: print("typeof-bool: bool\n");
         else: print("typeof-bool: other\n");
     }
 
-    // type_of — struct
+    // @typeOf — struct
     tst := Point{ 1, 2 };
-    match type_of(tst) {
+    match @typeOf(tst) {
         case struct: print("typeof-struct: struct\n");
         else: print("typeof-struct: other\n");
     }
 
-    // type_of — enum
+    // @typeOf — enum
     ten : Color = .red;
-    match type_of(ten) {
+    match @typeOf(ten) {
         case enum: print("typeof-enum: enum\n");
         else: print("typeof-enum: other\n");
     }
 
-    // type_name
-    print("typename: {}\n", type_name(Point));
+    // @typeName
+    print("typename: {}\n", @typeName(Point));
 
     // struct_field_count on struct
     print("fieldcount: {}\n", struct_field_count(Point));

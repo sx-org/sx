@@ -1,17 +1,29 @@
-error: error tag 'error.NotInSet' is not in error set 'ParseErr'
-  --> examples/errors/1003-errors-raise-rejections.sx:17:11
+error: error member '.NotInSet' is not in error set 'ParseErr'
+  --> examples/errors/1003-errors-raise-rejections.sx:19:11
    |
-17 |     raise error.NotInSet;            // error: NotInSet not in ParseErr
-   |           ^^^^^^^^^^^^^^
+19 |     raise .NotInSet;            // error: NotInSet not in ParseErr
+   |           ^^^^^^^^^
 
-error: error tag 'error.Weird' is not in caller's error set 'ParseErr'
-  --> examples/errors/1003-errors-raise-rejections.sx:24:5
+error: error set 'ParseErr' has no member 'NotAMember'
+  --> examples/errors/1003-errors-raise-rejections.sx:24:11
    |
-24 |     raise e;                         // error: OtherErr not subset of ParseErr
+24 |     raise ParseErr.NotAMember;       // error: NotAMember is not a ParseErr member
+   |           ^^^^^^^^^^^^^^^^^^^
+
+error: error member 'OtherErr.Weird' is not in caller's error set 'ParseErr'
+  --> examples/errors/1003-errors-raise-rejections.sx:29:5
+   |
+29 |     raise OtherErr.Weird;            // error: OtherErr.Weird not in ParseErr
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+error: error member 'Weird' is not in caller's error set 'ParseErr'
+  --> examples/errors/1003-errors-raise-rejections.sx:36:5
+   |
+36 |     raise e;                         // error: OtherErr not subset of ParseErr
    |     ^^^^^^^^
 
 error: `raise` is only valid inside a failable function (a return type with `!` or `!Named`)
-  --> examples/errors/1003-errors-raise-rejections.sx:30:5
+  --> examples/errors/1003-errors-raise-rejections.sx:44:5
    |
-30 |     raise error.BadDigit;            // error: main (-> i32) is not failable
-   |     ^^^^^^^^^^^^^^^^^^^^^
+44 |     raise .BadDigit;            // error: main (-> i32) is not failable
+   |     ^^^^^^^^^^^^^^^^

@@ -174,7 +174,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
         srv.tick(1) catch {};
         n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
-        else if re == error.Closed { return total; }
+        else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
         he := -1;
         i := 0;

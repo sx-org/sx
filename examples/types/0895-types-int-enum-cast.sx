@@ -37,7 +37,7 @@ main :: () {
     // The cast result IS the enum type, both spellings.
     z := i.(Zone);
     x : Zone = xx i;
-    print("type: {} {}\n", type_of(z), type_of(x));
+    print("type: {} {}\n", @typeOf(z), @typeOf(x));
     print("value: {} {}\n", z, x);
 
     // Optional wrap.
@@ -63,17 +63,17 @@ main :: () {
     // A narrower backing runs the integer ladder first (i64 → u8).
     m : i64 = 2;
     s := m.(Small);
-    print("backed: {} {}\n", type_of(s), s);
+    print("backed: {} {}\n", @typeOf(s), s);
     // A narrower SOURCE widens into the backing.
     b : u8 = 2;
     print("widen: {}\n", b.(Zone));
 
     // enum → int is the dual: the value takes the integer type.
     k := Zone.top.(i64);
-    print("to-int: {} {}\n", type_of(k), k);
+    print("to-int: {} {}\n", @typeOf(k), k);
     print("round-trip: {}\n", k.(Zone) == Zone.top);
     ks := Small.c.(i64);
-    print("backed-to-int: {} {}\n", type_of(ks), ks);
+    print("backed-to-int: {} {}\n", @typeOf(ks), ks);
     // A flags enum keeps its bit value across the round trip.
     p := Perms.write.(i64) | Perms.exec.(i64);
     print("flags: {} {}\n", p, p.(Perms).(i64));

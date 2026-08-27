@@ -78,7 +78,6 @@ pub const Node = struct {
         raise_stmt: RaiseStmt,
         try_expr: TryExpr,
         catch_expr: CatchExpr,
-        onfail_stmt: OnFailStmt,
         /// `@caller` — a marker legal only inside a parameter's default
         /// expression, where it resolves to the CALL site's `@SourceSite`. The
         /// node's `span`/`source_file` carry that site (rewritten during default
@@ -566,14 +565,17 @@ pub const UnionDecl = struct {
     is_raw: bool = false,
 };
 
-/// `Foo :: error { TagA, TagB }` — a named error set. Tags are bare
-/// identifiers (no payload, no explicit value), unlike enum variants.
+/// `Foo :: error { A; B: i32 }` — a named error set, written with the enum
+/// member grammar. A member's identity is the pair `(set, tag)`.
 pub const ErrorSetDecl = struct {
     name: []const u8,
     tag_names: []const []const u8,
     /// Byte start of each tag name's spelling, one per entry in `tag_names`,
     /// same order; `no_source_start` when synthesized.
     tag_name_starts: []const u32,
+    /// Payload type per tag, one per entry in `tag_names`; null = void member.
+    /// Empty when no member carries a payload.
+    tag_types: []const ?*Node = &.{},
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.
     is_raw: bool = false,
@@ -752,18 +754,6 @@ pub const CatchExpr = struct {
     body: *Node,
 };
 
-/// `onfail [|e|] BODY` — cleanup run on error-exit of the enclosing block.
-/// The binding is optional. Body is a block (`onfail [|e|] { ... }`) or
-/// a bare expression (`onfail EXPR;`).
-pub const OnFailStmt = struct {
-    binding: ?[]const u8 = null,
-    binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
-    /// True when the binding was a backtick raw identifier
-    /// (`` onfail |`i32| { … } ``) — exempt from the reserved-type-name check.
-    binding_is_raw: bool = false,
-    body: *Node,
-};
-
 pub const PushStmt = struct {
     context_expr: *Node,
     body: *Node,
@@ -867,13 +857,20 @@ pub const OptionalTypeExpr = struct {
     inner_type: *Node,
 };
 
-/// The error channel of a multi-return result list: bare `!` (inferred
-/// set) or `!Named` (a declared `error { ... }` set). Appears only as
-/// the trailing result element; the parser enforces the position and
-/// sema restricts it to return positions.
+/// The error channel of a multi-return result list. Appears only as the
+/// trailing result element; the parser enforces the position and sema
+/// restricts it to return positions.
 pub const ErrorTypeExpr = struct {
-    /// `null` = inferred set (bare `!`); non-null = named set (`!Named`).
-    name: ?[]const u8 = null,
+    /// The set references `!` takes, as written: empty = the inferred channel
+    /// (bare `!`); one entry = a named set or qualified member (`!IoErr.Failed`);
+    /// more = a parenthesized composition (`!(A | B)`).
+    operands: []const []const u8 = &.{},
+
+    /// The single operand when the channel names one set or member; null when
+    /// it is inferred or composed.
+    pub fn namedSet(self: ErrorTypeExpr) ?[]const u8 {
+        return if (self.operands.len == 1) self.operands[0] else null;
+    }
 };
 
 pub const ForceUnwrap = struct {

@@ -1,0 +1,6 @@
+fields=FooError D
+composed=FooError.D FooError.D
+extra=Both Both.Extra
+void=FooError.A scalar=FooError.D{42}
+struct=FooError.C{v: 1, at: 7}
+across=BooError.Z

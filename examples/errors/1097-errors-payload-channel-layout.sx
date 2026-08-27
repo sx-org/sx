@@ -1,0 +1,40 @@
+// A member's declared payload widens its channel to `{ qualified_tag, payload }`,
+// sized to the widest member. The tag is the discriminant of a channel value.
+
+@import "modules/std.sx";
+
+PayErr :: error {
+    Bare;
+    Wide: i64;
+    Boxed: struct { v: i32; at: i64 };
+}
+
+boom :: (n: i64) -> (i64, !PayErr) {
+    if n < 0 { raise PayErr.Wide{7}; }
+    if n == 0 { raise PayErr.Bare; }
+    return n * 2;
+}
+
+relay :: (n: i64) -> (i64, !PayErr) {
+    v := try boom(n);
+    return v + 1;
+}
+
+main :: () -> i32 {
+    ok := relay(5) catch { -1 };
+    print("ok={}\n", ok);
+
+    wide := relay(-1) catch |e| { if e == PayErr.Wide 100 else 200 };
+    print("wide={}\n", wide);
+
+    arm := relay(0) catch |e| {
+        print("caught={}\n", e);
+        match e {
+            case .Bare:  1;
+            case .Wide:  2;
+            case .Boxed: 3;
+        }
+    };
+    print("arm={}\n", arm);
+    return 0;
+}

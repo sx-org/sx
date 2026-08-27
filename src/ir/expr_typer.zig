@@ -77,7 +77,10 @@ pub const ExprTyper = struct {
             // pure-failable operand (`-> !` / `-> !Named`, whose type IS the
             // error set) has no value → `void`; a value-carrying `-> (T..., !)`
             // operand yields its value part (the lone value, or a value-tuple).
+            // A `try { … }` boundary's success value IS the block's tail, so
+            // the block types the whole expression.
             .try_expr => |te| blk: {
+                if (te.operand.data == .block) break :blk self.l.inferExprType(te.operand);
                 const op_ty = self.l.inferExprType(te.operand);
                 const channel = self.l.errorChannelOf(op_ty) orelse break :blk .unresolved;
                 if (op_ty == channel) break :blk .void;
@@ -86,7 +89,9 @@ pub const ExprTyper = struct {
             // `expr catch ...` strips the error channel → the success type
             // (void for a pure-failable LHS; the value part for value-carrying).
             .catch_expr => |ce| blk: {
-                const op_ty = self.l.inferExprType(ce.operand);
+                const attempted = Lowering.catchAttempted(&ce);
+                if (attempted.boundary) break :blk self.l.inferExprType(attempted.node);
+                const op_ty = self.l.inferExprType(attempted.node);
                 const channel = self.l.errorChannelOf(op_ty) orelse break :blk .unresolved;
                 if (op_ty == channel) break :blk .void;
                 break :blk self.l.failableSuccessType(op_ty);
@@ -258,6 +263,7 @@ pub const ExprTyper = struct {
                         return if (is_opt_chain) self.l.module.types.optionalOf(mp_ty) else mp_ty;
                     }
                 }
+                if (self.l.errorViewFieldType(obj_ty, fa.field)) |t| return t;
                 if (!obj_ty.isBuiltin()) {
                     const field_name_id = self.l.module.types.internString(fa.field);
                     // Check union fields (tagged enum payloads) + promoted struct fields
@@ -319,6 +325,7 @@ pub const ExprTyper = struct {
                         return if (is_opt_chain) self.l.optionalOfFlattened(rt) else rt;
                     }
                 }
+                if (self.l.qualifiedErrorSet(fa.object)) |set_ty| return set_ty;
                 // Bare `Enum.variant` — a qualified enum literal read as a VALUE
                 // (its type is the enum). Mirrors the `lowerFieldAccess`
                 // qualified-enum-literal path: object is a type NAME resolving to
@@ -478,6 +485,9 @@ pub const ExprTyper = struct {
                 // does, so a `:=`-inferred decl gets the real struct type,
                 // not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
+                    // An error member's brace group holds its payload, so the
+                    // literal IS a channel value of the set the head names.
+                    if (self.l.qualifiedErrorMember(te)) |qm| return qm.set;
                     // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
@@ -508,8 +518,12 @@ pub const ExprTyper = struct {
                             }
                         }
                     }
-                    const ty = self.l.resolveTypeWithBindings(te);
-                    if (ty != .unresolved) return ty;
+                    // A `.X{ … }` head names a variant, never a type — what it
+                    // builds is the contextual target's, settled below.
+                    if (te.data != .enum_literal) {
+                        const ty = self.l.resolveTypeWithBindings(te);
+                        if (ty != .unresolved) return ty;
+                    }
                 }
                 // A bare `.{ … }` adopts the contextual target only when the
                 // target is a shape the literal can actually BUILD (the same

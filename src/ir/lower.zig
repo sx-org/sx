@@ -248,7 +248,7 @@ pub const Binding = struct {
         range_index,
         /// Match-arm payload / optional-match binding.
         match_payload,
-        /// `catch |e|` / `onfail |e|` error binding.
+        /// `catch |e|` error binding.
         catch_err,
         /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
         pack_elem_alias,
@@ -390,16 +390,6 @@ pub const Scope = struct {
         }
         return null;
     }
-};
-
-/// A pending block-scoped cleanup: `defer` (runs on every block exit) or
-/// `onfail` (runs only when an error leaves the block, binding the in-flight
-/// tag). Both share one declaration-ordered stack so error-exit cleanup runs
-/// them interleaved in reverse order.
-const CleanupEntry = struct {
-    body: *const Node,
-    is_onfail: bool,
-    binding: ?[]const u8 = null,
 };
 
 /// Pure non-transitive visibility walk: `name` is visible from `source` when
@@ -749,7 +739,7 @@ pub const Lowering = struct {
     named_return_defaults: ?[]const ?*const ast.Node = null,
     block_terminated: bool = false, // set when constant-folded if emits a return/br into current block
     in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (tell the user to annotate `-> (T, !)`)
-    defer_stack: std.ArrayList(CleanupEntry) = std.ArrayList(CleanupEntry).empty, // block-scoped defer + onfail cleanup stack
+    defer_stack: std.ArrayList(*const ast.Node) = std.ArrayList(*const ast.Node).empty, // block-scoped `defer` bodies, in declaration order
     func_defer_base: usize = 0, // defer stack base for current function (lowerReturn drains to this)
     deferred_type_fns: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty, // functions deferred until all types registered
     processing_deferred: bool = false, // true when processing deferred functions (prevents re-deferral)
@@ -776,7 +766,7 @@ pub const Lowering = struct {
     /// assembly so the primary diagnostics stand alone instead of cascading
     /// a field-not-found per use site.
     context_structural_error: bool = false,
-    /// Names declared as a BLOCK-LOCAL type (a `Foo :: struct/enum/union/error_set`
+    /// Names declared as a BLOCK-LOCAL type (a `Foo :: struct/enum/union/error`
     /// or bare type-decl statement inside a fn / init body), keyed by the DECLARING
     /// source. A local type registers into the global type table and CLOBBERS a
     /// same-name top-level entry (`registerStructDecl`'s `findByName … orelse intern`
@@ -865,6 +855,9 @@ pub const Lowering = struct {
     /// and trips LLVM's "Terminator found in the middle of a basic
     /// block" verifier.
     inline_return_target: ?InlineExit = null,
+    /// The `try { … }` boundary in scope. A `raise` or a failing `try` under
+    /// it exits there instead of propagating to the function.
+    error_boundary: ?ErrorBoundary = null,
     /// Active pack-arg-node bindings during a comptime call's body lowering.
     /// Maps the pack-param name (e.g. `args`) to the slice of call-site
     /// argument AST nodes. `lowerIndexExpr` (and `inferExprType`) check
@@ -926,6 +919,12 @@ pub const Lowering = struct {
     /// escape tags in. Read by `checkEscapeWidening` when a `try` operand is a
     /// closure/fn-type SLOT call (no static fn name). Key = `closureShapeKey`.
     shape_inferred_sets: std.StringHashMap([]const u32),
+    /// The channel a bare-`!` declaration carries: the interned flatten-merge
+    /// of the static types its body `try`s / `raise`s, or the DYNAMIC channel
+    /// when those escapes name no static member set. Every re-resolution of
+    /// that signature reads the entry, so slot exactness and value subset both
+    /// compare one TypeId.
+    inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
     /// is part of the contract — e.g. `Io.suspend_raw`); a conforming impl
@@ -1028,6 +1027,11 @@ pub const Lowering = struct {
         },
     };
 
+    /// The innermost `try { … }` boundary: where a `raise`, or a `try` whose
+    /// operand failed, exits. `fail_bb` takes the error tag as its lone
+    /// parameter; `defer_base` is the cleanup floor the boundary owns.
+    pub const ErrorBoundary = struct { chan: TypeId, fail_bb: BlockId, defer_base: usize };
+
     /// Where a failable `??` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
@@ -1073,6 +1077,7 @@ pub const Lowering = struct {
         pack_param_count: ?std.StringHashMap(u32),
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
+        error_boundary: ?ErrorBoundary,
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
@@ -1097,6 +1102,7 @@ pub const Lowering = struct {
                 .pack_param_count = l.pack_param_count,
                 .pack_arg_types = l.pack_arg_types,
                 .inline_return_target = l.inline_return_target,
+                .error_boundary = l.error_boundary,
                 // Flow narrowing is lexical to one function body — a nested
                 // (closure / local-fn) lowering starts with a fresh, empty
                 // narrowing state and the outer state is restored after.
@@ -1127,6 +1133,7 @@ pub const Lowering = struct {
             l.pack_param_count = null;
             l.pack_arg_types = null;
             l.inline_return_target = null;
+            l.error_boundary = null;
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
@@ -1148,6 +1155,7 @@ pub const Lowering = struct {
             l.pack_param_count = g.pack_param_count;
             l.pack_arg_types = g.pack_arg_types;
             l.inline_return_target = g.inline_return_target;
+            l.error_boundary = g.error_boundary;
             l.narrowed.deinit();
             l.narrowed = g.narrowed;
             l.narrowed_refs.deinit();
@@ -1191,6 +1199,7 @@ pub const Lowering = struct {
         loop_defer_base: usize,
         build_scopes: std.ArrayList(lower_build_block.Scope),
         inline_return_target: ?InlineExit,
+        error_boundary: ?ErrorBoundary,
         current_fn_decl: ?*const ast.FnDecl,
         pending_callable_return: ?*const ast.Node,
         fixed_callable_ret: ?TypeId,
@@ -1210,6 +1219,7 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
                 .inline_return_target = l.inline_return_target,
+                .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
@@ -1220,6 +1230,7 @@ pub const Lowering = struct {
             l.loop_defer_base = 0;
             l.build_scopes = .empty;
             l.inline_return_target = null;
+            l.error_boundary = null;
             l.current_fn_decl = null;
             l.pending_callable_return = null;
             l.fixed_callable_ret = null;
@@ -1240,6 +1251,7 @@ pub const Lowering = struct {
             g.l.build_scopes.deinit(g.l.alloc);
             g.l.build_scopes = g.build_scopes;
             g.l.inline_return_target = g.inline_return_target;
+            g.l.error_boundary = g.error_boundary;
             g.l.current_fn_decl = g.current_fn_decl;
             g.l.pending_callable_return = g.pending_callable_return;
             g.l.fixed_callable_ret = g.fixed_callable_ret;
@@ -1369,6 +1381,7 @@ pub const Lowering = struct {
             .inferred_error_sets = std.StringHashMap([]const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
+            .inferred_channels = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
     }
@@ -1408,7 +1421,9 @@ pub const Lowering = struct {
             // (`resolveParamType` et al.), not in the common resolver — return
             // types are re-resolved in many places (call-result typing, protocol
             // impls) that a central reject would wrongly trip.
-            return self.resolveTypeWithBindings(rt);
+            const resolved = self.resolveTypeWithBindings(rt);
+            if (self.inferred_channels.get(fd)) |chan| return self.withErrorChannel(resolved, chan);
+            return resolved;
         }
         // No explicit annotation — the type is inferred from the body, which
         // references the function's own parameters (`|x: i32| x * 2`). Those
@@ -1620,6 +1635,10 @@ pub const Lowering = struct {
     /// resolves to the querying module's own author.
     pub fn resolveName(self: *Lowering, name: []const u8) TypeId {
         return self.resolveNominalLeaf(name, false, null);
+    }
+
+    pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
+        return self.program_index.type_alias_map.get(name);
     }
 
     /// Fixed-array dimension hook for `TypeResolver.resolveCompound`. A literal
@@ -2110,12 +2129,9 @@ pub const Lowering = struct {
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
-            // to shadow. Same-name error-set collisions have nothing for the
-            // reference to select: error-set DECLARATIONS carry no per-decl
-            // nominal identity (struct/enum/union do), so a same-name set
-            // collapses to one TypeId at registration. `error_set_decl` is NOT
-            // in this switch: it interns only tag names, resolving no type
-            // names, so it stays on the flat `else`.
+            // to shadow. `error_set_decl` is NOT in this switch: it interns only
+            // member names, resolving no type names, so it stays on the flat
+            // `else`.
             .error_type_expr => return type_bridge.resolveErrorType(&node.data.error_type_expr, &self.module.types, self),
             else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map),
         }
@@ -3212,12 +3228,23 @@ pub const Lowering = struct {
     pub const emitTraceClear = lower_error.emitTraceClear;
     pub const placeholderTraceFrame = lower_error.placeholderTraceFrame;
     pub const errorSetTypeOf = lower_error.errorSetTypeOf;
-    pub const isErrorTagLiteralNode = lower_error.isErrorTagLiteralNode;
+    pub const lowerErrorPayload = lower_error.lowerErrorPayload;
+    pub const qualifiedErrorSet = lower_error.qualifiedErrorSet;
+    pub const qualifiedErrorMember = lower_error.qualifiedErrorMember;
+    pub const composedChannel = lower_error.composedChannel;
+    pub const slotReturnType = lower_error.slotReturnType;
+    pub const checkSlotChannel = lower_error.checkSlotChannel;
     pub const literalTagName = lower_error.literalTagName;
+    pub const raisedMember = lower_error.raisedMember;
+    pub const emitErrorKeywordMember = lower_error.emitErrorKeywordMember;
+    pub const emitAmbiguousMember = lower_error.emitAmbiguousMember;
+    pub const lowerErrorMemberConstruction = lower_error.lowerErrorMemberConstruction;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;
     pub const errorChannelOf = lower_error.errorChannelOf;
-    pub const isInferredErrorSet = lower_error.isInferredErrorSet;
+    pub const channelIsOpen = lower_error.channelIsOpen;
+    pub const channelIsDyn = lower_error.channelIsDyn;
+    pub const channelIsPlaceholder = lower_error.channelIsPlaceholder;
     pub const checkErrorSetSubset = lower_error.checkErrorSetSubset;
     pub const checkErrorSetValueCoercion = lower_error.checkErrorSetValueCoercion;
     pub const diagTagsNotInSet = lower_error.diagTagsNotInSet;
@@ -3239,6 +3266,8 @@ pub const Lowering = struct {
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;
+    pub const catchAttempted = lower_error.catchAttempted;
+    pub const errorExit = lower_error.errorExit;
     pub const emitErrorReturn = lower_error.emitErrorReturn;
     pub const diagTryNotFailable = lower_error.diagTryNotFailable;
     pub const lowerCatch = lower_error.lowerCatch;
@@ -3251,13 +3280,15 @@ pub const Lowering = struct {
     pub const isErasedAssertNode = lower_error.isErasedAssertNode;
     pub const desugarErasedAssert = lower_error.desugarErasedAssert;
     pub const coalesceChainSuccessType = lower_error.coalesceChainSuccessType;
-    pub const unwrapTryNode = lower_error.unwrapTryNode;
     pub const flattenCoalesceChain = lower_error.flattenCoalesceChain;
     pub const lowerFailableCoalesce = lower_error.lowerFailableCoalesce;
-    pub const callTargetName = lower_error.callTargetName;
-    pub const astIsPureBareInferred = lower_error.astIsPureBareInferred;
-    pub const astPureNamedSet = lower_error.astPureNamedSet;
-    pub const namedSetTags = lower_error.namedSetTags;
+    pub const astChannelNode = lower_error.astChannelNode;
+    pub const astChannelIsInferred = lower_error.astChannelIsInferred;
+    pub const declaredChannelTags = lower_error.declaredChannelTags;
+    pub const edgeCalleeDecl = lower_error.edgeCalleeDecl;
+    pub const withErrorChannel = lower_error.withErrorChannel;
+    pub const materialiseInferredChannel = lower_error.materialiseInferredChannel;
+    pub const materialiseDynChannel = lower_error.materialiseDynChannel;
     pub const convergeInferredErrorSets = lower_error.convergeInferredErrorSets;
     pub const containsTag = lower_error.containsTag;
     pub const convergeClosureShapeSets = lower_error.convergeClosureShapeSets;
@@ -3381,12 +3412,10 @@ pub const Lowering = struct {
     pub const lowerDestructureDecl = lower_stmt.lowerDestructureDecl;
     pub const lowerPush = lower_stmt.lowerPush;
     pub const lowerDefer = lower_stmt.lowerDefer;
-    pub const lowerOnFail = lower_stmt.lowerOnFail;
-    pub const diagOnFailNotFailable = lower_stmt.diagOnFailNotFailable;
     pub const emitBlockDefers = lower_stmt.emitBlockDefers;
     pub const emitLoopExitDefers = lower_stmt.emitLoopExitDefers;
     pub const lowerCleanupBody = lower_stmt.lowerCleanupBody;
-    pub const emitErrorCleanup = lower_stmt.emitErrorCleanup;
+    pub const emitDefers = lower_stmt.emitDefers;
 
     // --- lower/control_flow.zig (lower_control_flow) ---
     pub const lowerIfExpr = lower_control_flow.lowerIfExpr;
@@ -3615,6 +3644,7 @@ pub const Lowering = struct {
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
     pub const lowerAnyToF64Dispatch = lower_coerce.lowerAnyToF64Dispatch;
     pub const lowerAnyToIntDispatch = lower_coerce.lowerAnyToIntDispatch;
+    pub const widenAnyToF64 = lower_coerce.widenAnyToF64;
     pub const boxAnyOf = lower_coerce.boxAnyOf;
     pub const buildDefaultValue = lower_coerce.buildDefaultValue;
     pub const optionalOfFlattened = lower_coerce.optionalOfFlattened;
@@ -3854,8 +3884,11 @@ pub const Lowering = struct {
     pub const diagnoseSwizzleOob = lower_expr.diagnoseSwizzleOob;
     pub const lowerSwizzleRead = lower_expr.lowerSwizzleRead;
     pub const lowerFieldAccessOnType = lower_expr.lowerFieldAccessOnType;
+    pub const errorViewFieldType = lower_expr.errorViewFieldType;
     pub const lowerEnumLiteral = lower_expr.lowerEnumLiteral;
-    pub const lowerErrorTagLiteral = lower_expr.lowerErrorTagLiteral;
+    pub const lowerErrorMemberShorthand = lower_expr.lowerErrorMemberShorthand;
+    pub const anonymousErrorMember = lower_expr.anonymousErrorMember;
+    pub const lowerQualifiedErrorMember = lower_expr.lowerQualifiedErrorMember;
     pub const lowerTaggedEnumLiteral = lower_expr.lowerTaggedEnumLiteral;
     pub const findTaggedVariant = lower_expr.findTaggedVariant;
     pub const emitBadVariant = lower_expr.emitBadVariant;

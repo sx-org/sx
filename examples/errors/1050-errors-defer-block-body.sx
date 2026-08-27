@@ -1,13 +1,13 @@
-// A braced `defer { … }` body parses as a full statement block (like `onfail`),
-// so it supports every statement form — a destructure decl, a `catch`-statement,
-// nested var decls — not just a single bare expression.
+// A braced `defer { … }` body parses as a full statement block, so it supports
+// every statement form — a destructure decl, a `catch`-statement, nested var
+// decls — not just a single bare expression.
 
 @import "modules/std.sx";
 
 E :: error { Bad }
 
 probe   :: () -> (i32, !E) { return 21; }
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 
 run :: () {
     defer {

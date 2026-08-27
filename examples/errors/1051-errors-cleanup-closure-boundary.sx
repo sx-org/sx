@@ -1,5 +1,5 @@
-// A closure literal inside a `defer` / `onfail` body is its OWN function
-// boundary. Two boundary effects, both pinned here:
+// A closure literal inside a `defer` body is its OWN function boundary. Two
+// boundary effects, both pinned here:
 //
 // (a) `checkCleanupNode` sees a bare lambda STATEMENT as a `.lambda` node and
 //     STOPS — it does not descend into the lambda body. So the bare failable
@@ -17,7 +17,7 @@
 
 E :: error { Bad }
 
-failing :: () -> !E { raise error.Bad; }
+failing :: () -> !E { raise .Bad; }
 recover :: () -> (i32, !E) { return 21; }
 
 work :: () {

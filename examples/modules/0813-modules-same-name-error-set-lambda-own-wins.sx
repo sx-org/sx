@@ -2,17 +2,17 @@
 // (`() -> !IoErr { … }`). `main` flat-imports `dep.sx` (which authors
 // `IoErr { Net }`) AND authors its OWN `IoErr { Disk }`. The closure literal's
 // `-> !IoErr` channel must resolve to `main`'s OWN author (own-wins), so the
-// `raise error.Disk` inside the closure body validates against main's `{ Disk }`;
+// `raise .Disk` inside the closure body validates against main's `{ Disk }`;
 // meanwhile `dep_err` keeps dep's DISTINCT `IoErr { Net }`.
 //
 // Resolving the explicit `lam.return_type` in `lowerLambda`
 // through the STATELESS `type_bridge.resolveAstType` binds the closure's `!IoErr`
-// channel to the global last-wins author (dep's `{ Net }`); `error.Disk` is then
+// channel to the global last-wins author (dep's `{ Net }`); `.Disk` is then
 // then "not in error set 'IoErr'" and the program exited 1.
 //
 // The lambda return annotation routes through the source-aware
 // `resolveTypeWithBindings` (same path as the regular function-return channel),
-// main's own `IoErr` wins, `error.Disk` validates, exit 0.
+// main's own `IoErr` wins, `.Disk` validates, exit 0.
 
 @import "modules/std.sx";
 @import "0813-modules-same-name-error-set-lambda-own-wins/dep.sx";
@@ -20,9 +20,9 @@
 IoErr :: error { Disk }
 
 main :: () -> i32 {
-    fail_own := || -> !IoErr { raise error.Disk; };
+    fail_own := || -> !IoErr { raise .Disk; };
     fail_own() catch |e| {
-        if e == error.Disk { print("own=Disk\n"); }
+        if e == .Disk { print("own=Disk\n"); }
     };
     d := dep_err();
     print("dep={}\n", d);

@@ -266,8 +266,17 @@ pub const LLVMEmitter = struct {
 
     // Cached field name arrays for reflection (TypeId → LLVM global)
     field_name_arrays: std.AutoHashMap(u32, c.LLVMValueRef),
-    // The always-linked tag-name table (global tag id → name); built once.
+    // The always-linked member-name table (member id → name); built once.
     tag_name_array: ?c.LLVMValueRef = null,
+    // The member-payload-type table (member id → TypeId); built on the first
+    // `error_payload_view` site.
+    tag_payload_type_array: ?c.LLVMValueRef = null,
+    // The qualified-name table (member id → `Owner.Member`); built on the first
+    // `error_name_get` site.
+    tag_qualified_name_array: ?c.LLVMValueRef = null,
+    // The owner table (member id → the declaring error's TypeId); built on the
+    // first `error_owner_get` site.
+    tag_owner_type_array: ?c.LLVMValueRef = null,
 
     // Lazy global `[N x string]` indexed by TypeId.index(), holding
     // each type's display name. Built on the first dynamic
@@ -294,10 +303,14 @@ pub const LLVMEmitter = struct {
     is_flags_array_len: u32 = 0,
     vector_lanes_array: ?c.LLVMValueRef = null,
     vector_lanes_array_len: u32 = 0,
+    member_count_array: ?c.LLVMValueRef = null,
+    member_count_array_len: u32 = 0,
     variant_tag_width_array: ?c.LLVMValueRef = null,
     variant_tag_width_array_len: u32 = 0,
     slice_len_info_array: ?c.LLVMValueRef = null,
     slice_len_info_array_len: u32 = 0,
+    optional_flag_array: ?c.LLVMValueRef = null,
+    optional_flag_array_len: u32 = 0,
     // Field-family master-index tables: [N x ptr] → per-type arrays.
     member_name_ptrs: ?c.LLVMValueRef = null,
     member_name_ptrs_len: u32 = 0,
@@ -307,7 +320,7 @@ pub const LLVMEmitter = struct {
     field_offset_ptrs_len: u32 = 0,
     member_value_ptrs: ?c.LLVMValueRef = null,
     member_value_ptrs_len: u32 = 0,
-    // Runtime type_info records — [N x ptr] master to per-type
+    // Runtime `@typeInfo` records — [N x ptr] master to per-type
     // TypeInfo constants (each its own global; bytes match the sx layout).
     type_info_records: ?c.LLVMValueRef = null,
     type_info_records_len: u32 = 0,
@@ -894,7 +907,7 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .failable => {},
+                .@"struct", .@"union", .tagged_union, .failable, .@"error" => {},
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -915,7 +928,7 @@ pub const LLVMEmitter = struct {
     fn comptimeErrChannel(self: *LLVMEmitter, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         switch (self.ir_mod.types.get(ty)) {
-            .error_set => return ty,
+            .@"error" => return ty,
             .failable => |f| return f.err,
             else => return null,
         }
@@ -963,7 +976,7 @@ pub const LLVMEmitter = struct {
     /// resolved return trace from the thread-local buffer, and a help line.
     fn reportComptimeEscape(self: *LLVMEmitter, label: []const u8, tag: u32) void {
         const tname = self.ir_mod.types.tags.getName(tag);
-        std.debug.print("error: comptime `@run` ({s}) raised an unhandled error: error.{s}\n", .{ label, tname });
+        std.debug.print("error: comptime `@run` ({s}) raised an unhandled error: {s}\n", .{ label, tname });
         const n = sx_trace_len();
         if (n > 0) {
             std.debug.print("error return trace (most recent call last):\n", .{});
@@ -1960,7 +1973,10 @@ pub const LLVMEmitter = struct {
             // ── Reflection ops ──────────────────────────────────────
             .field_name_get => |fr| self.ops().emitFieldNameGet(fr),
             .field_value_get => |fr| self.ops().emitFieldValueGet(fr, func_idx),
-            .error_tag_name_get => |u| self.ops().emitErrorTagNameGet(u),
+            .error_member_name_get => |u| self.ops().emitErrorMemberNameGet(u),
+            .error_name_get => |u| self.ops().emitErrorNameGet(u),
+            .error_owner_get => |u| self.ops().emitErrorOwnerGet(u),
+            .error_payload_view => |u| self.ops().emitErrorPayloadView(u),
 
             // ── Switch branch ────────────────────────────────────────
             .switch_br => |sw| self.ops().emitSwitchBr(sw, func_idx),
@@ -2139,6 +2155,91 @@ pub const LLVMEmitter = struct {
 
     // ── Comparison helpers ────────────────────────────────────────────
 
+    /// The discriminant of a payload-carrying error channel; any other value
+    /// is its own discriminant.
+    pub fn channelTag(self: *LLVMEmitter, val: c.LLVMValueRef, ty: ?TypeId) c.LLVMValueRef {
+        const chan = ty orelse return val;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return val;
+        return c.LLVMBuildExtractValue(self.builder, val, 0, "channel.tag");
+    }
+
+    /// A `channel_llvm`-typed channel carrying `tag` over a zeroed payload area.
+    pub fn channelFromTag(self: *LLVMEmitter, channel_llvm: c.LLVMTypeRef, tag: c.LLVMValueRef) c.LLVMValueRef {
+        const word = self.coerceArg(tag, self.cached_i32);
+        return c.LLVMBuildInsertValue(self.builder, c.LLVMConstNull(channel_llvm), word, 0, "channel.from.tag");
+    }
+
+    /// A `val`-shaped stack copy, so a payload area can be addressed.
+    fn spill(self: *LLVMEmitter, val: c.LLVMValueRef, name: [*:0]const u8) c.LLVMValueRef {
+        const slot = self.buildEntryAlloca(c.LLVMTypeOf(val), name);
+        _ = c.LLVMBuildStore(self.builder, val, slot);
+        return slot;
+    }
+
+    /// The alignment a channel's payload area is addressed at. The tag word
+    /// heads the channel, so the area inherits the channel's own alignment.
+    fn channelAlign(self: *LLVMEmitter, channel: TypeId) c_uint {
+        return @intCast(self.ir_mod.types.typeAlignBytes(channel));
+    }
+
+    /// A `channel`-typed value carrying `tag` over `bytes` copied from
+    /// `payload_ptr`.
+    fn channelOverPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload_ptr: c.LLVMValueRef, payload_align: c_uint, bytes: u64) c.LLVMValueRef {
+        const channel_llvm = self.toLLVMType(channel);
+        const slot = self.buildEntryAlloca(channel_llvm, "channel.slot");
+        _ = c.LLVMBuildStore(self.builder, c.LLVMConstNull(channel_llvm), slot);
+        if (bytes > 0) {
+            const area = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 1, "channel.area");
+            _ = c.LLVMBuildMemCpy(self.builder, area, self.channelAlign(channel), payload_ptr, payload_align, c.LLVMConstInt(self.cached_i64, bytes, 0));
+        }
+        const tag_ptr = c.LLVMBuildStructGEP2(self.builder, channel_llvm, slot, 0, "channel.tagp");
+        _ = c.LLVMBuildStore(self.builder, self.coerceArg(tag, self.cached_i32), tag_ptr);
+        return c.LLVMBuildLoad2(self.builder, channel_llvm, slot, "channel.val");
+    }
+
+    /// A `channel` value carrying `tag` over a copy of `payload`.
+    pub fn channelWithPayload(self: *LLVMEmitter, channel: TypeId, tag: c.LLVMValueRef, payload: c.LLVMValueRef) c.LLVMValueRef {
+        const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+        const payload_llvm = c.LLVMTypeOf(payload);
+        return self.channelOverPayload(channel, tag, self.spill(payload, "channel.pay"), c.LLVMABIAlignmentOfType(dl, payload_llvm), c.LLVMABISizeOfType(dl, payload_llvm));
+    }
+
+    /// The address of `channel_val`'s payload area, over a spilled copy.
+    pub fn channelPayloadAddr(self: *LLVMEmitter, channel: TypeId, channel_val: c.LLVMValueRef) c.LLVMValueRef {
+        return c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), self.spill(channel_val, "channel.view"), 1, "channel.area");
+    }
+
+    /// `channel_val`'s payload area read as `payload_llvm`.
+    pub fn channelPayload(self: *LLVMEmitter, channel: TypeId, channel_val: c.LLVMValueRef, payload_llvm: c.LLVMTypeRef) c.LLVMValueRef {
+        const dl = c.LLVMGetModuleDataLayout(self.llvm_module);
+        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(channel), self.spill(channel_val, "channel.read"), 1, "channel.area");
+        const out = self.buildEntryAlloca(payload_llvm, "channel.pay");
+        const size = c.LLVMConstInt(self.cached_i64, c.LLVMABISizeOfType(dl, payload_llvm), 0);
+        _ = c.LLVMBuildMemCpy(self.builder, out, c.LLVMABIAlignmentOfType(dl, payload_llvm), area, self.channelAlign(channel), size);
+        return c.LLVMBuildLoad2(self.builder, payload_llvm, out, "channel.pay.val");
+    }
+
+    /// `val` retyped from channel `from` to channel `to`, carrying the tag word
+    /// and whatever payload area both channels reserve.
+    pub fn channelRetype(self: *LLVMEmitter, val: c.LLVMValueRef, from: TypeId, to: TypeId) c.LLVMValueRef {
+        const table = &self.ir_mod.types;
+        const tag = self.channelTag(val, from);
+        if (!table.isPayloadCarryingChannel(from)) return self.channelFromTag(self.toLLVMType(to), tag);
+        const area = c.LLVMBuildStructGEP2(self.builder, self.toLLVMType(from), self.spill(val, "channel.src"), 1, "channel.area");
+        const bytes = @min(table.channelPayloadBytes(from), table.channelPayloadBytes(to));
+        return self.channelOverPayload(to, tag, area, self.channelAlign(from), bytes);
+    }
+
+    /// The scalar an aggregate compares as when the other operand is one: a
+    /// 1-tuple's lone element, or a payload-carrying channel's tag word.
+    /// Null when the aggregate has no such reading.
+    fn scalarForCmp(self: *LLVMEmitter, val: c.LLVMValueRef, llvm_ty: c.LLVMTypeRef, ty: ?TypeId) ?c.LLVMValueRef {
+        if (c.LLVMCountStructElementTypes(llvm_ty) == 1) return c.LLVMBuildExtractValue(self.builder, val, 0, "tup.unwrap");
+        const chan = ty orelse return null;
+        if (!self.ir_mod.types.isPayloadCarryingChannel(chan)) return null;
+        return self.channelTag(val, chan);
+    }
+
     pub fn emitCmp(self: *LLVMEmitter, bin: ir_inst.BinOp, _: TypeId, int_pred: c_uint, float_pred: c_uint) void {
         var lhs = self.resolveRef(bin.lhs);
         var rhs = self.resolveRef(bin.rhs);
@@ -2148,16 +2249,16 @@ pub const LLVMEmitter = struct {
         var rhs_ty = c.LLVMTypeOf(rhs);
         var rhs_kind = c.LLVMGetTypeKind(rhs_ty);
 
-        // Unwrap single-element struct (1-tuple) to scalar for comparison
+        // Read an aggregate as its comparable scalar when the other side is one.
         if (kind == c.LLVMStructTypeKind and rhs_kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(lhs_ty) == 1) {
-                lhs = c.LLVMBuildExtractValue(self.builder, lhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(lhs, lhs_ty, self.getRefIRType(bin.lhs))) |scalar| {
+                lhs = scalar;
                 lhs_ty = c.LLVMTypeOf(lhs);
                 kind = c.LLVMGetTypeKind(lhs_ty);
             }
         } else if (rhs_kind == c.LLVMStructTypeKind and kind != c.LLVMStructTypeKind) {
-            if (c.LLVMCountStructElementTypes(rhs_ty) == 1) {
-                rhs = c.LLVMBuildExtractValue(self.builder, rhs, 0, "tup.unwrap");
+            if (self.scalarForCmp(rhs, rhs_ty, self.getRefIRType(bin.rhs))) |scalar| {
+                rhs = scalar;
                 rhs_ty = c.LLVMTypeOf(rhs);
                 rhs_kind = c.LLVMGetTypeKind(rhs_ty);
             }
@@ -2776,7 +2877,7 @@ pub const LLVMEmitter = struct {
         return self.getRefIRType(arg_ref) orelse .unresolved;
     }
 
-    /// How a reflection builtin (`type_name` / `type_eq`) must read its `Type`
+    /// How a reflection builtin (`type_name` / `rt_type_eq`) must read its `Type`
     /// argument: boxed inside an `Any` aggregate (extract the value field) vs a
     /// bare i64 `TypeId` index. The IR-type lookup is must-succeed, so it routes
     /// through `argIRTypeOrFail`; a failed lookup surfaces as `.unresolved` —
@@ -3055,16 +3156,16 @@ pub const LLVMEmitter = struct {
     }
 
     /// Failable main entry-point wrapper. At the LLVM level main
-    /// returns i32. `tag_val` is the u32 error tag (0 = "no error"); `value` is
-    /// the integer value slot for a value-carrying `-> (int, !)` main, or null
-    /// for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
-    /// (success — exit code truncated to u8 downstream); else resolve the tag
-    /// name from the always-linked tag-name table, hand it + the tag to
+    /// returns i32. `tag_val` is the `tag_ty` error channel (0 = "no error");
+    /// `value` is the integer value slot for a value-carrying `-> (int, !)`
+    /// main, or null for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
+    /// (success — exit code truncated to u8 downstream); else resolve the
+    /// member's `Owner.Member` spelling, hand it + the tag to
     /// `sx_trace_report_unhandled` (prints the header + return trace to stderr),
     /// and `ret i32 1`.
-    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef) void {
+    pub fn emitFailableMainRet(self: *LLVMEmitter, value: ?c.LLVMValueRef, tag_val: c.LLVMValueRef, tag_ty: TypeId) void {
         const llvm_func = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const tag_i32 = self.coerceArg(tag_val, self.cached_i32);
+        const tag_i32 = self.coerceArg(self.channelTag(tag_val, tag_ty), self.cached_i32);
 
         const is_err = c.LLVMBuildICmp(self.builder, c.LLVMIntNE, tag_i32, c.LLVMConstInt(self.cached_i32, 0, 0), "main.iserr");
         const ok_bb = c.LLVMAppendBasicBlockInContext(self.context, llvm_func, "main.ok");
@@ -3076,9 +3177,9 @@ pub const LLVMEmitter = struct {
         const ok_ret = if (value) |v| self.coerceArg(v, self.cached_i32) else c.LLVMConstInt(self.cached_i32, 0, 0);
         _ = c.LLVMBuildRet(self.builder, ok_ret);
 
-        // Error: resolve the tag name, report to stderr, exit 1.
+        // Error: resolve the member spelling, report to stderr, exit 1.
         c.LLVMPositionBuilderAtEnd(self.builder, err_bb);
-        const global = self.reflection().getOrBuildTagNameArray();
+        const global = self.reflection().getOrBuildTagQualifiedNameArray();
         const idx = c.LLVMBuildZExt(self.builder, tag_i32, self.cached_i64, "main.tagidx");
         const string_ty = self.getStringStructType();
         const n: u32 = @intCast(self.ir_mod.types.tags.names.items.len);

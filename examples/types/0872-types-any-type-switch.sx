@@ -27,7 +27,7 @@ describe :: (av: any) -> string {
         case struct: { r = "some struct"; }
         case enum: { r = "some enum"; }
         case float: { fv : f64 = xx av; r = format("float {}", fv); }
-        else: { r = concat("other: ", type_name(type_of(av))); }
+        else: { r = concat("other: ", @typeName(@typeOf(av))); }
     }
     r
 }

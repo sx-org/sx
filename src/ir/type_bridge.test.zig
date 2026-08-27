@@ -149,7 +149,7 @@ test "resolveAstType: named-const array dimension resolves to the same length as
     try std.testing.expectEqual(@as(u32, 4), info.array.length);
 }
 
-test "resolveAstType: error_set_decl registers an error-set type + interns tags" {
+test "resolveAstType: error_set_decl registers an error-set type + interns members" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -165,13 +165,35 @@ test "resolveAstType: error_set_decl registers an error-set type + interns tags"
 
     const id = type_bridge.resolveAstType(node, &table, null, null);
     const info = table.get(id);
-    try std.testing.expect(info == .error_set);
-    try std.testing.expectEqualStrings("ParseErr", table.getString(info.error_set.name));
-    try std.testing.expectEqual(@as(usize, 2), info.error_set.tags.len);
-    // Tags were interned into the global pool (round-trip a name through it).
-    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.internTag("BadDigit")));
+    try std.testing.expect(info == .@"error");
+    try std.testing.expectEqualStrings("ParseErr", table.getString(info.@"error".name));
+    try std.testing.expectEqual(@as(usize, 2), info.@"error".tags.len);
+    try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMember(id, "BadDigit").one));
     // Re-resolving the same decl dedups to the same TypeId.
     try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
+}
+
+test "resolveAstType: twin inline error sets are distinct TypeIds" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const tag_names = [_][]const u8{"A"};
+    const a = try alloc.create(Node);
+    defer alloc.destroy(a);
+    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_set_decl = .{
+        .name = "E",
+        .tag_names = &tag_names,
+        .tag_name_starts = &.{ast.no_source_start},
+    } } };
+    const b = try alloc.create(Node);
+    defer alloc.destroy(b);
+    b.* = a.*;
+
+    const ia = type_bridge.resolveAstType(a, &table, null, null);
+    const ib = type_bridge.resolveAstType(b, &table, null, null);
+    try std.testing.expect(ia != ib);
+    try std.testing.expect(table.errorSetMember(ia, "A").one != table.errorSetMember(ib, "A").one);
 }
 
 // ── failable-signature error channel resolution ──
@@ -182,12 +204,13 @@ test "resolveAstType: `!Named` resolves to the declared error set" {
     defer table.deinit();
 
     // Register `ParseErr :: error { BadDigit }` directly.
-    const set = table.errorSetType(table.internString("ParseErr"), &[_]u32{table.internTag("BadDigit")});
+    const pe = table.internString("ParseErr");
+    const set = table.errorSetType(.empty, &[_]u32{table.internMember(table.internErrorOwner(&pe, pe), "BadDigit")});
 
-    // `!ParseErr` (an error_type_expr with a name) resolves to that set.
+    // `!ParseErr` (an error_type_expr naming one set) resolves to that set.
     const node = try alloc.create(Node);
     defer alloc.destroy(node);
-    node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = "ParseErr" } } };
+    node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .operands = &.{"ParseErr"} } } };
     try std.testing.expectEqual(set, type_bridge.resolveAstType(node, &table, null, null));
 }
 
@@ -198,16 +221,16 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
 
     const a = try alloc.create(Node);
     defer alloc.destroy(a);
-    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    a.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
     const b = try alloc.create(Node);
     defer alloc.destroy(b);
-    b.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = null } } };
+    b.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
 
     const ia = type_bridge.resolveAstType(a, &table, null, null);
     const ib = type_bridge.resolveAstType(b, &table, null, null);
-    try std.testing.expect(table.get(ia) == .error_set);
-    try std.testing.expectEqualStrings("!", table.getString(table.get(ia).error_set.name));
-    try std.testing.expectEqual(@as(usize, 0), table.get(ia).error_set.tags.len); // empty until the SCC convergence pass runs
+    try std.testing.expect(table.get(ia) == .@"error");
+    try std.testing.expectEqualStrings("!", table.getString(table.get(ia).@"error".name));
+    try std.testing.expectEqual(@as(usize, 0), table.get(ia).@"error".tags.len); // empty until the SCC convergence pass runs
     try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder
 }
 
@@ -219,14 +242,15 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
     const alloc = arena.allocator();
     var table = TypeTable.init(alloc);
 
-    const set = table.errorSetType(table.internString("IoErr"), &[_]u32{table.internTag("Eof")});
+    const io = table.internString("IoErr");
+    const set = table.errorSetType(.empty, &[_]u32{table.internMember(table.internErrorOwner(&io, io), "Eof")});
 
     const val_ty = try alloc.create(Node);
     defer alloc.destroy(val_ty);
     val_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "i32" } } };
     const err_ty = try alloc.create(Node);
     defer alloc.destroy(err_ty);
-    err_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .name = "IoErr" } } };
+    err_ty.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .operands = &.{"IoErr"} } } };
     const fields = [_]*Node{ val_ty, err_ty };
     const tuple = try alloc.create(Node);
     defer alloc.destroy(tuple);

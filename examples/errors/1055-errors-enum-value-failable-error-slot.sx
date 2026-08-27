@@ -4,10 +4,10 @@
 // success-return lowering never mistakes it for a forwarded full tuple.
 //
 // This pins the slot at RUNTIME on the success path (e.(i64), bare `if e`,
-// and `e == error.X`) — not only via the `if !e` proof that the compiler can
+// and `e == .X`) — not only via the `if !e` proof that the compiler can
 // fold away. It also exercises a non-zero ordinal (`.blue` = 2) so a value slot
 // that collapses to 0 is caught, and asserts the error PATH still carries the
-// right tag and `error_name`.
+// right tag and `@errorName`.
 
 @import "modules/std.sx";
 
@@ -17,7 +17,7 @@ E :: error { Nope }
 pick :: (s: string) -> (Color, !E) {
     if s == "red"  { return .red; }
     if s == "blue" { return .blue; }       // non-zero ordinal (2)
-    raise error.Nope;
+    raise .Nope;
 }
 
 main :: () -> i32 {
@@ -25,7 +25,7 @@ main :: () -> i32 {
     c, e := pick("red");
     print("success err int = {}\n", e.(i64));             // 0
     if e { print("bare-if e: ERROR (WRONG)\n"); } else { print("bare-if e: ok\n"); }
-    if e == error.Nope { print("e == Nope (WRONG)\n"); } else { print("e != Nope (ok)\n"); }
+    if e == .Nope { print("e == Nope (WRONG)\n"); } else { print("e != Nope (ok)\n"); }
     if !e { print("guard !e: c = {}\n", c.(i64)); }        // 0 (red)
 
     // ── non-zero ordinal: value slot must carry the real ordinal ──
@@ -35,8 +35,8 @@ main :: () -> i32 {
     // ── error path: the right tag flows through ──
     c3, e3 := pick("xxx");
     print("error err nonzero = {}\n", e3.(i64) != 0);     // true (ordinal is program-global, not pinned)
-    if e3 == error.Nope { print("error: is Nope (ok)\n"); } else { print("error: not Nope (WRONG)\n"); }
-    print("error tag name = {}\n", error_name(e3));       // Nope
+    if e3 == .Nope { print("error: is Nope (ok)\n"); } else { print("error: not Nope (WRONG)\n"); }
+    print("error tag name = {}\n", @errorName(e3));       // E.Nope
 
     return 0;
 }

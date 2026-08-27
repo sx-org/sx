@@ -1,0 +1,21 @@
+// A member qualified through a NAMESPACE — `dep.Error.Disk` — names the same
+// `(set, member)` the declaring module's own `.Disk` does. That spelling is
+// what an inferred `!` needs when the set it raises into lives behind an
+// import alias: the channel converges to `dep.Error`, so `.Net` resolves in it
+// at the caller.
+@import "modules/std.sx";
+dep :: @import "1108-errors-namespaced-member/dep.sx";
+
+relay :: (n: i32) -> (i32, !) {
+    if n == 0 { raise dep.Error.Net; }
+    return try dep.fails(n);
+}
+
+main :: () -> i32 {
+    e : dep.Error = .Disk;
+    print("annotated: {}\n", e == dep.Error.Disk);
+    print("relay net: {}\n", relay(0) catch |r| { if r == .Net { 1 } else { 0 } });
+    print("relay disk: {}\n", relay(-1) catch |r| { if r == .Disk { 2 } else { 0 } });
+    print("ok: {}\n", relay(7) catch { -1 });
+    return 0;
+}

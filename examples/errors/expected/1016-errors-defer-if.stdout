@@ -1,0 +1,7 @@
+[handed out]
+[rolled back]
+close 200
+[snapshot]
+probe ok: 4
+probe failed: E.Bad
+probe err: -1

@@ -81,29 +81,9 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                     return lowerAnyToIntDispatch(self, operand, dst_ty, tags);
                 }
             }
-            // When inside a float match arm covering both f32 and f64,
-            // and target is f64, we need a mini-dispatch to unbox correctly:
-            // an f32 view holds 4 bytes — load f32, then fpext.
+            // An f32 view holds 4 bytes, so a float arm's f64 reading is per-tag.
             if (dst_ty == .f64) {
-                if (self.current_match_tags) |tags| {
-                    var has_f32 = false;
-                    var has_f64 = false;
-                    for (tags) |t| {
-                        const tid = TypeId.fromIndex(@intCast(t));
-                        if (tid == .f32) has_f32 = true;
-                        if (tid == .f64) has_f64 = true;
-                    }
-                    if (has_f32 and has_f64) {
-                        return self.lowerAnyToF64Dispatch(operand);
-                    }
-                    if (has_f32 and !has_f64) {
-                        // Only f32 values: unbox as f32, then widen
-                        const f32_val = self.builder.emit(.{ .unbox_any = .{
-                            .operand = operand,
-                        } }, .f32);
-                        return self.builder.emit(.{ .widen = .{ .operand = f32_val, .from = .f32, .to = .f64 } }, .f64);
-                    }
-                }
+                if (self.current_match_tags) |tags| return widenAnyToF64(self, operand, tags);
             }
             return self.builder.emit(.{ .unbox_any = .{
                 .operand = operand,
@@ -1079,6 +1059,26 @@ pub fn lowerAnyToF64Dispatch(self: *Lowering, any_val: Ref) Ref {
     return self.builder.load(result_slot, .f64);
 }
 
+/// The f64 reading of an `any` carrying one of the float tags in `tags` (the
+/// float analog of `lowerAnyToIntDispatch`): an f32 view is an exact-width
+/// 4-byte load that extends afterwards, so a set spanning both widths reads
+/// per tag.
+pub fn widenAnyToF64(self: *Lowering, any_val: Ref, tags: []const u64) Ref {
+    var has_f32 = false;
+    var has_f64 = false;
+    for (tags) |t| {
+        const tid = TypeId.fromIndex(@intCast(t));
+        if (tid == .f32) has_f32 = true;
+        if (tid == .f64) has_f64 = true;
+    }
+    if (has_f32 and has_f64) return lowerAnyToF64Dispatch(self, any_val);
+    if (has_f32) {
+        const f32_val = self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, .f32);
+        return self.builder.widen(f32_val, .f32, .f64);
+    }
+    return self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, .f64);
+}
+
 /// Generate a mini-dispatch for unboxing an `any` to a 64-bit int inside a
 /// `case int:`-style match arm whose tag set spans several widths (the int
 /// analog of `lowerAnyToF64Dispatch`). Under the borrow representation an
@@ -1404,6 +1404,17 @@ fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
         return false;
     }
+    // Two callables of one shape are the same width, which the reinterpretation
+    // rule below reads as legitimate — but a slot calls through exactly the
+    // channel it names, so the channels are asked about first.
+    if (self.slotReturnType(src_ty)) |src_ret| {
+        if (self.slotReturnType(dst_ty)) |dst_ret| {
+            if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                self.assignability_error_count += 1;
+                return false;
+            }
+        }
+    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         switch (diag) {
@@ -1607,7 +1618,7 @@ fn isFunctionType(self: *Lowering, ty: TypeId) bool {
 
 fn isErrorSetType(self: *Lowering, ty: TypeId) bool {
     if (ty.isBuiltin()) return false;
-    return self.module.types.get(ty) == .error_set;
+    return self.module.types.get(ty) == .@"error";
 }
 
 /// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
@@ -1682,12 +1693,22 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     }
     if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
         const cs = self.builder.current_span;
-        self.checkErrorSetValueCoercion(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        self.checkErrorSetValueCoercion(src_ty, dst_ty, span);
+        const src_sig = valueTypeOfRef(self, val, src_ty);
+        if (self.slotReturnType(src_sig)) |src_ret| {
+            if (self.slotReturnType(dst_ty)) |dst_ret| {
+                if (!self.checkSlotChannel(src_ret, dst_ret, span)) {
+                    self.assignability_error_count += 1;
+                }
+            }
+        }
     }
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
         .no_op => return val,
+        .error_set_retype => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         // No modeled coercion — the value passes through UNCHANGED. For an
         // EXPLICIT `xx`/`cast(T)` that is the intended escape hatch: record
         // the ref so downstream IMPLICIT sites (a return, a call arg, a field
