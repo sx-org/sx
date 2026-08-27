@@ -128,8 +128,10 @@ helper :: () -> ! {
 }
 ```
 
-Where a composition carries two members of the same name, qualify to say
-which (`raise ParseErr.Empty`, `case png.Error.Empty:`).
+`.Member` resolves when exactly one member of that name is live in the
+destination channel. Where a composition carries two, the shorthand
+refuses and the qualified form says which (`raise ParseErr.Empty`,
+`case png.Error.Empty:`).
 
 `raise` is a statement — it can't appear inside an expression. Inside a
 closure, `raise` ends **that closure**, not the function the closure was
@@ -333,15 +335,52 @@ bad := e == 42;                    // ERROR
 A `{` directly after an `if` condition opens the body, so a payload
 construction there is parenthesized: `if e == (.BadDigit{'x'}) { ... }`.
 
-To ignore payloads, compare discriminants with `@tag`:
+---
+
+## Reading an error
+
+An error value carries the member it was raised with. `.set` is the error
+that declares that member, `.name` is the member's spelling, and
+`@errorName` composes the two:
 
 ```sx
-if @tag(e) == .BadDigit { ... }    // any bad digit, whatever the byte
+v := ParseErr.BadDigit{'x'};
+v.set.name;         // "ParseErr"
+v.name;             // "BadDigit"
+@errorName(v);      // "ParseErr.BadDigit"
+@errorPayload(v);   // the payload as an `any` view — `void` for a void member
 ```
 
-`@tag(x)` works on error sets, enums, and tagged unions, and yields the
-discriminant — the payload dropped. A discriminant is not something you
-can `raise`, and it has no written spelling of its own.
+The set named is the one that interned the member, not the alias you
+reached it through: an imported `png.Error.Bad` still answers
+`Error.Bad`.
+
+Interpolating with `{}` writes that name plus the payload as the payload
+constructs — nothing for a void member, braces around a scalar, the
+struct's own braces for a struct — in every build, including release:
+
+```sx
+log.warn("parse failed: {}", e);   // → "parse failed: ParseErr.BadDigit{120}"
+```
+
+`print` and `format` walk a value's `@typeInfo` and write the pieces to a
+`Writer`; an error is one arm of that walk.
+
+To read the members of an error as a type, match its `@typeInfo`:
+
+```sx
+match @typeInfo(ParseErr) {
+  case .error: |ei| for m in ei.members { print("{}: {}\n", m.name, @typeName(m.payload)); }
+  else: {}
+}
+// Empty: void
+// BadDigit: u8
+// Overflow: ParseErr.Overflow
+```
+
+`m.tag` is the interned `(owner, name)` pair — the member's identity — so
+a composition's `BadDigit` and `ParseErr`'s own carry one tag. `m.owner`,
+`m.name`, and `m.payload` are lookups through it.
 
 ---
 
@@ -475,18 +514,6 @@ They cost nothing on the success path. Each frame's location comes from
 `Frame` metadata (file/line/col/func) baked in at the trace point — the
 trace resolves itself with no debug info. Separately, sx emits standard
 DWARF, so `lldb` / `gdb` work on sx binaries too.
-
-Interpolating an error with `{}` prints its owning set, its member, and
-its payload — in every build, including release:
-
-```sx
-log.warn("parse failed: {}", e);          // → "parse failed: ParseErr.BadDigit{120}"
-log.warn("parse failed: {}", @tag(e));    // → "parse failed: ParseErr.BadDigit"
-```
-
-The set named is the one that interned the member, not the alias you
-reached it through: an imported `png.Error.Bad` still prints
-`Error.Bad`.
 
 ---
 

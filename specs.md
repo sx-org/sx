@@ -46,7 +46,7 @@ Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a `constraint` or `interface` **method**, and an
 enum/tagged-union
-**variant** (`enum { struct: StructInfo; bool; }` — std/meta.sx's `TypeInfo`
+**variant** (`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo`
 is the canonical case), and is reached bare after a dot: field access
 (`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
 `case .struct:`), and optional chaining (`o?.if`). Declaration position
@@ -3129,7 +3129,7 @@ are not written onward.
 | Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` | unchanged |
-| Two error values, or an error against a discriminant / `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
+| Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
 `any`, interface handles against a foreign type, and distinct structs are refused.
 
@@ -4556,14 +4556,14 @@ answers from site-local visibility at either phase.
 | `unsigned` | the unsigned integers |
 | `float` | `f32`, `f64` |
 | `struct` | struct and tuple types |
-| `enum` | payload-less enums and tagged unions; not an error's discriminant |
+| `enum` | payload-less enums and tagged unions |
 | `union` | untagged unions and tagged unions |
 | `slice` | `[]T` |
 | `array` | `[N]T` |
 | `pointer` | `*T`, `[*]T`, function pointers |
 | `vector` | `@Vector(N, T)` |
 | `optional` | `?T` |
-| `error` | declared and inferred errors, and an error's discriminant |
+| `error` | declared and inferred errors |
 | `closure` | `Closure(…) -> R` — the erased form only; a unique lambda is its env, so it answers `struct` |
 | `type` | `Type` |
 | `interface` | interface types |
@@ -5637,7 +5637,6 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * size_of(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
 - `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
-- `@tag(x: $T)` — the discriminant of an error-set, enum, or tagged-union value, payload dropped. The discriminant is a first-class type with no written spelling — `@tag` is the only way to name it; see [§12 `@tag`](#tag) for its comparison, matching, and interpolation rules.
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
@@ -6398,8 +6397,9 @@ e : IoErr;           // the whole set — a binding is never narrowed
 ```
 
 `.X` resolves when exactly one member named `X` is live in the destination
-channel; where a composition carries two, the qualified form disambiguates
-(`case FooError.A:`, `case png.Error.X:`).
+channel. Two live members of that spelling refuse the shorthand — `'X' names
+more than one member` — and the qualified form picks one (`case FooError.A:`,
+`case png.Error.X:`).
 
 `raise .X` resolves against a channel **already in hand** — a channel written on
 the enclosing function (`!ParseErr`, `!(IoErr.Failed | Other.Failure)`). An
@@ -6673,21 +6673,6 @@ bad := e == 42;             // ERROR — never a raw integer
 A `{` directly after an `if` / `match` header condition opens the body, so a
 payload construction in that position is parenthesized (`if e == (.D{42}) { … }`).
 
-### `@tag`
-
-`@tag(x)` reads the discriminant of an error set, enum, or tagged union value,
-dropping the payload. The discriminant type has no written spelling.
-
-```sx
-t := @tag(e);
-if t == .D            { ... }   // a discriminant against a member — tag only
-if @tag(a) == @tag(b) { ... }   // tag only
-if e == t             { ... }   // an error value against a discriminant — tag only
-```
-
-Comparability follows the same ⊆ rule on the channels. A discriminant is not a
-`raise` operand, and a `match` arm on one takes no `|p|` capture.
-
 ### `.set` and `.name`
 
 An error value carries its member: `.set` is the error that declares it and
@@ -6695,15 +6680,33 @@ An error value carries its member: `.set` is the error that declares it and
 
 ```sx
 v := FooError.D{42};
-v.set.name;                       // "FooError"
-v.name;                           // "D"
-concat(v.set.name, concat(".", v.name));   // what `@errorName(v)` composes
+v.set.name;         // "FooError"
+v.name;             // "D"
+@errorName(v);      // "FooError.D" — the composition of the two
+@errorPayload(v);   // the payload as an `any` view; `void` for a void member
 ```
 
-Both read through the live member, so an error's discriminant and an `any` viewing
-either answer the same way, and a member introduced by an inline
-`error { … }` operand answers with the composition that names it. Classify the
-value first — `match @typeOf(v) { case error: … }`.
+Both read through the live member, so an `any` viewing the value answers the
+same way, and a member introduced by an inline `error { … }` operand answers
+with the composition that names it. Classify the value first —
+`match @typeOf(v) { case error: … }`.
+
+### Reflection
+
+`@typeInfo` of an error is `.error`, carrying one of the prelude's `MemberInfo`
+per member.
+
+```sx
+name := match @typeInfo(FooError) {
+  case .error: |ei| ei.members[1].name;   // "B" — members in declaration order
+  else:             "";
+};
+```
+
+`MemberInfo.tag` is the interned `(owner, name)` pair and **is** the member's
+identity, so the member a composition holds carries the tag its declaring set
+interned — `Both`'s `D` and `FooError`'s `D` are one tag. `owner`, `name`, and
+`payload` are lookups through it, and a void member's `payload` is `void`.
 
 ### Matching
 
@@ -6721,12 +6724,16 @@ match e {
 
 ### Interpolation
 
-`{}` on an error **value** prints the interning owner, the member, and the
-payload (`FooError.D{42}`); on an error's discriminant it prints owner and member
-alone (`FooError.D`). A member introduced by an inline `error { … }` operand
-prints under the composition that names it. The import binding a set was
+`{}` on an error prints the interning owner, the member, and the payload
+(`FooError.D{42}`). The payload renders as it constructs — nothing for a void
+member, braces around a scalar, the struct's own braces for a struct
+(`FooError.C{v: 1, at: 7}`). A member introduced by an inline `error { … }`
+operand prints under the composition that names it. The import binding a set was
 reached through never appears. The name table is **always linked, release
 builds included**.
+
+The rendering is the prelude's one `@typeInfo` walk written to a `Writer`; an
+error is its `.error` arm.
 
 ### Cleanup
 
