@@ -621,6 +621,9 @@ pub const BuiltinId = enum(u16) {
     // runtime fat-pointer read needs. Internal — serves fmt's
     // `__sx_any_len_word`.
     rt_slice_len_info,
+    // The byte offset of an optional's has_value flag, or -1 when its null
+    // state is the leading pointer word. Serves `@inner`'s presence probe.
+    rt_optional_flag,
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,

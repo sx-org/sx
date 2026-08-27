@@ -1359,6 +1359,29 @@ pub const TypeTable = struct {
             (@as(i64, @intCast(lw.offset)) << 16);
     }
 
+    /// True when `?child` needs no separate has_value flag: its null state is
+    /// the child's own leading pointer word.
+    pub fn optionalIsSentinel(self: *const TypeTable, child: TypeId) bool {
+        if (child.index() >= self.infos.items.len) return false;
+        return switch (self.get(child)) {
+            .pointer, .many_pointer, .function, .cstring, .closure => true,
+            .@"struct" => |s| s.is_protocol,
+            else => false,
+        };
+    }
+
+    /// Byte offset of an optional's has_value flag, or -1 when its null state
+    /// is the leading pointer word. Feeds the `__sx_optional_flags` runtime
+    /// table, which `@inner` probes; -1 for a non-optional kind.
+    pub fn optionalFlagOffset(self: *const TypeTable, id: TypeId) i64 {
+        if (id.index() >= self.infos.items.len) return -1;
+        const info = self.get(id);
+        if (info != .optional) return -1;
+        const child = info.optional.child;
+        if (self.optionalIsSentinel(child)) return -1;
+        return @intCast(self.typeSizeBytes(child));
+    }
+
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
         return self.intern(.{ .array = .{ .element = element, .length = length } });
     }

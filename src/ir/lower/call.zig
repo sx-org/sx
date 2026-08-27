@@ -2804,6 +2804,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@inner",
         .@"@typeEq",
         .@"@unbox",
         .vector_lanes,
@@ -3110,6 +3111,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@inner",
         .@"@typeEq",
         .@"@unbox",
         .vector_lanes,
@@ -3403,6 +3405,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@inner",
         .@"@typeEq",
         .@"@unbox",
         .vector_lanes,
@@ -3756,6 +3759,7 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@inner",
         .@"@typeEq",
         .@"@unbox",
         .vector_lanes,
@@ -4062,6 +4066,61 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
     const elem_size = self.builder.callBuiltin(.rt_size_of, size_args, .i64);
     const stride = self.builder.mul(idx, elem_size, .i64);
     return self.builder.makeAny(elem, self.builder.add(boxedFatMerge(self, recv, boxedHeaderBuffer, boxedStorage), stride, .i64));
+}
+
+/// `@inner(v)` — the payload of a boxed optional as a `?any`. The two reprs
+/// answer presence differently, so the row picks the probe: a flag byte at the
+/// row's offset, or the leading pointer word. Either way the payload sits at
+/// the front of the boxed storage.
+fn lowerInnerIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    const b = &self.builder;
+    const opt_any = self.module.types.optionalOf(.any);
+    if (c.args.len != 1) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@inner takes 1 argument, got {d}", .{c.args.len});
+        return b.constNull(opt_any);
+    }
+    const recv = boxedReceiver(self, c.args[0]);
+    const child_args = self.alloc.dupe(Ref, &.{ recv, b.constInt(0, .i64) }) catch return b.constNull(opt_any);
+    const child = b.callBuiltin(.rt_member_type, child_args, .type_value);
+    const payload = b.makeAny(child, b.anyData(recv, .i64));
+
+    const row_args = self.alloc.dupe(Ref, &.{recv}) catch return b.constNull(opt_any);
+    const flag_off = b.callBuiltin(.rt_optional_flag, row_args, .i64);
+    const bytes = b.anyData(recv, self.module.types.manyPtrTo(.u8));
+    const probe = b.alloca(.i64);
+    const flagged = b.emit(.{ .cmp_ge = .{ .lhs = flag_off, .rhs = b.constInt(0, .i64) } }, .bool);
+    const flag_bb = self.freshBlock("inner.flag");
+    const sentinel_bb = self.freshBlock("inner.sentinel");
+    const probed_bb = self.freshBlock("inner.probed");
+    b.condBr(flagged, flag_bb, &.{}, sentinel_bb, &.{});
+
+    b.switchToBlock(flag_bb);
+    const at = b.emit(.{ .index_gep = .{ .lhs = bytes, .rhs = flag_off } }, self.module.types.ptrTo(.u8));
+    b.store(probe, zextLoadI64(self, at, 1));
+    b.br(probed_bb, &.{});
+
+    b.switchToBlock(sentinel_bb);
+    b.store(probe, zextLoadI64(self, bytes, self.module.types.pointer_size));
+    b.br(probed_bb, &.{});
+
+    b.switchToBlock(probed_bb);
+    const present = b.emit(.{ .cmp_ne = .{ .lhs = b.load(probe, .i64), .rhs = b.constInt(0, .i64) } }, .bool);
+    const slot = b.alloca(opt_any);
+    const some_bb = self.freshBlock("inner.some");
+    const none_bb = self.freshBlock("inner.none");
+    const merge_bb = self.freshBlock("inner.merge");
+    b.condBr(present, some_bb, &.{}, none_bb, &.{});
+
+    b.switchToBlock(some_bb);
+    b.store(slot, b.optionalWrap(payload, opt_any));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(none_bb);
+    b.store(slot, b.constNull(opt_any));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(merge_bb);
+    return b.load(slot, opt_any);
 }
 
 /// Try to lower a call as a reflection intrinsic (expanded inline during
@@ -4373,6 +4432,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (intrinsics.findByName(name)) |id| switch (id) {
         .@"@len", .@"@field", .@"@elementAt" => return lowerBoxedViewIntrinsic(self, id, c),
+        .@"@inner" => return lowerInnerIntrinsic(self, c),
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         else => {},
     };
