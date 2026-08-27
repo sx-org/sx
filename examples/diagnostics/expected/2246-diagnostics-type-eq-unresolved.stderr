@@ -1,0 +1,5 @@
+error: unresolved 'type_eq' (in examples/diagnostics/2246-diagnostics-type-eq-unresolved.sx fn main)
+  --> examples/diagnostics/2246-diagnostics-type-eq-unresolved.sx:7:19
+   |
+ 7 |     print("{}\n", type_eq(i64, i64));
+   |                   ^^^^^^^

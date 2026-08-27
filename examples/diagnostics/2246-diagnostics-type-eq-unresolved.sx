@@ -1,0 +1,8 @@
+// Type identity is spelled `@typeEq`; `type_eq` is an ordinary identifier the
+// compiler resolves like any other undeclared name.
+
+@import "modules/std.sx";
+
+main :: () {
+    print("{}\n", type_eq(i64, i64));
+}

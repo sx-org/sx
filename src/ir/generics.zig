@@ -273,6 +273,16 @@ pub const GenericResolver = struct {
         return true;
     }
 
+    /// Whether `tp` is a TYPE parameter a call must bind — constrained by
+    /// `Type` or by a protocol. Comptime VALUE params (`$N: u32`) and `..$Ts`
+    /// packs bind through their own dispatch, so they answer false.
+    pub fn bindsTypeArgument(self: GenericResolver, tp: ast.StructTypeParam, source: ?[]const u8) bool {
+        if (tp.is_variadic) return false;
+        if (tp.constraint.data != .type_expr) return false;
+        const cname = tp.constraint.data.type_expr.name;
+        return std.mem.eql(u8, cname, "Type") or self.l.isProtocolConstraint(cname, source);
+    }
+
     pub fn buildTypeBindings(
         self: GenericResolver,
         fd: *const ast.FnDecl,
@@ -378,6 +388,16 @@ pub const GenericResolver = struct {
         // is the `T` stub and print's Any boxing mis-tags the value.
         var tmp_bindings = self.buildTypeBindings(fd, c.args);
         defer tmp_bindings.deinit();
+
+        // A TYPE param the arguments leave unbound resolves as `.unresolved`:
+        // its return leaf names the template's own parameter, which has no
+        // declaration to find, and the call path owns the `cannot infer`
+        // diagnostic for it.
+        for (fd.type_params) |tp| {
+            if (!self.bindsTypeArgument(tp, fd.body.source_file)) continue;
+            if (tmp_bindings.contains(tp.name)) continue;
+            tmp_bindings.put(tp.name, .unresolved) catch {};
+        }
 
         // Resolve return type with whatever bindings we built. Even an
         // empty `tmp_bindings` is a valid input — non-generic literal

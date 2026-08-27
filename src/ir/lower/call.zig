@@ -2914,19 +2914,12 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     // An uninferrable TYPE param must diagnose here: monomorphizing with
     // it unbound stamps `.unresolved` through the body and trips the
     // emitter's sentinel panic instead of surfacing a source error.
-    // Comptime VALUE params (`$N: u32`) and `..$Ts` packs bind through
-    // their own dispatch and are exempt.
     for (fd.type_params) |tp| {
-        if (tp.is_variadic) continue;
-        if (tp.constraint.data != .type_expr) continue;
-        const cname = tp.constraint.data.type_expr.name;
-        const is_type_param = std.mem.eql(u8, cname, "Type") or
-            self.isProtocolConstraint(cname, fd.body.source_file);
-        if (is_type_param and !bindings.contains(tp.name)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
-            return Ref.none;
-        }
+        if (!self.genericResolver().bindsTypeArgument(tp, fd.body.source_file)) continue;
+        if (bindings.contains(tp.name)) continue;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
+        return Ref.none;
     }
 
     const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);

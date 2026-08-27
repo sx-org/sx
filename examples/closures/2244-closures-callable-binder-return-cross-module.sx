@@ -1,0 +1,10 @@
+// A generic whose return type IS its callable binder types and dispatches across
+// a module boundary: the binder `F` binds from the lambda at the call site, and
+// the result is callable there.
+
+@import "modules/std.sx";
+m :: @import "2244-closures-callable-binder-return-cross-module/m.sx";
+
+main :: () {
+    print("{}\n", m.mk(|x| x + 1)(41));
+}

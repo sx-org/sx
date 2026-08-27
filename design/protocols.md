@@ -108,7 +108,7 @@ panics, `try` raises, `.(?Q)` answers null.
 ## Classification
 
 `is` asks whether the left operand's type satisfies a static description; `==`
-and `type_eq` ask identity. A static ask answers site-local impl visibility; a
+and `@typeEq` ask identity. A static ask answers site-local impl visibility; a
 runtime ask reads program-unique pairs. The two differ only under
 visibility-disjoint duplicate impls, where the site-local answer is true and the
 program-unique one is false.
@@ -173,7 +173,7 @@ constraint matches no category, and there is no `constraint` category word.
 
 - **Why `is` and `==` stay distinct.** They coincide exactly on concrete
   descriptions, and nowhere else: `x is int` and `x is Ord` have no `==`
-  spelling, and `type_eq(t1, t2)` over two runtime values has no `is` spelling.
+  spelling, and `@typeEq(t1, t2)` over two runtime values has no `is` spelling.
   Collapsing them would either lose the category and conformance questions or
   make `==` phase-dependent.
 

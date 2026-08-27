@@ -208,8 +208,11 @@ pub const CallResolver = struct {
                 const src = self.l.inferExprType(c.args[0]);
                 return refl(bare_name, self.l.tagTypeFor(src) orelse .unresolved);
             }
-            if (std.mem.eql(u8, bare_name, "@unbox") and c.args.len == 2) {
-                const target = if (self.l.isStaticTypeArg(c.args[1])) self.l.resolveTypeArg(c.args[1]) else TypeId.unresolved;
+            if (std.mem.eql(u8, bare_name, "@unbox")) {
+                const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[1]))
+                    self.l.resolveTypeArg(c.args[1])
+                else
+                    TypeId.unresolved;
                 return refl(bare_name, target);
             }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
@@ -218,11 +221,9 @@ pub const CallResolver = struct {
             // that type, so this asks it rather than restating the list.
             if (intrinsics.findByName(bare_name)) |id| {
                 if (intrinsics.byId(id).ret) |rt| return refl(bare_name, rt);
-                // A registry entry with no fixed `ret` computes its type from the
-                // arguments (math -> the arg's type, atomics -> T, `@typeInfo` ->
-                // TypeInfo). `resolveBuiltin` above already answered for the math
-                // ids; the rest are not reachable as pack-fn callees, and guessing
-                // a type here would be exactly the silent default we don't write.
+                // A registry entry with no fixed `ret` and no computed arm above
+                // falls through to the declaration, where an unbound template
+                // return leaf resolves as `.unresolved`.
             }
             // Keywords: bare names the compiler recognizes with no declaration, so
             // the registry has nothing to say about them.

@@ -1,0 +1,9 @@
+// `@unbox` with a missing type argument reports its arity alone: its declared
+// `-> T` return leaf has no binding, and an unbound leaf is unresolved.
+
+@import "modules/std.sx";
+
+main :: () {
+    v : any = 42;
+    print("{}\n", @unbox(v));
+}
