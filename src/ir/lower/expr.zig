@@ -4208,12 +4208,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // (`null`), never a failure — the optional IS the check.
                 // The asserted type is the INNER T; the result is `?T`.
                 if (pc.type_expr.data == .optional_type_expr) {
-                    const callee_node = Node{ .data = .{ .identifier = .{ .name = "__sx_cast_maybe" } }, .span = node.span, .source_file = node.source_file };
+                    const callee_node = Node{ .data = .{ .identifier = .{ .name = "@castOrNull" } }, .span = node.span, .source_file = node.source_file };
                     const args = self.alloc.dupe(*Node, &.{ pc.operand, pc.type_expr.data.optional_type_expr.inner_type }) catch unreachable;
                     const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
                     break :blk self.lowerCall(&syn_call);
                 }
-                const callee_node = Node{ .data = .{ .identifier = .{ .name = "__sx_cast_or_panic" } }, .span = node.span, .source_file = node.source_file };
+                const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
                 const args = self.alloc.dupe(*Node, &.{ pc.operand, pc.type_expr }) catch unreachable;
                 const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
                 break :blk self.lowerCall(&syn_call);
@@ -4244,12 +4244,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
                             if (pc.type_expr.data == .optional_type_expr) {
-                                const callee_node = Node{ .data = .{ .identifier = .{ .name = "__sx_cast_maybe" } }, .span = node.span, .source_file = node.source_file };
+                                const callee_node = Node{ .data = .{ .identifier = .{ .name = "@castOrNull" } }, .span = node.span, .source_file = node.source_file };
                                 const args = self.alloc.dupe(*Node, &.{ xx_node, pc.type_expr.data.optional_type_expr.inner_type }) catch unreachable;
                                 const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
                                 break :blk self.lowerCall(&syn_call);
                             }
-                            const callee_node = Node{ .data = .{ .identifier = .{ .name = "__sx_cast_or_panic" } }, .span = node.span, .source_file = node.source_file };
+                            const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
                             const args = self.alloc.dupe(*Node, &.{ xx_node, pc.type_expr }) catch unreachable;
                             const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
                             break :blk self.lowerCall(&syn_call);

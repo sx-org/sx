@@ -275,7 +275,7 @@ pub const CoercionResolver = struct {
     /// name-AND-shape gate as `isProtocolViewDst`. Consulted ONLY by the
     /// POSTFIX arm (`av.(@Any)` is the raw-view retrieval): `xx av`
     /// keeps its unbox meaning for EVERY target, @Any included — the
-    /// pure-sx assert helpers (`__sx_cast_maybe` & co.) and any generic
+    /// pure-sx assert helpers (`@castOrNull` & co.) and any generic
     /// `(av: any) -> $T { xx av }` rely on the unbox being universal.
     pub fn isAnyViewDst(self: CoercionResolver, dst_ty: TypeId) bool {
         if (dst_ty.isBuiltin()) return false;

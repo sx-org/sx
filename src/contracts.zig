@@ -121,6 +121,10 @@ pub const entries = [_]Contract{
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
     .{ .name = "@error", .module = "modules/std/core.sx" },
+    // Their bodies render a mismatch through the allocating formatter, so fmt owns them.
+    .{ .name = "@cast", .module = "modules/std/fmt.sx" },
+    .{ .name = "@tryCast", .module = "modules/std/fmt.sx" },
+    .{ .name = "@castOrNull", .module = "modules/std/fmt.sx" },
     .{ .name = "@sqrt", .module = "modules/math/scalar.sx" },
     .{ .name = "@sin", .module = "modules/math/scalar.sx" },
     .{ .name = "@cos", .module = "modules/math/scalar.sx" },
