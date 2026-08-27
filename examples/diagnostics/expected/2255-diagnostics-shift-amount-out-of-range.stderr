@@ -1,0 +1,21 @@
+error: shift amount 16 is out of range for 'u16': valid amounts are 0 to 15
+  --> examples/diagnostics/2255-diagnostics-shift-amount-out-of-range.sx:10:15
+   |
+10 |     a := g << 16;
+   |               ^^
+
+help: widen the operand to at least 17 bits before shifting
+   |
+10 |     a := g << 16;
+   |               ^^
+
+error: shift amount -1 is out of range for 'i64': valid amounts are 0 to 63
+  --> examples/diagnostics/2255-diagnostics-shift-amount-out-of-range.sx:11:15
+   |
+11 |     b := h << -1;
+   |               ^^
+
+help: a shift amount is never negative
+   |
+11 |     b := h << -1;
+   |               ^^

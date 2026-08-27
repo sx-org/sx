@@ -5329,6 +5329,32 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         else => {},
     }
 
+    // LLVM's shifts are poison at or past the operand's width, and that poison
+    // folds to a different constant in each context that reaches it.
+    switch (bop.op) {
+        .shl, .shr => {
+            if (self.module.types.integerLayout(ty)) |layout| {
+                if (constIntOf(self, rhs)) |amount| {
+                    const width: i64 = @intCast(layout.width);
+                    if (amount < 0 or amount >= width) {
+                        if (self.diagnostics) |diags| {
+                            const id = diags.addFmtId(.err, bop.rhs.span, "shift amount {d} is out of range for '{s}': valid amounts are 0 to {d}", .{
+                                amount, self.formatTypeName(ty), width - 1,
+                            });
+                            if (amount < 0) {
+                                diags.addHelp(id, bop.rhs.span, "a shift amount is never negative", null);
+                            } else {
+                                diags.addHelpFmt(id, bop.rhs.span, null, "widen the operand to at least {d} bits before shifting", .{amount + 1});
+                            }
+                        }
+                        return self.emitPlaceholder("shift-amount-out-of-range");
+                    }
+                }
+            }
+        },
+        else => {},
+    }
+
     return switch (bop.op) {
         .add => self.builder.add(lhs, rhs, ty),
         .sub => self.builder.sub(lhs, rhs, ty),

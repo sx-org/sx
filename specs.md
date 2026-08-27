@@ -4393,6 +4393,11 @@ Restrictions:
 
 All bitwise operators work on integer types. `>>` is arithmetic (sign-extending) for signed types and logical (zero-filling) for unsigned types.
 
+A shift happens in the LEFT operand's own width — there is no promotion to a
+wider type — so the amount must be less than that width. A constant amount that
+is negative or at least the width is refused where it is written; widen the
+operand first (`x.(u32) << 16`) to shift further.
+
 ```sx
 x := 0xFF & 0x0F;   // 15  — AND
 y := 1 | 2 | 4;     // 7   — OR

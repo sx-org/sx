@@ -1,0 +1,13 @@
+// A shift amount at or past the operand's width is poison in LLVM, and the
+// poison folds to a different constant in each context that reaches it, so a
+// constant amount that cannot shift is refused where it is written.
+
+@import "modules/std.sx";
+
+main :: () {
+    g : u16 = 54;
+    h : i64 = 1;
+    a := g << 16;
+    b := h << -1;
+    print("{} {}\n", a, b);
+}
