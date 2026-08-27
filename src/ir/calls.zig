@@ -209,7 +209,8 @@ pub const CallResolver = struct {
                 return refl(bare_name, self.l.tagTypeFor(src) orelse .unresolved);
             }
             if (std.mem.eql(u8, bare_name, "@unbox") and c.args.len == 2) {
-                return refl(bare_name, self.l.resolveTypeArg(c.args[1]));
+                const target = if (self.l.isStaticTypeArg(c.args[1])) self.l.resolveTypeArg(c.args[1]) else TypeId.unresolved;
+                return refl(bare_name, target);
             }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs

@@ -1,0 +1,5 @@
+error: @unbox expects a type known at compile time
+  --> examples/diagnostics/2242-diagnostics-unbox-needs-static-type.sx:5:29
+   |
+ 5 |     print("{}\n", @unbox(v, t));
+   |                             ^

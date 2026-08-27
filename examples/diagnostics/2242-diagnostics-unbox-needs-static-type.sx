@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+main :: () {
+    v : any = 42;
+    t := @typeOf(v);
+    print("{}\n", @unbox(v, t));
+}
