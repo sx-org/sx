@@ -56,6 +56,12 @@ OptionalInfo    :: core.OptionalInfo;
 
 out :: core.out;
 
+writer        :: @import "modules/std/writer.sx";
+Writer        :: writer.Writer;
+StringBuilder :: writer.StringBuilder;
+FdWriter      :: writer.FdWriter;
+write_each    :: writer.write_each;
+
 // --- Formatting ---
 
 print  :: fmt.print;
