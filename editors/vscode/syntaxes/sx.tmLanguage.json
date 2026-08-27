@@ -239,7 +239,7 @@
       "patterns": [
         {
           "name": "keyword.control.sx",
-          "match": "(?<!\\.)\\b(?:if|else|then|match|case|break|continue|while|for|return|defer|raise|try|catch|onfail|push|in|inline)\\b"
+          "match": "(?<!\\.)\\b(?:if|else|then|match|case|break|continue|while|for|return|defer|raise|try|catch|push|in|inline)\\b"
         },
         {
           "name": "storage.type.sx",

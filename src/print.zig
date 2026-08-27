@@ -98,16 +98,6 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll("raise ");
             try printExpr(r.tag, writer);
         },
-        .onfail_stmt => |o| {
-            try writer.writeAll("onfail");
-            if (o.binding) |bnd| {
-                try writer.writeAll(" |");
-                try writer.writeAll(bnd);
-                try writer.writeByte('|');
-            }
-            try writer.writeByte(' ');
-            try printExpr(o.body, writer);
-        },
         .return_stmt => |r| {
             try writer.writeAll("return");
             if (r.value) |v| {

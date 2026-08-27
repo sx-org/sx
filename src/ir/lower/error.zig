@@ -1456,13 +1456,13 @@ pub fn errorExit(self: *Lowering) ?ErrorExit {
 /// boundary's fail edge or the function's failure return.
 fn emitErrorExit(self: *Lowering, exit: ErrorExit, err: Ref) void {
     const b = exit.boundary orelse {
-        self.emitErrorCleanup(self.func_defer_base, err);
+        self.emitDefers(self.func_defer_base);
         self.emitErrorReturn(exit.ret_ty, exit.set, err);
         return;
     };
     const ety = self.builder.getRefType(err);
     const coerced = if (ety != b.chan) self.coerceExplicit(err, ety, b.chan) else err;
-    self.emitErrorCleanup(b.defer_base, coerced);
+    self.emitDefers(b.defer_base);
     self.builder.br(b.fail_bb, &.{coerced});
 }
 
@@ -1519,8 +1519,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     self.builder.condBr(is_err, prop_bb, &.{}, ok_bb, &.{});
 
     // Propagation: push a trace frame (this `try` failure escapes to the
-    // caller), run the function's cleanups (defers + onfails,
-    // since this is an error exit), then return the caller's failure
+    // caller), run the function's cleanups, then return the caller's failure
     // carrying this tag (pure caller → `ret(tag)`; value-carrying →
     // `ret {undef…, tag}`).
     self.builder.switchToBlock(prop_bb);
@@ -2059,11 +2058,10 @@ pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
             self.builder.br(merge_bb, &.{});
         }
 
-        // Failure: push a trace frame, then either route to the next
-        // operand (same block — no function exit, so `onfail` does not
-        // fire) or, for the final operand, resolve the total failure: to an
-        // absorbing consumer (`catch`) if one set a target, else propagate
-        // to the enclosing error exit.
+        // Failure: push a trace frame, then either route to the next operand
+        // (same block — no function exit) or, for the final operand, resolve
+        // the total failure: to an absorbing consumer (`catch`) if one set a
+        // target, else propagate to the enclosing error exit.
         self.builder.switchToBlock(fail_bb);
         self.emitTracePush(self.placeholderTraceFrame());
         if (is_last) {

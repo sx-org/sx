@@ -248,7 +248,7 @@ pub const Binding = struct {
         range_index,
         /// Match-arm payload / optional-match binding.
         match_payload,
-        /// `catch |e|` / `onfail |e|` error binding.
+        /// `catch |e|` error binding.
         catch_err,
         /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
         pack_elem_alias,
@@ -390,16 +390,6 @@ pub const Scope = struct {
         }
         return null;
     }
-};
-
-/// A pending block-scoped cleanup: `defer` (runs on every block exit) or
-/// `onfail` (runs only when an error leaves the block, binding the in-flight
-/// tag). Both share one declaration-ordered stack so error-exit cleanup runs
-/// them interleaved in reverse order.
-const CleanupEntry = struct {
-    body: *const Node,
-    is_onfail: bool,
-    binding: ?[]const u8 = null,
 };
 
 /// Pure non-transitive visibility walk: `name` is visible from `source` when
@@ -749,7 +739,7 @@ pub const Lowering = struct {
     named_return_defaults: ?[]const ?*const ast.Node = null,
     block_terminated: bool = false, // set when constant-folded if emits a return/br into current block
     in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (tell the user to annotate `-> (T, !)`)
-    defer_stack: std.ArrayList(CleanupEntry) = std.ArrayList(CleanupEntry).empty, // block-scoped defer + onfail cleanup stack
+    defer_stack: std.ArrayList(*const ast.Node) = std.ArrayList(*const ast.Node).empty, // block-scoped `defer` bodies, in declaration order
     func_defer_base: usize = 0, // defer stack base for current function (lowerReturn drains to this)
     deferred_type_fns: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty, // functions deferred until all types registered
     processing_deferred: bool = false, // true when processing deferred functions (prevents re-deferral)
@@ -3422,12 +3412,10 @@ pub const Lowering = struct {
     pub const lowerDestructureDecl = lower_stmt.lowerDestructureDecl;
     pub const lowerPush = lower_stmt.lowerPush;
     pub const lowerDefer = lower_stmt.lowerDefer;
-    pub const lowerOnFail = lower_stmt.lowerOnFail;
-    pub const diagOnFailNotFailable = lower_stmt.diagOnFailNotFailable;
     pub const emitBlockDefers = lower_stmt.emitBlockDefers;
     pub const emitLoopExitDefers = lower_stmt.emitLoopExitDefers;
     pub const lowerCleanupBody = lower_stmt.lowerCleanupBody;
-    pub const emitErrorCleanup = lower_stmt.emitErrorCleanup;
+    pub const emitDefers = lower_stmt.emitDefers;
 
     // --- lower/control_flow.zig (lower_control_flow) ---
     pub const lowerIfExpr = lower_control_flow.lowerIfExpr;

@@ -210,7 +210,7 @@ pub const UnknownTypeChecker = struct {
     /// reachable from `node` and rejects each *binding name* — `var` / `:=` /
     /// typed-local declarations, destructure names, function / lambda / method
     /// parameters, `if` / `while` optional bindings, `for` capture + index
-    /// names, match-arm captures, and `catch` / `onfail` tag bindings — whose
+    /// names, match-arm captures, and `catch` tag bindings — whose
     /// spelling collides with a reserved/builtin type name. Such a spelling
     /// parses as a `.type_expr`, so the address-of family in `lower.zig` never
     /// sees the scoped local and mis-lowers it (a loaded aggregate passed
@@ -306,10 +306,6 @@ pub const UnknownTypeChecker = struct {
                 if (ce.binding) |b| self.checkBindingName(b, ce.binding_span, ce.binding_is_raw);
                 self.checkBindingNames(ce.operand);
                 self.checkBindingNames(ce.body);
-            },
-            .onfail_stmt => |os| {
-                if (os.binding) |b| self.checkBindingName(b, os.binding_span, os.binding_is_raw);
-                self.checkBindingNames(os.body);
             },
             // impl / protocol-default / runtime-class method bodies: each
             // method introduces its own params + locals. A `main = true` /
@@ -581,7 +577,6 @@ pub const UnknownTypeChecker = struct {
                 self.harvestScopeDecls(ps.body, out);
             },
             .defer_stmt => |ds| self.harvestScopeDecls(ds.expr, out),
-            .onfail_stmt => |os| self.harvestScopeDecls(os.body, out),
             .return_stmt => |r| if (r.value) |v| self.harvestScopeDecls(v, out),
             .raise_stmt => |rs| self.harvestScopeDecls(rs.tag, out),
             .assignment => |a| {
@@ -827,7 +822,6 @@ pub const UnknownTypeChecker = struct {
                 self.walkBodyTypes(ps.body, declared, in_scope, type_vals);
             },
             .defer_stmt => |ds| self.walkBodyTypes(ds.expr, declared, in_scope, type_vals),
-            .onfail_stmt => |os| self.walkBodyTypes(os.body, declared, in_scope, type_vals),
             .return_stmt => |r| if (r.value) |v| self.walkBodyTypes(v, declared, in_scope, type_vals),
             .raise_stmt => |rs| self.walkBodyTypes(rs.tag, declared, in_scope, type_vals),
             .assignment => |a| {

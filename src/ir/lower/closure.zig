@@ -1158,10 +1158,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             const bound: []const []const u8 = if (ce.binding) |b| &.{b} else &.{};
             collectCapturesNested(self, ce.body, param_names, captures, bound);
         },
-        .onfail_stmt => |os| {
-            const bound: []const []const u8 = if (os.binding) |b| &.{b} else &.{};
-            collectCapturesNested(self, os.body, param_names, captures, bound);
-        },
         .raise_stmt => |rs| {
             self.collectCaptures(rs.tag, param_names, captures);
         },
