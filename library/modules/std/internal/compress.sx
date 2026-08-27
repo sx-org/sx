@@ -2928,7 +2928,6 @@ Inflater :: struct {
         consumed := 0;
         produced := 0;
         defer { self.last_consumed = consumed; self.last_produced = produced; }
-        onfail { self.last_consumed = consumed; self.last_produced = produced; }
         while true {
             if self.phase == .done {
                 if self.direct_output.ptr != null and self.bit_count >= 8 {
@@ -3987,7 +3986,8 @@ inflate_with_consumed :: (data: string, max_output: i64, alloc: Allocator) -> (s
     state := Inflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     direct := max_output > 0 and max_output <= DIRECT_INFLATE_LIMIT;
     if direct {
         if !out.ensure_capacity(max_output) { raise .AllocationFailed; }
@@ -4008,7 +4008,7 @@ inflate_with_consumed :: (data: string, max_output: i64, alloc: Allocator) -> (s
         progress := try state.step(input, output);
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
-        if progress.status == .done { return out.take(), input_at; }
+        if progress.status == .done { taken = true; return out.take(), input_at; }
         if progress.status == .need_input {
             if input_at >= data.len {
                 out.deinit();
@@ -4081,10 +4081,6 @@ compress_path :: (data: string, level: i64, strategy: Strategy, path: DeflatePat
 compress_into :: (data: string, output: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
     state := ZlibDeflater.init(level, alloc);
     defer state.deinit();
-    // Keep explicit failure cleanup alongside the ordinary defer. This is
-    // idempotent and covers an error raised after tdefl has materialized a
-    // pending block into its allocator-backed buffer.
-    onfail state.deinit();
     input_at := 0;
     output_at := 0;
     while true {
@@ -4127,7 +4123,8 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
         ZlibInflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     if direct {
         if !out.ensure_capacity(max_output) { raise .AllocationFailed; }
         state.raw.direct_output = .{ ptr = out.bytes.items.ptr, len = max_output };
@@ -4148,6 +4145,7 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
         if progress.status == .done {
+            taken = true;
             return out.take(), input_at;
         }
         if progress.status == .need_input and input_at >= data.len {
@@ -4169,7 +4167,6 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
 decompress_into_with_consumed :: (data: string, output: string, alloc: Allocator = context.allocator) -> (i64, i64, !Error) {
     state := ZlibInflater.init(output.len, alloc);
     defer state.deinit();
-    onfail state.deinit();
     input_at := 0;
     output_at := 0;
     while true {
@@ -4238,7 +4235,8 @@ gzip_decompress :: (data: string, max_output: i64 = 1073741824, alloc: Allocator
     state := GzipInflater.init(max_output, alloc);
     defer state.deinit();
     out := ByteWriter.init(alloc);
-    onfail out.deinit();
+    taken := false;
+    defer { if !taken { out.deinit(); } }
     input_at := 0;
     while true {
         remaining := max_output - out.bytes.len;
@@ -4253,7 +4251,7 @@ gzip_decompress :: (data: string, max_output: i64 = 1073741824, alloc: Allocator
         progress := try state.step(input, output, true);
         input_at += progress.consumed;
         out.bytes.items.len += progress.produced;
-        if progress.status == .done { return out.take(); }
+        if progress.status == .done { taken = true; return out.take(); }
         if progress.status == .need_input and input_at >= data.len {
             out.deinit();
             state.deinit();

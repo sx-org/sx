@@ -2018,13 +2018,16 @@ ZipStreamWriter :: struct {
         // back). Either way the ORIGINAL error is re-raised; a target sink
         // error surfaces at the emit that observed it, before any later
         // source read, so target failures take precedence over source ones.
-        onfail {
-            rolled_back := false;
-            if self.sink.truncate != null {
-                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+        committed := false;
+        defer {
+            if !committed {
+                rolled_back := false;
+                if self.sink.truncate != null {
+                    if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+                }
+                if rolled_back { self.offset = entry_start_offset; }
+                else { self.active = false; }
             }
-            if rolled_back { self.offset = entry_start_offset; }
-            else { self.active = false; }
         }
         try self.emit_zeros(padding);
         if offset_zip64 or size_zip64 { self.zip64 = true; }
@@ -2174,6 +2177,7 @@ ZipStreamWriter :: struct {
             zip64_compressed = compressed_zip64,
             zip64_offset = offset_zip64,
         });
+        committed = true;
     }
 
     // Stream an entry from an exactly-sized random-read source. A zero-length
@@ -2246,13 +2250,16 @@ ZipStreamWriter :: struct {
         // back). Either way the ORIGINAL error is re-raised; a target sink
         // error surfaces at the emit that observed it, before any later
         // source read, so target failures take precedence over source ones.
-        onfail {
-            rolled_back := false;
-            if self.sink.truncate != null {
-                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+        committed := false;
+        defer {
+            if !committed {
+                rolled_back := false;
+                if self.sink.truncate != null {
+                    if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+                }
+                if rolled_back { self.offset = entry_start_offset; }
+                else { self.active = false; }
             }
-            if rolled_back { self.offset = entry_start_offset; }
-            else { self.active = false; }
         }
         try self.emit_zeros(padding);
         if offset_zip64 or max_size_zip64 { self.zip64 = true; }
@@ -2410,6 +2417,7 @@ ZipStreamWriter :: struct {
             zip64_compressed = compressed_zip64,
             zip64_offset = offset_zip64,
         });
+        committed = true;
     }
 
     // Streaming/backend-general form of mz_zip_writer_add_from_zip_reader().
@@ -2524,13 +2532,16 @@ ZipStreamWriter :: struct {
         // back). Either way the ORIGINAL error is re-raised; a target sink
         // error surfaces at the emit that observed it, before any later
         // source read, so target failures take precedence over source ones.
-        onfail {
-            rolled_back := false;
-            if self.sink.truncate != null {
-                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+        committed := false;
+        defer {
+            if !committed {
+                rolled_back := false;
+                if self.sink.truncate != null {
+                    if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+                }
+                if rolled_back { self.offset = entry_start_offset; }
+                else { self.active = false; }
             }
-            if rolled_back { self.offset = entry_start_offset; }
-            else { self.active = false; }
         }
         try self.emit_zeros(padding);
         local_offset := self.offset;
@@ -2589,6 +2600,7 @@ ZipStreamWriter :: struct {
             version_made_by = entry.version_made_by, version_needed = entry.version_needed,
             zip64_size = self.zip64, zip64_compressed = self.zip64, zip64_offset = self.zip64,
         });
+        committed = true;
     }
 
     add_handle :: (self: *ZipStreamWriter, name: string, file: *File, max_size: i64, options: ZipEntryOptions = .{}) -> !Error {
