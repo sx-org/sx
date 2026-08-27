@@ -1146,6 +1146,29 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
+/// The value a type-switch category arm binds: the widened reading every tag
+/// in the set shares — `signed`/`unsigned` an i64, `float` an f64, `pointer` a
+/// `*void`. A category whose members have no common scalar reading binds the
+/// subject's own view, so the arm reads it through the reflection builtins.
+fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []const u64) struct { ref: Ref, ty: TypeId } {
+    const name: []const u8 = switch (pat.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => "",
+    };
+    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        return .{ .ref = self.lowerAnyToIntDispatch(subject, .i64, tags), .ty = .i64 };
+    }
+    if (std.mem.eql(u8, name, "float")) {
+        return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };
+    }
+    if (std.mem.eql(u8, name, "pointer")) {
+        const void_ptr_ty = self.module.types.ptrTo(.void);
+        return .{ .ref = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, void_ptr_ty), .ty = void_ptr_ty };
+    }
+    return .{ .ref = subject, .ty = .any };
+}
+
 pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
     const error_only = demand == .error_only;
@@ -1771,19 +1794,17 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             } else if (is_any_switch) {
                 // A concrete arm binds the typed value — exactly what
                 // `v := av.(T)` produces, with the tag pre-proven by the
-                // switch (no panic path). Category arms name a KIND (many
-                // types), so there is nothing single-typed to bind; the
-                // default arm keeps the subject as `any`.
+                // switch (no panic path). A category arm binds the reading
+                // its whole tag set shares.
                 if (arm_concrete.items[i]) |cty| {
                     const bound = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, cty);
                     arm_scope.put(capture_name, .{ .ref = bound, .ty = cty, .is_alloca = false, .origin = .match_payload });
+                } else if (arm.pattern) |cat_pat| {
+                    const bound = categoryCapture(self, cat_pat, subject, arm_tag_values.items[i]);
+                    arm_scope.put(capture_name, .{ .ref = bound.ref, .ty = bound.ty, .is_alloca = false, .origin = .match_payload });
                 } else {
                     if (self.diagnostics) |diags| {
-                        if (arm.pattern == null) {
-                            diags.addFmt(.err, me.subject.span, "an `else:` arm cannot bind — the subject keeps its `any` type there", .{});
-                        } else {
-                            diags.addFmt(.err, arm.pattern.?.span, "a category arm cannot bind a value — it names a kind, not one type; read the value through the reflection views instead", .{});
-                        }
+                        diags.addFmt(.err, me.subject.span, "an `else:` arm cannot bind — the subject keeps its `any` type there", .{});
                     }
                     const undef = self.builder.constUndef(.i64);
                     arm_scope.put(capture_name, .{ .ref = undef, .ty = .i64, .is_alloca = false, .origin = .match_payload });

@@ -81,29 +81,9 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                     return lowerAnyToIntDispatch(self, operand, dst_ty, tags);
                 }
             }
-            // When inside a float match arm covering both f32 and f64,
-            // and target is f64, we need a mini-dispatch to unbox correctly:
-            // an f32 view holds 4 bytes — load f32, then fpext.
+            // An f32 view holds 4 bytes, so a float arm's f64 reading is per-tag.
             if (dst_ty == .f64) {
-                if (self.current_match_tags) |tags| {
-                    var has_f32 = false;
-                    var has_f64 = false;
-                    for (tags) |t| {
-                        const tid = TypeId.fromIndex(@intCast(t));
-                        if (tid == .f32) has_f32 = true;
-                        if (tid == .f64) has_f64 = true;
-                    }
-                    if (has_f32 and has_f64) {
-                        return self.lowerAnyToF64Dispatch(operand);
-                    }
-                    if (has_f32 and !has_f64) {
-                        // Only f32 values: unbox as f32, then widen
-                        const f32_val = self.builder.emit(.{ .unbox_any = .{
-                            .operand = operand,
-                        } }, .f32);
-                        return self.builder.emit(.{ .widen = .{ .operand = f32_val, .from = .f32, .to = .f64 } }, .f64);
-                    }
-                }
+                if (self.current_match_tags) |tags| return widenAnyToF64(self, operand, tags);
             }
             return self.builder.emit(.{ .unbox_any = .{
                 .operand = operand,
@@ -1077,6 +1057,26 @@ pub fn lowerAnyToF64Dispatch(self: *Lowering, any_val: Ref) Ref {
     // Merge block: load result
     self.builder.switchToBlock(merge_bb);
     return self.builder.load(result_slot, .f64);
+}
+
+/// The f64 reading of an `any` carrying one of the float tags in `tags` (the
+/// float analog of `lowerAnyToIntDispatch`): an f32 view is an exact-width
+/// 4-byte load that extends afterwards, so a set spanning both widths reads
+/// per tag.
+pub fn widenAnyToF64(self: *Lowering, any_val: Ref, tags: []const u64) Ref {
+    var has_f32 = false;
+    var has_f64 = false;
+    for (tags) |t| {
+        const tid = TypeId.fromIndex(@intCast(t));
+        if (tid == .f32) has_f32 = true;
+        if (tid == .f64) has_f64 = true;
+    }
+    if (has_f32 and has_f64) return lowerAnyToF64Dispatch(self, any_val);
+    if (has_f32) {
+        const f32_val = self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, .f32);
+        return self.builder.widen(f32_val, .f32, .f64);
+    }
+    return self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, .f64);
 }
 
 /// Generate a mini-dispatch for unboxing an `any` to a 64-bit int inside a

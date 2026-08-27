@@ -1,0 +1,38 @@
+// A type-switch category arm binds the reading its whole tag set shares: an
+// integer widens to i64 by its own signedness, a float to f64, a pointer to
+// `*void`. A category whose members share no scalar reading binds the boxed
+// view, read through the reflection builtins.
+@import "modules/std.sx";
+
+Point :: struct { x: i32; y: i32 }
+
+show :: (v: any) -> string {
+    match v {
+        case signed: |n| { format("signed {}", n) }
+        case unsigned: |n| { format("unsigned {}", n) }
+        case float: |f| { format("float {}", f) }
+        case pointer: |p| { if p == null then "pointer null" else format("pointer {}", p.(usize) != 0) }
+        case struct: |s| { format("struct {}", @unbox(@field(s, 0), i32)) }
+        else: { "other" }
+    }
+}
+
+main :: () -> i32 {
+    small : i8 = -7;
+    wide : i64 = 900000;
+    big : u32 = 4000000000;
+    single : f32 = 1.5;
+    double : f64 = 2.25;
+    x : i32 = 3;
+    pt := Point{ x = 41, y = 5 };
+
+    print("{}\n", show(small));
+    print("{}\n", show(wide));
+    print("{}\n", show(big));
+    print("{}\n", show(single));
+    print("{}\n", show(double));
+    print("{}\n", show(*x));
+    print("{}\n", show(pt));
+    print("{}\n", show(true));
+    return 0;
+}

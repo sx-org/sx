@@ -3659,6 +3659,7 @@ pub const Lowering = struct {
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
     pub const lowerAnyToF64Dispatch = lower_coerce.lowerAnyToF64Dispatch;
     pub const lowerAnyToIntDispatch = lower_coerce.lowerAnyToIntDispatch;
+    pub const widenAnyToF64 = lower_coerce.widenAnyToF64;
     pub const boxAnyOf = lower_coerce.boxAnyOf;
     pub const buildDefaultValue = lower_coerce.buildDefaultValue;
     pub const optionalOfFlattened = lower_coerce.optionalOfFlattened;
