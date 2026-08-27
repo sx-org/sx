@@ -601,13 +601,10 @@ print :: ($fmt: string, ..$args) {
 }
 
 // ── Postfix-assertion runtime ───────────────────────────────────────────
-// `av.(T)` on a type-erased receiver is a CHECKED assertion, and each of its
-// three temperaments has a spelled form here: `@tryCast` sends a mismatch down
-// the error channel (the consumed forms `try av.(T)`, `av.(T) ?? d`,
-// `av.(T) catch`), `@cast` panics on one (the unconsumed `v := av.(T);` —
-// Go/Odin parity, the carve-out from the unconsumed-failable rule), and
-// `@castOrNull` answers it with `null` (`av.(?T)`). The compiler rewrites the
-// postfix forms to these.
+// `av.(T)` on a type-erased receiver is a CHECKED assertion: `@tryCast` is
+// the error-channel temperament, `@cast` panics on mismatch (the
+// unconsumed-failable carve-out; Go/Odin parity), `@castOrNull` answers
+// mismatch with `null`. The compiler rewrites the postfix forms to these.
 
 CastError :: error { mismatch }
 

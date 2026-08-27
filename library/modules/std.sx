@@ -62,10 +62,10 @@ print  :: fmt.print;
 format :: fmt.format;
 
 // Postfix-assertion runtime (`av.(T)` / `av.(?T)` on a type-erased
-// receiver): the compiler-rewrite targets the `@` registry does not already
-// resolve program-wide. Their `CastError { mismatch }` set has no alias
-// here — error sets cannot be aliased; the `mismatch` TAG is global by name,
-// so a caller's own set (or an inferred `!`) absorbs it.
+// receiver): chained and re-erasure rewrite targets. Their `CastError
+// { mismatch }` set has no alias here — error sets cannot be aliased;
+// the `mismatch` TAG is global by name, so a caller's own set (or an
+// inferred `!`) absorbs it.
 __sx_reerase_or_panic    :: fmt.__sx_reerase_or_panic;
 __sx_chain_cast_assert   :: fmt.__sx_chain_cast_assert;
 __sx_chain_cast_or_panic :: fmt.__sx_chain_cast_or_panic;
