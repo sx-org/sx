@@ -46,7 +46,7 @@ Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a `constraint` or `interface` **method**, and an
 enum/tagged-union
-**variant** (`enum { struct: StructInfo; bool; }` — std/meta.sx's `TypeInfo`
+**variant** (`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo`
 is the canonical case), and is reached bare after a dot: field access
 (`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
 `case .struct:`), and optional chaining (`o?.if`). Declaration position
@@ -6398,8 +6398,9 @@ e : IoErr;           // the whole set — a binding is never narrowed
 ```
 
 `.X` resolves when exactly one member named `X` is live in the destination
-channel; where a composition carries two, the qualified form disambiguates
-(`case FooError.A:`, `case png.Error.X:`).
+channel. Two live members of that spelling refuse the shorthand — `'X' names
+more than one member` — and the qualified form picks one (`case FooError.A:`,
+`case png.Error.X:`).
 
 `raise .X` resolves against a channel **already in hand** — a channel written on
 the enclosing function (`!ParseErr`, `!(IoErr.Failed | Other.Failure)`). An
@@ -6670,6 +6671,9 @@ hit := e == .D{42};         // tag AND payload
 bad := e == 42;             // ERROR — never a raw integer
 ```
 
+Two live values always compare both; their tag-only reading is
+`@tag(a) == @tag(b)`.
+
 A `{` directly after an `if` / `match` header condition opens the body, so a
 payload construction in that position is parenthesized (`if e == (.D{42}) { … }`).
 
@@ -6695,15 +6699,33 @@ An error value carries its member: `.set` is the error that declares it and
 
 ```sx
 v := FooError.D{42};
-v.set.name;                       // "FooError"
-v.name;                           // "D"
-concat(v.set.name, concat(".", v.name));   // what `@errorName(v)` composes
+v.set.name;         // "FooError"
+v.name;             // "D"
+@errorName(v);      // "FooError.D" — the composition of the two
+@errorPayload(v);   // the payload as an `any` view; `void` for a void member
 ```
 
 Both read through the live member, so an error's discriminant and an `any` viewing
 either answer the same way, and a member introduced by an inline
 `error { … }` operand answers with the composition that names it. Classify the
 value first — `match @typeOf(v) { case error: … }`.
+
+### Reflection
+
+`@typeInfo` of an error is `.error`, carrying one of the prelude's `MemberInfo`
+per member.
+
+```sx
+name := match @typeInfo(FooError) {
+  case .error: |ei| ei.members[1].name;   // "D" — members in declaration order
+  else:             "";
+};
+```
+
+`MemberInfo.tag` is the interned `(owner, name)` pair and **is** the member's
+identity, so the member a composition holds carries the tag its declaring set
+interned — `Both`'s `D` and `FooError`'s `D` are one tag. `owner`, `name`, and
+`payload` are lookups through it, and a void member's `payload` is `void`.
 
 ### Matching
 
@@ -6723,10 +6745,15 @@ match e {
 
 `{}` on an error **value** prints the interning owner, the member, and the
 payload (`FooError.D{42}`); on an error's discriminant it prints owner and member
-alone (`FooError.D`). A member introduced by an inline `error { … }` operand
-prints under the composition that names it. The import binding a set was
+alone (`FooError.D`). The payload renders as it constructs — nothing for a void
+member, braces around a scalar, the struct's own braces for a struct
+(`FooError.C{v: 1, at: 7}`). A member introduced by an inline `error { … }`
+operand prints under the composition that names it. The import binding a set was
 reached through never appears. The name table is **always linked, release
 builds included**.
+
+The rendering is the prelude's one `@typeInfo` walk written to a `Writer`; an
+error is its `.error` arm.
 
 ### Cleanup
 
