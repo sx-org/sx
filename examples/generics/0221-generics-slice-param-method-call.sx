@@ -1,14 +1,11 @@
 // A generic method taking a slice (`xs: []$T`) binds `T` through method-call
 // syntax (`b.take(a)`), through the explicit `Box.take(*b, a)` form, and
 // through the same signature on a free function. Each element type
-// monomorphizes independently, and printing a real slice still formats
-// through `slice_to_string`.
+// monomorphizes independently.
 //
 // The receiver-prepended call site installs no bindings when
 // `resolveCallParamTypes` gives each arg a target type, so `[]$T` must not
-// resolve to `[]unresolved`: `any_to_string`'s `case slice:` TypeTable scan
-// monomorphizes `slice_to_string` per slice tag, and it skips container types
-// built over `.unresolved` — no runtime value can ever have one.
+// resolve to `[]unresolved` — no runtime value can ever have one.
 
 @import "modules/std.sx";
 
@@ -44,7 +41,6 @@ main :: () -> i64 {
     v : i64 = 0;
     print("{}\n", free_take(*v, a));
 
-    // Printing a real slice still formats through `slice_to_string`.
     s : []i64 = a;
     print("{}\n", s);
 

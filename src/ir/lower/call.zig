@@ -2809,7 +2809,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3116,7 +3115,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3410,7 +3408,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3764,7 +3761,6 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
-        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3882,8 +3878,8 @@ fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
     };
 }
 
-/// The `__sx_slice_len_info` row for a boxed value's tag: nonzero exactly when
-/// the value is a fat pointer, whose count and buffer live in its header.
+/// The packed length-word row of a boxed value's tag: nonzero exactly when the
+/// value is a fat pointer, whose count and buffer live in its header.
 fn boxedLenRow(self: *Lowering, recv: Ref) Ref {
     const args = self.alloc.dupe(Ref, &.{recv}) catch return self.builder.constInt(0, .i64);
     return self.builder.callBuiltin(.rt_slice_len_info, args, .i64);
@@ -4417,9 +4413,14 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (std.mem.eql(u8, name, "@errorName")) {
         // `Owner.Member` — the error value's runtime member id read out of the
-        // qualified-name table.
+        // qualified-name table. An `any` receiver holds the member word in its
+        // boxed storage, so the read goes through the view first.
         if (c.args.len < 1) return self.builder.constString(self.module.types.internString(""));
-        const e = self.lowerExpr(c.args[0]);
+        const raw = self.lowerExpr(c.args[0]);
+        const e = if (self.inferExprType(c.args[0]) == .any)
+            self.builder.emit(.{ .unbox_any = .{ .operand = raw } }, .u32)
+        else
+            raw;
         return self.builder.emit(.{ .error_name_get = .{ .operand = e } }, .string);
     }
     if (std.mem.eql(u8, name, "@tag")) {
@@ -4793,18 +4794,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         const ty = self.resolveTypeArg(c.args[0]);
         return self.builder.constInt(self.module.types.variantTagWidth(ty), .i64);
-    }
-    if (std.mem.eql(u8, name, "__sx_slice_len_info")) {
-        // INTERNAL: the packed length-word row (fmt's runtime fat-pointer
-        // read). Static arg folds; runtime Type reads the row table.
-        if (c.args.len < 1) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            const arg_ref = self.lowerExpr(c.args[0]);
-            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_slice_len_info, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        return self.builder.constInt(self.module.types.sliceLenInfo(ty), .i64);
     }
     return null;
 }

@@ -1351,7 +1351,7 @@ pub const TypeTable = struct {
     /// `lenWordOf` packed into one row: bits 0..7 the count's BIT width,
     /// bit 8 its signedness, bits 16..31 its byte offset in the header.
     /// 0 for a kind that carries no fat pointer. Feeds the
-    /// `__sx_slice_len_infos` runtime table and its static fold.
+    /// `__sx_slice_len_infos` runtime table.
     pub fn sliceLenInfo(self: *const TypeTable, id: TypeId) i64 {
         const lw = self.lenWordOf(id) orelse return 0;
         return @as(i64, lw.bits) |
@@ -1669,6 +1669,18 @@ pub const TypeTable = struct {
     /// Construct (and intern) an error channel from its member ids.
     pub fn errorSetType(self: *TypeTable, spelling: StringId, member_ids: []const u32) TypeId {
         return self.intern(self.errorSetInfo(spelling, member_ids));
+    }
+
+    /// The members `id` reflects as an error, or null when it is not one. A
+    /// discriminant stands for the error it reads, so it answers with that
+    /// error's members.
+    pub fn reflectedErrorMembers(self: *const TypeTable, id: TypeId) ?[]const u32 {
+        if (id.isBuiltin() or id.index() >= self.infos.items.len) return null;
+        return switch (self.get(id)) {
+            .@"error" => |e| e.tags,
+            .@"enum" => |e| if (e.error_of) |owner| self.get(owner).@"error".tags else null,
+            else => null,
+        };
     }
 
     /// The discriminant of an error: the payload-free enum over its members,

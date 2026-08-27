@@ -68,11 +68,6 @@ vector_lanes :: ($T: Type) -> i64 intrinsic;
 // bytes at offset 0 (a backing-type union's header can be wider than the
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
-// INTERNAL (fmt's runtime fat-pointer read): T's length word packed into one
-// row — bits 0..7 its BIT width, bit 8 its signedness, bits 16..31 its byte
-// offset in the `{ptr, Len}` header. 0 for a kind that carries no fat
-// pointer. Accepts a runtime Type (row-table read).
-__sx_slice_len_info :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
 // `{ elem,  raw_any_data(av) + idx * size_of(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.

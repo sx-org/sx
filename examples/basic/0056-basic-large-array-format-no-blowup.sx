@@ -1,12 +1,8 @@
 // Interning a large (~64KB) array type and using `{}` formatting elsewhere must
 // NOT scalarize into an O(N) SelectionDAG (which crashes `sx build` and makes
-// `sx run` take ~12s). The array any-unbox formats via a SLICE VIEW of its
-// storage — no whole-array load.
-//
-// `any_to_string`'s `case array:` arm (per-type monomorphized formatting)
-// builds a `{ptr,len}` slice view of the payload pointer rather than loading
-// the whole [65536]u8 by value: output is identical (`[a, b, c]`), and a
-// large unrelated array type costs nothing.
+// `sx run` take ~12s). The `{}` walk strides one element VIEW per index over
+// the boxed storage, so the whole [65536]u8 never loads by value: the output is
+// `[a, b, c]`, and a large unrelated array type costs nothing.
 
 @import "modules/std.sx";
 
