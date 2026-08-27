@@ -476,10 +476,12 @@ pub const Reflection = struct {
             },
             .failable => vname = "void",
             .@"enum" => |e| {
-                vname = "enum";
-                const arr = self.memberElems(tt, ti, "enum", tid, e.variants.len);
+                const members = tt.reflectedErrorMembers(tid);
+                const count = if (members) |m| m.len else e.variants.len;
+                vname = if (members != null) "error" else "enum";
+                const arr = self.memberElems(tt, ti, vname, tid, count);
                 placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
-                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(e.variants.len), 0), .size = 8 }) catch unreachable;
+                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(count), 0), .size = 8 }) catch unreachable;
             },
             .tagged_union => |u| {
                 vname = "enum";
@@ -531,7 +533,7 @@ pub const Reflection = struct {
         }
         const esize = tt.typeSizeBytes(elem_sx);
         const is_error = std.mem.eql(u8, family, "error");
-        const err_tags: []const u32 = if (is_error) tt.get(tid).@"error".tags else &.{};
+        const err_tags: []const u32 = if (is_error) tt.reflectedErrorMembers(tid).? else &.{};
 
         var elems = std.ArrayList(c.LLVMValueRef).empty;
         defer elems.deinit(self.e.alloc);

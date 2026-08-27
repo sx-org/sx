@@ -2597,6 +2597,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// One word of a TypeInfo member element, tagged by how it is written.
     const Word = union(enum) { text: []const u8, ty: TypeId, num: i64 };
 
+    /// The `MemberInfo` words of error member `m`: its interned identity, then
+    /// the owner / name / payload that identity looks up.
+    fn errorRow(table: *const types.TypeTable, m: u32) [4]Word {
+        return .{
+            .{ .num = @intCast(m) },
+            .{ .ty = table.memberOwnerType(m) },
+            .{ .text = table.getTagName(m) },
+            .{ .ty = table.memberPayload(m) },
+        };
+    }
+
     /// Reflect type `tid` INTO a `TypeInfo` VALUE built in comptime memory — the
     /// inverse of the sx `define` (which calls `register_type`). Layouts come
     /// from `result_ty` (the prelude's `TypeInfo`): the variant is found BY NAME,
@@ -2708,12 +2719,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 payload = .{ .rows = rows.items };
             },
             .@"enum" => |e| {
-                vname = "enum";
-                for (e.variants, 0..) |v, i| try Row.push(self, &rows, &.{
-                    .{ .text = table.getString(v) },
-                    .{ .ty = .void },
-                    .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
-                });
+                if (table.reflectedErrorMembers(tid)) |members| {
+                    vname = "error";
+                    for (members) |m| try Row.push(self, &rows, &errorRow(table, m));
+                } else {
+                    vname = "enum";
+                    for (e.variants, 0..) |v, i| try Row.push(self, &rows, &.{
+                        .{ .text = table.getString(v) },
+                        .{ .ty = .void },
+                        .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
+                    });
+                }
                 payload = .{ .rows = rows.items };
             },
             .@"struct" => |st| {
@@ -2735,12 +2751,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             .@"error" => |e| {
                 vname = "error";
-                for (e.tags) |m| try Row.push(self, &rows, &.{
-                    .{ .num = @intCast(m) },
-                    .{ .ty = table.memberOwnerType(m) },
-                    .{ .text = table.getTagName(m) },
-                    .{ .ty = table.memberPayload(m) },
-                });
+                for (e.tags) |m| try Row.push(self, &rows, &errorRow(table, m));
                 payload = .{ .rows = rows.items };
             },
             .failable => vname = "void",
