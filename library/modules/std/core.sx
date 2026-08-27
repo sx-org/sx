@@ -83,10 +83,10 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // struct and union fields, enum and tagged-union variants, array elements,
 // vector lanes, and the count a slice's or string's header carries. `@field`
 // views the i-th member at its offset — a tagged union's members share the
-// payload offset. `@elementAt` views the i-th element of an array, vector, or
-// slice, striding from the buffer a fat pointer names. Each result borrows the
-// boxed storage, so it aliases later writes and copies nothing. An index past
-// the count is UB.
+// payload offset. `@elementAt` views the i-th element of an array, vector,
+// slice, or string, striding from the buffer a fat pointer names. Each result
+// borrows the boxed storage, so it aliases later writes and copies nothing.
+// An index past the count is UB.
 @len :: (v: any) -> i64;
 @field :: (v: any, idx: i64) -> any;
 @elementAt :: (v: any, idx: i64) -> any;

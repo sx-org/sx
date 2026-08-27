@@ -1,9 +1,9 @@
 // Runtime `struct_field_type(t, 0)` answers an ELEMENT/CHILD row for every
 // element-carrying kind: struct fields, array/vector elements, and — the
-// kinds with no static member count — a slice's element and an optional's
-// child (one table row each, index 0). The master member-type tables and
-// the static type-position fold answer from the same TypeTable query, so
-// the two can never diverge (pinned by the parity lines).
+// kinds with no static member count — a slice's element, a string's byte,
+// and an optional's child (one table row each, index 0). The master
+// member-type tables and the static type-position fold answer from the same
+// TypeTable query, so the two can never diverge (pinned by the parity lines).
 @import "modules/std.sx";
 
 Pair :: struct { a: i32; b: f64; }
@@ -25,6 +25,10 @@ main :: () {
     sv : any = s;
     print("slice: {} -> {}\n", @typeName(@typeOf(sv)), @typeName(struct_field_type(@typeOf(sv), 0)));
 
+    str : string = "hi";
+    strv : any = str;
+    print("string: {} -> {}\n", @typeName(@typeOf(strv)), @typeName(struct_field_type(@typeOf(strv), 0)));
+
     o : ?u8 = 7;
     ov : any = o;
     print("optional: {} -> {}\n", @typeName(@typeOf(ov)), @typeName(struct_field_type(@typeOf(ov), 0)));
@@ -32,7 +36,9 @@ main :: () {
     // parity: the runtime table rows == the static type-position folds
     st : Type = @typeOf(sv);
     ot : Type = @typeOf(ov);
-    print("parity: {} {}\n",
+    strt : Type = @typeOf(strv);
+    print("parity: {} {} {}\n",
         type_eq(struct_field_type(st, 0), struct_field_type([]i64, 0)),
-        type_eq(struct_field_type(ot, 0), struct_field_type(?u8, 0)));
+        type_eq(struct_field_type(ot, 0), struct_field_type(?u8, 0)),
+        type_eq(struct_field_type(strt, 0), struct_field_type(string, 0)));
 }
