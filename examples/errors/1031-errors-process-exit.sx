@@ -1,5 +1,5 @@
 // `process.exit`: immediate process termination with an exit
-// code. No `defer` / `onfail` cleanup runs and no error-trace frames are pushed
+// code. No `defer` cleanup runs and no error-trace frames are pushed
 // — it's POSIX `_exit(2)`. Here a runtime call exits 42; the line after never
 // runs. (sx `print` writes unbuffered via `write(2)`, so the "starting" line
 // still appears despite `_exit` skipping the stdio flush.)

@@ -1,8 +1,8 @@
-// Failable calls in cleanup bodies must be absorbed locally. A
-// `defer` / `onfail` body runs while the block is already exiting, so a failable
-// it calls has nowhere to propagate — it must be handled in place with `catch`
-// or a `?? <value>` terminator. This file shows the accepted forms; the bare
-// (un-absorbed) form is rejected in 1049.
+// Failable calls in cleanup bodies must be absorbed locally. A `defer` body
+// runs while the block is already exiting, so a failable it calls has nowhere
+// to propagate — it must be handled in place with `catch` or a `?? <value>`
+// terminator. This file shows the accepted forms; the bare (un-absorbed) form
+// is rejected in 1049.
 
 @import "modules/std.sx";
 
@@ -12,17 +12,13 @@ failing :: () -> !E { raise .Bad; }
 recover :: () -> (i32, !E) { raise .Bad; }
 
 work :: (n: i32) -> !E {
-    defer  print("defer: always\n");                                 // plain cleanup
-    onfail { failing() catch |e| print("onfail: caught (catch)\n"); }  // catch absorbs
-    onfail { x := recover() ?? 7; print("onfail: x={} (??)\n", x); } // ??-value absorbs
+    defer { failing() catch |e| print("cleanup: caught (catch)\n"); }  // catch absorbs
+    defer { x := recover() ?? 7; print("cleanup: x={} (??)\n", x); }   // ??-value absorbs
     if n < 0 { raise .Bad; }
     return;
 }
 
 main :: () -> i32 {
-    print("[error]\n");
-    a := work(-1);   // raises → onfail bodies fire, then defer (reverse decl order)
-    print("[ok]\n");
-    b := work(2);    // success → only defer fires
+    a := work(-1);
     return 0;
 }

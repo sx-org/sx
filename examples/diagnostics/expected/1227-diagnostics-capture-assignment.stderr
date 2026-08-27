@@ -1,44 +1,38 @@
 error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '*x' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:33:19
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:28:19
    |
-33 |     for x in xs { x += 100; }
+28 |     for x in xs { x += 100; }
    |                   ^^^^^^^^^
 
 error: cannot assign to immutable capture 'i' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:36:27
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:31:27
    |
-36 |     for v, i in xs, 0.. { i = 99; }
+31 |     for v, i in xs, 0.. { i = 99; }
    |                           ^^^^^^^
 
 error: cannot assign to immutable capture 'r' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:41:29
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:36:29
    |
-41 |         case .circle: |r| { r = 5.0; }
+36 |         case .circle: |r| { r = 5.0; }
    |                             ^^^^^^^^
 
 error: cannot assign to immutable capture 'n' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:42:27
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:37:27
    |
-42 |         case .rect: |n| { n = 7; }
+37 |         case .rect: |n| { n = 7; }
    |                           ^^^^^^
 
 error: cannot assign to immutable capture 'ov' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:48:28
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:43:28
    |
-48 |         case .some: |ov| { ov = 9; }
+43 |         case .some: |ov| { ov = 9; }
    |                            ^^^^^^^
 
-error: cannot assign to immutable capture 'e' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:53:25
+error: cannot assign to immutable capture 'e' — a catch error binding is read-only; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:48:25
    |
-53 |     must(0) catch |e| { e = .Bad; };
+48 |     must(0) catch |e| { e = .Bad; };
    |                         ^^^^^^^^^
-
-error: cannot assign to immutable capture 'e' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:25:18
-   |
-25 |     onfail |e| { e = .Bad; }           // onfail binding — immutable
-   |                  ^^^^^^^^^
 
 error: cannot assign to immutable capture 'x' — a pack-element alias is read-only; copy it into a `:=` local to mutate
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:21:26
@@ -47,13 +41,13 @@ error: cannot assign to immutable capture 'x' — a pack-element alias is read-o
    |                          ^^^^^^^^
 
 error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '*x' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:63:19
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:55:19
    |
-63 |     for x in xs { x, a = 5, 6; }
+55 |     for x in xs { x, a = 5, 6; }
    |                   ^
 
 error: cannot assign to constant 'c' — a '::' declaration is immutable; use ':=' to declare a mutable local
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:67:5
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:59:5
    |
-67 |     c = 10;
+59 |     c = 10;
    |     ^^^^^^^

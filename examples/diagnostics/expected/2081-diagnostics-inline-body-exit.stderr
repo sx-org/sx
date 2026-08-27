@@ -1,23 +1,17 @@
 error: `try` is only valid inside a failable function (a return type with `!` or `!Named`)
-  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:20:10
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:14:10
    |
-20 |     v := try fails();
+14 |     v := try fails();
    |          ^^^^^^^^^^^
 
 error: `raise` is only valid inside a failable function (a return type with `!` or `!Named`)
-  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:26:5
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:20:5
    |
-26 |     raise .Nope;
+20 |     raise .Nope;
    |     ^^^^^^^^^^^^
 
-error: `onfail` is only valid inside a failable function (a return type with `!` or `!Named`) — use `defer` for unconditional cleanup
-  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:32:5
-   |
-32 |     onfail { }
-   |     ^^^^^^^^^^
-
 error: function returns 'i64' but its body produces no value — end it with a trailing expression or an explicit `return`
-  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:37:5
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:25:5
    |
-37 |     if n > 0 { n = n + 1; }
+25 |     if n > 0 { n = n + 1; }
    |     ^^^^^^^^^^^^^^^^^^^^^^^

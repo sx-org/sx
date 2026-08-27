@@ -1,8 +1,8 @@
 // End-to-end error handling: failable functions (named + inferred sets) consumed
 // through every absorbing form — destructure, `try` (in helpers), `catch` (bare-
 // expr / match-body / diverging block / no-binding), `or` value-terminator,
-// `onfail` cleanup interleaved with `defer`, plus a member as a value and `{}`
-// tag-name interpolation.
+// guarded `defer` cleanup, plus a member as a value and `{}` tag-name
+// interpolation.
 
 @import "modules/std.sx";
 
@@ -39,11 +39,13 @@ sm_or_default :: (n: i32) -> i32 {
     };
 }
 
-// onfail + defer interleave: cleanup runs only on the error path
+// guarded + plain defer interleave: the rollback runs only on the error path
 sm_acquire :: (fail: bool) -> (i32, !) {
-    defer  print("  defer A\n");
-    onfail print("  onfail B\n");
+    handed := false;
+    defer print("  defer A\n");
+    defer if !handed print("  rollback B\n");
     if fail { raise AcquireErr.Acquire; }
+    handed = true;
     return 7;
 }
 
@@ -115,7 +117,7 @@ main :: () {
     // pure failable: absorb with no-binding catch
     sm_check(false) catch { print("check absorbed\n"); };
 
-    // onfail/defer interleave on error vs success
+    // cleanup interleave on error vs success
     print("acquire fail:\n");
     hv, herr := sm_acquire(true);
     print("acquire ok:\n");

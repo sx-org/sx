@@ -5,14 +5,14 @@
 // return, while the uncaught boundary in `escapes` propagates FooError to its
 // caller. `catch` is that `try`'s own fallback, so `try g(-1) catch { … }` and
 // `g(-1) catch { … }` are the same expression; `must(-1) catch {}` absorbs.
-// A boundary is a cleanup boundary too — its `defer`s and `onfail`s run on
-// the way out — and the enclosing function need not be failable at all. The
-// boundary is the error exit a propagating `??` takes, and a `try { … }` is
-// itself a failable `??` operand. A block with no tail value is a pure
-// failable, so its `catch` stands as a statement. A nested boundary hands the
-// outer one back, so the `try` after it exits through the outer block. A
-// `catch` absorbs exactly what it attempts, so a `try` sitting in its operand
-// exits through the enclosing channel.
+// A boundary is a cleanup boundary too — its `defer`s run on the way out — and
+// the enclosing function need not be failable at all. The boundary is the error
+// exit a propagating `??` takes, and a `try { … }` is itself a failable `??`
+// operand. A block with no tail value is a pure failable, so its `catch` stands
+// as a statement. A nested boundary hands the outer one back, so the `try`
+// after it exits through the outer block. A `catch` absorbs exactly what it
+// attempts, so a `try` sitting in its operand exits through the enclosing
+// channel.
 
 @import "modules/std.sx";
 
@@ -102,14 +102,6 @@ or_operand :: (n: i32) -> i32 {
     return try { try g(n); 5 } ?? 9;
 }
 
-with_onfail :: (n: i32, seen: *i32) -> i32 {
-    return try {
-        onfail { seen.* = seen.* + 1; }
-        try g(n);
-        n
-    } catch { -1 };
-}
-
 main :: () -> i32 {
     print("caught_raise={}\n", caught(0) catch { -9 });
     print("caught_try={}\n", caught(-1) catch { -9 });
@@ -136,11 +128,6 @@ main :: () -> i32 {
     print("slots_err={}\n", slots(-1));
     print("or_inside={}\n", or_inside());
     print("or_operand={}\n", or_operand(-1));
-
-    seen_of := 0;
-    print("onfail_err={} seen={}\n", with_onfail(-1, *seen_of), seen_of);
-    seen_of = 0;
-    print("onfail_ok={} seen={}\n", with_onfail(6, *seen_of), seen_of);
 
     print("marked={}\n", try g(-1) catch { -1 });
     print("bare={}\n", g(-1) catch { -1 });

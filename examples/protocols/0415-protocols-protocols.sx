@@ -128,7 +128,7 @@ gen_val :: () -> string {
     return "print(\"insert-gen: {}\\n\", 42);";
 }
 
-// --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
+// --- Error handling (failable functions: sets, raise/try/catch/or) ---
 
 SmokeErr :: error { Empty; BadDigit; Overflow }
 CheckErr :: error { NotReady }
@@ -163,11 +163,13 @@ sm_or_default :: (n: i32) -> i32 {
     };
 }
 
-// `onfail` + `defer` interleave: cleanup runs only on the error path
+// guarded + plain `defer` interleave: the rollback runs only on the error path
 sm_acquire :: (fail: bool) -> (i32, !) {
-    defer  print("  smoke defer A\n");
-    onfail print("  smoke onfail B\n");
+    handed := false;
+    defer print("  smoke defer A\n");
+    defer if !handed print("  smoke rollback B\n");
     if fail { raise AcquireErr.Acquire; }
+    handed = true;
     return 7;
 }
 
