@@ -73,6 +73,7 @@ pub const Id = enum(u16) {
     @"@len",
     @"@field",
     @"@elementAt",
+    @"@inner",
     @"@typeEq",
     @"@unbox",
     vector_lanes,
@@ -188,12 +189,13 @@ pub const Entry = struct {
     arity: u8,
     /// The return type, when it is fixed regardless of the arguments.
     ///
-    /// `null` means the handler computes it, and the reason is always that the
-    /// result depends on an argument: the math intrinsics return their
-    /// argument's type (`f32` in, `f32` out), the atomics return `T`, and
-    /// `@typeInfo` returns the `TypeInfo` it must look up in the type table.
-    /// Callers that need a type for a null entry must ask the handler — there is
-    /// no default to fall back on.
+    /// `null` means the handler computes it, for one of two reasons: the result
+    /// depends on an argument — the math intrinsics return their argument's type
+    /// (`f32` in, `f32` out), the atomics return `T`, `@typeInfo` returns the
+    /// `TypeInfo` it must look up in the type table — or the result is a type
+    /// this field cannot spell, since only a builtin `TypeId` is a comptime
+    /// value (`@inner` returns an interned `?any`). Callers that need a type for
+    /// a null entry must ask the handler — there is no default to fall back on.
     ret: ?TypeId = null,
 };
 
@@ -233,6 +235,7 @@ pub const entries = [_]Entry{
     .{ .id = .@"@len", .module = core, .name = "@len", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"@field", .module = core, .name = "@field", .mode = .lower, .arity = 2, .ret = .any },
     .{ .id = .@"@elementAt", .module = core, .name = "@elementAt", .mode = .lower, .arity = 2, .ret = .any },
+    .{ .id = .@"@inner", .module = core, .name = "@inner", .mode = .lower, .arity = 1 },
     .{ .id = .@"@typeEq", .module = core, .name = "@typeEq", .mode = .lower, .arity = 2, .ret = .bool },
     .{ .id = .@"@unbox", .module = core, .name = "@unbox", .mode = .lower, .arity = 2 },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },

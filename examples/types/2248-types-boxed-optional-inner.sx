@@ -1,0 +1,28 @@
+// `@inner` views a boxed optional's payload — null when the optional is
+// absent. The view borrows the boxed storage, so it copies nothing.
+
+@import "modules/std.sx";
+
+flagged :: (v: any) -> string {
+    if p := @inner(v) { format("{}", @unbox(p, i32)) } else { "null" }
+}
+
+sentinel :: (v: any) -> string {
+    if p := @inner(v) { format("{}", @unbox(p, *i32).*) } else { "null" }
+}
+
+main :: () -> i32 {
+    n : ?i32 = 7;
+    no_n : ?i32 = null;
+    print("flagged {} {}\n", flagged(n), flagged(no_n));
+
+    x : i32 = 41;
+    p : ?*i32 = *x;
+    no_p : ?*i32 = null;
+    print("sentinel {} {}\n", sentinel(p), sentinel(no_p));
+
+    // The view aliases the payload it borrows.
+    x = 99;
+    print("aliased {}\n", sentinel(p));
+    return 0;
+}

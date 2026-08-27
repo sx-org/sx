@@ -92,18 +92,9 @@ pub const TypeLowering = struct {
                 break :blk c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
             .optional => |opt| {
-                // ?*T / ?fn → bare pointer (null = none)
-                const child_info = self.e.ir_mod.types.get(opt.child);
-                if (child_info == .pointer or child_info == .many_pointer or child_info == .function or child_info == .cstring) {
-                    return self.e.cached_ptr;
-                }
-                if (child_info == .closure) {
-                    return self.e.getClosureStructType();
-                }
-                // ?Protocol → protocol struct (ctx ptr = field 0 is null when none).
-                if (child_info == .@"struct" and child_info.@"struct".is_protocol) {
-                    return self.toLLVMType(opt.child);
-                }
+                // A sentinel-shaped optional IS its child: the child's own
+                // leading pointer word is null when none.
+                if (self.e.ir_mod.types.optionalIsSentinel(opt.child)) return self.toLLVMType(opt.child);
                 // ?T → { T, i1 }
                 var field_types: [2]c.LLVMTypeRef = .{
                     self.fieldLLVMType(opt.child),

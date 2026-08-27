@@ -106,6 +106,7 @@ pub const entries = [_]Contract{
     .{ .name = "@len", .module = "modules/std/core.sx" },
     .{ .name = "@field", .module = "modules/std/core.sx" },
     .{ .name = "@elementAt", .module = "modules/std/core.sx" },
+    .{ .name = "@inner", .module = "modules/std/core.sx" },
     .{ .name = "@typeEq", .module = "modules/std/core.sx" },
     .{ .name = "@unbox", .module = "modules/std/core.sx" },
     .{ .name = "@is_comptime", .module = "modules/std/core.sx" },
