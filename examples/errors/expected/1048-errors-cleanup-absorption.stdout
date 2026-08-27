@@ -1,6 +1,2 @@
-[error]
-onfail: x=7 (??)
-onfail: caught (catch)
-defer: always
-[ok]
-defer: always
+cleanup: x=7 (??)
+cleanup: caught (catch)

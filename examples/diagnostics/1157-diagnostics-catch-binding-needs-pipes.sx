@@ -1,5 +1,5 @@
 // The catch error binding sits in pipes — `catch |e| {}`; a bare binding
-// is rejected with a fixit. `onfail |e| {}` follows the same rule.
+// is rejected with a fixit.
 
 @import "modules/std.sx";
 

@@ -1,5 +1,4 @@
 classify(-1) = 1
 classify(0)  = 2
 classify(5)  = 10
-cleanup: bad
 done

@@ -6,7 +6,7 @@
 //   - a variable `raise e` must carry a set that is a subset of the
 //     function's set.
 // The positive case lives in `examples/219-raise.sx`. Parse-time rejections
-// (`raise` in expression position / inside `defer` / `onfail`) are covered by
+// (`raise` in expression position / inside `defer`) are covered by
 // the inline parser tests.
 
 @import "modules/std.sx";

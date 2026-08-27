@@ -48,8 +48,6 @@ gen_val :: () -> string {
     return "print(\"insert-gen: {}\\n\", 42);";
 }
 
-// --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
-
 main :: () {
 
     // ========================================================

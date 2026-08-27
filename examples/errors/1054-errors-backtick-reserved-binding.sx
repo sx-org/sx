@@ -1,8 +1,8 @@
-// Backtick raw identifier as the error-tag binding of `catch` and `onfail`. A
-// reserved type-name spelling (`i16`, `u8`) is a value name when backticked, so
-// it is accepted as the tag binding and a later reference resolves to it. A
-// *bare* reserved spelling in the same position is still rejected (see
-// examples/1123), so the backtick escape is the only way to spell these tags.
+// Backtick raw identifier as the error-tag binding of `catch`. A reserved
+// type-name spelling (`i16`) is a value name when backticked, so it is accepted
+// as the tag binding and a later reference resolves to it. A *bare* reserved
+// spelling in the same position is still rejected (see examples/1123), so the
+// backtick escape is the only way to spell such a tag.
 @import "modules/std.sx";
 
 E :: error { Bad; Empty }
@@ -22,18 +22,10 @@ classify :: (n: i32) -> i32 {
     };
 }
 
-// `onfail` tag binding spelled `u8`, referenced in the cleanup body.
-cleanup :: (n: i32) -> !E {
-    onfail |`u8| { if `u8 == .Bad { print("cleanup: bad\n"); } }
-    if n < 0 { raise .Bad; }
-    return;
-}
-
 main :: () -> i32 {
     print("classify(-1) = {}\n", classify(-1));
     print("classify(0)  = {}\n", classify(0));
     print("classify(5)  = {}\n", classify(5));
-    c := cleanup(-1);
     print("done\n");
     return 0;
 }

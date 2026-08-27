@@ -3,7 +3,7 @@
 // capture family is covered, and each `=` below gets a SHAPE-AWARE "cannot assign
 // to immutable capture" message: only the for-loop ELEMENT form suggests the
 // `*x` by-ref write-back, since its container storage exists. Range indexes,
-// match payloads, catch/onfail bindings and pack-element aliases have no storage
+// match payloads, catch bindings and pack-element aliases have no storage
 // behind them, so they get the copy-into-a-`:=`-local advice alone. A
 // function-local `::` const rides the same enforcement with the constant-family
 // message.
@@ -19,11 +19,6 @@ must :: (n: i32) -> !E { if n == 0 { raise .Empty; } return; }
 
 pack_mut :: (..xs: i64) {
     inline for x in xs { x = 999; }          // pack-element alias — immutable
-}
-
-fail_note :: () -> !E {
-    onfail |e| { e = .Bad; }           // onfail binding — immutable
-    raise .Empty;
 }
 
 main :: () -> i32 {
@@ -51,9 +46,6 @@ main :: () -> i32 {
 
     // 4. catch error binding
     must(0) catch |e| { e = .Bad; };
-
-    // 4b. onfail error binding (in fail_note above)
-    fail_note() catch {};
 
     // 5. inline-for pack-element alias (in pack_mut above)
     pack_mut(1, 2, 3);
