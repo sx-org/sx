@@ -4679,13 +4679,13 @@ TAG — never the payload (Go's `switch v := x.(type)` / Odin's
 
 ```sx
 match av {
-    case i64: |v|   { print("int {}\n", v + 1); }      // v: i64 — the typed value
-    case Point: |p| { plot(p); }                       // named types
-    case []u8: |b|  { print("{} bytes\n", b.len); }    // composite types are real tags
-    case ?i64: |o|  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
-    case struct:    { walk_fields(av); }               // categories: tag SETS, no binding
-    case int:       { print("{}\n", xx av); }          // xx width-dispatches over the set
-    else:           { print("{}\n", @typeName(@typeOf(av))); }   // av stays `any`
+    case i64: |v|    { print("int {}\n", v + 1); }     // v: i64 — the typed value
+    case Point: |p|  { plot(p); }                      // named types
+    case []u8: |b|   { print("{} bytes\n", b.len); }   // composite types are real tags
+    case ?i64: |o|   { print("{}\n", o ?? 0); }        // tags are EXACT — no flattening
+    case signed: |n| { print("{}\n", n + 1); }         // categories widen: n is i64
+    case struct: |s| { walk_fields(s); }               // other kinds bind the `any` view
+    else:            { print("{}\n", @typeName(@typeOf(av))); }  // av stays `any`
 }
 ```
 
@@ -4696,10 +4696,11 @@ match av {
   path. Works in value position.
 - **Category arms** (`int`, `signed`, `unsigned`, `float`, `struct`, `enum`,
   `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error`,
-  `closure`, `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
-  read the value through the reflection views, or `xx av` in the
-  `int`/`float` arms (per-tag width dispatch). `string`/`bool`/`void`
-  are single types and take the concrete path, so their arms CAN bind.
+  `closure`, `type`) are tag SETS, and a `|v|` capture binds the reading the
+  whole set shares: `signed`/`unsigned` an `i64` widened by each tag's own
+  signedness, `float` an `f64`, `pointer` a `*void`. Every other category
+  binds the subject's own `any` view, read through the reflection builtins.
+  `string`/`bool`/`void` are single types and take the concrete path.
 - **Arms overlap first-wins, loudly**: a tag belongs to the first arm that
   names it, so a concrete arm must come BEFORE the category that contains
   it (`case i64:` above `case int:`). An arm left with no tags — the
