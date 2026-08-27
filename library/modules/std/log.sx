@@ -1,5 +1,6 @@
 @import "modules/std/core.sx";   // string
 @import "modules/std/fmt.sx";    // concat, build_format
+@import "modules/std/writer.sx"; // StringBuilder
 c :: @import "modules/std/c.sx"; // libc write
 
 // =====================================================================
@@ -17,7 +18,7 @@ log_emit :: (level: string, msg: string) {
     c.write(2, line.ptr, line.len);
 }
 
-warn  :: ($fmt: string, ..$args) { @insert build_format(fmt); @insert "log_emit(\"WARN:  \", result);"; }
-info  :: ($fmt: string, ..$args) { @insert build_format(fmt); @insert "log_emit(\"INFO:  \", result);"; }
-debug :: ($fmt: string, ..$args) { @insert build_format(fmt); @insert "log_emit(\"DEBUG: \", result);"; }
-err   :: ($fmt: string, ..$args) { @insert build_format(fmt); @insert "log_emit(\"ERROR: \", result);"; }
+warn  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert build_format(fmt, "sb"); sb.flush(); log_emit("WARN:  ", sb.finish()); }
+info  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert build_format(fmt, "sb"); sb.flush(); log_emit("INFO:  ", sb.finish()); }
+debug :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert build_format(fmt, "sb"); sb.flush(); log_emit("DEBUG: ", sb.finish()); }
+err   :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert build_format(fmt, "sb"); sb.flush(); log_emit("ERROR: ", sb.finish()); }
