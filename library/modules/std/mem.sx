@@ -54,6 +54,26 @@ alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
     .{ ptr = raw.([*]T), len = count }
 }
 
+// A zeroed `size`-byte string, NUL-terminated one byte past `len`.
+alloc_string :: (size: i64) -> string {
+    raw := context.allocator.alloc_bytes(size + 1);
+    c.memset(raw, 0, size + 1);
+    s : string = ---;
+    s.ptr = raw.([*]u8);
+    s.len = size;
+    s
+}
+
+// A zeroed []T of `count` elements.
+alloc_slice :: ($T: Type, count: i64) -> []T {
+    raw := context.allocator.alloc_bytes(count * size_of(T));
+    c.memset(raw, 0, count * size_of(T));
+    s : []T = ---;
+    s.ptr = raw.([*]T);
+    s.len = count;
+    s
+}
+
 // Persist a callable: give its environment a home in `alloc` and erase the
 // value to the `{fn_ptr, env}` pair a `Closure` slot takes. This is the ONLY
 // place a capturing lambda reaches the heap — a `|…|` literal allocates

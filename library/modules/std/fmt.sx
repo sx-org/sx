@@ -1,30 +1,9 @@
 // Formatting + string helpers: the `*_to_string` family, the `Writer` value
-// walk, the comptime `format` / `print` pair, and the slice/string allocation
-// helpers they build on. Consumers never import this file directly —
-// std.sx re-exports every public name here.
+// walk, and the comptime `format` / `print` pair. Consumers never import this
+// file directly — std.sx re-exports every public name here.
 @import "modules/std/core.sx";
 @import "modules/std/writer.sx";
 c :: @import "modules/std/c.sx";
-
-// --- Slice & string allocation ---
-
-alloc_string :: (size: i64) -> string {
-    raw := context.allocator.alloc_bytes(size + 1);
-    c.memset(raw, 0, size + 1);
-    s : string = ---;
-    s.ptr = raw.([*]u8);
-    s.len = size;
-    s
-}
-
-alloc_slice :: ($T: Type, count: i64) -> []T {
-    raw := context.allocator.alloc_bytes(count * size_of(T));
-    c.memset(raw, 0, count * size_of(T));
-    s : []T = ---;
-    s.ptr = raw.([*]T);
-    s.len = count;
-    s
-}
 
 int_to_string :: (n: i64) -> string {
     if n == 0 { return "0"; }
@@ -33,7 +12,8 @@ int_to_string :: (n: i64) -> string {
     // overflows for i64::MIN (its magnitude is unrepresentable as a
     // positive i64). sx `%` truncates toward zero, so `n % 10` keeps n's
     // sign; take each remainder's absolute value for the digit.
-    tmp := alloc_string(20);
+    digits : [20]u8 = ---;
+    tmp := string{ ptr = *digits[0], len = 20 };
     i := 19;
     v := n;
     while v != 0 {
@@ -56,7 +36,8 @@ uint_to_string :: (n: i64) -> string {
     // next limb; the per-step accumulator stays well within i64
     // (max 9*65536 + 65535), so signed `/` and `%` are exact.
     g := decompose_u16x4(n);
-    tmp := alloc_string(20);
+    digits : [20]u8 = ---;
+    tmp := string{ ptr = *digits[0], len = 20 };
     i := 19;
     while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
         rem := 0;
@@ -85,22 +66,14 @@ float_to_string :: (f: f64) -> string {
     if frac < 0 { frac = 0 - frac; }
     istr := int_to_string(int_part);
     fstr := int_to_string(frac);
-    il := istr.len;
-    fl := fstr.len;
-    prefix := if neg then 1 else 0;
-    total := prefix + il + 1 + 6;
-    buf := alloc_string(total);
-    pos := 0;
-    if neg { buf[0] = '-'; pos = 1; }
-    c.memcpy(*buf[pos], istr.ptr, il);
-    pos = pos + il;
-    buf[pos] = '.';
-    pos += 1;
-    pad := 6 - fl;
-    c.memset(*buf[pos], '0', pad);
-    pos = pos + pad;
-    c.memcpy(*buf[pos], fstr.ptr, fl);
-    buf
+    zeros := "000000";
+    sb := StringBuilder.init();
+    if neg { sb.write("-"); }
+    sb.write(istr);
+    sb.write(".");
+    sb.write(zeros[0 .. 6 - fstr.len]);
+    sb.write(fstr);
+    sb.finish()
 }
 
 hex_group :: (buf: string, offset: i64, val: i64) {
@@ -144,7 +117,8 @@ int_to_hex_string :: (n: i64) -> string {
     if n == 0 { return "0"; }
 
     g := decompose_u16x4(n);
-    buf := alloc_string(16);
+    digits : [16]u8 = ---;
+    buf := string{ ptr = *digits[0], len = 16 };
     hex_group(buf, 0, g[0]);
     hex_group(buf, 4, g[1]);
     hex_group(buf, 8, g[2]);
@@ -160,18 +134,23 @@ int_to_hex_string :: (n: i64) -> string {
 }
 
 concat :: (a: string, b: string) -> string {
-    al := a.len;
-    bl := b.len;
-    buf := alloc_string(al + bl);
-    c.memcpy(buf.ptr, a.ptr, al);
-    c.memcpy(*buf[al], b.ptr, bl);
-    buf
+    sb := StringBuilder.init();
+    sb.reserve(a.len + b.len);
+    sb.write(a);
+    sb.write(b);
+    sb.finish()
 }
 
 substr :: (s: string, start: i64, len: i64) -> string {
-    buf := alloc_string(len);
-    c.memcpy(buf.ptr, *s[start], len);
-    buf
+    sb := StringBuilder.init();
+    sb.reserve(len);
+    sb.write(s[start .. start + len]);
+    sb.finish()
+}
+
+last :: ufcs (s: []$T) -> ?$T {
+    if s.len == 0 { return null; }
+    s[s.len - 1]
 }
 
 // ── cstring: the C-boundary string ────────────────────────────────────
@@ -199,9 +178,11 @@ from_cstring :: (c: cstring) -> string {
 
 // An owned, terminated copy of `s` as a `cstring`.
 to_cstring :: (s: string) -> cstring {
-    z := alloc_string(s.len);
-    c.memcpy(z.ptr, s.ptr, s.len);
-    z.ptr.(cstring)
+    sb := StringBuilder.init();
+    sb.reserve(s.len + 1);
+    sb.write(s);
+    sb.write("\0");
+    sb.finish().ptr.(cstring)
 }
 
 // Join path components with the POSIX separator ('/'). Skips empty
@@ -214,8 +195,7 @@ path_join :: (..parts: []string) -> string {
     while i < parts.len {
         p := parts[i];
         if p.len > 0 {
-            if result.len > 0 {
-                tail := result[result.len - 1];
+            if tail := result.([]u8).last() {
                 head := p[0];
                 if tail == '/' {
                     if head == '/' {
