@@ -4966,7 +4966,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // AST nodes (`i64`, `*u8`, `?T`, `[3]f64`, etc.) OR resolve to
     // a static TypeId at lower time (`@typeOf(x)` for any
     // statically-typed `x`), resolve each and emit a `const_bool`.
-    // Same semantic as `type_eq(A, B)` but using the standard `==`
+    // Same semantic as `@typeEq(A, B)` but using the standard `==`
     // operator — the user's intuition. Without the fold, both
     // sides lower as `const_type` undef-i64 and the runtime icmp
     // returns garbage.

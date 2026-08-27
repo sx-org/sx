@@ -595,7 +595,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     }
                     return false;
                 }
-                if (std.mem.eql(u8, cname, "type_eq") and c.args.len >= 2) {
+                if (std.mem.eql(u8, cname, "@typeEq") and c.args.len >= 2) {
                     if (!self.isStaticTypeArg(c.args[0]) or !self.isStaticTypeArg(c.args[1])) return null;
                     const a = self.resolveTypeArg(c.args[0]);
                     const b = self.resolveTypeArg(c.args[1]);

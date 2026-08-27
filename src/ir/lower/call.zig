@@ -2804,6 +2804,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3115,6 +3117,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3406,6 +3410,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -3722,12 +3728,12 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 
 /// Is `name` dispatched by `tryLowerReflectionCall`? Either a registered
 /// reflection intrinsic, or one of the bare KEYWORDS the compiler recognizes with
-/// no declaration at all (`type_eq`, …). The two are listed apart
+/// no declaration at all (`__interp_print_frames`, …). The two are listed apart
 /// because only the first group answers to the registry; conflating them makes a
 /// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "type_eq", "__interp_print_frames", "__trace_resolve_frame",
+        "__interp_print_frames", "__trace_resolve_frame",
     };
     for (keywords) |k| {
         if (std.mem.eql(u8, name, k)) return true;
@@ -3757,6 +3763,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@len",
         .@"@field",
         .@"@elementAt",
+        .@"@typeEq",
+        .@"@unbox",
         .vector_lanes,
         .__sx_variant_tag_width,
         .__sx_slice_len_info,
@@ -4006,6 +4014,29 @@ fn boxedFatMerge(
     return self.builder.load(slot, .i64);
 }
 
+/// The `any` an intrinsic reads its receiver through: the argument itself when
+/// it is already boxed, otherwise a view over its storage.
+fn boxedReceiver(self: *Lowering, arg: *const Node) Ref {
+    const ty = self.inferExprType(arg);
+    const val = self.lowerExpr(arg);
+    return if (ty == .any) val else self.boxAnyOf(val, ty, arg);
+}
+
+/// `@unbox(v, $T)` — the typed load of `v`'s boxed storage as `T`. No tag
+/// check: `T` names what the storage holds, and the load is the operation.
+fn lowerUnboxIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@unbox takes 2 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const target = if (self.isStaticTypeArg(c.args[1])) self.resolveTypeArg(c.args[1]) else TypeId.unresolved;
+    if (target == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@unbox expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    return self.builder.emit(.{ .unbox_any = .{ .operand = boxedReceiver(self, c.args[0]) } }, target);
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4015,11 +4046,7 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
         });
         return sentinel;
     }
-    const recv = blk: {
-        const recv_ty = self.inferExprType(c.args[0]);
-        const val = self.lowerExpr(c.args[0]);
-        break :blk if (recv_ty == .any) val else self.boxAnyOf(val, recv_ty, c.args[0]);
-    };
+    const recv = boxedReceiver(self, c.args[0]);
     if (id == .@"@len") return boxedFatMerge(self, recv, boxedFatLen, boxedTableCount);
 
     // The index lowers under its declared `i64` parameter, so an ambient `any`
@@ -4220,11 +4247,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constString(self.module.types.internString(""));
         return self.builder.callBuiltin(.type_name, args_owned, .string);
     }
-    if (std.mem.eql(u8, name, "type_eq")) {
-        // type_eq(T1, T2) → const_bool — comptime TypeId equality.
+    if (std.mem.eql(u8, name, "@typeEq")) {
+        // @typeEq(T1, T2) → const_bool — comptime TypeId equality.
         // TypeIds are interned per structural shape so equality on
-        // them matches the user's intuition: `type_eq(i64, i64)` is
-        // true, `type_eq(*i64, *i64)` is true, distinct shapes are
+        // them matches the user's intuition: `@typeEq(i64, i64)` is
+        // true, `@typeEq(*i64, *i64)` is true, distinct shapes are
         // false. Pack-indexed types (`$args[0]`) resolve through
         // `resolveTypeArg` → `resolveTypeWithBindings`.
         if (c.args.len < 2) return self.builder.constBool(false);
@@ -4353,6 +4380,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (intrinsics.findByName(name)) |id| switch (id) {
         .@"@len", .@"@field", .@"@elementAt" => return lowerBoxedViewIntrinsic(self, id, c),
+        .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         else => {},
     };
     if (std.mem.eql(u8, name, "struct_field_value") or std.mem.eql(u8, name, "variant_payload")) {
@@ -4745,7 +4773,7 @@ pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {
 }
 
 /// Guard for the type-introspection builtins (`size_of`, `align_of`,
-/// `field_count`, `type_name`, `type_eq`, `type_is_unsigned`,
+/// `field_count`, `@typeName`, `@typeEq`, `type_is_unsigned`,
 /// `is_flags`): every argument must denote a type. A value argument is
 /// rejected with a diagnostic rather than silently reinterpreted as a
 /// TypeId index or sized via its `typeof`.
@@ -4809,7 +4837,7 @@ pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.S
 }
 
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
-    const arity: usize = if (std.mem.eql(u8, name, "type_eq"))
+    const arity: usize = if (std.mem.eql(u8, name, "@typeEq"))
         2
     else if (std.mem.eql(u8, name, "size_of") or
         std.mem.eql(u8, name, "align_of") or
@@ -4859,7 +4887,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
     if (std.mem.eql(u8, name, "@typeName"))
         return self.builder.constString(self.module.types.internString(""));
-    if (std.mem.eql(u8, name, "type_eq") or std.mem.eql(u8, name, "is_flags"))
+    if (std.mem.eql(u8, name, "@typeEq") or std.mem.eql(u8, name, "is_flags"))
         return self.builder.constBool(false);
     return self.builder.constInt(0, .i64);
 }

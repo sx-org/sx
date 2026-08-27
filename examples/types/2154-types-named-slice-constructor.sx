@@ -57,8 +57,8 @@ COMPTIME_SUM :: @run total(@Array(3, u8).[7, 8, 9]);
 @run boxed();
 
 main :: () -> i32 {
-    print("same={} name={}\n", type_eq(Named, Punct), @typeName(Named));
-    print("distinct={} bytes={}\n", type_eq(Bytes, []u8), @typeName(Bytes));
+    print("same={} name={}\n", @typeEq(Named, Punct), @typeName(Named));
+    print("distinct={} bytes={}\n", @typeEq(Bytes, []u8), @typeName(Bytes));
 
     a : [4]u8 = ---;
     a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;

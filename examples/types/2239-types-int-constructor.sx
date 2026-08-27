@@ -14,13 +14,13 @@ widen :: (v: @int(12, .signed)) -> i32 { v }
 
 main :: () -> i32 {
     print("alias={} spaced={} const={}\n",
-        type_eq(i8, @int(8, .signed)),
-        type_eq(u64, @int (64, .unsigned)),
-        type_eq(MyInt, @int(W, .signed)));
+        @typeEq(i8, @int(8, .signed)),
+        @typeEq(u64, @int (64, .unsigned)),
+        @typeEq(MyInt, @int(W, .signed)));
 
     x : @int(3, .signed) = -4;
     y : Flag = 1;
-    print("x={} y={} flag_is_bool={}\n", x, y, type_eq(Flag, bool));
+    print("x={} y={} flag_is_bool={}\n", x, y, @typeEq(Flag, bool));
 
     h : Holder = ---;
     h.small = 31;
@@ -30,7 +30,7 @@ main :: () -> i32 {
     print("sizes={} {}\n", size_of(@int(64, .unsigned)), size_of(MyInt));
 
     f := || -> @int(8, .signed) { 0 };
-    print("lambda={}\n", type_eq(@typeOf(f()), i8));
+    print("lambda={}\n", @typeEq(@typeOf(f()), i8));
 
     0
 }

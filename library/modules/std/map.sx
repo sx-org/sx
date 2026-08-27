@@ -89,7 +89,7 @@ map_hash_key :: (key: $K) -> u64 {
 // never lower on an enum/scalar); struct/tuple `T` recurses per field. Enums,
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
 map_hash_into :: (v: $T, h: u64) -> u64 {
-    inline if type_eq(T, string) {
+    inline if @typeEq(T, string) {
         sv : *string = (*v).(*string);
         return fnv1a_fold(h, sv.ptr, sv.len);
     }

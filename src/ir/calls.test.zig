@@ -79,7 +79,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         // `resolveBuiltin` table) — each must keep its own result tag so a
         // pack-fn caller boxes the value with the right type.
         .{ .name = "@typeName", .want = .string },
-        .{ .name = "type_eq", .want = .bool },
+        .{ .name = "@typeEq", .want = .bool },
         .{ .name = "struct_field_count", .want = .i64 },
         .{ .name = "variant_index", .want = .i64 },
         .{ .name = "struct_field_name", .want = .string },

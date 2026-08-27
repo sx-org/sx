@@ -2563,7 +2563,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 };
             },
             .rt_type_eq => {
-                if (bi.args.len < 2) return self.failMsg("comptime type_eq: expected two arguments");
+                if (bi.args.len < 2) return self.failMsg("comptime @typeEq: expected two arguments");
                 const ta = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 const tb = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[1]), frame.get(bi.args[1].index()));
                 return @as(Reg, @intFromBool(ta == tb));

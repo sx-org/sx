@@ -202,11 +202,14 @@ pub const CallResolver = struct {
                 };
                 return .{ .kind = .builtin, .return_type = rt, .target = .{ .builtin = bid } };
             }
-            // `@tag(x)` types as the argument's discriminant — a shape the
-            // registry's fixed `ret` cannot carry.
+            // `@tag(x)` types as the argument's discriminant and `@unbox(v, T)`
+            // as `T` — shapes the registry's fixed `ret` cannot carry.
             if (std.mem.eql(u8, bare_name, "@tag") and c.args.len == 1) {
                 const src = self.l.inferExprType(c.args[0]);
                 return refl(bare_name, self.l.tagTypeFor(src) orelse .unresolved);
+            }
+            if (std.mem.eql(u8, bare_name, "@unbox") and c.args.len == 2) {
+                return refl(bare_name, self.l.resolveTypeArg(c.args[1]));
             }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs
@@ -222,7 +225,6 @@ pub const CallResolver = struct {
             }
             // Keywords: bare names the compiler recognizes with no declaration, so
             // the registry has nothing to say about them.
-            if (std.mem.eql(u8, bare_name, "type_eq")) return refl(bare_name, .bool);
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);

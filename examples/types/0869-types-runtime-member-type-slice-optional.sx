@@ -38,7 +38,7 @@ main :: () {
     ot : Type = @typeOf(ov);
     strt : Type = @typeOf(strv);
     print("parity: {} {} {}\n",
-        type_eq(struct_field_type(st, 0), struct_field_type([]i64, 0)),
-        type_eq(struct_field_type(ot, 0), struct_field_type(?u8, 0)),
-        type_eq(struct_field_type(strt, 0), struct_field_type(string, 0)));
+        @typeEq(struct_field_type(st, 0), struct_field_type([]i64, 0)),
+        @typeEq(struct_field_type(ot, 0), struct_field_type(?u8, 0)),
+        @typeEq(struct_field_type(strt, 0), struct_field_type(string, 0)));
 }

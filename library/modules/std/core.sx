@@ -26,7 +26,7 @@ align_of :: ($T: Type) -> i64 intrinsic;
 struct_field_count :: ($T: Type) -> i64 intrinsic;
 struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
-// folds at LOWER time, so it composes inside `type_eq` / `@typeName` / any
+// folds at LOWER time, so it composes inside `@typeEq` / `@typeName` / any
 // type-arg slot.
 struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
 // The i-th field's byte offset within the struct (tuples: element offset).
@@ -90,6 +90,15 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 @len :: (v: any) -> i64;
 @field :: (v: any, idx: i64) -> any;
 @elementAt :: (v: any, idx: i64) -> any;
+
+// ── Type identity, and the typed read of boxed storage ─────────────────────
+// `@typeEq` is TypeId identity: types intern per structural shape, so it
+// answers on shape, and either side may be a runtime `Type`. `@unbox` reads an
+// `any`'s storage AS `T` — an unchecked typed load through the view, with no
+// tag check, so `T` must be the boxed type and a wider one overreads. The
+// checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
+@typeEq :: ($A: Type, $B: Type) -> bool;
+@unbox :: (v: any, $T: Type) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, type_id}` layout is private; these two are the stable contract
