@@ -56,7 +56,6 @@ impl Writer for StringBuilder {
     }
 }
 
-// Every write reaches the descriptor, so `flush` keeps the empty default.
 FdWriter :: struct {
     fd: i32;
 
