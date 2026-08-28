@@ -3684,8 +3684,12 @@ pub fn emitLoopExitDefers(self: *Lowering) void {
 
 /// Run a `defer` cleanup body for its side effects (void context).
 /// A braced body lowers as statements (NOT as a value): nothing demands a
-/// cleanup body's tail, so its value is discarded.
+/// cleanup body's tail, so its value is discarded. The exit path being lowered
+/// may itself stand in value position, so the ambient demand is cleared.
 pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
+    const saved_fbv = self.force_block_value;
+    self.force_block_value = false;
+    defer self.force_block_value = saved_fbv;
     if (body.data == .block) self.lowerBlock(body) else _ = self.lowerExpr(body);
 }
 
