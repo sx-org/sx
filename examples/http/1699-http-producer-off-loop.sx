@@ -82,12 +82,11 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         // this worker is still mid-handler — before the stream channel is
         // registered (the close-deadlock window).
         if req.path == "/slowbig" { usleep(300000); }
-        st : *StreamState = xx context.allocator.alloc_bytes(size_of(StreamState));
-        st.* = StreamState{
+        st := context.allocator.make(StreamState{
             seed = checksum(req.body),
             total = if req.path == "/stream" then STREAM_TOTAL else BIG_TOTAL,
             obs = obs,
-        };
+        });
         resp.stream(producer, xx st);
         return;
     }

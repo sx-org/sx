@@ -107,13 +107,11 @@ frame :: () {
 main :: () -> i32 {
     inline if OS != .ios { return 0; }
 
-    plat : *UIKitPlatform = xx context.allocator.alloc_bytes(size_of(UIKitPlatform));
-    plat.gpu_mode = .metal;
+    plat := context.allocator.make(UIKitPlatform{ gpu_mode = .metal });
     if !plat.init("Metal Clear", 0, 0) { return 1; }
     g_plat = plat;
 
-    gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
-    g_gpu = gpu;
+    g_gpu = context.allocator.make(MetalGPU{});
 
     uikit_app_run(plat, frame);
     plat.shutdown();

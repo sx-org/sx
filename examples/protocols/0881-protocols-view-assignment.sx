@@ -24,8 +24,7 @@ main :: () {
     v1 : *P = c;                       // lvalue decl view
     print("lvalue view   = {}\n", v1.n());
 
-    p : *C = xx context.allocator.alloc_bytes(size_of(C));
-    p.v = 7;
+    p := context.allocator.make(C{ v = 7 });
     v2 : *P = p;                       // pointer decl view
     print("ptr view      = {}\n", v2.n());
 
