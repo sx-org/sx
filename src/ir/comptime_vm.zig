@@ -1867,10 +1867,9 @@ pub const Vm = struct {
         }
         // The C function returns a single register word. For a plain word return
         // that word IS the result. For an OPTIONAL whose child is itself a single
-        // word (e.g. `getenv() -> ?cstring`, a `char*` the sx side treats as a
-        // nullable handle), the C returns the bare payload and we wrap it into the
-        // `{payload@0, has@sizeof(child)}` aggregate below (present iff non-null) —
-        // mirroring emit_llvm's wrapping of an extern `char*`→`?cstring` return.
+        // word (e.g. `-> ?i32`), the C returns the bare payload and we wrap it into
+        // the `{payload@0, has@sizeof(child)}` aggregate below (present iff
+        // non-null) — mirroring emit_llvm's wrapping of such an extern return.
         const opt_child: ?TypeId = if (!ret.isBuiltin() and table.get(ret) == .optional) blk: {
             const ch = table.get(ret).optional.child;
             // An optional with a SENTINEL (pointer) child is itself a word and is
@@ -3115,7 +3114,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             // A tagged union is a `{ tag@0, [N x i8] payload@tag_size }` value held
             // by-address (like a struct) — same as the `enum_init` write path.
             .@"struct", .array, .slice, .tagged_union, .failable => .aggregate,
-            // `?T`: a pointer child is null-as-0 (word); else `{T, i1}` by-address.
+            // `?T`: a one-word sentinel child is null-as-0 (word); else `{T, i1}` by-address.
             .optional => |o| if (optChildIsPtr(table, o.child)) .word else .aggregate,
             else => .unsupported,
         };
@@ -3157,14 +3156,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         };
     }
 
-    /// A `?T` whose child is a pointer/many-pointer/function is represented as a
-    /// bare pointer (null == 0), not a `{T, i1}` aggregate — mirrors `typeSizeBytes`.
+    /// A sentinel `?T` that fits ONE pointer word rides as a bare pointer
+    /// (null == 0), not a `{T, i1}` aggregate; a wider one stays by-address.
     fn optChildIsPtr(table: *const types.TypeTable, child: TypeId) bool {
-        if (child.isBuiltin()) return false;
-        return switch (table.get(child)) {
-            .pointer, .many_pointer, .function => true,
-            else => false,
-        };
+        return table.optionalIsSentinel(child) and table.typeSizeBytes(child) == table.pointer_size;
     }
 
     /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
