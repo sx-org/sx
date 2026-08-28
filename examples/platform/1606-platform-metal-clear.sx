@@ -78,8 +78,11 @@ frame :: () {
     // (the layer is created during -[SxAppDelegate didFinishLaunching:]
     // which fires AFTER our main() returns into UIApplicationMain).
     if g_gpu.layer == null {
-        if g_plat.gl_layer == null { return; }
-        if !g_gpu.init(g_plat.gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
+        if gl_layer := g_plat.gl_layer {
+            if !g_gpu.init(gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
+        } else {
+            return;
+        }
     }
 
     // Compile shader + upload vertex buffer once.
@@ -90,7 +93,7 @@ frame :: () {
     if g_vbuf == 0 {
         g_vbuf = g_gpu.create_buffer(72);  // 3 verts × 24 bytes
         if g_vbuf == 0 { return; }
-        g_gpu.update_buffer(g_vbuf, xx *TRI_VERTS, 72);
+        g_gpu.update_buffer(g_vbuf, *TRI_VERTS, 72);
     }
 
     bg : ClearColor = .{ r = 0.07, g = 0.10, b = 0.18, a = 1.0 };

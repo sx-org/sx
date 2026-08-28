@@ -40,7 +40,7 @@ configure :: () {
 //   Obj-C: -(BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts
 //   Type encoding: "c@:@@"  -- BOOL (signed char), self, _cmd, id, id
 did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
-    NSLog(xx "[sx-device-probe] launched\n");
+    NSLog(nsstring("[sx-device-probe] launched\n"));
     return 1; // YES
 }
 
@@ -54,5 +54,5 @@ main :: () -> i32 {
     objc_registerClassPair(SxAppDelegate);
 
     // UIApplicationMain blocks driving iOS's run loop.
-    return UIApplicationMain(0, xx 0, xx 0, xx "SxAppDelegate");
+    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
 }

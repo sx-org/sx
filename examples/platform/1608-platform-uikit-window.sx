@@ -55,12 +55,12 @@ scene_will_connect :: (self: *void, _cmd: *void, scene: *void, session: *void, o
     // UIKit invokes this callback only after the UIWindowScene exists, unlike
     // application:didFinishLaunchingWithOptions: where connectedScenes is still
     // empty on current iOS releases.
-    if scene == xx 0 { NSLog(xx "[sx] scene NULL\n"); return; }
-    NSLog(xx "[sx] scene: ok\n");
+    if scene == xx 0 { NSLog(nsstring("[sx] scene NULL\n")); return; }
+    NSLog(nsstring("[sx] scene: ok\n"));
 
     win_raw := msg_o(UIWindow, sel_alloc);
     g_window = msg_ooo(win_raw, sel_init_with_scene, scene);
-    NSLog(xx "[sx] window: ok\n");
+    NSLog(nsstring("[sx] window: ok\n"));
 
     vc_raw := msg_o(UIViewController, sel_alloc);
     vc     := msg_o(vc_raw, sel_init);
@@ -72,7 +72,7 @@ scene_will_connect :: (self: *void, _cmd: *void, scene: *void, session: *void, o
     msg_oo(g_window, sel_set_bg, blue);
 
     msg_v(g_window, sel_make_key_visible);
-    NSLog(xx "[sx] makeKeyAndVisible done\n");
+    NSLog(nsstring("[sx] makeKeyAndVisible done\n"));
 }
 
 did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
@@ -80,7 +80,7 @@ did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u
     _ := _cmd;
     _ := app;
     _ := opts;
-    NSLog(xx "[sx] application:didFinishLaunchingWithOptions: called\n");
+    NSLog(nsstring("[sx] application:didFinishLaunchingWithOptions: called\n"));
     return 1;
 }
 
@@ -111,5 +111,5 @@ main :: () -> i32 {
         xx window_setter, "v@:@".ptr);
     objc_registerClassPair(SxSceneDelegate);
 
-    return UIApplicationMain(0, xx 0, xx 0, xx "SxAppDelegate");
+    return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));
 }

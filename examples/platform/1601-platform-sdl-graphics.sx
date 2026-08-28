@@ -196,7 +196,7 @@ main :: () {
 
         // Compute rotation angle from time
         ticks := SDL_GetTicks();
-        ms : f32 = xx ticks;
+        ms : f32 = ticks;
         angle := ms * 0.001;
         
         // Build matrices
@@ -208,7 +208,7 @@ main :: () {
         vm    := mat4_multiply(view, model);
         mvp   := mat4_multiply(proj, vm);
 
-        glUniformMatrix4fv(mvp_loc, 1, 0, mvp.data);
+        glUniformMatrix4fv(mvp_loc, 1, 0, *mvp.data[0]);
 
         glClearColor(0.1, 0.1, 0.15, 1.0);
         glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);

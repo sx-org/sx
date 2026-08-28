@@ -1,0 +1,1 @@
+{ "target": "ios", "compile_only": true, "host_os": "macos" }
