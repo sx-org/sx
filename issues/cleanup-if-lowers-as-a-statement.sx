@@ -1,0 +1,24 @@
+@import "modules/std.sx";
+
+E :: error { Bad }
+
+step :: (n: i64) -> (i64, !E) {
+    if n < 0 { raise .Bad; }
+    n
+}
+
+run :: (n: i64) -> (i64, !E) {
+    done := false;
+    defer if !done print("cleanup {}\n", n);
+    v := try step(n);
+    done = true;
+    v
+}
+
+main :: () -> i32 {
+    a := run(-1) catch |e| { -1 };
+    print("failed: {}\n", a);
+    b := run(7) catch |e| { -1 };
+    print("ok: {}\n", b);
+    return 0;
+}
