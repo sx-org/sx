@@ -1702,12 +1702,7 @@ pub const TypeTable = struct {
             .pointer, .many_pointer, .function => 8,
             .closure => 16, // {fn_ptr, env}
             .optional => |opt| blk: {
-                // Sentinel-shaped optionals (pointer/closure/protocol) cost
-                // no extra storage — null reuses the payload's null state.
-                const child_info = self.get(opt.child);
-                if (child_info == .pointer or child_info == .many_pointer or child_info == .function or child_info == .cstring) break :blk 8;
-                if (child_info == .closure) break :blk 16;
-                if (child_info == .@"struct" and child_info.@"struct".is_protocol) break :blk self.sizeOf(opt.child);
+                if (self.optionalIsSentinel(opt.child)) break :blk self.sizeOf(opt.child);
                 // Discriminated form: payload + has_value flag (8-aligned).
                 break :blk self.sizeOf(opt.child) + 8;
             },
@@ -1807,13 +1802,7 @@ pub const TypeTable = struct {
             },
             .closure => 2 * ptr_size, // {fn_ptr, env_ptr}
             .optional => |o| blk: {
-                const child_info = self.get(o.child);
-                if (child_info == .pointer or child_info == .many_pointer or child_info == .function)
-                    break :blk ptr_size;
-                if (child_info == .closure)
-                    break :blk 2 * ptr_size;
-                if (child_info == .@"struct" and child_info.@"struct".is_protocol)
-                    break :blk self.typeSizeBytes(o.child);
+                if (self.optionalIsSentinel(o.child)) break :blk self.typeSizeBytes(o.child);
                 const cs = self.typeSizeBytes(o.child);
                 const ca = self.typeAlignBytes(o.child);
                 // { T, i1 } — i1 goes right after T, then pad to struct alignment

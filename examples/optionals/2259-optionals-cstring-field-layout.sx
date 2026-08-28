@@ -1,0 +1,37 @@
+// A `?cstring` is one pointer word — null IS the pointer's null state — so a
+// struct field costs no flag byte, and the same presence test answers alike
+// at runtime and in the comptime VM.
+
+@import "modules/std.sx";
+
+S :: struct { a: ?cstring; b: i64; }
+
+GPU :: interface {
+  ping :: (self: *Self) -> i64;
+}
+
+Impl :: struct {}
+impl GPU for Impl {
+  ping :: (self: *Impl) -> i64 { 42 }
+}
+
+present :: (c: ?cstring) -> bool { return c != null; }
+
+protocol_present :: () -> bool {
+    impl := Impl{};
+    g : ?GPU = impl.(GPU);
+    return g != null;
+}
+
+COMPTIME_CSTRING  :: @run present("hi");
+COMPTIME_PROTOCOL :: @run protocol_present();
+
+main :: () -> i32 {
+    print("{}\n", size_of(S));
+    with    := S{ a = "hi", b = 7 };
+    without := S{ a = null, b = 9 };
+    print("{} {}\n", with.b, without.b);
+    print("{} {}\n", present("hi"), COMPTIME_CSTRING);
+    print("{}\n", COMPTIME_PROTOCOL);
+    return 0;
+}
