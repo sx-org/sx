@@ -8,9 +8,6 @@
 //     msg_fn : Msg = objc_msgSend.(Msg);
 //     result := msg_fn(receiver, selector, c_str);
 
-// std is required for real: the `impl Into(*NSString) for string` bridge
-// below needs `Into` nameable in THIS module's scope — an impl head whose
-// protocol does not resolve is a compile error.
 @import "modules/std.sx";
 
 // ─── Obj-C primitive type aliases ───────────────────────────────────────
@@ -111,26 +108,21 @@ NSObject :: @ObjcClass("NSObject") extern {
 NSUTF8StringEncoding :: 4;
 
 // Foundation's immutable string. `UTF8String` views the bytes as a C string
-// whose lifetime is tied to the NSString (don't free it). The `Into` impl
-// lets any `string` flow into a `*NSString` slot via Into, e.g.
-// `dict.objectForKey("SomeKey".(*NSString))`.
+// whose lifetime is tied to the NSString (don't free it). `nsstring` below is
+// how a `string` reaches a `*NSString` slot.
 NSString :: @ObjcClass("NSString", extends = NSObject) extern {
     // Narrows the inherited `NSObject.alloc` return so an `initWith…` chained
     // onto it dispatches against NSString.
     alloc      :: () -> *NSString;
     UTF8String :: (self: *Self) -> [*]u8;
     initWithBytes_length_encoding :: (self: *Self, bytes: [*]u8, length: usize, encoding: usize) -> *NSString;
-    initWithBytesNoCopy_length_encoding_freeWhenDone :: (self: *Self, bytes: [*]u8, length: usize, encoding: usize, free: BOOL) -> *NSString;
 }
 
-// Copies exactly `self.len` bytes into an autoreleased NSString; `self` need
-// not be NUL-terminated.
-impl Into(*NSString) for string {
-    convert :: (self: string, alloc: Allocator = context.allocator) -> *NSString {
-        _ = alloc;
-        obj := NSString.alloc().initWithBytes_length_encoding(self.ptr, self.len.(usize), NSUTF8StringEncoding);
-        return obj.autorelease();
-    }
+// Copies exactly `s.len` bytes into an autoreleased NSString; `s` need not be
+// NUL-terminated.
+nsstring :: (s: string) -> *NSString {
+    obj := NSString.alloc().initWithBytes_length_encoding(s.ptr, s.len.(usize), NSUTF8StringEncoding);
+    obj.autorelease()
 }
 
 // ─── Autoreleasepool ─────────────────────────────────────────────────────

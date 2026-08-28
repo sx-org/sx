@@ -297,10 +297,10 @@ impl Platform for UIKitPlatform {
         self.frame_closure = frame_fn;
         self.has_frame_closure = true;
         if self.delegate_class_name.len == 0 {
-            NSLog("[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n".(*NSString));
+            NSLog(nsstring("[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n"));
             return;
         }
-        UIApplicationMain(0, (0).(*void), (0).(*NSString), self.delegate_class_name.(*NSString));
+        UIApplicationMain(0, (0).(*void), (0).(*NSString), nsstring(self.delegate_class_name));
     }
 
     poll_events :: (self: *UIKitPlatform) -> []PlatformEvent {
@@ -434,7 +434,7 @@ impl Platform for UIKitPlatform {
 
         status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
         if status != GL_FRAMEBUFFER_COMPLETE {
-            NSLog("[sx] framebuffer incomplete after renderbuffer setup\n".(*NSString));
+            NSLog(nsstring("[sx] framebuffer incomplete after renderbuffer setup\n"));
         }
     }
 
@@ -481,19 +481,19 @@ impl Platform for UIKitPlatform {
         user_info := notification.userInfo();
         if user_info == null { return; }
 
-        end_value_raw := user_info.objectForKey("UIKeyboardFrameEndUserInfoKey".(*NSString));
+        end_value_raw := user_info.objectForKey(nsstring("UIKeyboardFrameEndUserInfoKey"));
         if end_value_raw == null { return; }
         end_value : *NSValue = end_value_raw.(*NSValue);
         end_rect := end_value.CGRectValue();
 
-        dur_value_raw := user_info.objectForKey("UIKeyboardAnimationDurationUserInfoKey".(*NSString));
+        dur_value_raw := user_info.objectForKey(nsstring("UIKeyboardAnimationDurationUserInfoKey"));
         anim_dur : f64 = 0.0;
         if dur_value_raw != null {
             dur_value : *NSNumber = dur_value_raw.(*NSNumber);
             anim_dur = dur_value.doubleValue();
         }
 
-        curve_value_raw := user_info.objectForKey("UIKeyboardAnimationCurveUserInfoKey".(*NSString));
+        curve_value_raw := user_info.objectForKey(nsstring("UIKeyboardAnimationCurveUserInfoKey"));
         curve_int : u64 = 0;
         if curve_value_raw != null {
             curve_value : *NSNumber = curve_value_raw.(*NSNumber);
@@ -607,9 +607,9 @@ impl Platform for UIKitPlatform {
         link := CADisplayLink.displayLinkWithTarget_selector(gl_view, sel_tick);
         self.display_link = link;
         runloop := NSRunLoop.currentRunLoop();
-        link.addToRunLoop_forMode(runloop, "kCFRunLoopDefaultMode".(*NSString));
+        link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopDefaultMode"));
 
-        NSLog("[sx] UIKitPlatform booted\n".(*NSString));
+        NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
 
     // CADisplayLink callback (vsync-paced). Drives keyboard-inset

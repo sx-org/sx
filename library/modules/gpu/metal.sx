@@ -558,16 +558,16 @@ impl GPU for MetalGPU {
         if self.device == null { return 0; }
 
         err : *void = null;
-        library := self.device.newLibraryWithSource_options_error(vsrc.(*NSString), null, *err);
+        library := self.device.newLibraryWithSource_options_error(nsstring(vsrc), null, *err);
         if library == null {
-            NSLog("[metal] MSL compile failed\n".(*NSString));
+            NSLog(nsstring("[metal] MSL compile failed\n"));
             return 0;
         }
 
-        vfn := library.newFunctionWithName("vmain".(*NSString));
-        ffn := library.newFunctionWithName("fmain".(*NSString));
-        if vfn == null { NSLog("[metal] missing vmain in MSL\n".(*NSString)); return 0; }
-        if ffn == null { NSLog("[metal] missing fmain in MSL\n".(*NSString)); return 0; }
+        vfn := library.newFunctionWithName(nsstring("vmain"));
+        ffn := library.newFunctionWithName(nsstring("fmain"));
+        if vfn == null { NSLog(nsstring("[metal] missing vmain in MSL\n")); return 0; }
+        if ffn == null { NSLog(nsstring("[metal] missing fmain in MSL\n")); return 0; }
 
         desc := MTLRenderPipelineDescriptor.alloc().init();
         desc.setVertexFunction(vfn);
@@ -587,7 +587,7 @@ impl GPU for MetalGPU {
         err2 : *void = null;
         state := self.device.newRenderPipelineStateWithDescriptor_error(desc, *err2);
         if state == null {
-            NSLog("[metal] pipeline state creation failed\n".(*NSString));
+            NSLog(nsstring("[metal] pipeline state creation failed\n"));
             return 0;
         }
 

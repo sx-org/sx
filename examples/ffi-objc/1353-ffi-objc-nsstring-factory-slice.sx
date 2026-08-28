@@ -1,6 +1,6 @@
-// `impl Into(*NSString) for string` is total over `string`: it copies exactly
-// `self.len` bytes, so a slice of a larger buffer — which has no NUL at
-// `len` — converts to just its own bytes.
+// `nsstring` is total over `string`: it copies exactly `s.len` bytes, so a
+// slice of a larger buffer — which has no NUL at `len` — converts to just its
+// own bytes.
 @import "modules/std.sx";
 @import "modules/build.sx";
 @import "modules/ffi/objc.sx";
@@ -25,10 +25,10 @@ main :: () -> i32 {
     inline if OS == .macos {
         autoreleasepool(|| {
             src := "hello world";
-            show("sliced", xx src[0..5]);
-            show("literal", xx "hello world");
-            show("empty", xx "");
-            show("tail", xx src[6..11]);
+            show("sliced", nsstring(src[0..5]));
+            show("literal", nsstring("hello world"));
+            show("empty", nsstring(""));
+            show("tail", nsstring(src[6..11]));
         });
     }
     inline if OS != .macos {
