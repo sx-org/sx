@@ -1,0 +1,18 @@
+// An Obj-C method argument passes the same coercion gate as any other call
+// argument, in instance and class dispatch alike: a `string` is a `{ptr,len}`
+// pair, and an object-pointer slot that took one would hand Foundation the
+// literal's own bytes as an address.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+
+SxProbeCoerce :: @ObjcClass("SxProbeCoerce", extends = NSObject) extern {
+    setName        :: (self: *Self, name: *NSString);
+    setDefaultName :: (name: *NSString);
+}
+
+main :: () {
+    probe : *SxProbeCoerce = null;
+    probe.setName("a string");
+    SxProbeCoerce.setDefaultName("a string");
+}

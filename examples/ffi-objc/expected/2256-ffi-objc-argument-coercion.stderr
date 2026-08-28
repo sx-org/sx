@@ -1,0 +1,11 @@
+error: cannot coerce a value of type 'string' to '*NSString': no implicit conversion applies
+  --> examples/ffi-objc/2256-ffi-objc-argument-coercion.sx:16:5
+   |
+16 |     probe.setName("a string");
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'string' to '*NSString': no implicit conversion applies
+  --> examples/ffi-objc/2256-ffi-objc-argument-coercion.sx:17:5
+   |
+17 |     SxProbeCoerce.setDefaultName("a string");
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

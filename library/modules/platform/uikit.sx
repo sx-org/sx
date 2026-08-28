@@ -409,7 +409,9 @@ impl Platform for UIKitPlatform {
         glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
 
         if gl_ctx := self.gl_ctx {
-            gl_ctx.renderbufferStorage_fromDrawable(GL_RENDERBUFFER, self.gl_layer);
+            if gl_layer := self.gl_layer {
+                gl_ctx.renderbufferStorage_fromDrawable(GL_RENDERBUFFER, gl_layer);
+            }
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, self.framebuffer);

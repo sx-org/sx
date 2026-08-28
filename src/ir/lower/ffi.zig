@@ -392,6 +392,28 @@ pub fn runtimeClassStructType(self: *Lowering, fcd: *const ast.RuntimeClassDecl)
     return self.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
 }
 
+/// Coerce Obj-C dispatch arguments to the method's declared parameter
+/// types, through the gate every other call runs. An instance method's
+/// leading `*Self` is bound by the receiver, not written at the call site.
+fn coerceObjcMethodArgs(
+    self: *Lowering,
+    fcd: *const ast.RuntimeClassDecl,
+    method: ast.RuntimeMethodDecl,
+    args: []Ref,
+) void {
+    const start: usize = if (method.is_static) 0 else 1;
+    if (method.params.len <= start) return;
+    var params = std.ArrayList(Function.Param).empty;
+    defer params.deinit(self.alloc);
+    for (method.params[start..], start..) |p_node, i| {
+        params.append(self.alloc, .{
+            .name = self.module.types.internString(method.param_names[i]),
+            .ty = self.resolveRuntimeClassMemberType(fcd, p_node),
+        }) catch unreachable;
+    }
+    self.coerceCallArgs(args, params.items);
+}
+
 /// Lower `inst.method(args)` on an `@ObjcClass` / `@ObjcProtocol`
 /// receiver. The selector is derived by `deriveObjcSelector`; arity
 /// is validated against the keyword count produced by the mangling
@@ -449,6 +471,7 @@ pub fn lowerObjcMethodCall(
     const sel = self.builder.emit(.{ .load = .{ .operand = slot_ptr } }, vptr_ty);
 
     const args_owned = self.alloc.dupe(Ref, method_args) catch unreachable;
+    coerceObjcMethodArgs(self, fcd, method, args_owned);
     return self.builder.emit(.{ .objc_msg_send = .{
         .recv = target,
         .sel = sel,
@@ -555,6 +578,7 @@ pub fn lowerObjcStaticCall(
     const sel = self.builder.emit(.{ .load = .{ .operand = sel_slot_ptr } }, vptr_ty);
 
     const args_owned = self.alloc.dupe(Ref, method_args) catch unreachable;
+    coerceObjcMethodArgs(self, fcd, method, args_owned);
     return self.builder.emit(.{ .objc_msg_send = .{
         .recv = class_obj,
         .sel = sel,
