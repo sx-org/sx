@@ -1,6 +1,6 @@
 // A direct call to a generic fn whose arguments cannot bind a TYPE param is
 // diagnosed at the call site rather than monomorphized with the param unbound. A
-// `string` argument at a `[]$T` param is the canonical uninferrable shape.
+// scalar argument at a `[]$T` param is the canonical uninferrable shape.
 
 @import "modules/std.sx";
 
@@ -9,6 +9,6 @@ first :: (xs: []$T) -> T {
 }
 
 main :: () -> i32 {
-    print("{}\n", first("abc"));
+    print("{}\n", first(42));
     return 0;
 }

@@ -1,6 +1,6 @@
 // `last` answers a slice's final element, and null for an empty slice. The
-// kernel is generic over the element type; a string reaches it through its
-// `[]u8` view.
+// kernel is generic over the element type; a `string` IS a `[]u8`, so it
+// binds that element type directly.
 @import "modules/std.sx";
 
 main :: () -> i32 {
@@ -10,6 +10,6 @@ main :: () -> i32 {
     empty : []i64 = .[];
     if v := empty.last() { print("{}\n", v); } else { print("null\n"); }
 
-    if b := "sx".([]u8).last() { print("{}\n", b); }
+    if b := "sx".last() { print("{}\n", b); }
     return 0;
 }

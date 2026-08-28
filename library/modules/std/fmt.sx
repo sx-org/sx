@@ -195,7 +195,7 @@ path_join :: (..parts: []string) -> string {
     while i < parts.len {
         p := parts[i];
         if p.len > 0 {
-            if tail := result.([]u8).last() {
+            if tail := result.last() {
                 head := p[0];
                 if tail == '/' {
                     if head == '/' {

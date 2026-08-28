@@ -850,6 +850,8 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             // arg coerces to a slice at a `[]T` param (the same promotion
             // concrete slice params perform), so it binds from its
             // element type too.
+            // `string` IS the `[]u8` slice, so it binds the element param to `u8`.
+            if (arg_ty == .string) break :blk self.extractTypeParam(st.element_type, .u8, tp_name);
             if (arg_ty.isBuiltin()) break :blk null;
             const info = self.module.types.get(arg_ty);
             break :blk switch (info) {
