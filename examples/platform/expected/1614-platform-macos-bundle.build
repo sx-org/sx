@@ -1,0 +1,1 @@
+{ "aot": true, "serial": true, "bundle": { "app": ".sx-tmp/1614-platform-macos-bundle.app", "expect": ["Contents/Info.plist", "Contents/MacOS", "Contents/_CodeSignature"] } }

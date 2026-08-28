@@ -2,10 +2,10 @@
 @import "modules/build.sx";
 @import "modules/platform/bundle.sx";
 
-// Register the sx-side `.app` bundler. Under `sx build` on macOS, the
-// post-link callback runs and writes a real `.app` next to the
-// binary. Under `sx run` (JIT) the callback is registered but never
-// fires — so the test runner only sees `runtime main`.
+// `on_build(bundle_main)` registers the sx-side `.app` bundler explicitly:
+// under `sx build` on macOS the post-link callback writes a real `.app`
+// beside the binary. 1665 reaches the same bundler through
+// `default_pipeline`'s auto-bundle instead.
 
 configure :: () {
     opts := build_options();
