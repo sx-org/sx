@@ -171,6 +171,11 @@ pub const CoercionResolver = struct {
                 if (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .optional) {
                     return .optional_to_optional;
                 }
+                // A `*void` slot takes a proven-present `?*T` exactly as it
+                // takes the `*T`: unwrap, then the payload's own address
+                // conversion. The unwrap arm still gates on flow narrowing,
+                // so an unproven optional is refused there.
+                if (self.classify(child_ty, dst_ty) == .ptr_to_void) return .optional_unwrap;
             }
         }
 

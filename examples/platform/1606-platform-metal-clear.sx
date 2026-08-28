@@ -78,11 +78,9 @@ frame :: () {
     // (the layer is created during -[SxAppDelegate didFinishLaunching:]
     // which fires AFTER our main() returns into UIApplicationMain).
     if g_gpu.layer == null {
-        if gl_layer := g_plat.gl_layer {
-            if !g_gpu.init(gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
-        } else {
-            return;
-        }
+        gl_layer := g_plat.gl_layer;
+        if gl_layer == null { return; }
+        if !g_gpu.init(gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
     }
 
     // Compile shader + upload vertex buffer once.
