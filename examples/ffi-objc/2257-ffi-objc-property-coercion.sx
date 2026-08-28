@@ -1,0 +1,16 @@
+// An `@ObjcProperty` assignment passes the same coercion gate as a method
+// argument: `obj.field = val` dispatches `setField:` with `val` in the
+// argument slot, so a `string` written there would reach an object-pointer
+// slot as its own {ptr,len} pair.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+
+SxPropCoerce :: @ObjcClass("SxPropCoerce", extends = NSObject) extern {
+    name: @ObjcProperty(*NSString);
+}
+
+main :: () {
+    probe : *SxPropCoerce = null;
+    probe.name = "a string";
+}

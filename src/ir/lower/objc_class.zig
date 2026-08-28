@@ -234,6 +234,10 @@ pub fn lowerObjcPropertySetter(self: *Lowering, obj_expr: *const ast.Node, field
     const sel = self.builder.emit(.{ .load = .{ .operand = slot_ptr } }, vptr_ty);
     const args = self.alloc.alloc(Ref, 1) catch unreachable;
     args[0] = val;
+    self.coerceCallArgs(args, &.{.{
+        .name = self.module.types.internString(field.name),
+        .ty = self.resolveType(field.field_type),
+    }});
     _ = self.builder.emit(.{ .objc_msg_send = .{
         .recv = obj_ref,
         .sel = sel,
