@@ -13,8 +13,8 @@ Ordering :: enum {
     relaxed;   // → LLVM Monotonic
     acquire;   // → LLVM Acquire
     release;   // → LLVM Release
-    acq_rel;   // → LLVM AcquireRelease
-    seq_cst;   // → LLVM SequentiallyConsistent
+    acqRel;   // → LLVM AcquireRelease
+    seqCst;   // → LLVM SequentiallyConsistent
 }
 
 // Compiler intrinsics. Not called directly by users — `Atomic(T)`'s methods
@@ -46,7 +46,7 @@ fence :: ($o: Ordering) { atomicFence(o); }
 // a present value is the ACTUAL current value on failure (for a retry loop).
 // `_weak` may fail spuriously (LLVM `cmpxchg weak`) — use it inside a retry loop.
 // Two orderings: `success` (applied when the exchange happens) and `failure`
-// (the load when it doesn't). The failure ordering may not be .release / .acq_rel
+// (the load when it doesn't). The failure ordering may not be .release / .acqRel
 // and may not be stronger than the success ordering (LLVM rule, enforced at lower).
 atomicCmpxchg     :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
 atomicCmpxchgWeak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
@@ -72,21 +72,21 @@ Atomic :: struct ($T: Type) {
     }
 
     // Read-modify-write (integer T). Each returns the value BEFORE the update.
-    fetch_add :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchAdd(T, *self.value, v, o); }
-    fetch_sub :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchSub(T, *self.value, v, o); }
-    fetch_and :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchAnd(T, *self.value, v, o); }
-    fetch_or  :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchOr(T, *self.value, v, o); }
-    fetch_xor :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchXor(T, *self.value, v, o); }
-    fetch_min :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchMin(T, *self.value, v, o); }
-    fetch_max :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchMax(T, *self.value, v, o); }
+    fetchAdd :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchAdd(T, *self.value, v, o); }
+    fetchSub :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchSub(T, *self.value, v, o); }
+    fetchAnd :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchAnd(T, *self.value, v, o); }
+    fetchOr  :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchOr(T, *self.value, v, o); }
+    fetchXor :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchXor(T, *self.value, v, o); }
+    fetchMin :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchMin(T, *self.value, v, o); }
+    fetchMax :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicFetchMax(T, *self.value, v, o); }
 
     // Swap: store `v`, return the value BEFORE the swap (integer T).
     swap :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomicSwap(T, *self.value, v, o); }
 
     // Compare-exchange (integer T). Returns `?T`: `null` on success (the value
     // equalled `expected` and is now `desired`); on failure the ACTUAL current
-    // value (retry with it). `compare_exchange_weak` may fail spuriously — use it
+    // value (retry with it). `compareExchangeWeak` may fail spuriously — use it
     // inside a retry loop. `$success` / `$failure` are comptime ordering params.
-    compare_exchange      :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomicCmpxchg(T, *self.value, expected, desired, success, failure); }
-    compare_exchange_weak :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomicCmpxchgWeak(T, *self.value, expected, desired, success, failure); }
+    compareExchange     :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomicCmpxchg(T, *self.value, expected, desired, success, failure); }
+    compareExchangeWeak :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomicCmpxchgWeak(T, *self.value, expected, desired, success, failure); }
 }

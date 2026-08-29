@@ -32,7 +32,7 @@ impl Shape for Sq  { area :: (self: *Sq) -> i64 { self.s * self.s } }
 impl Shape for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
 impl Shape for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
 
-mono_ns :: () -> i64 {
+monoNs :: () -> i64 {
     ts : time.Timespec = .{};
     c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
     ts.sec * 1000000000 + ts.nsec
@@ -77,7 +77,7 @@ main :: () {
     s := 0;
     while s < SAMPLES {
         // ── handle: build (the handle borrows each conformer in place) ──
-        t0 := mono_ns();
+        t0 := monoNs();
         i = 0;
         while i < N {
             m := i % 3;
@@ -86,7 +86,7 @@ main :: () {
             else { hv[i] = tris[i]; }
             i = i + 1;
         }
-        t1 := mono_ns();
+        t1 := monoNs();
 
         // ── handle: walk (table load + indirect call) ──
         k := 0;
@@ -95,7 +95,7 @@ main :: () {
             while i < N { hsink = hsink + hv[i].area(); i = i + 1; }
             k = k + 1;
         }
-        t2 := mono_ns();
+        t2 := monoNs();
 
         // ── direct: the same conformers, same order, no handle ──
         k = 0;
@@ -110,7 +110,7 @@ main :: () {
             }
             k = k + 1;
         }
-        t3 := mono_ns();
+        t3 := monoNs();
 
         hb[s] = t1 - t0;
         hw[s] = t2 - t1;

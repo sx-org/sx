@@ -30,9 +30,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -58,7 +58,7 @@ drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -79,10 +79,10 @@ main :: () -> i32 {
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = TIMEOUT_MS,
-            timeout_keepalive_ms = TIMEOUT_MS,
-            request_count = 50,
-            max_conn = 4,
+            timeoutRequestMs = TIMEOUT_MS,
+            timeoutKeepaliveMs = TIMEOUT_MS,
+            requestCount = 50,
+            maxConn = 4,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }

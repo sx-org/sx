@@ -34,7 +34,7 @@ main :: () -> i32 {
     opt : i32 = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, *opt, 4);
 
-    addr := sockaddr_in(PORT, 0);   // INADDR_ANY, per-OS layout
+    addr := sockaddrIn(PORT, 0);   // INADDR_ANY, per-OS layout
 
     if bind(fd, *addr, 16) < 0 {
         print("error: bind()\n");

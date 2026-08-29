@@ -35,8 +35,8 @@ main :: () -> i32 {
     inline if @host.os == .windows { return 0; }
     else {
         path := "/tmp/sx_std_fs_mtime_test";
-        fs.delete_file(path);
-        if !fs.write_file(path, "mtime") { return 1; }
+        fs.deleteFile(path);
+        if !fs.writeFile(path, "mtime") { return 1; }
 
         initial_access : i64 = 1700000001;
         initial_modified : i64 = 1700000002;
@@ -45,31 +45,31 @@ main :: () -> i32 {
             .{ sec = initial_access, nsec = 0 },
             .{ sec = initial_modified, nsec = 0 },
         ];
-        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, *initial[0], 0) != 0 {
-            fs.delete_file(path);
+        if posix_abi.fsPosixUtimensat(posix_abi.FS_POSIX_AT_FDCWD, path, *initial[0], 0) != 0 {
+            fs.deleteFile(path);
             return 2;
         }
-        if !fs.set_modified_seconds(path, target_modified) {
-            fs.delete_file(path);
+        if !fs.setModifiedSeconds(path, target_modified) {
+            fs.deleteFile(path);
             return 3;
         }
 
-        maybe := fs.open_file(path, .read);
-        if maybe == null { fs.delete_file(path); return 4; }
+        maybe := fs.openFile(path, .read);
+        if maybe == null { fs.deleteFile(path); return 4; }
         file := maybe?!;
-        public_modified, public_ok := fs.modified_seconds(*file);
+        public_modified, public_ok := fs.modifiedSeconds(*file);
         access, modified, raw_ok := read_times(*file);
-        close_ok := file.close();
-        delete_ok := fs.delete_file(path);
+        closeOk := file.close();
+        delete_ok := fs.deleteFile(path);
 
         if !public_ok or public_modified != target_modified { return 5; }
         if !raw_ok or access != initial_access { return 6; }
         if modified != target_modified { return 7; }
-        if !close_ok or !delete_ok { return 8; }
+        if !closeOk or !delete_ok { return 8; }
 
         missing := "/tmp/sx_std_fs_mtime_missing";
-        fs.delete_file(missing);
-        if fs.set_modified_seconds(missing, target_modified) { return 9; }
+        fs.deleteFile(missing);
+        if fs.setModifiedSeconds(missing, target_modified) { return 9; }
         return 0;
     }
 }

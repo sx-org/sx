@@ -5,20 +5,20 @@
 // the unsent send buffer, so the client gets a reset instead of the error
 // response it is owed.
 //
-// Config.linger_timeout_ms (default 1000; 0 selects the abrupt
+// Config.lingerTimeoutMs (default 1000; 0 selects the abrupt
 // close): after an error response drains, the server shutdown(SHUT_WR)s
 // (FIN after the response — no RST), then keeps reading and DISCARDING
 // inbound bytes until EOF or the linger deadline, and only then closes.
 //
 // This test:
-// 1. Sends a 64 KB junk burst (no header terminator; read_buf_cap 8 KB) —
+// 1. Sends a 64 KB junk burst (no header terminator; readBufCap 8 KB) —
 //    the server 431s with ~56 KB still unread in its receive queue.
 // 2. Asserts the client RECEIVES the full "HTTP/1.1 431" response and then
 //    a CLEAN FIN — a raw read() == 0 — never a reset. The FIN-vs-RST kind
 //    is the assertion because on a slower/wide-area path an RST routinely
 //    destroys the 431 itself, while loopback usually wins that race.
 // 3. Client closes; the lingering slot sees EOF and is freed well before
-//    the linger deadline (polled via stats().active_conns == 0).
+//    the linger deadline (polled via stats().activeConns == 0).
 // 4. The server stays healthy: a fresh request gets a 200.
 // 5. GPA leak gate: net-zero after close.
 @import "modules/std.sx";
@@ -35,9 +35,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -65,11 +65,11 @@ main :: () -> i32 {
 
         cfg : http.Config = .{
             port = PORT,
-            read_buf_cap = 8192,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
+            readBufCap = 8192,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
@@ -84,7 +84,7 @@ main :: () -> i32 {
         t : i64 = 0;
         wb : i64 = 0;
         while fsent < JUNK_LEN and t < 400 {
-            n, we := socket.write_nb(ca, *junk[fsent], (JUNK_LEN - fsent));
+            n, we := socket.writeNb(ca, *junk[fsent], (JUNK_LEN - fsent));
             if !we { fsent += n; wb = 0; }
             else if we == .WouldBlock {
                 // The server drains + discards, so the burst always
@@ -140,12 +140,12 @@ main :: () -> i32 {
         while t < 500 {
             srv.tick(1) catch {};
             st := srv.stats();
-            if st.active_conns == 0 { break; }
+            if st.activeConns == 0 { break; }
             t += 1;
         }
         st := srv.stats();
-        if st.active_conns != 0 {
-            print("lingering slot never freed (active={})\n", st.active_conns);
+        if st.activeConns != 0 {
+            print("lingering slot never freed (active={})\n", st.activeConns);
             failed = 1;
         }
 
@@ -161,7 +161,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                n, re := socket.read_nb(cb, *rbuf[btotal], (cap - btotal));
+                n, re := socket.readNb(cb, *rbuf[btotal], (cap - btotal));
                 if !re { btotal += n; got += n; continue; }
                 if re == .Closed { bdone = true; }
                 break;

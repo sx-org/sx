@@ -5,7 +5,7 @@
 //
 // The compare lowers field-wise in src/ir/lower/expr.zig (lowerStructEquality)
 // so every field participates and each field is compared against its own type
-// (float→fcmp, string→str_eq, nested struct→recurse, tagged-union field→
+// (float→fcmp, string→strEq, nested struct→recurse, tagged-union field→
 // tag-only).
 @import "modules/std.sx";
 
@@ -54,7 +54,7 @@ main :: () -> i32 {
     report("nested eq", n1 == n2);      // true
     report("nested inner-differs", n1 == n3); // false
 
-    // string field: str_eq semantics (content, not pointer identity).
+    // string field: strEq semantics (content, not pointer identity).
     st1 : WithStr = .{ a = 1, s = "hi" };
     st2 : WithStr = .{ a = 1, s = "hi" };
     st3 : WithStr = .{ a = 1, s = "bye" };

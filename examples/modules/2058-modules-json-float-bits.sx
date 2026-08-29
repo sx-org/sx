@@ -37,7 +37,7 @@ report_band :: (kind: string, j: i64, ok: bool) {
 }
 
 // An all-ones exponent field encodes a NaN or an infinity.
-is_non_finite :: (bits: i64) -> bool {
+isNonFinite :: (bits: i64) -> bool {
     ((bits >> 52) & 0x7FF) == 0x7FF
 }
 
@@ -88,7 +88,7 @@ main :: () -> ! {
     while i < SAMPLES {
         i += 1;
         bits := rng.next();
-        if is_non_finite(bits) { continue; }
+        if isNonFinite(bits) { continue; }
         u.s = bits;
         if u.f == 0.0 { continue; }
         b := band_of(bits);

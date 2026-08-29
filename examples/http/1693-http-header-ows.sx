@@ -1,7 +1,7 @@
-// std.http — header-value OWS handling in find_header (RFC 9112 §5.1).
+// std.http — header-value OWS handling in findHeader (RFC 9112 §5.1).
 //
 // A field value is `OWS field-value OWS` — optional whitespace is
-// SP *or* HTAB on both sides, and it is not part of the value. find_header
+// SP *or* HTAB on both sides, and it is not part of the value. findHeader
 // trims BOTH sides, so a value reaches every comparison site clean:
 // • `Content-Length:\t5`      → the digit parser sees "5", not a tab;
 // • `Transfer-Encoding: chunked ` (trailing SP) → matches "chunked";
@@ -21,7 +21,7 @@ http :: @import "modules/std/http.sx";
 PORT :: 19007;
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    ev := http.find_header(req, "x-echo");
+    ev := http.findHeader(req, "x-echo");
     if ev.len > 0 {
         resp.body = concat("[", concat(ev, "]"));
         return;
@@ -32,9 +32,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -66,7 +66,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
     srv.tick(1) catch {};
     while true {
-        n, re := socket.read_nb(fd, *buf[total.*], (cap - total.*));
+        n, re := socket.readNb(fd, *buf[total.*], (cap - total.*));
         if !re { total.* += n; continue; }
         if re == .Closed { return true; }
         return false;
@@ -117,7 +117,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 

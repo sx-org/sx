@@ -29,9 +29,9 @@ Request        :: types.Request;
 Response       :: types.Response;
 StreamProducer :: types.StreamProducer;
 ContentCoding  :: types.ContentCoding;
-find_header    :: types.find_header;
-count_header   :: types.count_header;
-reason_for     :: types.reason_for;
+findHeader     :: types.findHeader;
+countHeader    :: types.countHeader;
+reasonFor      :: types.reasonFor;
 
 // ── TLS transport seam (tls.sx) ─────────────────────────────────────
 TlsConn     :: tls.TlsConn;
@@ -67,6 +67,6 @@ dispatch       :: router.dispatch;
 Client         :: client.Client;
 ClientResponse :: client.ClientResponse;
 ClientErr      :: client.ClientErr;
-ClientOpts     :: client.ClientOpts;   // open/open_addr options
+ClientOpts     :: client.ClientOpts;   // open/openAddr options
 ClientConn     :: client.ClientConn;   // an open client session
 ClientPool     :: client.ClientPool;   // single-threaded keep-alive pool

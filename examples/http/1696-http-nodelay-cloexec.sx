@@ -1,6 +1,6 @@
 // std.http — accepted sockets get TCP_NODELAY + CLOEXEC.
 //
-// TCP_NODELAY: a response written in one write_more pass otherwise sits in
+// TCP_NODELAY: a response written in one writeMore pass otherwise sits in
 // the kernel's Nagle buffer waiting for the peer's ACK — 40 ms latency
 // cliffs under keep-alive request/response traffic. The server sets it on
 // every accepted connection.
@@ -38,9 +38,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -66,7 +66,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
@@ -82,7 +82,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+                n, re := socket.readNb(fd, *rbuf[total], (cap - total));
                 if !re { total += n; got += n; continue; }
                 break;
             }
@@ -99,7 +99,7 @@ main :: () -> i32 {
         // Find the occupied slot (state != CONN_FREE) and inspect its fd.
         cfd : i32 = -1;
         i : i64 = 0;
-        while i < cfg.max_conn {
+        while i < cfg.maxConn {
             if srv.conns[i].state != 0 { cfd = srv.conns[i].fd; break; }
             i += 1;
         }

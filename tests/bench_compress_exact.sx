@@ -10,7 +10,7 @@ EXACT_PATH :: ".sx-tmp/bench-compress/sx-exact.matrix";
 
 strategy_at :: (index: i64) -> compress.Strategy {
     if index == 1 { return .filtered; }
-    if index == 2 { return .huffman_only; }
+    if index == 2 { return .huffmanOnly; }
     if index == 3 { return .rle; }
     if index == 4 { return .fixed; }
     .default
@@ -34,7 +34,7 @@ append_record :: (corpus: i64, level: i64, strategy: i64, packed: string) -> boo
         header[8 + i] = ((packed.len >> (i * 8)) & 0xff).(u8);
         i += 1;
     }
-    fs.append_file(EXACT_PATH, header[..]) and fs.append_file(EXACT_PATH, packed)
+    fs.appendFile(EXACT_PATH, header[..]) and fs.appendFile(EXACT_PATH, packed)
 }
 
 run_corpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> bool {
@@ -60,7 +60,7 @@ run_corpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> bo
 }
 
 main :: () -> i32 {
-    if !fs.write_file(EXACT_PATH, "") { return 1; }
+    if !fs.writeFile(EXACT_PATH, "") { return 1; }
     gpa := mem.GPA.init();
     raw := gpa.allocBytes(1048576);
     if raw == null { return 1; }

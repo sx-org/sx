@@ -389,12 +389,12 @@ pub const VaCopy = struct {
 };
 
 /// Memory ordering for atomic ops. The sx-surface `Ordering` enum
-/// (`relaxed`/`acquire`/`release`/`acq_rel`/`seq_cst`) is read statically at
+/// (`relaxed`/`acquire`/`release`/`acqRel`/`seqCst`) is read statically at
 /// lower-time (the arg MUST be a constant enum literal) and baked here, so the
 /// op carries no runtime ordering operand. The LLVM mapping is EXPLICIT (LLVM's
 /// `LLVMAtomicOrdering` is non-contiguous: Monotonic=2/Acquire=4/…/SeqCst=7) —
 /// never an identity cast.
-pub const AtomicOrdering = enum { relaxed, acquire, release, acq_rel, seq_cst };
+pub const AtomicOrdering = enum { relaxed, acquire, release, acqRel, seqCst };
 
 pub const AtomicLoad = struct {
     ptr: Ref,
@@ -439,7 +439,7 @@ pub const AtomicCmpxchg = struct {
     weak: bool,
 };
 
-/// Standalone memory fence (`fence(.seq_cst)`) — no address, void result. The
+/// Standalone memory fence (`fence(.seqCst)`) — no address, void result. The
 /// ordering may NOT be `relaxed` (LLVM has no monotonic/unordered fence).
 pub const AtomicFence = struct {
     ordering: AtomicOrdering,

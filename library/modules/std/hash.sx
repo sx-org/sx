@@ -31,7 +31,7 @@
 // =====================================================================
 
 @import "modules/std/core.sx";     // string
-@import "modules/std/fs.sx";       // open_file, File
+@import "modules/std/fs.sx";       // openFile, File
 
 // Low 32 bits. SHA-256 is defined over 32-bit words; every add/rotate
 // result is masked back through this so the carry never escapes bit 31.
@@ -266,7 +266,7 @@ fnv1a :: (data: string) -> u64 {
 // MB artifacts. Returns null if the file can't be opened. No heap
 // allocation: the chunk buffer is a stack array.
 sha256File :: (path: [:0]u8) -> ?[64]u8 {
-    handle := open_file(path, .read);
+    handle := openFile(path, .read);
     if handle == null { return null; }
     defer handle.close();
 

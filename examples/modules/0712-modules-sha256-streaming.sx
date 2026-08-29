@@ -59,9 +59,9 @@ main :: () {
     check("split-on-boundary", stream_split(MSG, 64), PIN);   // 64: exact block edge
 
     // sha256File (streaming) must equal the in-memory digest.
-    if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path := ".sx-tmp/sx_0712_stream.bin";
-    if !write_file(path, MSG) { print("file-write: FAIL\n"); return; }
+    if !writeFile(path, MSG) { print("file-write: FAIL\n"); return; }
 
     maybe := sha256File(path);
     if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
@@ -73,5 +73,5 @@ main :: () {
     report("file-eq-memory", fv == mv);
     check("file-pinned", file_digest, PIN);
 
-    delete_file(path);
+    deleteFile(path);
 }

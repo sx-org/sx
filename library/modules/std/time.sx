@@ -1,8 +1,8 @@
 // std.time — wall and monotonic clocks over clock_gettime(2)
 //
 //
-//   now_secs()  wall clock, unix epoch seconds (CLOCK_REALTIME).
-//   mono_ms()   monotonic milliseconds for deadlines/timeouts —
+//   nowSecs()  wall clock, unix epoch seconds (CLOCK_REALTIME).
+//   monoMs()   monotonic milliseconds for deadlines/timeouts —
 //               unaffected by wall-clock steps (NTP, manual set);
 //               meaningful only as a difference between two reads in
 //               one process, never as an absolute time.
@@ -38,14 +38,14 @@ inline match @host.os {
 }
 
 // Wall clock as unix epoch seconds.
-now_secs :: () -> i64 {
+nowSecs :: () -> i64 {
     ts : Timespec = .{};
     c.clock_gettime(CLOCK_REALTIME, *ts);
     return ts.sec;
 }
 
 // Monotonic milliseconds since an arbitrary process-local origin.
-mono_ms :: () -> i64 {
+monoMs :: () -> i64 {
     ts : Timespec = .{};
     c.clock_gettime(CLOCK_MONOTONIC, *ts);
     return ts.sec * 1000 + ts.nsec / 1000000;
@@ -53,7 +53,7 @@ mono_ms :: () -> i64 {
 
 // Monotonic nanoseconds since an arbitrary process-local origin —
 // input timestamps, frame timing.
-mono_ns :: () -> i64 {
+monoNs :: () -> i64 {
     ts : Timespec = .{};
     c.clock_gettime(CLOCK_MONOTONIC, *ts);
     return ts.sec * 1_000_000_000 + ts.nsec;
@@ -75,13 +75,13 @@ CivilTime :: struct {
 
 // Unix epoch seconds -> local civil time. `false` when libc cannot represent
 // the instant in local time.
-local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
-    value := unix_seconds;
+localCivil :: (unixSeconds: i64) -> (CivilTime, bool) {
+    value := unixSeconds;
     broken : c.Tm = .{};
     valid := false;
     inline match @host.os {
-        case .windows: valid = c.localtime_s(*broken, *value) == 0;
-        else: valid = c.localtime_r(*value, *broken) != null;
+        case .windows: valid = c.localtimeS(*broken, *value) == 0;
+        else: valid = c.localtimeR(*value, *broken) != null;
     }
     if !valid { return CivilTime{}, false; }
     civil := CivilTime{
@@ -97,7 +97,7 @@ local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
 
 // Local civil time -> unix epoch seconds (mktime with DST resolution).
 // `false` when the civil time does not resolve to a representable instant.
-local_epoch :: (civil: CivilTime) -> (i64, bool) {
+localEpoch :: (civil: CivilTime) -> (i64, bool) {
     broken : c.Tm = .{};
     broken.isdst = -1;
     broken.year = (civil.year - 1900).(i32);

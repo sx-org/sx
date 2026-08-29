@@ -358,7 +358,7 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 
 `modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `@sizeOf` / field reflection.
 
-**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
+**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
 
 **Volatile** — `@volatileLoad(T, addr)` / `@volatileStore(T, addr, v)` from `core.sx`. Not atomic.
 
@@ -384,7 +384,7 @@ main :: () {
 
 `await` parks the current fiber, so the coordinator is `s.spawn`ed.
 
-**CLI** — `modules/std/cli.sx`: `os_args`, `parse`, `EX_OK` / `EX_USAGE`.
+**CLI** — `modules/std/cli.sx`: `osArgs`, `parse`, `EX_OK` / `EX_USAGE`.
 
 ## Cross-Compilation
 

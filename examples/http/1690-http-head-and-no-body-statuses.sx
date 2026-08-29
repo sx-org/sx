@@ -31,13 +31,13 @@ PORT_B :: 19003;
 
 stream_calls : i64 = 0;   // bumped by the producer — must stay 0 for HEAD
 
-producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
     calls : *i64 = xx ctx;
     calls.* += 1;
     if offset >= 10 { return 0; }
     src := "streamdata";
     n := 10 - offset;
-    if n > dst_cap { n = dst_cap; }
+    if n > dstCap { n = dstCap; }
     i : i64 = 0;
     while i < n { dst[i] = src[offset + i]; i += 1; }
     return n;
@@ -81,9 +81,9 @@ str_is :: (a: string, b: string) -> bool {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -125,7 +125,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -159,7 +159,7 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, xx *stream_calls);
         if se { print("init failed\n"); return 1; }
 
@@ -234,8 +234,8 @@ main :: () -> i32 {
         srv.close();
 
         // (h) pooled HEAD: the worker-side serialization must suppress too
-        cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10,
-                                thread_pool_count = 1, handler_timeout_ms = 30 };
+        cfgp : http.Config = .{ port = PORT_B, maxConn = 4, requestCount = 10,
+                                threadPoolCount = 1, handlerTimeoutMs = 30 };
         srvp, spe := http.Server.init(cfgp, route, xx *stream_calls);
         if spe { print("pool init failed\n"); return 1; }
         r = roundtrip(*srvp, PORT_B, "HEAD /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
@@ -255,7 +255,7 @@ main :: () -> i32 {
             failed = 1;
         }
 
-        // (j) pooled 204: no_body computed on the worker
+        // (j) pooled 204: noBody computed on the worker
         r = roundtrip(*srvp, PORT_B, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 204 No Content", "pooled 204 status", *failed);
         check_absent(r, "junk", "pooled 204 body", *failed);

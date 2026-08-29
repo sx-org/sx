@@ -3,7 +3,7 @@
 // One program exercises the whole pure-sx runtime together: the M:1 scheduler,
 // the suspending fiber-task async layer `go`/`wait`, and the deterministic
 // virtual-time timers `sleep`/`nowMs` — all over the `abi(.naked)`
-// `swap_context` on guarded `mmap` stacks.
+// `swapContext` on guarded `mmap` stacks.
 //
 // A coordinator fiber launches three async tasks; each `sleep`s a different
 // duration, records its completion (id @ virtual-ms) into a shared log, then
@@ -65,6 +65,6 @@ main :: () -> i64 {
         i = i + 1;
     }
     print("final virtual clock: {}ms\n", s.nowMs());
-    print("tasks: {}\n", s.n_spawned);
+    print("tasks: {}\n", s.nSpawned);
     return 0;
 }

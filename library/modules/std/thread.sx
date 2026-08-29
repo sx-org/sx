@@ -129,7 +129,7 @@ Pool :: struct {
     // The allocator the pool (struct + tasks + threads) was created from.
     // Captured at create so shutdown frees from the SAME allocator,
     // independent of whatever context is current at shutdown time.
-    own_alloc: Allocator;
+    ownAlloc: Allocator;
 
     // Heap-allocate (the pool must never move: workers hold its address,
     // and it embeds a live mutex), init in place, spawn the workers.
@@ -137,7 +137,7 @@ Pool :: struct {
         alloc := context.allocator;
         p : *Pool = alloc.create(Pool);
         p.* = Pool{};
-        p.own_alloc = alloc;
+        p.ownAlloc = alloc;
         // Free-before-raise: nothing past `p` is allocated yet, so the
         // mutex-setup failure only needs to release `p`. The cond-setup
         // failure additionally tears down the already-init'd mutex.
@@ -149,7 +149,7 @@ Pool :: struct {
         p.count = workers;
         i : i64 = 0;
         while i < workers {
-            if c.pthread_create(*p.threads[i], null, pool_worker, p) != 0 {
+            if c.pthread_create(*p.threads[i], null, poolWorker, p) != 0 {
                 // join what started, then fail loudly
                 p.count = i;
                 p.shutdown();
@@ -191,7 +191,7 @@ Pool :: struct {
         // Free everything create allocated, from the same allocator.
         // tasks/threads first, then the Pool struct last (no field of
         // self is read after this point).
-        a := self.own_alloc;
+        a := self.ownAlloc;
         if self.tasks != null { a.deallocBytes(self.tasks); }
         if self.threads != null { a.deallocBytes(self.threads); }
         a.deallocBytes(self);
@@ -200,7 +200,7 @@ Pool :: struct {
 
 // The worker loop: C entry, own fabricated Context, then
 // pop-task/run-task until stop with an empty queue.
-pool_worker :: (arg: *void) -> *void abi(.c) {
+poolWorker :: (arg: *void) -> *void abi(.c) {
     p : *Pool = arg.(*Pool);
     gpa := GPA.init();
     push .{ allocator = gpa } {

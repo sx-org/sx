@@ -572,8 +572,8 @@ pub const Ops = struct {
             .relaxed => c.LLVMAtomicOrderingMonotonic,
             .acquire => c.LLVMAtomicOrderingAcquire,
             .release => c.LLVMAtomicOrderingRelease,
-            .acq_rel => c.LLVMAtomicOrderingAcquireRelease,
-            .seq_cst => c.LLVMAtomicOrderingSequentiallyConsistent,
+            .acqRel => c.LLVMAtomicOrderingAcquireRelease,
+            .seqCst => c.LLVMAtomicOrderingSequentiallyConsistent,
         };
     }
 

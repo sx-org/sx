@@ -6,9 +6,9 @@
 // observed timestamps are fully reproducible, which is exactly what a
 // deterministic-sim Io test harness needs.
 //
-// HOW IT WORKS. `s.sleep(ms)` arms a timer `{ clock_ms + ms, current }` and
+// HOW IT WORKS. `s.sleep(ms)` arms a timer `{ clockMs + ms, current }` and
 // parks the fiber off-queue. `s.run` drives ready fibers to quiescence, then
-// fires the earliest pending timer: it advances `clock_ms` to that deadline and
+// fires the earliest pending timer: it advances `clockMs` to that deadline and
 // `wake`s the sleeper (re-readying it), and repeats until both the ready queue
 // AND the timer set are empty. So a fiber that just woke reads `nowMs()` equal
 // to its own deadline.
@@ -30,7 +30,7 @@
 // No real-time variant runs here; the equivalence is the contract the
 // deterministic test relies on.
 //
-// aarch64-macOS-pinned (the scheduler's `swap_context` asm + guard-page mmap
+// aarch64-macOS-pinned (the scheduler's `swapContext` asm + guard-page mmap
 // constants are per-arch / Apple-specific): runs end-to-end on a matching host,
 // ir-only on a mismatch.
 @import "modules/std.sx";
@@ -67,6 +67,6 @@ main :: () -> i64 {
         i = i + 1;
     }
     print("final virtual clock: {}ms\n", s.nowMs());
-    print("spawned: {}\n", s.n_spawned);
+    print("spawned: {}\n", s.nSpawned);
     return 0;
 }

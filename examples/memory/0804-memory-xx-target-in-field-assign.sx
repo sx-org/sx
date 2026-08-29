@@ -27,7 +27,7 @@ begin :: (self: *Foo, current: i64, freq: i64) -> FC {
 }
 
 main :: () -> void {
-    f : *Foo = xx c.libc_malloc(@sizeOf(Foo));
+    f : *Foo = xx c.libcMalloc(@sizeOf(Foo));
     f.pixel_w = 2880;
     f.dpi = 0.0;
     f.last_perf = 1000;

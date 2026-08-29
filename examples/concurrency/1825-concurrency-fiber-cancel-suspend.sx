@@ -34,7 +34,7 @@ main :: () -> i64 {
                 rec(pl, 2);                  // POST-SUSPEND — must NEVER run
                 42
             });
-            ps.yield_now();                  // let the worker run & park in sleep
+            ps.yieldNow();                  // let the worker run & park in sleep
             w.cancel();                      // cancel while parked → wakes + raises
             r := w.await() ?? { -99 };       // await raises Canceled → -99
             rec(pl, r);

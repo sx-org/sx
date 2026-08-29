@@ -1,4 +1,4 @@
-error: fence ordering cannot be .relaxed (use .acquire / .release / .acq_rel / .seq_cst)
+error: fence ordering cannot be .relaxed (use .acquire / .release / .acqRel / .seqCst)
   --> examples/diagnostics/1187-diagnostics-atomic-fence-relaxed.sx:7:17
    |
  7 |     atomicFence(.relaxed);

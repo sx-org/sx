@@ -57,24 +57,24 @@ EV_ERROR   :u16: 0x4000;
 EV_EOF     :u16: 0x8000;
 
 // A change entry for one (fd, filter) registration.
-kev_change :: (fd: i32, filter: i16, flags: u16, udata: usize) -> Kevent {
+kevChange :: (fd: i32, filter: i16, flags: u16, udata: usize) -> Kevent {
     return Kevent{ ident = fd, filter = filter, flags = flags, udata = udata };
 }
 
 // Apply one registration change immediately (no event drain).
 // True on success.
-kq_apply :: (kq: i32, change: Kevent) -> bool {
+kqApply :: (kq: i32, change: Kevent) -> bool {
     ch := change;
     return kevent(kq, *ch, 1, null, 0, null) >= 0;
 }
 
 // Drain ready events into `events` (capacity `cap`), waiting at most
-// `timeout_ms` (negative = wait forever). Returns the event count
+// `timeoutMs` (negative = wait forever). Returns the event count
 // (0 = timeout); -1 only for a real kevent failure — EINTR is retried.
-kq_wait :: (kq: i32, events: *Kevent, cap: i32, timeout_ms: i64) -> i32 {
-    ts : KqTimespec = .{ sec = timeout_ms / 1000, nsec = (timeout_ms % 1000) * 1000000 };
+kqWait :: (kq: i32, events: *Kevent, cap: i32, timeoutMs: i64) -> i32 {
+    ts : KqTimespec = .{ sec = timeoutMs / 1000, nsec = (timeoutMs % 1000) * 1000000 };
     while true {
-        n := if timeout_ms < 0
+        n := if timeoutMs < 0
             then kevent(kq, null, 0, events, cap, null)
             else kevent(kq, null, 0, events, cap, *ts);
         if n >= 0 { return n; }

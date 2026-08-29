@@ -42,11 +42,11 @@ raises :: (args: []string, cmds: []Command, want: CliError) -> bool {
 main :: () -> ! {
     // ── Command table (caller storage; flag specs passed as views) ────
     publish_flags : []FlagSpec = .[
-        FlagSpec{ name = "out",     takes_value = true,  required = true  },
-        FlagSpec{ name = "verbose", takes_value = false, required = false },
+        FlagSpec{ name = "out",     takesValue = true,  required = true  },
+        FlagSpec{ name = "verbose", takesValue = false, required = false },
     ];
     status_flags : []FlagSpec = .[
-        FlagSpec{ name = "verbose", takes_value = false, required = false },
+        FlagSpec{ name = "verbose", takesValue = false, required = false },
     ];
     cmds : []Command = .[
         Command{ group = "ci", command = "publish", flags = publish_flags },
@@ -60,10 +60,10 @@ main :: () -> ! {
 
     report("dispatch-group",   p.group == "ci");
     report("dispatch-command", p.command == "publish");
-    report("dispatch-index",   p.cmd_index == 0);
-    report("flag-value",       p.value_of("out") == "dist");
-    report("flag-value-set",   p.is_set("out"));
-    report("bool-set",         p.is_set("verbose"));
+    report("dispatch-index",   p.cmdIndex == 0);
+    report("flag-value",       p.valueOf("out") == "dist");
+    report("flag-value-set",   p.isSet("out"));
+    report("bool-set",         p.isSet("verbose"));
     report("json-set",         p.json);
     report("no-rest",          p.rest.len == 0);
 
@@ -71,7 +71,7 @@ main :: () -> ! {
     // "dist" is argv[3]; its bytes must lie inside that very element.
     src   : i64 = xx argv[3].ptr;
     stop  := src + argv[3].len;
-    pview : i64 = xx p.value_of("out").ptr;
+    pview : i64 = xx p.valueOf("out").ptr;
     report("value-is-view", in_range(pview, src, stop) or pview == src);
     // group/command are argv[0]/argv[1] verbatim (same pointer, no copy).
     g0 : i64 = xx argv[0].ptr;
@@ -81,18 +81,18 @@ main :: () -> ! {
     // ── 3. Dispatch to a different command in the table ──────────────
     s_argv : []string = .["ci", "status", "--verbose"];
     sp := try parse(s_argv, cmds, *d);
-    report("dispatch-2nd",   sp.command == "status" and sp.cmd_index == 1);
-    report("2nd-bool",       sp.is_set("verbose"));
+    report("dispatch-2nd",   sp.command == "status" and sp.cmdIndex == 1);
+    report("2nd-bool",       sp.isSet("verbose"));
     report("2nd-json-unset", !sp.json);
 
     // ── 4. `--` separator: rest are operand views, flags stop there ──
     sep_argv : []string = .["ci", "publish", "--out", "dist", "--", "--raw", "x"];
     spv := try parse(sep_argv, cmds, *d);
-    report("sep-value",   spv.value_of("out") == "dist");
+    report("sep-value",   spv.valueOf("out") == "dist");
     report("sep-rest-len", spv.rest.len == 2);
     report("sep-rest-0",  spv.rest.len == 2 and spv.rest[0] == "--raw");
     report("sep-rest-1",  spv.rest.len == 2 and spv.rest[1] == "x");
-    report("sep-no-bool", !spv.is_set("verbose"));
+    report("sep-no-bool", !spv.isSet("verbose"));
 
     // ── 5. First bare operand also stops flag parsing ────────────────
     bare_argv : []string = .["ci", "publish", "--out", "dist", "extra", "tail"];
@@ -103,7 +103,7 @@ main :: () -> ! {
     // ── 6. Value-flag accepts a single-dash value (not a long flag) ──
     dash_argv : []string = .["ci", "publish", "--out", "-5", "--verbose"];
     dpv := try parse(dash_argv, cmds, *d);
-    report("dash-value", dpv.value_of("out") == "-5" and dpv.is_set("verbose"));
+    report("dash-value", dpv.valueOf("out") == "-5" and dpv.isSet("verbose"));
 
     // ── 7. Failures: each surfaces the specific variant ──────────────
     a_zero_args     : []string = .[];                                       // nothing at all
@@ -120,23 +120,23 @@ main :: () -> ! {
     // truncating. 17 specs (> 16) trips the check right after dispatch
     // matches (group, command), before any flag is read.
     over_flags : []FlagSpec = .[
-        FlagSpec{ name = "f00", takes_value = false, required = false },
-        FlagSpec{ name = "f01", takes_value = false, required = false },
-        FlagSpec{ name = "f02", takes_value = false, required = false },
-        FlagSpec{ name = "f03", takes_value = false, required = false },
-        FlagSpec{ name = "f04", takes_value = false, required = false },
-        FlagSpec{ name = "f05", takes_value = false, required = false },
-        FlagSpec{ name = "f06", takes_value = false, required = false },
-        FlagSpec{ name = "f07", takes_value = false, required = false },
-        FlagSpec{ name = "f08", takes_value = false, required = false },
-        FlagSpec{ name = "f09", takes_value = false, required = false },
-        FlagSpec{ name = "f10", takes_value = false, required = false },
-        FlagSpec{ name = "f11", takes_value = false, required = false },
-        FlagSpec{ name = "f12", takes_value = false, required = false },
-        FlagSpec{ name = "f13", takes_value = false, required = false },
-        FlagSpec{ name = "f14", takes_value = false, required = false },
-        FlagSpec{ name = "f15", takes_value = false, required = false },
-        FlagSpec{ name = "f16", takes_value = false, required = false },
+        FlagSpec{ name = "f00", takesValue = false, required = false },
+        FlagSpec{ name = "f01", takesValue = false, required = false },
+        FlagSpec{ name = "f02", takesValue = false, required = false },
+        FlagSpec{ name = "f03", takesValue = false, required = false },
+        FlagSpec{ name = "f04", takesValue = false, required = false },
+        FlagSpec{ name = "f05", takesValue = false, required = false },
+        FlagSpec{ name = "f06", takesValue = false, required = false },
+        FlagSpec{ name = "f07", takesValue = false, required = false },
+        FlagSpec{ name = "f08", takesValue = false, required = false },
+        FlagSpec{ name = "f09", takesValue = false, required = false },
+        FlagSpec{ name = "f10", takesValue = false, required = false },
+        FlagSpec{ name = "f11", takesValue = false, required = false },
+        FlagSpec{ name = "f12", takesValue = false, required = false },
+        FlagSpec{ name = "f13", takesValue = false, required = false },
+        FlagSpec{ name = "f14", takesValue = false, required = false },
+        FlagSpec{ name = "f15", takesValue = false, required = false },
+        FlagSpec{ name = "f16", takesValue = false, required = false },
     ];
     over_cmds : []Command = .[ Command{ group = "big", command = "cmd", flags = over_flags } ];
     over_args : []string  = .["big", "cmd"];

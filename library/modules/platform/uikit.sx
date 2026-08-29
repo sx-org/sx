@@ -699,7 +699,7 @@ impl Platform for UIKitPlatform {
 // process monotonic clock.
 uikit_pointer :: (pos: Point) -> PointerEvent {
     PointerEvent{
-        header = .{ time_ns = time.mono_ns().(u64) },
+        header = .{ time_ns = time.monoNs().(u64) },
         kind = .touch,
         position = pos,
     }

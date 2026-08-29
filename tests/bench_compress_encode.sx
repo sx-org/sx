@@ -9,7 +9,7 @@
 BENCH_WARMUPS : i64 = 3;
 BENCH_SAMPLES : i64 = 15;
 
-mono_ns :: () -> i64 {
+monoNs :: () -> i64 {
     ts : time.Timespec = .{};
     if c.clock_gettime(time.CLOCK_MONOTONIC, @ts) != 0 { return -1; }
     ts.sec * 1000000000 + ts.nsec
@@ -53,10 +53,10 @@ run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool 
     samples : [15]i64 = ---;
     run := 0;
     while run < BENCH_SAMPLES {
-        started := mono_ns();
+        started := monoNs();
         if started < 0 { return false; }
         value := zlib.encode(data, options, alloc) catch { return false; };
-        finished := mono_ns();
+        finished := monoNs();
         if finished < started {
             alloc.deallocBytes(value.ptr);
             return false;
@@ -74,7 +74,7 @@ run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool 
     throughput := data.len * 1000000000 / 1024 / safe_ns;
     print("{} level={} input={} packed={} ratio_permille={} encode_ns={} encode_KiB_s={}\n",
         label, level, data.len, packed.len, ratio_permille, encode_ns, throughput);
-    ok := fs.write_file(artifact_path(label, level), packed);
+    ok := fs.writeFile(artifact_path(label, level), packed);
     alloc.deallocBytes(packed.ptr);
     ok
 }

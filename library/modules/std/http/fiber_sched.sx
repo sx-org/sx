@@ -15,7 +15,7 @@
 // OUTLIVE the Server. drive() maps to Scheduler.poll(0), which drains the
 // ready queue and never blocks; a handler that used the scheduler's own
 // fd-blocking would make poll bail loudly (fiber handlers do their I/O
-// waiting through req.read_body — the server's loop owns the fds).
+// waiting through req.readBody — the server's loop owns the fds).
 @import "modules/std/http/fiber.sx";
 sched :: @import "modules/std/sched.sx";
 
@@ -40,8 +40,8 @@ SchedRunner :: struct {
 impl FiberRunner for SchedRunner {
     spawn :: (self: *SchedRunner, entry: *void, arg: *void) -> usize {
         f := self.s.spawn(||_{ entry, arg } {
-            entry_fn := entry.((*void) -> void);
-            entry_fn(arg);
+            entryFn := entry.((*void) -> void);
+            entryFn(arg);
         });
         return f.(usize);
     }
@@ -52,14 +52,14 @@ impl FiberRunner for SchedRunner {
         self.s.wake(f);
     }
 
-    suspend_current :: (self: *SchedRunner) {
-        self.s.suspend_self();
+    suspendCurrent :: (self: *SchedRunner) {
+        self.s.suspendSelf();
     }
 
     drive :: (self: *SchedRunner) {
         // poll(0) drains every ready fiber and returns without blocking
         // (it aborts loudly if a fiber used the scheduler's own fd-wait —
-        // fiber handlers must wait through req.read_body instead). The
+        // fiber handlers must wait through req.readBody instead). The
         // virtual-time return value is meaningless here (no timers).
         self.s.poll(0);
     }

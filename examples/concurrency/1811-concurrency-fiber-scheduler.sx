@@ -1,7 +1,7 @@
 // The M:1 cooperative fiber scheduler core, in pure
-// sx over `swap_context` (proven in 1807-1809). `Scheduler` drives N fibers,
+// sx over `swapContext` (proven in 1807-1809). `Scheduler` drives N fibers,
 // each running a `body: Closure() -> void` on its own guarded `mmap` stack;
-// fibers cooperate by calling `yield_now`, which round-robins control back
+// fibers cooperate by calling `yieldNow`, which round-robins control back
 // through the scheduler loop.
 //
 // Round-robin demo: 3 fibers (A=0, B=1, C=2) each append their id to a shared
@@ -44,13 +44,13 @@ main :: () -> i64 {
     psh := *sh;
 
     // Three DIFFERENT fiber bodies (distinct captured ids), interleaving via
-    // yield_now. Each appends its id once per round for 3 rounds.
+    // yieldNow. Each appends its id once per round for 3 rounds.
     spawn_worker :: (ps: *sched.Scheduler, psh: *Shared, my_id: i64) {
         ps.spawn(||_{ ps, psh, my_id } {
             r := 0;
             while r < 3 {
                 append(psh, my_id);
-                if r < 2 { ps.yield_now(); }   // cooperate between rounds
+                if r < 2 { ps.yieldNow(); }   // cooperate between rounds
                 r = r + 1;
             }
             psh.done[my_id] = 1;
@@ -72,7 +72,7 @@ main :: () -> i64 {
     }
     print("\n");
 
-    print("spawned: {}\n", s.n_spawned);
+    print("spawned: {}\n", s.nSpawned);
     print("done: {} {} {}\n", sh.done[0], sh.done[1], sh.done[2]);
     print("all done: {}\n", sh.done[0] + sh.done[1] + sh.done[2]);
     return 0;

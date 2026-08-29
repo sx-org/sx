@@ -14,6 +14,6 @@ main :: () {
     a.store(true, .release);
     print("after store: {}\n", a.load(.acquire)); // true
 
-    a.store(false, .seq_cst);
-    print("after reset: {}\n", a.load(.seq_cst)); // false
+    a.store(false, .seqCst);
+    print("after reset: {}\n", a.load(.seqCst)); // false
 }

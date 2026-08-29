@@ -27,7 +27,7 @@ submit :: (rc: *http.RouteCtx) {
 // Param route: the fallback pass must still extract path params. The
 // param is surfaced in a HEADER because a HEAD response has no body.
 user :: (rc: *http.RouteCtx) {
-    rc.resp.add_header("X-Id", rc.param("id"));
+    rc.resp.addHeader("X-Id", rc.param("id"));
     rc.resp.body = "user:x";       // 6 bytes
 }
 
@@ -38,22 +38,22 @@ hd_get :: (rc: *http.RouteCtx) {
 }
 
 hd_head :: (rc: *http.RouteCtx) {
-    rc.resp.add_header("X-Via", "head-route");
+    rc.resp.addHeader("X-Via", "head-route");
 }
 
 // Custom 404 — must be reached for HEAD too.
 nf :: (rc: *http.RouteCtx) {
     rc.resp.status = 404;
-    rc.resp.add_header("X-NF", "1");
+    rc.resp.addHeader("X-NF", "1");
     rc.resp.body = "custom nf";
 }
 
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -93,7 +93,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -126,9 +126,9 @@ main :: () -> i32 {
         router.get("/users/:id", user);
         router.get("/hd", hd_get);
         router.route("HEAD", "/hd", hd_head);   // AFTER the GET — must still win
-        router.set_not_found(nf);
+        router.setNotFound(nf);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, http.dispatch, xx *router);
         if se { print("init failed\n"); return 1; }
 
@@ -161,12 +161,12 @@ main :: () -> i32 {
         check(r, "HTTP/1.1 405", "HEAD 405 status", *failed);
         check(r, "Allow: POST", "HEAD 405 Allow", *failed);
 
-        // (d) HEAD on an unregistered path reaches the CUSTOM not_found
+        // (d) HEAD on an unregistered path reaches the CUSTOM notFound
         r = roundtrip(*srv, "HEAD /nope HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 404", "HEAD 404", *failed);
         check(r, "X-NF: 1", "HEAD custom not_found", *failed);
 
-        // (e) fallback through a PARAM route: match_pattern must fill the
+        // (e) fallback through a PARAM route: matchPattern must fill the
         // params in the second pass (value surfaced via header)
         r = roundtrip(*srv, "HEAD /users/42 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "HEAD param status", *failed);

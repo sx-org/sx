@@ -1,7 +1,7 @@
 // std.http inbound request-body handling: the server
 // DECODES an inbound `Transfer-Encoding: chunked` request body into
 // Request.body (the handler sees the assembled body), enforces a
-// configurable max_body with EARLY 413 (declared Content-Length over max,
+// configurable maxBody with EARLY 413 (declared Content-Length over max,
 // or a chunked body that grows past max — without buffering the whole
 // oversized body), rejects the CL+TE smuggling pair → 400, a non-chunked
 // TE → 501, and malformed chunk framing → 400, while the fixed-body
@@ -53,9 +53,9 @@ contains :: (hay: string, needle: string) -> bool {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -100,7 +100,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     out : string = "";
     while tries < 4000 {
         srv.tick(2) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (8192 - total));
+        n, re := socket.readNb(fd, *scratch[total], (8192 - total));
         if !re { total += n; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
         if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
@@ -131,7 +131,7 @@ roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*
             sent += n;
         }
         srv.tick(2) catch {};
-        rn, re := socket.read_nb(fd, *scratch[total], (8192 - total));
+        rn, re := socket.readNb(fd, *scratch[total], (8192 - total));
         if !re { total += rn; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
         if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
@@ -153,7 +153,7 @@ body_of :: (r: string) -> string {
     return string{ ptr = *r.ptr[he + 4], len = r.len - (he + 4) };
 }
 
-str_eq :: (a: string, b: string) -> bool {
+strEq :: (a: string, b: string) -> bool {
     if a.len != b.len { return false; }
     i := 0;
     while i < a.len { if a[i] != b[i] { return false; } i += 1; }
@@ -163,7 +163,7 @@ str_eq :: (a: string, b: string) -> bool {
 // Count how many connection slots are currently in use (not FREE).
 active_slots :: (srv: *http.Server) -> i64 {
     s := srv.stats();
-    return s.active_conns;
+    return s.activeConns;
 }
 
 main :: () -> i32 {
@@ -174,11 +174,11 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 2000,
-            timeout_keepalive_ms = 2000,
-            request_count = 100,
-            max_conn = 8,
-            max_body = 64,            // small ceiling to exercise early 413
+            timeoutRequestMs = 2000,
+            timeoutKeepaliveMs = 2000,
+            requestCount = 100,
+            maxConn = 8,
+            maxBody = 64,            // small ceiling to exercise early 413
         };
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }
@@ -188,7 +188,7 @@ main :: () -> i32 {
         // ── 1. fixed Content-Length body still works (200, exact body) ──
         if rc == 0 {
             r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "hello") {
                 print("fixed body: expected 200 'hello'\n"); rc = 1;
             }
         }
@@ -211,7 +211,7 @@ main :: () -> i32 {
                     "0\r\nX-Trailer: ignored\r\n\r\n"))));
             }
             r := roundtrip_split(*srv, req, 7, scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "Wikipedia in chunks.") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "Wikipedia in chunks.") {
                 print("chunked decode: expected 200 'Wikipedia in chunks.', got body len {}\n", body_of(r).len);
                 rc = 1;
             }
@@ -222,12 +222,12 @@ main :: () -> i32 {
         if rc == 0 {
             req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
             r := roundtrip(*srv, req, scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "hello") {
                 print("chunked single: expected 200 'hello'\n"); rc = 1;
             }
         }
 
-        // ── 4. max_body: Content-Length over max (64) → early 413 ──
+        // ── 4. maxBody: Content-Length over max (64) → early 413 ──
         if rc == 0 {
             // 100 bytes declared; never buffered — rejected on the CL alone.
             r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 100\r\n\r\n", scratch);
@@ -236,10 +236,10 @@ main :: () -> i32 {
             }
         }
 
-        // ── 5. max_body: chunked body grows past max → 413 ──
+        // ── 5. maxBody: chunked body grows past max → 413 ──
         if rc == 0 {
             // a single 0x50 (80) byte chunk > 64; rejected the instant the
-            // size header crosses max_body (the 80 data bytes aren't sent).
+            // size header crosses maxBody (the 80 data bytes aren't sent).
             req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n50\r\n";
             r := roundtrip(*srv, req, scratch);
             if !contains(r, "HTTP/1.1 413") {
@@ -280,8 +280,8 @@ main :: () -> i32 {
             if !contains(r, "HTTP/1.1 400") { print("0x-prefix size: expected 400\n"); rc = 1; }
         }
 
-        // ── 9c. single chunk size over max_body (not i64-wrapping) → 413 ──
-        //    `100` hex = 256 > max_body (64). Must be 413 (over-limit), NOT a
+        // ── 9c. single chunk size over maxBody (not i64-wrapping) → 413 ──
+        //    `100` hex = 256 > maxBody (64). Must be 413 (over-limit), NOT a
         //    400 (overflow) — and the 256 data bytes are never buffered.
         if rc == 0 {
             r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n100\r\n", scratch);
@@ -311,7 +311,7 @@ main :: () -> i32 {
         // ── 11. server still healthy after all of the above ──
         if rc == 0 {
             r := roundtrip(*srv, "GET /len HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc", scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "3") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "3") {
                 print("post-run health: expected 200 '3'\n"); rc = 1;
             }
         }

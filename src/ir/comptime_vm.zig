@@ -635,7 +635,7 @@ pub const Vm = struct {
     /// comptime memory gives a context whose fn slots are real func-refs, so
     /// a comptime body that allocates via `context.allocator` dispatches
     /// through `call_indirect` to the thunk to `CAllocator.allocBytes` to
-    /// `libc_malloc` to the VM's native `malloc` — all on the VM, no host
+    /// `libcMalloc` to the VM's native `malloc` — all on the VM, no host
     /// heap. No hand-built shadow context exists: if the global is absent
     /// (std not imported, or its defaults not yet constructible at this
     /// point in the scan), bail LOUDLY — never a hardcoded thunk table that

@@ -40,7 +40,7 @@ DEFLATE, zlib, gzip, and ZIP reuse `compress.Error` directly:
 - `AllocationFailed` reports allocator failure.
 
 `compress.Progress` reports how much of the caller's input and output windows
-was consumed or initialized, followed by `need_input`, `need_output`, or
+was consumed or initialized, followed by `needInput`, `needOutput`, or
 `done`. `compress.StreamingEncoder` and `StreamingDecoder` provide the common
 bounded streaming behavior implemented by each concrete codec state.
 
@@ -64,10 +64,10 @@ own or borrow state and must not be copied; pass pointers when sharing them.
 
 ## DEFLATE, zlib, and gzip
 
-Each format exposes `Encoder`, `Decoder`, `encode`, `encode_into`, `decode`,
-`decode_into`, and `bound`. Raw DEFLATE and zlib additionally expose prefix
-decoding. Their ordinary `decode` and `decode_into` operations reject trailing
-bytes; the corresponding `decode_prefix` and `decode_into_prefix` operations
+Each format exposes `Encoder`, `Decoder`, `encode`, `encodeInto`, `decode`,
+`decodeInto`, and `bound`. Raw DEFLATE and zlib additionally expose prefix
+decoding. Their ordinary `decode` and `decodeInto` operations reject trailing
+bytes; the corresponding `decodePrefix` and `decodeIntoPrefix` operations
 return both the decoded bytes and the compressed byte count when a stream is
 embedded in a larger input.
 
@@ -75,7 +75,7 @@ embedded in a larger input.
 return `u32` and accept an optional prior checksum for incremental updates.
 `gzip.Header` describes gzip-only metadata such as filename, comment, extra
 bytes, timestamp, operating-system identifier, text flag, and the optional
-FHCRC header checksum (`header_checksum`). Its
+FHCRC header checksum (`headerChecksum`). Its
 string fields are borrowed for an `encode` call; `Encoder.init` and `reset`
 copy them into encoder-owned state before returning.
 
@@ -85,21 +85,21 @@ A streaming state operates only on the windows supplied to each call:
 encoder := try deflate.Encoder.init(.{ level = 6 });
 defer encoder.deinit();
 
-input_at := 0;
-output_at := 0;
+inputAt := 0;
+outputAt := 0;
 while true {
     input : string = "";
-    if input_at < source.len { input = source[input_at..]; }
-    output := destination[output_at..];
+    if inputAt < source.len { input = source[inputAt..]; }
+    output := destination[outputAt..];
     progress := try encoder.flush(input, output, .finish);
-    input_at += progress.consumed;
-    output_at += progress.produced;
+    inputAt += progress.consumed;
+    outputAt += progress.produced;
     if progress.status == .done { break; }
-    if progress.status == .need_output and output_at == destination.len {
+    if progress.status == .needOutput and outputAt == destination.len {
         raise .OutputLimit;
     }
 }
-compressed := destination[..output_at];
+compressed := destination[..outputAt];
 ```
 
 Use `.none` while more independent input windows are expected. Raw DEFLATE
@@ -131,9 +131,9 @@ from compression failure.
 
 ## ZIP ownership and I/O
 
-`zip.open` and `zip.open_embedded` borrow their input archive bytes. Those
+`zip.open` and `zip.openEmbedded` borrow their input archive bytes. Those
 bytes must outlive the `zip.Reader`. Entries and their name/comment/extra
-views borrow the reader. `extract` and `extract_compressed` return owned
+views borrow the reader. `extract` and `extractCompressed` return owned
 storage; `_into` variants return borrowed caller-buffer prefixes.
 
 For bounded random-access input, implement `zip.Source`:
@@ -146,7 +146,7 @@ ArchiveSource :: struct { bytes: string; }
 impl zip.Source for ArchiveSource {
     size :: (self: *ArchiveSource) -> i64 { self.bytes.len }
 
-    read_at :: (self: *ArchiveSource, offset: i64, output: string) ->
+    readAt :: (self: *ArchiveSource, offset: i64, output: string) ->
         (string, !Error) {
         if offset < 0 or offset > self.bytes.len { raise .InvalidData; }
         take := self.bytes.len - offset;
@@ -158,17 +158,17 @@ impl zip.Source for ArchiveSource {
 }
 ```
 
-`size` is authoritative. `read_at` must return an initialized prefix of the
+`size` is authoritative. `readAt` must return an initialized prefix of the
 supplied output window, may return a partial prefix, and returns an empty
 prefix at end of input. The returned slice must point at that window rather
 than unrelated storage. The source object must outlive a reader opened with
-`zip.open_source`.
+`zip.openSource`.
 
 `zip.Sink.write` either accepts the supplied bytes or raises an error. A sink
 writer is poisoned after an error because already-emitted archive bytes cannot
 be rolled back.
 
-`Reader.stream`, `stream_name`, and `stream_compressed` return a bounded,
+`Reader.stream`, `streamName`, and `streamCompressed` return a bounded,
 seekable `zip.EntryReader`. It borrows the archive reader. `read` returns an
 initialized borrowed prefix; read again after the last non-empty chunk to get
 the empty end marker and complete checksum validation, or call the explicit
@@ -178,10 +178,10 @@ terminal read. Seeking backwards replays decompression without materializing
 the whole entry.
 
 ```sx
-archive := try zip.open_source(xx source, .{ max_metadata = 8 * 1024 * 1024 });
+archive := try zip.openSource(xx source, .{ maxMetadata = 8 * 1024 * 1024 });
 defer archive.deinit();
 
-entry := try archive.stream_name("assets/data.bin", 16 * 1024 * 1024);
+entry := try archive.streamName("assets/data.bin", 16 * 1024 * 1024);
 defer entry.deinit();
 
 buffer : [16384]u8 = ---;
@@ -193,9 +193,9 @@ while true {
 ```
 
 `zip.Writer.init` accumulates an owned memory archive; after `finish`, `take`
-transfers that ownership to the caller. `init_sink` emits incrementally,
-`init_file` writes a path, `from_reader` preserves existing local records
-without recompression, and `append_file` updates an existing archive. Every
+transfers that ownership to the caller. `initSink` emits incrementally,
+`initFile` writes a path, `fromReader` preserves existing local records
+without recompression, and `appendFile` updates an existing archive. Every
 factory takes a typed options struct (`WriterOptions`, `FileWriterOptions`,
 `FromReaderOptions`, `AppendOptions`; readers take `OpenOptions` /
 `OpenFileOptions`, whose null `size` means "to the end of the file") — no
@@ -207,13 +207,13 @@ infallible cleanup and is a no-op after `close`.
 Entry options select store or DEFLATE, level, deterministic metadata,
 separate local/central extras, data descriptors, UTF-8 naming, attributes,
 and timestamps without exposing miniz flag words. Archive-wide entry alignment
-is configured separately with `Writer.set_alignment`. ZIP64 may be forced and
+is configured separately with `Writer.setAlignment`. ZIP64 may be forced and
 is selected automatically when ZIP32 limits are exceeded. Raw compressed entry
-streaming and `Writer.add_from` support lossless archive transfer.
+streaming and `Writer.addFrom` support lossless archive transfer.
 
 ZIP can inspect encrypted entries, unknown methods, and unsafe paths, but it
 does not decrypt archives. Multi-disk archives, encryption, and writing or
-decoding methods other than store and DEFLATE are unsupported. `safe_path` is
+decoding methods other than store and DEFLATE are unsupported. `safePath` is
 inspection metadata only; applications must still choose and enforce their
 own extraction root.
 

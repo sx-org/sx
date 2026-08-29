@@ -24,8 +24,8 @@ libc :: @library "c";
 // still indexed program-wide: the bare C names can steal unrelated language
 // functions/resolution paths even when every libc use is namespace-qualified.
 // The linked symbols remain `malloc` / `free`.
-libc_malloc :: (size: i64) -> *void extern libc "malloc";
-libc_free :: (ptr: *void) -> void extern libc "free";
+libcMalloc :: (size: i64) -> *void extern libc "malloc";
+libcFree :: (ptr: *void) -> void extern libc "free";
 memcpy  :: (dst: *void, src: *void, size: i64) -> *void extern libc;
 memset  :: (dst: *void, val: i64, size: i64) -> void extern libc;
 memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
@@ -62,7 +62,7 @@ inline match @host.pointerSize {
     else: @error("std/c.sx: unsupported pointer size for C timespec");
 }
 
-clock_gettime :: (clock_id: i32, ts: *Timespec) -> i32 extern libc;
+clock_gettime :: (clockId: i32, ts: *Timespec) -> i32 extern libc;
 
 // libc `struct tm` (broken-down civil time). The two trailing POSIX fields
 // exist where the target ABI provides them; Windows/wasm layouts differ only
@@ -81,8 +81,8 @@ inline match @host.os {
     }
 }
 inline match @host.os {
-    case .windows: localtime_s :: (result: *Tm, source: *i64) -> i32 extern libc "localtime_s";
-    else: localtime_r :: (source: *i64, result: *Tm) -> *Tm extern libc "localtime_r";
+    case .windows: localtimeS :: (result: *Tm, source: *i64) -> i32 extern libc "localtime_s";
+    else: localtimeR :: (source: *i64, result: *Tm) -> *Tm extern libc "localtime_r";
 }
 inline match @host.os {
     case .windows: mktime :: (value: *Tm) -> i64 extern libc "_mktime64";
@@ -94,7 +94,7 @@ inline match @host.os {
 // them, so native programs do not carry target-inapplicable externs.
 inline match @host.os {
     case .wasm:
-        emscripten_set_main_loop  :: (func: *void, fps: i32, sim_infinite: i32) extern libc;
+        emscripten_set_main_loop  :: (func: *void, fps: i32, simInfinite: i32) extern libc;
         emscripten_run_script_int :: (script: [:0]u8) -> i32 extern libc;
     else: {}
 }
@@ -131,13 +131,13 @@ signal  :: (sig: i32, handler: usize) -> usize extern libc;
 // add its own case — the `else` forces a loud compile error rather than binding
 // the wrong symbol (e.g. windows is `_errno`, NOT `__errno_location`).
 inline match @host.os {
-    case .macos:  errno_location :: () -> *i32 extern libc "__error";
-    case .ios:    errno_location :: () -> *i32 extern libc "__error";
-    case .linux:  errno_location :: () -> *i32 extern libc "__errno_location";
-    case .android: errno_location :: () -> *i32 extern libc "__errno";
-    case .windows: errno_location :: () -> *i32 extern libc "_errno";
-    case .wasm:   errno_location :: () -> *i32 extern libc "__errno_location";
-    else:         @error("std/c.sx: errno_location symbol is only known for Darwin (__error), Linux/Emscripten (__errno_location), Android (__errno), and Windows (_errno) — add a case for this target.");
+    case .macos:  errnoLocation :: () -> *i32 extern libc "__error";
+    case .ios:    errnoLocation :: () -> *i32 extern libc "__error";
+    case .linux:  errnoLocation :: () -> *i32 extern libc "__errno_location";
+    case .android: errnoLocation :: () -> *i32 extern libc "__errno";
+    case .windows: errnoLocation :: () -> *i32 extern libc "_errno";
+    case .wasm:   errnoLocation :: () -> *i32 extern libc "__errno_location";
+    else:         @error("std/c.sx: errnoLocation symbol is only known for Darwin (__error), Linux/Emscripten (__errno_location), Android (__errno), and Windows (_errno) — add a case for this target.");
 }
 
 // ── pthread ─────────────────────────────────────────────────────────────────

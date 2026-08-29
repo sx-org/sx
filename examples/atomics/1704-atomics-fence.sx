@@ -10,6 +10,6 @@ main :: () {
     fence(.release);
     a.store(3, .relaxed);
     fence(.acquire);
-    fence(.seq_cst);
+    fence(.seqCst);
     print("after fences: {}\n", a.load(.relaxed)); // 3
 }

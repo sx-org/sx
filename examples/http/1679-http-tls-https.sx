@@ -6,7 +6,7 @@
 //
 // Cases:
 //   A. successful HTTPS request → 200 with the expected body.
-//   B. bad cert path → setup_files returns false (server accepts no TLS; loud).
+//   B. bad cert path → setupFiles returns false (server accepts no TLS; loud).
 //   C. handshake failure (a plaintext client sends garbage to the TLS port) →
 //      the server drops that slot, then still serves a fresh good client.
 //   + net-zero GPA leak gate across the whole run.
@@ -37,7 +37,7 @@ cli_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     n := socket.write(fd.*, buf, len);
     if n >= 0 { return xx n; }
     e := socket.errno();
-    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
+    if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
     return -1;
 }
 cli_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
@@ -46,7 +46,7 @@ cli_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     if n > 0 { return xx n; }
     if n == 0 { return 0; }
     e := socket.errno();
-    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
+    if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
     return -1;
 }
 
@@ -98,9 +98,9 @@ client_free :: (c: *TlsClient) {
 dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(PORT, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -121,18 +121,18 @@ main :: () -> i32 {
 }
 
 run :: () -> i32 {
-    // ── B. bad cert path → setup_files must fail loudly ──
+    // ── B. bad cert path → setupFiles must fail loudly ──
     bad : tlsp.TlsServer = .{};
-    if bad.setup_files("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
-        return 1;   // setup_files unexpectedly succeeded on a missing cert
+    if bad.setupFiles("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+        return 1;   // setupFiles unexpectedly succeeded on a missing cert
     }
 
     // ── shared acceptor from the fixture cert/key ──
     ts : tlsp.TlsServer = .{};
-    if !ts.setup_files("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+    if !ts.setupFiles("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
         return 2;
     }
-    cfg : http.Config = .{ port = PORT, timeout_request_ms = 3000, max_conn = 8 };
+    cfg : http.Config = .{ port = PORT, timeoutRequestMs = 3000, maxConn = 8 };
     cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 3; }

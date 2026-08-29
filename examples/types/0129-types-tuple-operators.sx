@@ -835,12 +835,12 @@ main :: () {
         // tmp_cl = cl_arr[1]; print("closure-loop-1: {}\n", tmp_cl(1));
         // tmp_cl = cl_arr[4]; print("closure-loop-4: {}\n", tmp_cl(1));
 
-        use_fast := true;
-        k_fast : i32 = 2;
-        k_slow : i32 = 10;
-        f_fast : Closure(i32) -> i32 = closure(|x: i32|_{ k_fast } -> i32 x * k_fast);
-        f_slow : Closure(i32) -> i32 = closure(|x: i32|_{ k_slow } -> i32 x + k_slow);
-        f_cond : Closure(i32) -> i32 = if use_fast then f_fast else f_slow;
+        useFast := true;
+        k_fast: i32 = 2;
+        k_slow: i32 = 10;
+        f_fast: Closure(i32) -> i32 = closure(|x: i32|_{ k_fast } -> i32 x * k_fast);
+        f_slow: Closure(i32) -> i32 = closure(|x: i32|_{ k_slow } -> i32 x + k_slow);
+        f_cond: Closure(i32) -> i32 = if useFast then f_fast else f_slow;
         print("closure-cond: {}\n", f_cond(5));
 
         Form :: struct {

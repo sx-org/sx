@@ -16,13 +16,13 @@ main :: () -> i32 {
     loop, ie := event.Loop.init();
     if ie { print("loop init failed\n"); return 1; }
     are := false;
-    loop.add_read(a, 41) catch { are = true; };
+    loop.addRead(a, 41) catch { are = true; };
     if are { print("add_read failed\n"); return 1; }
 
     evs : [8]event.Event = ---;
 
     // Idle: a bounded wait returns 0 events, and roughly honors the bound.
-    t0 := event.deadline_in(40);
+    t0 := event.deadlineIn(40);
     n, we := loop.wait(.{ ptr = *evs[0], len = 8 }, 40);
     if we { print("wait failed\n"); return 1; }
     if n != 0 { print("idle wait: expected 0 events, got {}\n", n); return 1; }
@@ -43,7 +43,7 @@ main :: () -> i32 {
 
     // Write interest on an empty send buffer reports writable at once.
     awe := false;
-    loop.add_write(b, 42) catch { awe = true; };
+    loop.addWrite(b, 42) catch { awe = true; };
     if awe { print("add_write failed\n"); return 1; }
     buf : [16]u8 = ---;
     socket.read(a, *buf[0], 16);   // drain so only the WRITE event fires
@@ -53,7 +53,7 @@ main :: () -> i32 {
     if !evs[0].writable { print("event not writable\n"); return 1; }
     if evs[0].udata != 42 { print("write udata did not round-trip\n"); return 1; }
     print("writable: immediate, udata correct\n");
-    loop.del_write(b);
+    loop.delWrite(b);
 
     // Peer close: readable with the eof flag set.
     socket.close(b);
@@ -63,7 +63,7 @@ main :: () -> i32 {
     if !evs[0].eof { print("after close: eof flag not set\n"); return 1; }
     print("peer close: eof flagged\n");
 
-    loop.del_read(a);
+    loop.delRead(a);
     socket.close(a);
     loop.close();
     print("event loop ok\n");

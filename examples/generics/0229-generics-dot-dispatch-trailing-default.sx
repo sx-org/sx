@@ -23,11 +23,11 @@ Tracker :: struct {
 impl Allocator for Tracker {
     allocBytes :: (self: *Tracker, size: i64) -> *void {
         self.allocs += 1;
-        c.libc_malloc(size)
+        c.libcMalloc(size)
     }
     deallocBytes :: (self: *Tracker, ptr: *void) {
         self.deallocs += 1;
-        c.libc_free(ptr);
+        c.libcFree(ptr);
     }
 }
 

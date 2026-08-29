@@ -23,7 +23,7 @@
 //     record). The retry comes from readability; wr_extra_retries counts
 //     write attempts made while waiting with nothing inbound, and must be 0.
 //     Keep-alive on the same conn afterwards proves the watch state heals.
-//   B (accept #3, pool + stream_request_body): the SECOND data-bearing read
+//   B (accept #3, pool + streamRequestBody): the SECOND data-bearing read
 //     (the body tail) injects the mode-R drain — the CONN_BODY pump must
 //     also retry on writability.
 //   H (accept #4): the want surfaces AFTER the request is fully
@@ -80,7 +80,7 @@ FakeConn :: struct {
 drain_fd :: (c: *FakeConn) -> i64 {
     got : i64 = 0;
     while c.pend_len < PEND_CAP {
-        n, re := socket.read_nb(c.fd, *c.pend[c.pend_len], (PEND_CAP - c.pend_len));
+        n, re := socket.readNb(c.fd, *c.pend[c.pend_len], (PEND_CAP - c.pend_len));
         if re == .WouldBlock { break; }
         if re { if got > 0 { break; } return -1; }
         c.pend_len += n;
@@ -121,7 +121,7 @@ impl TlsConn for FakeConn {
             }
             return 0, TlsStep.WantRead;   // nothing buffered yet — plain would-block
         }
-        n, re := socket.read_nb(self.fd, buf, cap);
+        n, re := socket.readNb(self.fd, buf, cap);
         if re == .WouldBlock {
             // Mode H: the request bytes have already been surfaced (a
             // data-bearing read happened); demand WRITABILITY once at the
@@ -149,7 +149,7 @@ impl TlsConn for FakeConn {
                 // the futile retry: a correct server only re-calls this on
                 // READ readiness, i.e. when the byte is actually there.
                 tick : [8]u8 = ---;
-                n, re := socket.read_nb(self.fd, *tick[0], 8);
+                n, re := socket.readNb(self.fd, *tick[0], 8);
                 if re == .WouldBlock {
                     self.acc.wr_extra_retries += 1;
                     return 0, TlsStep.WantRead;
@@ -164,7 +164,7 @@ impl TlsConn for FakeConn {
                 return 0, TlsStep.WantRead;
             }
         }
-        n, we := socket.write_nb(self.fd, buf, len);
+        n, we := socket.writeNb(self.fd, buf, len);
         if we == .WouldBlock { return 0, TlsStep.WantWrite; }
         if we { return 0, TlsStep.Fatal; }
         return n, TlsStep.Done;
@@ -208,7 +208,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         scratch : [64]u8 = ---;
         total : i64 = 0;
         while true {
-            n := req.read_body(*scratch[0], 64);
+            n := req.readBody(*scratch[0], 64);
             if n <= 0 { break; }
             total += n;
         }
@@ -231,9 +231,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(PORT, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -257,7 +257,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: str
     t : i64 = 0;
     while t < 2500 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { break; }
         s := string{ ptr = rbuf, len = total };
@@ -285,12 +285,12 @@ main :: () -> i32 {
 run :: (acc: *FakeAcceptor) -> i32 {
     cfg : http.Config = .{
         port = PORT,
-        timeout_request_ms = 800,     // a red-state stall evicts fast
-        timeout_keepalive_ms = 3000,
-        max_conn = 8,
-        thread_pool_count = 1,        // mode B needs the streamed-body pump
-        thread_pool_backlog = 8,
-        stream_request_body = true,
+        timeoutRequestMs = 800,     // a red-state stall evicts fast
+        timeoutKeepaliveMs = 3000,
+        maxConn = 8,
+        threadPoolCount = 1,        // mode B needs the streamed-body pump
+        threadPoolBacklog = 8,
+        streamRequestBody = true,
     };
     cfg.tls = xx acc;
     srv, se := http.Server.init(cfg, route, 0);

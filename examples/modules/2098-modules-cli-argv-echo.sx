@@ -6,9 +6,9 @@
 
 main :: () {
     buf : [64]string = ---;
-    args := os_args(buf[0..64]);
+    args := osArgs(buf[0..64]);
 
-    print("argc={}\n", os_argc());
+    print("argc={}\n", osArgc());
     print("filled={}\n", args.len);
     if args.len >= 1 and args[0].len > 0 { print("argv0: present\n"); }
     else { print("argv0: MISSING\n"); }
@@ -20,5 +20,5 @@ main :: () {
     }
 
     // The fill clamps to the caller's buffer, not to argc.
-    print("clamped={}\n", os_args(buf[0..0]).len);
+    print("clamped={}\n", osArgs(buf[0..0]).len);
 }

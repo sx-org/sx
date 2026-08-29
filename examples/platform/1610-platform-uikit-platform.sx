@@ -95,7 +95,7 @@ main :: () -> void {
     // iOS-only example (see the build+run header). The host seam gates
     // here — uikit.sx itself carries no per-function OS guards.
     inline if @host.os != .ios { return; }
-    plat : *UIKitPlatform = xx c.libc_malloc(@sizeOf(UIKitPlatform));
+    plat : *UIKitPlatform = xx c.libcMalloc(@sizeOf(UIKitPlatform));
     plat.init("SxUIKitPlatform", 0, 0);
     uikit_app_run(plat, tap_frame);
 }

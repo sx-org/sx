@@ -7,7 +7,7 @@
 // the connection must remain usable (keep-alive) afterwards.
 //
 // The parser keeps a per-Conn scan cursor + resumable chunk-scan state:
-// restarting the terminator scan from byte 0 on every read_more cycle, and
+// restarting the terminator scan from byte 0 on every readMore cycle, and
 // revalidating all chunked framing from scratch each cycle, is O(n²) on
 // slow-dripped requests — a slowloris CPU amplifier.
 //
@@ -40,7 +40,7 @@ checksum :: (s: string) -> i64 {
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/hdr" {
         // echo the probe header so the split header block is proven intact
-        v := http.find_header(req, "x-probe-23");
+        v := http.findHeader(req, "x-probe-23");
         resp.body = v;
         return;
     }
@@ -56,9 +56,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -83,7 +83,7 @@ send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
         if sent + want > s.len { want = s.len - sent; }
         off : i64 = 0;
         while off < want {
-            n, we := socket.write_nb(fd, *s.ptr[sent + off], (want - off));
+            n, we := socket.writeNb(fd, *s.ptr[sent + off], (want - off));
             if !we { off += n; }
             srv.tick(1) catch {};
         }
@@ -101,7 +101,7 @@ read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             break;
         }
@@ -144,14 +144,14 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         cap : i64 = 32768;
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
-        req_arena := mem.Arena.init(gpa, 65536);
+        reqArena := mem.Arena.init(gpa, 65536);
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 8000,
-            timeout_keepalive_ms = 8000,
-            request_count = 50,
-            max_conn = 4,
+            timeoutRequestMs = 8000,
+            timeoutKeepaliveMs = 8000,
+            requestCount = 50,
+            maxConn = 4,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
@@ -160,7 +160,7 @@ main :: () -> i32 {
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         // ── 1. header block split 7 bytes at a time ───────────────────
-        push .{ allocator = req_arena } {
+        push .{ allocator = reqArena } {
             r1 := "GET /hdr HTTP/1.1\r\nHost: t\r\n";
             i := 0;
             while i < 24 {
@@ -180,7 +180,7 @@ main :: () -> i32 {
         // ── 2. chunked body: 32 chunks, ext + trailer, split by 13 ────
         body_want : i64 = N_CHUNKS * CHUNK_DATA;
         chk : i64 = 0;
-        push .{ allocator = req_arena } {
+        push .{ allocator = reqArena } {
             // build the full decoded body first for the expected checksum
             full : [*]u8 = xx context.allocator.allocBytes(body_want);
             i := 0;
@@ -201,7 +201,7 @@ main :: () -> i32 {
         }
         resp2 := read_response(*srv, ca, rbuf, cap);
         expect2 : string = "";
-        push .{ allocator = req_arena } {   // arena-owned, freed at deinit
+        push .{ allocator = reqArena } {   // arena-owned, freed at deinit
             expect2 = concat(intToString(body_want), concat(":", intToString(chk)));
         }
         ok2 := contains(resp2, "HTTP/1.1 200 OK") and contains(resp2, expect2);
@@ -221,7 +221,7 @@ main :: () -> i32 {
 
         socket.close(ca);
         srv.close();
-        req_arena.deinit();
+        reqArena.deinit();
         context.allocator.deallocBytes(rbuf);
         leaked = gpa.allocCount;
     }

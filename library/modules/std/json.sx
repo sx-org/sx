@@ -55,7 +55,7 @@
 //
 // Streaming straight to a file (no whole-document string):
 //
-//     f := open_file("db.json\0", .write)?!;
+//     f := openFile("db.json\0", .write)?!;
 //     stage : [4096]u8 = ---;
 //     try writeToFile(root, @f, string{ ptr = @stage[0], len = 4096 });
 //     f.close();
@@ -68,7 +68,7 @@ c :: @import "modules/std/c.sx";
 // visibility is non-transitive, so the module that names the type imports it.
 @import "modules/std/mem.sx";
 @import "modules/std/fs.sx";
-// `to_f64` / `shortest` / `float_bits` / `is_non_finite` — the exact
+// `toF64` / `shortest` / `floatBits` / `isNonFinite` — the exact
 // decimal <-> binary pair the reader and the writer share.
 @import "modules/std/internal/decimal.sx";
 
@@ -143,7 +143,7 @@ Object :: struct {
     }
 }
 
-// Both directions come from std/internal/decimal.sx: `to_f64` reads a
+// Both directions come from std/internal/decimal.sx: `toF64` reads a
 // decimal significand scaled by a power of ten as the NEAREST double,
 // and `shortest` names a double with the fewest digits that read back as
 // itself. The reader and the writer share that one pair, so every finite
@@ -325,8 +325,8 @@ emitDecimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
 // double. The text is a preimage of `f`, never an approximation of it. A
 // NaN or an infinity has no JSON spelling and raises.
 writeFloat :: (f: f64, sink: *Sink) -> !JsonError {
-    bits := float_bits(f);
-    if is_non_finite(bits) { raise .NonFinite; }
+    bits := floatBits(f);
+    if isNonFinite(bits) { raise .NonFinite; }
     if bits < 0 { try sink.putByte('-'); }   // the sign BIT, so -0.0 keeps its sign
     v := if bits < 0 then 0.0 - f else f;
     if v == 0.0 { try sink.put("0.0"); return; }
@@ -684,8 +684,8 @@ Parser :: struct {
             exp10 += ev;
         }
         if isFloat {
-            fv := to_f64(*sig, exp10);
-            if is_non_finite(float_bits(fv)) { raise .BadNumber; }
+            fv := toF64(*sig, exp10);
+            if isNonFinite(floatBits(fv)) { raise .BadNumber; }
             if neg { fv = fv * (0.0 - 1.0); }   // scaled, not subtracted, so -0.0 keeps its sign
             return Value.float(fv);
         }

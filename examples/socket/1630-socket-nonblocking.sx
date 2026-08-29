@@ -1,7 +1,7 @@
-// std.socket nonblocking surface: set_nonblocking via
+// std.socket nonblocking surface: setNonblocking via
 // the C-variadic fcntl, and the typed _nb wrappers' full result
 // algebra — bytes, WouldBlock, Closed — on a unix socketpair, plus
-// accept_nb on a nonblocking TCP listener (WouldBlock with an empty
+// acceptNb on a nonblocking TCP listener (WouldBlock with an empty
 // backlog, a connection after a loopback connect).
 @import "modules/std.sx";
 
@@ -16,13 +16,13 @@ main :: () -> i32 {
     }
     a := pair[0];
     b := pair[1];
-    if !socket.set_nonblocking(a) or !socket.set_nonblocking(b) {
+    if !socket.setNonblocking(a) or !socket.setNonblocking(b) {
         print("set_nonblocking failed\n");
         return 1;
     }
 
     buf : [16]u8 = ---;
-    n, e := socket.read_nb(a, *buf[0], 16);
+    n, e := socket.readNb(a, *buf[0], 16);
     if e != .WouldBlock {
         print("empty pair read: expected WouldBlock\n");
         return 1;
@@ -30,16 +30,16 @@ main :: () -> i32 {
     print("empty read: WouldBlock\n");
 
     msg := "ping";
-    wn, we := socket.write_nb(b, msg.ptr, 4);
+    wn, we := socket.writeNb(b, msg.ptr, 4);
     if we { print("write_nb failed\n"); return 1; }
     if wn != 4 { print("short write: {}\n", wn); return 1; }
-    rn, re := socket.read_nb(a, *buf[0], 16);
+    rn, re := socket.readNb(a, *buf[0], 16);
     if re { print("read_nb after write failed\n"); return 1; }
     if rn != 4 { print("short read: {}\n", rn); return 1; }
     print("pair round trip: {} bytes\n", rn);
 
     socket.close(b);
-    cn, ce := socket.read_nb(a, *buf[0], 16);
+    cn, ce := socket.readNb(a, *buf[0], 16);
     if ce != .Closed {
         print("read after peer close: expected Closed\n");
         return 1;
@@ -47,19 +47,19 @@ main :: () -> i32 {
     print("peer close: Closed\n");
     socket.close(a);
 
-    // ── nonblocking listener: accept_nb ───────────────────────────────
+    // ── nonblocking listener: acceptNb ───────────────────────────────
     lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if lfd < 0 { print("listener socket failed\n"); return 1; }
     one : i32 = 1;
     socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
-    // Per-OS sockaddr_in — the constructor hides the darwin
-    // sin_len / linux layout split; addr is 127.0.0.1 in network order.
-    addr := socket.sockaddr_in(PORT, 0x0100007F);
+    // Per-OS sockaddrIn — the constructor hides the darwin
+    // sinLen / linux layout split; addr is 127.0.0.1 in network order.
+    addr := socket.sockaddrIn(PORT, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
-    if !socket.set_nonblocking(lfd) { print("listener set_nonblocking failed\n"); return 1; }
+    if !socket.setNonblocking(lfd) { print("listener set_nonblocking failed\n"); return 1; }
 
-    afd, ae := socket.accept_nb(lfd);
+    afd, ae := socket.acceptNb(lfd);
     if ae != .WouldBlock {
         print("empty backlog: expected WouldBlock\n");
         return 1;
@@ -77,7 +77,7 @@ main :: () -> i32 {
     got := -1;
     tries := 0;
     while got < 0 and tries < 1000 {
-        c2, ae2 := socket.accept_nb(lfd);
+        c2, ae2 := socket.acceptNb(lfd);
         if !ae2 { got = c2; }
         else if ae2 != .WouldBlock { print("accept_nb fault\n"); return 1; }
         tries += 1;

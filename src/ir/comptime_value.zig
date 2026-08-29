@@ -32,7 +32,7 @@ pub const Value = union(enum) {
     image_ref: ImageRef,
     /// Byte-granular raw pointer. Produced by `index_gep` on a string /
     /// `[*]u8` aggregate whose data field is itself a raw integer pointer
-    /// (e.g. from libc_malloc). Store/load through this variant operate
+    /// (e.g. from libcMalloc). Store/load through this variant operate
     /// on a single byte — matching the heap_ptr semantics for the same
     /// op shape.
     byte_ptr: usize,

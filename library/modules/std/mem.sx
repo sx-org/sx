@@ -162,10 +162,10 @@ CAllocator :: struct {}
 impl Allocator for CAllocator {
     allocBytes :: (self: *CAllocator, size: i64) -> *void {
         if size == 0 { return null; }
-        return c.libc_malloc(size);
+        return c.libcMalloc(size);
     }
     deallocBytes :: (self: *CAllocator, ptr: *void) {
-        c.libc_free(ptr);
+        c.libcFree(ptr);
     }
 }
 
@@ -204,12 +204,12 @@ impl Allocator for GPA {
     allocBytes :: (self: *GPA, size: i64) -> *void {
         if size == 0 { return null; }
         atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
-        return c.libc_malloc(size);
+        return c.libcMalloc(size);
     }
     deallocBytes :: (self: *GPA, ptr: *void) {
         if ptr == null { return; }
         atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
-        c.libc_free(ptr);
+        c.libcFree(ptr);
     }
 }
 

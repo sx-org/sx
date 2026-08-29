@@ -13,7 +13,7 @@ h :: (x: i64) -> i64 { return x + 1; }
 shadow_target :: (x: i64) -> void { print("local fnptr {}\n", x); }
 
 main :: () -> i32 {
-    cfg : lib.Cfg = .{ on_event = lib.hook };
+    cfg : lib.Cfg = .{ onEvent = lib.hook };
     lib.emit(cfg, 41);
     print("h(1) = {}\n", h(1));
 

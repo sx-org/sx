@@ -4,7 +4,7 @@
 // reasons. Used by BOTH the server (server.sx) and the client (client.sx);
 // the facade (../http.sx) re-exports the public surface under `http`.
 @import "modules/std/core.sx";
-@import "modules/std/fmt.sx";    // concat (Response.add_header)
+@import "modules/std/fmt.sx";    // concat (Response.addHeader)
 c :: @import "modules/std/c.sx"; // c.memmove (overlap-safe chunked-decode compaction)
 
 // A content coding the blocking client can decode transparently. Identity is
@@ -23,7 +23,7 @@ Request :: struct {
     version: string = "";
     // (RFC 9112 §3.2.2): the authority embedded in an absolute-form
     // request-target ("GET http://host:port/path HTTP/1.1"). Empty for the
-    // usual origin-form target — the Host header (find_header "host") is
+    // usual origin-form target — the Host header (findHeader "host") is
     // the authority source then. The server itself never routes on host
     // info, so RFC precedence is NOT enforced here: a handler that routes
     // on host MUST prefer a non-empty req.authority over the Host header
@@ -32,42 +32,42 @@ Request :: struct {
     // validated beyond the request-line syntax checks. `path` always
     // holds the routable path regardless of the target form.
     authority: string = "";
-    headers_raw: string = "";   // the raw header block (no request line)
+    headersRaw: string = "";   // the raw header block (no request line)
     body: string = "";
-    keep_alive: bool = true;
-    // The per-request handler budget in ms (Config.handler_timeout_ms;
+    keepAlive: bool = true;
+    // The per-request handler budget in ms (Config.handlerTimeoutMs;
     // 0 = disabled). In POOL mode this is also enforced from the loop thread
     // (a hard 504 + close on overrun). In INLINE mode it is ADVISORY ONLY —
     // the loop can't preempt the handler — so a cooperative handler should
     // poll its own elapsed time against this budget and return early.
-    deadline_ms: i64 = 0;
-    // streaming body (Config.stream_request_body, pool mode): non-null
+    deadlineMs: i64 = 0;
+    // streaming body (Config.streamRequestBody, pool mode): non-null
     // when the request was dispatched at HEADERS-COMPLETE — `body` is ""
-    // then and the body arrives incrementally through read_body(). null =
+    // then and the body arrives incrementally through readBody(). null =
     // the fully-accumulated model (`body` complete before dispatch).
-    body_read_fn: BodyReadFn = null;
-    body_read_ctx: usize = 0;
-    // read_body's cursor over an ACCUMULATED `body`, so handler code stays
-    // mode-agnostic (read_body serves both models).
-    body_off: i64 = 0;
+    bodyReadFn: BodyReadFn = null;
+    bodyReadCtx: usize = 0;
+    // readBody's cursor over an ACCUMULATED `body`, so handler code stays
+    // mode-agnostic (readBody serves both models).
+    bodyOff: i64 = 0;
 
     // Read up to `cap` body bytes into `dst`. Streamed model: pulls from
     // the server, BLOCKING the worker until bytes are buffered, the body
     // ends, or the connection faults. Accumulated model: copies the next
     // piece of `body`. Returns > 0 = bytes read, 0 = end of body,
     // -1 = connection fault (streamed only).
-    read_body :: (self: *Request, dst: [*]u8, cap: i64) -> i64 {
-        if self.body_read_fn != null {
-            f := self.body_read_fn;
-            return f(self.body_read_ctx, dst, cap);
+    readBody :: (self: *Request, dst: [*]u8, cap: i64) -> i64 {
+        if self.bodyReadFn != null {
+            f := self.bodyReadFn;
+            return f(self.bodyReadCtx, dst, cap);
         }
         if cap <= 0 { return 0; }
         blen : i64 = self.body.len.(i64);
-        left := blen - self.body_off;
+        left := blen - self.bodyOff;
         if left <= 0 { return 0; }
         n := if cap < left then cap else left;
-        c.memcpy(*dst[0], *self.body.ptr[self.body_off], n);
-        self.body_off += n;
+        c.memcpy(*dst[0], *self.body.ptr[self.bodyOff], n);
+        self.bodyOff += n;
         return n;
     }
 }
@@ -77,26 +77,26 @@ Request :: struct {
 // Two output modes:
 //   • FIXED (default): the handler fills `body`; the server emits one
 //     `Content-Length` response, building it in a single allocation
-//     (serialize_bytes) and draining via write_more. The fast path —
+//     (serializeBytes) and draining via writeMore. The fast path —
 //     unchanged. Use for known-size bodies.
 //   • STREAMED/chunked: for a body whose size isn't known up front
 //     or is too large to buffer whole. The handler calls
 //     `resp.stream(producer, ctx)` (see below) and returns; the server
 //     emits `Transfer-Encoding: chunked` and PULLS the body from the
 //     producer in bounded pieces, framing each as a chunk through the
-//     SAME out_buf/write_more backpressure path — so peak memory stays
+//     SAME outBuf/writeMore backpressure path — so peak memory stays
 //     one bounded buffer (STREAM_BUF_CAP), never the whole body.
 //
 // The producer is a resumable pull function:
-//     (ctx, offset, dst, dst_cap) -> i64
+//     (ctx, offset, dst, dstCap) -> i64
 // Called repeatedly by the server; on each call it must write up to
-// `dst_cap` bytes of the body starting at logical byte `offset` into
+// `dstCap` bytes of the body starting at logical byte `offset` into
 // `dst`, and return the count written (0 = clean end of body — emits the
 // terminating zero chunk; a negative value is a source fault — the connection
 // closes without a terminator and is never reused). `offset` is the running total the server has
 // already pulled, so the producer is fully resumable across write
 // readiness: when the socket would block mid-stream the server pauses
-// (existing add_write arming) and resumes the producer at the same
+// (existing addWrite arming) and resumes the producer at the same
 // offset on writability.
 //
 // LIFETIME (per mode):
@@ -109,61 +109,61 @@ Request :: struct {
 //   • INLINE MODE: the producer is pulled on the LOOP thread AFTER the
 //     handler returned and the per-request arena died. `ctx` must point at
 //     CALLER-OWNED memory that outlives the response (a long-lived struct,
-//     an own_alloc block) — never req.* views, never arena allocations.
+//     an ownAlloc block) — never req.* views, never arena allocations.
 // In both modes the producer must not touch the connection — only fill `dst`.
-StreamProducer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64;
+StreamProducer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64;
 
 // the streaming body-read fn the server wires into a request it
-// dispatched at HEADERS-COMPLETE (Config.stream_request_body, pool mode).
+// dispatched at HEADERS-COMPLETE (Config.streamRequestBody, pool mode).
 // Reads up to `cap` DECODED body bytes into `dst`, BLOCKING the calling
 // worker until at least one byte is buffered, the body ends, or the
 // connection faults. Returns the byte count (> 0), 0 = end of body,
 // -1 = connection fault (peer reset / bad framing / slot evicted).
-// Handlers normally call Request.read_body instead of this directly.
+// Handlers normally call Request.readBody instead of this directly.
 BodyReadFn :: (ctx: usize, dst: [*]u8, cap: i64) -> i64;
 
 Response :: struct {
     status: i64 = 200;
-    content_type: string = "text/plain; charset=utf-8";
+    contentType: string = "text/plain; charset=utf-8";
     // Preformatted "Name: value\r\n" lines. Content-Length and
     // Transfer-Encoding are reserved: the server owns framing and turns a
     // handler response containing either field into a 500 before serialization.
-    extra_headers: string = "";
+    extraHeaders: string = "";
     body: string = "";
     // Streamed/chunked output. When `streamed` is true the server
     // ignores `body` and pulls from `producer` (see StreamProducer).
     streamed: bool = false;
     producer: StreamProducer = null;
-    producer_ctx: usize = 0;
+    producerCtx: usize = 0;
     // The server may apply negotiated gzip/deflate when its compression
     // policy is enabled. Disable this for secret-bearing reflected content
     // (BREACH-style side channels) or data that should remain identity.
-    allow_compression: bool = true;
+    allowCompression: bool = true;
 
     // ── helpers (add only what's missing) ────────────────────────────
-    set_status :: (self: *Response, status: i64) { self.status = status; }
-    set_content_type :: (self: *Response, ct: string) { self.content_type = ct; }
+    setStatus :: (self: *Response, status: i64) { self.status = status; }
+    setContentType :: (self: *Response, ct: string) { self.contentType = ct; }
     // Append one preformatted "Name: value\r\n" header line. Concats
     // through the current context allocator (the per-request arena), so
     // the result lives exactly as long as the response build.
-    add_header :: (self: *Response, name: string, value: string) {
+    addHeader :: (self: *Response, name: string, value: string) {
         line := concat(name, concat(": ", concat(value, "\r\n")));
-        self.extra_headers = concat(self.extra_headers, line);
+        self.extraHeaders = concat(self.extraHeaders, line);
     }
     // Opt into chunked streaming: the server emits Transfer-Encoding:
     // chunked and pulls the body from `producer` in bounded pieces.
     stream :: (self: *Response, producer: StreamProducer, ctx: usize) {
         self.streamed = true;
         self.producer = producer;
-        self.producer_ctx = ctx;
+        self.producerCtx = ctx;
     }
-    disable_compression :: (self: *Response) { self.allow_compression = false; }
+    disableCompression :: (self: *Response) { self.allowCompression = false; }
 }
 
-// Case-insensitive header lookup in `headers_raw`; "" when absent.
+// Case-insensitive header lookup in `headersRaw`; "" when absent.
 // `name` must be lowercase.
-find_header :: (req: *Request, name: string) -> string {
-    h := req.headers_raw;
+findHeader :: (req: *Request, name: string) -> string {
+    h := req.headersRaw;
     i := 0;
     while i < h.len {
         // line start: try to match `name` case-insensitively, then ':'
@@ -195,8 +195,8 @@ find_header :: (req: *Request, name: string) -> string {
 // Count case-insensitive occurrences of a header `name` (lowercase) in
 // the raw header block. >1 Content-Length is a request-smuggling vector,
 // so the parser rejects it; this is the detector.
-count_header :: (req: *Request, name: string) -> i64 {
-    h := req.headers_raw;
+countHeader :: (req: *Request, name: string) -> i64 {
+    h := req.headersRaw;
     n := 0;
     i := 0;
     while i < h.len {
@@ -218,33 +218,33 @@ count_header :: (req: *Request, name: string) -> i64 {
 //
 // Outcome of one decode attempt over the chunked body bytes sitting in the
 // read buffer after the header terminator. Validation is re-run each
-// read_more cycle but RESUMES from the caller-kept ChunkScan checkpoint,
+// readMore cycle but RESUMES from the caller-kept ChunkScan checkpoint,
 // so each raw byte is scanned once no matter how many partial reads
 // deliver the body; a chunk split across reads simply resumes (NEED_MORE
 // until the terminating zero-chunk + final CRLF have all arrived). Memory
-// stays bounded: read_buf_cap caps the raw bytes (read_more emits 413 past
+// stays bounded: readBufCap caps the raw bytes (readMore emits 413 past
 // it) and TOO_BIG fires the moment a chunk-size header pushes the running
-// decoded total over max_body — the data for that chunk is never read in.
+// decoded total over maxBody — the data for that chunk is never read in.
 ChunkStatus :: enum {
     NEED_MORE;   // framing incomplete so far — read more, retry
     OK;          // fully framed (zero chunk + final CRLF seen)
     BAD;         // malformed framing / bad hex / missing CRLF → 400
-    TOO_BIG;     // accumulated decoded body would exceed max_body → 413
+    TOO_BIG;     // accumulated decoded body would exceed maxBody → 413
     OVERFLOW;    // a chunk-size hex value would wrap i64 → 400
 }
 
 ChunkResult :: struct {
     status: ChunkStatus = ChunkStatus.NEED_MORE;
-    decoded_len: i64 = 0;   // bytes of decoded body (valid only when OK)
-    raw_len: i64 = 0;       // raw chunked bytes consumed (valid only when OK)
+    decodedLen: i64 = 0;   // bytes of decoded body (valid only when OK)
+    rawLen: i64 = 0;       // raw chunked bytes consumed (valid only when OK)
     // resumable validation: on NEED_MORE these carry the checkpoint —
     // the raw offset of the first incomplete chunk element and the decoded
     // total before it. Feed them back as the next call's ChunkScan so the
     // validator re-scans ONLY the incomplete element, never all prior
     // framing — revalidating a slow-dripped body from byte 0 every read
     // cycle is O(n²), a slowloris CPU amplifier.
-    resume_rp: i64 = 0;
-    resume_decoded: i64 = 0;
+    resumeRp: i64 = 0;
+    resumeDecoded: i64 = 0;
 }
 
 // Where a previous NEED_MORE validation stopped. rp is relative to the
@@ -260,7 +260,7 @@ ChunkScan :: struct {
 // bytes (everything currently buffered after the header terminator). On OK
 // the decoded body is COMPACTED IN PLACE to the front of `src` (each chunk's
 // data bytes moved up over the stripped framing — strictly leftward, so a
-// forward byte copy is safe) and `decoded_len` / `raw_len` are filled.
+// forward byte copy is safe) and `decodedLen` / `rawLen` are filled.
 //
 // CRITICAL: the in-place compaction is DESTRUCTIVE, but the decode is re-run
 // from scratch on every partial read. So the first pass is a NON-MUTATING
@@ -280,13 +280,13 @@ ChunkScan :: struct {
 // bytes (.{ 0, 0 } for a fresh body): validation continues from there
 // instead of re-walking all prior framing. The commit pass always runs
 // from 0 — it must re-parse the whole framing to compact.
-decode_chunked :: (src: [*]u8, avail: i64, max_body: i64, resume: ChunkScan) -> ChunkResult {
+decodeChunked :: (src: [*]u8, avail: i64, maxBody: i64, resume: ChunkScan) -> ChunkResult {
     // Phase 1: non-mutating validation scan (resumable).
-    scan := decode_chunked_pass(src, avail, max_body, false, resume);
+    scan := decodeChunkedPass(src, avail, maxBody, false, resume);
     if scan.status != ChunkStatus.OK { return scan; }
     // Phase 2: complete body confirmed — compact in place (data is bounded by
-    // raw_len, which we now know; the compaction re-parses the same framing).
-    return decode_chunked_pass(src, avail, max_body, true, ChunkScan{});
+    // rawLen, which we now know; the compaction re-parses the same framing).
+    return decodeChunkedPass(src, avail, maxBody, true, ChunkScan{});
 }
 
 // One pass over the chunked framing. When `commit` is false it only validates
@@ -296,23 +296,23 @@ decode_chunked :: (src: [*]u8, avail: i64, max_body: i64, resume: ChunkScan) -> 
 //
 // validation is RESUMABLE — it starts at `resume` (a chunk boundary
 // from a previous NEED_MORE) and, on NEED_MORE, reports the boundary of the
-// first incomplete element in resume_rp/resume_decoded. The commit pass is
+// first incomplete element in resumeRp/resumeDecoded. The commit pass is
 // always called with a zero resume (it re-parses everything to compact) and
 // never returns NEED_MORE (the validation pass proved completeness).
-decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, resume: ChunkScan) -> ChunkResult {
+decodeChunkedPass :: (src: [*]u8, avail: i64, maxBody: i64, commit: bool, resume: ChunkScan) -> ChunkResult {
     rp : i64 = resume.rp;      // read cursor over the raw framing
     wp : i64 = 0;              // write cursor for compacted decoded data (commit pass only)
     decoded : i64 = resume.decoded;
-    cp_rp : i64 = resume.rp;   // checkpoint: start of the element being parsed
-    cp_decoded : i64 = resume.decoded;
+    cpRp : i64 = resume.rp;   // checkpoint: start of the element being parsed
+    cpDecoded : i64 = resume.decoded;
     while true {
         // ── element boundary: checkpoint, then parse the size line ──
-        cp_rp = rp;
-        cp_decoded = decoded;
+        cpRp = rp;
+        cpDecoded = decoded;
         size : i64 = 0;
         digits : i64 = 0;
         // need at least one byte for a size digit
-        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         while rp < avail {
             ch := src[rp];
             hv : i64 = -1;
@@ -321,7 +321,7 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
             else if 'A' <= ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
             if hv < 0 { break; }
             // Overflow guard: this protects ONLY against an i64 wrap in the
-            // `size*16 + hv` shift below. The max_body ceiling is a separate,
+            // `size*16 + hv` shift below. The maxBody ceiling is a separate,
             // higher-level concern enforced by the TOO_BIG (413) check after
             // the size line — conflating the two here mislabels an over-max
             // (but non-wrapping) size as 400 instead of 413. Threshold is the
@@ -338,14 +338,14 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
         // (`0x5`, `5g`, a bare LF) is malformed framing — reject as BAD rather
         // than swallowing it in the ext-skip below, which would let `0x5` parse
         // as a 0-size (last) chunk.
-        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+        if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         if src[rp] != ';' and src[rp] != '\r' { return ChunkResult{ status = ChunkStatus.BAD }; }  // not ';' or CR
         // optional chunk-ext: only entered on ';'; skip everything up to CR.
         if src[rp] == ';' {
             while rp < avail and src[rp] != '\r' { rp += 1; }
         }
         // CRLF after the size line
-        if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+        if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         if src[rp] != '\r' or src[rp + 1] != '\n' { return ChunkResult{ status = ChunkStatus.BAD }; }
         rp += 2;
 
@@ -354,25 +354,25 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
             // A trailer line is anything up to CRLF; the terminator is an
             // empty line (immediate CRLF). Ignore trailer contents.
             while true {
-                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
                 if src[rp] == '\r' and src[rp + 1] == '\n' { rp += 2; break; }   // final CRLF
                 // scan this trailer line to its CRLF
                 ts := rp;
                 while rp < avail and src[rp] != '\r' { rp += 1; }
-                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+                if rp + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
                 if src[rp] != '\r' or src[rp + 1] != '\n' { return ChunkResult{ status = ChunkStatus.BAD }; }
                 if rp == ts { rp += 2; break; }   // empty line = end (no trailers)
                 rp += 2;
             }
-            return ChunkResult{ status = ChunkStatus.OK, decoded_len = decoded, raw_len = rp };
+            return ChunkResult{ status = ChunkStatus.OK, decodedLen = decoded, rawLen = rp };
         }
 
         // Early 413: the declared chunk size pushes the running decoded total
-        // over max_body. Reject NOW — never read the chunk's data into the slot.
-        if decoded + size > max_body { return ChunkResult{ status = ChunkStatus.TOO_BIG }; }
+        // over maxBody. Reject NOW — never read the chunk's data into the slot.
+        if decoded + size > maxBody { return ChunkResult{ status = ChunkStatus.TOO_BIG }; }
 
         // chunk-data: need `size` bytes + the trailing CRLF
-        if rp + size + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resume_rp = cp_rp, resume_decoded = cp_decoded }; }
+        if rp + size + 1 >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         // compact: move the data up over the stripped framing (wp <= rp always).
         // Only on the commit pass — the validation pass must not mutate.
         if commit and wp != rp {
@@ -395,7 +395,7 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
 // per wall-clock second on the loop thread; pool workers stamp their own.
 IMF_DATE_LEN :: 29;
 
-imf_two :: (n: i64, dst: [*]u8, off: i64) {
+imfTwo :: (n: i64, dst: [*]u8, off: i64) {
     dst[off] = ('0' + n / 10).(u8);
     dst[off + 1] = ('0' + n % 10).(u8);
 }
@@ -404,7 +404,7 @@ imf_two :: (n: i64, dst: [*]u8, off: i64) {
 // conversion is civil-from-days (Howard Hinnant's algorithm); weekday
 // from the day count (1970-01-01 was a Thursday). Valid for years
 // 1000..9999 (the fixed 4-digit field).
-format_imf_date :: (secs: i64, dst: [*]u8) {
+formatImfDate :: (secs: i64, dst: [*]u8) {
     days := secs / 86400;
     rem := secs % 86400;
     if rem < 0 { rem += 86400; days -= 1; }
@@ -428,20 +428,20 @@ format_imf_date :: (secs: i64, dst: [*]u8) {
     dst[2] = wnames[wd * 3 + 2];
     dst[3] = ',';
     dst[4] = ' ';
-    imf_two(d, dst, 5);
+    imfTwo(d, dst, 5);
     dst[7] = ' ';
     dst[8] = mnames[(m - 1) * 3];
     dst[9] = mnames[(m - 1) * 3 + 1];
     dst[10] = mnames[(m - 1) * 3 + 2];
     dst[11] = ' ';
-    imf_two(y / 100, dst, 12);
-    imf_two(y % 100, dst, 14);
+    imfTwo(y / 100, dst, 12);
+    imfTwo(y % 100, dst, 14);
     dst[16] = ' ';
-    imf_two(rem / 3600, dst, 17);
+    imfTwo(rem / 3600, dst, 17);
     dst[19] = ':';
-    imf_two((rem % 3600) / 60, dst, 20);
+    imfTwo((rem % 3600) / 60, dst, 20);
     dst[22] = ':';
-    imf_two(rem % 60, dst, 23);
+    imfTwo(rem % 60, dst, 23);
     dst[25] = ' ';
     dst[26] = 'G';
     dst[27] = 'M';
@@ -467,7 +467,7 @@ format_imf_date :: (secs: i64, dst: [*]u8) {
 // Both passes only ever write at-or-behind the read cursor, so the
 // in-place rewrite is safe; the caller re-views the buffer at the
 // returned length.
-normalize_path :: (buf: [*]u8, len: i64) -> i64 {
+normalizePath :: (buf: [*]u8, len: i64) -> i64 {
     // Pass 1: percent-decode (output can only shrink).
     rp : i64 = 0;
     wp : i64 = 0;
@@ -530,7 +530,7 @@ normalize_path :: (buf: [*]u8, len: i64) -> i64 {
 
 // True if `s` holds any ASCII control char (< 0x20 or 0x7F) — a CR/LF/NUL
 // in the method or path is a request-splitting vector.
-has_ctrl :: (s: string) -> bool {
+hasCtrl :: (s: string) -> bool {
     i := 0;
     while i < s.len {
         c := s[i];
@@ -541,11 +541,11 @@ has_ctrl :: (s: string) -> bool {
 }
 
 // (RFC 9110 §5.6.1, §7.6.1): true when the comma-separated list
-// `list` contains `token_lower` as a WHOLE token, case-insensitively,
+// `list` contains `tokenLower` as a WHOLE token, case-insensitively,
 // with any OWS (space/tab) around the token ignored — `close, TE` and
-// ` Close , TE` both contain "close"; "closefoo" does not. `token_lower`
+// ` Close , TE` both contain "close"; "closefoo" does not. `tokenLower`
 // must be lowercase. Empty list members ("close,,TE") are skipped.
-token_list_has :: (list: string, token_lower: string) -> bool {
+tokenListHas :: (list: string, tokenLower: string) -> bool {
     i := 0;
     while i < list.len {
         // token start: skip OWS and empty members
@@ -555,18 +555,18 @@ token_list_has :: (list: string, token_lower: string) -> bool {
         while i < list.len and list[i] != ',' { i += 1; }   // scan to end
         e := i;
         while e > s and (list[e - 1] == ' ' or list[e - 1] == '\t') { e -= 1; }   // trim trailing OWS
-        if ascii_ieq(string{ ptr = *list[s], len = e - s }, token_lower) { return true; }
+        if asciiIeq(string{ ptr = *list[s], len = e - s }, tokenLower) { return true; }
     }
     return false;
 }
 
-ascii_ieq :: (a: string, b_lower: string) -> bool {
-    if a.len != b_lower.len { return false; }
+asciiIeq :: (a: string, bLower: string) -> bool {
+    if a.len != bLower.len { return false; }
     i := 0;
     while i < a.len {
         c := a[i];
         if c >= 'A' and c <= 'Z' { c = c + ' '; }
-        if c != b_lower[i] { return false; }
+        if c != bLower[i] { return false; }
         i += 1;
     }
     return true;
@@ -577,7 +577,7 @@ ascii_ieq :: (a: string, b_lower: string) -> bool {
 // Decimal digits of a non-negative n written into dst; returns the count.
 // The serializer's alloc-free twin of intToString (which concats through
 // the context allocator).
-dec_into :: (n: i64, dst: [*]u8) -> i64 {
+decInto :: (n: i64, dst: [*]u8) -> i64 {
     if n == 0 { dst[0] = '0'; return 1; }
     tmp : [20]u8 = ---;
     cnt : i64 = 0;
@@ -595,8 +595,8 @@ dec_into :: (n: i64, dst: [*]u8) -> i64 {
     return cnt;
 }
 
-// Digit count of a non-negative n — sizes the buffer dec_into fills.
-dec_len :: (n: i64) -> i64 {
+// Digit count of a non-negative n — sizes the buffer decInto fills.
+decLen :: (n: i64) -> i64 {
     if n == 0 { return 1; }
     c : i64 = 0;
     v := n;
@@ -606,10 +606,10 @@ dec_len :: (n: i64) -> i64 {
 
 // The full "HTTP/1.1 <code> <reason>" first line, precomputed for every
 // status the server emits; "" for anything else (the serializer then
-// builds the line from dec_into + reason_for — same bytes, one branch
-// slower). Keep in lockstep with reason_for: a status added there but
+// builds the line from decInto + reasonFor — same bytes, one branch
+// slower). Keep in lockstep with reasonFor: a status added there but
 // missed here only loses the fast path, never changes the output.
-status_line_for :: (status: i64) -> string {
+statusLineFor :: (status: i64) -> string {
     if status == 200 { return "HTTP/1.1 200 OK"; }
     if status == 201 { return "HTTP/1.1 201 Created"; }
     if status == 204 { return "HTTP/1.1 204 No Content"; }
@@ -635,7 +635,7 @@ status_line_for :: (status: i64) -> string {
     return "";
 }
 
-reason_for :: (status: i64) -> string {
+reasonFor :: (status: i64) -> string {
     if status == 200 { return "OK"; }
     if status == 201 { return "Created"; }
     if status == 204 { return "No Content"; }

@@ -4,7 +4,7 @@
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    now := time.now_secs();
+    now := time.nowSecs();
     if now < 1767225600 {            // before 2026-01-01: implausible
         print("wall clock implausibly old: {}\n", now);
         return 1;
@@ -14,11 +14,11 @@ main :: () -> i32 {
         return 1;
     }
 
-    a := time.mono_ms();
+    a := time.monoMs();
     b := a;
     spins := 0;
     while b == a and spins < 100000000 {   // a real ms tick arrives long before the bound
-        b = time.mono_ms();
+        b = time.monoMs();
         spins += 1;
     }
     if b < a {

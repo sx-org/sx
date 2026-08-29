@@ -25,12 +25,12 @@
 //
 // Deadlines: the loop deliberately has no timer registrations —
 // httpz-style timeout bookkeeping (request/keepalive eviction) is
-// deadline math the caller does with `deadline_in`/`expired` between
+// deadline math the caller does with `deadlineIn`/`expired` between
 // waits, passing the nearest deadline as `wait`'s timeout.
 //
 // The two backends behave identically apart from `nbytes`: kqueue reports the
 // pending byte count, epoll reports 0. examples/event/1632 exercises the whole
-// facade surface (add_read/write, add_wake/wake, wait, del_*, EOF) on the
+// facade surface (addRead/write, addWake/wake, wait, del_*, EOF) on the
 // kqueue path; examples/event/1633 corpus-locks the layout-sensitive epoll ABI.
 // A Loop example pulls in the std barrel — an ~18k-line IR dump that churns on
 // any unrelated std change — so the epoll runtime path is not corpus-snapshotted
@@ -58,7 +58,7 @@ EventErr :: error {
 //   readable/writable — which direction is ready;
 //   eof  — the peer finished writing (drain pending bytes, then close);
 //   err  — the registration itself failed asynchronously;
-//   user — a cross-thread wake() (see add_wake), no fd attached;
+//   user — a cross-thread wake() (see addWake), no fd attached;
 //   nbytes — bytes readable / writable-buffer space (backend estimate;
 //            kqueue reports it, epoll does not → 0 on linux);
 //   udata  — the word given at registration, verbatim.
@@ -99,8 +99,8 @@ Reg :: struct {
 
 Loop :: struct {
     epfd: i32 = -1;
-    wake_fd: i32 = -1;        // eventfd, lazily created by add_wake
-    wake_udata: usize = 0;
+    wakeFd: i32 = -1;        // eventfd, lazily created by addWake
+    wakeUdata: usize = 0;
     regs: List(Reg);
     // The Loop outlives the caller's current `context.allocator` scope, so
     // capture the owning allocator at init and grow `regs` through it (the
@@ -108,23 +108,23 @@ Loop :: struct {
     own: Allocator;
 
     init :: () -> (Loop, !EventErr) {
-        e := ep.ep_create();
+        e := ep.epCreate();
         if e < 0 { raise .Init; }
         return Loop{ epfd = e, regs = .{}, own = context.allocator };
     }
 
     close :: (self: *Loop) {
         if self.epfd >= 0 { socket.close(self.epfd); }
-        if self.wake_fd >= 0 { socket.close(self.wake_fd); }
+        if self.wakeFd >= 0 { socket.close(self.wakeFd); }
         self.regs.deinit(self.own);
         self.epfd = -1;
-        self.wake_fd = -1;
+        self.wakeFd = -1;
     }
 
     // Index of the registration for `fd`, or -1. Linear scan — fd counts in
     // the M:1 / per-worker model are small (mirrors the scheduler's waiter
     // lists).
-    reg_index :: (self: *Loop, fd: i32) -> i64 {
+    regIndex :: (self: *Loop, fd: i32) -> i64 {
         i := 0;
         while i < self.regs.len {
             if self.regs.items[i].fd == fd { return i; }
@@ -136,11 +136,11 @@ Loop :: struct {
     // Drive `fd`'s registration to interest `mask`: ADD a new fd, MOD an
     // existing one, or DEL (and forget) when the mask drops to zero. The
     // table is kept in lockstep with the kernel. True on success.
-    apply_mask :: (self: *Loop, fd: i32, mask: u32, udata: usize) -> bool {
-        idx := self.reg_index(fd);
+    applyMask :: (self: *Loop, fd: i32, mask: u32, udata: usize) -> bool {
+        idx := self.regIndex(fd);
         if mask == 0 {
             if idx < 0 { return true; }
-            ok := ep.ep_ctl(self.epfd, ep.EPOLL_CTL_DEL, fd, 0);
+            ok := ep.epCtl(self.epfd, ep.EPOLL_CTL_DEL, fd, 0);
             // swap-remove the forgotten reg (order is irrelevant).
             self.regs.items[idx] = self.regs.items[self.regs.len - 1];
             self.regs.len = self.regs.len - 1;
@@ -149,88 +149,88 @@ Loop :: struct {
         if idx >= 0 {
             self.regs.items[idx].mask = mask;
             self.regs.items[idx].udata = udata;
-            return ep.ep_ctl(self.epfd, ep.EPOLL_CTL_MOD, fd, mask);
+            return ep.epCtl(self.epfd, ep.EPOLL_CTL_MOD, fd, mask);
         }
         self.regs.append(Reg{ fd = fd, mask = mask, udata = udata }, self.own);
-        return ep.ep_ctl(self.epfd, ep.EPOLL_CTL_ADD, fd, mask);
+        return ep.epCtl(self.epfd, ep.EPOLL_CTL_ADD, fd, mask);
     }
 
     // Read interest also arms EPOLLRDHUP so a peer half-close surfaces as
     // `Event.eof` — matching kqueue's EV_EOF, which comes for free.
-    add_read :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        idx := self.reg_index(fd);
+    addRead :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+        idx := self.regIndex(fd);
         mask := ep.EPOLLIN | ep.EPOLLRDHUP;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLIN | ep.EPOLLRDHUP; }
-        if !self.apply_mask(fd, mask, udata) { raise .Register; }
+        if !self.applyMask(fd, mask, udata) { raise .Register; }
         return;
     }
-    del_read :: (self: *Loop, fd: i32) {
-        idx := self.reg_index(fd);
+    delRead :: (self: *Loop, fd: i32) {
+        idx := self.regIndex(fd);
         if idx < 0 { return; }
         mask := self.regs.items[idx].mask & ~(ep.EPOLLIN | ep.EPOLLRDHUP);
-        self.apply_mask(fd, mask, self.regs.items[idx].udata);
+        self.applyMask(fd, mask, self.regs.items[idx].udata);
     }
-    add_write :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        idx := self.reg_index(fd);
+    addWrite :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+        idx := self.regIndex(fd);
         mask := ep.EPOLLOUT;
         if idx >= 0 { mask = self.regs.items[idx].mask | ep.EPOLLOUT; }
-        if !self.apply_mask(fd, mask, udata) { raise .Register; }
+        if !self.applyMask(fd, mask, udata) { raise .Register; }
         return;
     }
-    del_write :: (self: *Loop, fd: i32) {
-        idx := self.reg_index(fd);
+    delWrite :: (self: *Loop, fd: i32) {
+        idx := self.regIndex(fd);
         if idx < 0 { return; }
         mask := self.regs.items[idx].mask & ~ep.EPOLLOUT;
-        self.apply_mask(fd, mask, self.regs.items[idx].udata);
+        self.applyMask(fd, mask, self.regs.items[idx].udata);
     }
 
     // The loop's wake channel: an eventfd registered for EPOLLIN. wake()
     // from any thread writes the 8-byte counter, making wait() return an
     // Event carrying `udata` with `.user` set. (kqueue uses EVFILT_USER;
     // epoll's idiom is eventfd.) One registration serves the Loop's life.
-    add_wake :: (self: *Loop, udata: usize) -> !EventErr {
-        if self.wake_fd < 0 {
-            self.wake_fd = ep.eventfd(0, ep.EFD_CLOEXEC | ep.EFD_NONBLOCK);
-            if self.wake_fd < 0 { raise .Register; }
+    addWake :: (self: *Loop, udata: usize) -> !EventErr {
+        if self.wakeFd < 0 {
+            self.wakeFd = ep.eventfd(0, ep.EFD_CLOEXEC | ep.EFD_NONBLOCK);
+            if self.wakeFd < 0 { raise .Register; }
         }
-        self.wake_udata = udata;
-        if !ep.ep_ctl(self.epfd, ep.EPOLL_CTL_ADD, self.wake_fd, ep.EPOLLIN) { raise .Register; }
+        self.wakeUdata = udata;
+        if !ep.epCtl(self.epfd, ep.EPOLL_CTL_ADD, self.wakeFd, ep.EPOLLIN) { raise .Register; }
         return;
     }
 
     // Thread-safe: writing the eventfd counter is atomic.
     wake :: (self: *Loop) {
-        if self.wake_fd < 0 { return; }
+        if self.wakeFd < 0 { return; }
         one : u64 = 1;
-        socket.write(self.wake_fd, *one, 8);
+        socket.write(self.wakeFd, *one, 8);
     }
 
-    // Fill `out` with ready events, waiting at most `timeout_ms`
+    // Fill `out` with ready events, waiting at most `timeoutMs`
     // (negative = forever). Returns the count; 0 is a timeout.
-    wait :: (self: *Loop, out: []Event, timeout_ms: i64) -> (i64, !EventErr) {
+    wait :: (self: *Loop, out: []Event, timeoutMs: i64) -> (i64, !EventErr) {
         raw : [64]ep.EpollEvent = ---;
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
-        n := ep.ep_wait(self.epfd, .{ ptr = *raw[0], len = cap }, cap, timeout_ms);
+        n := ep.epWait(self.epfd, .{ ptr = *raw[0], len = cap }, cap, timeoutMs);
         if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
             evr := raw[i];
-            fd := ep.ev_fd(evr);
+            fd := ep.evFd(evr);
             e : Event = .{ fd = fd };
-            if self.wake_fd >= 0 and fd == self.wake_fd {
+            if self.wakeFd >= 0 and fd == self.wakeFd {
                 // Drain the eventfd counter so it doesn't re-fire immediately.
                 drain : u64 = 0;
-                socket.read(self.wake_fd, *drain, 8);
+                socket.read(self.wakeFd, *drain, 8);
                 e.user = true;
-                e.udata = self.wake_udata;
+                e.udata = self.wakeUdata;
             } else {
-                idx := self.reg_index(fd);
+                idx := self.regIndex(fd);
                 if idx >= 0 { e.udata = self.regs.items[idx].udata; }
-                if ep.ev_readable(evr) { e.readable = true; }
-                if ep.ev_writable(evr) { e.writable = true; }
-                if ep.ev_eof(evr)      { e.eof = true; }
-                if ep.ev_err(evr)      { e.err = true; }
+                if ep.evReadable(evr) { e.readable = true; }
+                if ep.evWritable(evr) { e.writable = true; }
+                if ep.evEof(evr)      { e.eof = true; }
+                if ep.evErr(evr)      { e.err = true; }
             }
             out[i] = e;
             i += 1;
@@ -256,44 +256,44 @@ Loop :: struct {
         self.kq = -1;
     }
 
-    add_read :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_ADD, udata)) { raise .Register; }
+    addRead :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+        if !kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_READ, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
-    del_read :: (self: *Loop, fd: i32) {
-        kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_DELETE, 0));
+    delRead :: (self: *Loop, fd: i32) {
+        kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_READ, kqb.EV_DELETE, 0));
     }
-    add_write :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
-        if !kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_WRITE, kqb.EV_ADD, udata)) { raise .Register; }
+    addWrite :: (self: *Loop, fd: i32, udata: usize) -> !EventErr {
+        if !kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_WRITE, kqb.EV_ADD, udata)) { raise .Register; }
         return;
     }
-    del_write :: (self: *Loop, fd: i32) {
-        kqb.kq_apply(self.kq, kqb.kev_change(fd, kqb.EVFILT_WRITE, kqb.EV_DELETE, 0));
+    delWrite :: (self: *Loop, fd: i32) {
+        kqb.kqApply(self.kq, kqb.kevChange(fd, kqb.EVFILT_WRITE, kqb.EV_DELETE, 0));
     }
 
     // Register the loop's wake channel: wake() from ANY thread makes
     // wait() return an Event carrying `udata` with `.user` set. EV_CLEAR
     // auto-resets, so one registration serves the loop's lifetime.
     // (kqueue EVFILT_USER here; the epoll twin maps to eventfd.)
-    add_wake :: (self: *Loop, udata: usize) -> !EventErr {
+    addWake :: (self: *Loop, udata: usize) -> !EventErr {
         ch : kqb.Kevent = .{ ident = 0, filter = kqb.EVFILT_USER, flags = kqb.EV_ADD | kqb.EV_CLEAR, udata = udata };
-        if !kqb.kq_apply(self.kq, ch) { raise .Register; }
+        if !kqb.kqApply(self.kq, ch) { raise .Register; }
         return;
     }
 
     // Thread-safe: kevent change submission is safe from any thread.
     wake :: (self: *Loop) {
         ch : kqb.Kevent = .{ ident = 0, filter = kqb.EVFILT_USER, fflags = kqb.NOTE_TRIGGER };
-        kqb.kq_apply(self.kq, ch);
+        kqb.kqApply(self.kq, ch);
     }
 
-    // Fill `out` with ready events, waiting at most `timeout_ms`
+    // Fill `out` with ready events, waiting at most `timeoutMs`
     // (negative = forever). Returns the count; 0 is a timeout.
-    wait :: (self: *Loop, out: []Event, timeout_ms: i64) -> (i64, !EventErr) {
+    wait :: (self: *Loop, out: []Event, timeoutMs: i64) -> (i64, !EventErr) {
         raw : [64]kqb.Kevent = ---;
         cap : i64 = 64;
         if out.len < cap { cap = out.len; }
-        n := kqb.kq_wait(self.kq, *raw[0], cap, timeout_ms);
+        n := kqb.kqWait(self.kq, *raw[0], cap, timeoutMs);
         if n < 0 { raise .Wait; }
         i := 0;
         while i < n {
@@ -317,19 +317,19 @@ Loop :: struct {
 // Backend-independent — shared by both Loop variants.
 
 // The absolute monotonic instant `ms` from now.
-deadline_in :: (ms: i64) -> i64 {
-    return timp.mono_ms() + ms;
+deadlineIn :: (ms: i64) -> i64 {
+    return timp.monoMs() + ms;
 }
 
 // True once `deadline` has passed.
 expired :: (deadline: i64) -> bool {
-    return timp.mono_ms() >= deadline;
+    return timp.monoMs() >= deadline;
 }
 
 // Milliseconds until `deadline`, floored at 0 — the value to hand
 // `wait` so the loop wakes exactly when the nearest deadline fires.
-remaining_ms :: (deadline: i64) -> i64 {
-    left := deadline - timp.mono_ms();
+remainingMs :: (deadline: i64) -> i64 {
+    left := deadline - timp.monoMs();
     if left < 0 { return 0; }
     return left;
 }

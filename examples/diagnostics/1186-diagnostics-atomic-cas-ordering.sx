@@ -1,5 +1,5 @@
 // Atomic compare-exchange dual-ordering validation: the FAILURE ordering may not
-// be stronger than the SUCCESS ordering. Here failure=.seq_cst (rank 3) is
+// be stronger than the SUCCESS ordering. Here failure=.seqCst (rank 3) is
 // stronger than success=.relaxed (rank 0). The call goes to the intrinsic directly
 // so the diagnostic span is the user file, not the lib forward site.
 @import "modules/std.sx";
@@ -7,5 +7,5 @@
 
 main :: () {
     n : i64 = 0;
-    _ := atomicCmpxchg(i64, *n, 0, 1, .relaxed, .seq_cst);
+    _ := atomicCmpxchg(i64, *n, 0, 1, .relaxed, .seqCst);
 }

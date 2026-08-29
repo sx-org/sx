@@ -3038,14 +3038,14 @@ fn atomicOrderingFromTag(tag: i64) ?inst_mod.AtomicOrdering {
         0 => .relaxed,
         1 => .acquire,
         2 => .release,
-        3 => .acq_rel,
-        4 => .seq_cst,
+        3 => .acqRel,
+        4 => .seqCst,
         else => null,
     };
 }
 
 /// Resolve an ordering argument to the IR `AtomicOrdering`. Accepts a bare enum
-/// literal (`.seq_cst`) OR a comptime-bound identifier (a `$o: Ordering` param
+/// literal (`.seqCst`) OR a comptime-bound identifier (a `$o: Ordering` param
 /// forwarded into the intrinsic — read its bound variant tag via
 /// `comptimeIntNamed`). Returns null for a non-constant ordering — the caller
 /// turns that into a loud diagnostic (never a silent default).
@@ -3055,8 +3055,8 @@ fn atomicOrderingFromNode(self: *Lowering, node: *const Node) ?inst_mod.AtomicOr
         if (std.mem.eql(u8, n, "relaxed")) return .relaxed;
         if (std.mem.eql(u8, n, "acquire")) return .acquire;
         if (std.mem.eql(u8, n, "release")) return .release;
-        if (std.mem.eql(u8, n, "acq_rel")) return .acq_rel;
-        if (std.mem.eql(u8, n, "seq_cst")) return .seq_cst;
+        if (std.mem.eql(u8, n, "acqRel")) return .acqRel;
+        if (std.mem.eql(u8, n, "seqCst")) return .seqCst;
         return null;
     }
     if (node.data == .identifier) {
@@ -3220,7 +3220,7 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         };
         // LLVM has no monotonic/unordered fence — `.relaxed` is invalid.
         if (ordering == .relaxed) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "fence ordering cannot be .relaxed (use .acquire / .release / .acq_rel / .seq_cst)", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "fence ordering cannot be .relaxed (use .acquire / .release / .acqRel / .seqCst)", .{});
             return Ref.none;
         }
         self.builder.emitVoid(.{ .atomic_fence = .{ .ordering = ordering } }, .void);
@@ -3286,26 +3286,26 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
     }
 
     // CAS resolves TWO orderings (success, failure) and validates the LLVM rule
-    // that the failure ordering may not be .release / .acq_rel and may not be
+    // that the failure ordering may not be .release / .acqRel and may not be
     // stronger than the success ordering. Handled in its own branch (different
     // arity + dual-ordering shape) before the single-ordering path below.
     if (is_cas) {
         const succ_node = c.args[4];
         const fail_node = c.args[5];
         const success_ordering = atomicOrderingFromNode(self, succ_node) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, succ_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acq_rel / .seq_cst)", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, succ_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acqRel / .seqCst)", .{});
             return Ref.none;
         };
         const failure_ordering = atomicOrderingFromNode(self, fail_node) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, fail_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acq_rel / .seq_cst)", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, fail_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acqRel / .seqCst)", .{});
             return Ref.none;
         };
         // The FAILURE ordering describes a load that does NOT write, so LLVM
-        // forbids .release / .acq_rel there, and forbids it being stronger than
+        // forbids .release / .acqRel there, and forbids it being stronger than
         // the SUCCESS ordering. Strength rank: relaxed=0 < acquire=release=1 <
-        // acq_rel=2 < seq_cst=3.
-        if (failure_ordering == .release or failure_ordering == .acq_rel) {
-            if (self.diagnostics) |d| d.addFmt(.err, fail_node.span, "atomic compare-exchange failure ordering cannot be .release or .acq_rel (use .relaxed / .acquire / .seq_cst)", .{});
+        // acqRel=2 < seqCst=3.
+        if (failure_ordering == .release or failure_ordering == .acqRel) {
+            if (self.diagnostics) |d| d.addFmt(.err, fail_node.span, "atomic compare-exchange failure ordering cannot be .release or .acqRel (use .relaxed / .acquire / .seqCst)", .{});
             return Ref.none;
         }
         if (atomicOrderingRank(failure_ordering) > atomicOrderingRank(success_ordering)) {
@@ -3331,17 +3331,17 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
 
     const ord_node = c.args[expected - 1];
     const ordering = atomicOrderingFromNode(self, ord_node) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acq_rel / .seq_cst)", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic ordering must be a constant ordering literal (.relaxed / .acquire / .release / .acqRel / .seqCst)", .{});
         return Ref.none;
     };
     // Per-op ordering validity (LLVM rejects these). A load can't release; a
-    // store can't acquire; neither can acq_rel. (RMW accepts all orderings.)
-    if (is_load and (ordering == .release or ordering == .acq_rel)) {
-        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic load ordering cannot be .release or .acq_rel (use .relaxed / .acquire / .seq_cst)", .{});
+    // store can't acquire; neither can acqRel. (RMW accepts all orderings.)
+    if (is_load and (ordering == .release or ordering == .acqRel)) {
+        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic load ordering cannot be .release or .acqRel (use .relaxed / .acquire / .seqCst)", .{});
         return Ref.none;
     }
-    if (is_store and (ordering == .acquire or ordering == .acq_rel)) {
-        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic store ordering cannot be .acquire or .acq_rel (use .relaxed / .release / .seq_cst)", .{});
+    if (is_store and (ordering == .acquire or ordering == .acqRel)) {
+        if (self.diagnostics) |d| d.addFmt(.err, ord_node.span, "atomic store ordering cannot be .acquire or .acqRel (use .relaxed / .release / .seqCst)", .{});
         return Ref.none;
     }
 
@@ -3693,13 +3693,13 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
 
 /// Strength rank of an atomic ordering, for the compare-exchange rule that the
 /// failure ordering may not be stronger than the success ordering.
-/// relaxed=0 < acquire=release=1 < acq_rel=2 < seq_cst=3.
+/// relaxed=0 < acquire=release=1 < acqRel=2 < seqCst=3.
 fn atomicOrderingRank(o: inst_mod.AtomicOrdering) u8 {
     return switch (o) {
         .relaxed => 0,
         .acquire, .release => 1,
-        .acq_rel => 2,
-        .seq_cst => 3,
+        .acqRel => 2,
+        .seqCst => 3,
     };
 }
 
