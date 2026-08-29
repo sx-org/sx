@@ -9,6 +9,6 @@
 StringId :: u32;
 
 main :: () {
-    id := raw_intern("called at runtime");
+    id := rawIntern("called at runtime");
     print("{}\n", id);
 }

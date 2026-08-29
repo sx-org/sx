@@ -310,7 +310,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         // Condition couldn't be evaluated — fall through to runtime
     }
 
-    // Check for constant-bool conditions (e.g., is_flags(T) → false) to avoid dead-code LLVM errors
+    // Check for constant-bool conditions (e.g., isFlags(T) → false) to avoid dead-code LLVM errors
     if (self.tryConstBoolCondition(ie.condition)) |is_true| {
         if (is_true) {
             // Condition always true: only lower then-branch
@@ -590,12 +590,12 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
-                // A RUNTIME Type argument (`t := @typeOf(av); if is_flags(t)`)
+                // A RUNTIME Type argument (`t := @typeOf(av); if isFlags(t)`)
                 // cannot const-fold — bail to the normal runtime lowering
                 // (the rt table read). Folding through resolveTypeArg here
                 // both emitted a spurious "unresolved type" diagnostic and
                 // silently decided the branch.
-                if (std.mem.eql(u8, cname, "is_flags")) {
+                if (std.mem.eql(u8, cname, "isFlags")) {
                     if (c.args.len > 0) {
                         if (!self.isStaticTypeArg(c.args[0])) return null;
                         const ty = self.resolveTypeArg(c.args[0]);

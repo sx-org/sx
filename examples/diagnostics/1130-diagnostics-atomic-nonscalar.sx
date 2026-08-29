@@ -4,5 +4,5 @@
 
 main :: () {
     arr : [8]u8 = .[0, 0, 0, 0, 0, 0, 0, 0];
-    x := atomic_load([8]u8, *arr, .seq_cst);
+    x := atomicLoad([8]u8, *arr, .seq_cst);
 }

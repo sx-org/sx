@@ -10,6 +10,6 @@ main :: () {
     th : Type = Header;
     tk : Type = Kind;
     print("{} {} {} {} {} {}\n",
-        @sizeOf(th), @alignOf(th), struct_field_count(th),
-        variant_count(tk), is_flags(tk), @typeEq(th, Header));
+        @sizeOf(th), @alignOf(th), structFieldCount(th),
+        variantCount(tk), isFlags(tk), @typeEq(th, Header));
 }

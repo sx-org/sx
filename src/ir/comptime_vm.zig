@@ -454,7 +454,7 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
 }
 
 /// A `{ name: string, ty: Type }` member decoded from comptime memory — the
-/// shape of the compiler-API `Member` that `raw_register_type` takes.
+/// shape of the compiler-API `Member` that `rawRegisterType` takes.
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
 /// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
@@ -2029,7 +2029,7 @@ pub const Vm = struct {
 /// mode, so an id that is not evaluate-only cannot arrive here.
 fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []const Ref, frame: *Frame, ref_types: []const TypeId, result_ty: TypeId) Error!?Reg {
         const table = try self.requireTable();
-        if (intr == .raw_intern) {
+        if (intr == .rawIntern) {
             if (args.len != 1) return self.failMsg("comptime intern: expected one string arg");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
@@ -2039,7 +2039,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const id = @constCast(table).internString(text);
             return @as(Reg, @intFromEnum(id));
         }
-        if (intr == .raw_text_of) {
+        if (intr == .rawTextOf) {
             if (args.len != 1) return self.failMsg("comptime text_of: expected one StringId arg");
             const raw = frame.get(args[0].index());
             if (raw > std.math.maxInt(u32)) return self.failMsg("comptime text_of: StringId out of range");
@@ -2049,7 +2049,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // ── read-only reflection readers ──────────────────────────
         // Type handle = a u32 `TypeId` (a word), exactly like `StringId` — so
         // these mirror intern/text_of's shape: word in, word out, no marshaling.
-        if (intr == .raw_find_type) {
+        if (intr == .rawFindType) {
             if (args.len != 1) return self.failMsg("comptime find_type: expected one StringId arg");
             const sid: types.StringId = @enumFromInt(try self.argHandle(args, frame, 0));
             // Not found → the dedicated `unresolved` (0) sentinel, never a real
@@ -2057,7 +2057,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const tid = table.findByName(sid) orelse TypeId.unresolved;
             return @as(Reg, tid.index());
         }
-        if (intr == .raw_field_count) {
+        if (intr == .rawFieldCount) {
             if (args.len != 1) return self.failMsg("comptime type_field_count: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             // `TypeTable.memberCount`; a type with no member count bails loudly
@@ -2066,14 +2066,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_count: type has no field/variant count");
             return @as(Reg, @bitCast(count));
         }
-        if (intr == .raw_type_name) {
+        if (intr == .rawTypeName) {
             if (args.len != 1) return self.failMsg("comptime type_nominal_name: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             const sid = table.nominalName(tid) orelse
                 return self.failMsg("comptime type_nominal_name: type has no nominal name");
             return @as(Reg, @intFromEnum(sid));
         }
-        if (intr == .raw_field_name) {
+        if (intr == .rawFieldName) {
             if (args.len != 2) return self.failMsg("comptime type_field_name: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2081,7 +2081,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_name: out-of-range idx or unnamed member");
             return @as(Reg, @intFromEnum(sid));
         }
-        if (intr == .raw_field_type) {
+        if (intr == .rawFieldType) {
             if (args.len != 2) return self.failMsg("comptime type_field_type: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2089,12 +2089,12 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_type: out-of-range idx or member has no type");
             return @as(Reg, mty.index());
         }
-        if (intr == .raw_type_kind) {
+        if (intr == .rawTypeKind) {
             if (args.len != 1) return self.failMsg("comptime type_kind: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             return @as(Reg, @bitCast(table.kindCode(tid))); // total — never bails
         }
-        if (intr == .raw_variant_value) {
+        if (intr == .rawVariantValue) {
             if (args.len != 2) return self.failMsg("comptime type_field_value: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2107,18 +2107,18 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // mutable access the read-side `intern` uses (the table is genuinely
         // mutable; the VM merely holds it `const`). They take/return real `Type`
         // values (`.type_value` words = `TypeId.index()`).
-        if (intr == .raw_declare_type) {
+        if (intr == .rawDeclareType) {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             return @as(Reg, (self.declareNominal(table, text)).index());
         }
-        if (intr == .raw_pointer_to) {
+        if (intr == .rawPointerTo) {
             if (args.len != 1) return self.failMsg("comptime pointer_to: expected (Type)");
             const t = try self.argTypeId(args, frame, 0);
             return @as(Reg, @constCast(table).intern(.{ .pointer = .{ .pointee = t } }).index());
         }
-        if (intr == .raw_register_type) {
+        if (intr == .rawRegisterType) {
             return self.registerTypeVm(args, frame, ref_types);
         }
         // ── BuildOptions ───────────────────────────────────────────────────

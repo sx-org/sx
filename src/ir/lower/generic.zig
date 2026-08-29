@@ -320,8 +320,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             // type argument is: `@typeOf(x)` with an `any`-typed operand
             // answers the runtime TAG (freezing it statically said "any"
             // where the two-step form read "Point"), and
-            // `struct_field_type(tp, i)` / `variant_type(tp, i)` /
-            // `pointee_type(tp)` with a runtime `tp` produce runtime Types.
+            // `structFieldType(tp, i)` / `variantType(tp, i)` /
+            // `pointeeType(tp)` with a runtime `tp` produce runtime Types.
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
@@ -332,9 +332,9 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                     // "any"/"Drawable" where the value knows "Point".
                     if (aty == .any or self.getProtocolInfo(aty) != null) return false;
                 }
-                if ((std.mem.eql(u8, cn, "struct_field_type") or
-                    std.mem.eql(u8, cn, "variant_type") or
-                    std.mem.eql(u8, cn, "pointee_type")) and cl.args.len >= 1)
+                if ((std.mem.eql(u8, cn, "structFieldType") or
+                    std.mem.eql(u8, cn, "variantType") or
+                    std.mem.eql(u8, cn, "pointeeType")) and cl.args.len >= 1)
                 {
                     return self.isStaticTypeArg(cl.args[0]);
                 }
@@ -550,7 +550,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .type_expr => |te| {
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized
-            // target (`x.(struct_field_type(T, i))`) parses as a type_expr,
+            // target (`x.(structFieldType(T, i))`) parses as a type_expr,
             // and the stateless resolver below would fabricate a 0-field
             // stub named "T" instead.
             if (self.type_bindings) |tb| {
@@ -611,7 +611,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .function_type_expr,
         // A parameterized head (`Box(i64)`, or a Type-returning reflection
         // builtin the postfix-cast target parses as one —
-        // `x.(struct_field_type(T, i))`) resolves through the gated path,
+        // `x.(structFieldType(T, i))`) resolves through the gated path,
         // which delegates builtins to `resolveTypeCallWithBindings`.
         .parameterized_type_expr,
         => return self.resolveTypeWithBindings(node),
@@ -1055,7 +1055,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         tags.append(self.alloc, TypeId.isize.index()) catch {};
         // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
         // normalizes them into a builtin tag (`boxAnyOf`), but an interior
-        // VIEW (`struct_field_value` on an `any` receiver) carries the
+        // VIEW (`structFieldValue` on an `any` receiver) carries the
         // field's TRUE tag — normalization can't reach a view, so the
         // category list must cover these tags or a view of an arb-width
         // field falls through every arm.
@@ -1975,7 +1975,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // field / variant-payload / element type). A genuine type-table op, kept as
     // a compiler builtin (like type_name); folds at lower time so it composes
     // inside @typeEq / @typeName / any type-arg slot.
-    if (std.mem.eql(u8, callee_name, "struct_field_type") or std.mem.eql(u8, callee_name, "variant_type")) {
+    if (std.mem.eql(u8, callee_name, "structFieldType") or std.mem.eql(u8, callee_name, "variantType")) {
         if (cl.args.len != 2) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, cl.callee.span, "{s} takes a type and an index: {s}($T, i)", .{ callee_name, callee_name });
@@ -1996,7 +1996,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // pointee($P) -> Type — comptime reflection: the target type of a pointer
     // (`pointee(*X)` -> `X`). Folds at lower time like `field_type` so it
     // composes inside any type-arg slot. A non-pointer arg is a loud error.
-    if (std.mem.eql(u8, callee_name, "pointee_type")) {
+    if (std.mem.eql(u8, callee_name, "pointeeType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, cl.callee.span, "pointee takes one type: pointee($P)", .{});
@@ -2015,7 +2015,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         };
     }
     // @envType($F) -> Type — the environment a callable value IS. Folds here
-    // like `pointee_type` so it answers in a type-argument slot.
+    // like `pointeeType` so it answers in a type-argument slot.
     if (std.mem.eql(u8, callee_name, "@envType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
@@ -2090,13 +2090,13 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     const is_qualified = std.mem.indexOfScalar(u8, pt.name, '.') != null;
 
     // A Type-returning reflection builtin spelled in a TYPE position
-    // (`x.(struct_field_type(T, i))` — the postfix-cast target parses via
+    // (`x.(structFieldType(T, i))` — the postfix-cast target parses via
     // parseTypeExpr, so the call arrives as a parameterized type). The
     // `.call` resolver owns these folds — delegate with the same arg nodes.
-    if (!pt.is_raw and (std.mem.eql(u8, base_name, "struct_field_type") or
-        std.mem.eql(u8, base_name, "variant_type") or
+    if (!pt.is_raw and (std.mem.eql(u8, base_name, "structFieldType") or
+        std.mem.eql(u8, base_name, "variantType") or
         std.mem.eql(u8, base_name, "@envType") or
-        std.mem.eql(u8, base_name, "pointee_type")))
+        std.mem.eql(u8, base_name, "pointeeType")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };

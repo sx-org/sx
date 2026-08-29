@@ -219,11 +219,11 @@ struct_to_string :: (s: $T) -> string {
     // value prints its name.
     result := "{";
     i := 0;
-    while i < struct_field_count(T) {
+    while i < structFieldCount(T) {
         if i > 0 { result = concat(result, ", "); }
-        result = concat(result, struct_field_name(T, i));
+        result = concat(result, structFieldName(T, i));
         result = concat(result, ": ");
-        result = concat(result, any_to_string(struct_field_value(s, i)));
+        result = concat(result, any_to_string(structFieldValue(s, i)));
         i += 1;
     }
     concat(result, "}")
@@ -276,11 +276,11 @@ flags_to_string :: (val: $T) -> string {
     v := val.(i64);
     result := "";
     i := 0;
-    while i < variant_count(T) {
-        fv := variant_value(T, i);
+    while i < variantCount(T) {
+        fv := variantValue(T, i);
         if v & fv {
             if result.len > 0 { result = concat(result, " | "); }
-            result = concat(result, concat(".", variant_name(T, i)));
+            result = concat(result, concat(".", variantName(T, i)));
         }
         i += 1;
     }
@@ -289,10 +289,10 @@ flags_to_string :: (val: $T) -> string {
 }
 
 enum_to_string :: (u: $T) -> string {
-    if is_flags(T) { return flags_to_string(u); }
-    idx := variant_index(T, u);
-    result := concat(".", variant_name(T, idx));
-    payload := variant_payload(u, idx);
+    if isFlags(T) { return flags_to_string(u); }
+    idx := variantIndex(T, u);
+    result := concat(".", variantName(T, idx));
+    payload := variantPayload(u, idx);
     pstr := any_to_string(payload);
     if pstr.len > 0 {
         result = concat(result, concat("(", concat(pstr, ")")));
@@ -340,7 +340,7 @@ write_any :: (w: Writer, val: any) {
             w.write("}");
         }
         case .enum: |ei| {
-            if is_flags(t) {
+            if isFlags(t) {
                 bits := __sx_any_tag_word(t, val);
                 empty := true;
                 fi := 0;
@@ -356,7 +356,7 @@ write_any :: (w: Writer, val: any) {
                 }
                 if empty { w.write("0"); }
             } else {
-                idx := variant_index(t, val);
+                idx := variantIndex(t, val);
                 live := ei.variants[idx];
                 w.write(".");
                 w.write(live.name);
@@ -594,7 +594,7 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
     w := __sx_variant_tag_width(t);
     signed := false;
     if w < 0 { signed = true; w = -w; }
-    p : [*]u8 = raw_any_data(av).([*]u8);
+    p : [*]u8 = rawAnyData(av).([*]u8);
     v := 0;
     i := 0;
     while i < w {
@@ -611,15 +611,15 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
     v
 }
 
-// `variant_index(t, av)` with a RUNTIME t lowers to this scan: value → the
+// `variantIndex(t, av)` with a RUNTIME t lowers to this scan: value → the
 // sequential ordinal, over the runtime variant-value table (explicit values
 // and explicit tags included). A tag the table does not list names no variant.
 __sx_variant_index :: (t: Type, av: any) -> i64 {
     v := __sx_any_tag_word(t, av);
-    n := variant_count(t);
+    n := variantCount(t);
     i := 0;
     while i < n {
-        if variant_value(t, i) == v { return i; }
+        if variantValue(t, i) == v { return i; }
         i += 1;
     }
     @panic(format("{} has no variant for tag {}", @typeName(t), v), @SourceSite{})

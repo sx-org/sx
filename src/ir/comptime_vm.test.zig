@@ -989,7 +989,7 @@ test "comptime_vm exec: compiler-fn intern/text_of round-trip (native)" {
     var ifb = Fb.init(alloc, &ip, .u32);
     ifb.func.is_extern = true;
     ifb.func.is_intrinsic = true;
-    ifb.func.name = module.types.internString("raw_intern");
+    ifb.func.name = module.types.internString("rawIntern");
     const intern_id = module.addFunction(ifb.func);
 
     // extern text_of(id: u32) -> string [compiler]   (FuncId 1, no body)
@@ -997,7 +997,7 @@ test "comptime_vm exec: compiler-fn intern/text_of round-trip (native)" {
     var tfb = Fb.init(alloc, &tp, .string);
     tfb.func.is_extern = true;
     tfb.func.is_intrinsic = true;
-    tfb.func.name = module.types.internString("raw_text_of");
+    tfb.func.name = module.types.internString("rawTextOf");
     const textof_id = module.addFunction(tfb.func);
 
     // main(): return length(text_of(intern("hello")))   → 5
@@ -1039,7 +1039,7 @@ test "comptime_vm exec: compiler-fn find_type + type_field_count (native reflect
     var ffb = Fb.init(alloc, &fp, .u32);
     ffb.func.is_extern = true;
     ffb.func.is_intrinsic = true;
-    ffb.func.name = module.types.internString("raw_find_type");
+    ffb.func.name = module.types.internString("rawFindType");
     const find_id = module.addFunction(ffb.func);
 
     // extern type_field_count(t: u32) -> i64 [compiler]   (FuncId 1, no body)
@@ -1047,7 +1047,7 @@ test "comptime_vm exec: compiler-fn find_type + type_field_count (native reflect
     var cfb = Fb.init(alloc, &cp, .i64);
     cfb.func.is_extern = true;
     cfb.func.is_intrinsic = true;
-    cfb.func.name = module.types.internString("raw_field_count");
+    cfb.func.name = module.types.internString("rawFieldCount");
     const count_id = module.addFunction(cfb.func);
 
     // main(): return type_field_count(find_type(intern_id_of("Point")))   → 3
@@ -1108,7 +1108,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     var fnb = Fb.init(alloc, &fnp, .u32);
     fnb.func.is_extern = true;
     fnb.func.is_intrinsic = true;
-    fnb.func.name = module.types.internString("raw_field_name");
+    fnb.func.name = module.types.internString("rawFieldName");
     const fname_id = module.addFunction(fnb.func);
 
     // extern type_field_type(t: u32, idx: i64) -> u32 [compiler]   (FuncId 1)
@@ -1116,7 +1116,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     var ftb = Fb.init(alloc, &ftp, .u32);
     ftb.func.is_extern = true;
     ftb.func.is_intrinsic = true;
-    ftb.func.name = module.types.internString("raw_field_type");
+    ftb.func.name = module.types.internString("rawFieldType");
     const ftype_id = module.addFunction(ftb.func);
 
     // extern type_nominal_name(t: u32) -> u32 [compiler]   (FuncId 2)
@@ -1124,7 +1124,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     var nnb = Fb.init(alloc, &nnp, .u32);
     nnb.func.is_extern = true;
     nnb.func.is_intrinsic = true;
-    nnb.func.name = module.types.internString("raw_type_name");
+    nnb.func.name = module.types.internString("rawTypeName");
     const nname_id = module.addFunction(nnb.func);
 
     // main(): return type_field_name(Pair, 1)   → StringId("hi")
@@ -1181,7 +1181,7 @@ test "comptime_vm exec: compiler-fn type_kind + type_field_value (native reflect
     var kb = Fb.init(alloc, &kp, .i64);
     kb.func.is_extern = true;
     kb.func.is_intrinsic = true;
-    kb.func.name = module.types.internString("raw_type_kind");
+    kb.func.name = module.types.internString("rawTypeKind");
     const kind_id = module.addFunction(kb.func);
 
     // extern type_field_value(t: u32, idx: i64) -> i64 [compiler]   (FuncId 1)
@@ -1189,7 +1189,7 @@ test "comptime_vm exec: compiler-fn type_kind + type_field_value (native reflect
     var vb = Fb.init(alloc, &vp, .i64);
     vb.func.is_extern = true;
     vb.func.is_intrinsic = true;
-    vb.func.name = module.types.internString("raw_variant_value");
+    vb.func.name = module.types.internString("rawVariantValue");
     const val_id = module.addFunction(vb.func);
 
     var v = vm.Vm.init(alloc);

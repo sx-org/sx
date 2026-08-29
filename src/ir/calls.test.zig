@@ -80,14 +80,14 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         // pack-fn caller boxes the value with the right type.
         .{ .name = "@typeName", .want = .string },
         .{ .name = "@typeEq", .want = .bool },
-        .{ .name = "struct_field_count", .want = .i64 },
-        .{ .name = "variant_index", .want = .i64 },
-        .{ .name = "struct_field_name", .want = .string },
+        .{ .name = "structFieldCount", .want = .i64 },
+        .{ .name = "variantIndex", .want = .i64 },
+        .{ .name = "structFieldName", .want = .string },
         .{ .name = "@errorName", .want = .string },
         .{ .name = "@isComptime", .want = .bool },
-        .{ .name = "is_flags", .want = .bool },
+        .{ .name = "isFlags", .want = .bool },
         .{ .name = "@typeOf", .want = .type_value },
-        .{ .name = "struct_field_value", .want = .any },
+        .{ .name = "structFieldValue", .want = .any },
         .{ .name = "__interp_print_frames", .want = .void },
         // A math builtin with a non-`f32` argument widens to `f64` (the int
         // literal arg is not `f32`, so the `f32` fast-path is not taken).

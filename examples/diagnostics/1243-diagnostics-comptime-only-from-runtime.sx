@@ -7,10 +7,10 @@
 // at all?" — here the answer is three hops up, in `main`.
 @import "modules/std.sx";
 
-// `raw_intern` mints into the compiler's own string pool; there is nothing for it to
+// `rawIntern` mints into the compiler's own string pool; there is nothing for it to
 // do in a shipped binary.
 beta :: () -> u32 {
-    return raw_intern("interned at runtime?");
+    return rawIntern("interned at runtime?");
 }
 
 alpha :: () -> u32 {

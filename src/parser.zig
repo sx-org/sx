@@ -3900,7 +3900,7 @@ pub const Parser = struct {
         // no `@Init(T){ … }` literal and no `@Init` expression. Every other `@`
         // name is an ordinary type reference here — a declared contract takes
         // an aggregate literal (`@SourceSite{ … }`), and `@Vector(N, T)` is the
-        // type an expression such as `vector_lanes(@Vector(3, f32))` names.
+        // type an expression such as `vectorLanes(@Vector(3, f32))` names.
         if (self.tokens.tag(self.tok) == .at_identifier) {
             const at_name = self.tokens.slice(self.tok);
             if (contracts.isBoundOnly(at_name)) {

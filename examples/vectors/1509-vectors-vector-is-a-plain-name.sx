@@ -14,7 +14,7 @@ main :: () -> i32 {
     print("x={} y={} [2]={}\n", b.x, b.y, b[2]);
 
     named := Vector{ tag = "plain" };
-    Vector := vector_lanes(@Vector(3, f32));
+    Vector := vectorLanes(@Vector(3, f32));
     print("tag={} lanes={}\n", named.tag, Vector);
     0
 }

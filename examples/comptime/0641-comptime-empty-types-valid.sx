@@ -9,7 +9,7 @@
 
 EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));
 EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ variants = .[] }));
-EmptyUnion  :: raw_register_type(declare("EmptyUnion"), 3, .[]);
+EmptyUnion  :: rawRegisterType(declare("EmptyUnion"), 3, .[]);
 
 main :: () -> i32 {
     s : EmptyStruct = .{};
