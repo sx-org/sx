@@ -5534,15 +5534,18 @@ n :: i64 intrinsic;
 and does not parse.
 
 An intrinsic binds to the compiler's registry by **(module, name)** — the
-declaring module is part of its identity. `struct_field_count` is an intrinsic
-because `modules/std/core.sx` declares it, not because the name is magic; the
-same spelling in another module names an ordinary function and is rejected:
+declaring module is part of its identity. `@sizeOf` is an intrinsic because
+`modules/std/core.sx` declares it, not because the name is magic; the same
+spelling in another module names an ordinary function and is rejected:
 
 ```sx
-struct_field_count :: ($T: Type) -> i64 intrinsic;
-// ERROR outside std/core.sx: 'struct_field_count' is declared by
-// modules/std/core.sx
+@sizeOf :: ($T: Type) -> i64;   // ERROR outside std/core.sx: '@sizeOf' is
+                                // declared by modules/std/core.sx
 ```
+
+An `@` name is gated twice over — the intrinsic registry answers for the
+implementation, the `@` namespace (§Lexical Structure) for the sigil — so a
+misplaced declaration draws one diagnostic from each.
 
 A name the registry does not carry (`unknown intrinsic 'foo'`) or a wrong
 parameter count is a compile-time error at the declaration itself — never a

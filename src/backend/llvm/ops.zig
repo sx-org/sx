@@ -1880,13 +1880,13 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, gep, "tiu.load");
                 self.e.mapRef(result);
             },
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
                 const kind: @import("reflection.zig").Reflection.ScalarTableKind = switch (bi.builtin) {
-                    .rt_size_of => .size,
-                    .rt_align_of => .alignment,
+                    .@"rt_@sizeOf" => .size,
+                    .@"rt_@alignOf" => .alignment,
                     .rt_struct_field_count => .sf_count,
                     .rt_variant_count => .var_count,
                     .rt_is_flags => .flags,
@@ -1973,7 +1973,7 @@ pub const Ops = struct {
                 self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntEQ, ta, tb, "rteq"));
             },
             else => {
-                // size_of, cast — handled by lowering or codegen glue
+                // @sizeOf, cast — handled by lowering or codegen glue
                 self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             },
         }

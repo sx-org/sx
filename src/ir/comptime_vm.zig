@@ -2505,13 +2505,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return switch (bi.builtin) {
-                    .rt_size_of => @as(Reg, @intCast(table.typeSizeBytes(tid))),
-                    .rt_align_of => @as(Reg, @intCast(table.typeAlignBytes(tid))),
+                    .@"rt_@sizeOf" => @as(Reg, @intCast(table.typeSizeBytes(tid))),
+                    .@"rt_@alignOf" => @as(Reg, @intCast(table.typeAlignBytes(tid))),
                     .rt_struct_field_count => blk: {
                         if (!tid.isBuiltin()) switch (table.get(tid)) {
                             .@"struct" => |st| break :blk @as(Reg, @intCast(st.fields.len)),

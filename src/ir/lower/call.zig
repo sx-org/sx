@@ -1495,7 +1495,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Check builtins first (these are handled natively by interpreter and emitter)
             if (resolveBuiltin(id.name)) |bid| {
                 const ret_ty: TypeId = switch (bid) {
-                    .size_of, .align_of => .i64,
+                    .@"@sizeOf", .@"@alignOf" => .i64,
                     .sqrt, .sin, .cos, .floor => blk: {
                         // Math builtins: return type matches argument type ($T -> T)
                         if (c.args.len > 0) {
@@ -2774,8 +2774,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@sin" => .sin,
         .@"@cos" => .cos,
         .@"@floor" => .floor,
-        .@"@sizeOf" => .size_of,
-        .@"@alignOf" => .align_of,
+        .@"@sizeOf" => .@"@sizeOf",
+        .@"@alignOf" => .@"@alignOf",
 
         // No `call_builtin` form. The reflection intrinsics fold to a constant in
         // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `@typeInfo`
@@ -4055,7 +4055,7 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
     const elem_args = self.alloc.dupe(Ref, &.{ recv, self.builder.constInt(0, .i64) }) catch return sentinel;
     const elem = self.builder.callBuiltin(.rt_member_type, elem_args, .type_value);
     const size_args = self.alloc.dupe(Ref, &.{elem}) catch return sentinel;
-    const elem_size = self.builder.callBuiltin(.rt_size_of, size_args, .i64);
+    const elem_size = self.builder.callBuiltin(.@"rt_@sizeOf", size_args, .i64);
     const stride = self.builder.mul(idx, elem_size, .i64);
     return self.builder.makeAny(elem, self.builder.add(boxedFatMerge(self, recv, boxedHeaderBuffer, boxedStorage), stride, .i64));
 }
@@ -4201,7 +4201,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_size_of, args_owned, .i64);
+            return self.builder.callBuiltin(.@"rt_@sizeOf", args_owned, .i64);
         }
         const ty = self.resolveTypeArg(c.args[0]);
         // An open set's layout follows the members declared anywhere in the
@@ -4216,7 +4216,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_align_of, args_owned, .i64);
+            return self.builder.callBuiltin(.@"rt_@alignOf", args_owned, .i64);
         }
         const ty = self.resolveTypeArg(c.args[0]);
         if (self.openSetLayoutDependsOnSet(ty))
@@ -4523,7 +4523,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         } else {
             tag = self.lowerExpr(c.args[1]);
             const sz_args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constInt(0, .any);
-            elem_size = self.builder.callBuiltin(.rt_size_of, sz_args, .i64);
+            elem_size = self.builder.callBuiltin(.@"rt_@sizeOf", sz_args, .i64);
         }
         const stride = self.builder.emit(.{ .mul = .{ .lhs = idx, .rhs = elem_size } }, .i64);
         const base = self.builder.anyData(av, .i64);

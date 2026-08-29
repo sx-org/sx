@@ -1,6 +1,7 @@
 == D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
 (comments, string/char literals, and @string heredocs excluded by the scanner)
 
+issues/foreign-private-field-naming/facade.sx:4:5: private [use] | private state: Secret;
 library/modules/build.sx:32:37: intrinsic [use] | build_options :: () -> BuildOptions intrinsic;
 library/modules/build.sx:36:58: intrinsic [use] | add_link_flag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
 library/modules/build.sx:37:58: intrinsic [use] | add_framework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
@@ -61,40 +62,34 @@ library/modules/std/atomic.sx:37:66: intrinsic [use] | atomic_swap :: ($T: Type,
 library/modules/std/atomic.sx:41:31: intrinsic [use] | atomic_fence :: (o: Ordering) intrinsic;
 library/modules/std/atomic.sx:51:113: intrinsic [use] | atomic_cmpxchg      :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
 library/modules/std/atomic.sx:52:113: intrinsic [use] | atomic_cmpxchg_weak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
-library/modules/std/core.sx:19:30: intrinsic [use] | size_of :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:20:31: intrinsic [use] | align_of :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:21:30: intrinsic [use] | type_of :: (val: $T) -> Type intrinsic;
-library/modules/std/core.sx:22:35: intrinsic [use] | type_name :: ($T: Type) -> string intrinsic;
 library/modules/std/core.sx:26:41: intrinsic [use] | struct_field_count :: ($T: Type) -> i64 intrinsic;
 library/modules/std/core.sx:27:53: intrinsic [use] | struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:35:51: intrinsic [use] | struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:37:52: intrinsic [use] | struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:41:36: intrinsic [use] | pointee_type :: ($P: Type) -> Type intrinsic;
-library/modules/std/core.sx:42:48: intrinsic [use] | struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:45:36: intrinsic [use] | variant_count :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:46:48: intrinsic [use] | variant_name :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:47:46: intrinsic [use] | variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:48:45: intrinsic [use] | variant_payload :: (u: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:49:32: intrinsic [use] | is_flags :: ($T: Type) -> bool intrinsic;
-library/modules/std/core.sx:50:46: intrinsic [use] | variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:51:44: intrinsic [use] | variant_index :: ($T: Type, val: T) -> i64 intrinsic;
-library/modules/std/core.sx:52:33: intrinsic [use] | error_name :: (e: $T) -> string intrinsic;
-library/modules/std/core.sx:58:35: intrinsic [use] | vector_lanes :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:65:45: intrinsic [use] | __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:70:42: intrinsic [use] | __sx_slice_len_info :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:74:55: intrinsic [use] | any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:83:36: intrinsic [use] | raw_any_data :: (av: any) -> *void intrinsic;
-library/modules/std/core.sx:84:48: intrinsic [use] | raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
-library/modules/std/core.sx:299:45: intrinsic [use] | raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
-library/modules/std/core.sx:300:46: intrinsic [use] | raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
-library/modules/std/core.sx:301:45: intrinsic [use] | raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-library/modules/std/core.sx:302:42: intrinsic [use] | raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-library/modules/std/core.sx:304:34: intrinsic [use] | raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-library/modules/std/core.sx:305:37: intrinsic [use] | raw_field_count  :: (t: u32) -> i64 intrinsic;
-library/modules/std/core.sx:306:47: intrinsic [use] | raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-library/modules/std/core.sx:307:47: intrinsic [use] | raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-library/modules/std/core.sx:308:49: intrinsic [use] | raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-library/modules/std/core.sx:309:44: intrinsic [use] | raw_pointer_to        :: (t: Type) -> Type intrinsic;
+library/modules/std/core.sx:31:51: intrinsic [use] | struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
+library/modules/std/core.sx:33:52: intrinsic [use] | struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
+library/modules/std/core.sx:37:36: intrinsic [use] | pointee_type :: ($P: Type) -> Type intrinsic;
+library/modules/std/core.sx:38:48: intrinsic [use] | struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:41:36: intrinsic [use] | variant_count :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:42:48: intrinsic [use] | variant_name :: ($T: Type, idx: i64) -> string intrinsic;
+library/modules/std/core.sx:43:46: intrinsic [use] | variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
+library/modules/std/core.sx:44:45: intrinsic [use] | variant_payload :: (u: $T, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:45:32: intrinsic [use] | is_flags :: ($T: Type) -> bool intrinsic;
+library/modules/std/core.sx:46:46: intrinsic [use] | variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
+library/modules/std/core.sx:47:44: intrinsic [use] | variant_index :: ($T: Type, val: T) -> i64 intrinsic;
+library/modules/std/core.sx:59:35: intrinsic [use] | vector_lanes :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:66:45: intrinsic [use] | __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:70:55: intrinsic [use] | any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:103:36: intrinsic [use] | raw_any_data :: (av: any) -> *void intrinsic;
+library/modules/std/core.sx:104:48: intrinsic [use] | raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
+library/modules/std/core.sx:334:45: intrinsic [use] | raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
+library/modules/std/core.sx:335:46: intrinsic [use] | raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
+library/modules/std/core.sx:336:45: intrinsic [use] | raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+library/modules/std/core.sx:337:42: intrinsic [use] | raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
+library/modules/std/core.sx:339:34: intrinsic [use] | raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+library/modules/std/core.sx:340:37: intrinsic [use] | raw_field_count  :: (t: u32) -> i64 intrinsic;
+library/modules/std/core.sx:341:47: intrinsic [use] | raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+library/modules/std/core.sx:342:47: intrinsic [use] | raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+library/modules/std/core.sx:343:49: intrinsic [use] | raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+library/modules/std/core.sx:344:44: intrinsic [use] | raw_pointer_to        :: (t: Type) -> Type intrinsic;
 library/modules/std/internal/compress.sx:13:1: private [use] | private DeflatePath :: enum { fastest; portable; }
 library/modules/std/internal/compress.sx:15:1: private [use] | private TDEFL_PROBES : [11]i64 = .[0, 1, 6, 32, 16, 32, 128, 256, 512, 768, 1500];
 library/modules/std/internal/compress.sx:17:1: private [use] | private TDEFL_LESS_MEMORY_RAW_BLOCK_LIMIT : i64 = 21839;
@@ -145,13 +140,13 @@ library/modules/std/internal/compress.sx:2439:1: private [use] | private contain
 library/modules/std/internal/compress.sx:2448:1: private [use] | private validate_gzip_options :: (options: GzipOptions) -> !Error {
 library/modules/std/internal/compress.sx:2476:1: private [use] | private GzipDeflatePhase :: enum { header; body; trailer; done; }
 library/modules/std/internal/compress.sx:2660:1: private [use] | private InflatePhase :: enum {
-library/modules/std/internal/compress.sx:3465:1: private [use] | private ZlibInflatePhase :: enum { header; body; checksum; done; }
-library/modules/std/internal/compress.sx:3604:1: private [use] | private TinflStatus :: enum { cannot_make_progress; bad_param; adler_mismatch; failed; done; needs_more_input; has_more_output; }
-library/modules/std/internal/compress.sx:3606:1: private [use] | private TinflProgress :: struct {
-library/modules/std/internal/compress.sx:3615:1: private [use] | private TinflDecompressor :: struct {
-library/modules/std/internal/compress.sx:3701:1: private [use] | private tinfl_error :: (status: TinflStatus) -> Error {
-library/modules/std/internal/compress.sx:3750:1: private [use] | private GzipInflatePhase :: enum {
-library/modules/std/internal/compress.sx:3984:1: private [use] | private DIRECT_INFLATE_LIMIT : i64 : 67108864;
+library/modules/std/internal/compress.sx:3464:1: private [use] | private ZlibInflatePhase :: enum { header; body; checksum; done; }
+library/modules/std/internal/compress.sx:3603:1: private [use] | private TinflStatus :: enum { cannot_make_progress; bad_param; adler_mismatch; failed; done; needs_more_input; has_more_output; }
+library/modules/std/internal/compress.sx:3605:1: private [use] | private TinflProgress :: struct {
+library/modules/std/internal/compress.sx:3614:1: private [use] | private TinflDecompressor :: struct {
+library/modules/std/internal/compress.sx:3700:1: private [use] | private tinfl_error :: (status: TinflStatus) -> Error {
+library/modules/std/internal/compress.sx:3749:1: private [use] | private GzipInflatePhase :: enum {
+library/modules/std/internal/compress.sx:3983:1: private [use] | private DIRECT_INFLATE_LIMIT : i64 : 67108864;
 library/modules/std/internal/compress.sx:4037:1: private [use] | private compress_checked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
 library/modules/std/internal/compress.sx:4043:1: private [use] | private compress_strategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
 library/modules/std/internal/decimal.sx:55:1: private [use] | private LIMB_BITS :: 28;
@@ -168,10 +163,10 @@ library/modules/std/internal/decimal.sx:336:1: private [use] | private floor_div
 library/modules/std/internal/decimal.sx:345:1: private [use] | private reaches_upper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
 library/modules/std/internal/decimal.sx:438:1: private [use] | private reaches_upper_scaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
 library/modules/std/internal/decimal.sx:447:1: private [use] | private int_bit_len :: (v: i64) -> i64 {
-library/modules/std/internal/png.sx:10:1: private [use] | private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
-library/modules/std/internal/png.sx:12:1: private [use] | private png_write_chunk :: (out: *ByteWriter, kind: string, payload: string) {
-library/modules/std/internal/png.sx:131:1: private [use] | private png_u32be :: (d: string, off: i64) -> i64 {
-library/modules/std/internal/png.sx:135:1: private [use] | private paeth :: (a: i64, b: i64, c: i64) -> i64 {
+library/modules/std/internal/png.sx:20:1: private [use] | private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
+library/modules/std/internal/png.sx:22:1: private [use] | private png_write_chunk :: (out: *ByteWriter, kind: string, payload: string) {
+library/modules/std/internal/png.sx:141:1: private [use] | private png_u32be :: (d: string, off: i64) -> i64 {
+library/modules/std/internal/png.sx:145:1: private [use] | private paeth :: (a: i64, b: i64, c: i64) -> i64 {
 library/modules/std/internal/zip.sx:11:1: private [use] | private le16 :: (data: string, at: i64) -> (i64, !Error) {
 library/modules/std/internal/zip.sx:16:1: private [use] | private le32 :: (data: string, at: i64) -> (i64, !Error) {
 library/modules/std/internal/zip.sx:21:1: private [use] | private le64 :: (data: string, at: i64) -> (i64, !Error) {
@@ -226,24 +221,23 @@ library/modules/std/internal/zip_facade.sx:367:1: private [use] | private StdZip
 library/modules/std/internal/zip_facade.sx:375:1: private [use] | private StdZipBorrowedSinkWriter :: struct {
 library/modules/std/internal/zip_facade.sx:381:1: private [use] | private StdZipFileWriter :: struct {
 library/modules/std/internal/zip_facade.sx:385:1: private [use] | private StdZipAppendFileWriter :: struct {
-library/modules/std/internal/zip_facade.sx:485:1: private [use] | private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
-library/modules/std/internal/zip_facade.sx:496:1: private [use] | private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -> Error {
-library/modules/std/internal/zip_facade.sx:506:1: private [use] | private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
-library/modules/std/internal/zip_facade.sx:520:1: private [use] | private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
-library/modules/std/internal/zip_facade.sx:540:1: private [use] | private std_zip_writer_default_comment :: (state: *StdZipWriterState) -> string {
-library/modules/std/internal/zip_facade.sx:683:1: private [use] | private std_zip_extract_to_sink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
-library/modules/std/internal/zip_facade.sx:693:1: private [use] | private std_zip_add_source :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !Error {
-library/modules/std/meta.sx:114:45: intrinsic [use] | raw_declare_type  :: (name: string) -> Type intrinsic;
-library/modules/std/meta.sx:115:75: intrinsic [use] | raw_register_type :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
-library/modules/std/meta.sx:150:38: intrinsic [use] | type_info  :: ($T: Type) -> TypeInfo intrinsic;
+library/modules/std/internal/zip_facade.sx:487:1: private [use] | private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
+library/modules/std/internal/zip_facade.sx:498:1: private [use] | private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -> Error {
+library/modules/std/internal/zip_facade.sx:508:1: private [use] | private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
+library/modules/std/internal/zip_facade.sx:522:1: private [use] | private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
+library/modules/std/internal/zip_facade.sx:542:1: private [use] | private std_zip_writer_default_comment :: (state: *StdZipWriterState) -> string {
+library/modules/std/internal/zip_facade.sx:685:1: private [use] | private std_zip_extract_to_sink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+library/modules/std/internal/zip_facade.sx:695:1: private [use] | private std_zip_add_source :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !Error {
+library/modules/std/meta.sx:31:45: intrinsic [use] | raw_declare_type  :: (name: string) -> Type intrinsic;
+library/modules/std/meta.sx:32:75: intrinsic [use] | raw_register_type :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
 
 == summary ==
 package: 2
   typed-decl(param/field/local): 1
   use: 1
 import: 0
-private: 138
-  use: 138
-intrinsic: 95
-  use: 95
-total identifier hits: 235 in 11 file(s) (scanned 123 .sx file(s))
+private: 139
+  use: 139
+intrinsic: 88
+  use: 88
+total identifier hits: 229 in 12 file(s) (scanned 152 .sx file(s))

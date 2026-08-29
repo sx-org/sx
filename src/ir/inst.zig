@@ -590,8 +590,8 @@ pub const BuiltinId = enum(u16) {
     sin,
     cos,
     floor,
-    size_of,
-    align_of,
+    @"@sizeOf",
+    @"@alignOf",
     // Comptime-only reflection builtins. `tryLowerReflectionCall`
     // folds these at lower time when the type argument is statically
     // resolvable — emits a `const_string` / `const_bool` directly.
@@ -604,8 +604,8 @@ pub const BuiltinId = enum(u16) {
     is_unsigned,
     // Runtime-Type scalar reflection: tag-indexed table reads
     // (sizes/aligns/counts/flag-bits); rt_type_eq is a plain tag compare.
-    rt_size_of,
-    rt_align_of,
+    @"rt_@sizeOf",
+    @"rt_@alignOf",
     rt_struct_field_count,
     rt_variant_count,
     rt_is_flags,

@@ -197,7 +197,7 @@ pub const CallResolver = struct {
                         }
                         break :blk TypeId.f64;
                     },
-                    .size_of, .align_of => .i64,
+                    .@"@sizeOf", .@"@alignOf" => .i64,
                     else => .unresolved,
                 };
                 return .{ .kind = .builtin, .return_type = rt, .target = .{ .builtin = bid } };

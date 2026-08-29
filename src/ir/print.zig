@@ -153,8 +153,8 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .conformance_lookup => |t| try writer.print("conformance_lookup({s}) %{d}, @{d} : ", .{ tt.typeName(t.contract), t.tag.index(), t.table.index() }),
         .open_set_layout => |q| try writer.print("{s}({s}) : ", .{
             switch (q.query) {
-                .size => "set_size_of",
-                .alignment => "set_align_of",
+                .size => "set_@sizeOf",
+                .alignment => "set_@alignOf",
             },
             tt.typeName(q.measured),
         }),

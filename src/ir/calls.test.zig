@@ -153,7 +153,7 @@ test "plan: builtin and reflection carry kind + target" {
     var so_call = node(.{ .call = .{ .callee = &so_callee, .args = &args } });
     const so = cr.plan(&so_call.data.call);
     try std.testing.expectEqual(CallPlan.Kind.builtin, so.kind);
-    try std.testing.expectEqual(BuiltinId.size_of, so.target.builtin);
+    try std.testing.expectEqual(BuiltinId.@"@sizeOf", so.target.builtin);
     try std.testing.expectEqual(TypeId.i64, so.return_type);
 
     var tn_callee = node(.{ .identifier = .{ .name = "@typeName" } });
