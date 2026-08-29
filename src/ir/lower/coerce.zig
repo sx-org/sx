@@ -134,12 +134,12 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             // ladder below, whose value arm erases via a self-contained copy.
         },
         // Protocol → pointer: recover the typed ctx pointer (field 0) of the
-        // `{ ctx, __type_id, vtable_ptr }` value.
+        // `{ ctx, typeId, vtable_ptr }` value.
         .protocol_to_pointer => {
             // A pointer-to-PROTOCOL target is a type lie, not a recovery:
             // ctx addresses the CONCRETE value, so `s.(*Sizable)` would
             // return concrete bytes typed as a protocol-value pointer —
-            // and `*P` dispatch would load them as {ctx, __type_id, vtable}.
+            // and `*P` dispatch would load them as {ctx, typeId, vtable}.
             // Refuse with the two honest spellings.
             if (!dst_ty.isBuiltin()) {
                 const dinfo = self.module.types.get(dst_ty);
@@ -157,7 +157,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             return self.builder.emit(.{ .bitcast = .{ .operand = ctx_ref, .from = void_ptr_ty, .to = dst_ty } }, dst_ty);
         },
         // Protocol → @Protocol: the modeled raw-view retrieval. Built
-        // FIELD-WISE — {ctx, __type_id} is the prefix of BOTH protocol
+        // FIELD-WISE — {ctx, typeId} is the prefix of BOTH protocol
         // layouts, so the view can never carry a wrong word and the result
         // is a real value that works in any position (a bit reinterpret
         // would width-mismatch on `inline`-kind values, which are wider).
@@ -596,7 +596,7 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
     }
 }
 
-/// The `any` view of a protocol value (§7.3): its `{ctx, __type_id}` prefix
+/// The `any` view of a protocol value (§7.3): its `{ctx, typeId}` prefix
 /// IS an any `{data, typeId}`, so the view names the CONCRETE receiver.
 pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
     const void_ptr_ty = self.module.types.ptrTo(.void);

@@ -257,7 +257,7 @@ pub fn registerProtocolDecl(self: *Lowering, pd: *const ast.ProtocolDecl) void {
 }
 
 /// Instantiate a parameterized protocol as a runtime VALUE type:
-/// `VL(i64)` → a 16-byte `{ctx, __vtable}` protocol value (`is_protocol`),
+/// `VL(i64)` → a `{ctx, typeId, vtable}` protocol value (`is_protocol`),
 /// with method infos resolved under the type-arg binding (so `get -> T`
 /// becomes `get -> i64`) and the binding recorded for projection. Cached by
 /// the mangled name `VL__i64`. Mirrors the non-parameterized path in
@@ -281,15 +281,14 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         if (info == .@"struct" and info.@"struct".is_protocol) return existing;
     }
 
-    // Value struct: {ctx, __type_id, __vtable} — that word mirrors
-    // registerProtocolDecl's layout.
+    // Value struct: the {ctx, typeId, vtable} layout of registerProtocolDecl.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString("ctx"), .ty = void_ptr_ty }) catch unreachable;
     fields.append(self.alloc, .{
-        .name = table.internString("__type_id"),
+        .name = table.internString("typeId"),
         .ty = .type_value,
     }) catch unreachable;
-    fields.append(self.alloc, .{ .name = table.internString("__vtable"), .ty = void_ptr_ty }) catch unreachable;
+    fields.append(self.alloc, .{ .name = table.internString("vtable"), .ty = void_ptr_ty }) catch unreachable;
     const struct_info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items, .is_protocol = true } };
     const id = if (table.findByName(name_id)) |existing| existing else table.intern(struct_info);
     table.updatePreservingKey(id, struct_info);
@@ -736,7 +735,7 @@ pub fn getOrCreateVtableGlobal(
 
 /// Fold a module-scope global — a bare identifier, or a field_access whose
 /// root is a module namespace and whose member is a registered global — at a
-/// `vtable` protocol-typed static initializer into `{ ctx, __type_id, &vtable }`.
+/// `vtable` protocol-typed static initializer into `{ ctx, typeId, &vtable }`.
 /// The erasure borrows the global's stable storage, so ctx is the global's
 /// address. A path rooted at a global VALUE (`g.field`) does not qualify.
 /// Null result = not this shape / not resolvable; the caller falls through
@@ -1535,7 +1534,7 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
 }
 
 /// Build a protocol value over `concrete_ptr` as its ctx:
-/// struct_init { ctx, __type_id, &vtable }.
+/// struct_init { ctx, typeId, &vtable }.
 /// The pointer is used directly — it is the caller's referent, and the caller
 /// owns its lifetime.
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId) Ref {
@@ -1642,7 +1641,7 @@ fn buildErasedValue(self: *Lowering, ctx_ptr: Ref, proto_name: []const u8, concr
     const vtable_ptr_ty = self.module.types.ptrTo(vtable_ty);
     const vtable_addr = self.builder.emit(.{ .global_addr = vtable_global_id }, vtable_ptr_ty);
 
-    // Build protocol struct: { ctx, __type_id, &vtable }
+    // Build protocol struct: { ctx, typeId, &vtable }
     var proto_fields = std.ArrayList(Ref).empty;
     defer proto_fields.deinit(self.alloc);
     proto_fields.append(self.alloc, ctx_ptr) catch unreachable;

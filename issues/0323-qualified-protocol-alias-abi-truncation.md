@@ -49,7 +49,7 @@ either side of one another adversarially at both opt levels.
 
 ## IR evidence
 
-For a three-word default protocol layout `{ctx, __type_id, vtable}`, the broken
+For a three-word default protocol layout `{ctx, typeId, vtable}`, the broken
 function is declared with a single scalar argument:
 
 ```llvm

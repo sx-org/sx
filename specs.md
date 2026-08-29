@@ -1363,11 +1363,11 @@ instantiation compiles them against the concrete `Self`.
 ##### 5.1 Handle layout
 
 ```
-interface:  { ctx: *void, __type_id: Type, __vtable: *Vtable }    3 words
+interface:  { ctx: *void, typeId: Type, vtable: *Vtable }    3 words
 
             ┌──────────┬────────────┬───────────┐
 Show handle │ ctx *────┼─►referent  │ vtable *──┼─► global constant,
-            │          │  __type_id │           │    one per pair
+            │          │  typeId    │           │    one per pair
             └──────────┴────────────┴───────────┘
 ```
 
@@ -3192,8 +3192,8 @@ float); `0..(5)` stays a range.
 retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
 `p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
 see below). The interface case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a handle
-`{ctx, __type_id, vtable}`, so the result is a real value usable in
+a bit reinterpret: `{ctx, typeId}` is the leading prefix of a handle
+`{ctx, typeId, vtable}`, so the result is a real value usable in
 any position (argument, return, store). `@Interface` mirrors exactly that
 prefix — byte-identical to an `any` `{data, typeId}`; the handle
 is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any

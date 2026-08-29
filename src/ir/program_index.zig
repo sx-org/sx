@@ -128,7 +128,7 @@ pub const ProtocolDeclInfo = struct {
     kind: ast.ProtocolKind,
     methods: []const ProtocolMethodInfo,
 
-    /// True for the kind whose values are erased ({ctx, __type_id, vtable}).
+    /// True for the kind whose values are erased ({ctx, typeId, vtable}).
     pub fn isErased(self: ProtocolDeclInfo) bool {
         return self.kind == .erased;
     }

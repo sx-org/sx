@@ -1,5 +1,5 @@
 // An empty-vtable interface (no methods) erases. The handle carries
-// {ctx, __type_id}, so @typeOf, the checked downcast, the type switch, and
+// {ctx, typeId}, so @typeOf, the checked downcast, the type switch, and
 // the @Protocol view all work with zero dispatchable methods.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";

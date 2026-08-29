@@ -1,7 +1,7 @@
 // An interface types a Context field (specs.md §6.6): the default folds to the
 // erasure of a NAMED global instance — a borrow of that global's storage, never
 // null — and the dispatch word is the pair's shared vtable symbol, so the
-// constant is `{ &instance, __type_id, &vtable }`.
+// constant is `{ &instance, typeId, &vtable }`.
 //
 // Both accepted spellings of the default appear below: the bare name (the
 // declared type states the conversion) and the explicit `xx`.
