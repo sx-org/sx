@@ -176,9 +176,7 @@ pub fn packArgNodeAt(self: *Lowering, ie: *const ast.IndexExpr) ?*const Node {
 }
 
 /// Resolve an index expression to a comptime-known integer: a literal, or a
-/// comptime constant that projects to an `int_val` (the cursor of an
-/// `inline for i in 0..N` unroll, a comptime struct's integer field).
-/// Otherwise null.
+/// comptime constant that projects to an `int_val`. Otherwise null.
 pub fn comptimeIndexOf(self: *Lowering, index: *const Node) ?i64 {
     switch (index.data) {
         .int_literal => |lit| return lit.value,

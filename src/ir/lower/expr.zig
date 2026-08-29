@@ -1003,9 +1003,8 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     return .unresolved;
 }
 
-/// A comptime constant as a runtime value. `.target_variant` and a struct
-/// whose contract the program does not declare have no type to be read as, so
-/// they answer null and the read falls through to ordinary name resolution.
+/// A comptime constant as a runtime value. `.target_variant` and `.struct_val`
+/// have no scalar to emit, so they answer null.
 fn comptimeConstRef(self: *Lowering, cv: lower.Lowering.ComptimeValue) ?Ref {
     return switch (cv) {
         .int_val => |iv| self.builder.constInt(iv, .i64),

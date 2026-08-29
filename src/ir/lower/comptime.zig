@@ -2235,8 +2235,7 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
 
 /// `<comptime struct>.field` as a compile-time integer — a name in
 /// `comptime_constants` bound to a struct value, projected by field name.
-/// Keyed by name + field, never by node, so a type-position receiver
-/// (`[@host.pointerSize]T`) answers the same as a value-position one.
+/// Keyed by name + field, never by node.
 pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
     const cv = self.comptime_constants.get(name) orelse return null;
     if (cv != .struct_val) return null;
