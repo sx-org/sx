@@ -2,17 +2,17 @@
 @import "modules/build.sx";
 
 // --- @run build configuration ---
-// build_options() returns a BuildOptions struct at compile time.
-// Methods on it (add_link_flag, set_output_path) are compiler builtins
+// buildOptions() returns a BuildOptions struct at compile time.
+// Methods on it (addLinkFlag, setOutputPath) are compiler builtins
 // that configure the build without runtime cost.
 
 configure_build :: () {
-    opts := build_options();
+    opts := buildOptions();
     // These calls are intercepted by the compiler at compile time.
     // On a normal (non-wasm) target, inline if gates them off.
     inline if @host.os == .wasm {
-        opts.set_output_path(".sx-tmp/1604-platform-build-config/test.html");
-        opts.add_link_flag("-sUSE_SDL=3");
+        opts.setOutputPath(".sx-tmp/1604-platform-build-config/test.html");
+        opts.addLinkFlag("-sUSE_SDL=3");
     }
 }
 @run configure_build();

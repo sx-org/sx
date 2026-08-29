@@ -2,50 +2,50 @@
 (comments, string/char literals, and @string heredocs excluded by the scanner)
 
 issues/foreign-private-field-naming/facade.sx:4:5: private [use] | private state: Secret;
-library/modules/build.sx:32:37: intrinsic [use] | build_options :: () -> BuildOptions intrinsic;
-library/modules/build.sx:36:58: intrinsic [use] | add_link_flag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
-library/modules/build.sx:37:58: intrinsic [use] | add_framework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
-library/modules/build.sx:38:60: intrinsic [use] | set_output_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:39:59: intrinsic [use] | set_wasm_shell :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:47:71: intrinsic [use] | add_asset_dir :: ufcs (self: BuildOptions, src: [:0]u8, dest: [:0]u8) intrinsic;
-library/modules/build.sx:48:53: intrinsic [use] | asset_dir_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:49:65: intrinsic [use] | asset_dir_src_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:50:66: intrinsic [use] | asset_dir_dest_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:54:72: intrinsic [use] | set_post_link_module :: ufcs (self: BuildOptions, module_name: [:0]u8) intrinsic;
-library/modules/build.sx:58:52: intrinsic [use] | binary_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:64:60: intrinsic [use] | set_bundle_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:65:56: intrinsic [use] | set_bundle_id :: ufcs (self: BuildOptions, id: [:0]u8) intrinsic;
-library/modules/build.sx:66:70: intrinsic [use] | set_codesign_identity :: ufcs (self: BuildOptions, identity: [:0]u8) intrinsic;
-library/modules/build.sx:67:69: intrinsic [use] | set_provisioning_profile :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:69:52: intrinsic [use] | bundle_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:70:50: intrinsic [use] | bundle_id :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:71:58: intrinsic [use] | codesign_identity :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:72:61: intrinsic [use] | provisioning_profile :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:78:54: intrinsic [use] | target_triple :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:79:47: intrinsic [use] | is_macos :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:80:45: intrinsic [use] | is_ios :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:81:52: intrinsic [use] | is_ios_device :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:82:55: intrinsic [use] | is_ios_simulator :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:83:49: intrinsic [use] | is_android :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:90:53: intrinsic [use] | framework_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:91:61: intrinsic [use] | framework_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:92:58: intrinsic [use] | framework_path_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:93:66: intrinsic [use] | framework_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:99:62: intrinsic [use] | set_manifest_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:100:62: intrinsic [use] | set_keystore_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:101:54: intrinsic [use] | manifest_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:102:54: intrinsic [use] | keystore_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:109:52: intrinsic [use] | jni_main_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:110:73: intrinsic [use] | jni_main_runtime_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:111:72: intrinsic [use] | jni_main_java_source_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:119:47: intrinsic [use] | on_build :: (cb: (opt: BuildOptions) -> bool) intrinsic;
-library/modules/compiler.sx:21:38: intrinsic [use] | c_object_paths :: () -> List(string) intrinsic;
-library/modules/compiler.sx:22:38: intrinsic [use] | link_libraries :: () -> List(string) intrinsic;
-library/modules/compiler.sx:26:29: intrinsic [use] | emit_object :: () -> string intrinsic;
-library/modules/compiler.sx:30:34: intrinsic [use] | build_output     :: () -> string intrinsic;        // the output binary path
-library/modules/compiler.sx:31:34: intrinsic [use] | build_target     :: () -> string intrinsic;        // the target triple ("" = host)
-library/modules/compiler.sx:32:40: intrinsic [use] | build_frameworks :: () -> List(string) intrinsic;  // `-framework` names
-library/modules/compiler.sx:33:40: intrinsic [use] | build_flags      :: () -> List(string) intrinsic;  // extra link flags
+library/modules/build.sx:31:36: intrinsic [use] | buildOptions :: () -> BuildOptions intrinsic;
+library/modules/build.sx:35:56: intrinsic [use] | addLinkFlag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
+library/modules/build.sx:36:57: intrinsic [use] | addFramework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
+library/modules/build.sx:37:58: intrinsic [use] | setOutputPath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:38:57: intrinsic [use] | setWasmShell :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:46:69: intrinsic [use] | addAssetDir :: ufcs (self: BuildOptions, src: [:0]u8, dest: [:0]u8) intrinsic;
+library/modules/build.sx:47:51: intrinsic [use] | assetDirCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:48:62: intrinsic [use] | assetDirSrcAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:49:63: intrinsic [use] | assetDirDestAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:53:69: intrinsic [use] | setPostLinkModule :: ufcs (self: BuildOptions, module_name: [:0]u8) intrinsic;
+library/modules/build.sx:57:51: intrinsic [use] | binaryPath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:63:58: intrinsic [use] | setBundlePath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:64:54: intrinsic [use] | setBundleId :: ufcs (self: BuildOptions, id: [:0]u8) intrinsic;
+library/modules/build.sx:65:68: intrinsic [use] | setCodesignIdentity :: ufcs (self: BuildOptions, identity: [:0]u8) intrinsic;
+library/modules/build.sx:66:67: intrinsic [use] | setProvisioningProfile :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:68:51: intrinsic [use] | bundlePath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:69:49: intrinsic [use] | bundleId :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:70:57: intrinsic [use] | codesignIdentity :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:71:60: intrinsic [use] | provisioningProfile :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:77:53: intrinsic [use] | targetTriple :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:78:46: intrinsic [use] | isMacos :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:79:44: intrinsic [use] | isIos :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:80:50: intrinsic [use] | isIosDevice :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:81:53: intrinsic [use] | isIosSimulator :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:82:48: intrinsic [use] | isAndroid :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:89:52: intrinsic [use] | frameworkCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:90:60: intrinsic [use] | frameworkAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:91:56: intrinsic [use] | frameworkPathCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:92:64: intrinsic [use] | frameworkPathAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:98:60: intrinsic [use] | setManifestPath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:99:60: intrinsic [use] | setKeystorePath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:100:53: intrinsic [use] | manifestPath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:101:53: intrinsic [use] | keystorePath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:108:50: intrinsic [use] | jniMainCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:109:69: intrinsic [use] | jniMainRuntimePathAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:110:68: intrinsic [use] | jniMainJavaSourceAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:118:46: intrinsic [use] | onBuild :: (cb: (opt: BuildOptions) -> bool) intrinsic;
+library/modules/compiler.sx:21:36: intrinsic [use] | cObjectPaths :: () -> List(string) intrinsic;
+library/modules/compiler.sx:22:37: intrinsic [use] | linkLibraries :: () -> List(string) intrinsic;
+library/modules/compiler.sx:26:28: intrinsic [use] | emitObject :: () -> string intrinsic;
+library/modules/compiler.sx:30:33: intrinsic [use] | buildOutput     :: () -> string intrinsic;        // the output binary path
+library/modules/compiler.sx:31:33: intrinsic [use] | buildTarget     :: () -> string intrinsic;        // the target triple ("" = host)
+library/modules/compiler.sx:32:39: intrinsic [use] | buildFrameworks :: () -> List(string) intrinsic;  // `-framework` names
+library/modules/compiler.sx:33:39: intrinsic [use] | buildFlags      :: () -> List(string) intrinsic;  // extra link flags
 library/modules/compiler.sx:40:73: intrinsic [use] | frameworks: List(string), flags: List(string), target: string) intrinsic;
 library/modules/platform/bundle.sx:947:48: package [typed-decl(param/field/local)] | build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string) -> string {
 library/modules/platform/bundle.sx:948:27: package [use] | pkg_esc := xml.escape(package);

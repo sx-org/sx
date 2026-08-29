@@ -760,7 +760,7 @@ pub const LLVMEmitter = struct {
     /// binary with CWD=/.
     ///
     /// Only a build that asks for a bundle gets it: `--bundle` lands on
-    /// `target_config`, `@run set_bundle_path` on `build_config`, and either
+    /// `target_config`, `@run setBundlePath` on `build_config`, and either
     /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;

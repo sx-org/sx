@@ -1,7 +1,7 @@
 // Pure UIKit + CAEAGLLayer + CADisplayLink backend for iOS.
 //
-// Linking is per-target via the game's build.sx (`opts.add_framework("UIKit")`
-// + `opts.add_framework("OpenGLES")` + `opts.add_framework("QuartzCore")` on
+// Linking is per-target via the game's build.sx (`opts.addFramework("UIKit")`
+// + `opts.addFramework("OpenGLES")` + `opts.addFramework("QuartzCore")` on
 // `.ios`). iOS-only by nature: platform selection lives at the consumer
 // seam, not per-function here — touching this host on another target
 // fails at link/JIT with the UIKit symbol named.

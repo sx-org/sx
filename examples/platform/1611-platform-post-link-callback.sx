@@ -15,8 +15,8 @@ post_link :: (opt: BuildOptions) -> bool {
 }
 
 configure :: () {
-    opts := build_options();
-    on_build(post_link);
+    opts := buildOptions();
+    onBuild(post_link);
 }
 @run configure();
 

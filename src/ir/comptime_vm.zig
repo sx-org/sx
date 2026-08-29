@@ -415,7 +415,7 @@ pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.
 
 /// Run a post-link build callback on the VM (the post-codegen build driver — see
 /// `core.invokeByFuncId`). Like `tryEval`, but for a callback that may take the
-/// opaque `BuildOptions` handle as an explicit arg (the `on_build(cb)` form,
+/// opaque `BuildOptions` handle as an explicit arg (the `onBuild(cb)` form,
 /// `cb: (opt: BuildOptions) -> bool`): when `pass_options` is set, the handle (a
 /// null sentinel — the real state is the threaded `BuildConfig`) is passed after
 /// the implicit ctx.
@@ -497,13 +497,13 @@ fn predIsAndroid(triple: ?[]const u8) bool {
     return tripleHas(triple, "android");
 }
 
-/// Map a BuildOptions predicate name (`is_macos`/…) to its triple-test, or null.
+/// Map a BuildOptions predicate name (`isMacos`/…) to its triple-test, or null.
 fn boolPredicate(name: []const u8) ?*const fn (?[]const u8) bool {
-    if (std.mem.eql(u8, name, "is_macos")) return predIsMacOS;
-    if (std.mem.eql(u8, name, "is_ios")) return predIsIOS;
-    if (std.mem.eql(u8, name, "is_ios_device")) return predIsIOSDevice;
-    if (std.mem.eql(u8, name, "is_ios_simulator")) return predIsIOSSimulator;
-    if (std.mem.eql(u8, name, "is_android")) return predIsAndroid;
+    if (std.mem.eql(u8, name, "isMacos")) return predIsMacOS;
+    if (std.mem.eql(u8, name, "isIos")) return predIsIOS;
+    if (std.mem.eql(u8, name, "isIosDevice")) return predIsIOSDevice;
+    if (std.mem.eql(u8, name, "isIosSimulator")) return predIsIOSSimulator;
+    if (std.mem.eql(u8, name, "isAndroid")) return predIsAndroid;
     return null;
 }
 
@@ -521,7 +521,7 @@ pub const Vm = struct {
     /// The mutable build configuration (`BuildOptions` accumulator) — the SAME
     /// `BuildConfig` `EmitLLVM` owns and `main.zig` reads post-link. Threaded in at
     /// the `@run`/const-init eval sites so a `BuildOptions` intrinsic
-    /// (e.g. `set_post_link_callback`) records into it directly. Null at lowering-time
+    /// (e.g. `setOutputPath`) records into it directly. Null at lowering-time
     /// type-fn evals (no build config exists yet); such a function bails loudly.
     build_config: ?*compiler_hooks.BuildConfig = null,
     /// File → source text (the diagnostics' `import_sources`), threaded from the host
@@ -609,7 +609,7 @@ pub const Vm = struct {
     /// Run a comptime entry with the materialized implicit `*Context` (when the
     /// function has one) PREPENDED to `extra` explicit arg words. A nullary
     /// const-init / `@run` passes `extra = &.{}`; a post-link build callback of
-    /// the `on_build` form passes the opaque `BuildOptions` handle.
+    /// the `onBuild` form passes the opaque `BuildOptions` handle.
     fn runEntryArgs(self: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: entry run needs a module");
         const func = module.getFunction(func_id);
@@ -2122,23 +2122,22 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.registerTypeVm(args, frame, ref_types);
         }
         // ── BuildOptions ───────────────────────────────────────────────────
-        // `build_options()` hands back an opaque, zero-field `BuildOptions` handle;
+        // `buildOptions()` hands back an opaque, zero-field `BuildOptions` handle;
         // the real state lives on the threaded `BuildConfig`. Return the null
         // sentinel word (the handle is never dereferenced — every operation takes it
         // as an ignored `self`).
-        if (intr == .build_options) {
+        if (intr == .buildOptions) {
             return @as(Reg, null_addr);
         }
-        // `on_build(cb)` — register the build callback (`cb: (opt:
-        // BuildOptions) -> bool`). Like `set_post_link_callback` but a free
-        // fn (cb is arg 0, no self) and the callback receives the `BuildOptions`
+        // `onBuild(cb)` — register the build callback (`cb: (opt:
+        // BuildOptions) -> bool`). The callback receives the `BuildOptions`
         // handle when invoked (the `post_link_takes_options` flag drives that).
-        if (intr == .on_build) {
-            if (args.len != 1) return self.failMsg("comptime on_build: expected (cb)");
+        if (intr == .onBuild) {
+            if (args.len != 1) return self.failMsg("comptime onBuild: expected (cb)");
             const bc = self.build_config orelse
-                return self.failMsg("comptime on_build: no build config threaded into the VM");
+                return self.failMsg("comptime onBuild: no build config threaded into the VM");
             const fid = funcRefToId(frame.get(args[0].index())) orelse
-                return self.failMsg("comptime on_build: cb arg is not a function value");
+                return self.failMsg("comptime onBuild: cb arg is not a function value");
             bc.post_link_callback_fn = fid;
             bc.post_link_takes_options = true;
             return @as(Reg, null_addr);
@@ -2148,52 +2147,52 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // forwards before the post-link callback runs. Each builds a fresh
         // `List(string)` in comptime memory (the result type drives its layout) — no
         // driver action, so they're pure data even in the sx-driven end state.
-        if (intr == .c_object_paths) {
-            if (args.len != 0) return self.failMsg("comptime c_object_paths: expected no args");
+        if (intr == .cObjectPaths) {
+            if (args.len != 0) return self.failMsg("comptime cObjectPaths: expected no args");
             const bc = self.build_config orelse
-                return self.failMsg("comptime c_object_paths: no build config threaded into the VM");
+                return self.failMsg("comptime cObjectPaths: no build config threaded into the VM");
             return try self.makeStringList(table, result_ty, bc.c_object_paths);
         }
-        if (intr == .link_libraries) {
-            if (args.len != 0) return self.failMsg("comptime link_libraries: expected no args");
+        if (intr == .linkLibraries) {
+            if (args.len != 0) return self.failMsg("comptime linkLibraries: expected no args");
             const bc = self.build_config orelse
-                return self.failMsg("comptime link_libraries: no build config threaded into the VM");
+                return self.failMsg("comptime linkLibraries: no build config threaded into the VM");
             return try self.makeStringList(table, result_ty, bc.link_libraries);
         }
-        // `emit_object() -> string` — ACTION: verify + emit the codegen'd module
+        // `emitObject() -> string` — ACTION: verify + emit the codegen'd module
         // to its object file and return the path. Dispatches through the
         // host-installed hook (the VM can't emit itself); emission is sx-driven
-        // via `default_pipeline`.
-        if (intr == .emit_object) {
-            if (args.len != 0) return self.failMsg("comptime emit_object: expected no args");
+        // via `defaultPipeline`.
+        if (intr == .emitObject) {
+            if (args.len != 0) return self.failMsg("comptime emitObject: expected no args");
             const bc = self.build_config orelse
-                return self.failMsg("comptime emit_object: no build config threaded into the VM");
+                return self.failMsg("comptime emitObject: no build config threaded into the VM");
             const hooks = bc.build_hooks orelse
-                return self.failMsg("comptime emit_object: no build hooks installed (emit is a post-codegen-only action)");
+                return self.failMsg("comptime emitObject: no build hooks installed (emit is a post-codegen-only action)");
             const path = hooks.emit_object(hooks.ctx) catch
-                return self.failMsg("comptime emit_object: object emission failed");
+                return self.failMsg("comptime emitObject: object emission failed");
             return try self.makeStringValue(table, path);
         }
         // Build-config metadata the sx driver passes to `link`. Read-only data
         // forwarded by `main.zig` (the merged CLI + `@run` build config).
-        if (intr == .build_output) {
-            if (args.len != 0) return self.failMsg("comptime build_output: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime build_output: no build config");
+        if (intr == .buildOutput) {
+            if (args.len != 0) return self.failMsg("comptime buildOutput: expected no args");
+            const bc = self.build_config orelse return self.failMsg("comptime buildOutput: no build config");
             return try self.makeStringValue(table, bc.output_path orelse "");
         }
-        if (intr == .build_target) {
-            if (args.len != 0) return self.failMsg("comptime build_target: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime build_target: no build config");
+        if (intr == .buildTarget) {
+            if (args.len != 0) return self.failMsg("comptime buildTarget: expected no args");
+            const bc = self.build_config orelse return self.failMsg("comptime buildTarget: no build config");
             return try self.makeStringValue(table, bc.target_triple orelse "");
         }
-        if (intr == .build_frameworks) {
-            if (args.len != 0) return self.failMsg("comptime build_frameworks: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime build_frameworks: no build config");
+        if (intr == .buildFrameworks) {
+            if (args.len != 0) return self.failMsg("comptime buildFrameworks: expected no args");
+            const bc = self.build_config orelse return self.failMsg("comptime buildFrameworks: no build config");
             return try self.makeStringList(table, result_ty, bc.target_frameworks);
         }
-        if (intr == .build_flags) {
-            if (args.len != 0) return self.failMsg("comptime build_flags: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime build_flags: no build config");
+        if (intr == .buildFlags) {
+            if (args.len != 0) return self.failMsg("comptime buildFlags: expected no args");
+            const bc = self.build_config orelse return self.failMsg("comptime buildFlags: no build config");
             return try self.makeStringList(table, result_ty, bc.merged_link_flags);
         }
         // `link(objects, output, libraries, frameworks, flags, target)` — the one
@@ -2254,17 +2253,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // null so the caller treats it as unknown (it then bails loudly).
         const bc = self.build_config orelse return null;
         const str_fields = [_]StrField{
-            .{ .set = "set_output_path", .get = "", .field = &bc.output_path },
-            .{ .set = "set_wasm_shell", .get = "", .field = &bc.wasm_shell_path },
-            .{ .set = "set_post_link_module", .get = "", .field = &bc.post_link_module },
-            .{ .set = "set_bundle_path", .get = "bundle_path", .field = &bc.bundle_path },
-            .{ .set = "set_bundle_id", .get = "bundle_id", .field = &bc.bundle_id },
-            .{ .set = "set_codesign_identity", .get = "codesign_identity", .field = &bc.codesign_identity },
-            .{ .set = "set_provisioning_profile", .get = "provisioning_profile", .field = &bc.provisioning_profile },
-            .{ .set = "set_manifest_path", .get = "manifest_path", .field = &bc.manifest_path },
-            .{ .set = "set_keystore_path", .get = "keystore_path", .field = &bc.keystore_path },
-            .{ .set = "_", .get = "binary_path", .field = &bc.binary_path },
-            .{ .set = "_", .get = "target_triple", .field = &bc.target_triple },
+            .{ .set = "setOutputPath", .get = "", .field = &bc.output_path },
+            .{ .set = "setWasmShell", .get = "", .field = &bc.wasm_shell_path },
+            .{ .set = "setPostLinkModule", .get = "", .field = &bc.post_link_module },
+            .{ .set = "setBundlePath", .get = "bundlePath", .field = &bc.bundle_path },
+            .{ .set = "setBundleId", .get = "bundleId", .field = &bc.bundle_id },
+            .{ .set = "setCodesignIdentity", .get = "codesignIdentity", .field = &bc.codesign_identity },
+            .{ .set = "setProvisioningProfile", .get = "provisioningProfile", .field = &bc.provisioning_profile },
+            .{ .set = "setManifestPath", .get = "manifestPath", .field = &bc.manifest_path },
+            .{ .set = "setKeystorePath", .get = "keystorePath", .field = &bc.keystore_path },
+            .{ .set = "_", .get = "binaryPath", .field = &bc.binary_path },
+            .{ .set = "_", .get = "targetTriple", .field = &bc.target_triple },
         };
         for (str_fields) |sf| {
             if (sf.set.len > 1 and std.mem.eql(u8, name, sf.set)) {
@@ -2278,52 +2277,53 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             }
         }
         // List-appending setters (dupe + append into the persistent gpa).
-        if (std.mem.eql(u8, name, "add_link_flag")) {
-            if (args.len != 2) return self.failMsg("comptime add_link_flag: expected (self, flag)");
+        if (std.mem.eql(u8, name, "addLinkFlag")) {
+            if (args.len != 2) return self.failMsg("comptime addLinkFlag: expected (self, flag)");
             bc.link_flags.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
-                return self.failMsg("comptime add_link_flag: out of memory");
+                return self.failMsg("comptime addLinkFlag: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "add_framework")) {
-            if (args.len != 2) return self.failMsg("comptime add_framework: expected (self, name)");
+        if (std.mem.eql(u8, name, "addFramework")) {
+            if (args.len != 2) return self.failMsg("comptime addFramework: expected (self, name)");
             bc.frameworks.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
-                return self.failMsg("comptime add_framework: out of memory");
+                return self.failMsg("comptime addFramework: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "add_asset_dir")) {
-            if (args.len != 3) return self.failMsg("comptime add_asset_dir: expected (self, src, dest)");
+        if (std.mem.eql(u8, name, "addAssetDir")) {
+            if (args.len != 3) return self.failMsg("comptime addAssetDir: expected (self, src, dest)");
             const src = try self.dupeArgStr(args, frame, 1);
             const dest = try self.dupeArgStr(args, frame, 2);
             bc.asset_dirs.append(self.gpa, .{ .src = src, .dest = dest }) catch
-                return self.failMsg("comptime add_asset_dir: out of memory");
+                return self.failMsg("comptime addAssetDir: out of memory");
             return @as(Reg, null_addr);
         }
         // Count getters (i64).
-        if (std.mem.eql(u8, name, "asset_dir_count"))
+        if (std.mem.eql(u8, name, "assetDirCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.asset_dirs.items.len))));
-        if (std.mem.eql(u8, name, "framework_count"))
+        if (std.mem.eql(u8, name, "frameworkCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_frameworks.len))));
-        if (std.mem.eql(u8, name, "framework_path_count"))
+        if (std.mem.eql(u8, name, "frameworkPathCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
-        if (std.mem.eql(u8, name, "jni_main_count"))
+        if (std.mem.eql(u8, name, "jniMainCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
         // Indexed string getters (out-of-range → "").
         // Asset dirs are `{src,dest}` structs, so read the field directly.
-        if (std.mem.eql(u8, name, "asset_dir_src_at") or std.mem.eql(u8, name, "asset_dir_dest_at")) {
-            if (args.len != 2) return self.failMsg("comptime asset_dir getter: expected (self, i)");
+        const want_src = std.mem.eql(u8, name, "assetDirSrcAt");
+        if (want_src or std.mem.eql(u8, name, "assetDirDestAt")) {
+            if (args.len != 2) return self.failMsg("comptime assetDir getter: expected (self, i)");
             const idx: i64 = @bitCast(frame.get(args[1].index()));
             if (idx < 0 or @as(usize, @intCast(idx)) >= bc.asset_dirs.items.len)
                 return try self.makeStringValue(table, "");
             const ad = bc.asset_dirs.items[@intCast(idx)];
-            return try self.makeStringValue(table, if (name[10] == 's') ad.src else ad.dest);
+            return try self.makeStringValue(table, if (want_src) ad.src else ad.dest);
         }
-        if (std.mem.eql(u8, name, "framework_at"))
+        if (std.mem.eql(u8, name, "frameworkAt"))
             return try self.indexedStr(args, frame, bc.target_frameworks);
-        if (std.mem.eql(u8, name, "framework_path_at"))
+        if (std.mem.eql(u8, name, "frameworkPathAt"))
             return try self.indexedStr(args, frame, bc.target_framework_paths);
-        if (std.mem.eql(u8, name, "jni_main_runtime_path_at"))
+        if (std.mem.eql(u8, name, "jniMainRuntimePathAt"))
             return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
-        if (std.mem.eql(u8, name, "jni_main_java_source_at"))
+        if (std.mem.eql(u8, name, "jniMainJavaSourceAt"))
             return try self.indexedStr(args, frame, bc.jni_main_java_sources);
         // Target predicates (computed from the triple).
         if (boolPredicate(name)) |pred| {
@@ -3382,7 +3382,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// the result type of the calling primitive (`List(string)`); its field
     /// offsets/types drive the layout (target-aware via the table), so this works
     /// for any `{ items: [*]string, len: i64, cap: i64 }`-shaped struct. Used by
-    /// the metadata-query compiler primitives (`c_object_paths`/`link_libraries`).
+    /// the metadata-query compiler primitives (`cObjectPaths`/`linkLibraries`).
     fn makeStringList(self: *Vm, table: *const types.TypeTable, list_ty: TypeId, items: []const []const u8) Error!Reg {
         if (list_ty.isBuiltin() or table.get(list_ty) != .@"struct")
             return self.failMsg("comptime List builder: result type is not a List struct");

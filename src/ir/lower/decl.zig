@@ -195,11 +195,11 @@ fn isExportedEntryName(name: []const u8) bool {
 }
 
 /// The well-known stdlib build driver (`library/modules/build.sx`). It is invoked
-/// by the compiler post-codegen when no `@run on_build(...)` override exists, but
+/// by the compiler post-codegen when no `@run onBuild(...)` override exists, but
 /// is never CALLED from sx — so it must be force-lowered like an OS entry point,
 /// else lazy lowering leaves it a bodiless `declare` stub the VM can't run.
 fn isDefaultBuildPipeline(name: []const u8) bool {
-    return std.mem.eql(u8, name, "default_pipeline");
+    return std.mem.eql(u8, name, "defaultPipeline");
 }
 
 /// Lower all top-level declarations from a root node.
@@ -312,12 +312,12 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.checkInfiniteSize();
     // Pass 2: lower main (and comptime side-effects)
     self.lowerMainAndComptime(decls);
-    // Pass 2b: force-lower the stdlib build driver `default_pipeline` (in the
+    // Pass 2b: force-lower the stdlib build driver `defaultPipeline` (in the
     // flat-imported `modules/build.sx`, so NOT in the main `decls` above). The
-    // compiler auto-invokes it post-codegen when no `@run on_build(...)` override
+    // compiler auto-invokes it post-codegen when no `@run onBuild(...)` override
     // exists, but nothing CALLS it from sx — so without this it stays a bodiless
     // stub the build VM can't run. No-ops when build.sx isn't imported.
-    self.lazyLowerFunction("default_pipeline");
+    self.lazyLowerFunction("defaultPipeline");
     // Pass 3: lower deferred functions (any_to_string etc.) now that all types are registered
     self.lowerDeferredTypeFns();
     // Pass 4: target-specific entry-point sanity checks

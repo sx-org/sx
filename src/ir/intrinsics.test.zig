@@ -105,7 +105,7 @@ fn collectDecls(
         // The LAST `::`, not the first: splitting on `;` means this chunk may
         // carry whole preceding declarations that never ended in one (e.g.
         // build.sx's `BuildOptions :: struct { }` sits directly above
-        // `build_options :: () -> BuildOptions intrinsic;`). Taking the first
+        // `buildOptions :: () -> BuildOptions intrinsic;`). Taking the first
         // `::` would name the wrong declaration.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
         // The declared name is the last identifier before that `::`, with its
