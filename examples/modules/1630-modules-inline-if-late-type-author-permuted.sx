@@ -6,6 +6,6 @@ gated :: @import "1629-modules-inline-if-late-type-author/gated.sx";
 @import "1629-modules-inline-if-late-type-author/plain.sx";
 
 main :: () -> i32 {
-    print("{} {} {}\n", plain_size(), gated.gated_size(), @sizeOf(gated.Slot));
+    print("{} {} {}\n", plainSize(), gated.gatedSize(), @sizeOf(gated.Slot));
     0
 }

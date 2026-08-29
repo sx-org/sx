@@ -4,38 +4,38 @@
 @import "modules/std.sx";
 
 Foo :: struct {
-    pixel_w: i32;
+    pixelW: i32;
     dpi: f32;
-    last_perf: i64;
-    delta_time: f32;
+    lastPerf: i64;
+    deltaTime: f32;
 }
 FC :: struct { a: f32; b: f32; c: i32; d: i32; e: f32; f: f32; }
 
 // If-then-else RHS in a function whose return type is not f32.
-calc_bool :: (self: *Foo, wf: f32) -> bool {
-    self.dpi = if wf > 0.0 then self.pixel_w / wf else 1.0;
+calcBool :: (self: *Foo, wf: f32) -> bool {
+    self.dpi = if wf > 0.0 then self.pixelW / wf else 1.0;
     true
 }
 
 // Binary-op RHS in a struct-returning function. Integer operands of `/`
 // convert to f32 before the divide; dest does not change the `/` itself.
 begin :: (self: *Foo, current: i64, freq: i64) -> FC {
-    if self.last_perf > 0 {
-        self.delta_time = (current - self.last_perf).(f32) / freq.(f32);
+    if self.lastPerf > 0 {
+        self.deltaTime = (current - self.lastPerf).(f32) / freq.(f32);
     }
     FC{ a = 1.0, b = 2.0, c = 3, d = 4, e = 5.0, f = 6.0 }
 }
 
 main :: () -> void {
     f : *Foo = xx c.libcMalloc(@sizeOf(Foo));
-    f.pixel_w = 2880;
+    f.pixelW = 2880;
     f.dpi = 0.0;
-    f.last_perf = 1000;
-    f.delta_time = 0.0;
+    f.lastPerf = 1000;
+    f.deltaTime = 0.0;
 
-    _ := calc_bool(f, 1440.0);
+    _ := calcBool(f, 1440.0);
     print("dpi={}\n", f.dpi);
 
     fc := begin(f, 1500, 1000);
-    print("delta={} fc.a={}\n", f.delta_time, fc.a);
+    print("delta={} fc.a={}\n", f.deltaTime, fc.a);
 }

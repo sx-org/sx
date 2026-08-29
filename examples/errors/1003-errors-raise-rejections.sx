@@ -15,31 +15,31 @@ ParseErr :: error { BadDigit; Overflow }
 OtherErr :: error { Weird }
 
 // Literal tag not in the declared set.
-bad_tag :: () -> !ParseErr {
+badTag :: () -> !ParseErr {
     raise .NotInSet;            // error: NotInSet not in ParseErr
 }
 
 // Member absent from its own set.
-bad_member :: () -> !ParseErr {
+badMember :: () -> !ParseErr {
     raise ParseErr.NotAMember;       // error: NotAMember is not a ParseErr member
 }
 
 // Qualified member of another set, absent from the function's set.
-cross_member :: () -> !ParseErr {
+crossMember :: () -> !ParseErr {
     raise OtherErr.Weird;            // error: OtherErr.Weird not in ParseErr
 }
 
 // Variable whose error set is not a subset of the function's set.
-makes_other :: () -> !OtherErr { return; }
+makesOther :: () -> !OtherErr { return; }
 relay :: () -> !ParseErr {
-    e := makes_other();              // e : OtherErr
+    e := makesOther();              // e : OtherErr
     raise e;                         // error: OtherErr not subset of ParseErr
 }
 
 main :: () -> i32 {
-    x := bad_tag();                  // force bad_tag to lower
-    m := bad_member();               // force bad_member to lower
-    c := cross_member();             // force cross_member to lower
+    x := badTag();                  // force badTag to lower
+    m := badMember();               // force badMember to lower
+    c := crossMember();             // force crossMember to lower
     y := relay();                    // force relay to lower
     raise .BadDigit;            // error: main (-> i32) is not failable
     return 0;

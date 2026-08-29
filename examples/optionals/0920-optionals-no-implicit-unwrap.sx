@@ -6,9 +6,9 @@
 // (see 0919); everything else is rejected.
 @import "modules/std.sx";
 
-takes_i32 :: (x: i32) { print("got {}\n", x); }
+takesI32 :: (x: i32) { print("got {}\n", x); }
 
 main :: () {
     n : ?i64 = null;
-    takes_i32(n);    // error: optional does not implicitly unwrap
+    takesI32(n);    // error: optional does not implicitly unwrap
 }

@@ -32,7 +32,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "healthy";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -78,7 +78,7 @@ main :: () -> i32 {
         junk : [*]u8 = xx context.allocator.allocBytes(JUNK_LEN);
         i : i64 = 0;
         while i < JUNK_LEN { junk[i] = 88; i += 1; }   // 'X': never a header end
-        ca := dial_port(PORT);
+        ca := dialPort(PORT);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
         fsent : i64 = 0;
         t : i64 = 0;
@@ -102,20 +102,20 @@ main :: () -> i32 {
         // Raw reads so FIN and RST are distinguishable: 0 = orderly FIN
         // (lingering close), -1/ECONNRESET = an abrupt-close RST.
         total : i64 = 0;
-        got_fin := false;
-        got_rst := false;
+        gotFin := false;
+        gotRst := false;
         stall : i64 = 0;
-        while !got_fin and !got_rst and stall < 300 {
+        while !gotFin and !gotRst and stall < 300 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
                 rn := socket.read(ca, *rbuf[total], (cap - total));
                 if rn > 0 { total += rn; got += rn; continue; }
-                if rn == 0 { got_fin = true; break; }
+                if rn == 0 { gotFin = true; break; }
                 e := socket.errno();
                 if e == posix.EINTR { continue; }
                 if e == posix.EAGAIN { break; }            // nothing yet
-                got_rst = true;                             // ECONNRESET & co.
+                gotRst = true;                             // ECONNRESET & co.
                 break;
             }
             if got > 0 { stall = 0; } else { stall += 1; }
@@ -125,11 +125,11 @@ main :: () -> i32 {
             print("431 never reached the client (got {} bytes)\n", total);
             failed = 1;
         }
-        if got_rst {
+        if gotRst {
             print("connection was RESET, not lingered (error response at risk)\n");
             failed = 1;
         }
-        if !got_fin {
+        if !gotFin {
             print("no clean FIN after the error response\n");
             failed = 1;
         }
@@ -150,7 +150,7 @@ main :: () -> i32 {
         }
 
         // ── server stays healthy ──────────────────────────────────────
-        cb := dial_port(PORT);
+        cb := dialPort(PORT);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(cb, req.ptr, req.len);

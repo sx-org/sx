@@ -2,6 +2,6 @@
 // C functions are legitimately visible here (the legal usage site).
 @import "c.sx";
 
-b_use :: () -> i32 {
+bUse :: () -> i32 {
     return c_abs_one(-1) + c_abs_two(-2);
 }

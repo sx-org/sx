@@ -15,7 +15,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("a.sx @run binds a.compute (7)", get_a() == 7);
-    report("b.sx @run binds b.compute (70)", get_b() == 70);
+    report("a.sx @run binds a.compute (7)", getA() == 7);
+    report("b.sx @run binds b.compute (70)", getB() == 70);
     0
 }

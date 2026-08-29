@@ -9,23 +9,23 @@
 @import "modules/std.sx";
 
 make :: () -> struct { x: i64; y: i64; } { .{ x = 3, y = 4 } }
-make_p :: () -> (struct { a: i64; }) { .{ a = 9 } }
-make_u :: () -> union { i: i64; f: f64; } {
+makeP :: () -> (struct { a: i64; }) { .{ a = 9 } }
+makeU :: () -> union { i: i64; f: f64; } {
     r : union { i: i64; f: f64; } = ---;
     r.i = 5;
     return r;
 }
-make_e :: () -> enum { S: i64; T: void; } { .S{ 11} }
+makeE :: () -> enum { S: i64; T: void; } { .S{ 11} }
 FnAlias :: () -> struct { x: i64; y: i64; };
 
 main :: () {
     m := make();
     print("{}\n", m.x + m.y);
-    p := make_p();
+    p := makeP();
     print("{}\n", p.a);
-    u := make_u();
+    u := makeU();
     print("{}\n", u.i);
-    e := make_e();
+    e := makeE();
     match e { case .S: { print("S\n"); } case .T: { print("T\n"); } }
     fp : FnAlias = make;
     r := fp();

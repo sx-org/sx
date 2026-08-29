@@ -3,4 +3,4 @@
 @import "modules/std.sx";
 v :: @import "view.sx";
 
-size_via_mid :: () -> i64 => @sizeOf(v.View);
+sizeViaMid :: () -> i64 => @sizeOf(v.View);

@@ -18,12 +18,12 @@ Small :: enum u8 { a; b; c; }
 Perms :: enum flags { read; write; exec; }
 
 // The issue-0396 shape: a tail-position cast flowing into `?E`.
-zone_of :: (n: i64) -> ?Zone {
+zoneOf :: (n: i64) -> ?Zone {
     if n < 0 { return null; }
     n.(Zone)
 }
 
-name_of :: (z: Zone) -> string {
+nameOf :: (z: Zone) -> string {
     match z {
         case .floating: "floating";
         case .fill: "fill";
@@ -41,12 +41,12 @@ main :: () {
     print("value: {} {}\n", z, x);
 
     // Optional wrap.
-    print("wrap: {} {}\n", zone_of(2), zone_of(-1));
+    print("wrap: {} {}\n", zoneOf(2), zoneOf(-1));
     // An optional TARGET is the ordinary wrap, never a check.
     print("opt-target: {}\n", i.(?Zone));
 
     // The cast result flows on: argument, match subject, comparison.
-    print("arg: {}\n", name_of(i.(Zone)));
+    print("arg: {}\n", nameOf(i.(Zone)));
     print("match: {}\n", match i.(Zone) {
         case .floating: 0;
         case .fill: 1;

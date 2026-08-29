@@ -6,7 +6,7 @@
 @import "modules/std.sx";
 
 // i32 < f32: the comparison meets at f32, so the int side widens.
-ceil_half :: (v: f32) -> i32 {
+ceilHalf :: (v: f32) -> i32 {
     t := v - 0.5;
     i : i32 = xx t;
     if i < t {        // 1.0 < 1.8 -> true
@@ -23,7 +23,7 @@ ge :: (y: i32, lo: f32) -> i32 {
 }
 
 main :: () -> i32 {
-    print("{}\n", ceil_half(2.3));   // 2
+    print("{}\n", ceilHalf(2.3));   // 2
     print("{}\n", ge(3, 2.0));       // 1
     0
 }

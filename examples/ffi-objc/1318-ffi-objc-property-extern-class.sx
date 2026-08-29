@@ -21,13 +21,13 @@
 // Build a probe class on the fly: registers two IMPs (`tag` and
 // `setTag:`) that read/write an instance-bound i32 stored in a
 // runtime ivar. Property dispatch should round-trip through them.
-g_probe_tag: i32 = 0;
+gProbeTag: i32 = 0;
 
-probe_get_tag :: (self: *void, _cmd: *void) -> i32 abi(.c) {
-    return g_probe_tag;
+probeGetTag :: (self: *void, _cmd: *void) -> i32 abi(.c) {
+    return gProbeTag;
 }
-probe_set_tag :: (self: *void, _cmd: *void, v: i32) abi(.c) {
-    g_probe_tag = v;
+probeSetTag :: (self: *void, _cmd: *void, v: i32) abi(.c) {
+    gProbeTag = v;
 }
 
 // Extern declaration with @ObjcProperty on `tag`.
@@ -40,18 +40,18 @@ SxPropProbe :: @ObjcClass("SxPropProbe") extern {
 main :: () -> i32 {
     inline if @host.os == .macos {
         // Register the class + the two IMPs.
-        ns_object := objc_getClass("NSObject".ptr);
-        cls := objc_allocateClassPair(ns_object, "SxPropProbe".ptr, 0);
-        class_addMethod(cls, sel_registerName("tag".ptr),    xx probe_get_tag, "i@:".ptr);
-        class_addMethod(cls, sel_registerName("setTag:".ptr), xx probe_set_tag, "v@:i".ptr);
+        nsObject := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(nsObject, "SxPropProbe".ptr, 0);
+        class_addMethod(cls, sel_registerName("tag".ptr),    xx probeGetTag, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("setTag:".ptr), xx probeSetTag, "v@:i".ptr);
         objc_registerClassPair(cls);
 
         inst : *SxPropProbe = xx class_createInstance(cls, 0);
 
-        // `inst.tag` → [inst tag] → probe_get_tag → reads g_probe_storage
+        // `inst.tag` → [inst tag] → probeGetTag → reads g_probe_storage
         v0 := inst.tag;
 
-        // `inst.tag = 42` → [inst setTag:42] → probe_set_tag
+        // `inst.tag = 42` → [inst setTag:42] → probeSetTag
         inst.tag = 42;
         v1 := inst.tag;
 

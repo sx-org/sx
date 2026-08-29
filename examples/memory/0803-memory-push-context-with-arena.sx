@@ -1,6 +1,6 @@
 // `push <Context>` of a WHOLE Context value whose `allocator` field is an
 // `inline`-kind protocol carrying an `Arena` upcast. The value is seeded from the
-// ambient context (`new_ctx := context`) so every other capability — builtin
+// ambient context (`newCtx := context`) so every other capability — builtin
 // or `@context.extend`ed — carries through, then the one field is overwritten.
 // Exercises save/restore of the boxed context across the push.
 
@@ -10,9 +10,9 @@
 main :: () -> void {
     arena := Arena.init(context.allocator, 4096);
 
-    new_ctx := context;
-    new_ctx.allocator = arena;
-    push new_ctx {
+    newCtx := context;
+    newCtx.allocator = arena;
+    push newCtx {
         ptr := context.allocator.allocBytes(128);
         out("inside push\n");
     }

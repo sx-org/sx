@@ -17,7 +17,7 @@ double :: (n: i32) -> i32 {
 }
 
 // Identical, without the terminator.
-double_bare :: (n: i32) -> i32 {
+doubleBare :: (n: i32) -> i32 {
     n * 2
 }
 
@@ -54,20 +54,20 @@ silent :: () {
     bump();
 }
 
-silent_bare :: () {
+silentBare :: () {
     bump()
 }
 
 main :: () -> i32 {
     total : i32 = 0;
     total = total + double(10);        // 20
-    total = total + double_bare(10);   // 20
+    total = total + doubleBare(10);   // 20
     total = total + sign(-7);          // -1
     total = total + sum3(1, 2, 3);     // 6
     total = total + classify(1);       // 10
 
     silent();
-    silent_bare();
+    silentBare();
     print("discarded tails ran: {}\n", calls);
 
     print("block-tail total: {}\n", total);   // 20 + 20 - 1 + 6 + 10 = 55

@@ -4,7 +4,7 @@
 //
 // Three call shapes:
 // 1. Named-variable receiver: `a : Allocator = xx p; T.init(a, ...)`
-// 2. Free function with inline xx: `make_t(xx p, ...)`
+// 2. Free function with inline xx: `makeT(xx p, ...)`
 // 3. Static method with inline xx: `T.init(xx p, ...)`
 
 @import "modules/std.sx";
@@ -12,34 +12,34 @@
 
 Box :: struct {
     parent: Allocator;
-    first_ptr: *void;
+    firstPtr: *void;
 
-    init :: (parent_alloc: Allocator, size: i64) -> *Box {
+    init :: (parentAlloc: Allocator, size: i64) -> *Box {
         self : *Box = xx c.libcMalloc(@sizeOf(Box));
-        self.parent = parent_alloc;
-        self.first_ptr = self.parent.allocBytes(size);
+        self.parent = parentAlloc;
+        self.firstPtr = self.parent.allocBytes(size);
         self
     }
 }
 
-make_box :: (parent_alloc: Allocator, size: i64) -> *Box {
+makeBox :: (parentAlloc: Allocator, size: i64) -> *Box {
     self : *Box = xx c.libcMalloc(@sizeOf(Box));
-    self.parent = parent_alloc;
-    self.first_ptr = self.parent.allocBytes(size);
+    self.parent = parentAlloc;
+    self.firstPtr = self.parent.allocBytes(size);
     self
 }
 
 main :: () -> i32 {
-    g_gpa : GPA = .{ allocCount = 0 };
+    gGpa : GPA = .{ allocCount = 0 };
 
-    a : Allocator = xx *g_gpa;
+    a : Allocator = xx *gGpa;
     b1 := Box.init(a, 64);
     print("Box.init (named-var):  ok\n");
 
-    b2 := make_box(xx *g_gpa, 64);
-    print("make_box (inline-xx):  ok\n");
+    b2 := makeBox(xx *gGpa, 64);
+    print("makeBox (inline-xx):  ok\n");
 
-    b3 := Box.init(xx *g_gpa, 64);
+    b3 := Box.init(xx *gGpa, 64);
     print("Box.init (inline-xx):  ok\n");
 
     0

@@ -5,8 +5,8 @@
 one :: @import "0899-protocols-qualified-alias-nominal-identity/one.sx";
 two :: @import "0899-protocols-qualified-alias-nominal-identity/two.sx";
 
-take_one :: (item: One) -> i64 { item.value() }
-take_two :: (item: Two) -> bool { item.other() }
+takeOne :: (item: One) -> i64 { item.value() }
+takeTwo :: (item: Two) -> bool { item.other() }
 
 One :: one.P;
 Two :: two.P;
@@ -23,11 +23,11 @@ impl Two for Both { other :: (self: *Both) -> bool { self.b } }
 main :: () -> i32 {
     first := First{ n = 37 };
     second := Second{ b = true };
-    if take_one(xx first) != 37 { return 1; }
-    if !take_two(xx second) { return 2; }
+    if takeOne(xx first) != 37 { return 1; }
+    if !takeTwo(xx second) { return 2; }
 
     both := Both{ n = 41, b = true };
-    if take_one(xx both) != 41 { return 3; }
-    if !take_two(xx both) { return 4; }
+    if takeOne(xx both) != 41 { return 3; }
+    if !takeTwo(xx both) { return 4; }
     0
 }

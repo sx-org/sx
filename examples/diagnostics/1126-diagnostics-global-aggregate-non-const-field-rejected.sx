@@ -4,10 +4,10 @@
 
 @import "modules/std.sx";
 
-runtime_marker :: () -> i64 { return 7; }
+runtimeMarker :: () -> i64 { return 7; }
 
 Box :: struct { p: *i64; marker: i64; }
-boxes : [1]Box = .[ .{ p = null, marker = runtime_marker() } ];
+boxes : [1]Box = .[ .{ p = null, marker = runtimeMarker() } ];
 
 main :: () -> i32 {
     print("marker={}\n", boxes[0].marker);

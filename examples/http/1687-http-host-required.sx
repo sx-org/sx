@@ -17,7 +17,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -42,7 +42,7 @@ contains :: (hay: string, needle: string) -> bool {
 // One connection, one request, read to EOF (all cases close: errors close,
 // the 200 cases send Connection: close / are 1.0).
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;

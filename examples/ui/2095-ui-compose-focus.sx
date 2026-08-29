@@ -35,7 +35,7 @@ main :: () -> i32 {
     focus := FocusRouter.init();
     log := Log{};
 
-    push .{ compose_ui = *identity, compose_focus = *focus } {
+    push .{ composeUi = *identity, composeFocus = *focus } {
         identity.beginBuild();
         tally := *log;
 

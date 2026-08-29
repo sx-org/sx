@@ -17,7 +17,7 @@ triple :: (x: i64) -> i64 { return x * 3; }
 
 // Field call through a `*CB` receiver inside a method, consuming the failable
 // field's error channel.
-run_work :: (self: *CB, n: i64) -> i64 {
+runWork :: (self: *CB, n: i64) -> i64 {
     v := self.work(n) catch { return -1; };
     return v;
 }
@@ -33,7 +33,7 @@ main :: () -> i64 {
 
     print("{}\n", b.add(3, 4));      // 7
     print("{}\n", b.fp(5));          // 15
-    print("{}\n", run_work(*b, 6));  // 60
-    print("{}\n", run_work(*b, -1)); // -1 (error path)
+    print("{}\n", runWork(*b, 6));  // 60
+    print("{}\n", runWork(*b, -1)); // -1 (error path)
     return 0;
 }

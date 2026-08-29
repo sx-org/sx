@@ -16,16 +16,16 @@ SxProbeNiladic :: @ObjcClass("SxProbeNiladic") extern {
     length :: (self: *Self) -> i32;
 }
 
-length_imp :: (self: *void, _cmd: *void) -> i32 abi(.c) {
+lengthImp :: (self: *void, _cmd: *void) -> i32 abi(.c) {
     42
 }
 
 main :: () -> i32 {
     inline if @host.os == .macos {
-        ns_object := objc_getClass("NSObject".ptr);
-        cls := objc_allocateClassPair(ns_object, "SxProbeNiladic".ptr, 0);
+        nsObject := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(nsObject, "SxProbeNiladic".ptr, 0);
         sel := sel_registerName("length".ptr);
-        class_addMethod(cls, sel, xx length_imp, "i@:".ptr);
+        class_addMethod(cls, sel, xx lengthImp, "i@:".ptr);
         objc_registerClassPair(cls);
 
         inst : *SxProbeNiladic = xx class_createInstance(cls, 0);

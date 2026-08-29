@@ -41,7 +41,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 // ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
-cli_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
     n := socket.write(fd.*, buf, len);
     if n >= 0 { return xx n; }
@@ -49,7 +49,7 @@ cli_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
     return -1;
 }
-cli_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+cliRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
     n := socket.read(fd.*, buf, len);
     if n > 0 { return xx n; }
@@ -72,7 +72,7 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 // NUL-terminated C string vs sx string.
-cstr_eq :: (p: [*]u8, s: string) -> bool {
+cstrEq :: (p: [*]u8, s: string) -> bool {
     if p == null { return false; }
     i := 0;
     while i < s.len { if p[i] != s[i] { return false; } i += 1; }
@@ -81,7 +81,7 @@ cstr_eq :: (p: [*]u8, s: string) -> bool {
 
 // Read a PEM file and parse it into an ALREADY-init'd cert chain. mbedTLS's
 // PEM parsers require the trailing NUL counted in buflen — re-buffer with one.
-load_crt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
+loadCrt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
     ok := false;
     if data := fs.readFile(path) {
         n : i64 = data.len;
@@ -95,7 +95,7 @@ load_crt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
     return ok;
 }
 
-load_key :: (pk: *mbedtls.PkContext, path: [:0]u8, drbg: *mbedtls.CtrDrbg) -> bool {
+loadKey :: (pk: *mbedtls.PkContext, path: [:0]u8, drbg: *mbedtls.CtrDrbg) -> bool {
     ok := false;
     if data := fs.readFile(path) {
         n : i64 = data.len;
@@ -128,11 +128,11 @@ CliOpt :: struct {
     hostname: [:0]u8;          // SNI + verification hostname (always set: TLS
                                // 1.3 verification requires it in mbedTLS 3.6)
     caPath: [:0]u8;           // trust anchor → VERIFY_REQUIRED
-    send_cert: bool = true;    // present the client.test identity
+    sendCert: bool = true;    // present the client.test identity
     alpn: u8 = 0;              // 0 = no ALPN ext, 1 = ["h2","http/1.1"], 2 = ["bogus/9"]
 }
 
-client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
+clientInit :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
     c.fd = fd;
     mbedtls.mbedtls_ssl_config_init(*c.cfg);
     mbedtls.mbedtls_ssl_init(*c.ssl);
@@ -146,14 +146,14 @@ client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
     mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, *c.drbg);
 
     // Trust anchor + strict verification of the server cert.
-    if !load_crt(*c.ca, opt.caPath) { return false; }
+    if !loadCrt(*c.ca, opt.caPath) { return false; }
     mbedtls.mbedtls_ssl_conf_ca_chain(*c.cfg, *c.ca, null);
     mbedtls.mbedtls_ssl_conf_authmode(*c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
 
     // mTLS identity.
-    if opt.send_cert {
-        if !load_crt(*c.own, "examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return false; }
-        if !load_key(*c.pk, "examples/http/1703-http-tls-alpn-sni-mtls/client-key.pem", *c.drbg) { return false; }
+    if opt.sendCert {
+        if !loadCrt(*c.own, "examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return false; }
+        if !loadKey(*c.pk, "examples/http/1703-http-tls-alpn-sni-mtls/client-key.pem", *c.drbg) { return false; }
         if mbedtls.mbedtls_ssl_conf_own_cert(*c.cfg, *c.own, *c.pk) != 0 { return false; }
     }
 
@@ -175,11 +175,11 @@ client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
 
     if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
     if mbedtls.mbedtls_ssl_set_hostname(*c.ssl, opt.hostname.ptr) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cli_send, cli_recv, null);
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cliSend, cliRecv, null);
     return true;
 }
 
-client_free :: (c: *TlsClient) {
+clientFree :: (c: *TlsClient) {
     mbedtls.mbedtls_ssl_free(*c.ssl);
     mbedtls.mbedtls_ssl_config_free(*c.cfg);
     mbedtls.mbedtls_ctr_drbg_free(*c.drbg);
@@ -214,7 +214,7 @@ driveHandshake :: (srv: *http.Server, cl: *TlsClient) -> i64 {
 
 // One HTTPS GET over an established session; asserts 200 + body.
 // Returns 0 ok, else a sub-code.
-one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
+oneGet :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
     sent := false; j : i64 = 0;
     while j < 200 and !sent {
@@ -277,15 +277,15 @@ run :: () -> i32 {
     if se { return 6; }
 
     // ── C. ALPN mismatch: only "bogus/9" offered → handshake must fail ──
-    fd_c := dial();
-    if fd_c < 0 { srv.close(); ts.deinit(); return 10; }
-    cl_c : TlsClient = .{};
-    if !client_init(*cl_c, fd_c, .{ hostname = "default.test",
+    fdC := dial();
+    if fdC < 0 { srv.close(); ts.deinit(); return 10; }
+    clC : TlsClient = .{};
+    if !clientInit(*clC, fdC, .{ hostname = "default.test",
                                     caPath = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
                                     alpn = 2 }) { srv.close(); ts.deinit(); return 11; }
-    hc := driveHandshake(*srv, *cl_c);
-    client_free(*cl_c);
-    socket.close(fd_c);
+    hc := driveHandshake(*srv, *clC);
+    clientFree(*clC);
+    socket.close(fdC);
     if hc != 0 { srv.close(); ts.deinit(); return 12; }   // must FAIL, not complete/hang
 
     // ── D. mTLS: a cert-less client must be refused. Under TLS 1.3 the
@@ -293,59 +293,59 @@ run :: () -> i32 {
     // the server's certificate-required rejection lands), so the refusal is
     // asserted where it is guaranteed to surface: the server must NEVER
     // serve the request — the first app-data exchange errors out. ──
-    fd_d := dial();
-    if fd_d < 0 { srv.close(); ts.deinit(); return 13; }
-    cl_d : TlsClient = .{};
-    if !client_init(*cl_d, fd_d, .{ hostname = "default.test",
+    fdD := dial();
+    if fdD < 0 { srv.close(); ts.deinit(); return 13; }
+    clD : TlsClient = .{};
+    if !clientInit(*clD, fdD, .{ hostname = "default.test",
                                     caPath = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
-                                    send_cert = false }) { srv.close(); ts.deinit(); return 14; }
-    hd := driveHandshake(*srv, *cl_d);
+                                    sendCert = false }) { srv.close(); ts.deinit(); return 14; }
+    hd := driveHandshake(*srv, *clD);
     refused := hd == 0;
-    if hd == 1 { refused = one_get(*srv, *cl_d) != 0; }
-    client_free(*cl_d);
-    socket.close(fd_d);
+    if hd == 1 { refused = oneGet(*srv, *clD) != 0; }
+    clientFree(*clD);
+    socket.close(fdD);
     if !refused { srv.close(); ts.deinit(); return 15; }
 
     // ── A. default fallback + ALPN negotiation + mTLS accept + 200 ──
-    fd_a := dial();
-    if fd_a < 0 { srv.close(); ts.deinit(); return 16; }
-    cl_a : TlsClient = .{};
-    if !client_init(*cl_a, fd_a, .{ hostname = "default.test",
+    fdA := dial();
+    if fdA < 0 { srv.close(); ts.deinit(); return 16; }
+    clA : TlsClient = .{};
+    if !clientInit(*clA, fdA, .{ hostname = "default.test",
                                     caPath = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
                                     alpn = 1 }) { srv.close(); ts.deinit(); return 17; }
-    ha := driveHandshake(*srv, *cl_a);
+    ha := driveHandshake(*srv, *clA);
     if ha != 1 {
-        client_free(*cl_a); socket.close(fd_a); srv.close(); ts.deinit();
+        clientFree(*clA); socket.close(fdA); srv.close(); ts.deinit();
         return 18;
     }
-    neg := mbedtls.mbedtls_ssl_get_alpn_protocol(*cl_a.ssl);
-    if !cstr_eq(neg, "http/1.1") {
-        client_free(*cl_a); socket.close(fd_a); srv.close(); ts.deinit();
+    neg := mbedtls.mbedtls_ssl_get_alpn_protocol(*clA.ssl);
+    if !cstrEq(neg, "http/1.1") {
+        clientFree(*clA); socket.close(fdA); srv.close(); ts.deinit();
         return 19;
     }
-    ga := one_get(*srv, *cl_a);
-    mbedtls.mbedtls_ssl_close_notify(*cl_a.ssl);
-    client_free(*cl_a);
-    socket.close(fd_a);
+    ga := oneGet(*srv, *clA);
+    mbedtls.mbedtls_ssl_close_notify(*clA.ssl);
+    clientFree(*clA);
+    socket.close(fdA);
     if ga != 0 { srv.close(); ts.deinit(); return 20; }
 
     // ── B. SNI: hostname alt.test, trusting ONLY the alt cert ──
-    fd_b := dial();
-    if fd_b < 0 { srv.close(); ts.deinit(); return 21; }
-    cl_b : TlsClient = .{};
-    if !client_init(*cl_b, fd_b, .{ hostname = "alt.test",
+    fdB := dial();
+    if fdB < 0 { srv.close(); ts.deinit(); return 21; }
+    clB : TlsClient = .{};
+    if !clientInit(*clB, fdB, .{ hostname = "alt.test",
                                     caPath = "examples/http/1703-http-tls-alpn-sni-mtls/alt-cert.pem" }) {
         srv.close(); ts.deinit(); return 22;
     }
-    hb := driveHandshake(*srv, *cl_b);
+    hb := driveHandshake(*srv, *clB);
     if hb != 1 {
-        client_free(*cl_b); socket.close(fd_b); srv.close(); ts.deinit();
+        clientFree(*clB); socket.close(fdB); srv.close(); ts.deinit();
         return 23;
     }
-    gb := one_get(*srv, *cl_b);
-    mbedtls.mbedtls_ssl_close_notify(*cl_b.ssl);
-    client_free(*cl_b);
-    socket.close(fd_b);
+    gb := oneGet(*srv, *clB);
+    mbedtls.mbedtls_ssl_close_notify(*clB.ssl);
+    clientFree(*clB);
+    socket.close(fdB);
     if gb != 0 { srv.close(); ts.deinit(); return 24; }
 
     srv.close();

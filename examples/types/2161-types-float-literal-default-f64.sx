@@ -21,7 +21,7 @@ g :: () -> f32 {
 
 id :: (v: $T) -> T { v }
 
-d_host :: () -> i32 {
+dHost :: () -> i32 {
     a, b := .{1.5, 2.5};
     print("a: {} b: {}\n", @typeName(@typeOf(a)), @typeName(@typeOf(b)));
     0
@@ -31,7 +31,7 @@ main :: () {
     f();
     g();
     print("id: {}\n", @typeName(@typeOf(id(1.5))));
-    d_host();
+    dHost();
     x := 3.14;
     print("main.x: {}\n", @typeName(@typeOf(x)));
 }

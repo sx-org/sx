@@ -6,7 +6,7 @@
 // Methods on it (addLinkFlag, setOutputPath) are compiler builtins
 // that configure the build without runtime cost.
 
-configure_build :: () {
+configureBuild :: () {
     opts := buildOptions();
     // These calls are intercepted by the compiler at compile time.
     // On a normal (non-wasm) target, inline if gates them off.
@@ -15,12 +15,12 @@ configure_build :: () {
         opts.addLinkFlag("-sUSE_SDL=3");
     }
 }
-@run configure_build();
+@run configureBuild();
 
 // --- inline if with compiler constants ---
 
 main :: () {
-    // Verify @run configure_build() executed without error
+    // Verify @run configureBuild() executed without error
     print("build config: ok\n");
 
     // Verify compiler constants are available

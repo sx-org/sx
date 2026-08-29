@@ -4,7 +4,7 @@
 // a `.type_expr` rather than an `.identifier`.
 @import "modules/std.sx";
 
-takes_u8 :: (u8: i32) -> i32 { return u8; }
+takesU8 :: (u8: i32) -> i32 { return u8; }
 
 main :: () -> i32 {
     i64 : i32 = 3;

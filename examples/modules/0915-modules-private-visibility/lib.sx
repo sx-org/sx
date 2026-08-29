@@ -10,7 +10,7 @@ private Mode :: enum { on; off; }
 private counter : i64 = 100;
 
 Alias :: Hidden;
-make_hidden :: () -> Hidden { return Hidden{ v = 7 }; }
+makeHidden :: () -> Hidden { return Hidden{ v = 7 }; }
 bump :: () -> i64 { counter += 1; return counter; }
 pick :: (m: Mode) -> i64 { if m == .on { return 1; } return 0; }
-pick_on :: () -> i64 { return pick(Mode.on); }
+pickOn :: () -> i64 { return pick(Mode.on); }

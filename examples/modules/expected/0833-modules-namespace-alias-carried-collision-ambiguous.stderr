@@ -1,5 +1,5 @@
 error: namespace 't' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally
-  --> examples/modules/0833-modules-namespace-alias-carried-collision-ambiguous.sx:12:43
+  --> examples/modules/0833-modules-namespace-alias-carried-collision-ambiguous.sx:12:41
    |
-12 |     print("{} {} {}\n", use_a(), use_b(), t.fx());
-   |                                           ^
+12 |     print("{} {} {}\n", useA(), useB(), t.fx());
+   |                                         ^

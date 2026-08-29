@@ -10,6 +10,6 @@
 @import "0753-modules-same-name-struct-same-fields/b.sx";
 
 main :: () -> i32 {
-    print("a={} b={}\n", a_pair(), b_pair());
+    print("a={} b={}\n", aPair(), bPair());
     0
 }

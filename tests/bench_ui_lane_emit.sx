@@ -3,7 +3,7 @@
 @import "modules/std.sx";
 @import "examples/ui/emit.sx";
 
-slot_bytes :: () -> i64 => @sizeOf(View);
+slotBytes :: () -> i64 => @sizeOf(View);
 
 build :: (n: i64) -> VStack {
     vstack(0.0) { ||_{ n = n }

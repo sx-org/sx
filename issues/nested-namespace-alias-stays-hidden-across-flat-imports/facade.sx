@@ -1,2 +1,2 @@
 @import "bridge.sx";
-public_api :: () -> i64 { bridged() }
+publicApi :: () -> i64 { bridged() }

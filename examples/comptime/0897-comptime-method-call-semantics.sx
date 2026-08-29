@@ -38,12 +38,12 @@ Thing :: struct {
         return .{ base = value };
     }
 
-    type_size :: ($T: Type, value: T, $o: Ord) -> i64 {
+    typeSize :: ($T: Type, value: T, $o: Ord) -> i64 {
         if o == .two { return 0; }
         return @sizeOf(T);
     }
 
-    instance_type_size :: (self: *Thing, $T: Type, value: T, $o: Ord) -> i64 {
+    instanceTypeSize :: (self: *Thing, $T: Type, value: T, $o: Ord) -> i64 {
         if o == .two { return 0; }
         return self.base + @sizeOf(T);
     }
@@ -89,10 +89,10 @@ main :: () {
 
     // Explicit and inferred method type arguments both install T before the
     // runtime value is target-typed and before the body resolves @sizeOf(T).
-    print("types={} {}\n", Thing.type_size(i32, 1, .one), Thing.type_size(1, .one));
+    print("types={} {}\n", Thing.typeSize(i32, 1, .one), Thing.typeSize(1, .one));
     print("instance-types={} {}\n",
-        thing.instance_type_size(i16, 1, .one),
-        thing.instance_type_size(1, .one));
+        thing.instanceTypeSize(i16, 1, .one),
+        thing.instanceTypeSize(1, .one));
 
     // A runtime slice-variadic remains a real callee local when another
     // comptime parameter makes the method inline.

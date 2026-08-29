@@ -40,7 +40,7 @@ own :: (n: i32, ..) -> i64 abi(.c) {
     return relay(n, ap);
 }
 
-own_through :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
+ownThrough :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -59,11 +59,11 @@ main :: () -> i32 {
     r: i32 = 9;
 
     // Zero fixed parameters: every argument, the count included, crosses the tail.
-    print("zero_fixed sx={} c={}\n", sum_all(n, a, b, c), c_sum_all());
+    print("zeroFixed sx={} c={}\n", sum_all(n, a, b, c), c_sum_all());
 
     x: f64 = 1.25;
     narrow: f32 = 0.5;
-    print("zero_fixed_doubles sx={} c={}\n", scale_all(n, x, 2.5, narrow), c_scale_all());
+    print("zeroFixedDoubles sx={} c={}\n", scale_all(n, x, 2.5, narrow), c_scale_all());
 
     print("fixed sx={} c={}\n", tally(3, p, q, r), c_tally());
     print("borrowed sx={}\n", own(3, p, q, r));
@@ -72,12 +72,12 @@ main :: () -> i32 {
     doubles: ScaleAll = scale_all;
     counted: Tally = tally;
     reader: Relay = relay;
-    print("through_type zero={} doubles={} counted={}\n", zero(n, a, b, c), doubles(n, x, 2.5, narrow), counted(3, p, q, r));
-    print("through_reader sx={}\n", own_through(reader, 3, p, q, r));
+    print("throughType zero={} doubles={} counted={}\n", zero(n, a, b, c), doubles(n, x, 2.5, narrow), counted(3, p, q, r));
+    print("throughReader sx={}\n", ownThrough(reader, 3, p, q, r));
 
     print("sum_all_type={}\n", @typeName(SumAll));
-    print("tally_type={}\n", @typeName(Tally));
-    print("relay_type={}\n", @typeName(Relay));
-    print("tally_is_fixed={}\n", Tally == Fixed);
+    print("tallyType={}\n", @typeName(Tally));
+    print("relayType={}\n", @typeName(Relay));
+    print("tallyIsFixed={}\n", Tally == Fixed);
     return 0;
 }

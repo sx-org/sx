@@ -19,10 +19,10 @@ http :: @import "modules/std/http.sx";
 
 PORT :: 19012;
 
-route_one :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "one"; }
-route_two :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "two"; }
+routeOne :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "one"; }
+routeTwo :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "two"; }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -46,7 +46,7 @@ contains :: (hay: string, needle: string) -> bool {
 
 // One connection against the PAIR: send, tick both servers, read to EOF.
 roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -78,19 +78,19 @@ main :: () -> i32 {
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg1 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
-        srv1, e1 := http.Server.init(cfg1, route_one, 0);
+        srv1, e1 := http.Server.init(cfg1, routeOne, 0);
         if e1 { print("srv1 init failed\n"); return 1; }
 
         cfg2 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
-        srv2, e2 := http.Server.init(cfg2, route_two, 0);
-        if e2 { print("srv2 init: expected shared bind via reuse_port\n"); failed = 1; }
+        srv2, e2 := http.Server.init(cfg2, routeTwo, 0);
+        if e2 { print("srv2 init: expected shared bind via reusePort\n"); failed = 1; }
 
         // Control: WITHOUT the knob the same port must refuse to bind —
         // reusePort sharing is strictly opt-in.
         cfg3 : http.Config = .{ port = PORT, maxConn = 8 };
-        srv3, e3 := http.Server.init(cfg3, route_one, 0);
+        srv3, e3 := http.Server.init(cfg3, routeOne, 0);
         if !e3 {
-            print("plain bind on a reuse_port port: expected Bind error\n");
+            print("plain bind on a reusePort port: expected Bind error\n");
             failed = 1;
             srv3.close();
         }
@@ -100,9 +100,9 @@ main :: () -> i32 {
             k : i64 = 0;
             while k < 8 {
                 r := roundtrip2(*srv1, *srv2, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-                hit_one := contains(r, "HTTP/1.1 200 OK") and contains(r, "one");
-                hit_two := contains(r, "HTTP/1.1 200 OK") and contains(r, "two");
-                if hit_one or hit_two { served += 1; }
+                hitOne := contains(r, "HTTP/1.1 200 OK") and contains(r, "one");
+                hitTwo := contains(r, "HTTP/1.1 200 OK") and contains(r, "two");
+                if hitOne or hitTwo { served += 1; }
                 k += 1;
             }
             if served != 8 {

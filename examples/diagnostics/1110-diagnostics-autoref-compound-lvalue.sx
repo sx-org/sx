@@ -1,5 +1,5 @@
 // Auto-ref of a COMPOUND lvalue (field access / index / deref) passed to a `*T`
-// parameter references the real lvalue, not a copy: `make_move(self.board, m)`
+// parameter references the real lvalue, not a copy: `makeMove(self.board, m)`
 // mutates the field itself. Plain locals (`bump(x)`) and compound lvalues
 // auto-ref alike.
 

@@ -18,11 +18,11 @@ bump :: () -> i64 {
 }
 
 trace : i64 = 0;
-idx_probe :: () -> i64 {
+idxProbe :: () -> i64 {
     trace = trace * 10 + 1;
     return 1;
 }
-rhs_probe :: () -> i64 {
+rhsProbe :: () -> i64 {
     trace = trace * 10 + 2;
     return 7;
 }
@@ -37,10 +37,10 @@ main :: () -> i32 {
     g -= 2;
     print("global={}\n", g);                         // 103
 
-    lib.lib_g += 8;
-    lib.lib_g -= 3;
-    lib.lib_pair.a += 41;
-    print("qualified={} field={}\n", lib.lib_g, lib.lib_pair.a);   // 5 42
+    lib.libG += 8;
+    lib.libG -= 3;
+    lib.libPair.a += 41;
+    print("qualified={} field={}\n", lib.libG, lib.libPair.a);   // 5 42
 
     p : Point = .{ x = 1, y = 2 };
     p.x += 9;
@@ -62,7 +62,7 @@ main :: () -> i32 {
     print("elem0={} calls={}\n", xs[0], n);          // 5 1
 
     // The RHS runs before the index expression: the trace reads 2 then 1.
-    xs[idx_probe()] += rhs_probe();
+    xs[idxProbe()] += rhsProbe();
     print("order={} elem1={}\n", trace, xs[1]);      // 21 47
 
     return 0;

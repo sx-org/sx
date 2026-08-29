@@ -6,11 +6,11 @@
 //     COFF symbols (no leading underscore); return address rides the stack.
 // 2-fiber MUTUAL scribble: A (base 0x5000) and B (base 0x6000) each load
 // distinct sentinels into EVERY callee-saved reg and yield to each other, so a
-// sentinel survives only if swap_good saved+restored it (each fiber physically
+// sentinel survives only if swapGood saved+restored it (each fiber physically
 // clobbers the other's registers while it is suspended). Self-validating by
 // construction; the corruption-DETECTION of this exact scribble/verify logic
 // was negative-controlled on aarch64 (examples/1808). Prints three fields:
-// "<gp_mismatch> <xmm_mismatch> <P|F>"  — expected "0 0 P".
+// "<gpMismatch> <xmmMismatch> <P|F>"  — expected "0 0 P".
 //
 // Pinned x86_64-windows-gnu: ir-only on a non-Windows host, where the `.ir`
 // locks the Win64-ABI lowering; on a Windows x86_64 runner it runs end-to-end
@@ -34,7 +34,7 @@ Fiber :: struct {
     xmm: u64;
 }
 
-swap_good :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_good" {
+swapGood :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_good" {
     asm volatile {
         @string A
         movq %rbx, 0(%rcx)
@@ -80,11 +80,11 @@ A
     };
 }
 
-// scribble_verify(self_ctx=rcx, peer=rdx, base=r8, swapfn=r9) -> rax packed
-// (xmm_mismatch << 16) | gp_mismatch. Naked: 264-byte frame saves the caller's
+// scribbleVerify(selfCtx=rcx, peer=rdx, base=r8, swapfn=r9) -> rax packed
+// (xmmMismatch << 16) | gpMismatch. Naked: 264-byte frame saves the caller's
 // callee-saved (it scribbles them) + base; yields via `call *%r9`; verifies on
 // resume; restores the caller regs; returns.
-scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> u64 abi(.naked) export "scribble_verify" {
+scribbleVerify :: (selfCtx: *FiberCtx, peer: *FiberCtx, base: u64) -> u64 abi(.naked) export "scribble_verify" {
     asm volatile {
         @string SV
         subq $264, %rsp
@@ -278,15 +278,15 @@ T,
 };
 fib_tramp :: () extern;
 
-fib_body :: (self: *Fiber) export "fib_body" {
-    packed := scribble_verify(*self.ctx, self.peer, self.base);
+fibBody :: (self: *Fiber) export "fib_body" {
+    packed := scribbleVerify(*self.ctx, self.peer, self.base);
     self.gp  = packed & 0xffff;
     self.xmm = (packed >> 16) & 0xffff;
-    swap_good(*self.ctx, self.next);
+    swapGood(*self.ctx, self.next);
 }
 
 STACK :: 131072;
-g_out : *void = null;
+gOut : *void = null;
 
 boot :: (f: *Fiber) {
     raw : *void = VirtualAlloc(null, STACK, 0x3000, 0x4);   // MEM_COMMIT|RESERVE, PAGE_READWRITE
@@ -304,36 +304,36 @@ boot :: (f: *Fiber) {
 VirtualAlloc :: (addr: *void, size: i64, typ: u32, protect: u32) -> *void extern;
 
 run :: () -> u64 {
-    main_ctx : FiberCtx = ---;
+    mainCtx : FiberCtx = ---;
     a : Fiber = ---;  a.base = 0x5000;
     b : Fiber = ---;  b.base = 0x6000;
     a.peer = *b.ctx;  a.next = *b.ctx;
-    b.peer = *a.ctx;  b.next = *main_ctx;
+    b.peer = *a.ctx;  b.next = *mainCtx;
     boot(*a);  boot(*b);
-    swap_good(*main_ctx, *a.ctx);
+    swapGood(*mainCtx, *a.ctx);
     // pack both fibers' counts: ((a.xmm+b.xmm) << 16) | (a.gp+b.gp)
     return (((a.xmm + b.xmm) << 16) | (a.gp + b.gp));
 }
 
-emit_num :: (v: u64) {
-    if v == 0 { z : [1]u8 = .[48]; w : u32 = 0; WriteFile(g_out, *z[0], 1, *w, null); return; }
+emitNum :: (v: u64) {
+    if v == 0 { z : [1]u8 = .[48]; w : u32 = 0; WriteFile(gOut, *z[0], 1, *w, null); return; }
     buf : [20]u8 = ---;
     i : i64 = 20;
     vv := v;
     while vv > 0 { i = i - 1; buf[i] = xx (48 + (vv % 10)); vv = vv / 10; }
     w : u32 = 0;
-    WriteFile(g_out, *buf[i], xx (20 - i), *w, null);
+    WriteFile(gOut, *buf[i], xx (20 - i), *w, null);
 }
-emit_b :: (c: u8) { b : [1]u8 = ---; b[0] = c; w : u32 = 0; WriteFile(g_out, *b[0], 1, *w, null); }
+emitB :: (c: u8) { b : [1]u8 = ---; b[0] = c; w : u32 = 0; WriteFile(gOut, *b[0], 1, *w, null); }
 
 main :: () {
-    g_out = GetStdHandle(0xFFFFFFF5);
+    gOut = GetStdHandle(0xFFFFFFF5);
     good := run();
     gg := good & 0xffff;  gx := (good >> 16) & 0xffff;
-    emit_num(gg);  emit_b(32);  emit_num(gx);  emit_b(32);
+    emitNum(gg);  emitB(32);  emitNum(gx);  emitB(32);
     pass := 0;
     if gg == 0 { if gx == 0 { pass = 1; } }
-    if pass == 1 { emit_b(80); } else { emit_b(70); }   // 'P' / 'F'
-    emit_b(10);
+    if pass == 1 { emitB(80); } else { emitB(70); }   // 'P' / 'F'
+    emitB(10);
     ExitProcess(0);
 }

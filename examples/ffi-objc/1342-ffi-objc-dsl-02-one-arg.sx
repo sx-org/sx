@@ -16,8 +16,8 @@ addObject_imp :: (self: *void, _cmd: *void, val: i32) -> i32 abi(.c) {
 
 main :: () -> i32 {
     inline if @host.os == .macos {
-        ns_object := objc_getClass("NSObject".ptr);
-        cls := objc_allocateClassPair(ns_object, "SxProbeOneArg".ptr, 0);
+        nsObject := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(nsObject, "SxProbeOneArg".ptr, 0);
         sel := sel_registerName("addObject:".ptr);
         class_addMethod(cls, sel, xx addObject_imp, "i@:i".ptr);
         objc_registerClassPair(cls);

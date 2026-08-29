@@ -3,7 +3,7 @@
 // Completes the READ side the metatype needs to re-express `@typeInfo(T)` as sx:
 //
 //   rawTypeKind(t)            → a stable kind discriminant, to branch on the shape
-//                             (0 other · 1 struct · 2 enum · 3 tagged_union ·
+//                             (0 other · 1 struct · 2 enum · 3 taggedUnion ·
 //                              4 tuple · 5 union · 6 array · 7 vector · 8 error)
 //   rawVariantValue(t, i)  → enum variant i's integer value (explicit or ordinal)
 //
@@ -23,18 +23,18 @@ Color       :: enum { red; green; blue; }
 WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
 Point       :: struct { x: i64; y: i64; }
 
-color_kind :: @run rawTypeKind(rawFindType(rawIntern("Color")));   // 2 = enum
-point_kind :: @run rawTypeKind(rawFindType(rawIntern("Point")));   // 1 = struct
+colorKind :: @run rawTypeKind(rawFindType(rawIntern("Color")));   // 2 = enum
+pointKind :: @run rawTypeKind(rawFindType(rawIntern("Point")));   // 1 = struct
 
 // Plain enum → ordinal values.
-green_val :: @run rawVariantValue(rawFindType(rawIntern("Color")), 1);   // 1
+greenVal :: @run rawVariantValue(rawFindType(rawIntern("Color")), 1);   // 1
 
 // Flags enum → explicit values, read by name + value.
-vsync_name :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("WindowFlags")), 0)); // "vsync"
-vsync_val  :: @run rawVariantValue(rawFindType(rawIntern("WindowFlags")), 0);          // 64
+vsyncName :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("WindowFlags")), 0)); // "vsync"
+vsyncVal  :: @run rawVariantValue(rawFindType(rawIntern("WindowFlags")), 0);          // 64
 
 main :: () {
-    print("Color kind = {}, Point kind = {}\n", color_kind, point_kind);
-    print("Color.green = {}\n", green_val);
-    print("WindowFlags.{} = {}\n", vsync_name, vsync_val);
+    print("Color kind = {}, Point kind = {}\n", colorKind, pointKind);
+    print("Color.green = {}\n", greenVal);
+    print("WindowFlags.{} = {}\n", vsyncName, vsyncVal);
 }

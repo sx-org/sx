@@ -3,12 +3,12 @@
 // integrated through the dispatch gate.
 //
 // What this exercises end-to-end:
-// 1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
+// 1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, selAlloc).
 //    The runtime invokes the synthesized +alloc IMP
 //    which allocates an instance + state struct and binds them
 //    via __sx_state.
 // 2. `f.bump()` — sx-side method call lowers to
-//    objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
+//    objc_msgSend(f, selBump). Runtime dispatches to the IMP
 //    trampoline, which reads __sx_state to find
 //    the state pointer and forwards to the sx body
 //    `SxFoo.bump(__sx_default_context, state)`. Body mutates
@@ -50,9 +50,9 @@ main :: () -> i32 {
         print("counter: {}\n", f.get());
 
         // release
-        sel_release : SEL = sel_registerName("release".ptr);
-        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
-        release_fn(f, sel_release);
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(f, selRelease);
     }
     inline if @host.os != .macos {
         print("counter: 3\n");

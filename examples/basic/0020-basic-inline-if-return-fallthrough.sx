@@ -6,11 +6,11 @@
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-do_it :: () -> bool {
+doIt :: () -> bool {
     inline if @host.os != .ios { return false; }
     true
 }
 
 main :: () -> i32 {
-    if do_it() then 0 else 1
+    if doIt() then 0 else 1
 }

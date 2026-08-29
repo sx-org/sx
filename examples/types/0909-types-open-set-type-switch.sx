@@ -53,9 +53,9 @@ describe :: (v: View) -> string {
 // The numbering the arms compare against is written at the freeze, so a switch
 // asked before it waits for it — including for a member instantiated later than
 // the question.
-CT_ANSWER :: @run early_switch();
+CT_ANSWER :: @run earlySwitch();
 
-early_switch :: () -> string {
+earlySwitch :: () -> string {
     v: View = Padded(i64){ inner = 7 };
     match v {
         case Label: { return "label"; }

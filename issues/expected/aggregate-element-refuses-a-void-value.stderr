@@ -43,15 +43,15 @@ help: call it as a statement instead of using its result
    |                            ^^^
 
 error: element 1 cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:19:32
+  --> issues/aggregate-element-refuses-a-void-value.sx:19:31
    |
-19 |     array_dot : [2]i64 = .[ 1, g() ];
-   |                                ^^^
+19 |     arrayDot : [2]i64 = .[ 1, g() ];
+   |                               ^^^
 
 help: call it as a statement instead of using its result
    |
-19 |     array_dot : [2]i64 = .[ 1, g() ];
-   |                                ^^^
+19 |     arrayDot : [2]i64 = .[ 1, g() ];
+   |                               ^^^
 
 error: element 0 cannot take 'void' — this expression produces no value
   --> issues/aggregate-element-refuses-a-void-value.sx:20:24
@@ -76,15 +76,15 @@ help: call it as a statement instead of using its result
    |                           ^^^
 
 error: element 0 cannot take 'void' — this expression produces no value
-  --> issues/aggregate-element-refuses-a-void-value.sx:22:36
+  --> issues/aggregate-element-refuses-a-void-value.sx:22:35
    |
-22 |     tagged_scalar := Shape.circle{ g() };
-   |                                    ^^^
+22 |     taggedScalar := Shape.circle{ g() };
+   |                                   ^^^
 
 help: call it as a statement instead of using its result
    |
-22 |     tagged_scalar := Shape.circle{ g() };
-   |                                    ^^^
+22 |     taggedScalar := Shape.circle{ g() };
+   |                                   ^^^
 
 error: field 'a' cannot take 'void' — this expression produces no value
   --> issues/aggregate-element-refuses-a-void-value.sx:23:23

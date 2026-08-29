@@ -48,7 +48,7 @@ main :: () -> i64 {
     atomicStore(i64, *x, 7, .seqCst);
     bad = bad + check("atomicLoad", atomicLoad(i64, *x, .seqCst), 7);
     bad = bad + check("atomicFetchAdd", atomicFetchAdd(i64, *x, 3, .seqCst), 7);
-    bad = bad + check("after fetch_add", x, 10);
+    bad = bad + check("after fetchAdd", x, 10);
 
     // A non-zero exit means some intrinsic did not resolve or answered wrong.
     return bad;

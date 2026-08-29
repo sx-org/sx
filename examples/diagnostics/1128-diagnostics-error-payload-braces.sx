@@ -9,18 +9,18 @@ PayErr :: error {
     Boxed: struct { v: i32; at: i64 };
 }
 
-bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
-void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
-empty_scalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
+bareMember  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+voidBraces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+emptyScalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
 absent       :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Gone{1}; } return n; }
 sound        :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare; }          return n; }
-absent_arm   :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
+absentArm   :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
 
 main :: () -> i32 {
-    a := bare_member(-1) catch { 0 };
-    b := void_braces(-1) catch { 0 };
-    c := empty_scalar(-1) catch { 0 };
+    a := bareMember(-1) catch { 0 };
+    b := voidBraces(-1) catch { 0 };
+    c := emptyScalar(-1) catch { 0 };
     d := absent(-1) catch { 0 };
-    e := absent_arm(-1);
+    e := absentArm(-1);
     return xx (a + b + c + d + e);
 }

@@ -3,4 +3,4 @@
 // a.sx's source context so the bare `compute` resolves at all (not ambiguous).
 compute :: () -> i64 { return 7; }
 A_VAL :: @run compute();
-get_a :: () -> i64 { return A_VAL; }
+getA :: () -> i64 { return A_VAL; }

@@ -2,10 +2,10 @@
 @import "modules/std.sx";
 
 pcaplib :: @library "pcap";
-pcap_lib_version :: () -> ?cstring extern pcaplib "pcap_lib_version";
+pcapLibVersion :: () -> ?cstring extern pcaplib "pcap_lib_version";
 
-pcap_version :: () -> string {
-    p := pcap_lib_version();
+pcapVersion :: () -> string {
+    p := pcapLibVersion();
     if p == null { return ""; }
     return fromCstring(p?!);
 }

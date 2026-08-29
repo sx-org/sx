@@ -1,16 +1,16 @@
 // Bare fn → `?Closure`: fn → Closure promotion (null-env static
 // thunk) composes with T → ?T wrapping in every position where each step
 // applies individually — call args, struct-literal fields, decl targets, and
-// returns. The point-free slot idiom (`opt_slot(toolbar)`,
-// `B{ on_tap = toolbar }`) behaves exactly like `opt_slot(|| toolbar())`.
+// returns. The point-free slot idiom (`optSlot(toolbar)`,
+// `B{ onTap = toolbar }`) behaves exactly like `optSlot(|| toolbar())`.
 @import "modules/std.sx";
 
 toolbar :: () { print("toolbar\n"); }
 add1 :: (x: i64) -> i64 { x + 1 }
 
-opt_slot :: (f: ?Closure() = null) { if g := f { g(); } else { print("none\n"); } }
+optSlot :: (f: ?Closure() = null) { if g := f { g(); } else { print("none\n"); } }
 
-B :: struct { on_tap: ?Closure() = null; }
+B :: struct { onTap: ?Closure() = null; }
 
 pick :: (use: bool) -> ?Closure() {
     if use { return toolbar; }
@@ -18,10 +18,10 @@ pick :: (use: bool) -> ?Closure() {
 }
 
 main :: () {
-    opt_slot(toolbar);
-    opt_slot();
-    b := B{ on_tap = toolbar };
-    if g := b.on_tap { g(); }
+    optSlot(toolbar);
+    optSlot();
+    b := B{ onTap = toolbar };
+    if g := b.onTap { g(); }
     d : ?Closure() = toolbar;
     if g := d { g(); }
     r := pick(true);

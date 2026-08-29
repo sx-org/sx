@@ -18,7 +18,7 @@ bug :: (cmd: [:0]u8) -> ?R {
     R{ x = 1 }
 }
 
-post_link :: (opt: BuildOptions) -> bool {
+postLink :: (opt: BuildOptions) -> bool {
     if r := bug("echo hi") { puts("ok"); } else { puts("null"); }
     true
 }
@@ -28,7 +28,7 @@ post_link :: (opt: BuildOptions) -> bool {
 // `onBuild()` compiler-API calls are permitted.
 configure :: () {
     opts := buildOptions();
-    onBuild(post_link);
+    onBuild(postLink);
 }
 @run configure();
 

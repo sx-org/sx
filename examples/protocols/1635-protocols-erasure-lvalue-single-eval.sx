@@ -23,14 +23,14 @@ impl P for S {
 
 H :: struct { arr: [2]S; }
 
-g_arr : [2]S = .[ S{ v = 100 }, S{ v = 200 } ];
+gArr : [2]S = .[ S{ v = 100 }, S{ v = 200 } ];
 
-g_calls : i64 = 0;
-next_ret : i64 = 1;
+gCalls : i64 = 0;
+nextRet : i64 = 1;
 
 next :: () -> i64 {
-    g_calls += 1;
-    return next_ret;
+    gCalls += 1;
+    return nextRet;
 }
 
 main :: () -> i32 {
@@ -42,33 +42,33 @@ main :: () -> i32 {
     arr[2] = S{ v = 30 };
 
     // Plain I destination: one eval, right element, borrowed in place.
-    g_calls = 0;
+    gCalls = 0;
     p := arr[next()].(P);
-    if g_calls != 1 { print("plain evals {}\n", g_calls); fails += 1; }
+    if gCalls != 1 { print("plain evals {}\n", gCalls); fails += 1; }
     if p.get() != 20 { print("plain element {}\n", p.get()); fails += 1; }
     p.bump();
     if p.get() != 21 { print("plain bump {}\n", p.get()); fails += 1; }
     if arr[1].v != 21 { print("handle did not borrow source {}\n", arr[1].v); fails += 1; }
 
     // ?I destination: one eval, same borrow.
-    g_calls = 0;
+    gCalls = 0;
     op : ?P = arr[next()].(P);
-    if g_calls != 1 { print("opt evals {}\n", g_calls); fails += 1; }
+    if gCalls != 1 { print("opt evals {}\n", gCalls); fails += 1; }
     if op == null { print("opt null\n"); fails += 1; }
     if op.get() != 21 { print("opt element {}\n", op.get()); fails += 1; }
 
     // Module-GLOBAL array base: one eval, right element.
-    next_ret = 0;
-    g_calls = 0;
-    pg := g_arr[next()].(P);
-    if g_calls != 1 { print("global evals {}\n", g_calls); fails += 1; }
+    nextRet = 0;
+    gCalls = 0;
+    pg := gArr[next()].(P);
+    if gCalls != 1 { print("global evals {}\n", gCalls); fails += 1; }
     if pg.get() != 100 { print("global element {}\n", pg.get()); fails += 1; }
 
     // STRUCT-FIELD array base: one eval, right element.
     h : H = .{ arr = .[ S{ v = 300 }, S{ v = 400 } ] };
-    g_calls = 0;
+    gCalls = 0;
     pf := h.arr[next()].(P);
-    if g_calls != 1 { print("field evals {}\n", g_calls); fails += 1; }
+    if gCalls != 1 { print("field evals {}\n", gCalls); fails += 1; }
     if pf.get() != 300 { print("field element {}\n", pf.get()); fails += 1; }
 
     // By-VALUE for capture: x is a per-iteration copy, so the handle borrows

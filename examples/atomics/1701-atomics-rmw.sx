@@ -6,10 +6,10 @@
 @import "modules/std/atomic.sx";
 
 // comptime (@run) signed min/max with a negative — must match runtime.
-c_max :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMax(3, .seqCst); return a.load(.seqCst); }
-c_min :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMin(3, .seqCst); return a.load(.seqCst); }
-G_MAX :: @run c_max();
-G_MIN :: @run c_min();
+cMax :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMax(3, .seqCst); return a.load(.seqCst); }
+cMin :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetchMin(3, .seqCst); return a.load(.seqCst); }
+G_MAX :: @run cMax();
+G_MIN :: @run cMin();
 
 main :: () {
     a := Atomic(i64).init(10);

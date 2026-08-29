@@ -9,7 +9,7 @@ ProposedSize :: struct {
 }
 
 // Direct function — does it work?
-direct_size :: (proposal: ProposedSize) -> f32 {
+directSize :: (proposal: ProposedSize) -> f32 {
     w := if pw := proposal.width { pw } else { 100.0 };
     h := if ph := proposal.height { ph } else { 100.0 };
     w + h
@@ -32,13 +32,13 @@ impl Sizable for Widget {
 main :: () -> void {
     // Test 1: Direct call
     print("=== Direct calls ===\n");
-    d1 := direct_size(ProposedSize{ width = 50.0, height = null });
+    d1 := directSize(ProposedSize{ width = 50.0, height = null });
     print("d1 = {}\n", d1);
-    d2 := direct_size(ProposedSize{ width = null, height = 50.0 });
+    d2 := directSize(ProposedSize{ width = null, height = 50.0 });
     print("d2 = {}\n", d2);
-    d3 := direct_size(ProposedSize{ width = null, height = null });
+    d3 := directSize(ProposedSize{ width = null, height = null });
     print("d3 = {}\n", d3);
-    d4 := direct_size(ProposedSize{ width = 50.0, height = 60.0 });
+    d4 := directSize(ProposedSize{ width = 50.0, height = 60.0 });
     print("d4 = {}\n", d4);
 
     // Test 2: Protocol dispatch

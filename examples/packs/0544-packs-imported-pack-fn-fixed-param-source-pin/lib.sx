@@ -9,8 +9,8 @@ make :: () -> Needs => Needs{ v = 7 };
 
 // Control: a plain (non-pack) fn with the same fixed param already resolves in
 // its defining module — the cross-module call-arg typing path is source-pinned.
-use_plain :: (n: Needs) -> i64 => n.v;
+usePlain :: (n: Needs) -> i64 => n.v;
 
 // Pack fn: the fixed-prefix param `n: Needs` is bound during pack
 // monomorphization. Its type must resolve under this module's source.
-use_pack :: (n: Needs, ..$args) -> i64 => n.v + args[0];
+usePack :: (n: Needs, ..$args) -> i64 => n.v + args[0];

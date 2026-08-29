@@ -8,20 +8,20 @@ W :: struct { v: i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 S :: struct { inner: P; }
 
-rvalue_direct :: () -> P { return W{ v = 1 }; }
-rvalue_in_literal :: () -> S { return S{ inner = W{ v = 2 } }; }
-empty_literal :: () -> P { return .{}; }
+rvalueDirect :: () -> P { return W{ v = 1 }; }
+rvalueInLiteral :: () -> S { return S{ inner = W{ v = 2 } }; }
+emptyLiteral :: () -> P { return .{}; }
 
 take :: (v: P) -> P { v }
-through_argument :: () -> P { return take(W{ v = 3 }); }
-through_binding :: () -> P { r : P = ---; r = W{ v = 4 }; return r; }
+throughArgument :: () -> P { return take(W{ v = 3 }); }
+throughBinding :: () -> P { r : P = ---; r = W{ v = 4 }; return r; }
 absent :: () -> ?P { return null; }
 
 main :: () {
-    _ = rvalue_direct();
-    _ = rvalue_in_literal();
-    _ = empty_literal();
-    _ = through_argument();
-    _ = through_binding();
+    _ = rvalueDirect();
+    _ = rvalueInLiteral();
+    _ = emptyLiteral();
+    _ = throughArgument();
+    _ = throughBinding();
     _ = absent();
 }

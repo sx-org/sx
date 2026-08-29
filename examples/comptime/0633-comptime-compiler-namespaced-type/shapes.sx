@@ -2,11 +2,11 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";   // rawDeclareType / rawRegisterType / Member
 
-build_suit :: () -> Type {
+buildSuit :: () -> Type {
     return rawRegisterType(rawDeclareType("Suit"), 2, .[   // kind 2 = actual enum
         Member{ name = "hearts", ty = void },
         Member{ name = "spades", ty = void },
     ]);
 }
 
-Suit :: build_suit();
+Suit :: buildSuit();

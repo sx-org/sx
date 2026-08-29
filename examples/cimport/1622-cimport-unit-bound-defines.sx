@@ -9,9 +9,9 @@ unit :: @import c {
     @source "1622-cimport-unit-bound-defines/unit.c";
 };
 
-unit_answer :: () -> i32 extern unit "unit_answer";
+unitAnswer :: () -> i32 extern unit "unit_answer";
 
 main :: () -> i32 {
-    print("unit answer = {}\n", unit_answer());
+    print("unit answer = {}\n", unitAnswer());
     0
 }

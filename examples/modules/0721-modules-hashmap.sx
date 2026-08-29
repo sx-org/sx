@@ -22,15 +22,15 @@ main :: () {
     while i < 5 { m.put(i, i * 10, gpa); total += i; i += 1; }
     report("basic-len", m.len == 5);
 
-    sum_keys : i64 = 0;
+    sumKeys : i64 = 0;
     it := m.nextUsed(0);
-    while it < m.cap { sum_keys += m.keys[it]; it = m.nextUsed(it + 1); }
-    report("basic-iter-sum", sum_keys == total);          // 0+1+2+3+4 = 10
+    while it < m.cap { sumKeys += m.keys[it]; it = m.nextUsed(it + 1); }
+    report("basic-iter-sum", sumKeys == total);          // 0+1+2+3+4 = 10
 
-    got_all := true;
+    gotAll := true;
     i = 0;
-    while i < 5 { if m.get(i)?! != i * 10 { got_all = false; } i += 1; }
-    report("basic-get-all", got_all);
+    while i < 5 { if m.get(i)?! != i * 10 { gotAll = false; } i += 1; }
+    report("basic-get-all", gotAll);
 
     // ── overwrite on existing key: value replaced, count unchanged ────────
     m.put(2, 999, gpa);
@@ -67,14 +67,14 @@ main :: () {
 
     // iterate: count entries, confirm key == value for every live slot
     cnt : i64 = 0;
-    kv_ok := true;
+    kvOk := true;
     gi := g.nextUsed(0);
     while gi < g.cap {
-        if g.keys[gi] != g.values[gi] { kv_ok = false; }
+        if g.keys[gi] != g.values[gi] { kvOk = false; }
         cnt += 1; gi = g.nextUsed(gi + 1);
     }
     report("grow-iter-count", cnt == N);
-    report("grow-iter-kv", kv_ok);
+    report("grow-iter-kv", kvOk);
 
     all := true;
     i = 0;
@@ -86,12 +86,12 @@ main :: () {
     c : HashMap(i64, i64) = .{};
     c.put(1, 1, gpa);
     report("clear-pre", c.get(1)?! == 1 and c.len == 1);
-    cap_before := c.cap;
-    report("clear-cap-pos", cap_before > 0);
+    capBefore := c.cap;
+    report("clear-cap-pos", capBefore > 0);
     c.clear();
     c.clear();                                            // idempotent
     report("clear-len", c.len == 0);
-    report("clear-cap-kept", c.cap == cap_before);
+    report("clear-cap-kept", c.cap == capBefore);
     report("clear-gone", !c.contains(1));
     c.put(2, 2, gpa);                                  // reuse after clear
     report("clear-reuse", c.get(2)?! == 2);

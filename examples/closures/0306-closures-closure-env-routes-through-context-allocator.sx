@@ -31,8 +31,8 @@ main :: () -> i32 {
         // The literal IS its env; `closure` copies that env into storage the
         // installed tracer's `alloc` hands out.
         captured : i64 = 100;
-        add_capture : Closure(i64) -> i64 = closure(|y: i64|_{ captured } -> i64 y + captured);
-        _ = add_capture(1);
+        addCapture : Closure(i64) -> i64 = closure(|y: i64|_{ captured } -> i64 y + captured);
+        _ = addCapture(1);
     }
     print("Tracer.count = {}\n", tracer.count);
     0

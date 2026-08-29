@@ -4,7 +4,7 @@
 // nominal TypeIds, not the first same-name authors in A.
 Box  :: struct { y: i64; peer: *Node; }
 Node :: struct { m: i64; owner: *Box; }
-b_test :: () -> i64 {
+bTest :: () -> i64 {
     nd := Node{ m = 99, owner = null };
     bx := Box{ y = 7, peer = *nd };
     // Reads B's Node.m (99); binding the forward ref to A's Node (which has

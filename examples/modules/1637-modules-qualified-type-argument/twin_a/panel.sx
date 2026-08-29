@@ -3,12 +3,12 @@
 v :: @import "../view.sx";
 
 Panel :: @OpenVariant(v.View) {
-    tag: string = "twin_a";
+    tag: string = "twinA";
     render :: (self: *Panel) -> string => self.tag;
 }
 
 mk :: () -> v.View {
-    p : Panel = .{ tag = "twin_a value" };
+    p : Panel = .{ tag = "twinA value" };
     x : v.View = p;
     return x;
 }

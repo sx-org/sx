@@ -7,6 +7,6 @@
 @import "0918-modules-private-no-suppression/b.sx";
 
 main :: () -> i32 {
-    print("{} {} {}\n", helper(), LIMIT, a_probe());
+    print("{} {} {}\n", helper(), LIMIT, aProbe());
     return 0;
 }

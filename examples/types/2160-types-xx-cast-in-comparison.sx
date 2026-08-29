@@ -28,8 +28,8 @@ main :: () -> i32 {
     print("hoisted  : {}\n", a == hoisted);
 
     // Either operand position takes the peer's type.
-    lhs_cast : bool = b.(i32) == a;
-    print("lhs cast : {}\n", lhs_cast);
+    lhsCast : bool = b.(i32) == a;
+    print("lhs cast : {}\n", lhsCast);
 
     // The peer is the target, so the cast truncates to `i32` here — the
     // full-width `i64` compare would read false.

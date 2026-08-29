@@ -73,7 +73,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "hello";   // GET or HEAD /hello
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -95,7 +95,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-num_after :: (hay: string, key: string) -> i64 {
+numAfter :: (hay: string, key: string) -> i64 {
     i := 0;
     while i + key.len <= hay.len {
         j := 0;
@@ -118,7 +118,7 @@ num_after :: (hay: string, key: string) -> i64 {
     return -1;
 }
 
-send_all :: (srv: *http.Server, fd: i32, s: string) {
+sendAll :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
         n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
@@ -127,7 +127,7 @@ send_all :: (srv: *http.Server, fd: i32, s: string) {
     }
 }
 
-read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+readResponse :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     total : i64 = 0;
     t : i64 = 0;
     while t < 20000 {
@@ -143,7 +143,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
             i += 1;
         }
         if he >= 0 {
-            cl := num_after(resp, "Content-Length: ");
+            cl := numAfter(resp, "Content-Length: ");
             if cl >= 0 and total >= he + cl { return total; }
         }
         t += 1;
@@ -154,7 +154,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
 // Read a chunked response until the terminating "0\r\n\r\n" (the data
 // pattern's consecutive bytes differ by 7 mod 251 — the terminator cannot
 // occur inside chunk data; see 1699).
-read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+readChunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     total : i64 = 0;
     t : i64 = 0;
     while t < 200000 {
@@ -172,7 +172,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     return 0;
 }
 
-dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
+dechunkCheck :: (body: string, seed: i64, expectTotal: i64) -> bool {
     p : i64 = 0;
     total : i64 = 0;
     while true {
@@ -205,7 +205,7 @@ dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
         if body[p] != 13 or body[p + 1] != 10 { return false; }
         p += 2;
     }
-    return total == expect_total;
+    return total == expectTotal;
 }
 
 main :: () -> i32 {
@@ -239,29 +239,29 @@ main :: () -> i32 {
             sum = (sum * 31 + body[i]) % 1000000007;
             i += 1;
         }
-        c1 := dial_port(PORT);
+        c1 := dialPort(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
-        send_all(*srv, c1, string{ ptr = body, len = SUM_LEN });
-        r1 := read_response(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
+        sendAll(*srv, c1, string{ ptr = body, len = SUM_LEN });
+        r1 := readResponse(*srv, c1, rbuf, cap);
         resp1 := string{ ptr = rbuf, len = r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
-        if num_after(resp1, "len=") != SUM_LEN { print("case1: bad len {}\n", num_after(resp1, "len=")); failed = 1; }
-        if num_after(resp1, "sum=") != sum { print("case1: bad sum\n"); failed = 1; }
+        if numAfter(resp1, "len=") != SUM_LEN { print("case1: bad len {}\n", numAfter(resp1, "len=")); failed = 1; }
+        if numAfter(resp1, "sum=") != sum { print("case1: bad sum\n"); failed = 1; }
 
         // ── case 2: HEAD through the fiber path — headers only ────────
-        send_all(*srv, c1, "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\n");
+        sendAll(*srv, c1, "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\n");
         // a HEAD response is the header block alone: read until \r\n\r\n,
         // then a few extra ticks must produce NOTHING further
-        h_total : i64 = 0;
+        hTotal : i64 = 0;
         he : i64 = -1;
         t : i64 = 0;
         while t < 20000 and he < 0 {
             srv.tick(1) catch {};
-            n, re := socket.readNb(c1, *rbuf[h_total], (cap - h_total));
-            if !re { h_total += n; }
+            n, re := socket.readNb(c1, *rbuf[hTotal], (cap - hTotal));
+            if !re { hTotal += n; }
             k : i64 = 0;
-            while k + 3 < h_total {
+            while k + 3 < hTotal {
                 if rbuf[k] == 13 and rbuf[k+1] == 10 and rbuf[k+2] == 13 and rbuf[k+3] == 10 { he = k + 4; break; }
                 k += 1;
             }
@@ -270,18 +270,18 @@ main :: () -> i32 {
         t = 0;
         while t < 50 {
             srv.tick(1) catch {};
-            n, re := socket.readNb(c1, *rbuf[h_total], (cap - h_total));
-            if !re { h_total += n; }
+            n, re := socket.readNb(c1, *rbuf[hTotal], (cap - hTotal));
+            if !re { hTotal += n; }
             t += 1;
         }
-        hresp := string{ ptr = rbuf, len = h_total };
+        hresp := string{ ptr = rbuf, len = hTotal };
         if !contains(hresp, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
-        if num_after(hresp, "Content-Length: ") != 5 { print("case2: CL {} (want 5)\n", num_after(hresp, "Content-Length: ")); failed = 1; }
-        if he < 0 or h_total != he { print("case2: body bytes on a HEAD ({} past headers)\n", h_total - he); failed = 1; }
+        if numAfter(hresp, "Content-Length: ") != 5 { print("case2: CL {} (want 5)\n", numAfter(hresp, "Content-Length: ")); failed = 1; }
+        if he < 0 or hTotal != he { print("case2: body bytes on a HEAD ({} past headers)\n", hTotal - he); failed = 1; }
 
         // ── case 3: resp.stream from a fiber (inline producer contract) ──
-        send_all(*srv, c1, "GET /chunky HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r3 := read_chunked(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "GET /chunky HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r3 := readChunked(*srv, c1, rbuf, cap);
         resp3 := string{ ptr = rbuf, len = r3 };
         if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
         if !contains(resp3, "Transfer-Encoding: chunked") { print("case3: not chunked\n"); failed = 1; }
@@ -292,7 +292,7 @@ main :: () -> i32 {
             i += 1;
         }
         if che < 0 { print("case3: no header end\n"); failed = 1; }
-        else if !dechunk_check(string{ ptr = *rbuf[che], len = (r3 - che) }, 4242, CHUNKY_LEN) {
+        else if !dechunkCheck(string{ ptr = *rbuf[che], len = (r3 - che) }, 4242, CHUNKY_LEN) {
             print("case3: stream bytes wrong\n");
             failed = 1;
         }

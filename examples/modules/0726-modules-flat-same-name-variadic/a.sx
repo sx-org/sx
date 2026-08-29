@@ -7,5 +7,5 @@ pick :: (..xs: []i64) -> i64 {
     for it in xs { result = result + it; }
     result
 }
-from_a_combine :: () -> i64 { return combine(10, 20); }
-from_a_pick :: () -> i64 { return pick(1, 2, 3); }
+fromACombine :: () -> i64 { return combine(10, 20); }
+fromAPick :: () -> i64 { return pick(1, 2, 3); }

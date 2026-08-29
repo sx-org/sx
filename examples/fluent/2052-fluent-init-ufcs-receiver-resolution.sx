@@ -21,14 +21,14 @@
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
 
-@context.extend ui_out: *List(View) = null;
+@context.extend uiOut: *List(View) = null;
 @context.extend ticks: *i64 = null;
 
 // A destination-first ufcs with two ordinary arguments after the receiver.
-emit_at :: ufcs (value: $I/@Init(View), a: i64, b: i64) {
+emitAt :: ufcs (value: $I/@Init(View), a: i64, b: i64) {
     item: View = ---;
     value.write(*item);
-    context.ui_out.append(item);
+    context.uiOut.append(item);
 }
 
 tick :: () -> i64 {
@@ -55,9 +55,9 @@ Crate :: struct {
     v: i64 = 0;
     stow :: (self: *Crate) -> string => "own method";
 
-    // A STATIC on the same type, sharing the free function's name: `Crate.emit_at`
+    // A STATIC on the same type, sharing the free function's name: `Crate.emitAt`
     // names this one, and its arguments are its own.
-    emit_at :: (n: i64) -> string => "static";
+    emitAt :: (n: i64) -> string => "static";
 }
 
 // A GENERIC instance's own method: its declaration is stamped per instantiation,
@@ -65,7 +65,7 @@ Crate :: struct {
 // reading the receiver's bits.
 Crated :: struct ($T: Type) {
     v: $T = ---;
-    emit_at :: (self: *Crated(T), a: i64, b: i64) -> string => "generic method";
+    emitAt :: (self: *Crated(T), a: i64, b: i64) -> string => "generic method";
 }
 
 // A CALLABLE field named like a free function: calling it calls the field.
@@ -100,18 +100,18 @@ main :: () -> i32 {
     out : List(View) = .{};
     n : i64 = 0;
 
-    push .{ ui_out = *out, ticks = *n } {
+    push .{ uiOut = *out, ticks = *n } {
         // Two arguments, spelled both ways: each evaluated once, each time.
-        Label{ text = "receiver" }.emit_at(tick(), tick());
+        Label{ text = "receiver" }.emitAt(tick(), tick());
         print("receiver spelling: {} evaluations\n", n);
 
         n = 0;
-        emit_at(Label{ text = "argument" }, tick(), tick());
+        emitAt(Label{ text = "argument" }, tick(), tick());
         print("argument spelling: {} evaluations\n", n);
 
         // The receiver's own side effect runs once, inside the write.
         n = 0;
-        counted().emit_at(0, 0);
+        counted().emitAt(0, 0);
         print("receiver evaluated: {}\n", n == 100);
     }
     print("emitted {}\n", out.len);
@@ -121,7 +121,7 @@ main :: () -> i32 {
     // the receiver's address.
     g := Crated(i64){ v = 7 };
     pg := *g;
-    print("generic {} {} v={}\n", g.emit_at(1, 2), pg.emit_at(1, 2), g.v);
+    print("generic {} {} v={}\n", g.emitAt(1, 2), pg.emitAt(1, 2), g.v);
 
     // A callable field is called, and the free function of that name still forms.
     o := Obj{ stow = || "field closure" };
@@ -131,7 +131,7 @@ main :: () -> i32 {
     print("alias {}\n", (9).send());
 
     // A dot on a name: the type prefix names the static, not the free function.
-    print("type prefix {}\n", Crate.emit_at(3));
+    print("type prefix {}\n", Crate.emitAt(3));
 
     // The receiver's type answers first, however it declares the method.
     b := Box{ v = 1 };

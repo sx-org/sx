@@ -30,42 +30,42 @@ main :: () -> i32 {
 
         push .{ allocator = tracker } {
             // Snapshot BEFORE the sx-defined alloc.
-            alloc_before   := tracker.allocCount;
-            dealloc_before := tracker.deallocCount;
+            allocBefore   := tracker.allocCount;
+            deallocBefore := tracker.deallocCount;
 
             f := SxAllocProbe.alloc();
 
             // Snapshot AFTER alloc, BEFORE release.
-            alloc_after_alloc   := tracker.allocCount;
-            dealloc_after_alloc := tracker.deallocCount;
+            allocAfterAlloc   := tracker.allocCount;
+            deallocAfterAlloc := tracker.deallocCount;
 
             f.release();
 
             // Snapshot AFTER release.
-            alloc_after_release   := tracker.allocCount;
-            dealloc_after_release := tracker.deallocCount;
+            allocAfterRelease   := tracker.allocCount;
+            deallocAfterRelease := tracker.deallocCount;
 
             // Verify deltas (do all asserts before any print).
-            alloc_delta_a   := alloc_after_alloc   - alloc_before;
-            dealloc_delta_a := dealloc_after_alloc - dealloc_before;
-            alloc_delta_r   := alloc_after_release   - alloc_after_alloc;
-            dealloc_delta_r := dealloc_after_release - dealloc_after_alloc;
+            allocDeltaA   := allocAfterAlloc   - allocBefore;
+            deallocDeltaA := deallocAfterAlloc - deallocBefore;
+            allocDeltaR   := allocAfterRelease   - allocAfterAlloc;
+            deallocDeltaR := deallocAfterRelease - deallocAfterAlloc;
 
-            if alloc_delta_a < 1 {
-                print("FAIL: alloc didn't fire through tracker; delta={}\n", alloc_delta_a);
+            if allocDeltaA < 1 {
+                print("FAIL: alloc didn't fire through tracker; delta={}\n", allocDeltaA);
                 return 1;
             }
-            if dealloc_delta_a != 0 {
-                print("FAIL: dealloc fired prematurely; delta={}\n", dealloc_delta_a);
+            if deallocDeltaA != 0 {
+                print("FAIL: dealloc fired prematurely; delta={}\n", deallocDeltaA);
                 return 1;
             }
-            if dealloc_delta_r < 1 {
-                print("FAIL: release→-dealloc didn't route through tracker; delta={}\n", dealloc_delta_r);
+            if deallocDeltaR < 1 {
+                print("FAIL: release→-dealloc didn't route through tracker; delta={}\n", deallocDeltaR);
                 return 1;
             }
-            if dealloc_delta_r != alloc_delta_a {
+            if deallocDeltaR != allocDeltaA {
                 print("FAIL: alloc/dealloc deltas mismatched; alloc={} dealloc={}\n",
-                      alloc_delta_a, dealloc_delta_r);
+                      allocDeltaA, deallocDeltaR);
                 return 1;
             }
         }

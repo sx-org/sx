@@ -23,7 +23,7 @@ pair :: () -> (a: ElementId, b: ElementId) {
 }
 
 build :: (out: *List(u64)) {
-    context.compose_ui.beginBuild();
+    context.composeUi.beginBuild();
     for i in 0..3 { out.append(cell().value) }
     a, b := pair();
     out.append(a.value);
@@ -49,7 +49,7 @@ distinct :: (ids: *List(u64)) -> bool {
 
 main :: () -> i32 {
     ui := Identity.init(context.allocator);
-    push .{ compose_ui = *ui } {
+    push .{ composeUi = *ui } {
         first := List(u64){};
         second := List(u64){};
         build(*first);

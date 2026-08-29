@@ -7,7 +7,7 @@ update :: ufcs (self: *Box, n: i64) {
     self.count += 1;
 }
 
-run_imported_reserved_name :: () -> i32 {
+runImportedReservedName :: () -> i32 {
     i8 := Box{ total = 0, count = 0 };
     update(*i8, 5);
     i8.update(7);

@@ -4,15 +4,15 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-call_static_max :: (env: *void, cls: *void) -> i32 {
+callStaticMax :: (env: *void, cls: *void) -> i32 {
     @JniStaticCall(i32, env, cls, "max", "(II)I", 3, 7)
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := call_static_max(null, null);
+    if gShouldCall {
+        _ := callStaticMax(null, null);
     }
     print("ok\n");
     0

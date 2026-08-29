@@ -25,11 +25,11 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> ! {
-    publish_flags : []FlagSpec = .[
+    publishFlags : []FlagSpec = .[
         FlagSpec{ name = "out", takesValue = true, required = true },
     ];
     cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "publish", flags = publishFlags },
     ];
 
     // ── 1. Named exit-code constants (the dist contract) ──────────────
@@ -38,10 +38,10 @@ main :: () -> ! {
 
     // ── 2. `--json` detection — true with the flag, false without ─────
     d : Diag = .{};
-    with_json    : []string = .["ci", "publish", "--out", "dist", "--json"];
-    without_json : []string = .["ci", "publish", "--out", "dist"];
-    pj := try parse(with_json,    cmds, *d);
-    pn := try parse(without_json, cmds, *d);
+    withJson    : []string = .["ci", "publish", "--out", "dist", "--json"];
+    withoutJson : []string = .["ci", "publish", "--out", "dist"];
+    pj := try parse(withJson,    cmds, *d);
+    pn := try parse(withoutJson, cmds, *d);
     report("json-set-true",  pj.json);
     report("json-set-false", !pn.json);
 

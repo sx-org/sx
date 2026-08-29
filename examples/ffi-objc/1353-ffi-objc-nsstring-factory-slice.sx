@@ -5,7 +5,7 @@
 @import "modules/build.sx";
 @import "modules/ffi/objc.sx";
 
-cstr_len :: (p: [*]u8) -> i64 {
+cstrLen :: (p: [*]u8) -> i64 {
     n := 0;
     while p[n] != 0 {
         n += 1;
@@ -17,7 +17,7 @@ show :: (label: string, ns: *NSString) {
     back := ns.UTF8String();
     s : string = ---;
     s.ptr = back;
-    s.len = cstr_len(back);
+    s.len = cstrLen(back);
     print("{}: \"{}\" len {}\n", label, s, s.len);
 }
 

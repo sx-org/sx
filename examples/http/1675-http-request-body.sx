@@ -50,7 +50,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
@@ -60,7 +60,7 @@ dial_port :: (port: i64) -> i32 {
 }
 
 // True when buf[0..len] holds a complete fixed (Content-Length) response.
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -92,7 +92,7 @@ resp_complete :: (buf: [*]u8, len: i64) -> bool {
 // Send a whole request, tick until a complete fixed response arrives,
 // return the response text ("" = closed with no response).
 roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
@@ -103,7 +103,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
         n, re := socket.readNb(fd, *scratch[total], (8192 - total));
         if !re { total += n; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
-        if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
+        if respComplete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
         tries += 1;
     }
     socket.close(fd);
@@ -113,8 +113,8 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
 // Send `reqtext` in `pieces` slices (split across ticks so the chunked
 // decoder must resume across partial reads), then tick until a complete
 // fixed response arrives. Returns the response text.
-roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*]u8) -> string {
-    fd := dial_port(PORT);
+roundtripSplit :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*]u8) -> string {
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     sent : i64 = 0;
     piece := reqtext.len / pieces;
@@ -134,7 +134,7 @@ roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*
         rn, re := socket.readNb(fd, *scratch[total], (8192 - total));
         if !re { total += rn; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
-        if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
+        if respComplete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
         tries += 1;
     }
     socket.close(fd);
@@ -142,7 +142,7 @@ roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*
 }
 
 // Extract the response body (bytes after the header terminator).
-body_of :: (r: string) -> string {
+bodyOf :: (r: string) -> string {
     he := -1;
     i := 0;
     while i + 3 < r.len {
@@ -161,7 +161,7 @@ strEq :: (a: string, b: string) -> bool {
 }
 
 // Count how many connection slots are currently in use (not FREE).
-active_slots :: (srv: *http.Server) -> i64 {
+activeSlots :: (srv: *http.Server) -> i64 {
     s := srv.stats();
     return s.activeConns;
 }
@@ -188,7 +188,7 @@ main :: () -> i32 {
         // ── 1. fixed Content-Length body still works (200, exact body) ──
         if rc == 0 {
             r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "hello") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(bodyOf(r), "hello") {
                 print("fixed body: expected 200 'hello'\n"); rc = 1;
             }
         }
@@ -210,9 +210,9 @@ main :: () -> i32 {
                     concat("B\r\n in chunks.\r\n",
                     "0\r\nX-Trailer: ignored\r\n\r\n"))));
             }
-            r := roundtrip_split(*srv, req, 7, scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "Wikipedia in chunks.") {
-                print("chunked decode: expected 200 'Wikipedia in chunks.', got body len {}\n", body_of(r).len);
+            r := roundtripSplit(*srv, req, 7, scratch);
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(bodyOf(r), "Wikipedia in chunks.") {
+                print("chunked decode: expected 200 'Wikipedia in chunks.', got body len {}\n", bodyOf(r).len);
                 rc = 1;
             }
             ta.deinit();
@@ -222,7 +222,7 @@ main :: () -> i32 {
         if rc == 0 {
             req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
             r := roundtrip(*srv, req, scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "hello") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(bodyOf(r), "hello") {
                 print("chunked single: expected 200 'hello'\n"); rc = 1;
             }
         }
@@ -290,7 +290,7 @@ main :: () -> i32 {
 
         // ── 10. mid-body disconnect → server closes cleanly, slot freed ──
         if rc == 0 {
-            fd := dial_port(PORT);
+            fd := dialPort(PORT);
             if fd < 0 { print("dial mid-body failed\n"); rc = 1; }
             else {
                 // partial chunked body, then disconnect before completion
@@ -301,8 +301,8 @@ main :: () -> i32 {
                 socket.close(fd);                                 // disconnect mid-body
                 t = 0;
                 while t < 200 { srv.tick(1) catch {}; t += 1; }   // let the server notice + close
-                if active_slots(*srv) != 0 {
-                    print("mid-body disconnect: slot not freed ({} active)\n", active_slots(*srv));
+                if activeSlots(*srv) != 0 {
+                    print("mid-body disconnect: slot not freed ({} active)\n", activeSlots(*srv));
                     rc = 1;
                 }
             }
@@ -311,7 +311,7 @@ main :: () -> i32 {
         // ── 11. server still healthy after all of the above ──
         if rc == 0 {
             r := roundtrip(*srv, "GET /len HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc", scratch);
-            if !contains(r, "HTTP/1.1 200 OK") or !strEq(body_of(r), "3") {
+            if !contains(r, "HTTP/1.1 200 OK") or !strEq(bodyOf(r), "3") {
                 print("post-run health: expected 200 '3'\n"); rc = 1;
             }
         }
@@ -326,14 +326,14 @@ main :: () -> i32 {
     print("fixed Content-Length body -> 200 exact\n");
     print("chunked multi-chunk (ext + trailers, split reads) -> 200 exact\n");
     print("chunked single chunk -> 200 exact\n");
-    print("Content-Length over max_body -> 413 (early)\n");
-    print("chunked body over max_body -> 413 (early)\n");
+    print("Content-Length over maxBody -> 413 (early)\n");
+    print("chunked body over maxBody -> 413 (early)\n");
     print("Content-Length + Transfer-Encoding -> 400\n");
     print("Transfer-Encoding: gzip -> 501\n");
     print("malformed chunk (bad hex) -> 400\n");
     print("malformed chunk (missing CRLF) -> 400\n");
     print("malformed chunk (0x-prefix size) -> 400\n");
-    print("chunk size over max_body -> 413\n");
+    print("chunk size over maxBody -> 413\n");
     print("mid-body disconnect -> clean close, slot freed\n");
     print("server healthy after run\n");
     if leaked != 0 {

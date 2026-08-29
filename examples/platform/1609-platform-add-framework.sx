@@ -6,11 +6,11 @@
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-configure_build :: () {
+configureBuild :: () {
     opts := buildOptions();
     opts.addFramework("CoreFoundation");
 }
-@run configure_build();
+@run configureBuild();
 
 CFAbsoluteTimeGetCurrent :: () -> f64 extern;
 

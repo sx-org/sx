@@ -5,6 +5,6 @@
 target :: (x: i64 = 7) -> i64 { return x; }
 go     :: target;
 
-a_call     :: () -> i64 { return go(); }
-a_value    :: () -> i64 { g : (i64) -> i64 = go; return g(7); }
-a_consumed :: () -> i64 { return apply_seeded(go, 7); }
+aCall     :: () -> i64 { return go(); }
+aValue    :: () -> i64 { g : (i64) -> i64 = go; return g(7); }
+aConsumed :: () -> i64 { return applySeeded(go, 7); }

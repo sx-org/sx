@@ -4,24 +4,24 @@ stop :: () -> noreturn {
     @panic("unreachable");
 }
 
-block_tail :: (live: bool) -> i32 {
+blockTail :: (live: bool) -> i32 {
     if live { return 1; }
     x := { stop() };
     return x;
 }
 
-direct_call :: (live: bool) -> i32 {
+directCall :: (live: bool) -> i32 {
     if live { return 2; }
     x := stop();
     return x;
 }
 
-early_return :: (live: bool) -> i32 {
+earlyReturn :: (live: bool) -> i32 {
     if live { return 3; }
     x := { return 9; };
     return x;
 }
 
 main :: () {
-    print("{} {} {}\n", block_tail(true), direct_call(true), early_return(true));
+    print("{} {} {}\n", blockTail(true), directCall(true), earlyReturn(true));
 }

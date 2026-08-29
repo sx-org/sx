@@ -27,14 +27,14 @@ Outer :: struct { a: Inner; c: bool };
 Inner :: struct { d: i64 };
 
 // Alias as fn param type.
-sum_nt :: (t: NT) -> i64 {
+sumNt :: (t: NT) -> i64 {
     r := t.a;
     if t.b { r = r + 1; }
     return r;
 }
 
 // Alias as fn param AND return type.
-bump_nt :: (p: NT) -> NT {
+bumpNt :: (p: NT) -> NT {
     return .{a = p.a + 1, b = p.b};
 }
 
@@ -47,8 +47,8 @@ main :: () -> i32 {
     print("fcNT={} n0={} n1={}\n", structFieldCount(NT), structFieldName(NT, 0), structFieldName(NT, 1));
 
     // Alias as fn param / return type.
-    print("sum={}\n", sum_nt(x));
-    q := bump_nt(x);
+    print("sum={}\n", sumNt(x));
+    q := bumpNt(x);
     print("q.a={} q.b={}\n", q.a, q.b);
 
     // Alias-of-alias resolves to the same structural product.
@@ -58,7 +58,7 @@ main :: () -> i32 {
     // Forward element alias: FwdB (declared after FwdT) is i64, not a stub —
     // the alias layout matches the direct spelling exactly.
     f : FwdT = .{a = 5, c = true};
-    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, structFieldCount(FwdT), @sizeOf(FwdT) == @sizeOf(FwdDirect));
+    print("f.a={} fcFwd={} fwdSoEq={}\n", f.a, structFieldCount(FwdT), @sizeOf(FwdT) == @sizeOf(FwdDirect));
 
     // Generic-instantiation element: field access through the instantiated
     // List works and @sizeOf matches the direct spelling (no stub layout).
@@ -66,7 +66,7 @@ main :: () -> i32 {
     t.a = .{};
     t.a.append(4);
     t.b = "hi";
-    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, structFieldCount(TL), @sizeOf(TL) == @sizeOf(TLDirect));
+    print("t.a0={} t.b={} fcTL={} tlSoEq={}\n", t.a.items[0], t.b, structFieldCount(TL), @sizeOf(TL) == @sizeOf(TLDirect));
 
     // Forward product-in-product chain.
     n : Outer = .{a = .{d = 3}, c = true};

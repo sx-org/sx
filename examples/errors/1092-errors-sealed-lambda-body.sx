@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-Button :: struct { on_tap: ?Closure(i64) -> i64 = null; }
+Button :: struct { onTap: ?Closure(i64) -> i64 = null; }
 
 Maker :: struct {
     make :: (self: *Maker, b: Button) -> i64 { return 0; }
@@ -21,7 +21,7 @@ main :: () -> i32 {
     bare := |x: i64| x + n;                       // reject: `n` needs `_{ n }`
 
     a : Maker = .{};
-    _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
+    _ = a.make(Button{ onTap = |x: i64| x + n });  // reject: inner lambda sealed
 
     each(1) { |x| print("{}\n", x + n); };         // reject: a block is a literal
 

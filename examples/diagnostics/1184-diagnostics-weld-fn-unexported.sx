@@ -7,6 +7,6 @@
 // the binary by reachability rather than by its ABI (1664).
 @import "modules/std.sx";
 
-not_a_real_compiler_fn :: (x: i64) -> i64 abi(.compiler);
+notARealCompilerFn :: (x: i64) -> i64 abi(.compiler);
 
 main :: () { print("unreached\n"); }

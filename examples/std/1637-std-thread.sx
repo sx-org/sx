@@ -11,7 +11,7 @@ Shared :: struct {
 }
 
 // Raw-thread entry: C->sx boundary, own fabricated context.
-bump_entry :: (arg: *void) -> *void abi(.c) {
+bumpEntry :: (arg: *void) -> *void abi(.c) {
     sh : *Shared = arg.(*Shared);
     gpa := GPA.init();
     push .{ allocator = gpa } {
@@ -32,7 +32,7 @@ AddArg :: struct {
     v: i64;
 }
 
-add_task :: (arg: usize) {
+addTask :: (arg: usize) {
     a : *AddArg = arg.(*AddArg);
     a.sh.mu.lock();
     a.sh.counter += a.v;
@@ -40,7 +40,7 @@ add_task :: (arg: usize) {
 }
 
 // Holds its worker hostage until the gate opens (backpressure case).
-gate_task :: (arg: usize) {
+gateTask :: (arg: usize) {
     sh : *Shared = arg.(*Shared);
     while true {
         sh.mu.lock();
@@ -58,7 +58,7 @@ main :: () -> i32 {
     ths : [4]thread.Thread = ---;
     i := 0;
     while i < 4 {
-        t, te := thread.Thread.spawn(bump_entry, *sh);
+        t, te := thread.Thread.spawn(bumpEntry, *sh);
         if te { print("spawn failed\n"); return 1; }
         ths[i] = t;
         i += 1;
@@ -79,7 +79,7 @@ main :: () -> i32 {
     n := 0;
     while n < 100 {
         args[n] = AddArg{ sh = *sh, v = (n + 1) };
-        if !pool.submit(add_task, (*args[n]).(usize)) { print("submit unexpectedly refused\n"); return 1; }
+        if !pool.submit(addTask, (*args[n]).(usize)) { print("submit unexpectedly refused\n"); return 1; }
         n += 1;
     }
     pool.shutdown();   // queued tasks finish before workers exit
@@ -90,7 +90,7 @@ main :: () -> i32 {
     sh.gate = 0;
     p2, pe2 := thread.Pool.create(1, 2);
     if pe2 { print("pool2 create failed\n"); return 1; }
-    if !p2.submit(gate_task, (*sh).(usize)) { print("gate submit refused\n"); return 1; }
+    if !p2.submit(gateTask, (*sh).(usize)) { print("gate submit refused\n"); return 1; }
     // give the worker a beat to take the gate task off the queue
     spins := 0;
     taken := false;
@@ -101,9 +101,9 @@ main :: () -> i32 {
         spins += 1;
     }
     if !taken { print("worker never took the gate task\n"); return 1; }
-    if !p2.submit(gate_task_noop, 0) { print("backlog slot 1 refused\n"); return 1; }
-    if !p2.submit(gate_task_noop, 0) { print("backlog slot 2 refused\n"); return 1; }
-    if p2.submit(gate_task_noop, 0) { print("full backlog must refuse\n"); return 1; }
+    if !p2.submit(gateTaskNoop, 0) { print("backlog slot 1 refused\n"); return 1; }
+    if !p2.submit(gateTaskNoop, 0) { print("backlog slot 2 refused\n"); return 1; }
+    if p2.submit(gateTaskNoop, 0) { print("full backlog must refuse\n"); return 1; }
     print("backpressure: full backlog refuses\n");
     sh.mu.lock();
     sh.gate = 1;
@@ -113,4 +113,4 @@ main :: () -> i32 {
     return 0;
 }
 
-gate_task_noop :: (arg: usize) {}
+gateTaskNoop :: (arg: usize) {}

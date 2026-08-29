@@ -29,12 +29,12 @@ Stack :: @OpenVariant(View) {
     render :: (self: *Stack) -> string => self.label;
 }
 
-@context.extend ui_out: *List(View) = null;
+@context.extend uiOut: *List(View) = null;
 
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;
     value.write(*item);
-    context.ui_out.append(item);
+    context.uiOut.append(item);
 }
 
 // --- A fixed target that is a plain data type ---
@@ -97,7 +97,7 @@ main :: () -> i32 {
     s := Seen{};
     k := Kept{};
 
-    push .{ ui_out = *out, acc = *total, seen = *s, kept = *k } {
+    push .{ uiOut = *out, acc = *total, seen = *s, kept = *k } {
         // The receiver at each shape of the bound.
         Label{ text = "a member" }.emit();
         (40 + 2).add();

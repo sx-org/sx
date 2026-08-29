@@ -7,22 +7,22 @@ P :: interface { a :: (self: *Self) -> i64; }
 W :: struct { v: i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 
-the_w : W = .{ v = 7 };
-S :: struct { inner: P = the_w; }
+theW : W = .{ v = 7 };
+S :: struct { inner: P = theW; }
 
-static_default : S = .{};
+staticDefault : S = .{};
 // The same borrow written out: a static aggregate field takes the bare name of
 // a module-scope global, and the handle it folds to dispatches.
-static_named : S = .{ inner = the_w };
+staticNamed : S = .{ inner = theW };
 
 main :: () {
-    frame_default : S = .{};
-    print("{} {} {}\n", frame_default.inner.a(), static_default.inner.a(), static_named.inner.a());
+    frameDefault : S = .{};
+    print("{} {} {}\n", frameDefault.inner.a(), staticDefault.inner.a(), staticNamed.inner.a());
 
     // Both handles borrow the one global, so a write through it is visible
     // from either.
-    the_w.v = 11;
-    print("{} {} {}\n", frame_default.inner.a(), static_default.inner.a(), static_named.inner.a());
+    theW.v = 11;
+    print("{} {} {}\n", frameDefault.inner.a(), staticDefault.inner.a(), staticNamed.inner.a());
 
     opt : ?P = null;
     print("absent: {}\n", opt == null);

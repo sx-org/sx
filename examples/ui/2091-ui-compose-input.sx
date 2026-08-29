@@ -32,7 +32,7 @@ main :: () -> i32 {
     router := Router.init(context.allocator);
     tally := Tally{};
 
-    push .{ compose_ui = *identity, compose_input = *router } {
+    push .{ composeUi = *identity, composeInput = *router } {
         identity.beginBuild();
 
         // A handler captures by value, so what it carries to fire time is the
@@ -57,21 +57,21 @@ main :: () -> i32 {
         router.observe(*snap);
         print("regions {} nodes {}\n", snap.hitList.len, snap.scene.nodes.len);
 
-        top_id := ElementId{ value = snap.hitList.items[0].id };
+        topId := ElementId{ value = snap.hitList.items[0].id };
 
         // A tap on the top row.
         send(*router, down(20.0, 10.0));
-        pressed_top := isPressed(top_id);
+        pressedTop := isPressed(topId);
         send(*router, up(20.0, 10.0));
-        print("top {} pressed {} after {}\n", tally.top, pressed_top, isPressed(top_id));
+        print("top {} pressed {} after {}\n", tally.top, pressedTop, isPressed(topId));
 
         // The point stays captured across a move that leaves the region and
         // comes back; leaving drops the press, returning restores it.
         send(*router, down(20.0, 10.0));
         send(*router, move(20.0, 60.0));
-        left := isPressed(top_id);
+        left := isPressed(topId);
         send(*router, move(20.0, 10.0));
-        back := isPressed(top_id);
+        back := isPressed(topId);
         send(*router, up(20.0, 10.0));
         print("wander {} {} taps {}\n", left, back, tally.top);
 
@@ -102,7 +102,7 @@ main :: () -> i32 {
         project(*rest, Size{ width = 100.0, height = 80.0 }, *next);
         router.observe(*next);
         send(*router, up(20.0, 10.0));
-        print("vanished {} {}\n", tally.top, isPressed(top_id));
+        print("vanished {} {}\n", tally.top, isPressed(topId));
 
         next.deinit();
         snap.deinit()

@@ -94,7 +94,7 @@ classify :: (n: i64) -> i64 {
     }
 }
 
-classify_semi :: (n: i64) -> i64 {
+classifySemi :: (n: i64) -> i64 {
     match n {
         case 0: 100;
         case 1: { x := 5; x * 2 };
@@ -121,7 +121,7 @@ main :: () -> i32 {
     print("{} {} {}\n", shade(Color.Red), shade(Color.Green), shade(Color.Blue));
     print("{} {} {}\n", tone(Color.Red), tone(Color.Green), tone(Color.Blue));
     print("{} {} {}\n", classify(0), classify(1), classify(2));
-    print("{} {} {}\n", classify_semi(0), classify_semi(1), classify_semi(2));
+    print("{} {} {}\n", classifySemi(0), classifySemi(1), classifySemi(2));
     print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue));
 
     // `|e| expr` takes its `;` like any other arm statement.

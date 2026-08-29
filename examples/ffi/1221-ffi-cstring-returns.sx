@@ -4,19 +4,19 @@
 @import "modules/std.sx";
 
 libc :: @library "c";
-err_text :: (code: i32) -> [:0]u8 extern libc "strerror";
-sig_text :: (sig: i32) -> ?[:0]u8 extern libc "strsignal";
+errText :: (code: i32) -> [:0]u8 extern libc "strerror";
+sigText :: (sig: i32) -> ?[:0]u8 extern libc "strsignal";
 dlerror  :: () -> ?[:0]u8 extern libc;
 
 main :: () -> i32 {
     // plain: strerror(0) = "Undefined error: 0" on macOS — assert shape,
     // not the exact text (locale/platform variance)
-    t := err_text(2);
+    t := errText(2);
     if t.len < 5 { print("BUG: strerror too short ({})\n", t.len); return 1; }
     print("strerror(2) len ok\n");
 
     // optional, non-null branch
-    o := sig_text(2);
+    o := sigText(2);
     if o == null { print("BUG: strsignal null\n"); return 2; }
     if o?!.len < 3 { print("BUG: strsignal too short\n"); return 3; }
     print("optional non-null ok\n");

@@ -10,23 +10,23 @@
 Broad  :: error { Wide; Extra }
 Other  :: error { Wide }
 
-broad_src :: () -> (i32, !Broad) { raise .Extra; }
-wide_src  :: () -> (i32, !Broad) { raise .Wide; }
+broadSrc :: () -> (i32, !Broad) { raise .Extra; }
+wideSrc  :: () -> (i32, !Broad) { raise .Wide; }
 
-take_broad :: (b: Broad) -> void { print("param: {}\n", b); }
+takeBroad :: (b: Broad) -> void { print("param: {}\n", b); }
 
 Holder :: struct { e: Broad; }
 
 main :: () -> i32 {
-    v, be := wide_src();
+    v, be := wideSrc();
     same : Broad = be;
     print("decl: {}\n", same);
-    take_broad(be);
+    takeBroad(be);
     h := Holder{ e = be };
     print("field: {}\n", h.e);
 
     // `xx` is the escape hatch for a deliberate cross-set store.
-    w, xe := broad_src();
+    w, xe := broadSrc();
     forced : Other = xx xe;
     print("xx: {}\n", forced);
 
@@ -34,30 +34,30 @@ main :: () -> i32 {
     // and is membership-checked against it.
     short : Broad = .Extra;
     print("shorthand decl: {}\n", short);
-    take_broad(.Wide);
+    takeBroad(.Wide);
     sh := Holder{ e = .Extra };
     print("shorthand field: {}\n", sh.e);
     opt : ?Broad = .Wide;
     print("shorthand optional: {}\n", opt?!);
-    raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
-    raises_wide() catch |e| { print("shorthand raise: {}\n", e); };
+    raisesShorthand() catch |e| { print("shorthand return: {}\n", e); };
+    raisesWide() catch |e| { print("shorthand raise: {}\n", e); };
 
     // A `try` through a same-set channel.
-    x := via_broad() catch |e| { print("propagated: {}\n", e); return 0; };
+    x := viaBroad() catch |e| { print("propagated: {}\n", e); return 0; };
     return 0;
 }
 
-// A pure-failable `return` takes the shorthand; `raises_wide` raises one.
-raises_shorthand :: () -> !Broad {
+// A pure-failable `return` takes the shorthand; `raisesWide` raises one.
+raisesShorthand :: () -> !Broad {
     return .Wide;
 }
 
 // `try` on a Broad callee escaping through a Broad channel.
-via_broad :: () -> (i32, !Broad) {
-    n := try wide_src();
+viaBroad :: () -> (i32, !Broad) {
+    n := try wideSrc();
     return n;
 }
 
-raises_wide :: () -> !Broad {
+raisesWide :: () -> !Broad {
     raise .Wide;
 }

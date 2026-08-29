@@ -9,5 +9,5 @@ h :: @import "0836-modules-own-const-vs-ns-array-global/h.sx";
 K : i64 : 4;
 
 main :: () {
-    print("K={} use_k={}\n", K, h.use_k());
+    print("K={} useK={}\n", K, h.useK());
 }

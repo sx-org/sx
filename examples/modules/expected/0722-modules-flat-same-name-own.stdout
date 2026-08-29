@@ -1,2 +1,2 @@
-from_a binds a.greet: ok
-from_b binds b.greet: ok
+fromA binds a.greet: ok
+fromB binds b.greet: ok

@@ -11,11 +11,11 @@ Thing :: struct {
         self.n += args[0];
     }
 
-    bump_one :: (self: *Thing, amount: i64) {
+    bumpOne :: (self: *Thing, amount: i64) {
         self.n += amount;
     }
 
-    bump_static :: (other: *Thing, ..$args) {
+    bumpStatic :: (other: *Thing, ..$args) {
         other.n += args[0];
     }
 }
@@ -24,7 +24,7 @@ Box :: struct { inner: Thing; }
 
 // Fixed prefixes on static and ordinary free pack functions use the same
 // parameter-aware lowering. Keep both covered alongside the method receiver.
-bump_free :: (other: *Thing, ..$args) {
+bumpFree :: (other: *Thing, ..$args) {
     other.n += args[0];
 }
 
@@ -36,12 +36,12 @@ main :: () {
     t := Thing{ n = 5 };
     t.bump(7);
     print("instance={}\n", t.n);
-    Thing.bump_static(t, 8);
+    Thing.bumpStatic(t, 8);
     print("static={}\n", t.n);
-    bump_free(t, 9);
+    bumpFree(t, 9);
     print("free={} sum={}\n", t.n, sum(10, 20, 30));
     box := Box{ inner = .{ n = 40 } };
-    box.inner.bump_one(1);
+    box.inner.bumpOne(1);
     box.inner.bump(2);
     print("nested={}\n", box.inner.n);
 }

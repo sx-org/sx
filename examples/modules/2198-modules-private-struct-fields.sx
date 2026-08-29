@@ -15,9 +15,9 @@ main :: () -> i32 {
     b.set(b.get() + 7);
     c := box.Box{};
     d := box.Box{ 9 };
-    print("{}\n", a.get() + b.get() + c.get() + d.get() + box.same_file_sum(1) + box.promoted_sum(4));
+    print("{}\n", a.get() + b.get() + c.get() + d.get() + box.sameFileSum(1) + box.promotedSum(4));
     print("{} {} {}\n", first(..b), b[0], b);
-    k := box.make_coll();
+    k := box.makeColl();
     print("{}\n", k.m(3));
     return 0;
 }

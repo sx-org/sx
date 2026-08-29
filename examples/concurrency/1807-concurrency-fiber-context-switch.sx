@@ -37,8 +37,8 @@ Fiber :: struct {
     rounds: i64;
     id: i64;
     mode: i64;            // 0 = ping-pong, 1 = deep recursion
-    canary_fail: i64;
-    depth_fail: i64;
+    canaryFail: i64;
+    depthFail: i64;
 }
 
 // The switch: x0 = from, x1 = to (read straight from the ABI registers — a
@@ -94,9 +94,9 @@ descend :: (self: *Fiber, depth: i64) -> i64 {
     return bad;
 }
 
-fib_body :: (self: *Fiber) export "fib_body" {
+fibBody :: (self: *Fiber) export "fib_body" {
     if self.mode == 1 {
-        self.depth_fail = descend(self, 64);
+        self.depthFail = descend(self, 64);
         swapContext(*self.ctx, self.finish);
         return;
     }
@@ -105,7 +105,7 @@ fib_body :: (self: *Fiber) export "fib_body" {
     while i < self.rounds {
         self.count.* = self.count.* + 1;
         swapContext(*self.ctx, self.peer);
-        if canary != (0xCA11AB1E0000 + (xx self.id)).(u64) { self.canary_fail = self.canary_fail + 1; }
+        if canary != (0xCA11AB1E0000 + (xx self.id)).(u64) { self.canaryFail = self.canaryFail + 1; }
         i = i + 1;
     }
     swapContext(*self.ctx, self.finish);
@@ -121,30 +121,30 @@ boot :: (f: *Fiber) {
     f.ctx.regs[10] = 0;              // fp
     f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
-    f.canary_fail = 0;
-    f.depth_fail = 0;
+    f.canaryFail = 0;
+    f.depthFail = 0;
 }
 
 main :: () -> i64 {
-    main_ctx : FiberCtx = ---;
+    mainCtx : FiberCtx = ---;
     count : i64 = 0;
     verified : i64 = 0;
 
     // Scenario 1: 2-fiber ping-pong with a per-fiber stack canary.
-    a : Fiber = ---;  a.id = 1; a.mode = 0; a.rounds = 3; a.count = *count; a.verified = *verified; a.finish = *main_ctx;
-    b : Fiber = ---;  b.id = 2; b.mode = 0; b.rounds = 3; b.count = *count; b.verified = *verified; b.finish = *main_ctx;
+    a : Fiber = ---;  a.id = 1; a.mode = 0; a.rounds = 3; a.count = *count; a.verified = *verified; a.finish = *mainCtx;
+    b : Fiber = ---;  b.id = 2; b.mode = 0; b.rounds = 3; b.count = *count; b.verified = *verified; b.finish = *mainCtx;
     a.peer = *b.ctx;  b.peer = *a.ctx;
     boot(*a);  boot(*b);
-    swapContext(*main_ctx, *a.ctx);
+    swapContext(*mainCtx, *a.ctx);
     print("rounds: {}\n", count);
-    print("canary fails: {}\n", a.canary_fail + b.canary_fail);
+    print("canary fails: {}\n", a.canaryFail + b.canaryFail);
 
     // Scenario 2: a deep recursive chain suspended at the bottom, then resumed.
-    c : Fiber = ---;  c.id = 3; c.mode = 1; c.count = *count; c.verified = *verified; c.peer = *main_ctx; c.finish = *main_ctx;
+    c : Fiber = ---;  c.id = 3; c.mode = 1; c.count = *count; c.verified = *verified; c.peer = *mainCtx; c.finish = *mainCtx;
     boot(*c);
-    swapContext(*main_ctx, *c.ctx);   // descend to the bottom, yields back
-    swapContext(*main_ctx, *c.ctx);   // resume → unwind + verify, then finish
+    swapContext(*mainCtx, *c.ctx);   // descend to the bottom, yields back
+    swapContext(*mainCtx, *c.ctx);   // resume → unwind + verify, then finish
     print("frames verified: {}\n", verified);
-    print("depth fails: {}\n", c.depth_fail);
+    print("depth fails: {}\n", c.depthFail);
     return 0;
 }

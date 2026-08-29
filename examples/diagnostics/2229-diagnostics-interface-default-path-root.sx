@@ -9,11 +9,11 @@ W :: struct { v: i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 
 Box :: struct { w: W; }
-the_box : Box = .{ w = .{ v = 9 } };
+theBox : Box = .{ w = .{ v = 9 } };
 
 S :: struct { inner: P; }
-holder : S = .{ inner = the_box.w };
+holder : S = .{ inner = theBox.w };
 
-@context.extend probe: P = the_box.w;
+@context.extend probe: P = theBox.w;
 
 main :: () { print("{}\n", holder.inner.a()); }

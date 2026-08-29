@@ -12,10 +12,10 @@ Sink :: struct ($T: Type) {
     emit :: (self: *Sink(T), v: T) { self.items.append(v); }
 }
 
-@context.extend ui_sink: *Sink(View) = null;
+@context.extend uiSink: *Sink(View) = null;
 
 place :: (v: View) -> View {
-    if context.ui_sink != null { context.ui_sink.emit(v); }
+    if context.uiSink != null { context.uiSink.emit(v); }
     v
 }
 
@@ -24,23 +24,23 @@ spacer :: () -> View { place(View{ tag = "spacer" }) }
 
 vstack :: (spacing: f32, content: $F/() -> void) -> View {
     s := Sink(View){};
-    push .{ ui_sink = *s } { content(); }
+    push .{ uiSink = *s } { content(); }
     place(View{ tag = "vstack" })
 }
 
 hstack :: (spacing: f32, content: $F/() -> void) -> View {
     s := Sink(View){};
-    push .{ ui_sink = *s } { content(); }
+    push .{ uiSink = *s } { content(); }
     place(View{ tag = "hstack" })
 }
 
-button :: (label: string, on_tap: $F/() -> void) -> View {
+button :: (label: string, onTap: $F/() -> void) -> View {
     place(View{ tag = label })
 }
 
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) -> View {
-    vstack(0.0) { ||_{ top_bar = top_bar, fab = fab, content = content }
-        if tb := top_bar { tb(); }
+scaffold :: (topBar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) -> View {
+    vstack(0.0) { ||_{ topBar = topBar, fab = fab, content = content }
+        if tb := topBar { tb(); }
         content();
         if fb := fab { fb(); }
     }
@@ -48,7 +48,7 @@ scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() 
 
 toolbar :: () { text("toolbar"); }
 
-home_screen :: () -> View {
+homeScreen :: () -> View {
     vstack(0.0) {
         hstack(8.0) { text("Chats"); spacer(); };
         button("New chat") { print("tapped\n"); };
@@ -57,9 +57,9 @@ home_screen :: () -> View {
 
 main :: () {
     root := Sink(View){};
-    push .{ ui_sink = *root } {
-        home_screen();
-        scaffold(top_bar = toolbar) { text("content"); }
+    push .{ uiSink = *root } {
+        homeScreen();
+        scaffold(topBar = toolbar) { text("content"); }
     }
     print("emitted {}\n", root.items.len);
     print("{} {}\n", root.items.items[0].tag, root.items.items[1].tag);

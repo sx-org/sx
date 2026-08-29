@@ -8,5 +8,5 @@ combine :: (..xs: []i64) -> i64 {
     result
 }
 pick :: (a: i64, b: i64) -> i64 { return b - a; }
-from_b_combine :: () -> i64 { return combine(1, 2, 3, 4); }
-from_b_pick :: () -> i64 { return pick(2, 7); }
+fromBCombine :: () -> i64 { return combine(1, 2, 3, 4); }
+fromBPick :: () -> i64 { return pick(2, 7); }

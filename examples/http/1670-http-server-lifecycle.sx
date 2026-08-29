@@ -37,12 +37,12 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 
 // Slow handler for the in-flight-close scenario: sleeps so the request
 // lingers in CONN_HANDLING on a worker thread while the loop ticks.
-slow_handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+slowHandler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     usleep(80000);   // 80 ms
     resp.body = "ok";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -51,7 +51,7 @@ dial_port :: (port: i64) -> i32 {
     return fd;
 }
 
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -103,7 +103,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
         n, re := socket.readNb(fd, *scratch[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return string{ ptr = scratch, len = total }; }
-        if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
+        if respComplete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }
     return "";
@@ -112,41 +112,41 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
 // One server lifetime: init, serve a small GET and a large POST (the
 // big body forces a read-buffer grow), then close. `port` is bumped per
 // round so a lingering TIME_WAIT socket never collides.
-serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
+serveOnce :: (port: i64, poolCount: i64, scratch: [*]u8, cap: i64) -> bool {
     cfg : http.Config = .{
         port = port,
         timeoutRequestMs = 1000,
         timeoutKeepaliveMs = 1000,
         requestCount = 50,
         maxConn = 8,
-        threadPoolCount = pool_count,
+        threadPoolCount = poolCount,
         threadPoolBacklog = 16,
     };
     srv, se := http.Server.init(cfg, handler, 0);
-    if se { print("init failed (pool={})\n", pool_count); return false; }
+    if se { print("init failed (pool={})\n", poolCount); return false; }
 
-    c := dial_port(port);
-    if c < 0 { print("dial failed (pool={})\n", pool_count); srv.close(); return false; }
+    c := dialPort(port);
+    if c < 0 { print("dial failed (pool={})\n", poolCount); srv.close(); return false; }
 
     // small GET
     r1 := roundtrip(*srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
-    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
+    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", poolCount); socket.close(c); srv.close(); return false; }
 
     // large POST: body past READ_BUF_INITIAL forces growReadBuf on the
     // server side. Build the request into ONE explicit buffer (no concat
     // chain, which would allocate uncounted-then-freed scratch through the
     // GPA and muddy the leak gate); fill the body in place.
-    big_n := 40000;
+    bigN := 40000;
     hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
-    req_len : i64 = hdr.len + big_n;
-    rbuf : [*]u8 = xx context.allocator.allocBytes(req_len);
+    reqLen : i64 = hdr.len + bigN;
+    rbuf : [*]u8 = xx context.allocator.allocBytes(reqLen);
     cstd.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
-    while f < big_n { rbuf[hdr.len + f] = 97 + (f % 26).(u8); f += 1; }
-    r2 := roundtrip(*srv, c, string{ ptr = rbuf, len = req_len }, scratch, cap);
+    while f < bigN { rbuf[hdr.len + f] = 97 + (f % 26).(u8); f += 1; }
+    r2 := roundtrip(*srv, c, string{ ptr = rbuf, len = reqLen }, scratch, cap);
     ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
     context.allocator.deallocBytes(rbuf);
-    if !ok { print("large POST bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
+    if !ok { print("large POST bad (pool={})\n", poolCount); socket.close(c); srv.close(); return false; }
 
     socket.close(c);
     srv.close();
@@ -159,7 +159,7 @@ serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
 // CONN_HANDLING but no completion has drained, then close. close joins
 // the workers (they finish + queue completions) and must free every
 // in-flight completion's response bytes. Returns true on success.
-serve_inflight_close :: (port: i64, n: i64) -> bool {
+serveInflightClose :: (port: i64, n: i64) -> bool {
     cfg : http.Config = .{
         port = port,
         timeoutRequestMs = 5000,
@@ -169,13 +169,13 @@ serve_inflight_close :: (port: i64, n: i64) -> bool {
         threadPoolCount = 4,
         threadPoolBacklog = 32,
     };
-    srv, se := http.Server.init(cfg, slow_handler, 0);
+    srv, se := http.Server.init(cfg, slowHandler, 0);
     if se { print("inflight init failed\n"); return false; }
 
     fds : [16]i32 = ---;
     i : i64 = 0;
     while i < n {
-        fds[i] = dial_port(port);
+        fds[i] = dialPort(port);
         if fds[i] < 0 { print("inflight dial {} failed\n", i); srv.close(); return false; }
         i += 1;
     }
@@ -218,11 +218,11 @@ main :: () -> i32 {
         r := 0;
         while r < rounds {
             // inline server
-            if !serve_once(PORT + r * 8, 0, scratch, cap) { return 1; }
+            if !serveOnce(PORT + r * 8, 0, scratch, cap) { return 1; }
             // pooled server
-            if !serve_once(PORT + r * 8 + 2, 2, scratch, cap) { return 1; }
+            if !serveOnce(PORT + r * 8 + 2, 2, scratch, cap) { return 1; }
             // pooled server closed with requests still in-flight
-            if !serve_inflight_close(PORT + r * 8 + 4, 12) { return 1; }
+            if !serveInflightClose(PORT + r * 8 + 4, 12) { return 1; }
             r += 1;
         }
 

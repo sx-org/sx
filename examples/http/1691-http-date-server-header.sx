@@ -46,7 +46,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -69,7 +69,7 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(port);
+    fd := dialPort(port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -103,7 +103,7 @@ WDAYS :: "SunMonTueWedThuFriSat";
 MONTHS :: "JanFebMarAprMayJunJulAugSepOctNovDec";
 
 // Index of a 3-char name inside a packed table; -1 when absent.
-name_index :: (table: string, s: string, off: i64) -> i64 {
+nameIndex :: (table: string, s: string, off: i64) -> i64 {
     k : i64 = 0;
     while k * 3 < table.len {
         if table[k*3] == s[off] and table[k*3+1] == s[off+1] and table[k*3+2] == s[off+2] { return k; }
@@ -112,14 +112,14 @@ name_index :: (table: string, s: string, off: i64) -> i64 {
     return -1;
 }
 
-two_digits :: (s: string, off: i64) -> i64 {
+twoDigits :: (s: string, off: i64) -> i64 {
     a := s[off]; b := s[off + 1];
     if a < 48 or a > 57 or b < 48 or b > 57 { return -1; }
     return ((a - 48) * 10 + (b - 48));
 }
 
 // days-from-civil (the INVERSE of the server's civil-from-days).
-days_from_civil :: (y: i64, m: i64, d: i64) -> i64 {
+daysFromCivil :: (y: i64, m: i64, d: i64) -> i64 {
     yy := y;
     if m <= 2 { yy -= 1; }
     era := (if yy >= 0 then yy else yy - 399) / 400;
@@ -132,7 +132,7 @@ days_from_civil :: (y: i64, m: i64, d: i64) -> i64 {
 
 // Find "\r\nDate: <IMF-fixdate>\r\n" in the response; validate the shape
 // and return the re-derived unix epoch (-1 = malformed/absent).
-date_epoch_of :: (r: string) -> i64 {
+dateEpochOf :: (r: string) -> i64 {
     // locate "\r\nDate: "
     ds := -1;
     i := 0;
@@ -147,36 +147,36 @@ date_epoch_of :: (r: string) -> i64 {
     if ds < 0 { return -1; }
     v := string{ ptr = *r[ds], len = 29 };
     // "Www, DD Mmm YYYY HH:MM:SS GMT"
-    wd := name_index(WDAYS, v, 0);
+    wd := nameIndex(WDAYS, v, 0);
     if wd < 0 { return -1; }
     if v[3] != 44 or v[4] != 32 { return -1; }        // ", "
-    day := two_digits(v, 5);
+    day := twoDigits(v, 5);
     if day < 1 or day > 31 { return -1; }
     if v[7] != 32 { return -1; }
-    mon := name_index(MONTHS, v, 8);
+    mon := nameIndex(MONTHS, v, 8);
     if mon < 0 { return -1; }
     if v[11] != 32 { return -1; }
-    y1 := two_digits(v, 12);
-    y2 := two_digits(v, 14);
+    y1 := twoDigits(v, 12);
+    y2 := twoDigits(v, 14);
     if y1 < 0 or y2 < 0 { return -1; }
     year := y1 * 100 + y2;
     if v[16] != 32 { return -1; }
-    hh := two_digits(v, 17);
-    mm := two_digits(v, 20);
-    ss := two_digits(v, 23);
+    hh := twoDigits(v, 17);
+    mm := twoDigits(v, 20);
+    ss := twoDigits(v, 23);
     if hh < 0 or hh > 23 or mm < 0 or mm > 59 or ss < 0 or ss > 60 { return -1; }
     if v[19] != 58 or v[22] != 58 { return -1; }      // ':'
     if v[25] != 32 or v[26] != 71 or v[27] != 77 or v[28] != 84 { return -1; }   // " GMT"
-    days := days_from_civil(year, mon + 1, day);
+    days := daysFromCivil(year, mon + 1, day);
     // the weekday must agree with the date (1970-01-01 = Thursday)
-    wd_expect := (days + 4) % 7;
-    if wd_expect < 0 { wd_expect += 7; }
-    if wd != wd_expect { return -1; }
+    wdExpect := (days + 4) % 7;
+    if wdExpect < 0 { wdExpect += 7; }
+    if wd != wdExpect { return -1; }
     return days * 86400 + hh * 3600 + mm * 60 + ss;
 }
 
-check_date :: (r: string, before: i64, after: i64, label: string, failed: *i64) {
-    ep := date_epoch_of(r);
+checkDate :: (r: string, before: i64, after: i64, label: string, failed: *i64) {
+    ep := dateEpochOf(r);
     if ep < 0 {
         print("{}: Date header absent or malformed\n", label);
         failed.* = 1;
@@ -206,14 +206,14 @@ main :: () -> i32 {
         r := roundtrip(*srv, PORT_A, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after := time.nowSecs();
         check(r, "HTTP/1.1 200 OK", "basic status", *failed);
-        check_date(r, before, after, "basic Date", *failed);
+        checkDate(r, before, after, "basic Date", *failed);
 
         // (a2) a streamed (chunked) response carries Date too
         before = time.nowSecs();
         r2 := roundtrip(*srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after = time.nowSecs();
         check(r2, "Transfer-Encoding: chunked", "stream TE", *failed);
-        check_date(r2, before, after, "stream Date", *failed);
+        checkDate(r2, before, after, "stream Date", *failed);
 
         // (b) no Server: header unless configured
         if contains(r, "\r\nServer:") {
@@ -226,7 +226,7 @@ main :: () -> i32 {
         r = roundtrip(*srv, PORT_A, "BAD\r\n\r\n", rbuf, cap);
         after = time.nowSecs();
         check(r, "HTTP/1.1 400", "error status", *failed);
-        check_date(r, before, after, "error Date", *failed);
+        checkDate(r, before, after, "error Date", *failed);
 
         srv.close();
 
@@ -241,7 +241,7 @@ main :: () -> i32 {
         after = time.nowSecs();
         check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
         check(r, "\r\nServer: sx-test/1\r\n", "pooled Server header", *failed);
-        check_date(r, before, after, "pooled Date", *failed);
+        checkDate(r, before, after, "pooled Date", *failed);
         srvp.close();
 
         context.allocator.deallocBytes(rbuf);

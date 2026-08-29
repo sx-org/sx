@@ -41,7 +41,7 @@ plain :: () -> i64 abi(.c) {
     return 11;
 }
 
-fixed_one :: (n: i32) -> i64 abi(.c) {
+fixedOne :: (n: i32) -> i64 abi(.c) {
     return n;
 }
 
@@ -67,23 +67,23 @@ main :: () -> i32 {
     // The narrow widths the caller promotes are read at the width C promoted
     // them to, through the pointer exactly as through the name.
     narrow: u8 = 7;
-    signed_narrow: i16 = -3;
-    print("promoted sx={} c={}\n", sx(2, narrow, signed_narrow), ct(2, narrow, signed_narrow));
+    signedNarrow: i16 = -3;
+    print("promoted sx={} c={}\n", sx(2, narrow, signedNarrow), ct(2, narrow, signedNarrow));
 
     // Zero fixed parameters: a call with no argument at all passes an empty
     // tail, and a call with arguments passes them all through it.
     z: Zero = constant;
-    print("zero_empty={} zero_tail={}\n", z(), z(1, 2));
+    print("zeroEmpty={} zeroTail={}\n", z(), z(1, 2));
 
-    fx: Fixed = fixed_one;
-    print("fixed_one={}\n", fx(9));
+    fx: Fixed = fixedOne;
+    print("fixedOne={}\n", fx(9));
 
     t := Table{ open = constant, shut = plain };
-    print("field_open={} field_shut={}\n", t.open(1, 2), t.shut());
+    print("fieldOpen={} fieldShut={}\n", t.open(1, 2), t.shut());
 
     print("summer={}\n", @typeName(Summer));
     print("zero={}\n", @typeName(Zero));
     print("empty={}\n", @typeName(Empty));
-    print("summer_is_fixed={} zero_is_empty={}\n", Summer == Fixed, Zero == Empty);
+    print("summerIsFixed={} zeroIsEmpty={}\n", Summer == Fixed, Zero == Empty);
     return 0;
 }

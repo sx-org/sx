@@ -11,7 +11,7 @@
 
 @import "modules/std.sx";
 
-ct_probe :: () {
+ctProbe :: () {
     print("before\n");
     x : u64 = 1;
     t : Type = @typeOf(x);
@@ -22,6 +22,6 @@ ct_probe :: () {
     print("after\n");
 }
 
-@run ct_probe();
+@run ctProbe();
 
 main :: () {}

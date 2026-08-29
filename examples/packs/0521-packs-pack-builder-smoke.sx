@@ -27,12 +27,12 @@ describe :: (..$args) -> string {
     return s;
 }
 
-run_all :: () {
+runAll :: () {
     print("{}\n", describe());                        // []
     print("{}\n", describe(42));                       // [i64]
     print("{}\n", describe(42, "hi"));                 // [i64, string]
     print("{}\n", describe(true, 3.14, "x", 99));       // [bool, f64, string, i64]
 }
-@run run_all();
+@run runAll();
 
 main :: () { print("rt\n"); }

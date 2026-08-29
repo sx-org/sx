@@ -1,9 +1,9 @@
 // `@context.extend` end-to-end (design/context-extension.md):
 // - a module declares a field; the compiler assembles the program's
 //   Context from every declaration in the compilation.
-// - the default is visible before any push (`trace_depth` reads 3,
+// - the default is visible before any push (`traceDepth` reads 3,
 //   `marker` reads null — both straight from `__sx_default_context`).
-// - reader_mod reads the field WITHOUT importing its declaring module.
+// - readerMod reads the field WITHOUT importing its declaring module.
 // - `push .{ field = v }` spread+patches added fields exactly like
 //   builtin ones — unnamed fields inherit, the scope restores on exit.
 @import "modules/std.sx";
@@ -13,20 +13,20 @@
 @context.extend marker: ?*i64 = null;
 
 main :: () {
-    print("default trace_depth = {}\n", context.trace_depth);
+    print("default traceDepth = {}\n", context.traceDepth);
     print("default marker is null = {}\n", context.marker == null);
-    print("reader (no import of decl_mod) sees {}\n", read_depth());
+    print("reader (no import of declMod) sees {}\n", readDepth());
 
     m : i64 = 5;
-    push .{ trace_depth = 7, marker = *m } {
-        print("pushed trace_depth = {}\n", context.trace_depth);
+    push .{ traceDepth = 7, marker = *m } {
+        print("pushed traceDepth = {}\n", context.traceDepth);
         print("pushed marker = {}\n", context.marker?!.*);
-        print("reader inside push sees {}\n", read_depth());
+        print("reader inside push sees {}\n", readDepth());
         push .{ marker = null } {
-            // Only marker is overwritten; trace_depth inherits from the
+            // Only marker is overwritten; traceDepth inherits from the
             // enclosing push, not the default.
-            print("inner trace_depth = {}, marker null = {}\n", context.trace_depth, context.marker == null);
+            print("inner traceDepth = {}, marker null = {}\n", context.traceDepth, context.marker == null);
         }
     }
-    print("restored trace_depth = {}\n", context.trace_depth);
+    print("restored traceDepth = {}\n", context.traceDepth);
 }

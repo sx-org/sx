@@ -15,9 +15,9 @@ Out :: struct {
     read: i64;
     wrote: i64;
     outer: i64;
-    ctx_held: i64;
+    ctxHeld: i64;
     level: bool;
-    arena_read: i64;
+    arenaRead: i64;
     growth: i64;
 }
 
@@ -31,34 +31,34 @@ main :: () -> i64 {
     a := TrackingAllocator.init(base);
     arena := Arena.init(base, 4096);
     pgpa := *gpa; pctx := *ctx; pa := *a;
-    ctx_h : Allocator = ctx;
-    a_h : Allocator = a;
-    arena_h : Allocator = arena;
+    ctxH : Allocator = ctx;
+    aH : Allocator = a;
+    arenaH : Allocator = arena;
 
     s := sched.Scheduler.init();
     ps := *s;
-    push .{ io = s, allocator = ctx_h } {
-        ps.spawn(||_{ po, pgpa, pctx, pa, a_h, arena_h } {
+    push .{ io = s, allocator = ctxH } {
+        ps.spawn(||_{ po, pgpa, pctx, pa, aH, arenaH } {
             held := pctx.leakCount();
 
             n := 41;
-            f := context.io.async(||_{ n } -> (i64, !IoErr) n, a_h);
+            f := context.io.async(||_{ n } -> (i64, !IoErr) n, aH);
             po.read = f.await() ?? 0;
 
             // A worker that WRITES its env writes the persisted copy — the
             // binding the literal read keeps the value it had.
             hits := 0;
-            g := context.io.async(||_{ hits } -> (i64, !IoErr) { hits = hits + 1; hits }, a_h);
+            g := context.io.async(||_{ hits } -> (i64, !IoErr) { hits = hits + 1; hits }, aH);
             po.wrote = g.await() ?? 0;
             po.outer = hits;
 
-            po.ctx_held = pctx.leakCount() - held;
+            po.ctxHeld = pctx.leakCount() - held;
             po.level = pa.allocCount == pa.deallocCount;
 
             before := pgpa.allocCount;
             k := 6;
-            h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena_h);
-            po.arena_read = h.await() ?? 0;
+            h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arenaH);
+            po.arenaRead = h.await() ?? 0;
             po.growth = pgpa.allocCount - before;
         });
         ps.run();
@@ -66,9 +66,9 @@ main :: () -> i64 {
     s.deinit();
     arena.deinit();
 
-    print("read {} level {} ctx holds {}\n", out.read, out.level, out.ctx_held);
+    print("read {} level {} ctx holds {}\n", out.read, out.level, out.ctxHeld);
     print("wrote {} outer {}\n", out.wrote, out.outer);
-    print("arena {} gpa growth {}\n", out.arena_read, out.growth);
+    print("arena {} gpa growth {}\n", out.arenaRead, out.growth);
     print("task level {} gpa outstanding {}\n", a.allocCount == a.deallocCount, gpa.allocCount);
     return 0;
 }

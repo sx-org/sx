@@ -14,7 +14,7 @@ monoNs :: () -> i64 {
     ts.sec * 1000000000 + ts.nsec
 }
 
-artifact_path :: (label: string, level: i64) -> [:0]u8 {
+artifactPath :: (label: string, level: i64) -> [:0]u8 {
     if label[0] == 'r' {
         if level == 1 { return ".sx-tmp/bench-compress/sx-repeat-1.zlib"; }
         if level == 6 { return ".sx-tmp/bench-compress/sx-repeat-6.zlib"; }
@@ -35,7 +35,7 @@ same :: (left: string, right: string) -> bool {
     true
 }
 
-median_sample :: (samples: *[15]i64) -> i64 {
+medianSample :: (samples: *[15]i64) -> i64 {
     i := 1;
     while i < BENCH_SAMPLES {
         value := samples[i];
@@ -50,10 +50,10 @@ median_sample :: (samples: *[15]i64) -> i64 {
     samples[BENCH_SAMPLES / 2]
 }
 
-run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
-    maybe_packed := fs.readFile(artifact_path(label, level));
-    if maybe_packed == null { return false; }
-    packed := maybe_packed?!;
+runCase :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
+    maybePacked := fs.readFile(artifactPath(label, level));
+    if maybePacked == null { return false; }
+    packed := maybePacked?!;
 
     warmup := 0;
     while warmup < BENCH_WARMUPS {
@@ -97,29 +97,29 @@ run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool 
         }
         run += 1;
     }
-    decode_ns := median_sample(@samples);
-    if decode_ns <= 0 {
+    decodeNs := medianSample(@samples);
+    if decodeNs <= 0 {
         context.allocator.deallocBytes(packed.ptr);
         return false;
     }
-    safe_ns := if decode_ns > 0 then decode_ns else 1;
-    ratio_permille := if data.len > 0 then packed.len * 1000 / data.len else 0;
-    throughput := data.len * 1000000000 / 1024 / safe_ns;
+    safeNs := if decodeNs > 0 then decodeNs else 1;
+    ratioPermille := if data.len > 0 then packed.len * 1000 / data.len else 0;
+    throughput := data.len * 1000000000 / 1024 / safeNs;
     print("{} level={} input={} packed={} ratio_permille={} decode_ns={} decode_KiB_s={}\n",
-        label, level, data.len, packed.len, ratio_permille, decode_ns, throughput);
+        label, level, data.len, packed.len, ratioPermille, decodeNs, throughput);
     context.allocator.deallocBytes(packed.ptr);
     true
 }
 
-run_corpora :: (data: string, alloc: Allocator) -> bool {
+runCorpora :: (data: string, alloc: Allocator) -> bool {
     i := 0;
     while i < data.len {
         data.ptr[i] = ('a' + ((i / 97 + i) % 11)).(u8);
         i += 1;
     }
-    if !run_case("repetitive", data, 1, alloc) or
-       !run_case("repetitive", data, 6, alloc) or
-       !run_case("repetitive", data, 9, alloc) { return false; }
+    if !runCase("repetitive", data, 1, alloc) or
+       !runCase("repetitive", data, 6, alloc) or
+       !runCase("repetitive", data, 9, alloc) { return false; }
 
     state := 0x12345678;
     i = 0;
@@ -130,9 +130,9 @@ run_corpora :: (data: string, alloc: Allocator) -> bool {
         data.ptr[i] = (state & 0xff).(u8);
         i += 1;
     }
-    run_case("incompressible", data, 1, alloc) and
-    run_case("incompressible", data, 6, alloc) and
-    run_case("incompressible", data, 9, alloc)
+    runCase("incompressible", data, 1, alloc) and
+    runCase("incompressible", data, 6, alloc) and
+    runCase("incompressible", data, 9, alloc)
 }
 
 main :: () -> i32 {
@@ -140,7 +140,7 @@ main :: () -> i32 {
     raw := gpa.allocBytes(1048576);
     if raw == null { return 1; }
     data := string{ ptr = xx raw, len = 1048576 };
-    ok := run_corpora(data, gpa);
+    ok := runCorpora(data, gpa);
     gpa.deallocBytes(raw);
     if !ok or gpa.allocCount != 0 { return 1; }
     0

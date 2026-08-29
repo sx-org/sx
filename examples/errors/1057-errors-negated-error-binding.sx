@@ -13,10 +13,10 @@ f :: (fail: bool) -> (i64, !E) {
 main :: () -> i32 {
     // set error: `if e` holds, `if !e` must NOT
     v, e := f(true);
-    took_e := false;
-    if e { took_e = true; }
+    tookE := false;
+    if e { tookE = true; }
     if !e { print("BUG: !e held on a set error (v={})\n", v); return 1; }
-    if !took_e { print("BUG: if e did not hold on a set error\n"); return 2; }
+    if !tookE { print("BUG: if e did not hold on a set error\n"); return 2; }
 
     // success: `if !e` holds and the value is real
     v2, e2 := f(false);

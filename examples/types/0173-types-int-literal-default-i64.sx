@@ -18,13 +18,13 @@ g :: () -> i8 {
     0
 }
 
-big_host :: () -> i32 {
+bigHost :: () -> i32 {
     big := 3000000000;
     print("big: {} = {}\n", @typeName(@typeOf(big)), big);
     0
 }
 
-d_host :: () -> i32 {
+dHost :: () -> i32 {
     a, b := .{1, 2};
     print("a: {} b: {}\n", @typeName(@typeOf(a)), @typeName(@typeOf(b)));
     0
@@ -33,8 +33,8 @@ d_host :: () -> i32 {
 main :: () {
     f();
     g();
-    big_host();
-    d_host();
+    bigHost();
+    dHost();
     x := 0;
     print("main.x: {}\n", @typeName(@typeOf(x)));
 }

@@ -1,11 +1,11 @@
 error: cannot coerce a value of type '()' to 'string': no implicit conversion applies
   --> examples/diagnostics/1271-diagnostics-fn-value-type-name.sx:14:5
    |
-14 |     takes_s(toolbar);
-   |     ^^^^^^^^^^^^^^^^
+14 |     takesS(toolbar);
+   |     ^^^^^^^^^^^^^^^
 
 error: cannot return a value of type '(i64) -> i64' where 'string' is expected
-  --> examples/diagnostics/1271-diagnostics-fn-value-type-name.sx:11:33
+  --> examples/diagnostics/1271-diagnostics-fn-value-type-name.sx:11:32
    |
-11 | give_s :: () -> string { return add1; }
-   |                                 ^^^^
+11 | giveS :: () -> string { return add1; }
+   |                                ^^^^

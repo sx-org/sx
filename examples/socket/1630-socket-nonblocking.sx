@@ -17,7 +17,7 @@ main :: () -> i32 {
     a := pair[0];
     b := pair[1];
     if !socket.setNonblocking(a) or !socket.setNonblocking(b) {
-        print("set_nonblocking failed\n");
+        print("setNonblocking failed\n");
         return 1;
     }
 
@@ -31,10 +31,10 @@ main :: () -> i32 {
 
     msg := "ping";
     wn, we := socket.writeNb(b, msg.ptr, 4);
-    if we { print("write_nb failed\n"); return 1; }
+    if we { print("writeNb failed\n"); return 1; }
     if wn != 4 { print("short write: {}\n", wn); return 1; }
     rn, re := socket.readNb(a, *buf[0], 16);
-    if re { print("read_nb after write failed\n"); return 1; }
+    if re { print("readNb after write failed\n"); return 1; }
     if rn != 4 { print("short read: {}\n", rn); return 1; }
     print("pair round trip: {} bytes\n", rn);
 
@@ -57,7 +57,7 @@ main :: () -> i32 {
     addr := socket.sockaddrIn(PORT, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
-    if !socket.setNonblocking(lfd) { print("listener set_nonblocking failed\n"); return 1; }
+    if !socket.setNonblocking(lfd) { print("listener setNonblocking failed\n"); return 1; }
 
     afd, ae := socket.acceptNb(lfd);
     if ae != .WouldBlock {
@@ -79,7 +79,7 @@ main :: () -> i32 {
     while got < 0 and tries < 1000 {
         c2, ae2 := socket.acceptNb(lfd);
         if !ae2 { got = c2; }
-        else if ae2 != .WouldBlock { print("accept_nb fault\n"); return 1; }
+        else if ae2 != .WouldBlock { print("acceptNb fault\n"); return 1; }
         tries += 1;
     }
     if got < 0 { print("accept never produced the connection\n"); return 1; }

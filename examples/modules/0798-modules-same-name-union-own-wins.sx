@@ -2,7 +2,7 @@
 // `dep.sx` (which authors `Pair { a }`) AND authors its OWN `Pair { m }`. A bare
 // `Pair` reference in `main` resolves to `main`'s OWN author, not the flat-imported
 // one (the querying source's author wins outright — no ambiguity), so `p : Pair`
-// here binds `main`'s union (whose `m` field dep's `Pair` lacks) while `dep_pair()`
+// here binds `main`'s union (whose `m` field dep's `Pair` lacks) while `depPair()`
 // uses dep's DISTINCT `Pair`.
 //
 // A stateless `type_bridge.resolveInlineUnion` `findByName`
@@ -18,6 +18,6 @@ Pair :: union { m: i32; }
 main :: () -> i32 {
     p : Pair = ---;
     p.m = 5;
-    print("own={} dep={}\n", p.m, dep_pair());
+    print("own={} dep={}\n", p.m, depPair());
     0
 }

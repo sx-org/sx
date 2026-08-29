@@ -24,16 +24,16 @@ respread :: (..xs: any) -> i64 {
 }
 
 // pack captured into a closure that OUTLIVES the spawner's frame
-make_thunk :: (..args: any) -> Closure() -> i64 {
+makeThunk :: (..args: any) -> Closure() -> i64 {
     return closure(||_{ args = .{..args} } -> i64 add2(..args));
 }
 
 // pack captured into a closure: spread AND comptime-indexed
-capture_both :: (dst: *string, ..args: any) {
+captureBoth :: (dst: *string, ..args: any) {
     captured := ||_{ dst = dst, args = .{..args} } { dst.* = join(..args); };
     captured();
 }
-capture_index :: (po: *i64, ..args: any) {
+captureIndex :: (po: *i64, ..args: any) {
     captured := ||_{ po = po, args = .{..args} } { po.* = args[0] + args[1]; };
     captured();
 }
@@ -62,17 +62,17 @@ main :: () -> i32 {
     print("resplice: {} {}\n", t2.0, t2.1);          // 1 two
 
     // deferred closure over a captured (materialized) pack
-    thunk := make_thunk(40, 2);
+    thunk := makeThunk(40, 2);
     print("thunk: {}\n", thunk());                   // 42
 
     // heterogeneous pack captured + spread inside the closure
     s := "";
-    capture_both(*s, "id", 7);
+    captureBoth(*s, "id", 7);
     print("captured: {}\n", s);                      // id-7
 
     // pack captured + comptime-indexed inside the closure
     n : i64 = 0;
-    capture_index(*n, 40, 2);
+    captureIndex(*n, 40, 2);
     print("indexed: {}\n", n);                       // 42
 
     0

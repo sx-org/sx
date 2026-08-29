@@ -14,39 +14,39 @@ Mid :: struct { x: i64; y: i32; }
 Big :: struct { x: i64; y: i64; z: i64; }
 Hfa :: struct { x: f32; y: f32; }
 
-add_pt :: (p: Point) -> i32 abi(.c) { return p.x + p.y; }
-add_tiny :: (t: Tiny) -> i32 abi(.c) { return t.a + t.b; }
-add_mid :: (m: Mid) -> i64 abi(.c) { return m.x + m.y; }
-add_big :: (b: Big) -> i64 abi(.c) { return b.x + b.y + b.z; }
-add_hfa :: (h: Hfa) -> f32 abi(.c) { return h.x + h.y; }
-str_len :: (s: string) -> i64 abi(.c) { return s.len; }
-mk_pt :: (x: i32, y: i32) -> Point abi(.c) { return Point{ x = x, y = y }; }
-mk_big :: (x: i64) -> Big abi(.c) { return Big{ x = x, y = x * 2, z = x * 3 }; }
+addPt :: (p: Point) -> i32 abi(.c) { return p.x + p.y; }
+addTiny :: (t: Tiny) -> i32 abi(.c) { return t.a + t.b; }
+addMid :: (m: Mid) -> i64 abi(.c) { return m.x + m.y; }
+addBig :: (b: Big) -> i64 abi(.c) { return b.x + b.y + b.z; }
+addHfa :: (h: Hfa) -> f32 abi(.c) { return h.x + h.y; }
+strLen :: (s: string) -> i64 abi(.c) { return s.len; }
+mkPt :: (x: i32, y: i32) -> Point abi(.c) { return Point{ x = x, y = y }; }
+mkBig :: (x: i64) -> Big abi(.c) { return Big{ x = x, y = x * 2, z = x * 3 }; }
 
 main :: () -> i64 {
     // Param matrix through abi(.c) fn pointers.
-    fp1 : (Point) -> i32 abi(.c) = add_pt;
+    fp1 : (Point) -> i32 abi(.c) = addPt;
     print("pt: {}\n", fp1(Point{ x = 1, y = 2 }));
-    fp2 : (Tiny) -> i32 abi(.c) = add_tiny;
+    fp2 : (Tiny) -> i32 abi(.c) = addTiny;
     print("tiny: {}\n", fp2(Tiny{ a = 5, b = 6 }));
-    fp3 : (Mid) -> i64 abi(.c) = add_mid;
+    fp3 : (Mid) -> i64 abi(.c) = addMid;
     print("mid: {}\n", fp3(Mid{ x = 100, y = 20 }));
-    fp4 : (Big) -> i64 abi(.c) = add_big;
+    fp4 : (Big) -> i64 abi(.c) = addBig;
     print("big: {}\n", fp4(Big{ x = 1, y = 2, z = 3 }));
-    fp5 : (Hfa) -> f32 abi(.c) = add_hfa;
+    fp5 : (Hfa) -> f32 abi(.c) = addHfa;
     print("hfa: {}\n", fp5(Hfa{ x = 1.5, y = 2.5 }));
-    fp6 : (string) -> i64 abi(.c) = str_len;
+    fp6 : (string) -> i64 abi(.c) = strLen;
     print("str: {}\n", fp6("hello"));
 
     // Return matrix: register-coerced small struct + sret big struct,
     // through the fn pointer and direct (the sret body param shift).
-    fp7 : (i32, i32) -> Point abi(.c) = mk_pt;
+    fp7 : (i32, i32) -> Point abi(.c) = mkPt;
     r := fp7(30, 40);
     print("mkpt: {} {}\n", r.x, r.y);
-    fp8 : (i64) -> Big abi(.c) = mk_big;
+    fp8 : (i64) -> Big abi(.c) = mkBig;
     b := fp8(7);
     print("mkbig: {} {} {}\n", b.x, b.y, b.z);
-    d := mk_big(9);
+    d := mkBig(9);
     print("direct: {} {} {}\n", d.x, d.y, d.z);
     return 0;
 }

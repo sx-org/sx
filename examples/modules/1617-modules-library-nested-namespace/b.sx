@@ -2,4 +2,4 @@
 @import "modules/std.sx";
 c :: @import "c.sx";
 
-version_via_b :: () -> string { return c.pcap_version(); }
+versionViaB :: () -> string { return c.pcapVersion(); }

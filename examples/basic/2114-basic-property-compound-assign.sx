@@ -16,7 +16,7 @@ Wide :: struct { a: i64; b: i64; }
 
 cells : [2]Temp = .[ .{}, .{} ];
 visits : i64 = 0;
-next_cell :: () -> *Temp {
+nextCell :: () -> *Temp {
     cur := visits;
     visits += 1;
     return *cells[cur];
@@ -32,7 +32,7 @@ main :: () -> i32 {
     // same cell.
     cells[0].raw = 10;
     cells[1].raw = 20;
-    next_cell().celsius += 5;
+    nextCell().celsius += 5;
     print("once={} {} visits={}\n", cells[0].raw, cells[1].raw, visits);   // 30 20 1
 
     arr : [5]i64 = .[1, 2, 3, 4, 5];

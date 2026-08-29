@@ -59,7 +59,7 @@ contains :: (hay: string, needle: string) -> bool {
 
 // Connect a client socket to `a` (blocking connect, then nonblocking for
 // the tick-driven read). -1 = connect refused/failed.
-dial_addr :: (a: *socket.Addr) -> i32 {
+dialAddr :: (a: *socket.Addr) -> i32 {
     fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     if socket.connectTo(fd, a) != 0 { socket.close(fd); return -1; }
@@ -89,10 +89,10 @@ roundtrip :: (srv: *http.Server, fd: i32) -> bool {
 
 // Serve one client dialed at `a` on a fresh server built from `cfg`;
 // then close the server. 0 ok, else the case-distinct code.
-serve_one :: (cfg: http.Config, a: *socket.Addr, code: i32) -> i32 {
+serveOne :: (cfg: http.Config, a: *socket.Addr, code: i32) -> i32 {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return code; }
-    fd := dial_addr(a);
+    fd := dialAddr(a);
     if fd < 0 { srv.close(); return code + 1; }
     ok := roundtrip(*srv, fd);
     socket.close(fd);
@@ -108,7 +108,7 @@ main :: () -> i32 {
     leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
-    print("bind ok: [::1] v6-only-loopback, 127.0.0.1, dual-stack both families + localhost resolve, ipv6_only refuses v4, unix socket served + unlinked, guards loud; net-zero GPA\n");
+    print("bind ok: [::1] v6-only-loopback, 127.0.0.1, dual-stack both families + localhost resolve, ipv6Only refuses v4, unix socket served + unlinked, guards loud; net-zero GPA\n");
     0
 }
 
@@ -116,79 +116,79 @@ run :: () -> i32 {
     // ── A. [::1]: v6 serves; v4 loopback is refused ──
     a6, ok6 := socket.parseAddr("::1", PORT_A);
     if !ok6 { return 10; }
-    cfg_a : http.Config = .{ port = PORT_A, bindAddr = "::1", timeoutRequestMs = 3000, maxConn = 8 };
-    ra := serve_one_with_v4_refusal(cfg_a, *a6, PORT_A, 11);
+    cfgA : http.Config = .{ port = PORT_A, bindAddr = "::1", timeoutRequestMs = 3000, maxConn = 8 };
+    ra := serveOneWithV4Refusal(cfgA, *a6, PORT_A, 11);
     if ra != 0 { return ra; }
 
     // ── B. 127.0.0.1 ──
     a4, ok4 := socket.parseAddr("127.0.0.1", PORT_B);
     if !ok4 { return 20; }
-    cfg_b : http.Config = .{ port = PORT_B, bindAddr = "127.0.0.1", timeoutRequestMs = 3000, maxConn = 8 };
-    rb := serve_one(cfg_b, *a4, 21);
+    cfgB : http.Config = .{ port = PORT_B, bindAddr = "127.0.0.1", timeoutRequestMs = 3000, maxConn = 8 };
+    rb := serveOne(cfgB, *a4, 21);
     if rb != 0 { return rb; }
 
     // ── C. dual-stack "::": BOTH families + resolve("localhost") ──
-    cfg_c : http.Config = .{ port = PORT_C, bindAddr = "::", timeoutRequestMs = 3000, maxConn = 8 };
-    srv_c, se_c := http.Server.init(cfg_c, handler, 0);
-    if se_c { return 30; }
+    cfgC : http.Config = .{ port = PORT_C, bindAddr = "::", timeoutRequestMs = 3000, maxConn = 8 };
+    srvC, seC := http.Server.init(cfgC, handler, 0);
+    if seC { return 30; }
     c6, cok6 := socket.parseAddr("::1", PORT_C);
-    if !cok6 { srv_c.close(); return 31; }
-    fd6 := dial_addr(*c6);
-    if fd6 < 0 { srv_c.close(); return 32; }
-    if !roundtrip(*srv_c, fd6) { socket.close(fd6); srv_c.close(); return 33; }
+    if !cok6 { srvC.close(); return 31; }
+    fd6 := dialAddr(*c6);
+    if fd6 < 0 { srvC.close(); return 32; }
+    if !roundtrip(*srvC, fd6) { socket.close(fd6); srvC.close(); return 33; }
     socket.close(fd6);
     c4, cok4 := socket.parseAddr("127.0.0.1", PORT_C);
-    if !cok4 { srv_c.close(); return 34; }
-    fd4 := dial_addr(*c4);
-    if fd4 < 0 { srv_c.close(); return 35; }
-    if !roundtrip(*srv_c, fd4) { socket.close(fd4); srv_c.close(); return 36; }
+    if !cok4 { srvC.close(); return 34; }
+    fd4 := dialAddr(*c4);
+    if fd4 < 0 { srvC.close(); return 35; }
+    if !roundtrip(*srvC, fd4) { socket.close(fd4); srvC.close(); return 36; }
     socket.close(fd4);
     // resolve("localhost") → whichever family comes back, the dual-stack
     // listener answers.
     lh, lok := socket.resolve("localhost", PORT_C);
-    if !lok { srv_c.close(); return 37; }
-    fdl := dial_addr(*lh);
-    if fdl < 0 { srv_c.close(); return 38; }
-    if !roundtrip(*srv_c, fdl) { socket.close(fdl); srv_c.close(); return 39; }
+    if !lok { srvC.close(); return 37; }
+    fdl := dialAddr(*lh);
+    if fdl < 0 { srvC.close(); return 38; }
+    if !roundtrip(*srvC, fdl) { socket.close(fdl); srvC.close(); return 39; }
     socket.close(fdl);
-    srv_c.close();
+    srvC.close();
 
     // ── D. "::" with ipv6Only=true: v6 serves, v4 refused ──
     d6, dok6 := socket.parseAddr("::1", PORT_D);
     if !dok6 { return 40; }
-    cfg_d : http.Config = .{ port = PORT_D, bindAddr = "::", ipv6Only = true, timeoutRequestMs = 3000, maxConn = 8 };
-    rd := serve_one_with_v4_refusal(cfg_d, *d6, PORT_D, 41);
+    cfgD : http.Config = .{ port = PORT_D, bindAddr = "::", ipv6Only = true, timeoutRequestMs = 3000, maxConn = 8 };
+    rd := serveOneWithV4Refusal(cfgD, *d6, PORT_D, 41);
     if rd != 0 { return rd; }
 
     // ── E. Unix-domain socket: serve + unlink on close ──
     fs.createDirAll(".sx-tmp");
-    cfg_e : http.Config = .{ unixPath = SOCK_PATH, timeoutRequestMs = 3000, maxConn = 8 };
-    srv_e, se_e := http.Server.init(cfg_e, handler, 0);
-    if se_e { return 50; }
-    if !fs.exists(SOCK_PATH) { srv_e.close(); return 51; }
+    cfgE : http.Config = .{ unixPath = SOCK_PATH, timeoutRequestMs = 3000, maxConn = 8 };
+    srvE, seE := http.Server.init(cfgE, handler, 0);
+    if seE { return 50; }
+    if !fs.exists(SOCK_PATH) { srvE.close(); return 51; }
     ua, uok := socket.addrUnix(SOCK_PATH);
-    if !uok { srv_e.close(); return 52; }
-    fdu := dial_addr(*ua);
-    if fdu < 0 { srv_e.close(); return 53; }
-    if !roundtrip(*srv_e, fdu) { socket.close(fdu); srv_e.close(); return 54; }
+    if !uok { srvE.close(); return 52; }
+    fdu := dialAddr(*ua);
+    if fdu < 0 { srvE.close(); return 53; }
+    if !roundtrip(*srvE, fdu) { socket.close(fdu); srvE.close(); return 54; }
     socket.close(fdu);
-    srv_e.close();
+    srvE.close();
     if fs.exists(SOCK_PATH) { return 55; }   // close() must remove the file
 
     // ── F. loud guards ──
-    cfg_f1 : http.Config = .{ unixPath = SOCK_PATH, reusePort = true };
-    _, ef1 := http.Server.init(cfg_f1, handler, 0);
+    cfgF1 : http.Config = .{ unixPath = SOCK_PATH, reusePort = true };
+    _, ef1 := http.Server.init(cfgF1, handler, 0);
     if ef1 != .Config { return 60; }
-    cfg_f2 : http.Config = .{ unixPath = SOCK_PATH, bindAddr = "127.0.0.1" };
-    _, ef2 := http.Server.init(cfg_f2, handler, 0);
+    cfgF2 : http.Config = .{ unixPath = SOCK_PATH, bindAddr = "127.0.0.1" };
+    _, ef2 := http.Server.init(cfgF2, handler, 0);
     if ef2 != .Config { return 61; }
-    cfg_f3 : http.Config = .{ port = PORT_B, bindAddr = "not-an-ip" };
-    _, ef3 := http.Server.init(cfg_f3, handler, 0);
+    cfgF3 : http.Config = .{ port = PORT_B, bindAddr = "not-an-ip" };
+    _, ef3 := http.Server.init(cfgF3, handler, 0);
     if ef3 != .Bind { return 62; }
     // an out-of-range port must be `HttpErr.Bind` — not a
     // silent htons truncation onto a kernel-chosen ephemeral port.
-    cfg_f4 : http.Config = .{ port = 65536, bindAddr = "127.0.0.1" };
-    _, ef4 := http.Server.init(cfg_f4, handler, 0);
+    cfgF4 : http.Config = .{ port = 65536, bindAddr = "127.0.0.1" };
+    _, ef4 := http.Server.init(cfgF4, handler, 0);
     if ef4 != .Bind { return 63; }
 
     return 0;
@@ -197,10 +197,10 @@ run :: () -> i32 {
 // A server that must SERVE `a` (v6) and REFUSE a plain v4 loopback
 // connect on the same port — proves the bound family. `code` is this
 // case's error base.
-serve_one_with_v4_refusal :: (cfg: http.Config, a: *socket.Addr, port: i64, code: i32) -> i32 {
+serveOneWithV4Refusal :: (cfg: http.Config, a: *socket.Addr, port: i64, code: i32) -> i32 {
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return code; }
-    fd := dial_addr(a);
+    fd := dialAddr(a);
     if fd < 0 { srv.close(); return code + 1; }
     ok := roundtrip(*srv, fd);
     socket.close(fd);

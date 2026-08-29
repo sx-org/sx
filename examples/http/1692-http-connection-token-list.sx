@@ -23,7 +23,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -45,7 +45,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-count_occurrences :: (hay: string, needle: string) -> i64 {
+countOccurrences :: (hay: string, needle: string) -> i64 {
     n : i64 = 0;
     i := 0;
     while i + needle.len <= hay.len {
@@ -60,7 +60,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 // Write the blob, read until EOF or stall. eof reports whether the
 // server closed the connection.
 exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { eof.* = false; return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -90,7 +90,7 @@ check :: (r: string, frag: string, label: string, failed: *i64) {
 }
 
 // A close-list case: one request, server must announce close and FIN.
-expect_close :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+expectClose :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     eof := false;
     r := exchange(srv, req, buf, cap, *eof);
     check(r, "HTTP/1.1 200 OK", label, failed);
@@ -103,10 +103,10 @@ expect_close :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap:
 
 // A keep-list case: the first request must be kept alive — proven by a
 // pipelined close-marked second request answered on the same conn.
-expect_kept :: (srv: *http.Server, two_reqs: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+expectKept :: (srv: *http.Server, twoReqs: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     eof := false;
-    r := exchange(srv, two_reqs, buf, cap, *eof);
-    if count_occurrences(r, "HTTP/1.1 200 OK") != 2 {
+    r := exchange(srv, twoReqs, buf, cap, *eof);
+    if countOccurrences(r, "HTTP/1.1 200 OK") != 2 {
         print("{}: expected two responses on one connection\n", label);
         failed.* = 1;
     }
@@ -127,26 +127,26 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // (a) close first in the list
-        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, TE\r\n\r\n",
+        expectClose(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, TE\r\n\r\n",
             "close-first", rbuf, cap, *failed);
 
         // (b) close not first
-        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: TE, close\r\n\r\n",
+        expectClose(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: TE, close\r\n\r\n",
             "close-last", rbuf, cap, *failed);
 
         // (c) OWS around the token
-        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close , TE\r\n\r\n",
+        expectClose(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close , TE\r\n\r\n",
             "close-ows", rbuf, cap, *failed);
 
         // (d) 1.0 + "Keep-Alive, TE" (case + list) → kept; the pipelined
         // 1.0 follow-up (default close) proves it
-        expect_kept(*srv,
+        expectKept(*srv,
             "GET / HTTP/1.0\r\nConnection: Keep-Alive, TE\r\n\r\nGET / HTTP/1.0\r\n\r\n",
             "1.0 keep-list", rbuf, cap, *failed);
 
         // (e) "closefoo" is NOT the close token — 1.1 default keep-alive
         // must survive; the close-marked follow-up proves liveness
-        expect_kept(*srv,
+        expectKept(*srv,
             "GET / HTTP/1.1\r\nHost: t\r\nConnection: closefoo\r\n\r\nGET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
             "closefoo", rbuf, cap, *failed);
 

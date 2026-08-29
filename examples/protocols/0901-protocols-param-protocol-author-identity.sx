@@ -11,8 +11,8 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("a own dispatch", a.own_tag() == 101);
-    report("b own dispatch", b.own_first() == 7 and b.own_tag() == 201);
+    report("a own dispatch", a.ownTag() == 101);
+    report("b own dispatch", b.ownFirst() == 7 and b.ownTag() == 201);
 
     ca := a.Cell{ v = 2 };
     pa := ca.(a.P(i64));

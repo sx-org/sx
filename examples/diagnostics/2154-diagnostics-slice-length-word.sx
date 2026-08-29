@@ -11,7 +11,7 @@ Nib :: @Slice(u8, @int(4, .unsigned));
 
 take :: (b: Tiny) -> u8 { b.len }
 
-take_nib :: (b: Nib) -> u8 { b.len }
+takeNib :: (b: Nib) -> u8 { b.len }
 
 main :: () -> i32 {
     x : Bad = ---;
@@ -22,7 +22,7 @@ main :: () -> i32 {
     s2 : Tiny = big[0..];
 
     mid : [20]u8 = ---;
-    take_nib(mid);
+    takeNib(mid);
 
     ok : [4]u8 = ---;
     t : Tiny = ok;

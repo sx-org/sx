@@ -5,7 +5,7 @@
 @import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }
-Overlay :: union { as_int: i64; as_bytes: [8]u8; }
+Overlay :: union { asInt: i64; asBytes: [8]u8; }
 WithVec :: struct { v: @Vector(3, f32); }
 
 describe :: ($T: Type) -> string {

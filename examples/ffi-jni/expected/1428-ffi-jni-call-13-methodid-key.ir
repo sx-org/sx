@@ -1,5 +1,5 @@
 
-@g_should_call = internal global i1 false
+@gShouldCall = internal global i1 false
 @__sx_default_context = internal constant { ptr } zeroinitializer
 @str = private unnamed_addr constant [5 x i8] c"getX\00", align 1
 @str.1 = private unnamed_addr constant [4 x i8] c"()I\00", align 1
@@ -35,7 +35,7 @@ entry:
 declare i64 @write(i32, ptr, i64)
 
 ; Function Attrs: nounwind
-define internal void @unused_jni(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) #0 {
+define internal void @unusedJni(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) #0 {
 entry:
   %alloca = alloca ptr, align 8
   %allocaN = alloca i32, align 4
@@ -166,11 +166,11 @@ jni.cont48:                                       ; preds = %jni.miss47, %jni.co
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %gload = load i1, ptr @g_should_call, align 1
+  %gload = load i1, ptr @gShouldCall, align 1
   br i1 %gload, label %if.then.0, label %if.merge.1
 
 if.then.0:                                        ; preds = %entry
-  call void @unused_jni(ptr @__sx_default_context, ptr null, ptr null, ptr null, ptr null, ptr null)
+  call void @unusedJni(ptr @__sx_default_context, ptr null, ptr null, ptr null, ptr null, ptr null)
   br label %if.merge.1
 
 if.merge.1:                                       ; preds = %if.then.0, %entry

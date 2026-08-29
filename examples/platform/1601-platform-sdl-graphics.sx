@@ -18,7 +18,7 @@ Matrix44 :: union {
     struct { c0, c1, c2, c3: @Vector(4, f32); };
 }
 
-mat4_multiply :: (a: *Matrix44, b: *Matrix44) -> Matrix44 {
+mat4Multiply :: (a: *Matrix44, b: *Matrix44) -> Matrix44 {
     out : Matrix44 = ---;
     out.c0 = a.c0 * b.c0.x + a.c1 * b.c0.y + a.c2 * b.c0.z + a.c3 * b.c0.w;
     out.c1 = a.c0 * b.c1.x + a.c1 * b.c1.y + a.c2 * b.c1.z + a.c3 * b.c1.w;
@@ -26,9 +26,9 @@ mat4_multiply :: (a: *Matrix44, b: *Matrix44) -> Matrix44 {
     out.c3 = a.c0 * b.c3.x + a.c1 * b.c3.y + a.c2 * b.c3.z + a.c3 * b.c3.w;
     out
 }
-multiply :: ufcs mat4_multiply;
+multiply :: ufcs mat4Multiply;
 
-mat4_perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
+mat4Perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
     half := fov / 2.0;
     f := @cos(half) / @sin(half);
     m : Matrix44 = ---;
@@ -39,7 +39,7 @@ mat4_perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
     m
 }
 
-mat4_rotate_y :: (angle: f32) -> Matrix44 {
+mat4RotateY :: (angle: f32) -> Matrix44 {
     c := @cos(angle);
     s := @sin(angle);
     m : Matrix44 = ---;
@@ -50,7 +50,7 @@ mat4_rotate_y :: (angle: f32) -> Matrix44 {
     m
 }
 
-mat4_rotate_x :: (angle: f32) -> Matrix44 {
+mat4RotateX :: (angle: f32) -> Matrix44 {
     c := @cos(angle);
     s := @sin(angle);
     m : Matrix44 = ---;
@@ -61,7 +61,7 @@ mat4_rotate_x :: (angle: f32) -> Matrix44 {
     m
 }
 
-mat4_translate :: (tx: f32, ty: f32, tz: f32) -> Matrix44 {
+mat4Translate :: (tx: f32, ty: f32, tz: f32) -> Matrix44 {
     m : Matrix44 = ---;
     m.c0 = vec4(1.0, 0.0, 0.0, 0.0);
     m.c1 = vec4(0.0, 1.0, 0.0, 0.0);
@@ -96,9 +96,9 @@ main :: () {
     program := createProgram(VERT_SHADER_SRC, FRAG_SHADER_SRC);
     glUseProgram(program);
 
-    mvp_loc : i32 = glGetUniformLocation(program, "uMVP");
-    light_loc : i32 = glGetUniformLocation(program, "uLightDir");
-    wire_loc : i32 = glGetUniformLocation(program, "uWire");
+    mvpLoc : i32 = glGetUniformLocation(program, "uMVP");
+    lightLoc : i32 = glGetUniformLocation(program, "uLightDir");
+    wireLoc : i32 = glGetUniformLocation(program, "uWire");
 
     // Cube vertices: pos(vec4 w=1) + normal(vec4 w=0), 36 vertices × 2 vec4s = 72
     vertices : []@Vector(4, f32) = .[
@@ -166,8 +166,8 @@ main :: () {
     glEnableVertexAttribArray(1);
 
     // Set light direction
-    glUniform3f(light_loc, 0.5, 0.7, 1.0);
-    glUniform1f(wire_loc, 0.0);
+    glUniform3f(lightLoc, 0.5, 0.7, 1.0);
+    glUniform1f(wireLoc, 0.0);
 
     // Render loop
     running := true;
@@ -200,21 +200,21 @@ main :: () {
         angle := ms * 0.001;
         
         // Build matrices
-        proj  := mat4_perspective(PI / 4.0, WIDTH / HEIGHT, 0.1, 100.0);
-        view  := mat4_translate(0.0, 0.0, -3.0);
-        rot_y := mat4_rotate_y(angle);
-        rot_x := mat4_rotate_x(angle * 0.7);
-        model := mat4_multiply(rot_y, rot_x);
-        vm    := mat4_multiply(view, model);
-        mvp   := mat4_multiply(proj, vm);
+        proj  := mat4Perspective(PI / 4.0, WIDTH / HEIGHT, 0.1, 100.0);
+        view  := mat4Translate(0.0, 0.0, -3.0);
+        rotY := mat4RotateY(angle);
+        rotX := mat4RotateX(angle * 0.7);
+        model := mat4Multiply(rotY, rotX);
+        vm    := mat4Multiply(view, model);
+        mvp   := mat4Multiply(proj, vm);
 
-        glUniformMatrix4fv(mvp_loc, 1, 0, *mvp.data[0]);
+        glUniformMatrix4fv(mvpLoc, 1, 0, *mvp.data[0]);
 
         glClearColor(0.1, 0.1, 0.15, 1.0);
         glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);
 
         // Solid pass
-        glUniform1f(wire_loc, 0.0);
+        glUniform1f(wireLoc, 0.0);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
@@ -222,13 +222,13 @@ main :: () {
         glDepthFunc(GL_LEQUAL);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glLineWidth(2.0);
-        glUniform1f(wire_loc, 1.0);
+        glUniform1f(wireLoc, 1.0);
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // Restore
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDepthFunc(GL_LESS);
-        glUniform1f(wire_loc, 0.0);
+        glUniform1f(wireLoc, 0.0);
 
         SDL_GL_SwapWindow(window);
     }

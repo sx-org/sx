@@ -9,11 +9,11 @@ Pt :: struct { x: i64; y: i64; }
 
 Box :: struct {
     v: i64;
-    is_pos :: (self: *Box) -> bool @get => self.v > 0;          // bool
+    isPos :: (self: *Box) -> bool @get => self.v > 0;          // bool
     neg    :: (self: *Box) -> i64  @get => -self.v;             // scalar
     origin :: (self: *Box) -> Pt   @get => .{ x = self.v, y = self.v };  // struct
     // nested: a getter that reads another getter
-    twice_neg :: (self: *Box) -> i64 @get => self.neg + self.neg;
+    twiceNeg :: (self: *Box) -> i64 @get => self.neg + self.neg;
 }
 
 Holder :: struct ($T: Type) {
@@ -25,8 +25,8 @@ Holder :: struct ($T: Type) {
 
 main :: () -> i64 {
     b : Box = .{ v = 7 };
-    print("is_pos={} neg={} twice_neg={}\n", b.is_pos, b.neg, b.twice_neg);  // true -7 -14
-    if b.is_pos { print("positive\n"); }                  // condition
+    print("isPos={} neg={} twiceNeg={}\n", b.isPos, b.neg, b.twiceNeg);  // true -7 -14
+    if b.isPos { print("positive\n"); }                  // condition
     o := b.origin;                                         // struct-returning getter + binding
     print("origin=({},{})\n", o.x, o.y);                   // (7,7)
     print("paren neg()={}\n", b.neg());                    // explicit-paren call still works
@@ -45,7 +45,7 @@ main :: () -> i64 {
 
     // via a pointer receiver (auto-deref) and an explicit postfix deref
     pb := *b;
-    print("via ptr is_pos={}\n", pb.is_pos);               // true
-    print("via deref is_pos={}\n", pb.*.is_pos);           // true (p.*.getter)
+    print("via ptr isPos={}\n", pb.isPos);               // true
+    print("via deref isPos={}\n", pb.*.isPos);           // true (p.*.getter)
     return 0;
 }

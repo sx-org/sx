@@ -8,11 +8,11 @@ ENABLED :: true;
 ALIAS   :: ENABLED;
 NATIVE  :: @host.pointerSize == 8;
 
-inline if ENABLED { from_const :: () -> i64 { 1 } } else { from_const :: () -> i64 { -1 } }
-inline if ALIAS   { from_alias :: () -> i64 { 2 } } else { from_alias :: () -> i64 { -2 } }
-inline if NATIVE  { from_target :: () -> i64 { 3 } } else { from_target :: () -> i64 { -3 } }
+inline if ENABLED { fromConst :: () -> i64 { 1 } } else { fromConst :: () -> i64 { -1 } }
+inline if ALIAS   { fromAlias :: () -> i64 { 2 } } else { fromAlias :: () -> i64 { -2 } }
+inline if NATIVE  { fromTarget :: () -> i64 { 3 } } else { fromTarget :: () -> i64 { -3 } }
 
 main :: () -> i32 {
-    print("{} {} {}\n", from_const(), from_alias(), from_target());
+    print("{} {} {}\n", fromConst(), fromAlias(), fromTarget());
     0
 }

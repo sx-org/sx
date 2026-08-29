@@ -6,12 +6,12 @@
 Fmt :: enum { a; b; }
 
 Proto :: interface {
-  take_fmt :: (self: *Self, f: Fmt);
+  takeFmt :: (self: *Self, f: Fmt);
 }
 
 Impl :: struct {}
 impl Proto for Impl {
-  take_fmt :: (self: *Impl, f: Fmt) {
+  takeFmt :: (self: *Impl, f: Fmt) {
     n : i64 = xx f;
     print("proto f = {}\n", n);
   }
@@ -27,7 +27,7 @@ main :: () -> i32 {
 
   impl := Impl{};
   p := impl.(Proto);
-  p.take_fmt(.b);
-  p.take_fmt(.a);
+  p.takeFmt(.b);
+  p.takeFmt(.a);
   0
 }

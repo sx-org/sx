@@ -7,7 +7,7 @@ target :: (x: i64 = 20) -> i64 { return x + 100; }
 hop    :: target;
 go     :: hop;
 
-b_call     :: () -> i64 { return go(); }
-b_value    :: () -> i64 { g : (i64) -> i64 = go; return g(20); }
-b_capture  :: () -> i64 { f := go; return f(20); }
-b_consumed :: () -> i64 { return apply_seeded(go, 20); }
+bCall     :: () -> i64 { return go(); }
+bValue    :: () -> i64 { g : (i64) -> i64 = go; return g(20); }
+bCapture  :: () -> i64 { f := go; return f(20); }
+bConsumed :: () -> i64 { return applySeeded(go, 20); }

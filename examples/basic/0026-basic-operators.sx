@@ -14,7 +14,7 @@ Chained :: constraint {
     wrap :: (self: *Self, msg: string) -> i32 {
         self.base(msg) + 1
     }
-    double_wrap :: (self: *Self, msg: string) -> i32 {
+    doubleWrap :: (self: *Self, msg: string) -> i32 {
         self.wrap(msg) + self.wrap(msg)
     }
 }

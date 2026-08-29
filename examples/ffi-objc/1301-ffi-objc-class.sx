@@ -3,30 +3,30 @@
 //
 // The flow:
 //   1. `objc_allocateClassPair(NSObject, "SxThing", 0)` returns an unregistered Class.
-//   2. `class_addMethod(cls, sel_hello, IMP, "v@:")` attaches our sx function as
+//   2. `class_addMethod(cls, selHello, IMP, "v@:")` attaches our sx function as
 //      the `hello` method (type encoding "v@:" = void method(id self, SEL _cmd)).
 //   3. `objc_registerClassPair(cls)` finalizes it.
 //   4. `class_createInstance(cls, 0)` returns an `id` for a fresh instance.
 //   5. typed-cast `objc_msgSend` for `void (id, SEL)` and dispatch `hello`.
-// If the IMP ran, the global `g_marker` is non-zero and we return it as exit.
+// If the IMP ran, the global `gMarker` is non-zero and we return it as exit.
 
 @import "modules/std.sx";
 @import "modules/ffi/objc.sx";
 
-g_marker : i32 = 0;
+gMarker : i32 = 0;
 
 // IMP for `hello`. Must use C calling convention so `self` and `_cmd` land in
 // x0 and x1 the way the Obj-C runtime expects.
-hello_imp :: (self: *void, _cmd: *void) abi(.c) {
-    g_marker = 42;
+helloImp :: (self: *void, _cmd: *void) abi(.c) {
+    gMarker = 42;
 }
 
 main :: () -> i32 {
     NSObject := objc_getClass("NSObject".ptr);
     SxThing  := objc_allocateClassPair(NSObject, "SxThing".ptr, 0);
-    sel_hello := sel_registerName("hello".ptr);
+    selHello := sel_registerName("hello".ptr);
 
-    ok := class_addMethod(SxThing, sel_hello, xx hello_imp, "v@:".ptr);
+    ok := class_addMethod(SxThing, selHello, xx helloImp, "v@:".ptr);
     if !ok { return 1; }
     objc_registerClassPair(SxThing);
 
@@ -35,7 +35,7 @@ main :: () -> i32 {
 
     // [obj hello]
     msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
-    msg(obj, sel_hello);
+    msg(obj, selHello);
 
-    return g_marker; // 42 if hello_imp ran
+    return gMarker; // 42 if helloImp ran
 }

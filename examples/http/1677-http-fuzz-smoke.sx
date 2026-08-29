@@ -41,7 +41,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "ok";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -66,7 +66,7 @@ contains :: (hay: string, needle: string) -> bool {
 // A plausible HTTP response: "HTTP/1.1 " followed by a 3-digit status code.
 // This is the "responded, not garbage" assertion — the fuzzer accepts any
 // well-formed status line; the parser must never emit non-HTTP bytes.
-plausible_response :: (s: string) -> bool {
+plausibleResponse :: (s: string) -> bool {
     pre := "HTTP/1.1 ";
     if s.len < pre.len + 3 { return false; }
     i := 0;
@@ -197,8 +197,8 @@ mutate :: (rng: *Rng, src: string, dst: [*]u8, cap: i64) -> i64 {
 // loop). Returns: 0 = responded plausibly OR closed cleanly (PASS),
 // 1 = a hang (budget exhausted with no response and no close), 2 = garbage
 // response (responded but not "HTTP/1.1 <ddd>").
-fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]u8, scap: i64) -> i64 {
-    fd := dial_port(PORT);
+fuzzOnce :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]u8, scap: i64) -> i64 {
+    fd := dialPort(PORT);
     if fd < 0 { return 0; }   // couldn't dial (e.g. transient) — not a parser fault
 
     sent : i64 = 0;
@@ -241,7 +241,7 @@ fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*
 
     if responded {
         s := string{ ptr = scratch, len = total };
-        if !plausible_response(s) { return 2; }   // garbage
+        if !plausibleResponse(s) { return 2; }   // garbage
         return 0;
     }
     if closed { return 0; }   // clean close, no response — acceptable
@@ -250,8 +250,8 @@ fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*
 
 // A clean GET on its own connection — must round-trip 200 "ok". This is the
 // LIVENESS check interleaved through the fuzz noise.
-liveness_ok :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
-    fd := dial_port(PORT);
+livenessOk :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
+    fd := dialPort(PORT);
     if fd < 0 { return false; }
     req := "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n";
     socket.write(fd, req.ptr, req.len);
@@ -277,7 +277,7 @@ main :: () -> i32 {
     leaked : i64 = 0;
     failed := false;
     detail : string = "";
-    crash_iter : i64 = -1;
+    crashIter : i64 = -1;
 
     // Everything that allocates runs under the GPA so the leak gate sees
     // every server alloc/dealloc. ONE server is reused across all iterations
@@ -307,21 +307,21 @@ main :: () -> i32 {
 
         hangs : i64 = 0;
         garbage : i64 = 0;
-        live_fail : i64 = 0;
+        liveFail : i64 = 0;
 
         it : i64 = 0;
         while it < ITERATIONS {
             // pick a template, mutate it
             tidx := rng.upto(TEMPLATES);
             blen := mutate(*rng, template(tidx), mutbuf, MUTBUF);
-            r := fuzz_once(*rng, *srv, mutbuf, blen, scratch, 8192);
-            if r == 1 { hangs += 1; failed = true; detail = "HANG"; crash_iter = it; break; }
-            if r == 2 { garbage += 1; failed = true; detail = "GARBAGE RESPONSE"; crash_iter = it; break; }
+            r := fuzzOnce(*rng, *srv, mutbuf, blen, scratch, 8192);
+            if r == 1 { hangs += 1; failed = true; detail = "HANG"; crashIter = it; break; }
+            if r == 2 { garbage += 1; failed = true; detail = "GARBAGE RESPONSE"; crashIter = it; break; }
 
             // every 250 iterations, prove the server still serves a clean GET
             if it % 250 == 0 {
-                if !liveness_ok(*srv, scratch, 8192) {
-                    live_fail += 1; failed = true; detail = "LIVENESS"; crash_iter = it; break;
+                if !livenessOk(*srv, scratch, 8192) {
+                    liveFail += 1; failed = true; detail = "LIVENESS"; crashIter = it; break;
                 }
             }
             it += 1;
@@ -334,7 +334,7 @@ main :: () -> i32 {
     }
 
     if failed {
-        print("FUZZ FAIL ({}) at iteration {}\n", detail, crash_iter);
+        print("FUZZ FAIL ({}) at iteration {}\n", detail, crashIter);
         return 1;
     }
     if leaked != 0 {

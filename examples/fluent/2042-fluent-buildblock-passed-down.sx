@@ -67,14 +67,14 @@ twice :: (content: $B/@BuildBlock(Drawable)) -> i32 {
 
 main :: () -> i32 {
     rows := .["alpha", "beta"];
-    show_extra := true;
+    showExtra := true;
 
     print("two down {}\n", column("chain") {
         Label{ text = "top" };
         for row in rows {
             Label{ text = row };
         }
-        if show_extra {
+        if showExtra {
             Label{ text = "extra" };
         }
     });

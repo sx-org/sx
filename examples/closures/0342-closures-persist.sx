@@ -15,7 +15,7 @@ impl (i64) -> i64 for Accum {
     call :: (self: *Accum, x: i64) -> i64 { return self.total + x; }
 }
 
-Widget :: struct { on_tap: ?Closure(i64) -> void; }
+Widget :: struct { onTap: ?Closure(i64) -> void; }
 
 main :: () {
     n := 5;
@@ -43,15 +43,15 @@ main :: () {
     // The allocator is chosen, or taken from the context.
     arena := Arena.init(context.allocator, 4096);
     m := 7;
-    on_arena := closure(|x: i64|_{ m } -> i64 x * m, arena);
-    print("arena {}\n", on_arena(6));                          // 42
+    onArena := closure(|x: i64|_{ m } -> i64 x * m, arena);
+    print("arena {}\n", onArena(6));                          // 42
     arena.deinit();
 
     // A capturing lambda reaches a `Closure` field through `closure`.
     id := 3;
     tap := closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
-    w := Widget{ on_tap = tap };
-    if h := w.on_tap { h(9); }
+    w := Widget{ onTap = tap };
+    if h := w.onTap { h(9); }
 
     free(tap);
     free(lam);

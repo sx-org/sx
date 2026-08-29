@@ -8,6 +8,6 @@
 @import "0756-modules-same-name-alias-per-source/b.sx";
 
 main :: () -> i32 {
-    print("a={} b={}\n", a_val(), b_val());
+    print("a={} b={}\n", aVal(), bVal());
     0
 }

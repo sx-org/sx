@@ -13,7 +13,7 @@
 pkg :: @import "1631-modules-namespaced-open-set/pkg/view.sx";
 
 // A membership bound whose head is the set reached by name.
-render_one :: (v: $V/pkg.View) -> string => v.render();
+renderOne :: (v: $V/pkg.View) -> string => v.render();
 
 main :: () -> i32 {
     // The set as an annotation, and a member through the same name.
@@ -24,10 +24,10 @@ main :: () -> i32 {
     // out here: one set, one layout.
     xs : List(pkg.View) = .{};
     xs.append(v);
-    print("size in {} out {} held {}\n", pkg.size_here(), @sizeOf(pkg.View), xs.len);
+    print("size in {} out {} held {}\n", pkg.sizeHere(), @sizeOf(pkg.View), xs.len);
 
     // The bound head, taking the member and the set itself.
-    print("bound {} {}\n", render_one(pkg.Label{ text = "member" }), render_one(v));
+    print("bound {} {}\n", renderOne(pkg.Label{ text = "member" }), renderOne(v));
 
     // A value formed out here, given to a signature written in the set's own module.
     print("crossed {}\n", pkg.describe(v));

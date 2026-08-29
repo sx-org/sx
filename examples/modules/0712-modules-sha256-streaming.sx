@@ -34,7 +34,7 @@ report :: (label: string, ok: bool) {
 }
 
 // Absorb `data` one byte at a time (views of length 1 into the buffer).
-stream_by_byte :: (data: string) -> [64]u8 {
+streamByByte :: (data: string) -> [64]u8 {
     h := init();
     i := 0;
     while i < data.len {
@@ -45,7 +45,7 @@ stream_by_byte :: (data: string) -> [64]u8 {
 }
 
 // Absorb `data` as two updates split at `at` (views into the buffer).
-stream_split :: (data: string, at: i64) -> [64]u8 {
+streamSplit :: (data: string, at: i64) -> [64]u8 {
     h := init();
     h.update(string{ ptr = *data[0],  len = at });
     h.update(string{ ptr = *data[at], len = data.len - at });
@@ -54,9 +54,9 @@ stream_split :: (data: string, at: i64) -> [64]u8 {
 
 main :: () {
     check("oneshot-pinned",    sha256Hex(MSG), PIN);
-    check("byte-at-a-time",    stream_by_byte(MSG), PIN);
-    check("split-mid-block",   stream_split(MSG, 30), PIN);   // 30: mid first block
-    check("split-on-boundary", stream_split(MSG, 64), PIN);   // 64: exact block edge
+    check("byte-at-a-time",    streamByByte(MSG), PIN);
+    check("split-mid-block",   streamSplit(MSG, 30), PIN);   // 30: mid first block
+    check("split-on-boundary", streamSplit(MSG, 64), PIN);   // 64: exact block edge
 
     // sha256File (streaming) must equal the in-memory digest.
     if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
@@ -65,13 +65,13 @@ main :: () {
 
     maybe := sha256File(path);
     if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
-    file_digest := maybe?!;
-    mem_digest := sha256Hex(MSG);
+    fileDigest := maybe?!;
+    memDigest := sha256Hex(MSG);
 
-    fv := string{ ptr = *file_digest[0], len = 64 };
-    mv := string{ ptr = *mem_digest[0],  len = 64 };
+    fv := string{ ptr = *fileDigest[0], len = 64 };
+    mv := string{ ptr = *memDigest[0],  len = 64 };
     report("file-eq-memory", fv == mv);
-    check("file-pinned", file_digest, PIN);
+    check("file-pinned", fileDigest, PIN);
 
     deleteFile(path);
 }

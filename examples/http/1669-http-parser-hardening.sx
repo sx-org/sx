@@ -30,7 +30,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
@@ -40,7 +40,7 @@ dial_port :: (port: i64) -> i32 {
 }
 
 // True when buf[0..len] holds a complete response (headers + Content-Length body).
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -72,7 +72,7 @@ resp_complete :: (buf: [*]u8, len: i64) -> bool {
 // Send a request on a fresh connection, tick until the response arrives,
 // return the response text ("" = connection closed with no response).
 roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
@@ -83,7 +83,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
         n, re := socket.readNb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
-        if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
+        if respComplete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
         tries += 1;
     }
     socket.close(fd);

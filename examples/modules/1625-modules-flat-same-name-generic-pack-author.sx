@@ -11,9 +11,9 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("b generic binds b.ident (2)", b_generic() == 2);
-    report("b pack binds b.tally (20)", b_pack() == 20);
-    report("a generic binds a.ident (1)", a_generic() == 1);
-    report("a pack binds a.tally (10)", a_pack() == 10);
+    report("b generic binds b.ident (2)", bGeneric() == 2);
+    report("b pack binds b.tally (20)", bPack() == 20);
+    report("a generic binds a.ident (1)", aGeneric() == 1);
+    report("a pack binds a.tally (10)", aPack() == 10);
     0
 }

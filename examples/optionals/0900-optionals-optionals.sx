@@ -6,12 +6,12 @@ OptInner :: struct { val: i32; }
 OptOuter :: struct { inner: ?OptInner; }
 
 // --- Comptime optionals ---
-ct_sum :: () -> i32 {
+ctSum :: () -> i32 {
     x: ?i32 = 42;
     y: ?i32 = null;
     return (x ?? 0) + (y ?? 99);
 }
-CT_RESULT :: @run ct_sum();
+CT_RESULT :: @run ctSum();
 
 main :: () -> i32 {
     // Basic optional creation

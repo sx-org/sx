@@ -18,13 +18,13 @@ Button :: @OpenVariant(View) {
     render :: (self: *Button) -> string => self.text;
 }
 
-take_label :: ufcs (value: $I/@Init(Label)) {
+takeLabel :: ufcs (value: $I/@Init(Label)) {
     slot: Label = ---;
     value.write(*slot);
 }
 
 main :: () -> i32 {
     v : View = Button{ text = "other" };
-    v.take_label();
+    v.takeLabel();
     0
 }

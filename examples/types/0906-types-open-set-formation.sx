@@ -50,7 +50,7 @@ poke :: (v: View) -> i64 => v.bump(100);
 
 // `@Init(View)` — a fixed target. A member expression is type-checked at expected
 // `View`, so what the initializer writes is a complete slot (§5.2, §5.4).
-store_view :: (value: $I/@Init(View)) -> string {
+storeView :: (value: $I/@Init(View)) -> string {
     slot: View = ---;
     value.write(*slot);
     slot.render()
@@ -58,7 +58,7 @@ store_view :: (value: $I/@Init(View)) -> string {
 
 // An OPEN type argument takes the expression's own type, writes THAT, and the set
 // is reached afterwards by ordinary expected-type formation (§5.4).
-store_as_view :: (value: $I/@Init($V/View)) -> View {
+storeAsView :: (value: $I/@Init($V/View)) -> View {
     item: V = ---;
     value.write(*item);
     item
@@ -92,11 +92,11 @@ main :: () -> i32 {
 
     // `@Init(View)`: the member lifts at a fixed target; a value that already IS a
     // View is written as a plain slot copy (identity).
-    print("init lifted {}\n", store_view(Label{ text = "lifted" }));
+    print("init lifted {}\n", storeView(Label{ text = "lifted" }));
     already: View = Panel{ title = "identity" };
-    print("init identity {}\n", store_view(already));
+    print("init identity {}\n", storeView(already));
     // Open `$V`: writes `*Label`, then the return lifts it into a View.
-    print("init open {}\n", store_as_view(Label{ text = "open" }).render());
+    print("init open {}\n", storeAsView(Label{ text = "open" }).render());
     0
 }
 

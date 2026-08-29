@@ -36,61 +36,61 @@ fails :: () -> !Failed {
 
 // ── No explicit `return` in the body ───────────────────────────────────
 
-ct_value :: ($label: string) -> !Failed {
+ctValue :: ($label: string) -> !Failed {
     tick(label)
 }
 
-ct_wide :: ($label: string) -> !Failed {
+ctWide :: ($label: string) -> !Failed {
     tick64(label)
 }
 
-ct_void :: ($label: string) -> !Failed {
+ctVoid :: ($label: string) -> !Failed {
     nothing(label)
 }
 
-ct_compound :: ($label: string) -> !Failed {
+ctCompound :: ($label: string) -> !Failed {
     { x := tick(label); }
 }
 
-ct_error :: ($label: string) -> !Failed {
+ctError :: ($label: string) -> !Failed {
     print("ct-error {}\n", label);
     .Nope
 }
 
-ct_forward :: ($label: string) -> !Failed {
+ctForward :: ($label: string) -> !Failed {
     print("ct-forward {}\n", label);
     fails()
 }
 
-ct_defer :: ($label: string) -> !Failed {
+ctDefer :: ($label: string) -> !Failed {
     defer print("ct defer {}\n", label);
     tick(label)
 }
 
-ct_defer_error :: ($label: string) -> !Failed {
+ctDeferError :: ($label: string) -> !Failed {
     defer print("ct defer {}\n", label);
     fails()
 }
 
-ct_mixed :: ($label: string, b: bool) -> !Failed {
+ctMixed :: ($label: string, b: bool) -> !Failed {
     defer print("ct mixed defer\n");
     if b { fails() } else { tick(label) }
 }
 
 // ── With an explicit `return` in the body ──────────────────────────────
 
-ct_ret_value :: ($label: string, n: i32) -> !Failed {
+ctRetValue :: ($label: string, n: i32) -> !Failed {
     if n < 0 { return; }
     tick(label)
 }
 
-ct_ret_error :: ($label: string, n: i32) -> !Failed {
+ctRetError :: ($label: string, n: i32) -> !Failed {
     if n < 0 { return; }
     print("ct-ret-error {}\n", label);
     .Nope
 }
 
-ct_ret_early :: ($label: string, n: i32) -> !Failed {
+ctRetEarly :: ($label: string, n: i32) -> !Failed {
     if n < 0 {
         print("early {}\n", label);
         return;
@@ -98,46 +98,46 @@ ct_ret_early :: ($label: string, n: i32) -> !Failed {
     tick(label)
 }
 
-ct_ret_raise :: ($label: string, n: i32) -> !Failed {
+ctRetRaise :: ($label: string, n: i32) -> !Failed {
     if n < 0 {
         raise .Nope;
     }
     tick(label)
 }
 
-ct_ret_mixed :: ($label: string, b: bool) -> !Failed {
+ctRetMixed :: ($label: string, b: bool) -> !Failed {
     if b { return; }
     if b { fails() } else { tick(label) }
 }
 
 // ── A `-> noreturn` callee at the same sink ────────────────────────────
 
-ct_stop :: ($label: string) -> noreturn {
+ctStop :: ($label: string) -> noreturn {
     print("stop {}\n", label);
     proc.exit(0);
 }
 
 main :: () -> i32 {
-    ct_value("ct-value") catch { print("NOT REACHED ct-value\n"); };
-    ct_wide("ct-wide") catch { print("NOT REACHED ct-wide\n"); };
-    ct_void("ct-void") catch { print("NOT REACHED ct-void\n"); };
-    ct_compound("ct-compound") catch { print("NOT REACHED ct-compound\n"); };
-    ct_defer("ct-defer") catch { print("NOT REACHED ct-defer\n"); };
-    ct_mixed("ct-mixed", false) catch { print("NOT REACHED ct-mixed\n"); };
-    ct_error("a") catch { print("caught ct-error\n"); };
-    ct_forward("b") catch { print("caught ct-forward\n"); };
-    ct_defer_error("c") catch { print("caught ct-defer-error\n"); };
-    ct_mixed("d", true) catch { print("caught ct-mixed\n"); };
+    ctValue("ct-value") catch { print("NOT REACHED ct-value\n"); };
+    ctWide("ct-wide") catch { print("NOT REACHED ct-wide\n"); };
+    ctVoid("ct-void") catch { print("NOT REACHED ct-void\n"); };
+    ctCompound("ct-compound") catch { print("NOT REACHED ct-compound\n"); };
+    ctDefer("ct-defer") catch { print("NOT REACHED ct-defer\n"); };
+    ctMixed("ct-mixed", false) catch { print("NOT REACHED ct-mixed\n"); };
+    ctError("a") catch { print("caught ct-error\n"); };
+    ctForward("b") catch { print("caught ct-forward\n"); };
+    ctDeferError("c") catch { print("caught ct-defer-error\n"); };
+    ctMixed("d", true) catch { print("caught ct-mixed\n"); };
 
-    ct_ret_value("ct-ret-value", 1) catch { print("NOT REACHED ct-ret-value\n"); };
-    ct_ret_value("ct-ret-none", -1) catch { print("NOT REACHED ct-ret-none\n"); };
-    ct_ret_early("ct-ret-early", -1) catch { print("NOT REACHED ct-ret-early\n"); };
-    ct_ret_raise("ct-ret-raise", 1) catch { print("NOT REACHED ct-ret-raise\n"); };
-    ct_ret_mixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); };
-    ct_ret_error("e", 1) catch { print("caught ct-ret-error\n"); };
-    ct_ret_raise("f", -1) catch { print("caught ct-ret-raise\n"); };
+    ctRetValue("ct-ret-value", 1) catch { print("NOT REACHED ct-ret-value\n"); };
+    ctRetValue("ct-ret-none", -1) catch { print("NOT REACHED ct-ret-none\n"); };
+    ctRetEarly("ct-ret-early", -1) catch { print("NOT REACHED ct-ret-early\n"); };
+    ctRetRaise("ct-ret-raise", 1) catch { print("NOT REACHED ct-ret-raise\n"); };
+    ctRetMixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); };
+    ctRetError("e", 1) catch { print("caught ct-ret-error\n"); };
+    ctRetRaise("f", -1) catch { print("caught ct-ret-raise\n"); };
 
     // The body runs, then diverges — so this is main's tail, and there is no
     // trailing value after it.
-    ct_stop("ct-stop");
+    ctStop("ct-stop");
 }

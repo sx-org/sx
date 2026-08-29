@@ -28,6 +28,6 @@ main :: () -> i32 {
     b : Box = ---;
     b.m = 7;
     mk : Marker = xx *b;
-    print("v={} dep={}\n", mk.v, dep_box());
+    print("v={} dep={}\n", mk.v, depBox());
     0
 }

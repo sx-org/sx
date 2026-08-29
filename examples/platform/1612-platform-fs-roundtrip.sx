@@ -6,15 +6,15 @@
 // through it, then exercises basename/dirname.
 
 main :: () {
-    if !createDirAll("/tmp/sx_fs_test/a/b/c") { print("FAIL mkdir_all\n"); return; }
-    if !exists("/tmp/sx_fs_test/a/b/c") { print("FAIL exists after mkdir_all\n"); return; }
+    if !createDirAll("/tmp/sx_fs_test/a/b/c") { print("FAIL mkdirAll\n"); return; }
+    if !exists("/tmp/sx_fs_test/a/b/c") { print("FAIL exists after mkdirAll\n"); return; }
 
-    if !writeFile("/tmp/sx_fs_test/hello.txt", "hello fs") { print("FAIL write_file\n"); return; }
+    if !writeFile("/tmp/sx_fs_test/hello.txt", "hello fs") { print("FAIL writeFile\n"); return; }
     if r := readFile("/tmp/sx_fs_test/hello.txt") {
         if r.len != 8 { print("FAIL read length: got {}\n", r.len); return; }
         print("read: {}\n", r);
     } else {
-        print("FAIL read_file\n");
+        print("FAIL readFile\n");
         return;
     }
 
@@ -27,7 +27,7 @@ main :: () {
 
     if !setMode("/tmp/sx_fs_test/hello.txt", 493) { print("FAIL chmod\n"); return; }
 
-    if !deleteFile("/tmp/sx_fs_test/hello.txt") { print("FAIL delete_file\n"); return; }
+    if !deleteFile("/tmp/sx_fs_test/hello.txt") { print("FAIL deleteFile\n"); return; }
     if !deleteFile("/tmp/sx_fs_test/renamed.txt") { print("FAIL delete renamed\n"); return; }
     if !deleteDir("/tmp/sx_fs_test/a/b/c") { print("FAIL delete c\n"); return; }
     if !deleteDir("/tmp/sx_fs_test/a/b") { print("FAIL delete b\n"); return; }

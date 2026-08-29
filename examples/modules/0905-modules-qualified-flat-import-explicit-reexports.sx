@@ -19,7 +19,7 @@ main :: () -> i32 {
     alias : facade.PublicAlias = .{ value = 10 };
     if alias.value != 10 { return 5; }
 
-    if facade.PUBLIC_CONST != 22 or facade.public_global != 33 { return 6; }
-    if facade.public_fn() != 44 { return 7; }
+    if facade.PUBLIC_CONST != 22 or facade.publicGlobal != 33 { return 6; }
+    if facade.publicFn() != 44 { return 7; }
     0
 }

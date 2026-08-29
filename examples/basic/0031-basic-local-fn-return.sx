@@ -19,12 +19,12 @@ main :: () {
     // ========================================================
     print("=== 19. Local Fn Return ===\n");
     {
-        local_pt :: () -> Point { Point{ 42, 99} }
-        lp := local_pt();
+        localPt :: () -> Point { Point{ 42, 99} }
+        lp := localPt();
         print("local-struct: {} {}\n", lp.x, lp.y);
 
-        local_sh :: () -> Shape { .circle(2.5) }
-        ls := local_sh();
+        localSh :: () -> Shape { .circle(2.5) }
+        ls := localSh();
         print("local-enum: {}\n", ls);
     }
 }

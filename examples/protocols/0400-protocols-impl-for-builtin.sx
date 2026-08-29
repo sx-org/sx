@@ -11,7 +11,7 @@ impl Lerpable for f32 {
     lerp :: (self: f32, b: f32, t: f32) -> f32 { self + (b - self) * t }
 }
 
-do_lerp :: (a: $T/Lerpable, b: T, t: f32) -> T {
+doLerp :: (a: $T/Lerpable, b: T, t: f32) -> T {
     a.lerp(b, t)
 }
 
@@ -23,7 +23,7 @@ main :: () -> void {
     // Generic bound over the same impl
     val : f32 = 0.0;
     hi : f32 = 10.0;
-    result2 := do_lerp(val, hi, 0.25);
+    result2 := doLerp(val, hi, 0.25);
     print("lerp(0, 10, 0.25) = {}\n", result2);
 }
 

@@ -7,9 +7,9 @@
 // extern-import-shape `library_ref` through the same path.
 @import "modules/std.sx";
 
-c_abs :: (n: i32) -> i32 extern nosuchunit "abs";
+cAbs :: (n: i32) -> i32 extern nosuchunit "abs";
 
 main :: () -> i32 {
-    print("c_abs = {}\n", c_abs(-5));
+    print("cAbs = {}\n", cAbs(-5));
     0
 }

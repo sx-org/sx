@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-swap_take :: (..$args) -> $args[0] {
+swapTake :: (..$args) -> $args[0] {
     second : $args[1] = args[1];
     return args[0];
 }
@@ -14,8 +14,8 @@ swap_take :: (..$args) -> $args[0] {
 main :: () -> i32 {
     // Heterogeneous call shapes — each picks a different concrete
     // pair, gets its own mono.
-    a : i64 = swap_take(42, "ignored");      // $args[0] = i64, $args[1] = string
-    b : string = swap_take("first", 99);      // $args[0] = string, $args[1] = i64
+    a : i64 = swapTake(42, "ignored");      // $args[0] = i64, $args[1] = string
+    b : string = swapTake("first", 99);      // $args[0] = string, $args[1] = i64
     print("{} {}\n", a, b);
     return 0;
 }

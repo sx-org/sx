@@ -29,7 +29,7 @@ sentinel :: () -> i64 { return context.sentinel; }
 
 // Trampoline: runs under its own ambient context, but installs the fiber's
 // stored root before entering the fiber body.
-run_fiber :: (f: *Fiber) -> i64 {
+runFiber :: (f: *Fiber) -> i64 {
     push f.root {
         return sentinel();
     }
@@ -44,8 +44,8 @@ main :: () {
     other.sentinel = 99;          // a DIFFERENT ambient context
     push other {
         // Ambient is 99 here; the trampoline must install f.root (42).
-        print("fiber root: {}\n", run_fiber(*f));
-        // After run_fiber returns, this scope's ambient context is intact.
+        print("fiber root: {}\n", runFiber(*f));
+        // After runFiber returns, this scope's ambient context is intact.
         print("ambient after: {}\n", sentinel());
     }
 }

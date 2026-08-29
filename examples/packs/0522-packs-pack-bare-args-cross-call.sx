@@ -42,12 +42,12 @@ probe :: (..$args) -> string {
     return describe(list);
 }
 
-run_all :: () {
+runAll :: () {
     print("0: {}\n", probe());
     print("1: {}\n", probe(1));
     print("3: {}\n", probe(1, "x", true));
     print("5: {}\n", probe(1, 2.0, "x", true, 99));
 }
-@run run_all();
+@run runAll();
 
 main :: () { print("rt\n"); }

@@ -12,10 +12,10 @@ Grid :: struct {
     rows: [4][4]i32;
 }
 
-g_table : Table = ---;
+gTable : Table = ---;
 calls : i64 = 0;
 
-next_index :: () -> i64 {
+nextIndex :: () -> i64 {
     calls += 1;
     2
 }
@@ -37,7 +37,7 @@ main :: () -> i32 {
 
     // A side-effecting index expression runs exactly once per read.
     calls = 0;
-    if t.fast[next_index()] != 2 { return 2; }
+    if t.fast[nextIndex()] != 2 { return 2; }
     if calls != 1 { return 3; }
 
     // Nested chain: field -> dynamic index -> dynamic index, two calls total.
@@ -52,17 +52,17 @@ main :: () -> i32 {
         r += 1;
     }
     calls = 0;
-    if grid.rows[next_index()][next_index()] != 10 { return 4; }
+    if grid.rows[nextIndex()][nextIndex()] != 10 { return 4; }
     if calls != 2 { return 5; }
 
     // Module-global root: the field chain GEPs the global's storage.
     j := 0;
     while j < 1024 {
-        g_table.fast[j] = (1023 - j).(i32);
+        gTable.fast[j] = (1023 - j).(i32);
         j += 1;
     }
     idx := 100;
-    if g_table.fast[idx] != 923 { return 6; }
+    if gTable.fast[idx] != 923 { return 6; }
 
     0
 }

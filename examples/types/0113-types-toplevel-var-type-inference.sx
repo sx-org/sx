@@ -3,13 +3,13 @@
 // type, exactly as `:=` does for locals.
 @import "modules/std.sx";
 
-g_count := 42;        // inferred i64
-g_pi    := 3.14;      // inferred f64 — never i64
-g_flag  := true;      // inferred bool
+gCount := 42;        // inferred i64
+gPi    := 3.14;      // inferred f64 — never i64
+gFlag  := true;      // inferred bool
 
 main :: () -> i32 {
-    print("count = {}\n", g_count);
-    print("pi    = {}\n", g_pi);
-    print("flag  = {}\n", g_flag);
+    print("count = {}\n", gCount);
+    print("pi    = {}\n", gPi);
+    print("flag  = {}\n", gFlag);
     return 0;
 }

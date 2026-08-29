@@ -46,7 +46,7 @@ main :: () -> i32 {
     sites := 0;
     distinct := false;
     marks := Identity.init(home);
-    push .{ compose_ui = *marks, allocator = away } {
+    push .{ composeUi = *marks, allocator = away } {
         marks.beginBuild();
         a := elementId();
         b := elementId();
@@ -66,7 +66,7 @@ main :: () -> i32 {
     row := 0;
     tally := Identity.init(home);
     store := StateStore.init(home);
-    push .{ compose_ui = *tally, compose_state = *store, allocator = away } {
+    push .{ composeUi = *tally, composeState = *store, allocator = away } {
         tally.beginBuild();
         store.beginBuild();
         n := useState(i64, 1);
@@ -88,7 +88,7 @@ main :: () -> i32 {
     pointers := Identity.init(home);
     taps := Router.init(home);
     live := CommittedUiSnapshot.init(home);
-    push .{ compose_ui = *pointers, compose_input = *taps, allocator = away } {
+    push .{ composeUi = *pointers, composeInput = *taps, allocator = away } {
         pointers.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
@@ -119,7 +119,7 @@ main :: () -> i32 {
     struck := 0;
     labels := Identity.init(home);
     shot := CommittedUiSnapshot.init(home);
-    push .{ compose_ui = *labels } {
+    push .{ composeUi = *labels } {
         labels.beginBuild();
         hit := *struck;
         push .{ allocator = scratch } {
@@ -159,7 +159,7 @@ main :: () -> i32 {
     second := Arena.init(home, 2048);
     moved := CommittedUiSnapshot.init(first);
     untouched := true;
-    push .{ compose_ui = *stamps } {
+    push .{ composeUi = *stamps } {
         stamps.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {

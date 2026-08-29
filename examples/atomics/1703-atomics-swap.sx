@@ -4,8 +4,8 @@
 @import "modules/std.sx";
 @import "modules/std/atomic.sx";
 
-c_swap :: () -> i64 { a := Atomic(i64).init(7); old := a.swap(42, .seqCst); return old * 100 + a.load(.seqCst); }
-G_SWAP :: @run c_swap();   // 742 (old 7, now 42)
+cSwap :: () -> i64 { a := Atomic(i64).init(7); old := a.swap(42, .seqCst); return old * 100 + a.load(.seqCst); }
+G_SWAP :: @run cSwap();   // 742 (old 7, now 42)
 
 main :: () {
     a := Atomic(i64).init(7);

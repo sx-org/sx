@@ -6,6 +6,6 @@
 
 @import "modules/std.sx";
 
-extern g_x : *void;
+extern gX : *void;
 
 main :: () -> i32 { 0; }

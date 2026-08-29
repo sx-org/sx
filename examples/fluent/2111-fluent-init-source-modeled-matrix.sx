@@ -44,7 +44,7 @@ form_opt_View :: ufcs (value: $I/@Init(?View)) {
     print("?View {}\n", slot?!.render());
 }
 
-form_any :: ufcs (value: $I/@Init(any)) {
+formAny :: ufcs (value: $I/@Init(any)) {
     slot: any = ---;
     value.write(*slot);
     match slot {
@@ -56,7 +56,7 @@ form_any :: ufcs (value: $I/@Init(any)) {
 
 need_View :: ufcs (v: View) { print("need View {}\n", v.render()); }
 need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v?!.render()); }
-need_any :: ufcs (a: any) { print("need any {}\n", @typeName(@typeOf(a))); }
+needAny :: ufcs (a: any) { print("need any {}\n", @typeName(@typeOf(a))); }
 
 echo_View :: (v: View) -> View => v;
 
@@ -76,14 +76,14 @@ main :: () -> i32 {
     v.form_View();
     form_opt_View(v);
     v.form_opt_View();
-    form_any(v);
-    v.form_any();
-    form_any(other);
+    formAny(v);
+    v.formAny();
+    formAny(other);
 
     need_View(v);
     v.need_View();
     need_opt_View(v);
-    need_any(v);
+    needAny(v);
 
     form_View(echo_View(v));
     echo_View(v).form_View();

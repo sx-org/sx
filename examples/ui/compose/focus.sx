@@ -162,13 +162,13 @@ FocusRouter :: struct {
     }
 }
 
-@context.extend compose_focus: *FocusRouter = null;
+@context.extend composeFocus: *FocusRouter = null;
 
 // The focus state a build reads to style an element by whether the keys reach
 // it. With no router in context nothing is focused.
 isFocused :: (id: ElementId) -> bool {
-    if context.compose_focus == null then return false;
-    if f := context.compose_focus.focused {
+    if context.composeFocus == null then return false;
+    if f := context.composeFocus.focused {
         return f == id.value;
     }
     false

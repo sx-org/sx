@@ -7,9 +7,9 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-unused_jni :: (env: *void, target: *void) {
+unusedJni :: (env: *void, target: *void) {
     push .{ jni = env } {
         // Omitted env — env comes from the enclosing push .{ jni = env } scope.
         @JniCall(void, env, target, "noop", "()V");
@@ -17,8 +17,8 @@ unused_jni :: (env: *void, target: *void) {
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        unused_jni(null, null);
+    if gShouldCall {
+        unusedJni(null, null);
     }
     print("ok\n");
     0

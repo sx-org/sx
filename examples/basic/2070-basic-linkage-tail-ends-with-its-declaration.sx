@@ -8,19 +8,19 @@
 __stdinp : *void extern;
 LIMIT :: 9;
 
-// On the declaration's own line the same tail still binds — `c_abs` is C's
+// On the declaration's own line the same tail still binds — `cAbs` is C's
 // `abs`.
-c_abs :: (n: i32) -> i32 extern "abs";
+cAbs :: (n: i32) -> i32 extern "abs";
 
 // A line break inside the tail is ordinary whitespace, so both slots read on
 // through one.
-sx_double :: (n: i32) -> i32 export
+sxDouble :: (n: i32) -> i32 export
     "double_c"
     { n * 2 }
 
 main :: () -> i32 {
-    stdin_bits : u64 = xx *__stdinp;
-    print("limit={} stdin={}\n", LIMIT, stdin_bits != 0);
-    print("abs={} double={}\n", c_abs(-42), sx_double(21));
+    stdinBits : u64 = xx *__stdinp;
+    print("limit={} stdin={}\n", LIMIT, stdinBits != 0);
+    print("abs={} double={}\n", cAbs(-42), sxDouble(21));
     0
 }

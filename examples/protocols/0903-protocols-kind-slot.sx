@@ -24,7 +24,7 @@ impl Slot(i64) for Point { get :: (self: *Point) -> i64 { self.x } }
 Xorshift :: struct { state: u64; }
 impl Rng for Xorshift { next :: (self: *Xorshift) -> u64 { self.state + 1 } }
 
-kind_name :: ($P: Type) -> string {
+kindName :: ($P: Type) -> string {
     inline if P is interface { return "interface"; }
     "constraint"
 }
@@ -32,7 +32,7 @@ kind_name :: ($P: Type) -> string {
 smaller :: (a: $T/Ord, b: T) -> T { if a.less(b) { a } else { b } }
 
 main :: () {
-    print("{} {}\n", kind_name(Ord), kind_name(Show));
+    print("{} {}\n", kindName(Ord), kindName(Show));
     print("{} {} {}\n", Ord is struct, Show is struct, Rng is interface);
 
     // A constraint protocol still bounds generics — that is its whole job.

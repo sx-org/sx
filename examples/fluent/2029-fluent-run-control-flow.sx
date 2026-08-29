@@ -48,11 +48,11 @@ column :: (content: $B/@BuildBlock(Drawable)) {
 }
 
 main :: () -> i32 {
-    show_title := true;
+    showTitle := true;
     rows := .["alpha", "beta"];
 
     column() {
-        if show_title {
+        if showTitle {
             Label{ text = "title" };
         }
         for row in rows {

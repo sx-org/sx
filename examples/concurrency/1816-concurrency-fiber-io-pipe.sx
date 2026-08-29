@@ -1,14 +1,14 @@
 // REAL fd-readiness blocking via kqueue. A fiber can
-// `blockOnFd(read_fd, true)`; the scheduler's run loop blocks on `kevent` when
+// `blockOnFd(readFd, true)`; the scheduler's run loop blocks on `kevent` when
 // nothing else is runnable and wakes that fiber when the kernel reports the fd
 // readable.
 //
-// A unix `pipe` (read_fd, write_fd). A READER fiber is spawned FIRST,
-// so it runs while the pipe is EMPTY — it calls `blockOnFd(read_fd)` and parks
+// A unix `pipe` (readFd, writeFd). A READER fiber is spawned FIRST,
+// so it runs while the pipe is EMPTY — it calls `blockOnFd(readFd)` and parks
 // (genuinely blocked: there is no data yet, the writer has not run). A WRITER
-// fiber, spawned second, then writes 3 bytes to write_fd. Now the ready queue is
+// fiber, spawned second, then writes 3 bytes to writeFd. Now the ready queue is
 // drained and the only parked fiber is the reader's io-waiter, so the run loop
-// BLOCKS on `kevent`, which reports read_fd ready; the reader wakes and reads the
+// BLOCKS on `kevent`, which reports readFd ready; the reader wakes and reads the
 // bytes. The ordering ("wrote" recorded before "read") proves the reader blocked
 // on the empty pipe and was woken by kqueue readiness, not by data already
 // present.
@@ -34,36 +34,36 @@ close  :: (fd: i32) -> i32 extern libc "close";
 // Shared log: a tiny ledger of what happened, in order.
 S :: struct {
     wrote: bool;
-    read_n: i64;
+    readN: i64;
     bytes: [8]u8;
-    read_done: bool;
+    readDone: bool;
 }
 
 main :: () -> i64 {
-    st : S = .{ wrote = false, read_n = 0, read_done = false };   // bytes[] zero-filled
+    st : S = .{ wrote = false, readN = 0, readDone = false };   // bytes[] zero-filled
 
     fds : [2]i32 = ---;
     if c.pipe(*fds) != 0 {
         print("1816: pipe() failed\n");
         return 1;
     }
-    read_fd := fds[0];
-    write_fd := fds[1];
+    readFd := fds[0];
+    writeFd := fds[1];
 
     s := sched.Scheduler.init();
     ps := *s; pst := *st;
 
     // Reader: block on the (empty) pipe until it is readable, then read 3 bytes.
-    mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
+    mkReader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
         ps.spawn(||_{ ps, pst, rfd } {
-            ps.blockOnFd(rfd, true);   // parks until read_fd is readable
+            ps.blockOnFd(rfd, true);   // parks until readFd is readable
             n := read(rfd, *pst.bytes[0], 3);
-            pst.read_n = xx n;
-            pst.read_done = true;
+            pst.readN = xx n;
+            pst.readDone = true;
         });
     }
     // Writer: write 3 bytes ('a','b','c') to the write end.
-    mk_writer :: (ps: *sched.Scheduler, pst: *S, wfd: i32) {
+    mkWriter :: (ps: *sched.Scheduler, pst: *S, wfd: i32) {
         ps.spawn(||_{ pst, wfd } {
             buf : [3]u8 = ---;
             buf[0] = 97; buf[1] = 98; buf[2] = 99;  // 'a' 'b' 'c'
@@ -72,16 +72,16 @@ main :: () -> i64 {
         });
     }
 
-    mk_reader(ps, pst, read_fd);   // spawned first → runs + parks on empty pipe
-    mk_writer(ps, pst, write_fd);  // spawned second → writes, then kqueue wakes reader
+    mkReader(ps, pst, readFd);   // spawned first → runs + parks on empty pipe
+    mkWriter(ps, pst, writeFd);  // spawned second → writes, then kqueue wakes reader
     s.run();
 
     print("log: ");
     if st.wrote { print("wrote "); }
-    if st.read_done {
-        print("read {} [", st.read_n);
+    if st.readDone {
+        print("read {} [", st.readN);
         i := 0;
-        while i < st.read_n {
+        while i < st.readN {
             if i > 0 { print(" "); }
             print("{}", st.bytes[i]);
             i = i + 1;
@@ -89,9 +89,9 @@ main :: () -> i64 {
         print("]");
     }
     print("\n");
-    print("n_suspended: {}\n", s.nSuspended);
+    print("nSuspended: {}\n", s.nSuspended);
 
-    close(read_fd);
-    close(write_fd);
+    close(readFd);
+    close(writeFd);
     return 0;
 }

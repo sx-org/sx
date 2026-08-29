@@ -85,10 +85,10 @@ main :: () {
     // ── clearRetainingCapacity ───────────────────────────────────────────
     c : HashMap(i64, i64) = .{};
     c.put(1, 1, gpa);
-    cap_c := c.capacity();
+    capC := c.capacity();
     c.clear();
     c.clear();
-    report("clr-len", c.len == 0 and c.capacity() == cap_c);
+    report("clr-len", c.len == 0 and c.capacity() == capC);
     c.putAssumeCapacity(1, 1);
     report("clr-reuse", c.get(1)?! == 1 and c.len == 1);
     c.deinit(gpa);
@@ -101,10 +101,10 @@ main :: () {
     i = 0;
     while i < 10 { o.put(i, i * 10, gpa); i += 1; }
     cp := o.clone(gpa);
-    all_c := true;
+    allC := true;
     i = 0;
-    while i < 10 { if cp.get(i)?! != i * 10 { all_c = false; } i += 1; }
-    report("clone-vals", all_c and cp.len == 10);
+    while i < 10 { if cp.get(i)?! != i * 10 { allC = false; } i += 1; }
+    report("clone-vals", allC and cp.len == 10);
     cp.put(0, 999, gpa);                                  // mutate clone only
     report("clone-indep", o.get(0)?! == 0 and cp.get(0)?! == 999);
     o.deinit(gpa);
@@ -116,14 +116,14 @@ main :: () {
     while i < 16 { r16.put(i, i, gpa); i += 1; }
     i = 0;
     while i < 16 { if i % 3 == 0 { r16.remove(i, gpa); } i += 1; }
-    rm_ok := r16.len == 10;
+    rmOk := r16.len == 10;
     i = 0;
     while i < 16 {
-        if i % 3 == 0 { if r16.contains(i) { rm_ok = false; } }
-        else { if r16.get(i)?! != i { rm_ok = false; } }
+        if i % 3 == 0 { if r16.contains(i) { rmOk = false; } }
+        else { if r16.get(i)?! != i { rmOk = false; } }
         i += 1;
     }
-    report("remove", rm_ok);
+    report("remove", rmOk);
     r16.deinit(gpa);
 
     // ── reverse removes ──────────────────────────────────────────────────
@@ -131,15 +131,15 @@ main :: () {
     i = 0;
     while i < 16 { rr.put(i, i, gpa); i += 1; }
     i = 16;
-    rev_ok := true;
+    revOk := true;
     while i > 0 {
         rr.remove(i - 1, gpa);
-        if rr.contains(i - 1) { rev_ok = false; }
+        if rr.contains(i - 1) { revOk = false; }
         j := 0;
-        while j < i - 1 { if rr.get(j)?! != j { rev_ok = false; } j += 1; }
+        while j < i - 1 { if rr.get(j)?! != j { revOk = false; } j += 1; }
         i -= 1;
     }
-    report("reverse-removes", rev_ok and rr.len == 0);
+    report("reverse-removes", revOk and rr.len == 0);
     rr.deinit(gpa);
 
     // ── multiple removes on same metadata, then re-insert ────────────────
@@ -156,10 +156,10 @@ main :: () {
     mm.put(13, 13, gpa);
     mm.put(14, 14, gpa);
     mm.put(7, 7, gpa);
-    all_mm := true;
+    allMm := true;
     i = 0;
-    while i < 16 { if mm.get(i)?! != i { all_mm = false; } i += 1; }
-    report("multi-rm-reinsert", all_mm);
+    while i < 16 { if mm.get(i)?! != i { allMm = false; } i += 1; }
+    report("multi-rm-reinsert", allMm);
     mm.deinit(gpa);
 
     // ── put then overwrite every key ─────────────────────────────────────
@@ -168,10 +168,10 @@ main :: () {
     while i < 16 { p.put(i, i, gpa); i += 1; }
     i = 0;
     while i < 16 { p.put(i, i * 16 + 1, gpa); i += 1; }
-    all_p := true;
+    allP := true;
     i = 0;
-    while i < 16 { if p.get(i)?! != i * 16 + 1 { all_p = false; } i += 1; }
-    report("put-overwrite", all_p);
+    while i < 16 { if p.get(i)?! != i * 16 + 1 { allP = false; } i += 1; }
+    report("put-overwrite", allP);
     p.deinit(gpa);
 
     // ── putAssumeCapacity: sum, then overwrite-all ───────────────────────
@@ -179,16 +179,16 @@ main :: () {
     pac.ensureTotalCapacity(20, gpa);
     i = 0;
     while i < 20 { pac.putAssumeCapacity(i, i); i += 1; }
-    sum_pac := 0;
+    sumPac := 0;
     i = 0;
-    while i < 20 { sum_pac += pac.getPtr(i)?!.*; i += 1; }
-    report("pac-sum", sum_pac == 190);
+    while i < 20 { sumPac += pac.getPtr(i)?!.*; i += 1; }
+    report("pac-sum", sumPac == 190);
     i = 0;
     while i < 20 { pac.putAssumeCapacity(i, 1); i += 1; }
-    sum_pac2 := 0;
+    sumPac2 := 0;
     i = 0;
-    while i < 20 { sum_pac2 += pac.get(i)?!; i += 1; }
-    report("pac-overwrite", sum_pac2 == 20);
+    while i < 20 { sumPac2 += pac.get(i)?!; i += 1; }
+    report("pac-overwrite", sumPac2 == 20);
     pac.deinit(gpa);
 
     // ── getOrPut accumulation: 10 evens preset to 2, getOrPutValue 0..20 ──
@@ -197,10 +197,10 @@ main :: () {
     while i < 10 { g.put(i * 2, 2, gpa); i += 1; }
     i = 0;
     while i < 20 { g.getOrPutValue(i, 1, gpa); i += 1; }
-    sum_g := 0;
+    sumG := 0;
     i = 0;
-    while i < 20 { sum_g += g.get(i)?!; i += 1; }
-    report("gop-accum", sum_g == 30);                        // 10*2 + 10*1
+    while i < 20 { sumG += g.get(i)?!; i += 1; }
+    report("gop-accum", sumG == 30);                        // 10*2 + 10*1
     g.deinit(gpa);
 
     // ── rehash: drop tombstones, live entries survive ────────────────────
@@ -208,27 +208,27 @@ main :: () {
     i = 0;
     while i < 100 { rh.put(i, i, gpa); if i % 3 == 0 { rh.remove(i, gpa); } i += 1; }
     rh.rehash(gpa);
-    rehash_ok := rh.tombstones == 0;
+    rehashOk := rh.tombstones == 0;
     i = 0;
     while i < 100 {
-        if i % 3 == 0 { if rh.contains(i) { rehash_ok = false; } }
-        else { if rh.get(i)?! != i { rehash_ok = false; } }
+        if i % 3 == 0 { if rh.contains(i) { rehashOk = false; } }
+        else { if rh.get(i)?! != i { rehashOk = false; } }
         i += 1;
     }
-    report("rehash", rehash_ok);
+    report("rehash", rehashOk);
     rh.deinit(gpa);
 
     // ── iterator (while-let): count + sum keys/values ────────────────────
-    it_m : HashMap(i64, i64) = .{};
+    itM : HashMap(i64, i64) = .{};
     i = 0;
-    while i < 5 { it_m.put(i, i * 10, gpa); i += 1; }
-    sum_k := 0;
-    sum_v := 0;
+    while i < 5 { itM.put(i, i * 10, gpa); i += 1; }
+    sumK := 0;
+    sumV := 0;
     cnt := 0;
-    it := it_m.iterator();
-    while kv := it.next() { sum_k += kv.keyPtr.*; sum_v += kv.valuePtr.*; cnt += 1; }
-    report("iter", cnt == 5 and sum_k == 10 and sum_v == 100);
-    it_m.deinit(gpa);
+    it := itM.iterator();
+    while kv := it.next() { sumK += kv.keyPtr.*; sumV += kv.valuePtr.*; cnt += 1; }
+    report("iter", cnt == 5 and sumK == 10 and sumV == 100);
+    itM.deinit(gpa);
 
     // ── findIndex skips tombstones ACROSS a collision chain ─────────
     // Keys 1,9,17,25 all hash to bucket 4 at cap 8 → linear-probe chain in
@@ -260,24 +260,24 @@ main :: () {
     tb : HashMap(i64, i64) = .{};
     i = 0; while i < 16 { tb.put(i, i, gpa); i += 1; }
     i = 0; while i < 16 { if i % 2 == 0 { tb.remove(i, gpa); } i += 1; }
-    tb_cnt := 0; tb_sum := 0; tb_all_odd := true;
+    tbCnt := 0; tbSum := 0; tbAllOdd := true;
     tbit := tb.iterator();
     while kv := tbit.next() {
-        if kv.keyPtr.* % 2 == 0 { tb_all_odd = false; }
-        tb_cnt += 1; tb_sum += kv.keyPtr.*;
+        if kv.keyPtr.* % 2 == 0 { tbAllOdd = false; }
+        tbCnt += 1; tbSum += kv.keyPtr.*;
     }
-    report("g3-iter-skips-tombstones", tb_cnt == 8 and tb_sum == 64 and tb_all_odd);
+    report("g3-iter-skips-tombstones", tbCnt == 8 and tbSum == 64 and tbAllOdd);
     tb.deinit(gpa);
 
-    // ── ensureUnusedCapacity(n>1) GROW branch, then n put_assume_cap ─
+    // ── ensureUnusedCapacity(n>1) GROW branch, then n putAssumeCap ─
     uc : HashMap(i64, i64) = .{};
     uc.ensureUnusedCapacity(200, gpa);              // cap==0 → grow(mapCapacityFor(200))
-    uc_cap := uc.capacity();
-    report("g4-reserved", uc_cap >= 200);
+    ucCap := uc.capacity();
+    report("g4-reserved", ucCap >= 200);
     i = 0; while i < 200 { uc.putAssumeCapacity(i, i * 3); i += 1; }
-    uc_all := true;
-    i = 0; while i < 200 { if uc.get(i)?! != i * 3 { uc_all = false; } i += 1; }
-    report("g4-all-retrievable", uc_all and uc.len == 200 and uc.capacity() == uc_cap);
+    ucAll := true;
+    i = 0; while i < 200 { if uc.get(i)?! != i * 3 { ucAll = false; } i += 1; }
+    report("g4-all-retrievable", ucAll and uc.len == 200 and uc.capacity() == ucCap);
     uc.deinit(gpa);
 
     // ── clone with LIVE tombstones sitting mid probe-chain ───────────
@@ -335,17 +335,17 @@ main :: () {
     // not-yet-visited removed key is simply skipped.
     di : HashMap(i64, i64) = .{};
     i = 0; while i < 8 { di.put(i, i * 10, gpa); i += 1; }
-    di_cap := di.capacity();
-    di_removed := false;
-    di_cnt := 0; di_sum := 0;
+    diCap := di.capacity();
+    diRemoved := false;
+    diCnt := 0; diSum := 0;
     dit := di.iterator();
     while kv := dit.next() {
-        di_cnt += 1;
-        di_sum += kv.valuePtr.*;                        // deref stays valid — no realloc
-        if !di_removed and kv.keyPtr.* != 3 { di.remove(3, gpa); di_removed = true; }
+        diCnt += 1;
+        diSum += kv.valuePtr.*;                        // deref stays valid — no realloc
+        if !diRemoved and kv.keyPtr.* != 3 { di.remove(3, gpa); diRemoved = true; }
     }
     report("g9-remove-during-iter-safe",
-           di.capacity() == di_cap and !di.contains(3) and di.len == 7 and (di_cnt == 7 or di_cnt == 8));
+           di.capacity() == diCap and !di.contains(3) and di.len == 7 and (diCnt == 7 or diCnt == 8));
     di.deinit(gpa);
 
     // ── fetchPutAssumeCapacity OVERWRITE arm returns old value ───

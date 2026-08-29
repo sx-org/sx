@@ -4,7 +4,7 @@ Wrapper :: struct {
     private state: Secret;
 
     init :: (value: i64) -> Wrapper {
-        Wrapper{ state = make_secret(value) }
+        Wrapper{ state = makeSecret(value) }
     }
 
     get :: (self: *Wrapper) -> i64 { self.state.value }

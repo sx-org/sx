@@ -1,2 +1,2 @@
-from_a binds a.apply (value param): ok
-from_b binds b.apply (pointer param): ok
+fromA binds a.apply (value param): ok
+fromB binds b.apply (pointer param): ok

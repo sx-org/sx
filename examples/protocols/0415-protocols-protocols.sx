@@ -55,11 +55,11 @@ mul :: (a: i32, b: i32) -> i32 { a * b }
 
 identity :: (x: $T) -> T { x }
 
-pair_add :: (a: $T, b: $U) -> i64 {
+pairAdd :: (a: $T, b: $U) -> i64 {
     a.(i64) + b.(i64)
 }
 
-typed_sum :: (..args: []i32) -> i32 {
+typedSum :: (..args: []i32) -> i32 {
     result := 0;
     for it in args { result = result + it; }
     result
@@ -69,15 +69,15 @@ apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
     f(x, y)
 }
 
-void_return :: () {
+voidReturn :: () {
     return;
 }
 
-implicit_return :: (x: i32) -> i32 {
+implicitReturn :: (x: i32) -> i32 {
     x * 2
 }
 
-early_return :: (x: i32) -> i32 {
+earlyReturn :: (x: i32) -> i32 {
     if x > 10 { return 99; }
     x
 }
@@ -86,7 +86,7 @@ vec3 :: (x: f32, y: f32, z: f32) -> @Vector(3, f32) {
     .[x, y, z]
 }
 
-point_sum :: (p: Point) -> i32 { p.x + p.y }
+pointSum :: (p: Point) -> i32 { p.x + p.y }
 
 // @run compile-time constants
 CT_VAL :: @run add(10, 15);
@@ -96,35 +96,35 @@ CT_MUL :: @run mul(6, 7);
 CT_CHAIN :: @run add(CT_VAL, 5);
 
 // @run compile-time optional tests
-ct_opt_coalesce :: () -> i32 {
+ctOptCoalesce :: () -> i32 {
     x: ?i32 = 42;
     y: ?i32 = null;
     return (x ?? 0) + (y ?? 99);
 }
 
-ct_opt_unwrap :: () -> i32 {
+ctOptUnwrap :: () -> i32 {
     x: ?i32 = 77;
     return x?!;
 }
 
-ct_opt_guard :: () -> i32 {
+ctOptGuard :: () -> i32 {
     x: ?i32 = 10;
     if x == null { return -1; }
     return x;
 }
 
-CT_OPT_COALESCE :: @run ct_opt_coalesce();
+CT_OPT_COALESCE :: @run ctOptCoalesce();
 
-CT_OPT_UNWRAP :: @run ct_opt_unwrap();
+CT_OPT_UNWRAP :: @run ctOptUnwrap();
 
-CT_OPT_GUARD :: @run ct_opt_guard();
+CT_OPT_GUARD :: @run ctOptGuard();
 
 // @insert helpers
-gen_code :: () -> string {
+genCode :: () -> string {
     return "print(\"insert-ok\\n\");";
 }
 
-gen_val :: () -> string {
+genVal :: () -> string {
     return "print(\"insert-gen: {}\\n\", 42);";
 }
 
@@ -135,7 +135,7 @@ CheckErr :: error { NotReady }
 AcquireErr :: error { Acquire }
 
 // value-carrying, named set: raise three tags or succeed
-sm_parse :: (n: i32) -> (i32, !SmokeErr) {
+smParse :: (n: i32) -> (i32, !SmokeErr) {
     if n < 0  { raise .BadDigit; }
     if n == 0 { raise .Empty; }
     if n > 99 { raise .Overflow; }
@@ -143,28 +143,28 @@ sm_parse :: (n: i32) -> (i32, !SmokeErr) {
 }
 
 // pure failable, inferred set
-sm_check :: (ok: bool) -> ! {
+smCheck :: (ok: bool) -> ! {
     if !ok { raise CheckErr.NotReady; }
     return;
 }
 
 // multi-value, inferred set: `try` propagates; the SCC pass absorbs SmokeErr
-sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
-    x := try sm_parse(a);
-    y := try sm_parse(b);
+smPair :: (a: i32, b: i32) -> (i32, i32, !) {
+    x := try smParse(a);
+    y := try smParse(b);
     return .{x, y};
 }
 
 // `catch` block that diverges (logs the tag, then returns a fallback)
-sm_or_default :: (n: i32) -> i32 {
-    return sm_parse(n) catch |e| {
+smOrDefault :: (n: i32) -> i32 {
+    return smParse(n) catch |e| {
         print("  logged {}\n", e);
         return -1;
     };
 }
 
 // guarded + plain `defer` interleave: the rollback runs only on the error path
-sm_acquire :: (fail: bool) -> (i32, !) {
+smAcquire :: (fail: bool) -> (i32, !) {
     handed := false;
     defer print("  smoke defer A\n");
     defer if !handed print("  smoke rollback B\n");
@@ -174,15 +174,15 @@ sm_acquire :: (fail: bool) -> (i32, !) {
 }
 
 // `or`-chain: try a, fall to try b; propagate if both fail
-sm_first :: (a: i32, b: i32) -> (i32, !) {
-    v := try sm_parse(a) or try sm_parse(b);
+smFirst :: (a: i32, b: i32) -> (i32, !) {
+    v := try smParse(a) or try smParse(b);
     return v;
 }
 
 // --- Extern function binding ---
 libc :: @library "c";
 
-c_abs :: (n: i32) -> i32 extern libc "abs";
+cAbs :: (n: i32) -> i32 extern libc "abs";
 
 // --- Protocol declarations (static dispatch only) ---
 
@@ -231,7 +231,7 @@ impl Adder for Doubler {
 // default methods
 Repeater :: interface {
     say :: (self: *Self, msg: string);
-    say_twice :: (self: *Self, msg: string) {
+    sayTwice :: (self: *Self, msg: string) {
         self.say(msg);
         self.say(msg);
     }
@@ -252,7 +252,7 @@ Chained :: interface {
     wrap :: (self: *Self, msg: string) -> i32 {
         self.base(msg) + 1
     }
-    double_wrap :: (self: *Self, msg: string) -> i32 {
+    doubleWrap :: (self: *Self, msg: string) -> i32 {
         self.wrap(msg) + self.wrap(msg)
     }
 }
@@ -293,7 +293,7 @@ impl Eq for i64 {
 }
 
 // Generic constraints
-are_equal :: ($T: Type/Eq, a: T, b: T) -> bool {
+areEqual :: ($T: Type/Eq, a: T, b: T) -> bool {
     a.eq(b)
 }
 
@@ -307,13 +307,13 @@ impl Hashable for Point {
     }
 }
 
-eq_and_hash :: ($T: Type/Eq/Hashable, a: T, b: T) -> bool {
+eqAndHash :: ($T: Type/Eq/Hashable, a: T, b: T) -> bool {
     if a.hash() != b.hash() { return false; }
     a.eq(b)
 }
 
 // inline constraint syntax ($T/Protocol)
-sum_of_inline :: (a: $T/Summable, b: T) -> i32 {
+sumOfInline :: (a: $T/Summable, b: T) -> i32 {
     a.sum() + b.sum()
 }
 
@@ -357,9 +357,9 @@ Builder :: struct {
 }
 
 // Global variable for address-of test
-g_smoke_val : i32 = 42;
+gSmokeVal : i32 = 42;
 
-write_to_ptr :: (p: *i32) {
+writeToPtr :: (p: *i32) {
     p.* = 99;
 }
 
@@ -397,12 +397,12 @@ main :: () {
 
     // pass protocol value to function
     {
-        use_adder :: (a: Adder, n: i32) -> i32 {
+        useAdder :: (a: Adder, n: i32) -> i32 {
             a.add(n);
             a.value()
         }
         acc := Accumulator{ total = 100 };
-        result := use_adder(acc.(Adder), 50);
+        result := useAdder(acc.(Adder), 50);
         print("P2.2: {}\n", result);
     }
 
@@ -431,20 +431,20 @@ main :: () {
 
     // interface handle passed to function
     {
-        use_counter :: (c: Counter) -> i32 {
+        useCounter :: (c: Counter) -> i32 {
             c.inc();
             c.inc();
             c.get()
         }
         sc := SimpleCounter{ val = 10 };
-        result := use_counter(sc.(Counter));
+        result := useCounter(sc.(Counter));
         print("P3.2: {}\n", result);
     }
 
     // default method calls required method (static dispatch)
     {
         pr := Printer{ count = 0 };
-        pr.say_twice("hi ");
+        pr.sayTwice("hi ");
         print("\nP4.1: {}\n", pr.count);
     }
 
@@ -452,7 +452,7 @@ main :: () {
     {
         pr := Printer{ count = 0 };
         r : *Repeater = *pr;          // borrowed VIEW — mutations reach pr
-        r.say_twice("yo ");
+        r.sayTwice("yo ");
         print("\nP4.2: {}\n", pr.count);
     }
 
@@ -460,9 +460,9 @@ main :: () {
     {
         ci := ChainImpl{ val = 0 };
         ch : *Chained = *ci;          // view — ci.val is asserted below
-        // double_wrap calls wrap twice, wrap calls base once each
-        // base("hi") returns 2 (len), wrap adds 1 → 3, double_wrap = 3 + 3 = 6
-        result := ch.double_wrap("hi");
+        // doubleWrap calls wrap twice, wrap calls base once each
+        // base("hi") returns 2 (len), wrap adds 1 → 3, doubleWrap = 3 + 3 = 6
+        result := ch.doubleWrap("hi");
         // base was called 2 times (once per wrap call)
         print("P4.3: {} {}\n", result, ci.val);
     }
@@ -498,7 +498,7 @@ main :: () {
         p1 := Point{ x = 1, y = 2 };
         p2 := Point{ x = 1, y = 2 };
         p3 := Point{ x = 3, y = 4 };
-        print("P5.3: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
+        print("P5.3: {} {}\n", areEqual(p1, p2), areEqual(p1, p3));
     }
 
     // Single constraint — constrained generic function
@@ -506,12 +506,12 @@ main :: () {
         p1 := Point{ x = 1, y = 2 };
         p2 := Point{ x = 1, y = 2 };
         p3 := Point{ x = 3, y = 4 };
-        print("P6.1: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
+        print("P6.1: {} {}\n", areEqual(p1, p2), areEqual(p1, p3));
     }
 
     // Constraint with primitive type
     {
-        print("P6.2: {} {}\n", are_equal(42, 42), are_equal(42, 99));
+        print("P6.2: {} {}\n", areEqual(42, 42), areEqual(42, 99));
     }
 
     // Multiple constraints
@@ -519,15 +519,15 @@ main :: () {
         p1 := Point{ x = 1, y = 2 };
         p2 := Point{ x = 1, y = 2 };
         p3 := Point{ x = 3, y = 4 };
-        print("P6.3: {} {}\n", eq_and_hash(p1, p2), eq_and_hash(p1, p3));
+        print("P6.3: {} {}\n", eqAndHash(p1, p2), eqAndHash(p1, p3));
     }
 
     // inline constraint syntax ($T/Protocol)
     {
-        // sum_of_inline uses $T/Summable inline (not $T: Type/Summable)
+        // sumOfInline uses $T/Summable inline (not $T: Type/Summable)
         p1 := Point{ x = 10, y = 20 };
         p2 := Point{ x = 3, y = 7 };
-        print("P6.4: {}\n", sum_of_inline(p1, p2));
+        print("P6.4: {}\n", sumOfInline(p1, p2));
     }
 
     // Struct type param constraints ($T: Type/Summable)
@@ -550,7 +550,7 @@ main :: () {
     }
 
     // xx in function return position (tested in standalone test_return.sx)
-    // Covered by: make_adder :: (acc: *Accumulator) -> Adder { xx acc; }
+    // Covered by: makeAdder :: (acc: *Accumulator) -> Adder { xx acc; }
 
     // Protocol values in arrays — each element copies the handle and aliases
     // the named source.
@@ -568,17 +568,17 @@ main :: () {
 
     // postfix erasure of a named local at an interface argument
     {
-        use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
+        useAdder :: (a: Adder) -> i32 { a.add(10); a.value() }
         acc := Accumulator{ total = 5 };
-        result := use_adder(acc.(Adder));
+        result := useAdder(acc.(Adder));
         print("P2.7: {}\n", result);
     }
 
     // named local at an interface argument
     {
-        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        useCounter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 100 };
-        result := use_counter(sc.(Counter));
+        result := useCounter(sc.(Counter));
         print("P3.3: {}\n", result);
     }
 }

@@ -16,7 +16,7 @@ MotionEvent :: @JniClass("android/view/MotionEvent") extern {
     getY      :: (self: *Self) -> f32;
 }
 
-sx_consume_touch :: (action: i32, x: f32, y: f32) {
+sxConsumeTouch :: (action: i32, x: f32, y: f32) {
     // Black-hole call so the args aren't dead-stripped before LLVM
     // verification gets a chance to look at the call site.
     if action == 0 and x == 0.0 and y == 0.0 {
@@ -24,20 +24,20 @@ sx_consume_touch :: (action: i32, x: f32, y: f32) {
     }
 }
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-drive_touch :: (env: *void, ev: *MotionEvent) {
+driveTouch :: (env: *void, ev: *MotionEvent) {
     push .{ jni = env } {
         // All three JNI calls emit proper Call<T>Method dispatches;
         // lowering getX() / getY() to `undef` floats would pass garbage
-        // to sx_consume_touch.
-        sx_consume_touch(ev.getAction(), ev.getX(), ev.getY());
+        // to sxConsumeTouch.
+        sxConsumeTouch(ev.getAction(), ev.getX(), ev.getY());
     }
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        drive_touch(null, null);
+    if gShouldCall {
+        driveTouch(null, null);
     }
     print("ok\n");
     0

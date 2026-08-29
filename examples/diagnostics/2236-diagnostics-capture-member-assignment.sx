@@ -27,7 +27,7 @@ Shape :: enum { box: Item; none; }
 
 takes :: (p: *i64) {}
 
-pack_mut :: (..xs: Item) {
+packMut :: (..xs: Item) {
     inline for x in xs { x.n = 1; }
 }
 
@@ -80,7 +80,7 @@ main :: () -> i32 {
     c.n = 9;
 
     // 11. inline-for pack-element alias — member write
-    pack_mut(.{ n = 1, tags = .[0, 0] });
+    packMut(.{ n = 1, tags = .[0, 0] });
 
     0
 }

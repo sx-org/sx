@@ -6,7 +6,7 @@
 // every level coerces.
 @import "modules/std.sx";
 
-sum_nested :: (xss: [][]i64) -> i64 {
+sumNested :: (xss: [][]i64) -> i64 {
     total := 0;
     i := 0;
     while i < xss.len {
@@ -17,7 +17,7 @@ sum_nested :: (xss: [][]i64) -> i64 {
     return total;
 }
 
-count_x :: (xss: [][]string) -> i64 {
+countX :: (xss: [][]string) -> i64 {
     n := 0;
     i := 0;
     while i < xss.len {
@@ -31,11 +31,11 @@ count_x :: (xss: [][]string) -> i64 {
 main :: () {
     // numeric [][]i64 — local-bound vs direct-arg both sum to 10.
     local : [][]i64 = .[.[1, 2], .[3, 4]];
-    print("num local={}\n", sum_nested(local));
-    print("num direct={}\n", sum_nested(.[.[1, 2], .[3, 4]]));
+    print("num local={}\n", sumNested(local));
+    print("num direct={}\n", sumNested(.[.[1, 2], .[3, 4]]));
 
     // string [][]string — local-bound vs direct-arg both count 4 "x"s.
     slocal : [][]string = .[.["x", "a"], .["b", "x"], .["x", "x"]];
-    print("str local={}\n", count_x(slocal));
-    print("str direct={}\n", count_x(.[.["x", "a"], .["b", "x"], .["x", "x"]]));
+    print("str local={}\n", countX(slocal));
+    print("str direct={}\n", countX(.[.["x", "a"], .["b", "x"], .["x", "x"]]));
 }

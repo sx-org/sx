@@ -13,19 +13,19 @@
 E :: error { Neg }
 
 // dead `return 99;` after an unconditional return
-const_one :: () -> i64 { return 1; return 99; }
+constOne :: () -> i64 { return 1; return 99; }
 
 // dead `return x;` after an unconditional raise (the failable closure shape)
-always_raise :: (x: i64) -> (i64, !E) { raise .Neg; return x; }
+alwaysRaise :: (x: i64) -> (i64, !E) { raise .Neg; return x; }
 
 // guard: a conditional return must still fall through to the trailing return
 clamp :: (x: i64) -> i64 { if x > 10 { return 10; } return x; }
 
 main :: () -> i32 {
-    print("const_one={}\n", const_one());            // 1
-    print("raised={}\n", always_raise(5) catch |e| 0); // 0
-    print("clamp_hi={}\n", clamp(42));               // 10
-    print("clamp_lo={}\n", clamp(7));                // 7
+    print("constOne={}\n", constOne());            // 1
+    print("raised={}\n", alwaysRaise(5) catch |e| 0); // 0
+    print("clampHi={}\n", clamp(42));               // 10
+    print("clampLo={}\n", clamp(7));                // 7
 
     // dead code after a `return` at main's own block level is dropped.
     return 0;

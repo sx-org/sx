@@ -14,7 +14,7 @@ modifier :: @import "examples/ui/emit/modifier.sx";
 components :: @import "examples/ui/emit/components.sx";
 sink :: @import "examples/ui/emit/sink.sx";
 containers :: @import "examples/ui/emit/containers.sx";
-emit_mod :: @import "examples/ui/emit/emit.sx";
+emitMod :: @import "examples/ui/emit/emit.sx";
 runtime :: @import "examples/ui/emit/runtime.sx";
 
 // Geometry
@@ -39,7 +39,7 @@ VStack :: containers.VStack;
 
 // Ambient buffer and the terminal publish
 EmitSink :: sink.EmitSink;
-emit :: emit_mod.emit;
+emit :: emitMod.emit;
 vstack :: containers.vstack;
 renderRoot :: runtime.renderRoot;
 commandCount :: runtime.commandCount;

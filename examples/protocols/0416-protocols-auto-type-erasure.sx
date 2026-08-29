@@ -49,9 +49,9 @@ main :: () {
 
     // AE1: function argument, lvalue source
     {
-        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        useCounter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };
-        result := use_counter(sc.(Counter));
+        result := useCounter(sc.(Counter));
         print("AE1: {}\n", result);
     }
 
@@ -66,28 +66,28 @@ main :: () {
 
     // AE3: function argument, named local
     {
-        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        useCounter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 100 };
-        result := use_counter(sc.(Counter));
+        result := useCounter(sc.(Counter));
         print("AE3: {}\n", result);
     }
 
     // AE4: call result bound, then argument
     {
-        use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
+        useCounter :: (c: Counter) -> i32 { c.inc(); c.get() }
         mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }
         made := mk();
-        result := use_counter(made.(Counter));
+        result := useCounter(made.(Counter));
         print("AE4: {}\n", result);
     }
 
     // AE5: transient mutation through a VIEW param — a pointer-to-concrete
     // produces the `*Adder` view implicitly; mutations reach the original
     {
-        use_adder :: (a: *Adder) { a.add(10); }
+        useAdder :: (a: *Adder) { a.add(10); }
         acc := Accumulator{ total = 5 };
         p := *acc;
-        use_adder(p);
+        useAdder(p);
         print("AE5: {}\n", acc.total);
     }
 }

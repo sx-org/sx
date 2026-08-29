@@ -7,12 +7,12 @@
 // The fold of a SELECTED const's RHS must resolve nested same-name leaves (the
 // `M` inside `K :: M + 1`) in the SELECTED author's source context, not through
 // the global last-wins `module_const_map`. Both observables agree per module:
-// a_len=2 a_val=2, b_len=11 b_val=11.
+// aLen=2 aVal=2, bLen=11 bVal=11.
 @import "modules/std.sx";
 @import "0788-modules-same-name-const-expr-chain-dim/a.sx";
 @import "0788-modules-same-name-const-expr-chain-dim/b.sx";
 
 main :: () -> i32 {
-    print("a_len={} a_val={} b_len={} b_val={}\n", a_len(), a_val(), b_len(), b_val());
+    print("aLen={} aVal={} bLen={} bVal={}\n", aLen(), aVal(), bLen(), bVal());
     0
 }

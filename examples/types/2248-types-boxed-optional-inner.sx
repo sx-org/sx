@@ -13,13 +13,13 @@ sentinel :: (v: any) -> string {
 
 main :: () -> i32 {
     n : ?i32 = 7;
-    no_n : ?i32 = null;
-    print("flagged {} {}\n", flagged(n), flagged(no_n));
+    noN : ?i32 = null;
+    print("flagged {} {}\n", flagged(n), flagged(noN));
 
     x : i32 = 41;
     p : ?*i32 = *x;
-    no_p : ?*i32 = null;
-    print("sentinel {} {}\n", sentinel(p), sentinel(no_p));
+    noP : ?*i32 = null;
+    print("sentinel {} {}\n", sentinel(p), sentinel(noP));
 
     // The view aliases the payload it borrows.
     x = 99;

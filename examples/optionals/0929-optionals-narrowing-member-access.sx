@@ -19,36 +19,36 @@ T :: struct {
 }
 V :: struct { k: i64 = 9; }
 
-read_scalar :: (p: ?*T) -> i64 {
+readScalar :: (p: ?*T) -> i64 {
     if p == null { return 0; }
     return p.n;
 }
-read_nested :: (p: ?*T) -> i64 {
+readNested :: (p: ?*T) -> i64 {
     if p == null { return 0; }
     return p.inner.m;
 }
-read_two_step :: (p: ?*T) -> i64 {
+readTwoStep :: (p: ?*T) -> i64 {
     if p == null { return 0; }
     u := p.inner;         // aggregate copy via narrowed access; u: U
     return u.m;
 }
-write_through :: (p: ?*T) {
+writeThrough :: (p: ?*T) {
     if p == null { return; }
     p.n = 42;
 }
-call_method :: (p: ?*T) {
+callMethod :: (p: ?*T) {
     if p == null { return; }
     p.bump();
 }
-value_optional :: (v: ?V) -> i64 {
+valueOptional :: (v: ?V) -> i64 {
     if v == null { return 0; }
     return v.k;
 }
-still_chains :: (p: ?*T) -> ?i64 {
+stillChains :: (p: ?*T) -> ?i64 {
     if p == null { return null; }
     return p?.n;          // `?.` on a narrowed local keeps the optional shape
 }
-guard_or :: (a: ?*T, b: ?*V) -> i64 {
+guardOr :: (a: ?*T, b: ?*V) -> i64 {
     if a == null or b == null { return 0; }
     return a.n + b.k;     // the `or` guard proves BOTH present
 }
@@ -58,12 +58,12 @@ guard_or :: (a: ?*T, b: ?*V) -> i64 {
 // pointer.
 W :: struct { xs: List(i64) = .{}; }
 mkw :: (w: *W) -> ?*W { w }
-accessor_chain :: (w: *W) -> i64 {
+accessorChain :: (w: *W) -> i64 {
     s := mkw(w);
     if s == null { return 0; }
     return s.xs.len;      // @get accessor through the narrowed root
 }
-addr_chain :: (w: *W) -> *i64 {
+addrChain :: (w: *W) -> *i64 {
     s := mkw(w);
     if s == null { return null; }
     return *s.xs.items[0];   // address-of chain through the narrowed root
@@ -71,28 +71,28 @@ addr_chain :: (w: *W) -> *i64 {
 
 main :: () {
     t := T{};
-    process.assert(read_scalar(*t) == 7 and read_scalar(null) == 0, "scalar");
-    process.assert(read_nested(*t) == 3, "nested aggregate");
-    process.assert(read_two_step(*t) == 3, "aggregate copy");
+    process.assert(readScalar(*t) == 7 and readScalar(null) == 0, "scalar");
+    process.assert(readNested(*t) == 3, "nested aggregate");
+    process.assert(readTwoStep(*t) == 3, "aggregate copy");
 
-    write_through(*t);
+    writeThrough(*t);
     process.assert(t.n == 42, "write through narrowed pointer");
-    call_method(*t);
+    callMethod(*t);
     process.assert(t.n == 43, "method on narrowed receiver");
 
-    process.assert(value_optional(V{}) == 9 and value_optional(null) == 0, "value optional");
+    process.assert(valueOptional(V{}) == 9 and valueOptional(null) == 0, "value optional");
 
-    c := still_chains(*t);
+    c := stillChains(*t);
     process.assert(c != null and c?! == 43, "?. chain preserved");
 
     v := V{};
-    process.assert(guard_or(*t, *v) == 52, "or-guard narrows both");
-    process.assert(guard_or(null, *v) == 0, "or-guard rejects null");
+    process.assert(guardOr(*t, *v) == 52, "or-guard narrows both");
+    process.assert(guardOr(null, *v) == 0, "or-guard rejects null");
 
     w := W{};
     w.xs.append(11);
-    process.assert(accessor_chain(*w) == 1, "accessor chain");
-    pp := addr_chain(*w);
+    process.assert(accessorChain(*w) == 1, "accessor chain");
+    pp := addrChain(*w);
     pp.* = 12;
     process.assert(w.xs.items[0] == 12, "address-of chain writes through");
 

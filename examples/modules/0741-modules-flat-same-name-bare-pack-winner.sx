@@ -12,7 +12,7 @@
 @import "0741-modules-flat-same-name-bare-pack-winner/b.sx";
 
 main :: () -> i32 {
-    show_a();   // a-side: own == winner (the pack) → returns 1, byte-for-byte unchanged
-    show_b();   // b-side: selected own plain author → returns 2, not the pack winner
+    showA();   // a-side: own == winner (the pack) → returns 1, byte-for-byte unchanged
+    showB();   // b-side: selected own plain author → returns 2, not the pack winner
     0
 }

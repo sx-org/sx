@@ -10,20 +10,20 @@ Panel :: @OpenVariant(v.View) {
 
 Note :: struct { text: string; seq: i64; }
 
-alpha_soft :: () -> string {
+alphaSoft :: () -> string {
     p : Panel = .{ tag = "alpha soft" };
     x : v.View = p;
     if q := x.(?Panel) { return q.tag; }
     return "reached someone else's";
 }
 
-alpha_hard :: () -> string {
+alphaHard :: () -> string {
     p : Panel = .{ tag = "alpha hard" };
     x : v.View = p;
     return x.(Panel).render();
 }
 
-alpha_note :: () -> string {
+alphaNote :: () -> string {
     n : Note = .{ text = "alpha note", seq = 1 };
     av : any = n;
     return av.(Note).text;

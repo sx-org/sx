@@ -9,6 +9,6 @@
 @import "0752-modules-same-name-struct-distinct-fields/b.sx";
 
 main :: () -> i32 {
-    print("a={} b={}\n", a_box(), b_box());
+    print("a={} b={}\n", aBox(), bBox());
     0
 }

@@ -8,7 +8,7 @@
 Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding
 Inner   :: struct { x: u16; }
 Nested  :: struct { i: Inner; j: Inner; k: u8; }
-Overlay :: union { as_int: i64; as_bytes: [8]u8; }
+Overlay :: union { asInt: i64; asBytes: [8]u8; }
 Color   :: enum { red; green; blue; }
 Flags   :: enum flags { vsync; fullscreen; }
 

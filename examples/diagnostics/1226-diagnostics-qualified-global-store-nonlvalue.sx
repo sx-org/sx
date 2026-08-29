@@ -1,5 +1,5 @@
 // A qualified store through a namespace-import alias rejects a member that is NOT
-// a mutable global: a CONST (`lib.LIB_C = 3`) and a FUNCTION (`lib.lib_fn = 3`)
+// a mutable global: a CONST (`lib.LIB_C = 3`) and a FUNCTION (`lib.libFn = 3`)
 // each diagnose at the assignment site. A TRANSITIVE member (`amb.shared`,
 // authored only by modules that `amb` flat-imports) is not a namespace member at
 // all. Every error points at THIS file: classification runs in the target module's
@@ -12,7 +12,7 @@ amb :: @import "1226-diagnostics-qualified-global-store-nonlvalue/amb.sx";
 
 main :: () -> i32 {
     lib.LIB_C = null;              // target-directed null must not lower
-    lib.lib_fn = .selected;        // target-directed enum must not lower
+    lib.libFn = .selected;        // target-directed enum must not lower
     amb.shared = .{ value = 9 };   // target-directed struct must not lower
     0
 }

@@ -19,17 +19,17 @@
 ffi_apply_callback  :: (cb: (i32) -> i32 abi(.c), value: i32) -> i32 extern;
 ffi_apply_callback2 :: (cb: (*void, i32) -> i32 abi(.c), ctx: *void, v: i32) -> i32 extern;
 
-g_callback_hits : i32 = 0;
-g_callback_sum  : i32 = 0;
+gCallbackHits : i32 = 0;
+gCallbackSum  : i32 = 0;
 
-double_it :: (x: i32) -> i32 abi(.c) {
-    g_callback_hits += 1;
-    g_callback_sum += x;
+doubleIt :: (x: i32) -> i32 abi(.c) {
+    gCallbackHits += 1;
+    gCallbackSum += x;
     x * 2
 }
 
-add_with_ctx :: (ctx: *void, v: i32) -> i32 abi(.c) {
-    g_callback_hits += 1;
+addWithCtx :: (ctx: *void, v: i32) -> i32 abi(.c) {
+    gCallbackHits += 1;
     // Pass a sentinel via ctx to prove the pointer arg also survives the
     // round-trip — read it back as an i32 through *i32.
     p : *i32 = xx ctx;
@@ -38,22 +38,22 @@ add_with_ctx :: (ctx: *void, v: i32) -> i32 abi(.c) {
 
 main :: () -> i32 {
     // ── Single-arg callback ────────────────────────────────────────
-    r1 := ffi_apply_callback(double_it, 21);
+    r1 := ffi_apply_callback(doubleIt, 21);
     print("callback returned        = {}\n", r1);
-    print("hits after first call    = {}\n", g_callback_hits);
-    print("sum after first call     = {}\n", g_callback_sum);
+    print("hits after first call    = {}\n", gCallbackHits);
+    print("sum after first call     = {}\n", gCallbackSum);
 
     // Two more calls confirm the same fn pointer keeps working.
-    ffi_apply_callback(double_it, 7);
-    ffi_apply_callback(double_it, 11);
-    print("hits after three calls   = {}\n", g_callback_hits);
-    print("sum after three calls    = {}\n", g_callback_sum);
+    ffi_apply_callback(doubleIt, 7);
+    ffi_apply_callback(doubleIt, 11);
+    print("hits after three calls   = {}\n", gCallbackHits);
+    print("sum after three calls    = {}\n", gCallbackSum);
 
     // ── Two-arg callback with opaque ctx pointer ───────────────────
-    ctx_val : i32 = 100;
-    r2 := ffi_apply_callback2(add_with_ctx, *ctx_val, 42);
+    ctxVal : i32 = 100;
+    r2 := ffi_apply_callback2(addWithCtx, *ctxVal, 42);
     print("ctx + value              = {}\n", r2);
-    print("hits after ctx callback  = {}\n", g_callback_hits);
+    print("hits after ctx callback  = {}\n", gCallbackHits);
 
     0
 }

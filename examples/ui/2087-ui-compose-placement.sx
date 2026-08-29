@@ -40,9 +40,9 @@ main :: () -> i32 {
         corner = 8.0,
         padding = ui.EdgeInsets.symmetric(6.0, 2.0),
     });
-    card_size := card.sizeThatFits(ProposedSize.flexible());
-    print("card {}x{}\n", card_size.width.(i64), card_size.height.(i64));
-    draw(*card, Frame.make(0.0, 0.0, card_size.width, card_size.height));
+    cardSize := card.sizeThatFits(ProposedSize.flexible());
+    print("card {}x{}\n", cardSize.width.(i64), cardSize.height.(i64));
+    draw(*card, Frame.make(0.0, 0.0, cardSize.width, cardSize.height));
 
     // The same fields written in another order are the same element.
     same : View = place(Label{ text = "card" }, Mod{
@@ -51,8 +51,8 @@ main :: () -> i32 {
         bg = ui.COLOR_DARK_GRAY,
         margin = ui.EdgeInsets.all(4.0),
     });
-    same_size := same.sizeThatFits(ProposedSize.flexible());
-    print("same {}x{}\n", same_size.width.(i64), same_size.height.(i64));
+    sameSize := same.sizeThatFits(ProposedSize.flexible());
+    print("same {}x{}\n", sameSize.width.(i64), sameSize.height.(i64));
 
     // A ring instead of a fill; a fixed size centres the box in the bounds and
     // the content takes what the padding leaves of it.
@@ -76,8 +76,8 @@ main :: () -> i32 {
 
     // Hidden measures zero and draws nothing.
     gone : View = place(Label{ text = "gone" }, Mod{ hidden = true });
-    gone_size := gone.sizeThatFits(ProposedSize.flexible());
-    print("hidden {}x{}\n", gone_size.width.(i64), gone_size.height.(i64));
+    goneSize := gone.sizeThatFits(ProposedSize.flexible());
+    print("hidden {}x{}\n", goneSize.width.(i64), goneSize.height.(i64));
     draw(*gone, Frame.make(0.0, 0.0, 40.0, 16.0));
 
     // A placed component is a member, so it stacks like any other — and a

@@ -39,7 +39,7 @@ mclassify :: (n: i32) -> i32 {
 
 // Selective handle + re-raise (failable enclosing fn; `raise e` is the
 // variable form). Swallows Bad → success; re-raises everything else.
-handle_some :: (n: i32) -> !E {
+handleSome :: (n: i32) -> !E {
     must(n) catch |e| {
         if e == .Bad { return; }       // swallow → success
         raise e;                            // re-raise the rest
@@ -53,9 +53,9 @@ main :: () -> i32 {
     must(5)  catch { r = r + 100; };                         // success → body skipped
     r = r + classify(0);                                     // Empty → 2
     r = r + classify(8);                                     // success → 0
-    he := handle_some(0);                                    // Empty re-raised
+    he := handleSome(0);                                    // Empty re-raised
     if he == .Empty { r = r + 4; }                      // +4
-    hb := handle_some(-1);                                   // Bad swallowed → success
+    hb := handleSome(-1);                                   // Bad swallowed → success
     if hb == .Bad { r = r + 50; }                       // not taken
     r = r + mclassify(-1);                                   // Bad → 11
     print("catch result: {}\n", r);                          // 1+2+4+11 = 18

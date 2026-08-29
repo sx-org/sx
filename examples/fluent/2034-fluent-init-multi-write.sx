@@ -20,7 +20,7 @@ impl Drawable for Label {
 // How many times the argument expression has run.
 evaluations : i32 = 0;
 
-next_text :: () -> string {
+nextText :: () -> string {
     evaluations += 1;
     if evaluations == 1 then "first" else "second"
 }
@@ -52,13 +52,13 @@ repeat :: (value: $I/@Init($V/Drawable), times: i32) -> i32 {
 }
 
 main :: () -> i32 {
-    print("{}\n", pair(Label{ text = next_text() }));
+    print("{}\n", pair(Label{ text = nextText() }));
     print("evaluations {}\n", evaluations);
 
     evaluations = 0;
-    print("skipped {} evaluations {}\n", skip(Label{ text = next_text() }), evaluations);
+    print("skipped {} evaluations {}\n", skip(Label{ text = nextText() }), evaluations);
 
     evaluations = 0;
-    print("wrote {} evaluations {}\n", repeat(Label{ text = next_text() }, 3), evaluations);
+    print("wrote {} evaluations {}\n", repeat(Label{ text = nextText() }, 3), evaluations);
     0
 }

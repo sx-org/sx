@@ -13,7 +13,7 @@ Point :: struct {
 
 bump :: ufcs (p: Point, by: i64 = 10) -> i64 { return p.x + by; }
 
-sum_var :: (..xs: []i64) -> i64 {
+sumVar :: (..xs: []i64) -> i64 {
     t := 0;
     for x in xs { t = t + x; }
     return t;
@@ -27,7 +27,7 @@ main :: () {
     print("{}\n", p.scaled(3));       // explicit overrides
     print("{}\n", p.bump());          // default filled on ufcs dispatch
     print("{}\n", p.bump(1));
-    print("{}\n", sum_var());         // variadic: zero args
-    print("{}\n", sum_var(1, 2, 3));  // variadic: many args
+    print("{}\n", sumVar());         // variadic: zero args
+    print("{}\n", sumVar(1, 2, 3));  // variadic: many args
     print("{}\n", here() > 0);        // @caller default
 }

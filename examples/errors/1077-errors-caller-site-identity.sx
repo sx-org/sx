@@ -29,15 +29,15 @@ main :: () -> i32 {
 
     // A loop body is ONE lexical site: every iteration reports the same
     // ordinal, which is what makes the site a stable key.
-    loop_ordinals := 0;
+    loopOrdinals := 0;
     same := true;
     prev : u64 = 0;
     for i in 0..3 {
         ord := seen("loop");
         if i == 0 { prev = ord; } else if ord != prev { same = false; }
-        loop_ordinals += 1;
+        loopOrdinals += 1;
     }
-    print("loop ran {} times, one site {}\n", loop_ordinals, same);
+    print("loop ran {} times, one site {}\n", loopOrdinals, same);
 
     // An explicit argument overrides the default.
     fixed := @SourceSite{

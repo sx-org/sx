@@ -4,15 +4,15 @@
 
 @import "modules/std.sx";
 
-len_of :: (..$args) -> i64 {
+lenOf :: (..$args) -> i64 {
     list := $args;
     return list.len;
 }
 
 main :: () -> i32 {
-    print("{}\n", len_of());
-    print("{}\n", len_of(42));
-    print("{}\n", len_of(1, 2, 3));
-    print("{}\n", len_of("a", true, 3.14, "b"));
+    print("{}\n", lenOf());
+    print("{}\n", lenOf(42));
+    print("{}\n", lenOf(1, 2, 3));
+    print("{}\n", lenOf("a", true, 3.14, "b"));
     return 0;
 }

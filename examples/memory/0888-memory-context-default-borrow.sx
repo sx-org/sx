@@ -14,10 +14,10 @@
 fallback : Allocator = cAllocator;
 
 main :: () {
-    maybe_io : ?Io = context.io;
-    print("default io present = {}\n", maybe_io != null);
-    maybe_alloc : ?Allocator = context.allocator;
-    print("default allocator present = {}\n", maybe_alloc != null);
+    maybeIo : ?Io = context.io;
+    print("default io present = {}\n", maybeIo != null);
+    maybeAlloc : ?Allocator = context.allocator;
+    print("default allocator present = {}\n", maybeAlloc != null);
 
     recv : *CBlockingIo = xx context.io;
     print("io borrows cBlockingIo = {}\n", recv == *cBlockingIo);

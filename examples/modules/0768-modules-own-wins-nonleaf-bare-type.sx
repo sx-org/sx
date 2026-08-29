@@ -12,7 +12,7 @@
 //   - type-category match arm       `case Widget:`          → own identity
 //
 // The bare-type gate carries the OWN author's source-keyed TypeId into the
-// non-leaf sites. `dep_sizes` proves dep's distinct types still resolve to
+// non-leaf sites. `depSizes` proves dep's distinct types still resolve to
 // THEIR own 16 + 8 = 24 inside dep.
 
 @import "modules/std.sx";
@@ -34,8 +34,8 @@ main :: () -> i32 {
     xs := Nums.[1, 2];
     print("array={}\n", @sizeOf(Nums));
     t : Type = Widget;
-    print("typeval_eq={}\n", t == Widget);
+    print("typevalEq={}\n", t == Widget);
     print("match={}\n", describe(Widget));
-    print("dep={}\n", dep_sizes());
+    print("dep={}\n", depSizes());
     0
 }

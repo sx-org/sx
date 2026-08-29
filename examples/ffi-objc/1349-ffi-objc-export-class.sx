@@ -30,9 +30,9 @@ main :: () -> i32 {
         b.bump();
         print("counter: {}\n", b.get());
 
-        sel_release : SEL = sel_registerName("release".ptr);
-        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
-        release_fn(b, sel_release);
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(b, selRelease);
     }
     inline if @host.os != .macos {
         print("counter: 2\n");

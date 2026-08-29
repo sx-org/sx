@@ -10,7 +10,7 @@
 
 @import "modules/std.sx";
 
-count_anys :: (..$args) -> i64 {
+countAnys :: (..$args) -> i64 {
     total : i64 = 0;
     i : i64 = 0;
     while i < args.len {
@@ -23,6 +23,6 @@ count_anys :: (..$args) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", count_anys(10, "hi", 2.5, true));
+    print("{}\n", countAnys(10, "hi", 2.5, true));
     return 0;
 }

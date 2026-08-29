@@ -34,19 +34,19 @@ glEnable_  : (u32) -> void = ---;
 glDisable_ : (u32) -> void = ---;
 glScissor_ : (i32, i32, i32, i32) -> void = ---;
 
-g_color_index : i64 = 0;
-g_keyboard_up : bool = false;
-g_loaded : bool = false;
+gColorIndex : i64 = 0;
+gKeyboardUp : bool = false;
+gLoaded : bool = false;
 
-tap_frame :: () {
+tapFrame :: () {
     fc := gUikitPlat.beginFrame();
 
-    if !g_loaded {
+    if !gLoaded {
         // Cache the GL fn-ptrs we use beyond what modules/ffi/opengl.sx loads.
         glEnable_  = xx iosGlProc("glEnable".ptr);
         glDisable_ = xx iosGlProc("glDisable".ptr);
         glScissor_ = xx iosGlProc("glScissor".ptr);
-        g_loaded = true;
+        gLoaded = true;
     }
 
     events := gUikitPlat.pollEvents();
@@ -55,20 +55,20 @@ tap_frame :: () {
         ev := events.ptr[i];
         match ev {
             case .input: |ie| { match ie { case .pointerDown: {
-                g_color_index += 1;
-                if g_keyboard_up {
+                gColorIndex += 1;
+                if gKeyboardUp {
                     gUikitPlat.hideKeyboard();
-                    g_keyboard_up = false;
+                    gKeyboardUp = false;
                 } else {
                     gUikitPlat.showKeyboard();
-                    g_keyboard_up = true;
+                    gKeyboardUp = true;
                 }
             } } }
         }
         i += 1;
     }
 
-    phase := g_color_index % 3;
+    phase := gColorIndex % 3;
     r : f32 = if phase == 0 then 0.8 else 0.1;
     g : f32 = if phase == 1 then 0.8 else 0.1;
     b : f32 = if phase == 2 then 0.8 else 0.1;
@@ -79,10 +79,10 @@ tap_frame :: () {
 
     // Bottom bar = the interpolated safe-area bottom inset.
     insets := gUikitPlat.safeInsets();
-    bar_h_px : i32 = xx (insets.bottom * fc.dpiScale);
-    if bar_h_px > 0 {
+    barHPx : i32 = xx (insets.bottom * fc.dpiScale);
+    if barHPx > 0 {
         glEnable_(GL_SCISSOR_TEST);
-        glScissor_(0, 0, fc.pixelW, bar_h_px);
+        glScissor_(0, 0, fc.pixelW, barHPx);
         glClearColor(0.95, 0.25, 0.25, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
         glDisable_(GL_SCISSOR_TEST);
@@ -97,5 +97,5 @@ main :: () -> void {
     inline if @host.os != .ios { return; }
     plat : *UIKitPlatform = xx c.libcMalloc(@sizeOf(UIKitPlatform));
     plat.init("SxUIKitPlatform", 0, 0);
-    uikitAppRun(plat, tap_frame);
+    uikitAppRun(plat, tapFrame);
 }

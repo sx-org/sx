@@ -71,6 +71,6 @@ main :: () -> i32 {
     sn := p.sumn(*osl);
 
     print("p={} o={} t={} a={} | sp={} so={} ss={} sa={} st={} sn={} dep={}\n",
-        bp.m, bo?!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, dep_box());
+        bp.m, bo?!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, depBox());
     0
 }

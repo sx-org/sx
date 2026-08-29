@@ -1,23 +1,23 @@
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0909-modules-nested-namespace-alias-rhs-hidden.sx:7:12
    |
- 7 | BadType :: facade.engine_alias.Record;
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 7 | BadType :: facade.engineAlias.Record;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0909-modules-nested-namespace-alias-rhs-hidden.sx:8:13
    |
- 8 | BadValue :: facade.engine_alias.COUNT;
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 | BadValue :: facade.engineAlias.COUNT;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0909-modules-nested-namespace-alias-rhs-hidden.sx:9:15
    |
- 9 | BadGeneric :: facade.engine_alias.Box(i64);
-   |               ^^^^^^^^^^^^^^^^^^^^^^^
+ 9 | BadGeneric :: facade.engineAlias.Box(i64);
+   |               ^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0909-modules-nested-namespace-alias-rhs-hidden.sx:10:12
    |
-10 | BadMade :: facade.engine_alias.Make(i64);
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+10 | BadMade :: facade.engineAlias.Make(i64);
+   |            ^^^^^^^^^^^^^^^^^^^^^^^

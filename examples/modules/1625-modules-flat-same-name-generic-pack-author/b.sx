@@ -3,5 +3,5 @@
 ident :: (v: $T) -> i64 { return 2; }
 tally :: (..$args) -> i64 { return 20; }
 
-b_generic :: () -> i64 { return ident(5); }
-b_pack    :: () -> i64 { return tally(1, 2); }
+bGeneric :: () -> i64 { return ident(5); }
+bPack    :: () -> i64 { return tally(1, 2); }

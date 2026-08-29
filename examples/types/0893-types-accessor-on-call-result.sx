@@ -23,8 +23,8 @@ Box :: struct {
 g : Box = ---;
 
 // The whole function body as the chain — how the failure was first seen.
-via_call  :: () -> i64 { g.ptr().xs.len }
-via_unwrap :: () -> i64 { g.opt()?!.xs.len }
+viaCall  :: () -> i64 { g.ptr().xs.len }
+viaUnwrap :: () -> i64 { g.opt()?!.xs.len }
 
 main :: () {
     g = Box{};
@@ -37,8 +37,8 @@ main :: () {
     process.assert(g.ptr().xs.len == 3, "accessor through a call result");
     process.assert(g.opt()?!.xs.len == 3, "accessor through a force-unwrapped call result");
     process.assert(g.pick(false)?!.xs.len == 3, "accessor through a two-branch optional return");
-    process.assert(via_call() == 3, "accessor chain as a whole function body");
-    process.assert(via_unwrap() == 3, "unwrap chain as a whole function body");
+    process.assert(viaCall() == 3, "accessor chain as a whole function body");
+    process.assert(viaUnwrap() == 3, "unwrap chain as a whole function body");
 
     // Plain fields on the same chains keep working.
     process.assert(g.ptr().n == 7, "plain field through a call result");
@@ -47,5 +47,5 @@ main :: () {
     // Element reads through the same chain agree with the length.
     process.assert(g.ptr().xs.items[2] == 2, "indexing through a call result");
 
-    print("ok {} {}\n", via_call(), g.ptr().n);
+    print("ok {} {}\n", viaCall(), g.ptr().n);
 }

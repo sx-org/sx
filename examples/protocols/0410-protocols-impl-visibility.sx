@@ -17,4 +17,4 @@
 @import "./0410-protocols-impl-visibility-impl.sx";
 @import "./0410-protocols-impl-visibility-user.sx";
 
-main :: () -> i32 { run_user() }
+main :: () -> i32 { runUser() }

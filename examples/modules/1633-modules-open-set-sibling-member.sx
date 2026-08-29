@@ -17,7 +17,7 @@ main :: () -> i32 {
     print("{} {}\n", comp.hold(comp.Label{ text = "a member" }), comp.hold(comp.Panel{ title = "another" }));
 
     // A generic member's instantiation joins the same set, and its layout is in it.
-    print("{} size {}\n", comp.hold(comp.Padded(i64){ inner = 7 }), comp.size_here());
+    print("{} size {}\n", comp.hold(comp.Padded(i64){ inner = 7 }), comp.sizeHere());
     0
 }
 

@@ -44,10 +44,10 @@ structFieldCount(Point): 2
 @typeEq(i64, i64):    true
 @typeEq(i64, string): false
 === 10. ..$args walking ===
-type_list():            []
-type_list(1):           [i64]
-type_list(1, "x"):    [i64, string]
-type_list(true, 3.14):  [bool, f64]
+typeList():            []
+typeList(1):           [i64]
+typeList(1, "x"):    [i64, string]
+typeList(true, 3.14):  [bool, f64]
 === 11. Type in struct field ===
 h.t == i64:    true
 h.t == string: false

@@ -5,7 +5,7 @@
 
 @import "modules/std.sx";
 
-clamp_i8 :: (v: i8) -> i8 { v }
+clampI8 :: (v: i8) -> i8 { v }
 
 main :: () {
     a : i8 = -128;
@@ -17,6 +17,6 @@ main :: () {
     g : i16 = -32768;
     h : i8 = xx 300;            // explicit truncation stays legal
     i := 300.(i8);          // cast form too
-    j : i8 = clamp_i8(-5);
+    j : i8 = clampI8(-5);
     print("{} {} {} {} {} {} {} {} {} {}\n", a, b, c, d, e, f, g, h, i, j);
 }

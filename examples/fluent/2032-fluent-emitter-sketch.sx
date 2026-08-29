@@ -66,14 +66,14 @@ emit :: (title: string, content: $B/@BuildBlock(Cell)) {
 }
 
 main :: () -> i32 {
-    show_divider := true;
+    showDivider := true;
     lines := .["first", "second"];
 
     emit("report") {
         for line in lines {
             Text{ body = line };
         }
-        if show_divider {
+        if showDivider {
             Divider{};
         }
         Text{ body = "done" };

@@ -54,7 +54,7 @@ VStack :: @OpenVariant(View) {
 vstack :: (spacing: f32, body: $F/() -> void) -> VStack {
     stack := VStack{ spacing = spacing };
     sink := EmitSink{ children = *stack.children };
-    push .{ emit_ui = *sink } {
+    push .{ emitUi = *sink } {
         body();
     }
     stack

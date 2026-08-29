@@ -80,14 +80,14 @@ Identity :: struct {
     }
 }
 
-@context.extend compose_ui: *Identity = null;
+@context.extend composeUi: *Identity = null;
 
 // The id of the element being built at THIS call site. A component mints it
 // while the tree is built and carries it into render, where it names the hit
 // and focus regions the element declares.
 elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
-    process.assert(context.compose_ui != null, "element_id outside a compose build — push .{ compose_ui = *root.identity }");
-    occurrence := context.compose_ui.nextOccurrence(site.key);
+    process.assert(context.composeUi != null, "elementId outside a compose build — push .{ composeUi = *root.identity }");
+    occurrence := context.composeUi.nextOccurrence(site.key);
     hasher := siteHasher(site, ELEMENT_DOMAIN);
     hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }

@@ -55,7 +55,7 @@ form_Named :: ufcs (value: $I/@Init(Named)) {
     print("Named {}\n", slot.name());
 }
 
-form_any :: ufcs (value: $I/@Init(any)) {
+formAny :: ufcs (value: $I/@Init(any)) {
     slot: any = ---;
     value.write(*slot);
     match slot {
@@ -89,10 +89,10 @@ main :: () -> i32 {
     form_Named(h);
     h.form_Named();
 
-    form_any(Round{ s = "boxed" });
-    Round{ s = "boxed receiver" }.form_any();
-    form_any(h);
-    form_any(Label{ text = "boxed member" });
+    formAny(Round{ s = "boxed" });
+    Round{ s = "boxed receiver" }.formAny();
+    formAny(h);
+    formAny(Label{ text = "boxed member" });
 
     form_Round(echo_Round(Round{ s = "nested" }));
     echo_Round(Round{ s = "nested receiver" }).form_Round();

@@ -132,26 +132,26 @@ help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View
     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:120:24
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:120:23
     |
-120 |     cast_plain: View = xx Plain{ text = "still not a member" };
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+120 |     castPlain: View = xx Plain{ text = "still not a member" };
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
     |
-120 |     cast_plain: View = xx Plain{ text = "still not a member" };
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+120 |     castPlain: View = xx Plain{ text = "still not a member" };
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Alien' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:121:24
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:121:23
     |
-121 |     cast_alien: View = xx Alien{ text = "still another set" };
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+121 |     castAlien: View = xx Alien{ text = "still another set" };
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: 'Alien' is a member of 'Elsewhere', and a type belongs to one set
     |
-121 |     cast_alien: View = xx Alien{ text = "still another set" };
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+121 |     castAlien: View = xx Alien{ text = "still another set" };
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
   --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:62:35

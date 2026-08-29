@@ -17,7 +17,7 @@ main :: () -> i32 {
     if ie { print("loop init failed\n"); return 1; }
     are := false;
     loop.addRead(a, 41) catch { are = true; };
-    if are { print("add_read failed\n"); return 1; }
+    if are { print("addRead failed\n"); return 1; }
 
     evs : [8]event.Event = ---;
 
@@ -44,7 +44,7 @@ main :: () -> i32 {
     // Write interest on an empty send buffer reports writable at once.
     awe := false;
     loop.addWrite(b, 42) catch { awe = true; };
-    if awe { print("add_write failed\n"); return 1; }
+    if awe { print("addWrite failed\n"); return 1; }
     buf : [16]u8 = ---;
     socket.read(a, *buf[0], 16);   // drain so only the WRITE event fires
     n3, we3 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);

@@ -48,20 +48,20 @@ main :: () {
     // Array dimensions: separator/octal/hex literals as an array length flow
     // through the MAIN expression path (parseExpr -> .int_literal), same as any
     // ordinary literal. Assert their lane counts via `.len`.
-    dec_dim: [1_0]i32 = ---;
-    print("{}\n", dec_dim.len);          // 10
-    hex_dim: [0x1_0]i32 = ---;
-    print("{}\n", hex_dim.len);          // 16
-    oct_dim: [0o10]i32 = ---;
-    print("{}\n", oct_dim.len);          // 8
+    decDim: [1_0]i32 = ---;
+    print("{}\n", decDim.len);          // 10
+    hexDim: [0x1_0]i32 = ---;
+    print("{}\n", hexDim.len);          // 16
+    octDim: [0o10]i32 = ---;
+    print("{}\n", octDim.len);          // 8
 
     // Generic value-param position: the `$K` argument routes through the
     // type-arg literal parser (parser.zig ~801), NOT the main expression path.
     // Octal/separator literals here exercise that second base-detection block.
-    oct_arg: Vec(0o10, f32) = ---;
-    print("{}\n", oct_arg.data.len);     // 8
-    sep_arg: Vec(1_0, f32) = ---;
-    print("{}\n", sep_arg.data.len);     // 10
-    hex_arg: Vec(0xF_F, f32) = ---;
-    print("{}\n", hex_arg.data.len);     // 255
+    octArg: Vec(0o10, f32) = ---;
+    print("{}\n", octArg.data.len);     // 8
+    sepArg: Vec(1_0, f32) = ---;
+    print("{}\n", sepArg.data.len);     // 10
+    hexArg: Vec(0xF_F, f32) = ---;
+    print("{}\n", hexArg.data.len);     // 255
 }

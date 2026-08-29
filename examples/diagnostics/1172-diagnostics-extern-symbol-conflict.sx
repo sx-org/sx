@@ -10,19 +10,19 @@
 
 libc :: @library "c";
 // std/process.sx already binds getenv as `-> *u8`; this view disagrees.
-getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
+getenvOpt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
 
-fixed_view    :: (fmt: cstring) -> i32 extern libc "printf";
-variadic_view :: (fmt: cstring, ..) -> i32 extern libc "printf";
+fixedView    :: (fmt: cstring) -> i32 extern libc "printf";
+variadicView :: (fmt: cstring, ..) -> i32 extern libc "printf";
 
-tail_view   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
-same_tail   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
+tailView   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
+sameTail   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
 
 main :: () -> i32 {
-    p := getenv_opt("PATH");
+    p := getenvOpt("PATH");
     if p == null { return 1; }
-    n := fixed_view("x\n") + variadic_view("%d\n", 1);
-    n += tail_view("%d\n", 2) + same_tail("%d %d\n", 3, 4);
+    n := fixedView("x\n") + variadicView("%d\n", 1);
+    n += tailView("%d\n", 2) + sameTail("%d %d\n", 3, 4);
     if n < 0 { return 2; }
     return 0;
 }

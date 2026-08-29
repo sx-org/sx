@@ -6,11 +6,11 @@
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
 
-@context.extend ui_out: *List(View) = null;
+@context.extend uiOut: *List(View) = null;
 
 publish :: ufcs (value: $I/@Init(View)) -> string {
     item: View = ---;
     value.write(*item);
-    context.ui_out.append(item);
+    context.uiOut.append(item);
     return "receiver";
 }
