@@ -7,8 +7,7 @@
 // worker stands on.
 //
 // Backend: kqueue (std/net/kqueue) on darwin, epoll (std/net/epoll) on
-// linux. The whole `Loop` struct is selected per-OS by `inline if @host.os`
-// (the compiler's flatten pre-pass picks the matching top-level decl) —
+// linux. The whole `Loop` struct is selected per-OS by `inline if @host.os` —
 // callers never see the backend. The two backends differ enough in state
 // that they are separate structs rather than one struct with conditional
 // fields (sx has no conditional struct fields): kqueue carries only its
