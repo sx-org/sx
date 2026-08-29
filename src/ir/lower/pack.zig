@@ -175,23 +175,16 @@ pub fn packArgNodeAt(self: *Lowering, ie: *const ast.IndexExpr) ?*const Node {
     return arg_nodes[i];
 }
 
-/// Resolve an index expression to a comptime-known integer: a literal,
-/// or an identifier bound to an `int_val` in `comptime_constants` (e.g.
-/// the cursor of an `inline for i in 0..N` unroll). Otherwise null.
+/// Resolve an index expression to a comptime-known integer: a literal, or a
+/// comptime constant that projects to an `int_val`. Otherwise null.
 pub fn comptimeIndexOf(self: *Lowering, index: *const Node) ?i64 {
     switch (index.data) {
         .int_literal => |lit| return lit.value,
         .char_literal => |lit| return lit.value,
-        .identifier => |id| {
-            if (self.comptime_constants.get(id.name)) |cv| {
-                switch (cv) {
-                    .int_val => |iv| return iv,
-                    else => return null,
-                }
-            }
-            return null;
+        else => {
+            const cv = self.evalComptimeValue(index) orelse return null;
+            return if (cv == .int_val) cv.int_val else null;
         },
-        else => return null,
     }
 }
 

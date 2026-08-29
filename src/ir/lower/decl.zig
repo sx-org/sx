@@ -1294,8 +1294,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // (`L :: K.len`, `E :: K[1]`, `R :: LIT.r`) register with the count
     // placeholder so the folders reach them. Runs AFTER pass 2 so the
     // aggregate (array const / struct const) is registered regardless of
-    // declaration order; gated on the receiver naming a const aggregate so
-    // a namespaced member (`F :: m.PI_ISH`) is never mis-typed.
+    // declaration order; gated on the receiver naming a const aggregate or a
+    // comptime struct constant so a namespaced member (`F :: m.PI_ISH`) is
+    // never mis-typed.
     for (decls) |decl| {
         if (decl.data != .const_decl) continue;
         const cd = decl.data.const_decl;
@@ -1307,9 +1308,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => continue,
         };
         if (obj.data != .identifier) continue;
-        const recv_is_agg = switch (self.selectModuleConst(obj.data.identifier.name)) {
+        const recv = obj.data.identifier.name;
+        const recv_is_agg = switch (self.selectModuleConst(recv)) {
             .resolved => |sel| sel.info.value.data == .array_literal or sel.info.value.data == .struct_literal,
-            .own_opaque, .ambiguous, .none => false,
+            .own_opaque, .ambiguous, .none => if (self.comptime_constants.get(recv)) |cv| cv == .struct_val else false,
         };
         if (!recv_is_agg) continue;
         self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
