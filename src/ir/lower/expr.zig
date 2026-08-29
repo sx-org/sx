@@ -3533,10 +3533,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (self.comptime_constants.get(id.name)) |cv| {
                 switch (cv) {
                     .int_val => |iv| break :blk self.builder.constInt(iv, .i64),
+                    .bool_val => |bv| break :blk self.builder.constBool(bv),
                     .enum_tag => |et| break :blk self.builder.constInt(@intCast(et.tag), et.ty),
-                    // No enum type to read it as — fall through to the ordinary
+                    // No type to read them as — fall through to the ordinary
                     // name resolution, which reports the missing declaration.
-                    .target_variant => {},
+                    .target_variant, .struct_val => {},
                 }
             }
             // `context` resolves to a load through the lowering's

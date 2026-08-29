@@ -936,6 +936,7 @@ pub const Lowering = struct {
 
     pub const ComptimeValue = union(enum) {
         int_val: i64,
+        bool_val: bool,
         enum_tag: struct { ty: TypeId, tag: u32 },
         /// A target fact (`OS` / `ARCH`) in a program that does not declare the
         /// enum it is a variant of: the variant NAME the target selects. It
@@ -943,6 +944,12 @@ pub const Lowering = struct {
         /// reading — the declaration a runtime read needs is exactly the one
         /// that would have given it a tag.
         target_variant: []const u8,
+        struct_val: []const Field,
+
+        pub const Field = struct {
+            name: []const u8,
+            value: ComptimeValue,
+        };
     };
 
     pub const StructConstInfo = struct {
@@ -3301,6 +3308,7 @@ pub const Lowering = struct {
 
     // --- lower/comptime.zig (lower_comptime) ---
     pub const SelectedConst = lower_comptime.SelectedConst;
+    pub const evalComptimeValue = lower_comptime.evalComptimeValue;
     pub const evalComptimeCondition = lower_comptime.evalComptimeCondition;
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
     pub const evalStaticTypeMatch = lower_comptime.evalStaticTypeMatch;

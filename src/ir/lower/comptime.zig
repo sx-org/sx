@@ -221,6 +221,24 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
     return null;
 }
 
+/// Project a node to a comptime constant: a name in `comptime_constants`, or
+/// a named field of one that is a `.struct_val`. An unknown field is null —
+/// a comptime struct is not a namespace.
+pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
+    switch (node.data) {
+        .identifier => |id| return self.comptime_constants.get(id.name),
+        .field_access => |fa| {
+            const obj = evalComptimeValue(self, fa.object) orelse return null;
+            if (obj != .struct_val) return null;
+            for (obj.struct_val) |f| {
+                if (std.mem.eql(u8, f.name, fa.field)) return f.value;
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
 /// Evaluate a compile-time condition for `inline if`.
 /// Handles target/value comparisons and short-circuit `and` / `or` chains.
 pub fn evalComptimeCondition(self: *Lowering, node: *const Node) ?bool {
@@ -295,6 +313,15 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
             const result = iv == rhs_val;
             return if (bo.op == .eq) result else !result;
         },
+        .bool_val => |bv| {
+            const rhs_val = switch (bo.rhs.data) {
+                .bool_literal => |bl| bl.value,
+                else => return null,
+            };
+            const result = bv == rhs_val;
+            return if (bo.op == .eq) result else !result;
+        },
+        .struct_val => return null,
     }
 }
 
@@ -456,6 +483,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
             }
             return null;
         },
+        .bool_val, .struct_val => return null,
     }
 }
 
