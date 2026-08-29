@@ -199,7 +199,8 @@ pub const SourceConstCtx = struct {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
     pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.lowering.foldConstStructField(name, field, span, self.frame);
+        return self.lowering.foldComptimeStructField(name, field) orelse
+            self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     // Type-query builtin folds (`field_count`/`@sizeOf`/`@alignOf`) — delegate to
     // the wrapped Lowering, which can resolve the type-expr arg.
@@ -1826,7 +1827,8 @@ pub const Lowering = struct {
         return self.foldConstArrayElem(name, idx, span, null);
     }
     pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.foldConstStructField(name, field, span, null);
+        return self.foldComptimeStructField(name, field) orelse
+            self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
@@ -3309,6 +3311,7 @@ pub const Lowering = struct {
     // --- lower/comptime.zig (lower_comptime) ---
     pub const SelectedConst = lower_comptime.SelectedConst;
     pub const evalComptimeValue = lower_comptime.evalComptimeValue;
+    pub const foldComptimeStructField = lower_comptime.foldComptimeStructField;
     pub const evalComptimeCondition = lower_comptime.evalComptimeCondition;
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
     pub const evalStaticTypeMatch = lower_comptime.evalStaticTypeMatch;

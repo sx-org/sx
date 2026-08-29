@@ -2233,6 +2233,20 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
     return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
+/// `<comptime struct>.field` as a compile-time integer — a name in
+/// `comptime_constants` bound to a struct value, projected by field name.
+/// Keyed by name + field, never by node, so a type-position receiver
+/// (`[@host.pointerSize]T`) answers the same as a value-position one.
+pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
+    const cv = self.comptime_constants.get(name) orelse return null;
+    if (cv != .struct_val) return null;
+    for (cv.struct_val) |f| {
+        if (!std.mem.eql(u8, f.name, field)) continue;
+        return if (f.value == .int_val) f.value.int_val else null;
+    }
+    return null;
+}
+
 /// `<struct const>.field` as a compile-time integer — the SELECTED author's
 /// field initializer, matched by name (named inits) or position, folded in
 /// the author's context.

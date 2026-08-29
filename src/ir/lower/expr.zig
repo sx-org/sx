@@ -1003,6 +1003,28 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     return .unresolved;
 }
 
+/// A comptime constant as a runtime value. `.target_variant` and a struct
+/// whose contract the program does not declare have no type to be read as, so
+/// they answer null and the read falls through to ordinary name resolution.
+fn comptimeConstRef(self: *Lowering, cv: lower.Lowering.ComptimeValue) ?Ref {
+    return switch (cv) {
+        .int_val => |iv| self.builder.constInt(iv, .i64),
+        .bool_val => |bv| self.builder.constBool(bv),
+        .enum_tag => |et| self.builder.constInt(@intCast(et.tag), et.ty),
+        .target_variant, .struct_val => null,
+    };
+}
+
+/// A whole comptime struct (`x := @host`) as a runtime value: `struct_init`
+/// over the field constants in declaration order, typed by the contract the
+/// program declares under the same name.
+fn comptimeStructRef(self: *Lowering, name: []const u8, fields: []const lower.Lowering.ComptimeValue.Field) ?Ref {
+    const tid = self.module.types.findByName(self.module.types.internString(name)) orelse return null;
+    const refs = self.alloc.alloc(Ref, fields.len) catch return null;
+    for (fields, refs) |f, *r| r.* = comptimeConstRef(self, f.value) orelse return null;
+    return self.builder.emit(.{ .struct_init = .{ .fields = refs } }, tid);
+}
+
 pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) Ref {
     // `inline for x in xs` element capture as the receiver: re-enter with the
     // synthesized `xs[<i>]` as the object, so every pack-element rule below
@@ -1046,6 +1068,13 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // (`facade.engine_alias.CONST`) without ever stripping to a globally keyed
     // bare name before the complete prefix is proved.
     const full_node = Node{ .span = span, .data = .{ .field_access = fa.* } };
+
+    // A comptime constant's field (`@host.pointerSize`) is a value read, not a
+    // namespace member, so it answers ahead of the walk below.
+    if (self.evalComptimeValue(&full_node)) |cv| {
+        if (comptimeConstRef(self, cv)) |ref| return ref;
+    }
+
     if (self.qualifiedTypeName(&full_node)) |full_path| {
         defer self.alloc.free(full_path);
         const root_end = std.mem.indexOfScalar(u8, full_path, '.') orelse full_path.len;
@@ -3529,15 +3558,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk binding.ref;
                 }
             }
-            // Check compile-time constants (OS, ARCH, POINTER_SIZE) before globals
+            // A compile-time constant answers before globals.
             if (self.comptime_constants.get(id.name)) |cv| {
-                switch (cv) {
-                    .int_val => |iv| break :blk self.builder.constInt(iv, .i64),
-                    .bool_val => |bv| break :blk self.builder.constBool(bv),
-                    .enum_tag => |et| break :blk self.builder.constInt(@intCast(et.tag), et.ty),
-                    // No type to read them as — fall through to the ordinary
-                    // name resolution, which reports the missing declaration.
-                    .target_variant, .struct_val => {},
+                if (comptimeConstRef(self, cv)) |ref| break :blk ref;
+                if (cv == .struct_val) {
+                    if (comptimeStructRef(self, id.name, cv.struct_val)) |ref| break :blk ref;
                 }
             }
             // `context` resolves to a load through the lowering's
