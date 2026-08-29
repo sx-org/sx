@@ -22,7 +22,7 @@
 
 c_sum_ints :: (n: i32, ..) -> i64 extern;
 
-sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -60,7 +60,7 @@ main :: () -> i32 {
     b: i32 = 5;
     c: i32 = 6;
 
-    sx: Summer = sum_ints;
+    sx: Summer = sumInts;
     ct: Summer = c_sum_ints;
     print("fixed sx={} c={}\n", sx(3, a, b, c), ct(3, a, b, c));
 

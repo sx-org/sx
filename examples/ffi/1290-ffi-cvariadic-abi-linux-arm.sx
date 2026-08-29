@@ -8,7 +8,7 @@
 
 @import "modules/std/core.sx";
 
-sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
@@ -65,15 +65,15 @@ main :: () -> i32 {
     a: i32 = 4;
     b: i32 = 5;
     c: i32 = 6;
-    if sum_ints(3, a, b, c) != 15 { return 1; }
+    if sumInts(3, a, b, c) != 15 { return 1; }
     if ownForward(3, a, b, c) != 15 { return 2; }
     if twice(3, a, b, c) != 1515 { return 3; }
 
-    through: Summer = sum_ints;
+    through: Summer = sumInts;
     if through(3, a, b, c) != 15 { return 4; }
 
     narrow: u8 = 7;
     signedNarrow: i16 = -3;
-    if sum_ints(2, narrow, signedNarrow) != 4 { return 5; }
+    if sumInts(2, narrow, signedNarrow) != 4 { return 5; }
     return 0;
 }

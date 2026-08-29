@@ -48,7 +48,7 @@ constant :: (..) -> i64 abi(.c) {
 
 // The cursor argument is the local's address in every statement position — a
 // direct `@vaEnd` here, a deferred one in `sumDoubles`.
-sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+sumInts :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     total: i64 = 0;
@@ -130,11 +130,11 @@ main :: () -> i32 {
     a: i32 = 4;
     b: i32 = 5;
     c: i32 = 6;
-    print("ints sx={} c={}\n", sum_ints(3, a, b, c), c_sum_ints(3, a, b, c));
+    print("ints sx={} c={}\n", sumInts(3, a, b, c), c_sum_ints(3, a, b, c));
 
     // The narrow widths the caller promotes are read at the width C promoted
     // them to.
-    print("promoted sx={} c={}\n", sum_ints(2, narrow, signedNarrow), c_sum_ints(2, narrow, signedNarrow));
+    print("promoted sx={} c={}\n", sumInts(2, narrow, signedNarrow), c_sum_ints(2, narrow, signedNarrow));
 
     x: f64 = 1.25;
     print("doubles sx={} c={}\n", sumDoubles(3, x, 2.5, single), c_sum_doubles(3, x, 2.5, single));
