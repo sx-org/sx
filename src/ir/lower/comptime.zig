@@ -240,7 +240,8 @@ pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeV
 }
 
 /// Evaluate a compile-time condition for `inline if`.
-/// Handles target/value comparisons and short-circuit `and` / `or` chains.
+/// Handles target/value comparisons, `not`, and short-circuit `and` / `or`
+/// chains.
 pub fn evalComptimeCondition(self: *Lowering, node: *const Node) ?bool {
     return evalComptimeConditionDepth(self, node, 0);
 }
@@ -249,8 +250,16 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
     // Const chains recurse through module_const_map; a (rejected-elsewhere
     // but representable) self-referential const must not loop here.
     if (depth > 16) return null;
+    if (evalComptimeValue(self, node)) |cv| {
+        if (cv == .bool_val) return cv.bool_val;
+    }
     switch (node.data) {
         .bool_literal => |bl| return bl.value,
+        .unary_op => |uo| {
+            if (uo.op != .not) return null;
+            const inner = evalComptimeConditionDepth(self, uo.operand, depth + 1) orelse return null;
+            return !inner;
+        },
         // A bare identifier naming a module const folds through the const's
         // value expression (`ENABLED :: false`, chains, `F :: OS == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
@@ -274,12 +283,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
     }
     if (bo.op != .eq and bo.op != .neq) return null;
 
-    // LHS must be an identifier that's in comptime_constants
-    const name = switch (bo.lhs.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    const cv = self.comptime_constants.get(name) orelse return null;
+    const cv = evalComptimeValue(self, bo.lhs) orelse return null;
 
     switch (cv) {
         .enum_tag => |et| {
@@ -428,12 +432,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
 }
 
 pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node {
-    // Subject must be a comptime constant identifier
-    const name = switch (me.subject.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    const cv = self.comptime_constants.get(name) orelse return null;
+    const cv = evalComptimeValue(self, me.subject) orelse return null;
 
     switch (cv) {
         .enum_tag => |et| {

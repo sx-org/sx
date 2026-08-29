@@ -1,0 +1,29 @@
+// Nothing here imports `modules/std/target.sx`, so `OperatingSystem` is
+// absent from the type table and the match compares the target's variant
+// NAME.
+@import "modules/std.sx";
+
+inline if @host.isSimulator {
+    HOST_KIND :: "simulator";
+} else {
+    HOST_KIND :: "device";
+}
+
+inline match @host.os {
+    case .wasm: @error("wasm is not a host");
+    else: HOST_WORD :: "native";
+}
+
+main :: () {
+    print("{} {}\n", HOST_WORD, HOST_KIND);
+    inline if @host.pointerSize == 8 {
+        print("64-bit\n");
+    }
+    // A dead arm is dropped whole, annotations included.
+    inline if !@host.isSimulator {
+        print("not a simulator\n");
+    } else {
+        s : *MissingSimulatorSurface = null;
+        print("{}\n", s);
+    }
+}
