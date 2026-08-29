@@ -7,7 +7,7 @@
 // 2. Protocol impl method body           impl Hashable for Probe
 // 3. Closure value body                  closure that calls hash
 //
-// `inline match OS` gating across targets is covered by
+// `inline match @host.os` gating across targets is covered by
 // `tests/cross_compile.sh`.
 
 @import "modules/std.sx";
@@ -46,7 +46,7 @@ hash_through :: (recv: $T) -> i64 {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
 
         p : Probe = .{ receiver = ns_object };
@@ -70,7 +70,7 @@ main :: () -> i32 {
         h4 := hash_through(ns_object);
         print("generic h4  = {}\n", h4 == h1);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

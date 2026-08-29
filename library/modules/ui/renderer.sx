@@ -85,10 +85,10 @@ UIRenderer :: struct {
             // Backend-specific shader sources: Metal takes a combined MSL
             // library with `vmain` + `fmain` entry points; GLES3 takes a
             // separate vertex / fragment pair. Caller selects via OS gate.
-            inline if OS == .android {
+            inline if @host.os == .android {
                 self.mtl_shader = self.gpu.create_shader(UI_VERT_SRC_ES, UI_FRAG_SRC_ES);
             }
-            inline if OS == .ios or OS == .macos {
+            inline if @host.os == .ios or @host.os == .macos {
                 self.mtl_shader = self.gpu.create_shader(UI_MSL_SRC, "");
             }
             self.mtl_vbuf   = self.gpu.create_buffer(metal_buf_size);
@@ -98,7 +98,7 @@ UIRenderer :: struct {
         } else {
             // ── GL backend ─────────────────────────────────────────────
             // Create shader (ES for WASM/WebGL2 + iOS GLES3, Core for desktop GL 3.3)
-            inline if OS == .wasm or OS == .ios {
+            inline if @host.os == .wasm or @host.os == .ios {
                 self.shader = create_program(UI_VERT_SRC_ES, UI_FRAG_SRC_ES);
             } else {
                 self.shader = create_program(UI_VERT_SRC_CORE, UI_FRAG_SRC_CORE);
@@ -145,10 +145,10 @@ UIRenderer :: struct {
         if vertices.len == 0 or indices.len == 0 { return false; }
 
         if self.mesh_shader == 0 {
-            inline if OS == .android {
+            inline if @host.os == .android {
                 self.mesh_shader = self.gpu.create_shader(MESH_VERT_SRC_ES, MESH_FRAG_SRC_ES);
             }
-            inline if OS == .ios or OS == .macos {
+            inline if @host.os == .ios or @host.os == .macos {
                 self.mesh_shader = self.gpu.create_shader(MESH_MSL_SRC, "");
             }
             if self.mesh_shader == 0 { return false; }
@@ -179,10 +179,10 @@ UIRenderer :: struct {
         if vertices.len == 0 or indices.len == 0 { return false; }
 
         if self.skin_shader == 0 {
-            inline if OS == .android {
+            inline if @host.os == .android {
                 self.skin_shader = self.gpu.create_shader(SKINNED_VERT_SRC_ES, SKINNED_FRAG_SRC_ES);
             }
-            inline if OS == .ios or OS == .macos {
+            inline if @host.os == .ios or @host.os == .macos {
                 self.skin_shader = self.gpu.create_shader(SKINNED_MSL_SRC, "");
             }
             if self.skin_shader == 0 { return false; }

@@ -501,7 +501,7 @@ test "analyzeDocument: imports inside a module driver register from every branch
     try store.analyzeDocument(b_doc);
 
     const main_src: [:0]const u8 =
-        \\inline if OS == .macos {
+        \\inline if @host.os == .macos {
         \\    @import "driver_a.sx";
         \\} else {
         \\    @import "driver_b.sx";

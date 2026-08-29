@@ -100,7 +100,7 @@ impl GPU for Gles3Gpu {
     // current (AndroidPlatform.run_frame_loop ensures this before
     // invoking the user's per-frame closure). `target` is unused.
     init :: (self: *Gles3Gpu, target: *void, pixel_w: i32, pixel_h: i32) -> bool {
-        inline if OS != .android { return false; }
+        inline if @host.os != .android { return false; }
         self.pixel_w = pixel_w;
         self.pixel_h = pixel_h;
         self.parent_allocator = context.allocator;
@@ -138,7 +138,7 @@ impl GPU for Gles3Gpu {
     // AndroidPlatform.run_frame_loop; begin_frame here just clears the
     // active framebuffer. Returns true so callers don't bail out.
     begin_frame :: (self: *Gles3Gpu, clear: ClearColor) -> bool {
-        inline if OS != .android { return false; }
+        inline if @host.os != .android { return false; }
         glViewport(0, 0, self.pixel_w, self.pixel_h);
         glClearColor(clear.r, clear.g, clear.b, clear.a);
         // glClear honours the depth write mask, so the mask must be open
@@ -155,7 +155,7 @@ impl GPU for Gles3Gpu {
     // ── Resources ────────────────────────────────────────────────────────
 
     create_shader :: (self: *Gles3Gpu, vsrc: string, fsrc: string) -> ShaderHandle {
-        inline if OS != .android { return 0; }
+        inline if @host.os != .android { return 0; }
 
         prog := create_program(vsrc, fsrc);
         if prog == 0 { return 0; }
@@ -171,7 +171,7 @@ impl GPU for Gles3Gpu {
     }
 
     create_buffer :: (self: *Gles3Gpu, size_bytes: i64) -> BufferHandle {
-        inline if OS != .android { return 0; }
+        inline if @host.os != .android { return 0; }
         if size_bytes <= 0 { return 0; }
         b : u32 = 0;
         glGenBuffers(1, *b);
@@ -182,7 +182,7 @@ impl GPU for Gles3Gpu {
     }
 
     create_index_buffer :: (self: *Gles3Gpu, size_bytes: i64) -> IndexHandle {
-        inline if OS != .android { return 0; }
+        inline if @host.os != .android { return 0; }
         if size_bytes <= 0 { return 0; }
         b : u32 = 0;
         glGenBuffers(1, *b);
@@ -196,7 +196,7 @@ impl GPU for Gles3Gpu {
     }
 
     update_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_index(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
@@ -207,7 +207,7 @@ impl GPU for Gles3Gpu {
     }
 
     update_buffer :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_buffer(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
@@ -217,7 +217,7 @@ impl GPU for Gles3Gpu {
     }
 
     update_buffer_at :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, size_bytes: i64, byte_offset: i64) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_buffer(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
@@ -228,7 +228,7 @@ impl GPU for Gles3Gpu {
     }
 
     create_texture :: (self: *Gles3Gpu, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle {
-        inline if OS != .android { return 0; }
+        inline if @host.os != .android { return 0; }
         if w <= 0 { return 0; }
         if h <= 0 { return 0; }
 
@@ -261,7 +261,7 @@ impl GPU for Gles3Gpu {
     }
 
     update_texture_region :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
         if h64 > self.textures.len { return; }
@@ -281,7 +281,7 @@ impl GPU for Gles3Gpu {
     destroy_shader  :: (self: *Gles3Gpu, sh:  ShaderHandle) { }
 
     destroy_buffer  :: (self: *Gles3Gpu, handle: BufferHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_buffer(self, handle);
         if buf == 0 { return; }
         if self.current_vbo == buf { self.current_vbo = 0; }
@@ -290,7 +290,7 @@ impl GPU for Gles3Gpu {
     }
 
     destroy_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_index(self, handle);
         if buf == 0 { return; }
         if self.current_ibo == buf { self.current_ibo = 0; }
@@ -299,7 +299,7 @@ impl GPU for Gles3Gpu {
     }
 
     destroy_texture :: (self: *Gles3Gpu, tex: TextureHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if tex == 0 { return; }
         h64 : i64 = tex.(i64);
         if h64 > self.textures.len { return; }
@@ -312,7 +312,7 @@ impl GPU for Gles3Gpu {
     // ── Per-draw state ───────────────────────────────────────────────────
 
     set_shader :: (self: *Gles3Gpu, handle: ShaderHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
         if h64 > self.shaders.len { return; }
@@ -323,7 +323,7 @@ impl GPU for Gles3Gpu {
     }
 
     set_vertex_buffer :: (self: *Gles3Gpu, handle: BufferHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         buf := gles3_lookup_buffer(self, handle);
         if buf == 0 { return; }
         self.current_vbo = buf;
@@ -346,12 +346,12 @@ impl GPU for Gles3Gpu {
     }
 
     set_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         self.current_ibo = gles3_lookup_index(self, handle);
     }
 
     set_texture :: (self: *Gles3Gpu, slot: u32, handle: TextureHandle) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if slot != 0 { return; } // renderer only uses unit 0
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
@@ -373,7 +373,7 @@ impl GPU for Gles3Gpu {
     // uProj`; slot 2 + 16 bytes is the mesh tint into `uniform vec4 uTint`.
     // Look up via the current shader's cached uniform locations.
     set_vertex_constants :: (self: *Gles3Gpu, slot: u32, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if self.current_shader == 0 { return; }
         cs64 : i64 = self.current_shader.(i64);
         if cs64 > self.shaders.len { return; }
@@ -389,24 +389,24 @@ impl GPU for Gles3Gpu {
     }
 
     set_scissor :: (self: *Gles3Gpu, x: i32, y: i32, w: i32, h: i32) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         glEnable(GL_SCISSOR_TEST);
         glScissor(x, self.pixel_h - (y + h), w, h);
     }
 
     disable_scissor :: (self: *Gles3Gpu) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         glDisable(GL_SCISSOR_TEST);
     }
 
     set_depth_mode :: (self: *Gles3Gpu, mode: DepthMode) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         self.depth_mode = mode;
         gles3_apply_depth_mode(self);
     }
 
     set_bone_palette :: (self: *Gles3Gpu, data: *void, count: i32) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if data == null { return; }
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
@@ -416,14 +416,14 @@ impl GPU for Gles3Gpu {
     }
 
     draw_triangles :: (self: *Gles3Gpu, vertex_offset: i32, vertex_count: i32) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if vertex_count <= 0 { return; }
         glBindVertexArray(self.vao);
         glDrawArrays(GL_TRIANGLES, vertex_offset, vertex_count);
     }
 
     draw_indexed :: (self: *Gles3Gpu, index_offset: i32, index_count: i32) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if index_count <= 0 { return; }
         if index_offset < 0 { return; }
         if self.current_vbo == 0 { return; }
@@ -445,7 +445,7 @@ impl GPU for Gles3Gpu {
     }
 
     draw_skinned :: (self: *Gles3Gpu, index_offset: i32, index_count: i32) {
-        inline if OS != .android { return; }
+        inline if @host.os != .android { return; }
         if index_count <= 0 { return; }
         if index_offset < 0 { return; }
         if self.bone_count <= 0 { return; }
@@ -479,7 +479,7 @@ impl GPU for Gles3Gpu {
 }
 
 gles3_apply_depth_mode :: (self: *Gles3Gpu) {
-    inline if OS != .android { return; }
+    inline if @host.os != .android { return; }
     if self.depth_mode == .disabled {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
@@ -495,7 +495,7 @@ gles3_apply_depth_mode :: (self: *Gles3Gpu) {
 }
 
 gles3_bones_loc :: (self: *Gles3Gpu) -> i32 {
-    inline if OS != .android { return 0 - 1; }
+    inline if @host.os != .android { return 0 - 1; }
     if self.current_shader == 0 { return 0 - 1; }
     cs64 : i64 = self.current_shader.(i64);
     if cs64 > self.shaders.len { return 0 - 1; }
@@ -503,7 +503,7 @@ gles3_bones_loc :: (self: *Gles3Gpu) -> i32 {
 }
 
 gles3_lookup_buffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
-    inline if OS != .android { return 0; }
+    inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
     h64 : i64 = handle.(i64);
     if h64 > self.buffers.len { return 0; }
@@ -511,7 +511,7 @@ gles3_lookup_buffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
 }
 
 gles3_lookup_index :: (self: *Gles3Gpu, handle: u32) -> u32 {
-    inline if OS != .android { return 0; }
+    inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
     h64 : i64 = handle.(i64);
     if h64 > self.indices.len { return 0; }

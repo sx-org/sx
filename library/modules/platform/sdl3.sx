@@ -21,7 +21,7 @@ SDL_GetBasePath :: () -> [*]u8 extern;
 // bundle, so the `sx run` dev flow (binary not bundled, assets in the project
 // CWD) is left alone. Mirrors uikit.sx's iOS `chdir_to_bundle`.
 sdl_chdir_to_bundle :: () {
-    inline if OS != .macos { return; }
+    inline if @host.os != .macos { return; }
     bp := SDL_GetBasePath();
     if bp == null { return; }
     // Reorient only when the base path lives inside a `.app` bundle.
@@ -173,7 +173,7 @@ impl Platform for SdlPlatform {
         // Find bundled assets when launched as a `.app` (CWD=/ under Finder).
         sdl_chdir_to_bundle();
 
-        inline match OS {
+        inline match @host.os {
             case .wasm: {
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -195,7 +195,7 @@ impl Platform for SdlPlatform {
 
         init_w := w;
         init_h := h;
-        inline match OS {
+        inline match @host.os {
             case .wasm: {
                 init_w = c.emscripten_run_script_int("window.innerWidth");
                 init_h = c.emscripten_run_script_int("window.innerHeight");
@@ -252,12 +252,12 @@ impl Platform for SdlPlatform {
         self.has_frame_closure = true;
         g_sdl_plat = self;
 
-        inline match OS {
+        inline match @host.os {
             case .wasm: {}
             else: { SDL_AddEventWatch(*sdl_event_watch, self); }
         }
 
-        inline match OS {
+        inline match @host.os {
             case .wasm: { c.emscripten_set_main_loop(*sdl_wasm_tick, 0, 1); }
             else: {
                 while self.running {
@@ -300,7 +300,7 @@ impl Platform for SdlPlatform {
         }
         self.last_perf = current;
 
-        inline match OS {
+        inline match @host.os {
             case .wasm: {
                 new_w : i32 = 0;
                 new_h : i32 = 0;
@@ -348,7 +348,7 @@ impl Platform for SdlPlatform {
     }
 
     shutdown :: (self: *SdlPlatform) {
-        inline match OS {
+        inline match @host.os {
             case .wasm: {}
             else: {
                 SDL_GL_DestroyContext(self.gl_ctx);

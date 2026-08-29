@@ -15,7 +15,7 @@ addObject_imp :: (self: *void, _cmd: *void, val: i32) -> i32 abi(.c) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(ns_object, "SxProbeOneArg".ptr, 0);
         sel := sel_registerName("addObject:".ptr);
@@ -26,7 +26,7 @@ main :: () -> i32 {
         n := inst.addObject(21);
         print("addObject(21) = {}\n", n);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

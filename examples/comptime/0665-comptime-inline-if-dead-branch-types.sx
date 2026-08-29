@@ -3,7 +3,7 @@
 // lowered — a type that exists only on another target (or behind a
 // disabled feature const) must not error from a pruned branch, so the
 // unknown-type checker walks only the live one. Covers the bool-const,
-// `OS ==` binary, and/or, and `inline match OS` forms; the taken
+// `@host.os ==` binary, and/or, and `inline match @host.os` forms; the taken
 // branch always runs.
 @import "modules/std.sx";
 
@@ -16,19 +16,19 @@ main :: () {
     } else {
         print("const ok\n");
     }
-    inline if OS == .ios {
+    inline if @host.os == .ios {
         c : *MissingC = null;
         print("{}\n", c);
     } else {
         print("os ok\n");
     }
-    inline if OS == .ios or OS == .android {
+    inline if @host.os == .ios or @host.os == .android {
         d : *MissingD = null;
         print("{}\n", d);
     } else {
         print("or ok\n");
     }
-    inline match OS {
+    inline match @host.os {
         case .ios: {
             e : *MissingE = null;
             print("{}\n", e);

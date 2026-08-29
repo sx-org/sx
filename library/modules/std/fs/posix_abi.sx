@@ -11,7 +11,7 @@ fs_posix_ftruncate :: (fd: i32, len: i64) -> i32 extern fs_posix_libc "ftruncate
 
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;
 // Darwin uses the BSD values. Unsupported targets fail closed here.
-inline match OS {
+inline match @host.os {
     case .linux:
         FS_POSIX_O_RDONLY :i32: 0x0000;
         FS_POSIX_O_WRONLY :i32: 0x0001;

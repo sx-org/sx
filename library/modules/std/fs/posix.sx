@@ -210,13 +210,13 @@ fs_copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
 // the target ABI instead of exposing a platform stat layout in std.fs.
 fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
     if !fs_file_is_valid(handle) { return 0, false; }
-    inline if OS == .wasm { return 0, false; }
+    inline if @host.os == .wasm { return 0, false; }
     else {
         raw : [256]u8 = .{};
         if fs_posix_c.fstat(handle.(i32), *raw[0]) != 0 { return 0, false; }
         offset := 0;
-        inline if OS == .macos or OS == .ios { offset = 48; }
-        else if OS == .linux or OS == .android { offset = 88; }
+        inline if @host.os == .macos or @host.os == .ios { offset = 48; }
+        else if @host.os == .linux or @host.os == .android { offset = 88; }
         else { @error("std/fs/posix.sx: stat modification-time offset is not defined for this target"); }
         seconds : i64 = 0;
         fs_posix_c.memcpy(*seconds, *raw[offset], @sizeOf(i64));
@@ -225,7 +225,7 @@ fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
 }
 
 fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
-    inline if OS == .wasm { return false; }
+    inline if @host.os == .wasm { return false; }
     else {
         times : [2]FsPosixTimespec = .[
             .{ sec = 0, nsec = FS_POSIX_UTIME_OMIT },

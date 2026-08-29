@@ -9,38 +9,37 @@ main :: () {
     // --- inline if (compile-time conditionals) ---
     print("=== inline if ===\n");
     {
-        // POINTER_SIZE is 8 on desktop (64-bit)
-        inline if POINTER_SIZE == 8 {
+        inline if @host.pointerSize == 8 {
             print("64-bit\n");
         } else {
             print("32-bit\n");
         }
 
-        // OS enum comparison
-        inline if OS == .wasm {
+        // enum comparison
+        inline if @host.os == .wasm {
             print("wasm\n");
         } else {
             print("not wasm\n");
         }
 
         // != comparison
-        inline if OS != .unknown {
+        inline if @host.os != .unknown {
             print("known os\n");
         } else {
             print("unknown os\n");
         }
 
         // nested inline if
-        inline if POINTER_SIZE != 4 {
-            inline if OS != .wasm {
+        inline if @host.pointerSize != 4 {
+            inline if @host.os != .wasm {
                 print("desktop 64-bit\n");
             } else {
                 print("wasm 64-bit??\n");
             }
         }
 
-        // POINTER_SIZE in regular (non-inline) if expression
-        ps := if POINTER_SIZE == 8 then "8" else "4";
+        // non-inline if
+        ps := if @host.pointerSize == 8 then "8" else "4";
         print("pointer size via if: {}\n", ps);
     }
 }

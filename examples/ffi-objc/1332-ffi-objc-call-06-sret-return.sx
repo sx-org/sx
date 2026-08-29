@@ -23,7 +23,7 @@ triple_imp :: (self: *void, _cmd: *void) -> Triple abi(.c) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // Build the class:
         //   @interface SxTripleProbe : NSObject
         //     - (Triple)tripleValue;
@@ -43,7 +43,7 @@ main :: () -> i32 {
         t := @ObjcCall(Triple, instance, "tripleValue");
         print("triple = ({}, {}, {})\n", t.a, t.b, t.c);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

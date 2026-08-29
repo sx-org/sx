@@ -891,7 +891,7 @@ pub const Lowering = struct {
     struct_const_map: std.StringHashMap(StructConstInfo), // "Struct.CONST" → value info
     extern_name_map: std.StringHashMap([]const u8), // sx name → C name for #extern renames
     target_config: ?@import("../target.zig").TargetConfig = null, // compilation target (for inline if)
-    comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. OS, ARCH)
+    comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. @host)
     /// Module constants bound to a comptime `[N]Type` list (`S :: .[A, B];`).
     /// A type list has no runtime representation — it exists to drive
     /// `inline for` expansion, so it never becomes a global.
@@ -939,11 +939,11 @@ pub const Lowering = struct {
         int_val: i64,
         bool_val: bool,
         enum_tag: struct { ty: TypeId, tag: u32 },
-        /// A target fact (`OS` / `ARCH`) in a program that does not declare the
-        /// enum it is a variant of: the variant NAME the target selects. It
-        /// compares against an enum literal at comptime and has no runtime
-        /// reading — the declaration a runtime read needs is exactly the one
-        /// that would have given it a tag.
+        /// A `@host` enum field in a program that does not declare the enum it
+        /// is a variant of: the variant NAME the target selects. It compares
+        /// against an enum literal at comptime and has no runtime reading — the
+        /// declaration a runtime read needs is exactly the one that would have
+        /// given it a tag.
         target_variant: []const u8,
         struct_val: []const Field,
 

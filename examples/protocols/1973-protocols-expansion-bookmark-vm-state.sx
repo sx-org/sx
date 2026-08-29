@@ -28,7 +28,7 @@ probe :: () -> i64 {
 
 SUM :: @run probe();
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     @context_extend depth: i64 = 3;
 } else {
     @context_extend depth: i64 = 9;

@@ -12,7 +12,7 @@ Widget :: struct { n: i64; }
 Native :: struct { n: i64; }
 
 // Every target takes exactly one arm, so `Widget` has exactly one impl.
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     impl View for Widget {
         area :: (self: *Widget) -> i64 { self.n * 10 }
     }
@@ -24,7 +24,7 @@ inline if POINTER_SIZE == 8 {
 
 // An expansion body is module scope, so `private` stays legal on its
 // declarations and the impl beside them is an ordinary top-level impl.
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     private SCALE :: 3;
     impl View for Native {
         area :: (self: *Native) -> i64 { self.n * SCALE }

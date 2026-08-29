@@ -7,7 +7,7 @@
 @import "modules/build.sx";
 
 do_it :: () -> bool {
-    inline if OS != .ios { return false; }
+    inline if @host.os != .ios { return false; }
     true
 }
 

@@ -15,10 +15,10 @@ alloc_in_helper :: () -> bool {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         print("class live in helper: {}\n", alloc_in_helper());
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

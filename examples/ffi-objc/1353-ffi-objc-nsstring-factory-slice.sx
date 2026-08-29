@@ -22,7 +22,7 @@ show :: (label: string, ns: *NSString) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         autoreleasepool(|| {
             src := "hello world";
             show("sliced", nsstring(src[0..5]));
@@ -31,7 +31,7 @@ main :: () -> i32 {
             show("tail", nsstring(src[6..11]));
         });
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

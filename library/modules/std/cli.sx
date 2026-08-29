@@ -40,7 +40,7 @@ c :: @import "modules/std/c.sx"; // the shared libc handle for the per-OS extern
 libc :: c.libc;
 
 // Unbraced case arms keep their declarations at module scope.
-inline match OS {
+inline match @host.os {
     case .macos:
         // macOS C-runtime argv/argc accessors (crt_externs.h):
         //   extern char ***_NSGetArgv(void);   extern int *_NSGetArgc(void);
@@ -157,7 +157,7 @@ exit_usage :: () -> noreturn { proc.exit(EX_USAGE); }
 // Number of process arguments (argc). >= 1 for any normally-launched
 // process, since argv[0] is the executable path.
 os_argc :: () -> i64 {
-    inline match OS {
+    inline match @host.os {
         case .macos: { return (ns_get_argc().*).(i64); }
         case .linux: {
             cmdline_load();
@@ -180,7 +180,7 @@ os_argc :: () -> i64 {
 // are returned — call `os_argc()` first and size `buf` accordingly when an
 // exact count matters.
 os_args :: (buf: []string) -> []string {
-    inline match OS {
+    inline match @host.os {
         case .macos: {
             argc := (ns_get_argc().*).(i64);
             argv : [*]i64 = (ns_get_argv().*).([*]i64);

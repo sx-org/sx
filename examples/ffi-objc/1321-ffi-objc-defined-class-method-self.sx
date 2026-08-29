@@ -67,7 +67,7 @@ capture_observer :: (p: *void) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         f := SxIssue44Foo.alloc();
         if f == null { print("FAIL: alloc returned null\n"); return 1; }
 
@@ -100,6 +100,6 @@ main :: () -> i32 {
         // dispatch this for real (would crash inside NSNotificationCenter),
         // but the build pulling cleanly through is half the point.
     }
-    inline if OS != .macos { print("skipped (not macos)\n"); }
+    inline if @host.os != .macos { print("skipped (not macos)\n"); }
     0
 }

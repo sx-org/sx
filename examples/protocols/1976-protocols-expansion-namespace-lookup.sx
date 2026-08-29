@@ -17,7 +17,7 @@ inline if cfg.WIDE { A :: 1; } else { A :: 0; }
 
 inline if LOCAL { B :: 1; } else { B :: 0; }
 
-inline if POINTER_SIZE == 8 { LOCAL :: true; } else { LOCAL :: false; }
+inline if @host.pointerSize == 8 { LOCAL :: true; } else { LOCAL :: false; }
 
 main :: () {
     print("{} {}\n", A, B);

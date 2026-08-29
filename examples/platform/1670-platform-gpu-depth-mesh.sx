@@ -41,7 +41,7 @@ fragment float4 fmain(VOut v [[stage_in]]) { return v.color; }
 MSL;
 
 main :: () -> i32 {
-    inline if OS != .macos { print("depth center rgba: 0 255 0 255\n"); return 0; }
+    inline if @host.os != .macos { print("depth center rgba: 0 255 0 255\n"); return 0; }
 
     gpu : MetalGPU = .{};
     if !gpu.init_offscreen(W, H) { print("offscreen init failed\n"); return 1; }

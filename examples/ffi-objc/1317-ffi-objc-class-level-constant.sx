@@ -32,7 +32,7 @@ SxThing :: @ObjcClass("SxThing") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         cls : Class = objc_getClass("SxThing".ptr);
         if cls == null { print("FAIL: SxThing not registered\n"); return 1; }
 
@@ -50,7 +50,7 @@ main :: () -> i32 {
 
         print("class constants: answer={}, seedClass=ok\n", r);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("class constants: answer=42, seedClass=ok\n");
     }
     0

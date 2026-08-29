@@ -26,7 +26,7 @@ u64_imp :: (self: *void, _cmd: *void) -> u64 abi(.c) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
         my_cls := objc_allocateClassPair(ns_object, "SxRectU64Probe".ptr, 0);
 
@@ -49,7 +49,7 @@ main :: () -> i32 {
         u := @ObjcCall(u64, instance, "uval");
         print("uval = {}\n", u);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

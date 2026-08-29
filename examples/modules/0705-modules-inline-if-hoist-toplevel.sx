@@ -1,4 +1,4 @@
-// Top-level `inline if OS == .X { ... }` body decls get hoisted to the
+// Top-level `inline if @host.os == .X { ... }` body decls get hoisted to the
 // actual top level: `imports.flattenComptimeConditionals` runs at the head
 // of `resolveImports` and replaces matching arms with their body stmts
 // (recursively, so a nested `inline if` inside a hoisted arm also hoists).
@@ -10,7 +10,7 @@
 
 @import "modules/std.sx";
 
-inline if OS == .android {
+inline if @host.os == .android {
     @import "modules/std.sx";
     g_value : i64 = 99;
 } else {

@@ -9,7 +9,7 @@
 
 inline if WIDE { A :: 1; } else { A :: 0; }
 
-inline if POINTER_SIZE == 0 {
+inline if @host.pointerSize == 0 {
     @import "./1993-diagnostics-branch-import-wide.sx";
 } else {
     NARROW :: 1;

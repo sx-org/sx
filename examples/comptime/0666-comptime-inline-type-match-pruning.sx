@@ -9,9 +9,9 @@
 // carries no runtime tag; the runtime spelling is a pointed error, and the
 // dedicated diagnostics pin covers it). Specific type names and `else:`
 // select as in any match; a `@error(…)` arm fires only when
-// SELECTED (the dead-arm case is exactly the OS-match discipline).
+// SELECTED (the dead-arm case is exactly the target-match discipline).
 // Value-producing arms use explicit `return` (inline branches lower in
-// statement position, like `inline if OS`).
+// statement position, like `inline if @host.os`).
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 

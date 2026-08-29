@@ -17,7 +17,7 @@ yes_imp :: (self: *void, _cmd: *void) -> bool abi(.c) { true }
 no_imp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // Nil-recv: libobjc returns a zeroed slot, which decodes as false.
         nil_b := @ObjcCall(bool, null, "isEqual:");
         print("nil bool     = {}\n", nil_b);
@@ -41,7 +41,7 @@ main :: () -> i32 {
         print("yes = {}\n", y);
         print("no  = {}\n", n);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

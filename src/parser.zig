@@ -3260,10 +3260,10 @@ pub const Parser = struct {
         }
 
         // `@import "path";` / `@framework "Name";` inside a block body.
-        // Only meaningful inside an `inline if OS == ... { ... }` arm —
-        // the imports.zig flatten pass surfaces those
-        // declarations to the top level before resolution. Anywhere else
-        // these nodes survive into lowering and produce a clear error.
+        // Only meaningful inside an `inline if @host.os == ... { ... }` arm —
+        // module-scope expansion surfaces those declarations to the top level
+        // before resolution. Anywhere else these nodes survive into lowering
+        // and produce a clear error.
         if (self.tokens.tag(self.tok) == .at_import) {
             const start = self.tokens.start(self.tok);
             self.advance();
@@ -7870,11 +7870,15 @@ test "parse empty braces after a call subject as the arm list" {
 test "parse inline match as a comptime match" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "inline match OS {\n  case .macos: X :: 1;\n  else: X :: 2;\n}");
+    var parser = try Parser.init(arena.allocator(), "inline match @host.os {\n  case .macos: X :: 1;\n  else: X :: 2;\n}");
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .match_expr);
     try std.testing.expect(decl.data.match_expr.is_comptime);
+    const subject = decl.data.match_expr.subject;
+    try std.testing.expect(subject.data == .field_access);
+    try std.testing.expectEqualStrings("os", subject.data.field_access.field);
+    try std.testing.expectEqualStrings("@host", subject.data.field_access.object.data.identifier.name);
 }
 
 /// Parse `src`, expect `error.ParseError`, and pin both the diagnostic text

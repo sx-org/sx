@@ -38,7 +38,7 @@ SxPropProbe :: @ObjcClass("SxPropProbe") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // Register the class + the two IMPs.
         ns_object := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(ns_object, "SxPropProbe".ptr, 0);
@@ -60,7 +60,7 @@ main :: () -> i32 {
 
         print("tag round-trip: {} -> {} -> {}\n", v0, v1, v2);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("tag round-trip: 0 -> 42 -> -7\n");
     }
     0

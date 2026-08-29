@@ -12,7 +12,7 @@
 
 inline if WIDE { A :: 1; } else { A :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     @import "./1992-protocols-expansion-branch-import-wide.sx";
 } else {
     NARROW :: 1;

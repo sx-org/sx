@@ -12,7 +12,7 @@
 // The lookup is per call site.
 //
 // Host can't dlopen libjvm via the JIT, so the JNI body is gated
-// behind `inline if OS == .android`. The macOS test path strips the
+// behind `inline if @host.os == .android`. The macOS test path strips the
 // body and prints "skipped"; the cross_compile.sh Android target
 // verifies that the gated body actually compiles + links against
 // libjvm in the Android sysroot.
@@ -26,7 +26,7 @@
 SxJniCallVoidStub :: @JniClass("co/swipelab/sxjnicall/SxJniCallVoidStub", main = true) {}
 
 main :: () -> i32 {
-    inline if OS == .android {
+    inline if @host.os == .android {
         // Real Android entry passes env + target via the user's `onCreate`
         // / `#jni_attach`. For the cross-compile-only test we just need
         // the lowering to emit valid IR; runtime correctness is exercised
@@ -35,7 +35,7 @@ main :: () -> i32 {
         target : *void = null;
         @JniCall(void, env, target, "noop", "()V");
     }
-    inline if OS != .android {
+    inline if @host.os != .android {
         print("skipped (not android)\n");
     }
     0

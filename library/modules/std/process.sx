@@ -149,7 +149,7 @@ SIG_IGN    :usize: 1;
 // The one fcntl command whose number is per-libc. NO silent fallback: an
 // unsupported target must add its own case rather than inherit a number
 // that means something else there.
-inline match OS {
+inline match @host.os {
     case .macos:   F_DUPFD_CLOEXEC :i32: 67;
     case .ios:     F_DUPFD_CLOEXEC :i32: 67;
     case .linux:   F_DUPFD_CLOEXEC :i32: 1030;

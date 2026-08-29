@@ -6,7 +6,7 @@
 
 ENABLED :: true;
 ALIAS   :: ENABLED;
-NATIVE  :: POINTER_SIZE == 8;
+NATIVE  :: @host.pointerSize == 8;
 
 inline if ENABLED { from_const :: () -> i64 { 1 } } else { from_const :: () -> i64 { -1 } }
 inline if ALIAS   { from_alias :: () -> i64 { 2 } } else { from_alias :: () -> i64 { -2 } }

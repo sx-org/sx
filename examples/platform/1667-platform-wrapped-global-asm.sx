@@ -1,4 +1,4 @@
-// Top-level (global) `asm { … }` wrapped in a comptime `inline if OS ==
+// Top-level (global) `asm { … }` wrapped in a comptime `inline if @host.os ==
 // { case … }`: the taken arm's module-scope asm emits into the LLVM module
 // exactly like an unwrapped block, so the symbol it defines is DEFINED in
 // the object (not `U`) and a lib-less `extern` can call it. The branch body
@@ -9,7 +9,7 @@
 // symbols, linux does not). Built+run via `aot` (a module-asm symbol lives in
 // the final linked binary, not the JIT host); aarch64-pinned via `target:
 // macos`, so ir-only on a non-matching host.
-inline match OS {
+inline match @host.os {
     case .linux: asm {
         @string ASM
 .global wrapped_add

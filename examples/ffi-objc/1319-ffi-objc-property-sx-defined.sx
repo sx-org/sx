@@ -32,7 +32,7 @@ SxBox :: @ObjcClass("SxBox") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         b := SxBox.alloc().init();
 
         // width / height round-trip through synthesized IMPs.
@@ -64,7 +64,7 @@ main :: () -> i32 {
 
         print("property: w={} h={} area={}\n", w, h, a);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("property: w=10 h=7 area=0\n");
     }
     0

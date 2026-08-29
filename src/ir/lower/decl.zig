@@ -445,13 +445,13 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
     }
 }
 
-/// Inject compile-time constants from target_config into comptime_constants.
-/// `OS` / `ARCH` are compiler facts, so they exist whether or not the program
-/// declares the enum they are variants of: with `std/target.sx` in the program
-/// they carry the declared enum's tag (a runtime read of `OS` yields that
+/// Inject the target facts from target_config into comptime_constants.
+/// `@host` is a compiler fact, so it exists whether or not the program declares
+/// the enums its os / arch fields are variants of: with `std/target.sx` in the
+/// program they carry the declared enum's tag (a runtime read yields that
 /// constant); without it they carry the target's variant NAME, which is all a
-/// module-scope `inline if OS == .windows` needs — and every low-level backend
-/// selecting its platform arm depends on exactly that, since importing
+/// module-scope `inline if @host.os == .windows` needs — and every low-level
+/// backend selecting its platform arm depends on exactly that, since importing
 /// `target.sx` from inside the arm it selects would be circular.
 pub fn injectComptimeConstants(self: *Lowering) void {
     const tc = self.target_config orelse return;
@@ -470,7 +470,6 @@ pub fn injectComptimeConstants(self: *Lowering) void {
         "macos"
     else
         "unknown";
-    putTargetConstant(self, "OS", "OperatingSystem", os_variant);
 
     const arch_variant: []const u8 = if (tc.isWasm32())
         "wasm32"
@@ -482,11 +481,8 @@ pub fn injectComptimeConstants(self: *Lowering) void {
         "x86_64"
     else
         "unknown";
-    putTargetConstant(self, "ARCH", "Architecture", arch_variant);
 
-    // POINTER_SIZE: i64 (4 for wasm32, 8 for wasm64 and other 64-bit targets)
     const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
-    self.comptime_constants.put("POINTER_SIZE", .{ .int_val = ptr_size }) catch {};
 
     const fields = self.alloc.alloc(Lowering.ComptimeValue.Field, 4) catch return;
     fields[0] = .{ .name = "os", .value = targetEnumValue(self, "OperatingSystem", os_variant) };
@@ -494,10 +490,6 @@ pub fn injectComptimeConstants(self: *Lowering) void {
     fields[2] = .{ .name = "pointerSize", .value = .{ .int_val = ptr_size } };
     fields[3] = .{ .name = "isSimulator", .value = .{ .bool_val = tc.isIOSSimulator() } };
     self.comptime_constants.put("@host", .{ .struct_val = fields }) catch {};
-}
-
-fn putTargetConstant(self: *Lowering, name: []const u8, enum_name: []const u8, variant: []const u8) void {
-    self.comptime_constants.put(name, targetEnumValue(self, enum_name, variant)) catch {};
 }
 
 fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) Lowering.ComptimeValue {
@@ -1843,10 +1835,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             break :blk null;
         },
         // An enum-literal global (`chosen : Color = .green;`) serializes to
-        // the variant's tag value against the destination enum type. The
-        // compiler-injected `OS`/`ARCH` globals flow through here
-        // too; their runtime reads resolve via `comptime_constants`, so the
-        // serialized tag only affects the static initializer.
+        // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
         // Any other initializer shape (`.field_access` on a const, a call, an
         // arithmetic expression, …) is not a static constant the compiler can

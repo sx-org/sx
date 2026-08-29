@@ -33,7 +33,7 @@ universal_imp :: (self: *void, _cmd: *void, a: i32, b: i32, c: i32, d: i32) -> i
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(ns_object, "SxManglingProbe".ptr, 0);
 
@@ -62,7 +62,7 @@ main :: () -> i32 {
 
         print("mangling table OK\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

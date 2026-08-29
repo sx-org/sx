@@ -11,11 +11,11 @@
 @import "modules/build.sx";
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         @ObjcCall(void, null, "init");
         print("ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

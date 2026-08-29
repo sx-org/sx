@@ -15,7 +15,7 @@ DEEP :: @run { context.depth > 2 };
 
 inline if DEEP { MODE :: 1; } else { MODE :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     @import "./1994-protocols-expansion-branch-import-ctx.sx";
 } else {
     NARROW :: 1;
