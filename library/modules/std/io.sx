@@ -64,7 +64,7 @@ impl Io for CBlockingIo {
     }
     ready :: (self: *CBlockingIo, park: ParkToken) {}
     poll :: (self: *CBlockingIo, deadlineMs: i64) -> i64 { return 0; }
-    nowMs :: (self: *CBlockingIo) -> i64 { return time.mono_ms(); }
+    nowMs :: (self: *CBlockingIo) -> i64 { return time.monoMs(); }
     armTimer :: (self: *CBlockingIo, deadlineMs: i64, park: ParkToken) -> *void {
         return null;
     }

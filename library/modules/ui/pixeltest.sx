@@ -26,7 +26,7 @@ pixel_golden :: (actual: string, w: i64, h: i64, ref_path: [:0]u8,
             print("pixels FAIL {}: reference encode error\n", ref_path);
             return false;
         };
-        if !fs.write_file(ref_path, data) {
+        if !fs.writeFile(ref_path, data) {
             print("pixels FAIL {}: cannot write reference\n", ref_path);
             return false;
         }
@@ -34,7 +34,7 @@ pixel_golden :: (actual: string, w: i64, h: i64, ref_path: [:0]u8,
         return true;
     }
 
-    refd := fs.read_file(ref_path);
+    refd := fs.readFile(ref_path);
     if refd == null {
         print("pixels FAIL {}: no reference — rerun with SX_UPDATE_PIXELS=1\n", ref_path);
         return false;

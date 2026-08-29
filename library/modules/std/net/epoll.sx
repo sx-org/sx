@@ -14,7 +14,7 @@
 //     the per-fd mask and feeds the full mask on each change.
 //   - `epoll_event` echoes back a single 64-bit `data` word, NOT the fd in a
 //     separate field the way kqueue's `ident` is the fd. We stash the fd in the
-//     low 32 bits of `data` (`data_lo`) so `epoll_wait` reports which fd fired;
+//     low 32 bits of `data` (`dataLo`) so `epoll_wait` reports which fd fired;
 //     a caller wanting a wider udata keeps its own fd→udata map.
 //   - EOF is EPOLLHUP / EPOLLRDHUP flags on a readable event, not kqueue's
 //     EV_EOF; an async registration error is EPOLLERR.
@@ -27,14 +27,14 @@
 //   `data` at offset 8. sx has no packed-struct primitive, so we model the
 //   8-byte `data` union as two u32 halves and let the field layout fall out per
 //   arch:
-//     x86_64 : { events@0, data_lo@4, data_hi@8 }            → 12 bytes
-//     aarch64: { events@0, pad@4, data_lo@8, data_hi@12 }    → 16 bytes
+//     x86_64 : { events@0, dataLo@4, dataHi@8 }            → 12 bytes
+//     aarch64: { events@0, pad@4, dataLo@8, dataHi@12 }    → 16 bytes
 //   Every field is a u32 at a 4-aligned offset, so no packed attribute and no
 //   unaligned 8-byte access is ever needed — yet `@sizeOf(EpollEvent)` and the
 //   `[N]EpollEvent` stride come out byte-exact for the kernel ABI on both
 //   arches, and `epoll_wait` can fill a plain `[]EpollEvent` directly. (Both
 //   arches are little-endian, so the fd — an `int` in the union — is the low
-//   word, `data_lo`.) The struct-per-arch shape buys idiomatic field reads: no
+//   word, `dataLo`.) The struct-per-arch shape buys idiomatic field reads: no
 //   scalar-pointer indexing, no unaligned u64.
 //
 // The suite covers this module through IR only: the arch-correct layout
@@ -52,20 +52,20 @@ posix :: @import "modules/std/posix.sx";
 libc  :: c.libc;   // epoll_* are module-specific — bind through the shared handle
 
 // struct epoll_event, arch-exact (see the header). Both variants expose the
-// same three load-bearing fields — `events`, `data_lo` (the fd), `data_hi` — so
+// same three load-bearing fields — `events`, `dataLo` (the fd), `dataHi` — so
 // consumer code is arch-agnostic; the aarch64 `pad` is never touched.
 inline if @host.arch == .x86_64 {
     EpollEvent :: struct {
-        events:  u32 = 0;
-        data_lo: u32 = 0;   // the fd (union's low 32 bits)
-        data_hi: u32 = 0;
+        events: u32 = 0;
+        dataLo: u32 = 0;   // the fd (union's low 32 bits)
+        dataHi: u32 = 0;
     }
 } else {
     EpollEvent :: struct {
-        events:  u32 = 0;
-        pad:     u32 = 0;   // alignment pad before the 8-aligned data union
-        data_lo: u32 = 0;   // the fd (union's low 32 bits)
-        data_hi: u32 = 0;
+        events: u32 = 0;
+        pad:    u32 = 0;   // alignment pad before the 8-aligned data union
+        dataLo: u32 = 0;   // the fd (union's low 32 bits)
+        dataHi: u32 = 0;
     }
 }
 
@@ -95,39 +95,39 @@ epoll_wait    :: (epfd: i32, events: *EpollEvent, maxevents: i32, timeout: i32) 
 // eventfd: the cross-thread wake channel (epoll's answer to EVFILT_USER).
 eventfd       :: (initval: u32, flags: i32) -> i32 extern libc;
 
-// errno comes from std/posix.sx (per-OS errno_location resolved there).
+// errno comes from std/posix.sx (per-OS errnoLocation resolved there).
 EINTR_EP :: 4;
 
 // ── readiness-flag helpers over one event ──────────────────────────────────
-ev_readable :: (e: EpollEvent) -> bool { return (e.events & EPOLLIN)  != 0; }
-ev_writable :: (e: EpollEvent) -> bool { return (e.events & EPOLLOUT) != 0; }
+evReadable :: (e: EpollEvent) -> bool { return (e.events & EPOLLIN)  != 0; }
+evWritable :: (e: EpollEvent) -> bool { return (e.events & EPOLLOUT) != 0; }
 // EPOLLHUP (full close) or EPOLLRDHUP (peer half-closed) — drain then close.
-ev_eof      :: (e: EpollEvent) -> bool { return (e.events & (EPOLLHUP | EPOLLRDHUP)) != 0; }
-ev_err      :: (e: EpollEvent) -> bool { return (e.events & EPOLLERR) != 0; }
+evEof      :: (e: EpollEvent) -> bool { return (e.events & (EPOLLHUP | EPOLLRDHUP)) != 0; }
+evErr      :: (e: EpollEvent) -> bool { return (e.events & EPOLLERR) != 0; }
 // The fd stashed in `data` at registration.
-ev_fd       :: (e: EpollEvent) -> i32  { return e.data_lo; }
+evFd       :: (e: EpollEvent) -> i32  { return e.dataLo; }
 
 // ── thin wrappers ──────────────────────────────────────────────────────────
 
 // Create an epoll instance (close-on-exec). <0 on failure.
-ep_create :: () -> i32 {
+epCreate :: () -> i32 {
     return epoll_create1(EPOLL_CLOEXEC);
 }
 
 // Apply one registration change: add / modify / delete `fd`'s interest
 // `events` on `epfd`, stashing `fd` in `data` so `epoll_wait` reports it. True
 // on success. For EPOLL_CTL_DEL the kernel ignores the event payload.
-ep_ctl :: (epfd: i32, op: i32, fd: i32, events: u32) -> bool {
-    ev : EpollEvent = .{ events = events, data_lo = fd };
+epCtl :: (epfd: i32, op: i32, fd: i32, events: u32) -> bool {
+    ev : EpollEvent = .{ events = events, dataLo = fd };
     return epoll_ctl(epfd, op, fd, *ev) == 0;
 }
 
 // Drain ready events into `events` (room for `maxev` entries), waiting at most
-// `timeout_ms` (negative = forever). Returns the event count (0 = timeout); -1
-// only on a real failure — EINTR is retried (mirror of kqueue's kq_wait).
-ep_wait :: (epfd: i32, events: []EpollEvent, maxev: i32, timeout_ms: i32) -> i32 {
+// `timeoutMs` (negative = forever). Returns the event count (0 = timeout); -1
+// only on a real failure — EINTR is retried (mirror of kqueue's kqWait).
+epWait :: (epfd: i32, events: []EpollEvent, maxev: i32, timeoutMs: i32) -> i32 {
     while true {
-        n := epoll_wait(epfd, *events[0], maxev, timeout_ms);
+        n := epoll_wait(epfd, *events[0], maxev, timeoutMs);
         if n >= 0 { return n; }
         if posix.errno() != EINTR_EP { return -1; }   // EINTR: reissue
     }

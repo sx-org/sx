@@ -8,7 +8,7 @@
 BENCH_WARMUPS : i64 = 3;
 BENCH_SAMPLES : i64 = 15;
 
-mono_ns :: () -> i64 {
+monoNs :: () -> i64 {
     ts : time.Timespec = .{};
     if c.clock_gettime(time.CLOCK_MONOTONIC, @ts) != 0 { return -1; }
     ts.sec * 1000000000 + ts.nsec
@@ -51,7 +51,7 @@ median_sample :: (samples: *[15]i64) -> i64 {
 }
 
 run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
-    maybe_packed := fs.read_file(artifact_path(label, level));
+    maybe_packed := fs.readFile(artifact_path(label, level));
     if maybe_packed == null { return false; }
     packed := maybe_packed?!;
 
@@ -73,7 +73,7 @@ run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool 
     samples : [15]i64 = ---;
     run := 0;
     while run < BENCH_SAMPLES {
-        started := mono_ns();
+        started := monoNs();
         if started < 0 {
             context.allocator.deallocBytes(packed.ptr);
             return false;
@@ -82,7 +82,7 @@ run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool 
             context.allocator.deallocBytes(packed.ptr);
             return false;
         };
-        finished := mono_ns();
+        finished := monoNs();
         if finished < started {
             alloc.deallocBytes(plain.ptr);
             context.allocator.deallocBytes(packed.ptr);

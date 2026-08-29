@@ -7,30 +7,30 @@
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
 
-bound :: (source_len: i64) -> (i64, !Error) {
-    compress_bound(source_len)
+bound :: (sourceLen: i64) -> (i64, !Error) {
+    compressBound(sourceLen)
 }
 
 Encoder :: struct {
     state: Deflater;
 
     init :: (options: Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
-        try validate_options(options);
-        state := Deflater.init_strategy(options.level, options.strategy, alloc);
-        if state.allocation_failed { state.deinit(); raise .AllocationFailed; }
+        try validateOptions(options);
+        state := Deflater.initStrategy(options.level, options.strategy, alloc);
+        if state.allocationFailed { state.deinit(); raise .AllocationFailed; }
         Encoder{ state = state }
     }
 
     reset :: (self: *Encoder, options: Options = .{}) -> !Error {
-        try validate_options(options);
+        try validateOptions(options);
         alloc := self.state.alloc;
         self.state.deinit();
-        self.state = Deflater.init_strategy(options.level, options.strategy, alloc);
-        if self.state.allocation_failed { raise .AllocationFailed; }
+        self.state = Deflater.initStrategy(options.level, options.strategy, alloc);
+        if self.state.allocationFailed { raise .AllocationFailed; }
     }
 
     flush :: (self: *Encoder, input: string, output: string, mode: Flush = .none) -> (Progress, !Error) {
-        self.state.step_flush(input, output, mode)
+        self.state.stepFlush(input, output, mode)
     }
 
     write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
@@ -59,16 +59,16 @@ impl StreamingEncoder for Encoder {
 Decoder :: struct {
     state: Inflater;
 
-    init :: (max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (Decoder, !Error) {
-        try validate_output_limit(max_output);
-        state := Inflater.init(max_output, alloc);
+    init :: (maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (Decoder, !Error) {
+        try validateOutputLimit(maxOutput);
+        state := Inflater.init(maxOutput, alloc);
         if state.window.ptr == null { state.deinit(); raise .AllocationFailed; }
         Decoder{ state = state }
     }
 
-    reset :: (self: *Decoder, max_output: i64 = 1073741824) -> !Error {
-        try validate_output_limit(max_output);
-        self.state.reset(max_output);
+    reset :: (self: *Decoder, maxOutput: i64 = 1073741824) -> !Error {
+        try validateOutputLimit(maxOutput);
+        self.state.reset(maxOutput);
         if self.state.window.ptr == null { raise .AllocationFailed; }
     }
 
@@ -78,7 +78,7 @@ Decoder :: struct {
 
     finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
         progress := try self.state.step("", output);
-        if progress.status == .need_input { raise .UnexpectedEnd; }
+        if progress.status == .needInput { raise .UnexpectedEnd; }
         progress
     }
 
@@ -98,40 +98,40 @@ impl StreamingDecoder for Decoder {
 }
 
 encode :: (data: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validate_options(options);
-    result := deflate_strategy(data, options.level, options.strategy, alloc);
+    try validateOptions(options);
+    result := deflateStrategy(data, options.level, options.strategy, alloc);
     if result.ptr == null { raise .AllocationFailed; }
     result
 }
 
-encode_into :: (data: string, output: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+encodeInto :: (data: string, output: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
     encoder := try Encoder.init(options, alloc);
     defer encoder.deinit();
-    input_at := 0;
-    output_at := 0;
+    inputAt := 0;
+    outputAt := 0;
     while true {
         input : string = "";
-        if input_at < data.len { input = data[input_at..]; }
+        if inputAt < data.len { input = data[inputAt..]; }
         destination : string = "";
-        if output_at < output.len { destination = output[output_at..]; }
+        if outputAt < output.len { destination = output[outputAt..]; }
         progress := try encoder.flush(input, destination, .finish);
-        input_at += progress.consumed;
-        output_at += progress.produced;
-        if progress.status == .done { return output[..output_at]; }
-        if progress.status == .need_output and output_at >= output.len { raise .OutputLimit; }
+        inputAt += progress.consumed;
+        outputAt += progress.produced;
+        if progress.status == .done { return output[..outputAt]; }
+        if progress.status == .needOutput and outputAt >= output.len { raise .OutputLimit; }
     }
     raise .InvalidData;
 }
 
-decode_prefix :: (data: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
-    try validate_output_limit(max_output);
-    bytes, consumed := try inflate_with_consumed(data, max_output, alloc);
+decodePrefix :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
+    try validateOutputLimit(maxOutput);
+    bytes, consumed := try inflateWithConsumed(data, maxOutput, alloc);
     result : DecodeResult = .{ bytes = bytes, consumed = consumed };
     result
 }
 
-decode :: (data: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
-    result := try decode_prefix(data, max_output, alloc);
+decode :: (data: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+    result := try decodePrefix(data, maxOutput, alloc);
     if result.consumed != data.len {
         alloc.deallocBytes(result.bytes.ptr);
         raise .InvalidData;
@@ -139,14 +139,14 @@ decode :: (data: string, max_output: i64 = 1073741824, alloc: Allocator = contex
     result.bytes
 }
 
-decode_into_prefix :: (data: string, output: string, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
-    written, consumed := try inflate_into(data, output, false, alloc);
+decodeIntoPrefix :: (data: string, output: string, alloc: Allocator = context.allocator) -> (DecodeResult, !Error) {
+    written, consumed := try inflateInto(data, output, false, alloc);
     result : DecodeResult = .{ bytes = output[..written], consumed = consumed };
     result
 }
 
-decode_into :: (data: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
-    result := try decode_into_prefix(data, output, alloc);
+decodeInto :: (data: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
+    result := try decodeIntoPrefix(data, output, alloc);
     if result.consumed != data.len { raise .InvalidData; }
     result.bytes
 }

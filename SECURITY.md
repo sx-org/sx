@@ -34,8 +34,8 @@ where TLS terminates. If you expose the server directly, enable native TLS;
 running plaintext on the open internet is **not** recommended.
 
 Note on TLS scope: the provider defaults to TLS 1.2+ (preferring 1.3) and
-supports ALPN (`set_alpn`), SNI / multi-cert (`add_sni_cert_files`), and
-client-cert auth (`require_client_cert_files`). There is no explicit
+supports ALPN (`setAlpn`), SNI / multi-cert (`addSniCertFiles`), and
+client-cert auth (`requireClientCertFiles`). There is no explicit
 min-version pin (it needs a small C shim) — front with a proxy if you must
 REQUIRE 1.3.
 
@@ -76,11 +76,11 @@ Request parsing is hardened against the common malformed/malicious inputs
   default floors at TLS 1.2 preferring 1.3 — but REQUIRING 1.3 needs a small C
   shim (the mbedTLS setter is `static inline`); front with a proxy if you need
   that pin.
-- **Inline handler mode has no hard timeout.** With `thread_pool_count == 0` the
+- **Inline handler mode has no hard timeout.** With `threadPoolCount == 0` the
   handler runs on the event-loop thread and cannot be preempted — a hung inline
   handler hangs the whole server. The request deadline is exposed as
-  `Request.deadline_ms` for *cooperative* self-limiting only. **Run untrusted or
-  potentially-slow handlers in pool mode** (`thread_pool_count > 0`), where the
+  `Request.deadlineMs` for *cooperative* self-limiting only. **Run untrusted or
+  potentially-slow handlers in pool mode** (`threadPoolCount > 0`), where the
   loop enforces a hard per-request deadline (504) and stays responsive.
 - **A hung pooled handler costs one worker.** Pool mode 504s the client and frees
   the connection, but there is no thread cancellation (cancelling a thread
@@ -98,8 +98,8 @@ Request parsing is hardened against the common malformed/malicious inputs
 
 - Enable native TLS (`Config.tls`) or put it behind a reverse proxy that
   terminates TLS.
-- Use pool mode for any handler that can be slow, and set `handler_timeout_ms`.
-- Set `max_body`, `max_conn`, `max_headers`, `max_header_line`,
-  `request_count`, and the delivery/keep-alive timeouts to match your workload.
-- Install the `on_event` hook to log faults and watch the `Server.stats()`
+- Use pool mode for any handler that can be slow, and set `handlerTimeoutMs`.
+- Set `maxBody`, `maxConn`, `maxHeaders`, `maxHeaderLine`,
+  `requestCount`, and the delivery/keep-alive timeouts to match your workload.
+- Install the `onEvent` hook to log faults and watch the `Server.stats()`
   counters (rejected/timeouts/4xx/5xx) for abuse.

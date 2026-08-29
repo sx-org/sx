@@ -18,7 +18,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal { { [128 x i8], i32 }, i1 } @addr_unix({ ptr, i64 } %0) #0 {
+define internal { { [128 x i8], i32 }, i1 } @addrUnix({ ptr, i64 } %0) #0 {
 entry:
   %alloca = alloca { ptr, i64 }, align 8
   %allocaN = alloca i64, align 8
@@ -53,7 +53,7 @@ if.merge.49:                                      ; preds = %or.merge.47
   %addN = add i64 %add, 1
   %trunc = trunc i64 %addN to i32
   %truncN = trunc i32 %trunc to i8
-  call void @un_header(ptr %allocaN, i8 %truncN)
+  call void @unHeader(ptr %allocaN, i8 %truncN)
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.50
 
@@ -101,7 +101,7 @@ while.exit.52:                                    ; preds = %while.hdr.50
 }
 
 ; Function Attrs: nounwind
-define internal { i16, i16, i32, i64 } @sockaddr_in(i64 %0, i32 %1) #0 {
+define internal { i16, i16, i32, i64 } @sockaddrIn(i64 %0, i32 %1) #0 {
 entry:
   %alloca = alloca i64, align 8
   store i64 %0, ptr %alloca, align 8
@@ -117,7 +117,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal { i16, i16, i32, [16 x i8], i32 } @sockaddr_in6(i64 %0, ptr %1) #0 {
+define internal { i16, i16, i32, [16 x i8], i32 } @sockaddrIn6(i64 %0, ptr %1) #0 {
 entry:
   %alloca = alloca i64, align 8
   store i64 %0, ptr %alloca, align 8
@@ -135,7 +135,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal void @un_header(ptr %0, i8 %1) #0 {
+define internal void @unHeader(ptr %0, i8 %1) #0 {
 entry:
   %alloca = alloca ptr, align 8
   store ptr %0, ptr %alloca, align 8
@@ -156,7 +156,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i32 @addr_family(ptr %0) #0 {
+define internal i32 @addrFamily(ptr %0) #0 {
 entry:
   %alloca = alloca ptr, align 8
   store ptr %0, ptr %alloca, align 8
@@ -176,7 +176,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i1 @is_wouldblock(i32 %0) #0 {
+define internal i1 @isWouldblock(i32 %0) #0 {
 entry:
   %alloca = alloca i32, align 4
   store i32 %0, ptr %alloca, align 4
@@ -247,7 +247,7 @@ if.then.14:                                       ; preds = %if.merge.13
   ret i32 8
 
 if.merge.15:                                      ; preds = %if.merge.13
-  %call = call { i16, i16, i32, i64 } @sockaddr_in(i64 8080, i32 0)
+  %call = call { i16, i16, i32, i64 } @sockaddrIn(i64 8080, i32 0)
   store { i16, i16, i32, i64 } %call, ptr %alloca, align 8
   %load = load { i16, i16, i32, i64 }, ptr %alloca, align 8
   %sg = extractvalue { i16, i16, i32, i64 } %load, 0
@@ -267,7 +267,7 @@ if.then.18:                                       ; preds = %if.merge.17
   ret i32 10
 
 if.merge.19:                                      ; preds = %if.merge.17
-  %callN = call i1 @is_wouldblock(i32 11)
+  %callN = call i1 @isWouldblock(i32 11)
   %lnot = xor i1 %callN, true
   br i1 %lnot, label %if.then.20, label %if.merge.21
 
@@ -367,7 +367,7 @@ if.then.40:                                       ; preds = %if.merge.39
 
 if.merge.41:                                      ; preds = %if.merge.39
   store [16 x i8] undef, ptr %allocaN, align 1
-  %callN = call { i16, i16, i32, [16 x i8], i32 } @sockaddr_in6(i64 8080, ptr %allocaN)
+  %callN = call { i16, i16, i32, [16 x i8], i32 } @sockaddrIn6(i64 8080, ptr %allocaN)
   store { i16, i16, i32, [16 x i8], i32 } %callN, ptr %allocaN, align 4
   %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 0
@@ -387,7 +387,7 @@ if.then.44:                                       ; preds = %if.merge.43
   ret i32 23
 
 if.merge.45:                                      ; preds = %if.merge.43
-  %callN = call { { [128 x i8], i32 }, i1 } @addr_unix({ ptr, i64 } { ptr @str, i64 11 })
+  %callN = call { { [128 x i8], i32 }, i1 } @addrUnix({ ptr, i64 } { ptr @str, i64 11 })
   %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 0
   store { [128 x i8], i32 } %sgN, ptr %allocaN, align 4
   %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 1
@@ -400,7 +400,7 @@ if.then.53:                                       ; preds = %if.merge.45
   ret i32 24
 
 if.merge.54:                                      ; preds = %if.merge.45
-  %callN = call i32 @addr_family(ptr %allocaN)
+  %callN = call i32 @addrFamily(ptr %allocaN)
   %icmpN = icmp ne i32 %callN, 1
   br i1 %icmpN, label %if.then.55, label %if.merge.56
 

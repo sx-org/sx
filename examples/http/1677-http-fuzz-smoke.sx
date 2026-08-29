@@ -1,7 +1,7 @@
 // std.http: a seeded PRNG feeds mutated and malformed requests to one live
 // server driven single-thread through Server.tick. Every reply is either
 // "HTTP/1.1 " + a 3-digit status or a clean close; split sends drive the
-// partial-read resume paths in read_more / try_serve_one; an interleaved
+// partial-read resume paths in readMore / tryServeOne; an interleaved
 // plain GET keeps proving liveness. One server serves every iteration under
 // a GPA, so net-zero allocCount at the end is the leak gate.
 @import "modules/std.sx";
@@ -44,9 +44,9 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -208,19 +208,19 @@ fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*
     // Bounded WALL-CLOCK budget (a real hang exhausts it → reported as a
     // failure, never an infinite loop). Generously past the 2ms request
     // deadline so a NEED_MORE request always reaches its eviction within it.
-    budget := event.deadline_in(100);
+    budget := event.deadlineIn(100);
     while !event.expired(budget) {
         // dribble out a random-sized next piece
         if sent < blen {
             piece := 1 + rng.upto(64);
             if sent + piece > blen { piece = blen - sent; }
-            wn, we := socket.write_nb(fd, *bytes[sent], piece);
+            wn, we := socket.writeNb(fd, *bytes[sent], piece);
             if !we { sent += wn; }
             // WouldBlock / fault: just keep ticking; the server reads what it can
         }
         srv.tick(1) catch {};
         if total < scap {
-            n, re := socket.read_nb(fd, *scratch[total], (scap - total));
+            n, re := socket.readNb(fd, *scratch[total], (scap - total));
             if !re { total += n; }
             else if re == .Closed { closed = true; break; }
         }
@@ -260,7 +260,7 @@ liveness_ok :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
     out := false;
     while tries < 600 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (scap - total));
+        n, re := socket.readNb(fd, *scratch[total], (scap - total));
         if !re { total += n; }
         else if re == .Closed { break; }
         s := string{ ptr = scratch, len = total };
@@ -290,12 +290,12 @@ main :: () -> i32 {
         // run stays well under the corpus timeout.
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 2,
-            timeout_keepalive_ms = 2,
-            request_count = 1000,
-            max_conn = 16,
-            max_headers = 50,
-            max_header_line = 1024,
+            timeoutRequestMs = 2,
+            timeoutKeepaliveMs = 2,
+            requestCount = 1000,
+            maxConn = 16,
+            maxHeaders = 50,
+            maxHeaderLine = 1024,
         };
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }

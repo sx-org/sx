@@ -14,9 +14,9 @@
 // the loop thread. The server spawns a fiber per dispatched request,
 // WAKES it when body bytes arrive (or the connection dies), and DRIVES
 // all ready fibers at tick boundaries. A handler inside a fiber may call
-// req.read_body, which SUSPENDS the fiber until the wake — this is what
+// req.readBody, which SUSPENDS the fiber until the wake — this is what
 // lifts the pool-only streaming restriction. Handlers must not use the
-// scheduler's own sleep()/block_on_fd() (the server drives fibers with a
+// scheduler's own sleep()/blockOnFd() (the server drives fibers with a
 // non-blocking poll that cannot serve them; the provider bails loudly).
 FiberRunner :: interface {
     // Spawn a fiber running `entry(arg)` (entry is an sx `(*void) -> void`
@@ -29,7 +29,7 @@ FiberRunner :: interface {
     wake :: (self: *Self, handle: usize);
     // Park the CURRENTLY RUNNING fiber until a wake. Must be called from
     // inside a fiber (the provider bails loudly otherwise).
-    suspend_current :: (self: *Self);
+    suspendCurrent :: (self: *Self);
     // Run every ready fiber until all are done or suspended. NEVER blocks
     // — called by the server at tick boundaries.
     drive :: (self: *Self);

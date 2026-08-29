@@ -104,7 +104,7 @@ Rng :: struct {
     }
 }
 
-mono_ns :: () -> i64 {
+monoNs :: () -> i64 {
     ts : time.Timespec = .{};
     c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
     ts.sec * 1000000000 + ts.nsec
@@ -561,7 +561,7 @@ ap_default : Allocator = b00;
 // ── Lanes ────────────────────────────────────────────────────────────────
 
 direct_lane :: (arena: *Arena) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -571,14 +571,14 @@ direct_lane :: (arena: *Arena) -> i64 {
         sink = sink + b[0];
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
 
 borrow_lane :: (arena: *Arena) -> i64 {
     a : Allocator = arena;
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -588,14 +588,14 @@ borrow_lane :: (arena: *Arena) -> i64 {
         sink = sink + b[0];
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
 
 ctx_lane :: (arena: *Arena) -> i64 {
     push .{ allocator = arena } {
-        t0 := mono_ns();
+        t0 := monoNs();
         sink := 0;
         i := 0;
         while i < ALLOCS {
@@ -605,14 +605,14 @@ ctx_lane :: (arena: *Arena) -> i64 {
             sink = sink + b[0];
             i = i + 1;
         }
-        el := mono_ns() - t0;
+        el := monoNs() - t0;
         checksum = checksum + sink;
         return el;
     }
 }
 
 default_lane :: () -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -624,7 +624,7 @@ default_lane :: () -> i64 {
         context.allocator.deallocBytes(p);
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
@@ -633,7 +633,7 @@ default_lane :: () -> i64 {
 // stream dictates. `h.len` is 20 or 2 — the same loop measures both, so the
 // only difference between the two interleaved lanes is the switch's width.
 interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -643,7 +643,7 @@ interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
         sink = sink + b[0];
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
@@ -651,7 +651,7 @@ interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
 // The same 20 receivers, walked in a fixed rotation: the switch is as wide as
 // the interleaved lane's, the sequence is perfectly predictable.
 rotate_lane :: (h: []Allocator) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     k := 0;
@@ -664,7 +664,7 @@ rotate_lane :: (h: []Allocator) -> i64 {
         if k == NCONF { k = 0; }
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
@@ -674,7 +674,7 @@ rotate_lane :: (h: []Allocator) -> i64 {
 ctx_ptr_lane :: (arena: *Arena) -> i64 {
     ah : Allocator = arena;
     push .{ ap = *ah } {
-        t0 := mono_ns();
+        t0 := monoNs();
         sink := 0;
         i := 0;
         while i < ALLOCS {
@@ -684,7 +684,7 @@ ctx_ptr_lane :: (arena: *Arena) -> i64 {
             sink = sink + b[0];
             i = i + 1;
         }
-        el := mono_ns() - t0;
+        el := monoNs() - t0;
         checksum = checksum + sink;
         return el;
     }
@@ -696,7 +696,7 @@ ctx_ptr_lane :: (arena: *Arena) -> i64 {
 // the same as `interleaved_lane`'s, and the only added work is the load of
 // the pointer before the load of the handle.
 interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -706,13 +706,13 @@ interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
         sink = sink + b[0];
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
 
 rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     k := 0;
@@ -725,7 +725,7 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
         if k == NCONF { k = 0; }
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
@@ -734,7 +734,7 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
 // whole Context, so the pair below differs only in the width of the one
 // field being written.
 push_h16_lane :: (arena: *Arena) -> i64 {
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -746,14 +746,14 @@ push_h16_lane :: (arena: *Arena) -> i64 {
         }
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }
 
 push_ptr_lane :: (arena: *Arena) -> i64 {
     ah : Allocator = arena;
-    t0 := mono_ns();
+    t0 := monoNs();
     sink := 0;
     i := 0;
     while i < ALLOCS {
@@ -765,7 +765,7 @@ push_ptr_lane :: (arena: *Arena) -> i64 {
         }
         i = i + 1;
     }
-    el := mono_ns() - t0;
+    el := monoNs() - t0;
     checksum = checksum + sink;
     el
 }

@@ -45,9 +45,9 @@ empty_source :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { 0 }
 encoded_case :: (encoding: content.Encoding, fail_at: i64) -> (bool, i64) {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, fail_at = fail_at };
-    state := content.create_encoded_producer(encoding, 6, empty_source, 0, failing);
+    state := content.createEncodedProducer(encoding, 6, empty_source, 0, failing);
     success := state != null;
-    if state != null { content.destroy_encoded_producer(state, failing); }
+    if state != null { content.destroyEncodedProducer(state, failing); }
     expected := if fail_at == 0 then success and failing.failures == 0
                 else !success and failing.failures == 1;
     return expected and failing.live == 0 and gpa.allocCount == 0, failing.sequence;
@@ -68,7 +68,7 @@ encoded_sweep :: (encoding: content.Encoding) -> bool {
 out_chan_case :: (lp: event.Loop, fail_at: i64) -> (bool, i64) {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, fail_at = fail_at };
-    channel := server_impl.create_out_chan(failing, lp);
+    channel := server_impl.createOutChan(failing, lp);
     success := channel != null;
     if channel != null { channel.release(); }
     expected := if fail_at == 0 then success and failing.failures == 0
@@ -97,8 +97,8 @@ serialization_case :: (chunked: bool, fail: bool) -> bool {
     resp : types.Response = .{ body = "body" };
     date := "Thu, 01 Jan 1970 00:00:00 GMT";
     output := if chunked
-        then server_impl.serialize_chunked_head(*resp, true, failing, date, "")
-        else server_impl.serialize_bytes(*resp, true, failing, false, date, "");
+        then server_impl.serializeChunkedHead(*resp, true, failing, date, "")
+        else server_impl.serializeBytes(*resp, true, failing, false, date, "");
     success := output.buf != null;
     if output.buf != null { failing.deallocBytes(xx output.buf); }
     expected := if fail then !success and failing.failures == 1 else success;

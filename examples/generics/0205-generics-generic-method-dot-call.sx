@@ -16,7 +16,7 @@ Holder :: struct {
 }
 
 main :: () -> i32 {
-    h : *Holder = xx c.libc_malloc(@sizeOf(Holder));
+    h : *Holder = xx c.libcMalloc(@sizeOf(Holder));
     h.n = 7;
 
     print("plain: {}\n", h.plain());

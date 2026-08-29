@@ -1,7 +1,7 @@
 // =====================================================================
 // cli.sx — process command-line argument accessor (macOS, Linux), pure sx.
 //
-// `os_args(buf)` returns the real OS-level process argv as a `[]string`,
+// `osArgs(buf)` returns the real OS-level process argv as a `[]string`,
 // each element a VIEW over storage that lives for the whole process, so
 // the views never dangle. The caller provides the `buf: []string`
 // backing (typically a stack array).
@@ -48,8 +48,8 @@ inline match @host.os {
         // the `char**` / `int` the process was launched with. Declared as
         // `*i64` / `*i32` since on 64-bit a `char***` is just a pointer to a
         // pointer-sized slot.
-        ns_get_argv :: () -> *i64 extern libc "_NSGetArgv";
-        ns_get_argc :: () -> *i32 extern libc "_NSGetArgc";
+        nsGetArgv :: () -> *i64 extern libc "_NSGetArgv";
+        nsGetArgc :: () -> *i32 extern libc "_NSGetArgc";
 
     case .linux:
         // glibc exposes no argv accessor, so the source is the kernel's own
@@ -62,12 +62,12 @@ inline match @host.os {
         CMDLINE_FIRST_CAP :: 4096;
 
         cmdline : string = "";         // the NUL-separated blob
-        cmdline_argc : i64 = -1;       // -1 until `cmdline_load` has run
+        cmdlineArgc : i64 = -1;       // -1 until `cmdlineLoad` has run
 
         // Read the whole file into `buf`, returning the byte count, or -1 when
         // it cannot be opened or read. A count below `cap` means EOF was
         // reached.
-        cmdline_read :: (buf: [*]u8, cap: i64) -> i64 {
+        cmdlineRead :: (buf: [*]u8, cap: i64) -> i64 {
             fd := c.open("/proc/self/cmdline", CMDLINE_O_RDONLY, 0);
             if fd < 0 { return -1; }
             at := 0;
@@ -85,8 +85,8 @@ inline match @host.os {
         // no size up front, so the mapping doubles until one read reaches EOF
         // inside it — a full buffer is indistinguishable from a longer blob,
         // and a truncated last token would be a silently dropped argument.
-        cmdline_load :: () {
-            if cmdline_argc >= 0 { return; }
+        cmdlineLoad :: () {
+            if cmdlineArgc >= 0 { return; }
             cap := CMDLINE_FIRST_CAP;
             while true {
                 region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
@@ -95,7 +95,7 @@ inline match @host.os {
                     out("std.cli: mmap failed while reading /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
-                n := cmdline_read(region, cap);
+                n := cmdlineRead(region, cap);
                 if n < 0 {
                     out("std.cli: cannot read /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
@@ -114,7 +114,7 @@ inline match @host.os {
                 if cmdline.ptr[i] == 0 { k += 1; }
                 i += 1;
             }
-            cmdline_argc = k;
+            cmdlineArgc = k;
         }
 
     else: {}
@@ -128,7 +128,7 @@ inline match @host.os {
 //      code that matches the outcome: `EX_OK` on success, `EX_USAGE`
 //      after a `parse` failure (a `CliError` — bad command / flag /
 //      value), `EX_UNAVAILABLE` when the platform is unsupported.
-//   2. TERMINATORS. `exit_ok()` / `exit_usage()` end the process with the
+//   2. TERMINATORS. `exitOk()` / `exitUsage()` end the process with the
 //      matching code. They route through the canonical
 //      `process.exit(code: u8)` (modules/std/process.sx) — there is NO second
 //      hand-rolled `_exit` binding in this module; the unsupported-platform
@@ -147,21 +147,21 @@ EX_UNAVAILABLE :u8: 70;   // service / platform unavailable (sysexits.h)
 
 // End the process successfully (`EX_OK` = 0). Thin wrapper over the
 // canonical `process.exit` terminator — immediate `_exit(2)`, no unwinding.
-exit_ok :: () -> noreturn { proc.exit(EX_OK); }
+exitOk :: () -> noreturn { proc.exit(EX_OK); }
 
 // End the process with the usage-error code (`EX_USAGE` = 64). A CLI
 // front-end calls this after `parse` raises a `CliError` and the human
 // diagnostic has been written to stderr.
-exit_usage :: () -> noreturn { proc.exit(EX_USAGE); }
+exitUsage :: () -> noreturn { proc.exit(EX_USAGE); }
 
 // Number of process arguments (argc). >= 1 for any normally-launched
 // process, since argv[0] is the executable path.
-os_argc :: () -> i64 {
+osArgc :: () -> i64 {
     inline match @host.os {
-        case .macos: { return (ns_get_argc().*).(i64); }
+        case .macos: { return (nsGetArgc().*).(i64); }
         case .linux: {
-            cmdline_load();
-            return cmdline_argc;
+            cmdlineLoad();
+            return cmdlineArgc;
         }
         else: {
             out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
@@ -177,13 +177,13 @@ os_argc :: () -> i64 {
 // The caller owns `buf` (typically a stack `[N]string`); the returned
 // slice points into it and is valid for as long as `buf` is in scope. If
 // the process has more than `buf.len` arguments only the first `buf.len`
-// are returned — call `os_argc()` first and size `buf` accordingly when an
+// are returned — call `osArgc()` first and size `buf` accordingly when an
 // exact count matters.
-os_args :: (buf: []string) -> []string {
+osArgs :: (buf: []string) -> []string {
     inline match @host.os {
         case .macos: {
-            argc := (ns_get_argc().*).(i64);
-            argv : [*]i64 = (ns_get_argv().*).([*]i64);
+            argc := (nsGetArgc().*).(i64);
+            argv : [*]i64 = (nsGetArgv().*).([*]i64);
             n := if argc > buf.len then buf.len else argc;
             i := 0;
             while i < n {
@@ -199,8 +199,8 @@ os_args :: (buf: []string) -> []string {
             return result;
         }
         case .linux: {
-            cmdline_load();
-            n := if cmdline_argc > buf.len then buf.len else cmdline_argc;
+            cmdlineLoad();
+            n := if cmdlineArgc > buf.len then buf.len else cmdlineArgc;
             i := 0;
             at := 0;
             while i < n {
@@ -230,7 +230,7 @@ os_args :: (buf: []string) -> []string {
 // `parse(args, commands, diag)` reads a caller-supplied logical argument
 // vector `[]string` — NOT the process argv. (Mapping process argv ->
 // logical args, e.g. dropping the `sx run prog.sx` prefix, is the
-// consumer's job; see the `os_args` note above.) The grammar:
+// consumer's job; see the `osArgs` note above.) The grammar:
 //
 //     <group> <command> [--flag VALUE | --bool]... [--json] [-- rest...]
 //
@@ -269,14 +269,14 @@ os_args :: (buf: []string) -> []string {
 // Usage:
 //
 //     flags : []FlagSpec = .[
-//         FlagSpec{ name = "out",     takes_value = true,  required = true },
-//         FlagSpec{ name = "verbose", takes_value = false, required = false },
+//         FlagSpec{ name = "out",     takesValue = true,  required = true },
+//         FlagSpec{ name = "verbose", takesValue = false, required = false },
 //     ];
 //     cmds : []Command = .[ Command{ group = "ci", command = "publish", flags = flags } ];
 //     d : Diag = .{};
 //     p := try parse(args, cmds, @d);
 //     // p.group == "ci"; p.command == "publish";
-//     // p.value_of("out"); p.is_set("verbose"); p.json; p.rest
+//     // p.valueOf("out"); p.isSet("verbose"); p.json; p.rest
 // =====================================================================
 
 // The parser's failure contract. The first four are INPUT errors a caller
@@ -288,7 +288,7 @@ CliError :: error { UnknownCommand; UnknownFlag; MissingValue; MissingRequired; 
 // a value, and whether it must be present. Caller-owned; passed as a view.
 FlagSpec :: struct {
     name: string;
-    takes_value: bool;
+    takesValue: bool;
     required: bool;
 }
 
@@ -323,7 +323,7 @@ Diag :: struct {
 Parsed :: struct {
     group: string;
     command: string;
-    cmd_index: i64;
+    cmdIndex: i64;
     json: bool;                // `--json` mode: true iff `--json` is in argv
     rest: []string;
     spec: []FlagSpec;          // view of the matched command's flag specs
@@ -331,7 +331,7 @@ Parsed :: struct {
 
     // Presence of a declared flag (boolean or value-taking). False for an
     // undeclared name.
-    is_set :: (self: *Parsed, name: string) -> bool {
+    isSet :: (self: *Parsed, name: string) -> bool {
         j := 0;
         while j < self.spec.len {
             if self.spec[j].name == name { return self.values[j].set; }
@@ -341,8 +341,8 @@ Parsed :: struct {
     }
 
     // The VIEW value of a value-taking flag, or "" if absent/undeclared.
-    // Use `is_set` to distinguish "absent" from "present, empty value".
-    value_of :: (self: *Parsed, name: string) -> string {
+    // Use `isSet` to distinguish "absent" from "present, empty value".
+    valueOf :: (self: *Parsed, name: string) -> string {
         j := 0;
         while j < self.spec.len {
             if self.spec[j].name == name { return self.values[j].value; }
@@ -354,7 +354,7 @@ Parsed :: struct {
 
 // True for a long-option token (`--x`). A single dash or a bare word is
 // not a flag. Exactly `--` is the separator, tested before this.
-is_long_flag :: (s: string) -> bool {
+isLongFlag :: (s: string) -> bool {
     return s.len >= 2 and s[0] == '-' and s[1] == '-';
 }
 
@@ -395,7 +395,7 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
     result : Parsed = ---;
     result.group = group;
     result.command = command;
-    result.cmd_index = ci;
+    result.cmdIndex = ci;
     result.json = false;
     result.spec = spec;
     result.rest = args[args.len ..];
@@ -414,7 +414,7 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
             result.rest = args[i + 1 ..];
             break;
         }
-        if !is_long_flag(tok) {          // first bare operand ends flag parsing
+        if !isLongFlag(tok) {          // first bare operand ends flag parsing
             result.rest = args[i ..];
             break;
         }
@@ -435,8 +435,8 @@ parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliErro
             diag.token = tok;
             raise .UnknownFlag;
         }
-        if spec[si].takes_value {
-            if i + 1 >= args.len or is_long_flag(args[i + 1]) {
+        if spec[si].takesValue {
+            if i + 1 >= args.len or isLongFlag(args[i + 1]) {
                 diag.index = i;
                 diag.token = tok;
                 raise .MissingValue;

@@ -19,9 +19,9 @@ Error :: error {
     AllocationFailed;
 }
 
-Strategy :: enum { default; filtered; huffman_only; rle; fixed; }
+Strategy :: enum { default; filtered; huffmanOnly; rle; fixed; }
 Flush :: enum { none; sync; full; finish; }
-Status :: enum { need_input; need_output; done; }
+Status :: enum { needInput; needOutput; done; }
 
 Options :: struct {
     level: i64 = 6;

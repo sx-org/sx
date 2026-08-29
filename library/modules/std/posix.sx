@@ -11,10 +11,10 @@
 c :: @import "modules/std/c.sx";
 
 // Current thread's errno. Valid immediately after a libc call that returned its
-// error sentinel (-1 for most, NULL for allocators). `set_errno(0)` before a
+// error sentinel (-1 for most, NULL for allocators). `setErrno(0)` before a
 // call that reports success-with-0-result via errno.
-errno     :: () -> i32 { return c.errno_location().*; }
-set_errno :: (v: i32)  { c.errno_location().* = v; }
+errno    :: () -> i32 { return c.errnoLocation().*; }
+setErrno :: (v: i32)  { c.errnoLocation().* = v; }
 
 // ── errno constants (per-OS) ────────────────────────────────────────────────
 // Canonical home for the errno values the stdlib checks. Values differ by OS

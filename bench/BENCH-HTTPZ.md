@@ -22,9 +22,9 @@ Reading the table:
 - **Inline keep-alive +36%** comes from TCP_NODELAY — Nagle and
   delayed-ACK cliffs on request/response traffic. O(1) slot/deadline
   structures and single-pass serialization (zero per-response
-  allocations inline) add a few percent each at this small `max_conn`;
+  allocations inline) add a few percent each at this small `maxConn`;
   their structural value is that tick cost does not scale with
-  `max_conn` and the serializer does not scale with header-piece
+  `maxConn` and the serializer does not scale with header-piece
   count.
 - Plain-close and pool numbers move within the ambient ±5% band — the
   zig baseline itself swings 37.2k–40.4k across runs, which bounds the
@@ -35,8 +35,8 @@ Reading the table:
 
 ## 2026-07-02 — streaming request-body reader, same host
 
-`try_serve_one` hoists Content-Length parsing and the smuggling checks,
-carries a per-request `streaming` bool, and extracts `canon_path`; none
+`tryServeOne` hoists Content-Length parsing and the smuggling checks,
+carries a per-request `streaming` bool, and extracts `canonPath`; none
 of that work lands on the accumulate path. Measured: inline plain 37,982 /
 inline keep-alive **218,213** / pool(4) 126,735 / zig baseline 37,668
 rps — all within the ambient band of the perf-pass finals (keep-alive
@@ -45,7 +45,7 @@ rps — all within the ambient band of the perf-pass finals (keep-alive
 ## 2026-07-02 — producers off the loop thread, same host
 
 Pool-mode STREAM producers run on workers; fixed-body pool responses go
-through queue_completion. Measured: inline plain 37,865 / inline
+through queueCompletion. Measured: inline plain 37,865 / inline
 keep-alive **217,828** / pool(4) 125,766 / zig baseline 36,183 rps — all
 within the ambient band.
 

@@ -12,7 +12,7 @@
 @import "modules/std.sx";
 
 Color :: enum u8 { red; green; blue; }
-Code :: enum u16 { ok :: 200; not_found :: 404; teapot :: 418; }
+Code :: enum u16 { ok :: 200; notFound :: 404; teapot :: 418; }
 
 Pair :: struct { a: Color; b: Color; }
 Row :: struct { status: Code; pad: i64; }
@@ -25,8 +25,8 @@ palette : [3]Color = .[ .blue, .green, .red ];
 pair : Pair = .{ a = .blue, b = .green };
 // explicit-value enum: scalar, array (2-byte stride), and inside a struct array
 status : Code = .teapot;
-codes : [3]Code = .[ .ok, .not_found, .teapot ];
-rows : [2]Row = .[ .{ status = .not_found, pad = 11 }, .{ status = .teapot, pad = 22 } ];
+codes : [3]Code = .[ .ok, .notFound, .teapot ];
+rows : [2]Row = .[ .{ status = .notFound, pad = 11 }, .{ status = .teapot, pad = 22 } ];
 
 main :: () {
     print("chosen={}\n", chosen);
@@ -37,8 +37,8 @@ main :: () {
         and palette[0] == .blue and palette[1] == .green and palette[2] == .red
         and pair.a == .blue and pair.b == .green
         and status == .teapot
-        and codes[0] == .ok and codes[1] == .not_found and codes[2] == .teapot
-        and rows[0].status == .not_found and rows[0].pad == 11
+        and codes[0] == .ok and codes[1] == .notFound and codes[2] == .teapot
+        and rows[0].status == .notFound and rows[0].pad == 11
         and rows[1].status == .teapot and rows[1].pad == 22 {
         print("PASS\n");
     } else {

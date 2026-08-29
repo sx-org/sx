@@ -24,7 +24,7 @@ main :: () -> i32 {
 ```
 
 `Server.run()` loops until `Server.stop()` is requested, then drains and returns;
-`Server.close()` frees everything. `Server.tick(max_wait_ms)` runs one bounded
+`Server.close()` frees everything. `Server.tick(maxWaitMs)` runs one bounded
 loop iteration — useful for driving the server and its clients in one thread
 (every `examples/http/*` test does this).
 
@@ -38,7 +38,7 @@ races or use-after-free; get it right and the server is simple to reason about.
 ### One loop thread
 
 The event loop — accept, read, request parsing, response writing, timeout
-eviction, the `Stats` counters, and the `on_event` hook — all run on a **single
+eviction, the `Stats` counters, and the `onEvent` hook — all run on a **single
 thread**. Nothing in that path needs locking because nothing else touches it.
 
 ### Handler execution: inline, pool, or fibers
@@ -46,22 +46,22 @@ thread**. Nothing in that path needs locking because nothing else touches it.
 Three dispatch models, chosen by `Config`:
 
 - **Inline** (default): handlers run on the loop thread, run-to-completion.
-- **Pool** (`thread_pool_count > 0`): handlers run on worker threads; slow
-  handlers stop stalling the loop; hard `handler_timeout_ms` enforcement.
+- **Pool** (`threadPoolCount > 0`): handlers run on worker threads; slow
+  handlers stop stalling the loop; hard `handlerTimeoutMs` enforcement.
 - **Fibers** (`Config.fibers`): handlers run as M:1 fibers ON the
-  loop thread. A fiber handler may block-style `req.read_body` — the fiber
+  loop thread. A fiber handler may block-style `req.readBody` — the fiber
   suspends and the loop wakes it when body bytes arrive — so
-  `stream_request_body` works WITHOUT a pool, while everything stays
+  `streamRequestBody` works WITHOUT a pool, while everything stays
   single-threaded (no locks in handler code, no thread-safe-allocator
   requirement). COOPERATIVE: a compute-bound handler stalls the whole
-  server exactly like inline mode (no preemption; `handler_timeout_ms`
+  server exactly like inline mode (no preemption; `handlerTimeoutMs`
   stays advisory). Setup:
 
   ```sx
   fs :: @import "modules/std/http/fiber_sched.sx";   // opt-in: compiles the fiber runtime
   …
   runner := fs.SchedRunner.init();                   // must outlive the Server
-  cfg : http.Config = .{ …, stream_request_body = true, fibers = runner };
+  cfg : http.Config = .{ …, streamRequestBody = true, fibers = runner };
   srv, e := http.Server.init(cfg, handler, ctx);
   … srv.run(); srv.close();
   runner.deinit();                                   // caller owns the runner
@@ -71,25 +71,25 @@ Three dispatch models, chosen by `Config`:
   context-switch asm); it is a direct import, never re-exported, so
   non-fiber programs stay portable. Fibers and a pool together are
   rejected (`HttpErr.Config`). Handlers must not call the scheduler's own
-  `sleep`/`block_on_fd`; `resp.stream` producers follow the INLINE
+  `sleep`/`blockOnFd`; `resp.stream` producers follow the INLINE
   lifetime contract (the fiber's stack is gone when the producer is
   pulled — `ctx` must be caller-owned). Fiber handlers run on a **128 KB
   guard-paged stack** — keep large buffers on the heap or the per-request
   arena, not in locals (an overflow faults loudly, it never corrupts).
   There is no 503 shed in fiber mode: concurrency is bounded by
-  `max_conn` (one fiber per occupied slot).
+  `maxConn` (one fiber per occupied slot).
 
 ### Handler execution details: inline vs pool
 
-- **Inline** (`thread_pool_count == 0`, the default): the handler runs **on the
+- **Inline** (`threadPoolCount == 0`, the default): the handler runs **on the
   loop thread**, synchronously, during request dispatch. Fastest for quick
   handlers (no hand-off), but a slow handler stalls every other connection, and
   a hung handler hangs the whole server. There is **no hard handler timeout** in
   inline mode — the loop can't preempt itself. Use inline only for handlers you
   trust to return quickly.
-- **Pool** (`thread_pool_count = N > 0`): each parsed request is dispatched to a
+- **Pool** (`threadPoolCount = N > 0`): each parsed request is dispatched to a
   worker thread. The loop keeps serving other connections while a handler runs;
-  a per-request `handler_timeout_ms` is enforced (a worker that overruns loses
+  a per-request `handlerTimeoutMs` is enforced (a worker that overruns loses
   its connection — 504 to the client — while the server stays responsive). A
   full backlog sheds with **503** (backpressure) rather than growing unbounded.
   **Use pool mode for any handler that can be slow or is untrusted.**
@@ -129,11 +129,11 @@ allocator and **never shares allocator state across threads**.
 
 One event loop is one core. To use more, do NOT try to share a `Server`
 across threads — run **one complete `Server` per thread**, all bound to the
-same port with `Config.reuse_port = true`:
+same port with `Config.reusePort = true`:
 
 ```sx
 // per worker thread:
-cfg : http.Config = .{ port = 8080, reuse_port = true };
+cfg : http.Config = .{ port = 8080, reusePort = true };
 srv, err := http.Server.init(cfg, handler, ctx);
 if err { /* a refused SO_REUSEPORT or bind is a hard Bind fault */ return; }
 srv.run();   // each instance owns its loop, slots, buffers, stats
@@ -150,7 +150,7 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
   summing `stats()` across instances; `stop()`/`close()` each instance
   from its own controller.
 - Sharing is **opt-in and all-or-nothing**: every listener on the port
-  must set `reuse_port`; a plain bind against a shared port still fails
+  must set `reusePort`; a plain bind against a shared port still fails
   with `Bind` (no accidental sharing), and a refused `SO_REUSEPORT`
   setsockopt is a hard `Bind` fault, never a silent solo bind.
 - Handlers follow the same rules as always, per instance. If handlers
@@ -173,7 +173,7 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
 
 - **Response streaming** (`resp.stream(producer, ctx)`): emit a large body via
   `Transfer-Encoding: chunked` without buffering it whole. The producer is a
-  resumable pull `(ctx, offset, dst, dst_cap) -> count` (0 = end); the server
+  resumable pull `(ctx, offset, dst, dstCap) -> count` (0 = end); the server
   pulls one bounded piece at a time, backpressure-aware. See
   `examples/http/1674-http-streaming.sx`.
   - **Pool mode**: the producer is pumped **by the worker that ran the
@@ -184,7 +184,7 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
     pace**: a client that keeps draining slowly keeps refreshing the
     stall-based delivery deadline and holds the worker for as long as it
     reads (a client that stops reading entirely is evicted at the fixed
-    deadline). Size `thread_pool_count` for the number of concurrent
+    deadline). Size `threadPoolCount` for the number of concurrent
     streamed responses you are willing to serve; N slow readers pin N
     workers. A total-stream-duration bound is a possible future knob.
   - **Inline mode**: the producer runs on the loop thread after the handler
@@ -193,34 +193,34 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
     the loop (the inline contract).
 - **Request bodies (accumulated, the default)**: a `Content-Length` or
   `Transfer-Encoding: chunked` body is decoded into `Request.body`, bounded by
-  `Config.max_body` with early **413** rejection. See
+  `Config.maxBody` with early **413** rejection. See
   `examples/http/1675-http-request-body.sx`.
-- **Request-body streaming** (`Config.stream_request_body`, **pool mode
+- **Request-body streaming** (`Config.streamRequestBody`, **pool mode
   only**): every body-carrying request is dispatched at HEADERS-COMPLETE with
   `Request.body == ""`; the handler pulls the decoded body incrementally —
 
   ```sx
-  n := req.read_body(@scratch[0], scratch_cap);   // > 0 bytes; 0 end; -1 fault
+  n := req.readBody(@scratch[0], scratch_cap);   // > 0 bytes; 0 end; -1 fault
   ```
 
-  `read_body` BLOCKS the pool worker until the loop thread feeds more bytes
+  `readBody` BLOCKS the pool worker until the loop thread feeds more bytes
   through a bounded per-request channel (64 KB), so a body of any size streams
   through bounded memory. It also works on accumulated requests (serves
   `Request.body` through a cursor), so handler code can be mode-agnostic.
   Semantics to know:
-  - **`max_body` does not apply** to streamed requests — the reading handler
+  - **`maxBody` does not apply** to streamed requests — the reading handler
     is the bound. Refuse an oversized upload by responding (e.g. 413) without
     draining; the server then closes the connection after the response.
-  - An **early response** (before `read_body` returned 0) always closes the
+  - An **early response** (before `readBody` returned 0) always closes the
     connection — the unfinished inbound stream can never pipeline — and the
     response carries `Connection: close`.
-  - `read_body` returning **-1** means the connection died (peer reset, bad
+  - `readBody` returning **-1** means the connection died (peer reset, bad
     chunk framing, eviction): respond-and-return; the response is discarded
     if the socket is already gone.
-  - The delivery deadline (`timeout_request_ms`) becomes a **stall** bound,
-    refreshed on every piece of body progress; `handler_timeout_ms` starts
+  - The delivery deadline (`timeoutRequestMs`) becomes a **stall** bound,
+    refreshed on every piece of body progress; `handlerTimeoutMs` starts
     once the body completes.
-  - Inline mode (`thread_pool_count == 0`) cannot stream (the reader would
+  - Inline mode (`threadPoolCount == 0`) cannot stream (the reader would
     block the loop thread that feeds it) — `Server.init` raises
     `HttpErr.Config`.
 
@@ -234,9 +234,9 @@ Response compression is off by default. Enable it explicitly:
 
 ```sx
 cfg : http.Config = .{
-    compress_responses = true,
-    compress_min_size = 1024,
-    compress_level = 6,
+    compressResponses = true,
+    compressMinSize = 1024,
+    compressLevel = 6,
 };
 ```
 
@@ -256,14 +256,14 @@ identity. A handler-provided `Content-Encoding` stack is preserved byte for
 byte and never encoded again, but receives 406 unless the request accepts every
 coding in the stack. These responses are intentionally left unchanged:
 
-- `resp.disable_compression()` was called;
+- `resp.disableCompression()` was called;
 - a request has `Range`, the response is 206/416, or any response field is
   `Content-Range` (transforming a selected range would invalidate offsets);
 - any `Cache-Control` field includes `no-transform`;
 - a strong ETag or representation/content digest describes the identity bytes;
 - status 204/304, an ineligible media type, or a fixed body below the floor.
 
-`Response.extra_headers` must not contain `Content-Length` or
+`Response.extraHeaders` must not contain `Content-Length` or
 `Transfer-Encoding`; framing belongs to the server. A handler that supplies
 either gets an atomic 500 response before any conflicting head is written.
 For streamed bodies, producer return values are `>0` data, `0` clean EOF, and
@@ -273,7 +273,7 @@ zero chunk, and that connection is never reused.
 Compression can expose secret-dependent length through BREACH-style attacks
 when a response mixes secrets with attacker-controlled reflected input. Keep
 the feature disabled globally unless the application has assessed that risk,
-and call `resp.disable_compression()` for affected responses.
+and call `resp.disableCompression()` for affected responses.
 
 The blocking client advertises `Accept-Encoding: gzip, deflate` by default,
 except when the request already contains `Accept-Encoding` or contains
@@ -282,13 +282,13 @@ chunked bodies. HEAD responses and 1xx/204/304 framing are resolved before
 Content-Length or Transfer-Encoding, and informational responses are consumed
 until the final response. The encoded input window is 16 KiB and decoded output
 is bounded by the caller's buffer. After transparent decoding,
-`ClientResponse.decoded_from` is the optional typed value
+`ClientResponse.decodedFrom` is the optional typed value
 `http.ContentCoding.gzip` or `.deflate`; null means no transform. Stale
 `Content-Encoding` plus encoded `Content-Length` fields are removed from
-`headers_raw`, and `body.len` is the authoritative decoded size. Coded 206/416
+`headersRaw`, and `body.len` is the authoritative decoded size. Coded 206/416
 or any `Content-Range` response is returned unchanged.
 
-Set `ClientOpts.accept_compression = false` to neither advertise nor
+Set `ClientOpts.acceptCompression = false` to neither advertise nor
 transparently decode. If the caller manually sends an `Accept-Encoding` in that
 mode, arbitrary unknown, repeated, or stacked coding fields and the coded body
 remain intact, allowing explicit codec use. With decoding enabled, exactly one
@@ -319,7 +319,7 @@ changing any of them is a behavior break:
   posture as the WS-before-colon and duplicate-CL rejections.
 - **Trailers are consumed and DISCARDED.** After a chunked body's zero chunk,
   trailer lines are scanned to the terminating empty line and ignored — they
-  are never merged into `Request.headers_raw` (`find_header` cannot see
+  are never merged into `Request.headersRaw` (`findHeader` cannot see
   them), so a trailer can never smuggle a header past the pre-body guards
   (RFC 9112 §7.1.2 allows dropping trailers; the disallowed-field merge
   hazard is the reason).
@@ -344,7 +344,7 @@ changing any of them is a behavior break:
   dispatches HEAD to GET routes when no HEAD route exists. `204`/`304`
   never carry a body (204 omits `Content-Length` entirely).
 - **`Date`** on every response (cached per second); optional `Server:` via
-  `Config.server_name`.
+  `Config.serverName`.
 - **`Connection`** is parsed as a comma-separated token list (`close, TE`
   reads as close); if both `close` and `keep-alive` appear, close wins.
 
@@ -356,19 +356,19 @@ changing any of them is a behavior break:
 
 The listener is configured entirely from `Config`:
 
-- **`bind_addr`** — a NUMERIC address literal; the family follows it.
+- **`bindAddr`** — a NUMERIC address literal; the family follows it.
   `""` (default) binds IPv4 `INADDR_ANY`; `"127.0.0.1"` restricts to v4
   loopback; `"::"` makes an IPv6 listener that ALSO serves v4 by default
-  (see `ipv6_only`); `"::1"` is v6 loopback only. A value that parses as
+  (see `ipv6Only`); `"::1"` is v6 loopback only. A value that parses as
   neither family is `HttpErr.Bind` — never a fallback bind. Hostnames are
   not resolved here (a bind address is infrastructure, not DNS); use
   `socket.resolve` yourself if you must.
-- **`ipv6_only`** — every v6 listener sets `IPV6_V6ONLY` explicitly from
+- **`ipv6Only`** — every v6 listener sets `IPV6_V6ONLY` explicitly from
   this (default `false` = deterministic dual-stack, v4 connections arrive
   as mapped addresses), never the OS's sysctl-dependent default.
-- **`unix_path`** — non-empty makes an AF_UNIX listener on that path
-  (`port`, `bind_addr`, `reuse_port` do not apply; combining with
-  `bind_addr`/`reuse_port` is `HttpErr.Config`). **The path belongs to the
+- **`unixPath`** — non-empty makes an AF_UNIX listener on that path
+  (`port`, `bindAddr`, `reusePort` do not apply; combining with
+  `bindAddr`/`reusePort` is `HttpErr.Config`). **The path belongs to the
   server, exclusively**: whatever file is there is unlinked before bind
   (a regular file included), and `close()`/`stop()` remove it — so never
   point two servers at the same path (they unlink each other's live
@@ -377,11 +377,11 @@ The listener is configured entirely from `Config`:
   no TCP port exposed at all.
 - A v4-mapped literal (`"::ffff:127.0.0.1"`) makes an AF_INET6 listener
   that plain v4 clients reach (OS mapping semantics); with
-  `ipv6_only = true` it fails loudly at bind.
+  `ipv6Only = true` it fails loudly at bind.
 - Client-side, `std/socket` grew the matching primitives: a generic
-  `Addr` with `parse_addr` (numeric), `addr_unix`, and `resolve`
-  (getaddrinfo — the DNS-capable one), plus `connect_to`/`bind_to`/
-  `addr_family`. End-to-end example:
+  `Addr` with `parseAddr` (numeric), `addrUnix`, and `resolve`
+  (getaddrinfo — the DNS-capable one), plus `connectTo`/`bindTo`/
+  `addrFamily`. End-to-end example:
   `examples/http/1704-http-bind-ipv6-unix.sx`.
 
 ### Native TLS (HTTPS)
@@ -396,7 +396,7 @@ tls  :: @import "modules/std/http/tls_mbedtls.sx";
 
 main :: () -> i32 {
     server : tls.TlsServer = .{};
-    if !server.setup_files("cert.pem", "key.pem", context.allocator) {
+    if !server.setupFiles("cert.pem", "key.pem", context.allocator) {
         print("TLS setup failed\n"); return 1;
     }
     cfg : http.Config = .{ port = 443 };
@@ -413,20 +413,20 @@ main :: () -> i32 {
   seam over vendored mbedTLS v3.6.6 (TLS 1.2 + 1.3). A connection is negotiated
   through a `CONN_TLS_HANDSHAKE` state before its first request; a per-session
   setup failure drops the connection — **it is never served in the clear**.
-- `setup_files(cert, key, alloc)` loads a PEM cert chain + private key from disk;
+- `setupFiles(cert, key, alloc)` loads a PEM cert chain + private key from disk;
   `setup(cert_bytes, key_bytes, alloc)` takes the bytes directly. A bad cert/key
   makes the server accept **no** TLS (loud `false`), never plaintext.
 - The minimum version defaults to TLS 1.2 (preferring 1.3). The crypto is
   vendored + cross-compiled (no system mbedTLS); a `--self-contained` build
   links it statically into the binary — no per-target archive to ship.
-- **ALPN**: `server.set_alpn(protos)` advertises protocols in preference order
+- **ALPN**: `server.setAlpn(protos)` advertises protocols in preference order
   (e.g. `.["http/1.1"]`). A client whose ALPN offer has no overlap is refused
   at the handshake; a client that sends no ALPN extension still connects.
-- **SNI / multi-cert**: `server.add_sni_cert_files(name, cert, key)` (or
-  `add_sni_cert` for bytes) serves an extra identity when the client's SNI
+- **SNI / multi-cert**: `server.addSniCertFiles(name, cert, key)` (or
+  `addSniCert` for bytes) serves an extra identity when the client's SNI
   names `name` (exact, case-insensitive). No match falls back to the `setup`
   cert — unknown/IP connections get the default identity, never a refusal.
-- **Client-cert auth (mTLS)**: `server.require_client_cert_files(ca)` makes
+- **Client-cert auth (mTLS)**: `server.requireClientCertFiles(ca)` makes
   every handshake require a client certificate verifying against the CA chain
   (a self-signed client cert can BE the anchor). A cert-less or untrusted
   client fails the handshake and is dropped — never served.
@@ -454,7 +454,7 @@ nginx sketch:
 upstream sx_app { server 127.0.0.1:8080; keepalive 32; }
 server {
     listen 443 ssl http2;
-    server_name example.com;
+    serverName example.com;
     ssl_certificate     /etc/ssl/example.crt;
     ssl_certificate_key /etc/ssl/example.key;
     location / {
@@ -465,7 +465,7 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 30s;
-        client_max_body_size 10m;        # mirror Config.max_body
+        client_max_body_size 10m;        # mirror Config.maxBody
     }
 }
 ```
@@ -473,8 +473,8 @@ server {
 - **Client IP / scheme**: read `X-Forwarded-For` / `X-Forwarded-Proto` from the
   request headers (the proxy sets them; the server does not).
 - **Size / timeouts**: set the proxy's `client_max_body_size` and read/keepalive
-  timeouts to match the server's `max_body`, `timeout_request_ms`,
-  `timeout_keepalive_ms`.
+  timeouts to match the server's `maxBody`, `timeoutRequestMs`,
+  `timeoutKeepaliveMs`.
 
 ### Health check
 
@@ -488,7 +488,7 @@ if req.path == "/healthz" { resp.body = "ok"; return; }   // 200
 
 `Server.stop()` is safe to call from a signal relay or another thread (it wakes
 the loop). `run()` then stops accepting, closes idle keep-alives, drains
-in-flight requests up to `shutdown_timeout_ms`, and returns; the caller calls
+in-flight requests up to `shutdownTimeoutMs`, and returns; the caller calls
 `close()`. Wire your `SIGTERM` handler to `stop()` so deploys drain cleanly.
 
 ```ini
@@ -500,7 +500,7 @@ After=network.target
 [Service]
 ExecStart=/usr/local/bin/sx-app
 Restart=on-failure
-# Let in-flight requests drain (>= shutdown_timeout_ms):
+# Let in-flight requests drain (>= shutdownTimeoutMs):
 TimeoutStopSec=10
 # Hardening:
 DynamicUser=yes
@@ -544,7 +544,7 @@ ENTRYPOINT ["/sx-app"]
 
 ### Observability
 
-Install `Config.on_event` to log faults (it's called from the loop thread with
+Install `Config.onEvent` to log faults (it's called from the loop thread with
 the event kind + slot + a status/detail; no format is forced) and poll
 `Server.stats()` for counters — accepted/closed/active connections, requests
 served, 4xx/5xx, timeouts, 503 sheds, bytes in/out, pool queue depth. Watch the
@@ -554,16 +554,16 @@ rejected/timeout/5xx counters for abuse or saturation.
 
 | field | purpose |
 |-------|---------|
-| `port`, `backlog`, `max_conn` | listener + connection ceiling (excess → shed) |
-| `read_buf_cap`, `max_body` | hard raw ceiling / max decoded request body (→ 413) |
-| `max_headers`, `max_header_line` | header-count / line-size caps (→ 431) |
-| `timeout_request_ms`, `timeout_keepalive_ms` | slow-client eviction |
-| `request_count` | requests per connection, then close |
-| `thread_pool_count`, `thread_pool_backlog` | pool size / queue (full → 503) |
-| `handler_timeout_ms` | per-request deadline (hard in pool mode) |
-| `shutdown_timeout_ms` | graceful-drain bound |
-| `on_event`, `on_event_ctx` | observability hook |
-| `compress_responses`, `compress_min_size`, `compress_level` | negotiated gzip/deflate policy (off by default) |
+| `port`, `backlog`, `maxConn` | listener + connection ceiling (excess → shed) |
+| `readBufCap`, `maxBody` | hard raw ceiling / max decoded request body (→ 413) |
+| `maxHeaders`, `maxHeaderLine` | header-count / line-size caps (→ 431) |
+| `timeoutRequestMs`, `timeoutKeepaliveMs` | slow-client eviction |
+| `requestCount` | requests per connection, then close |
+| `threadPoolCount`, `threadPoolBacklog` | pool size / queue (full → 503) |
+| `handlerTimeoutMs` | per-request deadline (hard in pool mode) |
+| `shutdownTimeoutMs` | graceful-drain bound |
+| `onEvent`, `onEventCtx` | observability hook |
+| `compressResponses`, `compressMinSize`, `compressLevel` | negotiated gzip/deflate policy (off by default) |
 
 ---
 
@@ -579,11 +579,11 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 - HTTP/1.1 request parsing with the hardening guards (smuggling, overflow,
   resource caps), keep-alive + pipelining, inline and pooled handlers.
 - Response: fixed body (`Content-Length`) and chunked streaming
-  (`resp.stream`); bounded negotiated gzip/deflate; the `set_status` /
-  `set_content_type` / `add_header` / `disable_compression` helpers.
+  (`resp.stream`); bounded negotiated gzip/deflate; the `setStatus` /
+  `setContentType` / `addHeader` / `disableCompression` helpers.
 - Request bodies: `Content-Length` and inbound chunked decode, bounded by
-  `max_body`.
-- Graceful shutdown (`stop`), the `Stats` counters + `on_event` hook, and the
+  `maxBody`.
+- Graceful shutdown (`stop`), the `Stats` counters + `onEvent` hook, and the
   per-request handler timeout (hard in pool mode).
 - `std/http_router`: method+path routing, path params, query/urlencoded-form
   parsing, JSON request/response helpers (over `std/json`).
@@ -597,18 +597,18 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   (HTTPS)* above. An explicit min-version pin is future work (needs a small C
   shim — the mbedTLS setter is `static inline`).
 - **Blocking HTTP/1.1 client** (`http.Client`) — sessions
-  (`open`/`open_addr`/`send_on`/`recv_on`/`close_conn` under `ClientOpts`):
+  (`open`/`openAddr`/`sendOn`/`recvOn`/`closeConn` under `ClientOpts`):
   resolver or `Addr` dialing (unix included), connect + per-op I/O
   timeouts, HTTPS through the `TlsDialer` seam
   (`tls_mbedtls.TlsClientConfig` — explicit trust anchor with hostname
   verification, or the loudly-named `insecure()`; TLS 1.3 session tickets
   handled), chunked transfer decoding plus bounded transparent gzip/deflate
   content decoding, and truncated responses surfaced as errors — never a
-  padded body. `ClientOpts.accept_compression=false` retains the coded
+  padded body. `ClientOpts.acceptCompression=false` retains the coded
   representation instead.
   `Client.fetch(method, url, …)` adds URL parsing and redirect following
   (301/302/303 → GET, 307/308 preserve, capped by
-  `ClientOpts.max_redirects`; https targets require a configured dialer);
+  `ClientOpts.maxRedirects`; https targets require a configured dialer);
   `ClientPool` adds single-threaded keep-alive reuse with a one-shot
   fresh-dial retry for the stale-keep-alive race. System trust roots are
   not discovered — pass a CA explicitly.

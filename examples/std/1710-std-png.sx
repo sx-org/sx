@@ -47,7 +47,7 @@ check_image :: (image: png.Image, expected: string, alloc: Allocator) -> bool {
     matches
 }
 
-check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, bottom_up: bool, alloc: Allocator) -> bool {
+check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, bottomUp: bool, alloc: Allocator) -> bool {
     pixels : [24]u8 = ---;
     count := 3 * 2 * channels;
     i := 0;
@@ -60,7 +60,7 @@ check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, botto
         width = 3,
         height = 2,
         format = format,
-        stride = if bottom_up then 0 - 3 * channels else 0,
+        stride = if bottomUp then 0 - 3 * channels else 0,
     };
     check_image(image, expected, alloc)
 }
@@ -116,7 +116,7 @@ main :: () -> i32 {
         0x00,0x82,0xa7,0xcc,0x00,0x13,0x38,0x5d,0x0c,0x82,0x02,0x9e,0x6b,0xf3,0x92,0x7d,
         0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
     ];
-    gray_alpha : [82]u8 = .[
+    grayAlpha : [82]u8 = .[
         0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
         0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x04,0x00,0x00,0x00,0x37,0x7d,0xae,
         0x91,0x00,0x00,0x00,0x19,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x0e,0x00,0xf1,0xff,
@@ -143,13 +143,13 @@ main :: () -> i32 {
 
     gray_bytes := string{ ptr = *gray[0], len = gray.len };
     gray_bottom_up_bytes := string{ ptr = *gray_bottom_up[0], len = gray_bottom_up.len };
-    gray_alpha_bytes := string{ ptr = *gray_alpha[0], len = gray_alpha.len };
+    gray_alpha_bytes := string{ ptr = *grayAlpha[0], len = grayAlpha.len };
     rgb_bytes := string{ ptr = *rgb[0], len = rgb.len };
     rgba_bytes := string{ ptr = *rgba[0], len = rgba.len };
 
     gpa := mem.GPA.init();
     if !check_oracle(.gray, 1, gray_bytes, false, gpa) { return 1; }
-    if !check_oracle(.gray_alpha, 2, gray_alpha_bytes, false, gpa) { return 2; }
+    if !check_oracle(.grayAlpha, 2, gray_alpha_bytes, false, gpa) { return 2; }
     if !check_oracle(.rgb, 3, rgb_bytes, false, gpa) { return 3; }
     if !check_oracle(.rgba, 4, rgba_bytes, false, gpa) { return 4; }
     if !check_oracle(.gray, 1, gray_bottom_up_bytes, true, gpa) { return 5; }

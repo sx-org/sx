@@ -47,7 +47,7 @@ main :: () -> i64 {
             // Worker A yields mid-body so B interleaves before A completes.
             a := context.io.async(||_{ ps, pl } -> (i64, !IoErr) {
                 rec(pl, 1);
-                ps.yield_now();   // suspend A; B (already spawned) runs to completion
+                ps.yieldNow();   // suspend A; B (already spawned) runs to completion
                 rec(pl, 3);
                 42
             });
@@ -81,6 +81,6 @@ main :: () -> i64 {
         i = i + 1;
     }
     print("\n");
-    print("spawned: {}\n", s.n_spawned);
+    print("spawned: {}\n", s.nSpawned);
     return 0;
 }

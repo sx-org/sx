@@ -26,7 +26,7 @@ srv_entry :: (arg: *void) -> *void abi(.c) {
     return null;
 }
 
-LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddr_in order
+LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddrIn order
 
 main :: () -> i32 {
     gpa := GPA.init();

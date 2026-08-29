@@ -1,10 +1,10 @@
 // std.http — fiber-mode coverage: the paths 1700 does not reach.
-// One fiber server with stream_request_body = FALSE:
+// One fiber server with streamRequestBody = FALSE:
 // 1. POST /sum with a Content-Length body — ACCUMULATE-fiber dispatch
-//    (full-request job copy; req.read_body serves the cursor over the
+//    (full-request job copy; req.readBody serves the cursor over the
 //    complete body, so handler code is mode-agnostic) — byte-exact
 //    len + checksum.
-// 2. HEAD /hello — automatic HEAD through run_fiber_job: the response
+// 2. HEAD /hello — automatic HEAD through runFiberJob: the response
 //    carries the GET-equivalent Content-Length with ZERO body bytes on
 //    the wire (the client asserts the stream ends at the header block).
 // 3. GET /chunky — resp.stream FROM A FIBER: the producer follows the
@@ -27,11 +27,11 @@ ChunkyState :: struct {
     total: i64 = 0;
 }
 
-producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
     st : *ChunkyState = xx ctx;
     left := st.total - offset;
     if left <= 0 { return 0; }
-    n := if dst_cap < left then dst_cap else left;
+    n := if dstCap < left then dstCap else left;
     i : i64 = 0;
     while i < n {
         dst[i] = xx ((st.seed + (offset + i) * 7) % 251);
@@ -56,7 +56,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(*scratch[0], 8192);
+            n := req.readBody(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -76,9 +76,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -121,7 +121,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
+        n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -132,7 +132,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
@@ -159,7 +159,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 200000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         if total >= 5
@@ -221,16 +221,16 @@ main :: () -> i32 {
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
             fibers = runner,          // fiber mode, ACCUMULATE bodies
         };
         srv, se := http.Server.init(cfg, route, xx *chunky);
         if se { print("init failed\n"); return 1; }
 
-        // ── case 1: accumulate-fiber body + read_body cursor ──────────
+        // ── case 1: accumulate-fiber body + readBody cursor ──────────
         body : [*]u8 = xx context.allocator.allocBytes(SUM_LEN);
         sum : i64 = 0;
         i : i64 = 0;
@@ -258,7 +258,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 20000 and he < 0 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, *rbuf[h_total], (cap - h_total));
+            n, re := socket.readNb(c1, *rbuf[h_total], (cap - h_total));
             if !re { h_total += n; }
             k : i64 = 0;
             while k + 3 < h_total {
@@ -270,7 +270,7 @@ main :: () -> i32 {
         t = 0;
         while t < 50 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, *rbuf[h_total], (cap - h_total));
+            n, re := socket.readNb(c1, *rbuf[h_total], (cap - h_total));
             if !re { h_total += n; }
             t += 1;
         }

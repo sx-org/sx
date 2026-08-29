@@ -35,12 +35,12 @@ test_checksum_vectors :: () -> bool {
 
 test_zlib_lifecycle :: (alloc: Allocator) -> bool {
     encoder := zlib.Encoder.init(.{ level = 9 }, alloc) catch { return false; };
-    out_buf : [1024]u8 = ---;
+    outBuf : [1024]u8 = ---;
     made := 0;
-    progress := encoder.flush(PLAIN, out_buf[..], .finish) catch { encoder.deinit(); return false; };
+    progress := encoder.flush(PLAIN, outBuf[..], .finish) catch { encoder.deinit(); return false; };
     if progress.status != .done or progress.consumed != PLAIN.len { encoder.deinit(); return false; }
     made = progress.produced;
-    first := out_buf[..made];
+    first := outBuf[..made];
 
     // reset() re-arms the same state for a second stream.
     encoder.reset(.{ level = 9 }) catch { encoder.deinit(); return false; };

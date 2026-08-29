@@ -11,7 +11,7 @@
 // dereferences freed memory.
 //
 // Contract: `log: 2 1` (waker records 2, then the early-woken sleeper records 1),
-// `clock: 0` (no stale timer fired), `n_suspended: 0` (balanced).
+// `clock: 0` (no stale timer fired), `nSuspended: 0` (balanced).
 //
 // aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
 // runs end-to-end on a matching host, ir-only on a mismatch.
@@ -41,6 +41,6 @@ main :: () -> i64 {
     print("log:");
     i := 0; while i < st.n { print(" {}", st.log[i]); i = i + 1; }
     print("\n");
-    print("clock: {}  n_suspended: {}\n", s.nowMs(), s.n_suspended);
+    print("clock: {}  n_suspended: {}\n", s.nowMs(), s.nSuspended);
     return 0;
 }

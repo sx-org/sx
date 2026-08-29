@@ -1,14 +1,14 @@
 // std.http — per-request handler timeout (pool mode).
 //
-// A slow handler that overruns Config.handler_timeout_ms must NOT
+// A slow handler that overruns Config.handlerTimeoutMs must NOT
 // permanently consume server capacity. In POOL mode the handler runs on a
 // WORKER thread, so the LOOP thread enforces a hard deadline: a connection
-// sitting in CONN_HANDLING past handler_timeout_ms gets a 504, is closed,
+// sitting in CONN_HANDLING past handlerTimeoutMs gets a 504, is closed,
 // and the worker's eventual (late) completion is DISCARDED (gen-checked in
-// drain_completions) — no double-response, no double-free.
+// drainCompletions) — no double-response, no double-free.
 //
 // This drives a single-thread tick harness (the 1633/1670 shape) and proves:
-// 1. A request whose handler exceeds handler_timeout_ms → the client gets
+// 1. A request whose handler exceeds handlerTimeoutMs → the client gets
 //    504, the connection is freed.
 // 2. The server stays RESPONSIVE: a second, fast request on another
 //    connection gets a normal 200 (the loop was never blocked, capacity
@@ -57,9 +57,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -117,13 +117,13 @@ main :: () -> i32 {
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 8,
-            thread_pool_count = 2,        // pool mode — loop enforces the deadline
-            thread_pool_backlog = 16,
-            handler_timeout_ms = HANDLER_TIMEOUT_MS,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 8,
+            threadPoolCount = 2,        // pool mode — loop enforces the deadline
+            threadPoolBacklog = 16,
+            handlerTimeoutMs = HANDLER_TIMEOUT_MS,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
@@ -142,7 +142,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 {   // ~120 ms of 1 ms ticks — past the 40 ms deadline
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, *sbuf[sa_total], (cap - sa_total));
+            n, re := socket.readNb(ca, *sbuf[sa_total], (cap - sa_total));
             if !re { sa_total += n; }
             else if re == .Closed {
                 slow_resp = string{ ptr = sbuf, len = sa_total };
@@ -175,7 +175,7 @@ main :: () -> i32 {
         t = 0;
         while t < 200 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, *fbuf[fb_total], (cap - fb_total));
+            n, re := socket.readNb(cb, *fbuf[fb_total], (cap - fb_total));
             if !re { fb_total += n; }
             else if re == .Closed {
                 fast_resp = string{ ptr = fbuf, len = fb_total };
@@ -193,7 +193,7 @@ main :: () -> i32 {
         }
 
         // (3) Drive ticks well past the slow handler's 200 ms return so its
-        // LATE completion is queued and DISCARDED by drain_completions (gen
+        // LATE completion is queued and DISCARDED by drainCompletions (gen
         // mismatch — the slot was freed). No crash, no double-response.
         t = 0;
         while t < 250 {

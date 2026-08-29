@@ -25,7 +25,7 @@ Error :: error {
 
 PixelFormat :: enum {
     gray;
-    gray_alpha;
+    grayAlpha;
     rgb;
     rgba;
 }
@@ -59,49 +59,49 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
     if options.level < 0 or options.level > 10 { raise .InvalidCompressionLevel; }
 
     channels := 4;
-    color_type := 6;
+    colorType := 6;
     if image.format == .gray {
         channels = 1;
-        color_type = 0;
-    } else if image.format == .gray_alpha {
+        colorType = 0;
+    } else if image.format == .grayAlpha {
         channels = 2;
-        color_type = 4;
+        colorType = 4;
     } else if image.format == .rgb {
         channels = 3;
-        color_type = 2;
+        colorType = 2;
     }
 
     if image.width > i64.max / channels { raise .TooLarge; }
-    row_bytes := image.width * channels;
+    rowBytes := image.width * channels;
 
-    actual_stride := image.stride;
-    if actual_stride == 0 { actual_stride = row_bytes; }
+    actualStride := image.stride;
+    if actualStride == 0 { actualStride = rowBytes; }
     // Negating the minimum signed integer is itself an overflow.
-    if actual_stride == i64.min { raise .TooLarge; }
-    step := if actual_stride < 0 then 0 - actual_stride else actual_stride;
-    if step < row_bytes { raise .InvalidStride; }
+    if actualStride == i64.min { raise .TooLarge; }
+    step := if actualStride < 0 then 0 - actualStride else actualStride;
+    if step < rowBytes { raise .InvalidStride; }
 
-    rows_after_first := image.height - 1;
-    if rows_after_first > 0 and step > (i64.max - row_bytes) / rows_after_first {
+    rowsAfterFirst := image.height - 1;
+    if rowsAfterFirst > 0 and step > (i64.max - rowBytes) / rowsAfterFirst {
         raise .TooLarge;
     }
-    required_pixels := step * rows_after_first + row_bytes;
-    if image.pixels.len < required_pixels { raise .PixelDataTooShort; }
+    requiredPixels := step * rowsAfterFirst + rowBytes;
+    if image.pixels.len < requiredPixels { raise .PixelDataTooShort; }
 
-    if row_bytes == i64.max { raise .TooLarge; }
-    filtered_row_bytes := row_bytes + 1;
-    if filtered_row_bytes > i64.max / image.height { raise .TooLarge; }
-    filtered_len := filtered_row_bytes * image.height;
+    if rowBytes == i64.max { raise .TooLarge; }
+    filteredRowBytes := rowBytes + 1;
+    if filteredRowBytes > i64.max / image.height { raise .TooLarge; }
+    filteredLen := filteredRowBytes * image.height;
 
-    result := png_encode_bytes(
+    result := pngEncodeBytes(
         image.pixels,
         image.width,
         image.height,
-        row_bytes,
+        rowBytes,
         step,
-        actual_stride < 0,
-        color_type,
-        filtered_len,
+        actualStride < 0,
+        colorType,
+        filteredLen,
         options.level,
         alloc,
     ) catch |e| {
@@ -118,7 +118,7 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
 // palette, 16-bit, and Adam7 images reject with UnsupportedFormat.
 // `Image.pixels` is owned by `alloc`, tightly packed, top-down.
 decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
-    d := png_decode_bytes(data, alloc) catch |e| {
+    d := pngDecodeBytes(data, alloc) catch |e| {
         if e == .InvalidSignature { raise .InvalidSignature; }
         if e == .TruncatedData { raise .TruncatedData; }
         if e == .ChecksumMismatch { raise .ChecksumMismatch; }
@@ -129,7 +129,7 @@ decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error
     };
     fmt : PixelFormat = .rgba;
     if d.channels == 1 { fmt = .gray; }
-    else if d.channels == 2 { fmt = .gray_alpha; }
+    else if d.channels == 2 { fmt = .grayAlpha; }
     else if d.channels == 3 { fmt = .rgb; }
     result : Image = .{
         pixels = d.pixels,

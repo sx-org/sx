@@ -5,10 +5,10 @@
 //
 // Scenario (one run that touches every freed resource):
 //   - a SLEEPER fiber `sleep(5)`s              → exercises the `timers` List
-//   - a READER fiber `block_on_fd`s a pipe     → exercises the kqueue fd + the
-//                                                `io_waiters` List
+//   - a READER fiber `blockOnFd`s a pipe     → exercises the kqueue fd + the
+//                                                `ioWaiters` List
 //   - a WRITER fiber writes 3 bytes            → makes the pipe readable
-// After `run()` drains all of it, `deinit()` frees: the `timers` / `io_waiters`
+// After `run()` drains all of it, `deinit()` frees: the `timers` / `ioWaiters`
 // List backings, and CLOSES the kqueue fd (resetting `kq` to -1). The Fibers
 // were already reaped during `run()`. (The unified `context.io.async` layer's
 // Futures are NOT scheduler-tracked — they leak with the closure-env residual
@@ -17,7 +17,7 @@
 // WHAT IT PROVES (the contract; numbers below are the snapshot):
 //   - `freed by deinit: N` — live allocations reclaimed by `deinit` (> 0).
 //   - `live after deinit: 0` — NO residual. Each spawned fiber's body-closure heap
-//     env is reclaimed at reap (`reap_fiber` frees `body.env` via the spawn-time
+//     env is reclaimed at reap (`reapFiber` frees `body.env` via the spawn-time
 //     allocator snapshotted in `dctx`), and `deinit` frees the List backings + kq
 //     fd — so the live count returns to zero.
 //   - `kq open after run: 1` then `kq after deinit: -1` — the lazily-opened
@@ -75,7 +75,7 @@ main :: () -> i64 {
         // READER — blocks on the empty pipe until kqueue reports it readable.
         mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
             ps.spawn(||_{ ps, pst, rfd } {
-                ps.block_on_fd(rfd, true);
+                ps.blockOnFd(rfd, true);
                 n := read(rfd, *pst.bytes[0], 3);
                 pst.read_n = xx n;
                 pst.read_done = true;

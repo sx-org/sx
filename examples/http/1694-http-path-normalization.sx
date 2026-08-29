@@ -35,9 +35,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -65,7 +65,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -122,14 +122,14 @@ main :: () -> i32 {
         cap : i64 = 16384;
         rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT_A, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // request-building concats live in a throwaway arena so the GPA
         // gate below counts only real server leaks
-        req_arena := mem.Arena.init(gpa, 65536);
-        push .{ allocator = req_arena } {
+        reqArena := mem.Arena.init(gpa, 65536);
+        push .{ allocator = reqArena } {
             // (a) percent-decode in the path
             expect_path(*srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, *failed);
 
@@ -163,13 +163,13 @@ main :: () -> i32 {
             // (k) trailing "/." keeps the directory shape
             expect_path(*srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, *failed);
         }
-        req_arena.deinit();
+        reqArena.deinit();
 
         srv.close();
 
         // (l) pooled: a path that SHRINKS (decode + pop) must rebuild
         // byte-exact over the job-owned copy
-        cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10, thread_pool_count = 1 };
+        cfgp : http.Config = .{ port = PORT_B, maxConn = 4, requestCount = 10, threadPoolCount = 1 };
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
         r := roundtrip(*srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
@@ -181,7 +181,7 @@ main :: () -> i32 {
             failed = 1;
         }
 
-        // (m) absolute-form + encoded/dot path: path_off points into the
+        // (m) absolute-form + encoded/dot path: pathOff points into the
         // MIDDLE of the target; the rewrite must leave the authority (and
         // everything after the target) intact
         r = roundtrip(*srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);

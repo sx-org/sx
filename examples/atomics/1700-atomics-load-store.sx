@@ -7,11 +7,11 @@
 
 main :: () {
     a := Atomic(i64).init(7);
-    print("init: {}\n", a.load(.seq_cst));
+    print("init: {}\n", a.load(.seqCst));
 
     a.store(42, .release);
     print("after store: {}\n", a.load(.acquire));
 
-    a.store(a.load(.relaxed) + 1, .seq_cst);
-    print("incremented: {}\n", a.load(.seq_cst));
+    a.store(a.load(.relaxed) + 1, .seqCst);
+    print("incremented: {}\n", a.load(.seqCst));
 }

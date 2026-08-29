@@ -1,4 +1,4 @@
-error: atomic load ordering cannot be .release or .acq_rel (use .relaxed / .acquire / .seq_cst)
+error: atomic load ordering cannot be .release or .acqRel (use .relaxed / .acquire / .seqCst)
   --> examples/diagnostics/1131-diagnostics-atomic-bad-ordering.sx:8:30
    |
  8 |     x := atomicLoad(i64, *n, .release);

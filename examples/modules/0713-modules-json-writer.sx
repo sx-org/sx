@@ -90,17 +90,17 @@ main :: () -> ! {
     //    read it back and assert it equals the same document. Write into the
     //    repo-local, gitignored scratch dir and unlink afterwards so nothing
     //    leaks and concurrent runs don't fight over a shared /tmp name.
-    if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path := ".sx-tmp/sx_0713_json.json";
-    fh := open_file(path, .write);
+    fh := openFile(path, .write);
     if fh == null { print("open: FAIL\n"); return; }
     f := fh?!;
     stage : [8]u8 = ---;
     try writeToFile(root, *f, string{ ptr = *stage[0], len = 8 });
     f.close();
 
-    back := read_file(path);
-    delete_file(path);
+    back := readFile(path);
+    deleteFile(path);
     if back == null { print("file-read: FAIL\n"); return; }
     report("file-exact", back?! == EXPECT);
     return;

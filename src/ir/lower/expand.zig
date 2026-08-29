@@ -9,7 +9,7 @@
 //! declaration order.
 //!
 //! Containment is what the opacity buys: the windows and posix `std.fs`
-//! backends both resolve, both author `fs_file_is_valid`, and neither reaches
+//! backends both resolve, both author `fsFileIsValid`, and neither reaches
 //! module scope until its branch is selected.
 //!
 //! A condition or iterable that COMPUTES rather than names is executed, not

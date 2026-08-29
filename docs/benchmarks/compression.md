@@ -28,7 +28,7 @@
 
 ## Exact-output matrix
 
-The untimed compatibility gate covers both 1 MiB corpora, levels 0 through 10, and every public strategy: `default`, `filtered`, `huffman_only`, `rle`, and `fixed`. Each implementation writes the same 16-byte length-prefixed record format, followed by the complete compressed bytes.
+The untimed compatibility gate covers both 1 MiB corpora, levels 0 through 10, and every public strategy: `default`, `filtered`, `huffmanOnly`, `rle`, and `fixed`. Each implementation writes the same 16-byte length-prefixed record format, followed by the complete compressed bytes.
 
 - Expected cases: 110 (2 corpora × 11 levels × 5 strategies)
 - SX cases produced: 110

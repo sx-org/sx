@@ -43,9 +43,9 @@ contains :: (hay: string, needle: string) -> bool {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -92,7 +92,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
     tries := 0;
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (4096 - total));
+        n, re := socket.readNb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
         else if re == .Closed { return string{ ptr = scratch, len = total }; }
         if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
@@ -104,10 +104,10 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
 main :: () -> i32 {
     cfg : http.Config = .{
         port = PORT,
-        timeout_request_ms = 150,
-        timeout_keepalive_ms = 400,
-        request_count = 3,
-        max_conn = 8,
+        timeoutRequestMs = 150,
+        timeoutKeepaliveMs = 400,
+        requestCount = 3,
+        maxConn = 8,
     };
     srv, se := http.Server.init(cfg, handler, 77);
     if se { print("server init failed\n"); return 1; }
@@ -128,14 +128,14 @@ main :: () -> i32 {
     if !contains(r2, "hello GET") { print("case2: keep-alive reuse failed\n"); return 1; }
     print("keep-alive reuse ok\n");
 
-    // ── 3. third request hits request_count: Connection: close + EOF ─
+    // ── 3. third request hits requestCount: Connection: close + EOF ─
     r3 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "Connection: close") { print("case3: expected close at cap\n"); return 1; }
     drained := false;
     tries := 0;
     while !drained and tries < 200 {
         srv.tick(5) catch {};
-        zq, ze := socket.read_nb(c1, *buf[0], 64);
+        zq, ze := socket.readNb(c1, *buf[0], 64);
         if ze == .Closed { drained = true; }
         if !ze and zq == 0 { drained = true; }
         tries += 1;
@@ -172,7 +172,7 @@ main :: () -> i32 {
     btries := 0;
     while btries < 2000 {
         srv.tick(5) catch {};
-        bn, bre := socket.read_nb(c2b, *bigbuf[btotal], (big_n + 4096 - btotal));
+        bn, bre := socket.readNb(c2b, *bigbuf[btotal], (big_n + 4096 - btotal));
         if !bre { btotal += bn; }
         else if bre == .Closed { break; }
         if resp_complete(bigbuf, btotal) { break; }
@@ -191,7 +191,7 @@ main :: () -> i32 {
     if c3 < 0 { print("dial3 failed\n"); return 1; }
     half := "GET /hel";
     socket.write(c3, half.ptr, half.len);
-    gone := event.deadline_in(300);   // > timeout_request_ms
+    gone := event.deadlineIn(300);   // > timeoutRequestMs
     while !event.expired(gone) { srv.tick(5) catch {}; }
     c4 := dial();
     if c4 < 0 { print("dial4 failed\n"); return 1; }
@@ -201,7 +201,7 @@ main :: () -> i32 {
     tries = 0;
     while !evicted and tries < 200 {
         srv.tick(5) catch {};
-        zq2, ze2 := socket.read_nb(c3, *buf[0], 64);
+        zq2, ze2 := socket.readNb(c3, *buf[0], 64);
         if ze2 == .Closed { evicted = true; }
         if !ze2 and zq2 == 0 { evicted = true; }
         tries += 1;
@@ -214,17 +214,17 @@ main :: () -> i32 {
     srv.close();
 
     // ── pooled dispatch: same contract through worker threads ──
-    // thread_pool_count > 0 runs handlers on a pool; completions come
+    // threadPoolCount > 0 runs handlers on a pool; completions come
     // back through the loop's wake channel. Same assertions: routing,
     // body echo, keep-alive reuse — now crossing threads per request.
     pcfg : http.Config = .{
         port = PORT + 1,
-        timeout_request_ms = 1000,
-        timeout_keepalive_ms = 1000,
-        request_count = 50,
-        max_conn = 8,
-        thread_pool_count = 2,
-        thread_pool_backlog = 16,
+        timeoutRequestMs = 1000,
+        timeoutKeepaliveMs = 1000,
+        requestCount = 50,
+        maxConn = 8,
+        threadPoolCount = 2,
+        threadPoolBacklog = 16,
     };
     psrv, pse := http.Server.init(pcfg, handler, 77);
     if pse { print("pooled server init failed\n"); return 1; }

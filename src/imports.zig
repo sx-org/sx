@@ -1299,7 +1299,7 @@ pub fn isModuleDriver(decl: *const Node) bool {
 /// path is rewritten to that path so the splice can read the module back out
 /// of the cache. Nothing is merged and no edge is recorded: containment is the
 /// point — two backends authoring the same name (`std.fs`'s windows / posix
-/// `fs_file_is_valid`) never meet in module scope.
+/// `fsFileIsValid`) never meet in module scope.
 fn resolveBranchImports(
     allocator: std.mem.Allocator,
     io: std.Io,

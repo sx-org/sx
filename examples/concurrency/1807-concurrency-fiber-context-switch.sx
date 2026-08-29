@@ -1,5 +1,5 @@
 // The stackful context switch, in pure sx over the
-// `abi(.naked)` primitive. `swap_context(from, to)` saves the callee-saved
+// `abi(.naked)` primitive. `swapContext(from, to)` saves the callee-saved
 // registers + SP/LR into `*from` and loads them from `*to`, then `ret`s onto
 // `to`'s stack (SP-in ≠ SP-out by design — why it must be `.naked`, not `.c`).
 // A fiber is bootstrapped by hand: its saved context starts with SP = the top
@@ -43,7 +43,7 @@ Fiber :: struct {
 
 // The switch: x0 = from, x1 = to (read straight from the ABI registers — a
 // naked fn has no frame, so its params are never spilled).
-swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
+swapContext :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
     asm volatile {
         @string ASM
         stp x19, x20, [x0, #0]
@@ -85,7 +85,7 @@ fib_tramp :: () extern;
 // verify every frame's stack-local survived the switch.
 descend :: (self: *Fiber, depth: i64) -> i64 {
     if depth == 0 {
-        swap_context(*self.ctx, self.finish);
+        swapContext(*self.ctx, self.finish);
         return 0;
     }
     marker : i64 = depth * 7 + 3;
@@ -97,18 +97,18 @@ descend :: (self: *Fiber, depth: i64) -> i64 {
 fib_body :: (self: *Fiber) export "fib_body" {
     if self.mode == 1 {
         self.depth_fail = descend(self, 64);
-        swap_context(*self.ctx, self.finish);
+        swapContext(*self.ctx, self.finish);
         return;
     }
     canary : u64 = 0xCA11AB1E0000 + (xx self.id);
     i := 0;
     while i < self.rounds {
         self.count.* = self.count.* + 1;
-        swap_context(*self.ctx, self.peer);
+        swapContext(*self.ctx, self.peer);
         if canary != (0xCA11AB1E0000 + (xx self.id)).(u64) { self.canary_fail = self.canary_fail + 1; }
         i = i + 1;
     }
-    swap_context(*self.ctx, self.finish);
+    swapContext(*self.ctx, self.finish);
 }
 
 STACK :: 131072;
@@ -135,15 +135,15 @@ main :: () -> i64 {
     b : Fiber = ---;  b.id = 2; b.mode = 0; b.rounds = 3; b.count = *count; b.verified = *verified; b.finish = *main_ctx;
     a.peer = *b.ctx;  b.peer = *a.ctx;
     boot(*a);  boot(*b);
-    swap_context(*main_ctx, *a.ctx);
+    swapContext(*main_ctx, *a.ctx);
     print("rounds: {}\n", count);
     print("canary fails: {}\n", a.canary_fail + b.canary_fail);
 
     // Scenario 2: a deep recursive chain suspended at the bottom, then resumed.
     c : Fiber = ---;  c.id = 3; c.mode = 1; c.count = *count; c.verified = *verified; c.peer = *main_ctx; c.finish = *main_ctx;
     boot(*c);
-    swap_context(*main_ctx, *c.ctx);   // descend to the bottom, yields back
-    swap_context(*main_ctx, *c.ctx);   // resume → unwind + verify, then finish
+    swapContext(*main_ctx, *c.ctx);   // descend to the bottom, yields back
+    swapContext(*main_ctx, *c.ctx);   // resume → unwind + verify, then finish
     print("frames verified: {}\n", verified);
     print("depth fails: {}\n", c.depth_fail);
     return 0;

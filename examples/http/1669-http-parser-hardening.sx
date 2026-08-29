@@ -33,9 +33,9 @@ contains :: (hay: string, needle: string) -> bool {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -80,7 +80,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     out : string = "";
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (4096 - total));
+        n, re := socket.readNb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
         else if re == .Closed { out = string{ ptr = scratch, len = total }; break; }
         if resp_complete(scratch, total) { out = string{ ptr = scratch, len = total }; break; }
@@ -93,12 +93,12 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
 main :: () -> i32 {
     cfg : http.Config = .{
         port = PORT,
-        timeout_request_ms = 1000,
-        timeout_keepalive_ms = 1000,
-        request_count = 100,
-        max_conn = 8,
-        max_headers = 20,
-        max_header_line = 256,
+        timeoutRequestMs = 1000,
+        timeoutKeepaliveMs = 1000,
+        requestCount = 100,
+        maxConn = 8,
+        maxHeaders = 20,
+        maxHeaderLine = 256,
     };
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("server init failed\n"); return 1; }
@@ -133,7 +133,7 @@ main :: () -> i32 {
 
     // ── duplicate / conflicting Transfer-Encoding → 400 ─────────────────
     //    Two TE lines (`chunked` then `gzip`) ≡ the coding list `chunked,
-    //    gzip` (RFC 7230 §3.3.1) — chunked is not the final coding. find_header
+    //    gzip` (RFC 7230 §3.3.1) — chunked is not the final coding. findHeader
     //    sees only the first (`chunked`); honoring the second would reframe
     //    the body → request smuggling, so reject outright.
     r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n", *buf[0]);
@@ -178,7 +178,7 @@ main :: () -> i32 {
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("garbage version: expected 400\n"); return 1; }
     print("malformed HTTP version -> 400\n");
 
-    // ── over-long single header line → 431 (max_header_line = 256) ─────
+    // ── over-long single header line → 431 (maxHeaderLine = 256) ─────
     big : [*]u8 = xx context.allocator.allocBytes(700);
     f := 0;
     while f < 700 { big[f] = 120; f += 1; }   // 'x'
@@ -187,7 +187,7 @@ main :: () -> i32 {
     if !contains(r, "HTTP/1.1 431 Request Header Fields Too Large") { print("long header: expected 431\n"); return 1; }
     print("over-long header line -> 431\n");
 
-    // ── too many header lines → 431 (max_headers = 20) ────────────────
+    // ── too many header lines → 431 (maxHeaders = 20) ────────────────
     many : string = "GET /ok HTTP/1.1\r\n";
     g := 0;
     while g < 40 { many = concat(many, "X-H: v\r\n"); g += 1; }

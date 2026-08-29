@@ -117,7 +117,7 @@ decode_case :: (packed: string, plain: string, coding: string, framing: i64, one
     if one_short { ok = ok and e == .TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
-        ok = ok and !e and response.decoded_from != null and response.decoded_from?! == wanted
+        ok = ok and !e and response.decodedFrom != null and response.decodedFrom?! == wanted
             and same(response.body, plain);
     }
     context.allocator.deallocBytes(storage);
@@ -131,12 +131,12 @@ raw_coding_preserved :: () -> bool {
     wire := concat("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Encoding: br\r\n",
         "Content-Encoding: gzip\r\n\r\nraw");
     ok := write_all(pair[1], wire);
-    conn : http.ClientConn = .{ fd = pair[0], accept_compression = false };
+    conn : http.ClientConn = .{ fd = pair[0], acceptCompression = false };
     storage : [4096]u8 = ---;
-    response, e := http.Client.recv_on(*conn, *storage[0], storage.len);
-    ok = ok and !e and response.decoded_from == null and response.body == "raw"
-        and contains(response.headers_raw, "Content-Encoding: br")
-        and contains(response.headers_raw, "Content-Encoding: gzip");
+    response, e := http.Client.recvOn(*conn, *storage[0], storage.len);
+    ok = ok and !e and response.decodedFrom == null and response.body == "raw"
+        and contains(response.headersRaw, "Content-Encoding: br")
+        and contains(response.headersRaw, "Content-Encoding: gzip");
     socket.close(pair[0]); socket.close(pair[1]);
     ok
 }
@@ -152,7 +152,7 @@ range_coding_preserved :: (packed: string, coding: string, status: i64) -> bool 
     storage := context.allocator.allocBytes(head.len + packed.len);
     if storage == null { socket.close(pair[0]); socket.close(pair[1]); return false; }
     response, e := http.Client.recv(pair[0], xx storage, head.len + packed.len);
-    ok = ok and !e and response.status == status and response.decoded_from == null
+    ok = ok and !e and response.status == status and response.decodedFrom == null
         and response.header("content-encoding") == coding and same(response.body, packed);
     context.allocator.deallocBytes(storage);
     socket.close(pair[0]); socket.close(pair[1]);

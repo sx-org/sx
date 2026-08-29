@@ -1,14 +1,14 @@
 // std.http — streaming request-body reader (pool mode).
 //
-// Config.stream_request_body dispatches a body-carrying request at
+// Config.streamRequestBody dispatches a body-carrying request at
 // HEADERS-COMPLETE: req.body is "" and the handler pulls the decoded body
-// incrementally via req.read_body(dst, cap) — >0 bytes, 0 = end of body,
+// incrementally via req.readBody(dst, cap) — >0 bytes, 0 = end of body,
 // -1 = connection fault. The worker BLOCKS when no bytes are buffered; the
 // loop thread keeps reading + decoding the framing into a bounded channel,
-// so a body far larger than max_body (and the channel) streams through
+// so a body far larger than maxBody (and the channel) streams through
 // bounded memory.
 //
-// Cases (single pooled server, max_body = 4096 — every streamed body here
+// Cases (single pooled server, maxBody = 4096 — every streamed body here
 // is 25-50x over it, proving the exemption):
 //   1. POST /sum, Content-Length 200000, sent split across ticks: the
 //      handler read-loops 8 KB pieces, responds "len=<n> sum=<h>" — must
@@ -24,7 +24,7 @@
 //   4. /reject: handler responds 413 after ONE read, without draining — the
 //      response carries Connection: close (the reader never saw end-of-body)
 //      and the server closes the connection after it drains.
-//   5. /count: client disconnects mid-body — the handler's read_body returns
+//   5. /count: client disconnects mid-body — the handler's readBody returns
 //      -1 (fault) after exactly the bytes that arrived; the slot is freed and
 //      the server stays healthy (fresh /ping conn → 200 pong).
 //   6. GPA leak gate: net-zero after srv.close() (channel, job, wbuf all
@@ -44,10 +44,10 @@ COUNT_SENT :: 10000;     // case 5 bytes delivered before the disconnect
 
 // Worker-side observations, read by main only after srv.close() joins the pool.
 Obs :: struct {
-    count_rc: i64 = -99;    // /count's final read_body return (-1 expected)
+    count_rc: i64 = -99;    // /count's final readBody return (-1 expected)
     count_got: i64 = 0;     // bytes /count consumed before the fault
     reject_ran: i64 = 0;
-    ext_rc: i64 = -99;      // /countb's final read_body return (-1 expected)
+    ext_rc: i64 = -99;      // /countb's final readBody return (-1 expected)
     ext_got: i64 = 0;       // bytes /countb consumed before the framing abort
 }
 
@@ -59,7 +59,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(*scratch[0], 8192);
+            n := req.readBody(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -70,7 +70,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     }
     if req.path == "/reject" {
         scratch : [4096]u8 = ---;
-        req.read_body(*scratch[0], 4096);   // one piece, then bail without draining
+        req.readBody(*scratch[0], 4096);   // one piece, then bail without draining
         obs.reject_ran = 1;
         resp.status = 413;
         resp.body = "too big";
@@ -81,7 +81,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(*scratch[0], 4096);
+            rc = req.readBody(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -95,7 +95,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(*scratch[0], 4096);
+            rc = req.readBody(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -110,9 +110,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -158,7 +158,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
+        n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -172,7 +172,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
@@ -203,15 +203,15 @@ main :: () -> i32 {
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
-            max_body = 4096,             // streamed bodies must be EXEMPT
-            thread_pool_count = 2,
-            thread_pool_backlog = 16,
-            handler_timeout_ms = 5000,
-            stream_request_body = true,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
+            maxBody = 4096,             // streamed bodies must be EXEMPT
+            threadPoolCount = 2,
+            threadPoolBacklog = 16,
+            handlerTimeoutMs = 5000,
+            streamRequestBody = true,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
@@ -307,7 +307,7 @@ main :: () -> i32 {
         if !contains(resp4b, "Connection: close") { print("case4b: no close\n"); failed = 1; }
         socket.close(c4b);
 
-        // ── case 5: client disconnect mid-body → read_body faults ─────
+        // ── case 5: client disconnect mid-body → readBody faults ─────
         c5 := dial_port(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         send_all(*srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
@@ -316,7 +316,7 @@ main :: () -> i32 {
         // drain: tick until nothing is in flight (fault propagated, late
         // completion discarded), with a generous stall-based cap
         t : i64 = 0;
-        while t < 20000 and srv.in_flight() > 0 {
+        while t < 20000 and srv.inFlight() > 0 {
             srv.tick(1) catch {};
             t += 1;
         }

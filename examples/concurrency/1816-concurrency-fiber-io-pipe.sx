@@ -1,10 +1,10 @@
 // REAL fd-readiness blocking via kqueue. A fiber can
-// `block_on_fd(read_fd, true)`; the scheduler's run loop blocks on `kevent` when
+// `blockOnFd(read_fd, true)`; the scheduler's run loop blocks on `kevent` when
 // nothing else is runnable and wakes that fiber when the kernel reports the fd
 // readable.
 //
 // A unix `pipe` (read_fd, write_fd). A READER fiber is spawned FIRST,
-// so it runs while the pipe is EMPTY — it calls `block_on_fd(read_fd)` and parks
+// so it runs while the pipe is EMPTY — it calls `blockOnFd(read_fd)` and parks
 // (genuinely blocked: there is no data yet, the writer has not run). A WRITER
 // fiber, spawned second, then writes 3 bytes to write_fd. Now the ready queue is
 // drained and the only parked fiber is the reader's io-waiter, so the run loop
@@ -15,7 +15,7 @@
 //
 // Contract:
 //   log: wrote read 3 [97 98 99]
-//   n_suspended: 0   (the reader's park was balanced by the kqueue wake)
+//   nSuspended: 0   (the reader's park was balanced by the kqueue wake)
 //
 // aarch64-macOS-pinned: kqueue/kevent is Apple/BSD, and the scheduler's
 // per-arch asm + Apple mmap constants. Runs end-to-end on a matching host,
@@ -56,7 +56,7 @@ main :: () -> i64 {
     // Reader: block on the (empty) pipe until it is readable, then read 3 bytes.
     mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
         ps.spawn(||_{ ps, pst, rfd } {
-            ps.block_on_fd(rfd, true);   // parks until read_fd is readable
+            ps.blockOnFd(rfd, true);   // parks until read_fd is readable
             n := read(rfd, *pst.bytes[0], 3);
             pst.read_n = xx n;
             pst.read_done = true;
@@ -89,7 +89,7 @@ main :: () -> i64 {
         print("]");
     }
     print("\n");
-    print("n_suspended: {}\n", s.n_suspended);
+    print("n_suspended: {}\n", s.nSuspended);
 
     close(read_fd);
     close(write_fd);

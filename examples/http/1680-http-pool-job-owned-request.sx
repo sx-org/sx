@@ -1,15 +1,15 @@
 // std.http — pool-mode job-owned request bytes (no use-after-free).
 //
-// HandlerJob.req holds no string VIEWS into the connection's read_buf. At
+// HandlerJob.req holds no string VIEWS into the connection's readBuf. At
 // dispatch the job takes ownership of a COPY of the raw request bytes (one
-// allocation: job header + bytes tail, freed together in run_handler_job);
+// allocation: job header + bytes tail, freed together in runHandlerJob);
 // the worker never touches the conn's read buffer.
 //
 // The connection's buffer is not stable for the worker's lifetime: when a
-// handler overruns handler_timeout_ms the loop 504s and frees the slot
+// handler overruns handlerTimeoutMs the loop 504s and frees the slot
 // (handler_timeout_sweep) while the worker is still running, a NEW
 // connection reuses the slot and overwrites the read buffer, and (past
-// READ_BUF_INITIAL) grow_read_buf deallocs the buffer entirely. The gen
+// READ_BUF_INITIAL) growReadBuf deallocs the buffer entirely. The gen
 // check protects only the completion, never the worker's live reads.
 //
 // This test forces the exact overlap:
@@ -17,14 +17,14 @@
 //    (past the 40 ms handler deadline), THEN checksums req.body + req.path.
 // 2. The loop 504s A and frees its slot at ~40 ms.
 // 3. Connection B immediately reuses the slot with a DIFFERENT body big
-//    enough (~24 KB) to force grow_read_buf — which reallocs (and deallocs)
+//    enough (~24 KB) to force growReadBuf — which reallocs (and deallocs)
 //    the buffer a view-holding worker would point into. B gets a normal 200.
 // 4. After the worker returns and the pool is joined (srv.close), the
 //    checksum it computed must match A's body exactly — proof the worker
 //    read job-owned bytes, not the recycled/freed connection buffer.
 // 5. GPA leak gate: net-zero after close (the job's single allocation —
-//    header + bytes — is freed in run_handler_job; the discarded late
-//    completion's buffer is freed in drain_completions).
+//    header + bytes — is freed in runHandlerJob; the discarded late
+//    completion's buffer is freed in drainCompletions).
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
 
@@ -35,13 +35,13 @@ PORT :: 18991;
 HANDLER_TIMEOUT_MS :: 40;
 SLOW_SLEEP_US :: 200000;    // 200 ms — well past the 40 ms handler deadline
 A_BODY_LEN :: 512;          // connection A's body (pattern: i * 7 % 251)
-B_BODY_LEN :: 24576;        // connection B's body — forces grow_read_buf past 16 KB
+B_BODY_LEN :: 24576;        // connection B's body — forces growReadBuf past 16 KB
 
 // What the slow worker observed, written AFTER its sleep (i.e. after the
 // slot was recycled). Read by main only after srv.close() joins the pool.
 Observed :: struct {
     sum: i64 = 0;        // checksum over req.body as the worker saw it
-    body_len: i64 = 0;   // req.body.len as the worker saw it
+    bodyLen: i64 = 0;   // req.body.len as the worker saw it
     path_ok: i64 = 0;    // 1 if req.path still read "/slow"
     ran: i64 = 0;        // the slow handler completed
 }
@@ -65,7 +65,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         // NOW read the request views — they are job-owned, not pointers into
         // the recycled (then freed) conn buffer.
         obs.sum = checksum(req.body);
-        obs.body_len = req.body.len;
+        obs.bodyLen = req.body.len;
         if req.path == "/slow" { obs.path_ok = 1; }
         obs.ran = 1;
         resp.body = "slow-late";   // discarded (slot already 504'd + freed)
@@ -77,9 +77,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -100,7 +100,7 @@ contains :: (hay: string, needle: string) -> bool {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
+        n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -119,13 +119,13 @@ main :: () -> i32 {
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
-            thread_pool_count = 2,
-            thread_pool_backlog = 16,
-            handler_timeout_ms = HANDLER_TIMEOUT_MS,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
+            threadPoolCount = 2,
+            threadPoolBacklog = 16,
+            handlerTimeoutMs = HANDLER_TIMEOUT_MS,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
@@ -152,7 +152,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 and !got_504 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, *rbuf[a_total], (cap - a_total));
+            n, re := socket.readNb(ca, *rbuf[a_total], (cap - a_total));
             if !re { a_total += n; }
             a_resp := string{ ptr = rbuf, len = a_total };
             if contains(a_resp, "HTTP/1.1 504") { got_504 = true; }
@@ -180,7 +180,7 @@ main :: () -> i32 {
         t = 0;
         while t < 300 and !got_b {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, *rbuf[b_total], (cap - b_total));
+            n, re := socket.readNb(cb, *rbuf[b_total], (cap - b_total));
             if !re { b_total += n; }
             else if re == .Closed { got_b = true; }
             b_resp := string{ ptr = rbuf, len = b_total };
@@ -204,8 +204,8 @@ main :: () -> i32 {
         // ── the worker must have seen A's request, byte-exact ─────────
         if obs.ran != 1 { print("slow handler never completed\n"); failed = 1; }
         if obs.path_ok != 1 { print("worker saw a corrupted path\n"); failed = 1; }
-        if obs.body_len != A_BODY_LEN {
-            print("worker saw body_len {} (want {})\n", obs.body_len, A_BODY_LEN);
+        if obs.bodyLen != A_BODY_LEN {
+            print("worker saw body_len {} (want {})\n", obs.bodyLen, A_BODY_LEN);
             failed = 1;
         }
         if obs.sum != a_expect_sum {

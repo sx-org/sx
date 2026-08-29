@@ -2,12 +2,12 @@
 // implementation so its libc namespace and ABI constants are not authored by
 // the public std.fs facade.
 
-fs_posix_c :: @import "modules/std/c.sx";
-fs_posix_libc :: @library "c";
+fsPosixC :: @import "modules/std/c.sx";
+fsPosixLibc :: @library "c";
 
-FsPosixTimespec :: fs_posix_c.Timespec;
-fs_posix_utimensat :: (directory: i32, path: [:0]u8, times: *void, flags: i32) -> i32 extern fs_posix_libc "utimensat";
-fs_posix_ftruncate :: (fd: i32, len: i64) -> i32 extern fs_posix_libc "ftruncate";
+FsPosixTimespec :: fsPosixC.Timespec;
+fsPosixUtimensat :: (directory: i32, path: [:0]u8, times: *void, flags: i32) -> i32 extern fsPosixLibc "utimensat";
+fsPosixFtruncate :: (fd: i32, len: i64) -> i32 extern fsPosixLibc "ftruncate";
 
 // Linux, Android, and Emscripten use the Linux asm-generic open flag values;
 // Darwin uses the BSD values. Unsupported targets fail closed here.

@@ -9,7 +9,7 @@ fs :: @import "modules/std/fs.sx";
 kb :: @import "vendors/kb_text_shape/kb_text_shape.sx";
 
 main :: () -> i32 {
-    data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");
+    data := fs.readFile("/System/Library/Fonts/Helvetica.ttc");
     if data == null {
         print("font missing\n");
         return 1;

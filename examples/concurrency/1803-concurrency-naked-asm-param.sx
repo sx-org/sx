@@ -1,5 +1,5 @@
 // An `abi(.naked)` function with PARAMETERS reads its args
-// from ABI registers (the shape the fiber context-switch needs: `swap_context`
+// from ABI registers (the shape the fiber context-switch needs: `swapContext`
 // reads `from`/`to` from x0/x1).
 //
 // A naked function has no frame, so params are NOT spilled to stack slots — they

@@ -3,15 +3,15 @@
 // Handlers run as M:1 FIBERS on the loop thread (sched.sx behind the
 // FiberRunner seam — the provider module fiber_sched.sx is opt-in, so
 // non-fiber programs never compile the aarch64 context-switch asm).
-// The win: a handler may block-style `req.read_body` — the FIBER suspends
+// The win: a handler may block-style `req.readBody` — the FIBER suspends
 // and the loop's body pump wakes it when more decoded bytes arrive — so
 // streaming request bodies work WITHOUT a pool (init accepts
-// stream_request_body with fibers). Cooperative: everything still runs on the
+// streamRequestBody with fibers). Cooperative: everything still runs on the
 // loop thread (the tid assertions prove it).
 //
-// Cases (fiber server: no pool, stream_request_body = true):
+// Cases (fiber server: no pool, streamRequestBody = true):
 //   1. GET /ping → 200 pong (fiber dispatch of a bodyless request).
-//   2. SAME conn: POST /sum with a 200 KB body (50x max_body — the
+//   2. SAME conn: POST /sum with a 200 KB body (50x maxBody — the
 //      exemption applies to fiber streaming too), sent split across ticks:
 //      the handler read-loops 8 KB pieces, suspending between arrivals;
 //      byte-exact len+checksum. The handler tid must EQUAL the loop tid
@@ -19,7 +19,7 @@
 //   3. Keep-alive after the fiber-served stream: /ping again on the conn.
 //   4. /stall: headers + 1 KB of a declared 100 KB body, then the client
 //      goes silent → the stall-refreshed delivery deadline evicts the conn;
-//      the parked fiber wakes with read_body = -1, unwinds, and is reaped.
+//      the parked fiber wakes with readBody = -1, unwinds, and is reaped.
 //      Same-thread model: obs is readable immediately, no join needed.
 //   5. Server still healthy (fresh /ping).
 //   6. srv.close() with a fiber parked mid-body must return (close faults
@@ -60,7 +60,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(*scratch[0], 8192);
+            n := req.readBody(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -74,7 +74,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(*scratch[0], 4096);
+            rc = req.readBody(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -89,9 +89,9 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -134,7 +134,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
+        n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -145,7 +145,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
@@ -178,15 +178,15 @@ main :: () -> i32 {
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 400,    // the stall bound case 4 exercises;
+            timeoutRequestMs = 400,    // the stall bound case 4 exercises;
                                          // wide vs. self-driven loopback
                                          // round-trips, small vs. the 1s
                                          // corpus run budget it dominates
-            timeout_keepalive_ms = 2000,
-            request_count = 50,
-            max_conn = 4,
-            max_body = 4096,             // fiber streaming is exempt too
-            stream_request_body = true,  // no pool: REQUIRES fibers
+            timeoutKeepaliveMs = 2000,
+            requestCount = 50,
+            maxConn = 4,
+            maxBody = 4096,             // fiber streaming is exempt too
+            streamRequestBody = true,  // no pool: REQUIRES fibers
             fibers = runner,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
@@ -204,13 +204,13 @@ main :: () -> i32 {
         }
 
         // ── case 1b: pipelined requests complete in ONE tick ──────────
-        // The second request's fiber is dispatched by finalize_fibers'
+        // The second request's fiber is dispatched by finalizeFibers'
         // write→serve path AFTER the tick's first drive — the re-drive loop
         // must run it in the SAME tick, not sleep out the next tick's whole
-        // wait. The pin is measured SERVER-SIDE (requests_served delta across
+        // wait. The pin is measured SERVER-SIDE (requestsServed delta across
         // the single tick), where it is deterministic. Two loopback-visibility
         // races rule out a single-shot wire check: the request bytes can
-        // surface to the server's reader in parts (bytes_in < the pipeline →
+        // surface to the server's reader in parts (bytesIn < the pipeline →
         // void trial, fresh conn), and the SECOND response's bytes can reach
         // the client's reader a beat after the server wrote them — so the wire
         // check re-reads on a bounded budget instead of racing one read against
@@ -225,16 +225,16 @@ main :: () -> i32 {
             // registered mid-tick; its data event surfaces from the next wait)
             srv.tick(1) catch {};
             srv.tick(1) catch {};
-            bytes_in_before := srv.stats().bytes_in;
-            served_before := srv.stats().requests_served;
+            bytes_in_before := srv.stats().bytesIn;
+            served_before := srv.stats().requestsServed;
             psent : i64 = 0;
             while psent < preq.len {
-                n, we := socket.write_nb(cp, *preq.ptr[psent], (preq.len - psent));
+                n, we := socket.writeNb(cp, *preq.ptr[psent], (preq.len - psent));
                 if !we { psent += n; }
             }
             srv.tick(50) catch {};
-            tick_bytes := srv.stats().bytes_in - bytes_in_before;
-            tick_served := srv.stats().requests_served - served_before;
+            tick_bytes := srv.stats().bytesIn - bytes_in_before;
+            tick_served := srv.stats().requestsServed - served_before;
             if tick_bytes < preq.len and tick_served < 2 {
                 // the pipeline surfaced to the server in parts — the
                 // one-tick premise is void; retry on a fresh conn
@@ -257,7 +257,7 @@ main :: () -> i32 {
             pongs = 0;
             pr : i64 = 0;
             while pr < 200 and pongs < 2 {
-                n, re := socket.read_nb(cp, *rbuf[ptotal], (cap - ptotal));
+                n, re := socket.readNb(cp, *rbuf[ptotal], (cap - ptotal));
                 if !re { ptotal += n; }
                 else if re == .Closed { break; }
                 presp := string{ ptr = rbuf, len = ptotal };
@@ -337,7 +337,7 @@ main :: () -> i32 {
         send_all(*srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         send_all(*srv, c6, string{ ptr = body, len = 2048 });
         t = 0;
-        while t < 5 { srv.tick(1) catch {}; t += 1; }   // fiber parked in read_body
+        while t < 5 { srv.tick(1) catch {}; t += 1; }   // fiber parked in readBody
 
         srv.close();   // faults channels, wakes + drives fibers — must return
         socket.close(c6);

@@ -1005,7 +1005,7 @@ every field is equal (the same element-wise policy as tuples, which share the
 struct layout). Each field is compared against its own type — an `f64` field uses
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
 containing a NaN field is NOT equal to itself), a `string` field uses
-content equality (`str_eq`), a nested struct/tuple field recurses, a tagged-union
+content equality (`strEq`), a nested struct/tuple field recurses, a tagged-union
 field compares by tag only (matching a bare tagged-union `==`), a slice /
 pointer / cstring field compares by identity, and an `?T` field compares by the
 optional value-equality rule (§Optional Types — both-null equal, one-null
@@ -3025,7 +3025,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
   sources:       struct { ..ValueListenable(Ts) };   // one field; pack-spread product
   mapper:        Closure(..Ts) -> $R;       // pack-spread in callable sig
   value:         $R;
-  own_allocator: Allocator;
+  ownAllocator: Allocator;
 
   recompute :: (self: *Combined) {
     new_val := self.mapper(..self.sources.value);  // product projection + spread
@@ -3037,7 +3037,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
        -> ValueListenable($R) {
   c := context.allocator.alloc(Combined($R, ..sources.T));
-  c.own_allocator = context.allocator;
+  c.ownAllocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
   inline for i in 0..sources.len {          // comptime unroll over the pack
@@ -5732,9 +5732,9 @@ level where code goes dead:
 
 ```sx
 inline match @host.os {
-    case .macos: errno_location :: () -> *i32 extern libc "__error";
-    case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
-    else:        @error("errno_location: unsupported target — add its libc symbol.");
+    case .macos: errnoLocation :: () -> *i32 extern libc "__error";
+    case .linux: errnoLocation :: () -> *i32 extern libc "__errno_location";
+    else:        @error("errnoLocation: unsupported target — add its libc symbol.");
 }
 ```
 
@@ -6234,22 +6234,22 @@ arity-switched cdecl trampoline).
 
 | Function | Purpose |
 |----------|---------|
-| `open_file(path, mode) -> ?File` | open a handle |
-| `read_file(path) -> ?string` | one-shot slurp |
-| `write_file(path, data) -> bool` | create / truncate / write |
-| `append_file(path, data) -> bool` | append |
-| `copy_file(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
-| `delete_file(path) -> bool` | `unlink` |
-| `delete_dir(path) -> bool` | `rmdir` (empty only) |
-| `create_dir(path) -> bool` / `create_dir_all(path) -> bool` | `mkdir` / `mkdir -p` |
+| `openFile(path, mode) -> ?File` | open a handle |
+| `readFile(path) -> ?string` | one-shot slurp |
+| `writeFile(path, data) -> bool` | create / truncate / write |
+| `appendFile(path, data) -> bool` | append |
+| `copyFile(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
+| `deleteFile(path) -> bool` | `unlink` |
+| `deleteDir(path) -> bool` | `rmdir` (empty only) |
+| `createDir(path) -> bool` / `createDirAll(path) -> bool` | `mkdir` / `mkdir -p` |
 | `move(old, new) -> bool` | `rename` |
-| `set_mode(path, mode) -> bool` | `chmod` |
+| `setMode(path, mode) -> bool` | `chmod` |
 | `exists(path) -> bool` | `access(F_OK)` |
 | `basename(p) -> string` / `dirname(p) -> string` | text-only path split |
 
 `File` is a small value-typed handle wrapping a POSIX fd, with
-methods `is_valid / close / read / write / seek`. Higher-level helpers
-(`read_file`, `write_file`, `copy_file`) bypass `*File` methods and
+methods `isValid / close / read / write / seek`. Higher-level helpers
+(`readFile`, `writeFile`, `copyFile`) bypass `*File` methods and
 call libc directly so they remain callable from the post-link IR
 interpreter (which doesn't yet handle `*Self` method dispatch on
 locally-unwrapped optionals).
@@ -6260,9 +6260,9 @@ locally-unwrapped optionals).
 |----------|---------|
 | `run(cmd: [:0]u8) -> ?ProcessResult` | `popen` shell command, capture stdout + exit |
 | `env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
-| `find_executable(name) -> ?string` | `command -v <name>` via shell |
+| `findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
-`ProcessResult` is `{ exit_code: i32, stdout: string }`. The post-link
+`ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 `d8`, `keytool`, `apksigner`, etc. through `run`.
 
@@ -6286,7 +6286,7 @@ The Android branch:
 
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
-3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copy_file` from the linked output.
+3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copyFile` from the linked output.
 4. **Manifest** — user-supplied via `setManifestPath()`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.

@@ -20,7 +20,7 @@ declare i32 @epoll_ctl(i32, i32, i32, ptr) #0
 declare i32 @epoll_wait(i32, ptr, i32, i32) #0
 
 ; Function Attrs: nounwind
-define internal i1 @ev_readable({ i32, i32, i32 } %0) #0 {
+define internal i1 @evReadable({ i32, i32, i32 } %0) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %0, ptr %alloca, align 4
@@ -32,7 +32,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i1 @ev_writable({ i32, i32, i32 } %0) #0 {
+define internal i1 @evWritable({ i32, i32, i32 } %0) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %0, ptr %alloca, align 4
@@ -44,7 +44,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i1 @ev_eof({ i32, i32, i32 } %0) #0 {
+define internal i1 @evEof({ i32, i32, i32 } %0) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %0, ptr %alloca, align 4
@@ -56,7 +56,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i1 @ev_err({ i32, i32, i32 } %0) #0 {
+define internal i1 @evErr({ i32, i32, i32 } %0) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %0, ptr %alloca, align 4
@@ -68,7 +68,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i32 @ev_fd({ i32, i32, i32 } %0) #0 {
+define internal i32 @evFd({ i32, i32, i32 } %0) #0 {
 entry:
   %alloca = alloca { i32, i32, i32 }, align 8
   store { i32, i32, i32 } %0, ptr %alloca, align 4
@@ -78,14 +78,14 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i32 @ep_create() #0 {
+define internal i32 @epCreate() #0 {
 entry:
   %call = call i32 @epoll_create1(i32 524288)
   ret i32 %call
 }
 
 ; Function Attrs: nounwind
-define internal i1 @ep_ctl(i32 %0, i32 %1, i32 %2, i32 %3) #0 {
+define internal i1 @epCtl(i32 %0, i32 %1, i32 %2, i32 %3) #0 {
 entry:
   %alloca = alloca i32, align 4
   store i32 %0, ptr %alloca, align 4
@@ -111,7 +111,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i32 @ep_wait(i32 %0, { ptr, i64 } %1, i32 %2, i32 %3) #0 {
+define internal i32 @epWait(i32 %0, { ptr, i64 } %1, i32 %2, i32 %3) #0 {
 entry:
   %alloca = alloca i32, align 4
   %allocaN = alloca i32, align 4
@@ -166,11 +166,11 @@ entry:
   %allocaN = alloca [8 x { i32, i32, i32 }], align 8
   %allocaN = alloca { ptr, i64 }, align 8
   %allocaN = alloca i32, align 4
-  %call = call i32 @ep_create()
+  %call = call i32 @epCreate()
   %alloca = alloca i32, align 4
   store i32 %call, ptr %alloca, align 4
   %load = load i32, ptr %alloca, align 4
-  %callN = call i1 @ep_ctl(i32 %load, i32 1, i32 1, i32 8193)
+  %callN = call i1 @epCtl(i32 %load, i32 1, i32 1, i32 8193)
   %lnot = xor i1 %callN, true
   br i1 %lnot, label %if.then.0, label %if.merge.1
 
@@ -179,14 +179,14 @@ if.then.0:                                        ; preds = %entry
 
 if.merge.1:                                       ; preds = %entry
   %loadN = load i32, ptr %alloca, align 4
-  %callN = call i1 @ep_ctl(i32 %loadN, i32 3, i32 1, i32 5)
+  %callN = call i1 @epCtl(i32 %loadN, i32 3, i32 1, i32 5)
   %igp.ptr = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %si = insertvalue { ptr, i64 } undef, ptr %igp.ptr, 0
   %siN = insertvalue { ptr, i64 } %si, i64 8, 1
   store { ptr, i64 } %siN, ptr %allocaN, align 8
   %loadN = load i32, ptr %alloca, align 4
   %loadN = load { ptr, i64 }, ptr %allocaN, align 8
-  %callN = call i32 @ep_wait(i32 %loadN, { ptr, i64 } %loadN, i32 8, i32 100)
+  %callN = call i32 @epWait(i32 %loadN, { ptr, i64 } %loadN, i32 8, i32 100)
   store i32 %callN, ptr %allocaN, align 4
   %loadN = load i32, ptr %allocaN, align 4
   %icmp = icmp sgt i32 %loadN, 0
@@ -195,24 +195,24 @@ if.merge.1:                                       ; preds = %entry
 if.then.9:                                        ; preds = %if.merge.1
   %igp.ptr12 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %loadN = load { i32, i32, i32 }, ptr %igp.ptr12, align 4
-  %callN = call i1 @ev_readable({ i32, i32, i32 } %loadN)
+  %callN = call i1 @evReadable({ i32, i32, i32 } %loadN)
   br i1 %callN, label %if.then.11, label %if.merge.12
 
 if.merge.10:                                      ; preds = %if.merge.18, %if.merge.1
   %loadN = load i32, ptr %alloca, align 4
-  %callN = call i1 @ep_ctl(i32 %loadN, i32 2, i32 1, i32 0)
+  %callN = call i1 @epCtl(i32 %loadN, i32 2, i32 1, i32 0)
   ret i32 12
 
 if.then.11:                                       ; preds = %if.then.9
   %igp.ptr17 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %loadN = load { i32, i32, i32 }, ptr %igp.ptr17, align 4
-  %callN = call i32 @ev_fd({ i32, i32, i32 } %loadN)
+  %callN = call i32 @evFd({ i32, i32, i32 } %loadN)
   ret i32 %callN
 
 if.merge.12:                                      ; preds = %if.then.9
   %igp.ptr20 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %loadN = load { i32, i32, i32 }, ptr %igp.ptr20, align 4
-  %callN = call i1 @ev_writable({ i32, i32, i32 } %loadN)
+  %callN = call i1 @evWritable({ i32, i32, i32 } %loadN)
   br i1 %callN, label %if.then.13, label %if.merge.14
 
 if.then.13:                                       ; preds = %if.merge.12
@@ -221,7 +221,7 @@ if.then.13:                                       ; preds = %if.merge.12
 if.merge.14:                                      ; preds = %if.merge.12
   %igp.ptr23 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %loadN = load { i32, i32, i32 }, ptr %igp.ptr23, align 4
-  %callN = call i1 @ev_eof({ i32, i32, i32 } %loadN)
+  %callN = call i1 @evEof({ i32, i32, i32 } %loadN)
   br i1 %callN, label %if.then.15, label %if.merge.16
 
 if.then.15:                                       ; preds = %if.merge.14
@@ -230,7 +230,7 @@ if.then.15:                                       ; preds = %if.merge.14
 if.merge.16:                                      ; preds = %if.merge.14
   %igp.ptr26 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
   %loadN = load { i32, i32, i32 }, ptr %igp.ptr26, align 4
-  %callN = call i1 @ev_err({ i32, i32, i32 } %loadN)
+  %callN = call i1 @evErr({ i32, i32, i32 } %loadN)
   br i1 %callN, label %if.then.17, label %if.merge.18
 
 if.then.17:                                       ; preds = %if.merge.16

@@ -2303,7 +2303,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
         // permanently-wrong empty layout, so reject loudly.
         // The other composite RHS kinds (function / closure / pointer / slice
         // / optional / array) do NOT hit this: a struct field / signature that
-        // names such an alias above its decl (e.g. `body_read_fn: BodyReadFn`
+        // names such an alias above its decl (e.g. `bodyReadFn: BodyReadFn`
         // above `BodyReadFn :: (...) -> i64`) is patched by the struct/field
         // re-resolution machinery — a working forward-reference pattern the
         // stdlib http module relies on — so scoping the rejection to tuple
@@ -3916,7 +3916,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
     // An `abi(.naked)` (naked) function has no frame: its params arrive in ABI
-    // registers and are read directly by the asm body (e.g. `swap_context`'s
+    // registers and are read directly by the asm body (e.g. `swapContext`'s
     // `from`/`to`). Spilling them to allocas would (a) need a frame and (b) emit
     // `store i64 %0, …` — "cannot use argument of naked function" (LLVM verifier).
     // Leave the LLVM args declared-but-unused (the verifier allows that); the asm
