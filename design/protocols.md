@@ -24,7 +24,7 @@ exist only as monomorphized direct calls; it emits no vtables, no tables, no
 metadata.
 
 An **interface** is additionally a runtime value: a three-word handle
-`{ctx, __type_id, vtable}` whose first two words are byte-identical to an `any` of
+`{ctx, typeId, vtable}` whose first two words are byte-identical to an `any` of
 the referent. The handle **borrows**. The referent lives outside it, the handle
 carries no allocator word, copying a handle aliases the same referent, no
 spelling allocates one, and `free` refuses one. A program's ownership of the

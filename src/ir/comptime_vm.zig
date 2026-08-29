@@ -3071,7 +3071,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const word = try self.machine.readWord(reg + fieldOffset(table, ty, @intCast(i)), 8);
             // The vtable slot holds a declared global's instance; every other
             // trailing slot of an erased value is one method's fn pointer.
-            out[i] = if (std.mem.eql(u8, table.getString(f.name), "__vtable"))
+            out[i] = if (std.mem.eql(u8, table.getString(f.name), "vtable"))
                 try self.escapePointer(alloc, table, word, .void)
             else if (funcRefToId(word)) |fid|
                 .{ .func_ref = fid }

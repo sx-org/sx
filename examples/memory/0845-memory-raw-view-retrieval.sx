@@ -2,8 +2,8 @@
 // fat-value views @Closure {fnPtr, env}, @Slice {ptr, len} (slices AND
 // strings), and @Protocol {ctx, typeId} come back via `v.(@Protocol)` or
 // `xx v`. The protocol pair is a MODELED conversion built field-wise —
-// {ctx, __type_id} is the prefix BOTH protocol layouts share (default
-// {ctx, __type_id, vtable} and `inline` {ctx, __type_id, fn_ptrs…}),
+// {ctx, typeId} is the prefix BOTH protocol layouts share (default
+// {ctx, typeId, vtable} and `inline` {ctx, typeId, fn_ptrs…}),
 // byte-identical to an any {data, typeId} — never a bit reinterpret, so
 // an `inline`-kind value can't leak a wrong word and the result is a real value
 // that works in ARG POSITION (a reinterpret width-mismatched there).

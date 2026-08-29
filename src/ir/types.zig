@@ -1739,7 +1739,7 @@ pub const TypeTable = struct {
                 return 8;
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
-            .protocol => 24, // {ctx, __type_id, vtable}
+            .protocol => 24, // {ctx, typeId, vtable}
             .@"error" => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
@@ -1872,7 +1872,7 @@ pub const TypeTable = struct {
                 break :blk if (offset == 0) 0 else (offset + max_a - 1) & ~(max_a - 1);
             },
             .any => 2 * ptr_size, // {type_tag, data_ptr}
-            .protocol => 3 * ptr_size, // {ctx, __type_id, vtable}
+            .protocol => 3 * ptr_size, // {ctx, typeId, vtable}
             // The payload area aligns to 1, so the tag word alone pads the tail.
             .@"error" => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {

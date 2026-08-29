@@ -549,26 +549,22 @@ pub const ProtocolResolver = struct {
 
         var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
 
-        // Field 0: ctx: *void. Field 1: __type_id — the concrete type's
-        // TypeId, stamped at erasure (RTTI, Agra's Option-B ruling). The
-        // {ctx, __type_id} prefix is byte-identical to an `any`
-        // {data, typeId}, so downcasts and the protocol type switch read
-        // the prefix through the any machinery. Dunder name: a protocol
-        // METHOD named `typeId` must not collide (same reason as
-        // `__vtable`); the public spelling is @Protocol's `typeId`.
+        // Slot 1 carries the concrete type's TypeId, stamped at erasure, so
+        // that the {ctx, typeId} prefix is byte-identical to an `any`
+        // {data, typeId} and downcasts and the protocol type switch read it
+        // through the any machinery.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),
             .ty = void_ptr_ty,
         }) catch unreachable;
         fields.append(self.l.alloc, .{
-            .name = table.internString("__type_id"),
+            .name = table.internString("typeId"),
             .ty = .type_value,
         }) catch unreachable;
 
-        // Vtable pointer
         fields.append(self.l.alloc, .{
-            .name = table.internString("__vtable"),
+            .name = table.internString("vtable"),
             .ty = void_ptr_ty,
         }) catch unreachable;
 
