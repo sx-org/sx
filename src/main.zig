@@ -773,7 +773,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.target_frameworks = fws;
         e.build_config.target_framework_paths = merged_config.framework_paths;
         // The sx-driven build pipeline reads these via the
-        // `cObjectPaths()` / `linkLibraries()` / `build_*()` primitives. Slices
+        // `cObjectPaths()` / `linkLibraries()` / `buildOutput()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
         e.build_config.c_object_paths = c_obj_paths;
         e.build_config.link_libraries = libs;
