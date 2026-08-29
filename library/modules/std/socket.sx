@@ -119,8 +119,8 @@ set_blocking :: (fd: i32) -> bool {
 set_io_timeout :: (fd: i32, ms: i64) -> bool {
     if ms <= 0 { return false; }
     tv := timeval_ms(ms);
-    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, *tv, size_of(Timeval)) != 0 { return false; }
-    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, *tv, size_of(Timeval)) == 0;
+    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, *tv, @sizeOf(Timeval)) != 0 { return false; }
+    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, *tv, @sizeOf(Timeval)) == 0;
 }
 
 // Connect `fd` (already created, any family) to `a` with a hard deadline:
@@ -181,14 +181,14 @@ parse_addr :: (text: string, port: i64) -> (Addr, bool) {
     v4 : u32 = 0;
     if inet_pton(AF_INET, *tb[0], *v4) == 1 {
         sa := sockaddr_in(port, v4);
-        copy_bytes(*a.buf[0], *sa, size_of(SockAddr));
+        copy_bytes(*a.buf[0], *sa, @sizeOf(SockAddr));
         a.len = 16;
         return a, true;
     }
     v6 : [16]u8 = ---;
     if inet_pton(AF_INET6, *tb[0], *v6[0]) == 1 {
         sa6 := sockaddr_in6(port, *v6[0]);
-        copy_bytes(*a.buf[0], *sa6, size_of(SockAddrIn6));
+        copy_bytes(*a.buf[0], *sa6, @sizeOf(SockAddrIn6));
         a.len = 28;
         return a, true;
     }

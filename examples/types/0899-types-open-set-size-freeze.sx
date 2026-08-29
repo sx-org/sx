@@ -7,7 +7,7 @@
 // instantiation, so a body lowered before an instantiation and a body lowered
 // after it are asking about the same set at two different moments.
 //
-// So `size_of(P)` is not a literal baked where it is written: it is answered from
+// So `@sizeOf(P)` is not a literal baked where it is written: it is answered from
 // the frozen layout. `early` is lowered before `Padded(Big)` is instantiated and
 // `late` after it, and they agree — including with a `@run` written before any
 // member is declared, and with a compile-time evaluation that runs DURING lowering
@@ -16,7 +16,7 @@
 
 // Written before the set's members: a `@run` is answered from the frozen layout,
 // not from the layout as it stands at this line.
-VIEW_BEFORE :: @run size_of(View);
+VIEW_BEFORE :: @run @sizeOf(View);
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;
@@ -39,7 +39,7 @@ Big :: struct {
     e: i64 = 0; f: i64 = 0; g: i64 = 0; h: i64 = 0;
 }
 
-VIEW_AFTER :: @run size_of(View);
+VIEW_AFTER :: @run @sizeOf(View);
 
 // A plain struct holding the set by value has the same problem, and the same
 // answer: its own size is settled by the set's.
@@ -49,12 +49,12 @@ Wrapper :: struct {
 }
 
 // Lowered before `Padded(Big)` exists as a member…
-early :: () -> i64 => size_of(View);
-early_wrapper :: () -> i64 => size_of(Wrapper);
+early :: () -> i64 => @sizeOf(View);
+early_wrapper :: () -> i64 => @sizeOf(Wrapper);
 
 // …and after it.
-late :: () -> i64 => size_of(View);
-late_wrapper :: () -> i64 => size_of(Wrapper);
+late :: () -> i64 => @sizeOf(View);
+late_wrapper :: () -> i64 => @sizeOf(Wrapper);
 
 // A second set no generic member can reach: nothing can grow it once the
 // declarations are admitted, so its size is settled well before the freeze — which
@@ -71,7 +71,7 @@ Number :: @OpenVariant(Cell) {
 // This runs while `main` is being lowered, and it reads `Cell`'s size to decide
 // what code to write.
 cell_line :: () -> string {
-    if size_of(Cell) == 16 {
+    if @sizeOf(Cell) == 16 {
         return "print(\"cell 16\n\");";
     }
     return "print(\"cell other\n\");";
@@ -84,11 +84,11 @@ main :: () -> i32 {
     print("early {} late {}\n", e, late());
     print("wrapper {} {}\n", ew, late_wrapper());
     print("run {} {}\n", VIEW_BEFORE, VIEW_AFTER);
-    print("align {} {}\n", align_of(View), align_of(Wrapper));
+    print("align {} {}\n", @alignOf(View), @alignOf(Wrapper));
     // A settled set — nothing can still grow `Cell` — so a dimension over it is
     // answerable where it is written.
-    buf: [size_of(Cell)]u8 = ---;
-    print("cell {} buf {}\n", size_of(Cell), buf.len);
+    buf: [@sizeOf(Cell)]u8 = ---;
+    print("cell {} buf {}\n", @sizeOf(Cell), buf.len);
     @insert cell_line();
     print("render {} {}\n", Label{ text = "l" }.render(), p.render());
     0

@@ -96,7 +96,7 @@ main :: () -> i32 {
         .{ rows = .[ .[1.0, 0.0, 0.0, 0.6], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
     ];
 
-    vbytes : i64 = size_of(SkinnedVertex) * 6;
+    vbytes : i64 = @sizeOf(SkinnedVertex) * 6;
     ibytes : i64 = 4 * 6;
     vb := gpu.create_buffer(vbytes);
     ib := gpu.create_index_buffer(ibytes);

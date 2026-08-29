@@ -16,8 +16,8 @@ out :: (str: string) -> void {
     c.write(1, str.ptr, str.len);
 }
 // `@sqrt` / `@sin` / `@cos` / `@floor` are declared in math/scalar.sx.
-size_of :: ($T: Type) -> i64 intrinsic;
-align_of :: ($T: Type) -> i64 intrinsic;
+@sizeOf :: ($T: Type) -> i64;
+@alignOf :: ($T: Type) -> i64;
 @typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
@@ -60,12 +60,12 @@ vector_lanes :: ($T: Type) -> i64 intrinsic;
 // INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
 // variant read loads from a value of T, sign-encoded — negative means |w|
 // bytes then sign-extend (signed backing / tag type). A payload-less enum's
-// whole value is its tag; a tagged union's tag is the LOW size_of(tag_type)
+// whole value is its tag; a tagged union's tag is the LOW @sizeOf(tag_type)
 // bytes at offset 0 (a backing-type union's header can be wider than the
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
-// `{ elem,  raw_any_data(av) + idx * size_of(elem) }`. The walker's array
+// `{ elem,  raw_any_data(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
 any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 
@@ -99,7 +99,7 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // writes names and re-resolves, never raw tags; byte copies through the data
 // pointer are SHALLOW — interior pointers are not followed; and a view carries
 // NO lifetime — `raw_make_any` trusts the caller that `data` points at a live,
-// aligned value of `tp` covering size_of(tp) bytes.
+// aligned value of `tp` covering @sizeOf(tp) bytes.
 raw_any_data :: (av: any) -> *void intrinsic;
 raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 
@@ -347,7 +347,7 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 //
 // A type's whole shape as data. `@typeInfo` reflects a type INTO it; the
 // on-demand `modules/std/meta.sx` DSL (`declare` / `define`) constructs a NEW
-// nominal type FROM it. Sizes are not stored — `size_of(tp)` answers for any
+// nominal type FROM it. Sizes are not stored — `@sizeOf(tp)` answers for any
 // kind.
 
 // One field of a struct or tuple: its name, its type, and its byte offset,

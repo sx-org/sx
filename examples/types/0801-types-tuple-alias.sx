@@ -58,15 +58,15 @@ main :: () -> i32 {
     // Forward element alias: FwdB (declared after FwdT) is i64, not a stub —
     // the alias layout matches the direct spelling exactly.
     f : FwdT = .{a = 5, c = true};
-    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, struct_field_count(FwdT), size_of(FwdT) == size_of(FwdDirect));
+    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, struct_field_count(FwdT), @sizeOf(FwdT) == @sizeOf(FwdDirect));
 
     // Generic-instantiation element: field access through the instantiated
-    // List works and size_of matches the direct spelling (no stub layout).
+    // List works and @sizeOf matches the direct spelling (no stub layout).
     t : TL = ---;
     t.a = .{};
     t.a.append(4);
     t.b = "hi";
-    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), size_of(TL) == size_of(TLDirect));
+    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), @sizeOf(TL) == @sizeOf(TLDirect));
 
     // Forward product-in-product chain.
     n : Outer = .{a = .{d = 3}, c = true};

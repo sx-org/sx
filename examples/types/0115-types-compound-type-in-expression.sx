@@ -1,8 +1,8 @@
-// Compound type literals in expression position — `size_of` /
-// `align_of` accept pointer (`*T`), optional (`?T`), array (`[N]T`), and
+// Compound type literals in expression position — `@sizeOf` /
+// `@alignOf` accept pointer (`*T`), optional (`?T`), array (`[N]T`), and
 // function (`(A) -> B`) types directly. Also const-decl RHS aliases through
-// the same forms (`Ptr :: *u8;` etc). A named product alias reaches `size_of`
-// the same way. Same shape as the existing `size_of(i32)` baseline path.
+// the same forms (`Ptr :: *u8;` etc). A named product alias reaches `@sizeOf`
+// the same way. Same shape as the existing `@sizeOf(i32)` baseline path.
 
 @import "modules/std.sx";
 
@@ -15,19 +15,19 @@ Pair  :: struct { a: i32; b: i32 };
 
 main :: () -> i32 {
   // Direct: parser fix for *T, ?T  + existing [N]T path.
-  print("size_of(*u8)        = {}\n", size_of(*u8));
-  print("align_of(*u8)       = {}\n", align_of(*u8));
-  print("size_of(?u8)        = {}\n", size_of(?u8));
-  print("size_of([3]u8)      = {}\n", size_of([3]u8));
+  print("@sizeOf(*u8)        = {}\n", @sizeOf(*u8));
+  print("@alignOf(*u8)       = {}\n", @alignOf(*u8));
+  print("@sizeOf(?u8)        = {}\n", @sizeOf(?u8));
+  print("@sizeOf([3]u8)      = {}\n", @sizeOf([3]u8));
 
   // Function-type literal in expression position.
-  print("size_of((i32)->i32) = {}\n", size_of((i32) -> i32));
+  print("@sizeOf((i32)->i32) = {}\n", @sizeOf((i32) -> i32));
 
   // Aliases.
-  print("size_of(Ptr)        = {}\n", size_of(Ptr));
-  print("size_of(Maybe)      = {}\n", size_of(Maybe));
-  print("size_of(Arr)        = {}\n", size_of(Arr));
-  print("size_of(Cb)         = {}\n", size_of(Cb));
-  print("size_of(Pair)       = {}\n", size_of(Pair));
+  print("@sizeOf(Ptr)        = {}\n", @sizeOf(Ptr));
+  print("@sizeOf(Maybe)      = {}\n", @sizeOf(Maybe));
+  print("@sizeOf(Arr)        = {}\n", @sizeOf(Arr));
+  print("@sizeOf(Cb)         = {}\n", @sizeOf(Cb));
+  print("@sizeOf(Pair)       = {}\n", @sizeOf(Pair));
   0
 }

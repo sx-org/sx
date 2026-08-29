@@ -1180,7 +1180,7 @@ pub const TypeTable = struct {
     /// |width| bytes, sign-extend (a signed backing / tag type, so small
     /// negative explicit values round-trip). A payload-less enum's whole
     /// value IS its tag (backing size, default 8); a tagged union's tag is
-    /// the LOW size_of(tag_type) bytes at offset 0 (a backing-type union's
+    /// the LOW @sizeOf(tag_type) bytes at offset 0 (a backing-type union's
     /// header can be wider than the tag — the width must come from the tag
     /// type, never the header). 0 for a non-variant kind. Feeds the
     /// `__sx_variant_tag_widths` runtime table and its static fold.

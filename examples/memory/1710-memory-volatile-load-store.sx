@@ -3,7 +3,7 @@
 // to a single register value — each volatile access survives instead, and none
 // of them carries an atomic ordering (volatile is not atomic; see
 // modules/std/core.sx).
-// The intrinsics resolve with no import, like `size_of`; `out` is what needs one.
+// The intrinsics resolve with no import, like `@sizeOf`; `out` is what needs one.
 @import "modules/std/core.sx";
 
 Point :: struct {

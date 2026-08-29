@@ -1,9 +1,11 @@
 // A declaration whose implementation lives in the compiler ends in the reserved
-// word `intrinsic`, in body position:
+// word `intrinsic`, in body position; an `@` name spells the same thing with
+// the sigil alone:
 //
-//     size_of :: ($T: Type) -> i64 intrinsic;
+//     struct_field_count :: ($T: Type) -> i64 intrinsic;
+//     @sizeOf :: ($T: Type) -> i64;
 //
-// The declaration binds to the intrinsic registry by (module, name): `size_of`
+// The declaration binds to the intrinsic registry by (module, name): `@sizeOf`
 // is an intrinsic because std/core.sx declares it, not because the name is
 // magic. This example pins the parse + the layout/reflection intrinsics that
 // fold at lowering.
@@ -14,9 +16,9 @@ E :: enum { X; Y; }
 
 main :: () {
     // Layout — folded to a constant at lowering.
-    print("size_of(i64)   = {}\n", size_of(i64));
-    print("align_of(i64)  = {}\n", align_of(i64));
-    print("size_of(P)     = {}\n", size_of(P));
+    print("@sizeOf(i64)   = {}\n", @sizeOf(i64));
+    print("@alignOf(i64)  = {}\n", @alignOf(i64));
+    print("@sizeOf(P)     = {}\n", @sizeOf(P));
 
     // Reflection — same fold.
     print("struct_field_count(P) = {}\n", struct_field_count(P));

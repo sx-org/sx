@@ -14,4 +14,4 @@ hold :: (x: $V/v.View) -> string => x.render();
 // A SET-typed parameter: the call inside dispatches on the tag, so this package
 // gets its own dispatch routine.
 describe :: (x: v.View) -> string => x.render();
-size_here :: () -> i64 => size_of(v.View);
+size_here :: () -> i64 => @sizeOf(v.View);

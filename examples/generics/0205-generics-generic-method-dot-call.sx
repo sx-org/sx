@@ -11,12 +11,12 @@ Holder :: struct {
     n: i64;
 
     plain :: (self: *Holder) -> i64 { self.n }
-    sized :: (self: *Holder, $T: Type) -> i64 { size_of(T) }
+    sized :: (self: *Holder, $T: Type) -> i64 { @sizeOf(T) }
     taking :: (self: *Holder, $T: Type, v: T) -> T { v }
 }
 
 main :: () -> i32 {
-    h : *Holder = xx c.libc_malloc(size_of(Holder));
+    h : *Holder = xx c.libc_malloc(@sizeOf(Holder));
     h.n = 7;
 
     print("plain: {}\n", h.plain());

@@ -199,7 +199,7 @@ GlyphCache :: struct {
         // surrounding struct c.memset would otherwise wipe it.
         saved_gpu := self.gpu;
         // Zero out the entire struct first (parent may be uninitialized with = ---)
-        c.memset(self, 0, size_of(GlyphCache));
+        c.memset(self, 0, @sizeOf(GlyphCache));
         self.gpu = saved_gpu;
         self.parent_allocator = context.allocator;
 
@@ -237,8 +237,8 @@ GlyphCache :: struct {
             self.shape_font = kbts_ShapePushFontFromMemory(self.shape_ctx, self.font_data, file_size, 0);
             // Get font metrics (units_per_em) from kbts
             kb_info : KbtsFontInfo2_1 = ---;
-            c.memset(*kb_info, 0, size_of(KbtsFontInfo2_1));
-            kb_info.base.size = size_of(KbtsFontInfo2_1);
+            c.memset(*kb_info, 0, @sizeOf(KbtsFontInfo2_1));
+            kb_info.base.size = @sizeOf(KbtsFontInfo2_1);
             kbts_GetFontInfo2(self.shape_font, *kb_info);
             self.units_per_em = kb_info.units_per_em;
         }

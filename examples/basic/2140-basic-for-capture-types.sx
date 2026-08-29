@@ -31,5 +31,5 @@ main :: () {
 
     // A type-list cursor takes no annotation; the index riding beside it is a
     // range position like any other.
-    inline for T, i: i64 in .[i32, f64], 0.. { print("{} {}\n", i, size_of(T)); }
+    inline for T, i: i64 in .[i32, f64], 0.. { print("{} {}\n", i, @sizeOf(T)); }
 }

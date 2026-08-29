@@ -109,7 +109,7 @@ const StatelessInner = struct {
     pub fn typeLimitInt(self: StatelessInner, receiver: *const Node, field: []const u8) ?i64 {
         return program_index_mod.builtinNameLimit(self.table, receiver, field);
     }
-    // A type-query builtin call (`field_count`/`size_of`/`align_of`) needs to
+    // A type-query builtin call (`field_count`/`@sizeOf`/`@alignOf`) needs to
     // resolve a type-expr arg (and, for `field_count`, type-param bindings),
     // which the registration-time path lacks. Folded on the body-lowering path
     // (`Lowering`); null here → the clean unresolved-dim diagnostic.

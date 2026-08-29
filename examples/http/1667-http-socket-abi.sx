@@ -13,7 +13,7 @@ posix   :: @import "modules/std/posix.sx";
 main :: () -> i32 {
     // sockaddr_in is 16 bytes on both BSD and linux; only the first two bytes'
     // split differs (sin_len:u8 + sin_family:u8 vs a 2-byte sin_family).
-    if size_of(socket.SockAddr) != 16 { return 1; }
+    if @sizeOf(socket.SockAddr) != 16 { return 1; }
 
     // The constructor fills family + network-order port regardless of layout.
     a := socket.sockaddr_in(8080, 0);

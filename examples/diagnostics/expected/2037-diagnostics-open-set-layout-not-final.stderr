@@ -1,47 +1,47 @@
 error: the layout of the open set 'View' is not final here
   --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:21:13
    |
-21 |     bytes: [size_of(View)]u8 = ---;
+21 |     bytes: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
 help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
    |
-21 |     bytes: [size_of(View)]u8 = ---;
+21 |     bytes: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := @sizeOf(…)'), or bind it with '@run @sizeOf(…)' — both are answered from the frozen layout
    |
-21 |     bytes: [size_of(View)]u8 = ---;
+21 |     bytes: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
 error: the layout of 'Wrapper' is not final here: it holds the open set 'View' by value
   --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:30:13
    |
-30 |     bytes: [size_of(Wrapper)]u8 = ---;
+30 |     bytes: [@sizeOf(Wrapper)]u8 = ---;
    |             ^^^^^^^^^^^^^^^^
 
 help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
    |
-30 |     bytes: [size_of(Wrapper)]u8 = ---;
+30 |     bytes: [@sizeOf(Wrapper)]u8 = ---;
    |             ^^^^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := @sizeOf(…)'), or bind it with '@run @sizeOf(…)' — both are answered from the frozen layout
    |
-30 |     bytes: [size_of(Wrapper)]u8 = ---;
+30 |     bytes: [@sizeOf(Wrapper)]u8 = ---;
    |             ^^^^^^^^^^^^^^^^
 
 error: the layout of the open set 'View' is not final here
   --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:51:13
    |
-51 |     local: [size_of(View)]u8 = ---;
+51 |     local: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
 help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
    |
-51 |     local: [size_of(View)]u8 = ---;
+51 |     local: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := @sizeOf(…)'), or bind it with '@run @sizeOf(…)' — both are answered from the frozen layout
    |
-51 |     local: [size_of(View)]u8 = ---;
+51 |     local: [@sizeOf(View)]u8 = ---;
    |             ^^^^^^^^^^^^^

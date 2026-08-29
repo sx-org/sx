@@ -15,9 +15,9 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("Wrap layout per author", size_of(Wrap(a.Thing)) == 8 and size_of(Wrap(b.Thing)) == 24);
-    report("Make layout per author", size_of(Make(a.Thing)) == 8 and size_of(Make(b.Thing)) == 24);
-    report("Tup pack arg per author", size_of(Tup(a.Thing, i64)) == 16 and size_of(Tup(b.Thing, i64)) == 32);
+    report("Wrap layout per author", @sizeOf(Wrap(a.Thing)) == 8 and @sizeOf(Wrap(b.Thing)) == 24);
+    report("Make layout per author", @sizeOf(Make(a.Thing)) == 8 and @sizeOf(Make(b.Thing)) == 24);
+    report("Tup pack arg per author", @sizeOf(Tup(a.Thing, i64)) == 16 and @sizeOf(Tup(b.Thing, i64)) == 32);
 
     wa : Wrap(a.Thing) = .{ value = a.make() };
     wb : Wrap(b.Thing) = .{ value = b.make() };

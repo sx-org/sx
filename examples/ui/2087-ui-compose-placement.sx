@@ -90,7 +90,7 @@ main :: () -> i32 {
     print("screen\n");
     draw(*screen, Frame.make(0.0, 0.0, 60.0, 60.0));
 
-    print("slot {}\n", size_of(View));
+    print("slot {}\n", @sizeOf(View));
     0
 }
 

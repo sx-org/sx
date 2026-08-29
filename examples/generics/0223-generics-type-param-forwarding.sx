@@ -7,7 +7,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-inner :: ($T: Type) -> i64 { size_of(T) }
+inner :: ($T: Type) -> i64 { @sizeOf(T) }
 
 outer :: ($T: Type, v: T) -> i64 { inner(T) }
 

@@ -82,7 +82,7 @@ main :: () -> i32 {
 
     // A wrapper is an ordinary member: it can be read back out of its own set.
     board := measured.(MeasureBoard);
-    print("read back {} of {}\n", board.core.area(board.cols), size_of(Measure));
+    print("read back {} of {}\n", board.core.area(board.cols), @sizeOf(Measure));
     0
 }
 

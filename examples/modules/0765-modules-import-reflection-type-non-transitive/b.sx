@@ -4,7 +4,7 @@
 // type-arg / array-literal positions — the type is one flat hop away here,
 // two from a file that imports b.sx.
 b_sizes :: () -> i64 {
-    size_of(Nums) + size_of(*COnly)
+    @sizeOf(Nums) + @sizeOf(*COnly)
 }
 
 b_arr :: () -> i64 {

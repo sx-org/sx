@@ -927,7 +927,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // shadows the top-level fn entirely: the call targets
         // the local, so the program-fn visibility gate must not fire.
         // An intrinsic is a compiler feature, not a library export, so import
-        // visibility does not gate it — the same reason `size_of` / `sqrt` /
+        // visibility does not gate it — the same reason `@sizeOf` / `sqrt` /
         // `atomic_load` resolve with no import (their folds run before this
         // check). The evaluate-mode intrinsics DO reach here, because the VM
         // services them as ordinary declared calls; exempting them keeps every
@@ -2774,8 +2774,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@sin" => .sin,
         .@"@cos" => .cos,
         .@"@floor" => .floor,
-        .size_of => .size_of,
-        .align_of => .align_of,
+        .@"@sizeOf" => .size_of,
+        .@"@alignOf" => .align_of,
 
         // No `call_builtin` form. The reflection intrinsics fold to a constant in
         // `tryLowerReflectionCall`; `type_name` / `type_is_unsigned` / `@typeInfo`
@@ -3086,8 +3086,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .atomic_cmpxchg_weak,
         => true,
 
-        .size_of,
-        .align_of,
+        .@"@sizeOf",
+        .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
@@ -3378,8 +3378,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@env_type",
         .@"@env_of",
         .@"@call_ptr",
-        .size_of,
-        .align_of,
+        .@"@sizeOf",
+        .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
@@ -3730,8 +3730,8 @@ fn isReflectionCall(name: []const u8) bool {
     }
     const id = intrinsics.findByName(name) orelse return false;
     return switch (id) {
-        .size_of,
-        .align_of,
+        .@"@sizeOf",
+        .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
         .struct_field_count,
@@ -4194,8 +4194,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         _ = self.persistEnvType(name, self.inferExprType(c.args[0]), c.args[0].span) orelse return Ref.none;
         return self.lowerExpr(c.args[0]);
     }
-    if (std.mem.eql(u8, name, "size_of")) {
-        // size_of(T) → const_int(sizeof(T)); runtime Type arg → tag-indexed
+    if (std.mem.eql(u8, name, "@sizeOf")) {
+        // @sizeOf(T) → const_int(sizeof(T)); runtime Type arg → tag-indexed
         // size-table read. Same static/dynamic split as type_name —
         // the dynamic path never touches resolveTypeArg.
         if (!self.isStaticTypeArg(c.args[0])) {
@@ -4212,7 +4212,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const size: i64 = @intCast(self.typeSizeBytes(ty));
         return self.builder.constInt(size, .i64);
     }
-    if (std.mem.eql(u8, name, "align_of")) {
+    if (std.mem.eql(u8, name, "@alignOf")) {
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
@@ -4501,7 +4501,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (std.mem.eql(u8, name, "any_element")) {
         // any_element(av, elem, idx) → element view into an array/vector held
-        // by `av`: pure stride math, `{elem, av.data + idx * size_of(elem)}`.
+        // by `av`: pure stride math, `{elem, av.data + idx * @sizeOf(elem)}`.
         // A static `elem` folds its size and tag to constants; a runtime Type
         // reads the rt size table. Bounds are the caller's (same OOB rule as
         // the field family).
@@ -4806,7 +4806,7 @@ pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {
     return ty == .type_value or ty == .any;
 }
 
-/// Guard for the type-introspection builtins (`size_of`, `align_of`,
+/// Guard for the type-introspection builtins (`@sizeOf`, `@alignOf`,
 /// `field_count`, `@typeName`, `@typeEq`, `type_is_unsigned`,
 /// `is_flags`): every argument must denote a type. A value argument is
 /// rejected with a diagnostic rather than silently reinterpreted as a
@@ -4873,8 +4873,8 @@ pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.S
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     const arity: usize = if (std.mem.eql(u8, name, "@typeEq"))
         2
-    else if (std.mem.eql(u8, name, "size_of") or
-        std.mem.eql(u8, name, "align_of") or
+    else if (std.mem.eql(u8, name, "@sizeOf") or
+        std.mem.eql(u8, name, "@alignOf") or
         std.mem.eql(u8, name, "struct_field_count") or
         std.mem.eql(u8, name, "variant_count") or
         std.mem.eql(u8, name, "@typeName") or

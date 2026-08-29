@@ -18,9 +18,9 @@ main :: () {
     process.assert(KBTS_FONT_INFO_STRING_ID_COUNT == 13, "string id count matches the upstream enum");
 
     // kbts_font_info2: u32 Size, char*[13], u16[13], then three u32s.
-    process.assert(size_of(KbtsFontInfo2) == 152, "kbts_font_info2 layout");
+    process.assert(@sizeOf(KbtsFontInfo2) == 152, "kbts_font_info2 layout");
     // kbts_font_info2_1 adds UnitsPerEm and seven more s16 metrics.
-    process.assert(size_of(KbtsFontInfo2_1) == 168, "kbts_font_info2_1 layout");
+    process.assert(@sizeOf(KbtsFontInfo2_1) == 168, "kbts_font_info2_1 layout");
 
-    print("ok {} {}\n", size_of(KbtsFontInfo2), size_of(KbtsFontInfo2_1));
+    print("ok {} {}\n", @sizeOf(KbtsFontInfo2), @sizeOf(KbtsFontInfo2_1));
 }

@@ -3526,7 +3526,7 @@ pub const Parser = struct {
         // Prefix `*` — address-of. One glyph, two sides of the same coin:
         // prefix `*` TAKES a pointer, postfix `.*` FOLLOWS one, and `*T` in
         // a type position is the pointer TYPE. On a Type-valued operand the
-        // lowering resolves `*T` to the pointer type (so `size_of(*T)` and
+        // lowering resolves `*T` to the pointer type (so `@sizeOf(*T)` and
         // Type-arg positions keep working); on a value it is address-of.
         if (self.tokens.tag(self.tok) == .star) {
             const start = self.tokens.start(self.tok);

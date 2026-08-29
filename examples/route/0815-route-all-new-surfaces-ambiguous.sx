@@ -3,7 +3,7 @@
 // each of them instead of silently picking a global `findByName` last-wins author.
 // `main` flat-imports two same-name `Box` struct authors and authors none itself,
 // so every bare `Box` below is a genuine collision. `Box` is the kind-agnostic
-// canary (the bare-leaf forms — annotations / size_of / match / `!Named` — are
+// canary (the bare-leaf forms — annotations / @sizeOf / match / `!Named` — are
 // already locked per kind by 0755/0795/0797/0811); these cells exercise the
 // surfaces:
 //
@@ -28,7 +28,7 @@ WrapE :: enum { V: Box; }
 BoxPair :: struct { a: Box; b: i32 };
 
 main :: () -> i32 {
-    sz := size_of(BoxPair);
+    sz := @sizeOf(BoxPair);
     x : union { b: Box; n: i32; } = ---;
     0
 }

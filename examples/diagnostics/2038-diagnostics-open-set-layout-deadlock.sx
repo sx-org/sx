@@ -36,7 +36,7 @@ Padded :: @OpenVariant(View) ($T: Type) {
 // The code this writes depends on the set's size, and the code it writes is part of
 // the program whose bodies decide that size.
 line :: () -> string {
-    if size_of(View) > 32 {
+    if @sizeOf(View) > 32 {
         return "print(\"big\n\");";
     }
     return "print(\"small\n\");";

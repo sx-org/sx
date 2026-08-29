@@ -11,8 +11,8 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("Box author layout", size_of(a.Box(i64)) == 8 and size_of(b.Box(i64)) == 24);
-    report("Mk author layout", size_of(a.Mk(i64)) == 8 and size_of(b.Mk(i64)) == 24);
+    report("Box author layout", @sizeOf(a.Box(i64)) == 8 and @sizeOf(b.Box(i64)) == 24);
+    report("Mk author layout", @sizeOf(a.Mk(i64)) == 8 and @sizeOf(b.Mk(i64)) == 24);
     report("generic author body", a.pick(5) == 1 and b.pick(5) == 2);
     report("pack author body", a.tally(1, 2) == 1 and b.tally(1, 2) == 2);
 

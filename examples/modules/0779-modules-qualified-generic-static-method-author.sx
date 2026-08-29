@@ -18,6 +18,6 @@ b :: @import "0779-modules-qualified-generic-static-method-author/b.sx";
 main :: () -> i32 {
     xa := a.Box(i64).make(7);
     xb := b.Box(i64).make(9);
-    print("a.x={} b.x={} b.y={} sizes={} {}\n", xa.x, xb.x, xb.y, size_of(@typeOf(xa)), size_of(@typeOf(xb)));
+    print("a.x={} b.x={} b.y={} sizes={} {}\n", xa.x, xb.x, xb.y, @sizeOf(@typeOf(xa)), @sizeOf(@typeOf(xb)));
     0
 }

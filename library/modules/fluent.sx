@@ -15,7 +15,7 @@
 //
 // Each standalone expression in the block whose type conforms to the contract
 // becomes one `sink.expression(initializer)` call. The initializer is an
-// `@Init(V)` over the CONCRETE `V`, so the sink reserves `size_of(V)` and writes
+// `@Init(V)` over the CONCRETE `V`, so the sink reserves `@sizeOf(V)` and writes
 // the expression straight into its own storage; nothing is materialized, copied,
 // or erased before the sink asks for it. Provenance rides on the initializer:
 // `value.site()`.

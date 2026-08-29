@@ -2281,7 +2281,7 @@ fn nodeTypeLeafName(node: *const Node) ?[]const u8 {
 /// `resolveTypeWithBindings` is the same resolver the inline annotation form
 /// (`x : [2]List(i64)`, `x : Tuple(a: List(i64), b: string)`) uses, so
 /// generic-instantiation elements instantiate for real instead of stubbing
-/// into an empty nominal with a lying `size_of`, and a LATER-declared element
+/// into an empty nominal with a lying `@sizeOf`, and a LATER-declared element
 /// (`A :: [2]B; B :: i64`) is ADOPTED once the fixpoint reaches it, never
 /// left as a permanent size-0 stub.
 /// A dirty RHS (transitively carrying `.unresolved` — bad dims, unbound
@@ -3572,7 +3572,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
 /// declaration would defer the failure to a call site (or, worse, to a recognizer
 /// that silently does the wrong thing). Diagnose at the declaration span instead.
 ///
-/// The binding key is (module, name) — `size_of` is an intrinsic because
+/// The binding key is (module, name) — `@sizeOf` is an intrinsic because
 /// std/core.sx declares it, not because the name is magic. A same-named
 /// declaration in another module is a different function and is rejected here.
 fn validateIntrinsicDecl(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {

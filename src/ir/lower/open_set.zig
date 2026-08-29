@@ -10,15 +10,15 @@
 //! size, alignment, and codegen all come from the shipped aggregate paths rather
 //! than from a second layout rule:
 //!
-//!     payload_size      = max(size_of(V) for each declared V)   (≤ max)
-//!     payload_alignment = max(declared align, align_of(tag))    (not a max over V)
-//!     payload_offset    = align_up(size_of(tag), payload_alignment)
-//!     size_of(P)        = align_up(payload_offset + payload_size, payload_alignment)
+//!     payload_size      = max(@sizeOf(V) for each declared V)   (≤ max)
+//!     payload_alignment = max(declared align, @alignOf(tag))    (not a max over V)
+//!     payload_offset    = align_up(@sizeOf(tag), payload_alignment)
+//!     @sizeOf(P)        = align_up(payload_offset + payload_size, payload_alignment)
 //!
 //! The tag's own alignment is a FLOOR: a set declared `align = 4` is laid out at
 //! 8, because the tag word is in the same value. The payload is an array of an
 //! element whose alignment IS the payload alignment, so the offset guarantee and
-//! `align_of(P)` are delivered by the shape rather than assumed by whoever reads
+//! `@alignOf(P)` are delivered by the shape rather than assumed by whoever reads
 //! it.
 //!
 //! `max` is a ceiling, not a reservation: a set whose largest member is small is
@@ -34,7 +34,7 @@
 //!
 //! Which is why a set's size is not a source literal. The last member can arrive
 //! at any point up to the FREEZE — the point the convergence fixpoint settles
-//! at — so `size_of(P)` lowers to an `open_set_layout` op that each world resolves
+//! at — so `@sizeOf(P)` lowers to an `open_set_layout` op that each world resolves
 //! against the frozen layout, and one program has ONE answer wherever it asks. A
 //! position that must be folded EARLIER than the freeze — an array dimension, a
 //! `::` constant — is refused instead of answered against a layout that is not
@@ -341,7 +341,7 @@ pub fn isOpenSet(self: *Lowering, ty: TypeId) bool {
 /// Admit `variant` into the set its declaration named, checking everything the
 /// declaration is answerable for (spec: Open Sets — admission):
 ///
-///   - `size_of(V) ≤ max` and `align_of(V) ≤ align`;
+///   - `@sizeOf(V) ≤ max` and `@alignOf(V) ≤ align`;
 ///   - finite size: `V` must not contain the set by value, at any depth;
 ///   - every required method, on the variant itself;
 ///   - one set per type.
@@ -799,7 +799,7 @@ fn cascade(self: *Lowering, grown: *Set) void {
 /// The explicit backing shape the layout is stated with: `{ tag: i64, payload:
 /// [k]Elem }`, where `Elem`'s own alignment IS the payload alignment. Stating the
 /// shape is what keeps set layout out of the backend: the aggregate rules place
-/// the payload at `align_up(size_of(tag), align)` and give the whole value that
+/// the payload at `align_up(@sizeOf(tag), align)` and give the whole value that
 /// alignment, so both are delivered rather than promised.
 fn backingType(self: *Lowering, payload_size: u32, alignment: u32) TypeId {
     const table = &self.module.types;
@@ -1079,7 +1079,7 @@ pub fn refuseUnfrozenLayout(self: *Lowering, measured: TypeId, span: ast.Span) v
     // belong to the one that stands.
     if (d.items.items.len == before) return;
     d.addHelpFmt(id, span, null, "a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number", .{});
-    d.addHelpFmt(id, span, null, "read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout", .{});
+    d.addHelpFmt(id, span, null, "read the size where it is a VALUE ('n := @sizeOf(…)'), or bind it with '@run @sizeOf(…)' — both are answered from the frozen layout", .{});
 }
 
 /// The set `measured`'s layout depends on, named for the refusal.

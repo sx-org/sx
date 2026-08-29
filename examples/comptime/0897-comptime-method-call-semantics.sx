@@ -40,12 +40,12 @@ Thing :: struct {
 
     type_size :: ($T: Type, value: T, $o: Ord) -> i64 {
         if o == .two { return 0; }
-        return size_of(T);
+        return @sizeOf(T);
     }
 
     instance_type_size :: (self: *Thing, $T: Type, value: T, $o: Ord) -> i64 {
         if o == .two { return 0; }
-        return self.base + size_of(T);
+        return self.base + @sizeOf(T);
     }
 
     count :: (self: *Thing, $o: Ord, ..values: []any) -> i64 {
@@ -88,7 +88,7 @@ main :: () {
     print("short={}\n", short.base);
 
     // Explicit and inferred method type arguments both install T before the
-    // runtime value is target-typed and before the body resolves size_of(T).
+    // runtime value is target-typed and before the body resolves @sizeOf(T).
     print("types={} {}\n", Thing.type_size(i32, 1, .one), Thing.type_size(1, .one));
     print("instance-types={} {}\n",
         thing.instance_type_size(i16, 1, .one),

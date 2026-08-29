@@ -7,7 +7,7 @@
 //
 // Covers heterogeneous + COMPLEX payloads (multi-field struct, string fat
 // pointer, a larger struct, scalar) — make_variant zeroes the value then writes
-// the i64 tag @0 and the payload @ size_of(i64), so payloads of any size/shape
+// the i64 tag @0 and the payload @ @sizeOf(i64), so payloads of any size/shape
 // round-trip. Built with the natural early-return-per-arm pattern (a `return`
 // inside an `inline if` inside an `inline for`).
 @import "modules/std.sx";

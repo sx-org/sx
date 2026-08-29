@@ -125,8 +125,8 @@ Future :: struct ($R: Type) {
 // single top-level symbol serves every `async($R)` instantiation.
 // The heap box the bridge carries: a struct holding the nullary completion
 // closure. A struct field is the one position a `Closure() -> void` type parses
-// in (a bare alias / `size_of(Closure()->void)` trips the parser), and it gives
-// the bridge a concrete `*ThunkBox` to `size_of`/cast/call through.
+// in (a bare alias / `@sizeOf(Closure()->void)` trips the parser), and it gives
+// the bridge a concrete `*ThunkBox` to `@sizeOf`/cast/call through.
 // `run` is the completion closure (captures the Future + the worker); `worker_env`
 // records the WORKER closure's own heap env (captured by-value into `run`'s env, so
 // otherwise unreachable to free); `alloc` funds the box, `run`'s env, and a worker
@@ -189,7 +189,7 @@ fut_release :: ufcs (f: *Future($R)) {
 
 async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allocator) -> *Future($R) {
     w := closure(worker, alloc);
-    raw := alloc.alloc_bytes(size_of(Future($R)));
+    raw := alloc.alloc_bytes(@sizeOf(Future($R)));
     f : *Future($R) = raw.(*Future($R));
     f.state = .pending;
     f.park = .{ handle = null };
@@ -213,7 +213,7 @@ async :: ufcs (io: Io, worker: $F/() -> ($R, !), alloc: Allocator = context.allo
     // `suspend_raw` is a no-op, so the worker never raises Canceled inline — it
     // runs to completion (a post-hoc `cancel` still makes `await` raise via the
     // sticky `f.canceled`, the 1806 contract).
-    braw := alloc.alloc_bytes(size_of(ThunkBox));
+    braw := alloc.alloc_bytes(@sizeOf(ThunkBox));
     b : *ThunkBox = braw.(*ThunkBox);
     // Record the worker's own heap env so `sx_run_boxed_closure` can free it (it is
     // captured by-value into `run`'s env below, otherwise unreachable). `null` for

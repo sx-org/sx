@@ -1512,11 +1512,11 @@ Deflater :: struct {
             // this halves the hot chain footprint versus i32 tables.
             dict := alloc.alloc_bytes(32768 + 257);
             hash_size := if less_memory then 4096 else 32768;
-            hash := alloc.alloc_bytes(hash_size * size_of(u16));
-            next := alloc.alloc_bytes(32768 * size_of(u16));
+            hash := alloc.alloc_bytes(hash_size * @sizeOf(u16));
+            next := alloc.alloc_bytes(32768 * @sizeOf(u16));
             if dict != null { dict_buffer = .{ ptr = dict, len = 32768 + 257 }; }
-            if hash != null { hash_buffer = .{ ptr = hash, len = hash_size * size_of(u16) }; }
-            if next != null { next_buffer = .{ ptr = next, len = 32768 * size_of(u16) }; }
+            if hash != null { hash_buffer = .{ ptr = hash, len = hash_size * @sizeOf(u16) }; }
+            if next != null { next_buffer = .{ ptr = next, len = 32768 * @sizeOf(u16) }; }
         }
         token_buffer := TdeflTokenBuffer.init(alloc, actual_level > 0, less_memory);
         failed := if actual_level == 0 then raw_buffer.ptr == null else
@@ -1571,7 +1571,7 @@ Deflater :: struct {
             // is the chain terminator even when an absolute position wraps to
             // zero; preserving that quirk is required for byte identity.
             c.memset(heads, 0, result.hash.len);
-            c.memset(links, 0, 32768 * size_of(u16));
+            c.memset(links, 0, 32768 * @sizeOf(u16));
             c.memset(result.dict.ptr, 0, result.dict.len);
         }
         result

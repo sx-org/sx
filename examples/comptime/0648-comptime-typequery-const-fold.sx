@@ -1,4 +1,4 @@
-// Int-returning type-query builtins (`struct_field_count` / `size_of` / `align_of`)
+// Int-returning type-query builtins (`struct_field_count` / `@sizeOf` / `@alignOf`)
 // fold as comptime CONSTANTS — usable as an `inline for` bound and an array
 // dimension, exactly like a plain `K :: 3` const.
 // (This is what lets a `($T) -> Type` builder loop `inline for 0..struct_field_count(T)`
@@ -24,10 +24,10 @@ main :: () -> i32 {
     inline for i in 0..variant_count(E) { e = e + 1; }
     print("variant_count(E) = {}\n", e);
 
-    // size_of / align_of fold too
-    bytes : [size_of(i64)]u8 = ---;
-    print("size_of(i64) array len = {}\n", bytes.len);
-    print("align_of(f64) = {}\n", align_of(f64));
+    // @sizeOf / @alignOf fold too
+    bytes : [@sizeOf(i64)]u8 = ---;
+    print("@sizeOf(i64) array len = {}\n", bytes.len);
+    print("@alignOf(f64) = {}\n", @alignOf(f64));
 
     // composed const expression as a dim
     ys : [struct_field_count(S) + 1]i64 = ---;

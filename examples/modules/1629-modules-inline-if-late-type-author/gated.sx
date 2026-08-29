@@ -8,4 +8,4 @@ inline if POINTER_SIZE == 8 {
     Slot :: struct { a: i32; }
 }
 
-gated_size :: () -> i64 { size_of(Slot) }
+gated_size :: () -> i64 { @sizeOf(Slot) }

@@ -30,7 +30,7 @@
 //     x86_64 : { events@0, data_lo@4, data_hi@8 }            → 12 bytes
 //     aarch64: { events@0, pad@4, data_lo@8, data_hi@12 }    → 16 bytes
 //   Every field is a u32 at a 4-aligned offset, so no packed attribute and no
-//   unaligned 8-byte access is ever needed — yet `size_of(EpollEvent)` and the
+//   unaligned 8-byte access is ever needed — yet `@sizeOf(EpollEvent)` and the
 //   `[N]EpollEvent` stride come out byte-exact for the kernel ABI on both
 //   arches, and `epoll_wait` can fill a plain `[]EpollEvent` directly. (Both
 //   arches are little-endian, so the fd — an `int` in the union — is the low

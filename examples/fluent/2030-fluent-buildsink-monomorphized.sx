@@ -6,8 +6,8 @@
 //     }
 //
 // The compiler does not erase the reached expression before offering it. It
-// instantiates `expression` for each concrete `V`, so the sink sees `size_of(V)`,
-// `align_of(V)`, and `V`'s own methods, and reserves storage for the exact type
+// instantiates `expression` for each concrete `V`, so the sink sees `@sizeOf(V)`,
+// `@alignOf(V)`, and `V`'s own methods, and reserves storage for the exact type
 // before anything is built. Erasure — when a sink wants it — happens AFTER the
 // destination is initialized, which is why the handle is a borrow of the stored
 // value rather than a copy of it.
@@ -38,13 +38,13 @@ Measure :: struct {
     count: i32 = 0;
 
     expression :: (self: *Measure, value: $I/@Init($V/Drawable)) {
-        self.bytes += size_of(V);
+        self.bytes += @sizeOf(V);
         self.count += 1;
     }
 }
 impl @BuildSink(Drawable) for Measure {
     expression :: (self: *Measure, value: $I/@Init($V/Drawable)) {
-        self.bytes += size_of(V);
+        self.bytes += @sizeOf(V);
         self.count += 1;
     }
 }
@@ -81,7 +81,7 @@ column :: (content: $B/@BuildBlock(Drawable)) {
 }
 
 main :: () -> i32 {
-    print("size_of(Label)={} size_of(Rule)={}\n", size_of(Label), size_of(Rule));
+    print("@sizeOf(Label)={} @sizeOf(Rule)={}\n", @sizeOf(Label), @sizeOf(Rule));
     column() {
         Label{ text = "hello" };
         Rule{ width = 4 };
@@ -90,7 +90,7 @@ main :: () -> i32 {
 }
 
 // ** stdout **
-// size_of(Label)=16 size_of(Rule)=4
+// @sizeOf(Label)=16 @sizeOf(Rule)=4
 // measured 2 expression(s), 20 bytes of storage
 // kept hello
 // kept ----

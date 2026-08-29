@@ -20,7 +20,7 @@ Sized :: interface {
 inline for T in ALSO {
     inline if POINTER_SIZE == 8 {
         impl Sized for T {
-            footprint :: (self: *T) -> i64 { size_of(T) }
+            footprint :: (self: *T) -> i64 { @sizeOf(T) }
         }
     } else {
         impl Sized for T {
@@ -34,12 +34,12 @@ main :: () {
     // rides the trailing open range.
     inline for T, i in SHAPES, 0.. {
         v : T = ---;
-        print("{} {} {} {}\n", i, size_of(T), align_of(T), struct_field_count(T));
+        print("{} {} {} {}\n", i, @sizeOf(T), @alignOf(T), struct_field_count(T));
     }
 
     // A literal list needs no name; an alias iterates the same set.
     inline for T in .[i64, f64, bool] {
-        print("{} ", size_of(T));
+        print("{} ", @sizeOf(T));
     }
     inline for T in ALSO {
         print("{} ", struct_field_count(T));

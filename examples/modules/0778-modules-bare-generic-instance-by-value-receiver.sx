@@ -12,6 +12,6 @@
 
 main :: () -> i32 {
     x := Box(i64).make(5);
-    print("size={} dbl={}\n", size_of(@typeOf(x)), x.dbl());
+    print("size={} dbl={}\n", @sizeOf(@typeOf(x)), x.dbl());
     0
 }

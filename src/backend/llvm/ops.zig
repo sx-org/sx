@@ -2770,7 +2770,7 @@ pub const Ops = struct {
     // order). The {ptr, type_id} prefix is SHARED with protocol values.
     // Lowering guarantees box_any's operand is a pointer (borrowed lvalue
     // storage or a spilled frame temp) pointing at exactly
-    // size_of(type_id) bytes.
+    // @sizeOf(type_id) bytes.
     pub fn emitBoxAny(self: Ops, ba: BoxAny) void {
         const addr = self.e.resolveRef(ba.operand);
         if (c.LLVMGetTypeKind(c.LLVMTypeOf(addr)) != c.LLVMPointerTypeKind) {

@@ -11,7 +11,7 @@
 Inner :: struct { v: i64 = 11; }
 Box   :: struct($T: Type) { item: T; tag: i64 = 1; count: i64 = 9; }
 Outer :: struct($U: Type) { boxed: U; label: i64 = 99; }
-Dep   :: struct($T: Type) { item: T; sz: i64 = size_of(T); }
+Dep   :: struct($T: Type) { item: T; sz: i64 = @sizeOf(T); }
 
 // Alias-instantiation leg: the alias name carries the instance's defaults
 // AND its mirrored type bindings (registerGenericStructAlias), so both a
@@ -43,7 +43,7 @@ main :: () {
     o : Outer(Box(Inner)) = .{ boxed = .{ item = .{} } };
     print("{} {} {}\n", o.label, o.boxed.tag, o.boxed.item.v); // 99 1 11
 
-    // Dependent default — `sz = size_of(T)` is monomorphized PER instance.
+    // Dependent default — `sz = @sizeOf(T)` is monomorphized PER instance.
     d8 : Dep(i64) = .{ item = 5 };
     d2 : Dep(i16) = .{ item = 5 };
     print("{} {}\n", d8.sz, d2.sz);           // 8 2

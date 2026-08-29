@@ -9,7 +9,7 @@ Tracer :: struct {
     count: i64;
 
     init :: () -> *Tracer {
-        t : *Tracer = xx c.libc_malloc(size_of(Tracer));
+        t : *Tracer = xx c.libc_malloc(@sizeOf(Tracer));
         t.count = 0;
         t
     }

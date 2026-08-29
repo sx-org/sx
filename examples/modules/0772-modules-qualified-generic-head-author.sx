@@ -19,7 +19,7 @@ b :: @import "0772-modules-qualified-generic-head-author/b.sx";
 main :: () -> i32 {
     pa : a.Box(i64) = .{ x = 1 };
     pb : b.Box(i64) = .{ x = 10, y = 20 };
-    print("a={} b={}\n", size_of(a.Box(i64)), size_of(b.Box(i64)));
+    print("a={} b={}\n", @sizeOf(a.Box(i64)), @sizeOf(b.Box(i64)));
     print("pa.x={} pb.x={} pb.y={}\n", pa.x, pb.x, pb.y);
     0
 }

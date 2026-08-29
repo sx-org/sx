@@ -1,4 +1,4 @@
-// The type-introspection builtins (size_of, align_of, struct_field_count,
+// The type-introspection builtins (@sizeOf, @alignOf, struct_field_count,
 // @typeName, @typeEq, is_flags) take ONLY types. The strict
 // `$T: Type` guard (`Lowering.reflectionTypeArgGuard`) rejects an argument whose
 // static type is not `Type` with "<builtin> expects a type, got '<type>'" at that
@@ -10,8 +10,8 @@
 @import "modules/std.sx";
 
 main :: () {
-    print("{}\n", size_of(true));          // bool, not a type
-    print("{}\n", align_of(1.5));          // f64, not a type
+    print("{}\n", @sizeOf(true));          // bool, not a type
+    print("{}\n", @alignOf(1.5));          // f64, not a type
     print("{}\n", struct_field_count(true));      // bool, not a type
     print("{}\n", @typeName(1.5));         // f64, not a type
     print("{}\n", @typeEq(true, false));   // both bool — both rejected

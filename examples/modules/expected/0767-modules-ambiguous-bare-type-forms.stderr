@@ -1,7 +1,7 @@
 error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
   --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:31:19
    |
-31 |     sz := size_of(Thing);
+31 |     sz := @sizeOf(Thing);
    |                   ^^^^^
 
 error: type 'Nums' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import

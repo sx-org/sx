@@ -7,7 +7,7 @@ error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modul
 error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
   --> examples/0811-modules-same-name-error-set-ambiguous.sx:39:19
    |
-39 |     sz := size_of(IoErr);
+39 |     sz := @sizeOf(IoErr);
    |                   ^^^^^
 
 error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import

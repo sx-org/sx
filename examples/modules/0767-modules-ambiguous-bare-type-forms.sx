@@ -6,7 +6,7 @@
 // (consistent with the leaf, 0755) and poisons the result, NEVER silently picking
 // a global `findByName` / `struct_template_map` author:
 //
-//   - reflection / type-arg slot    `size_of(Thing)`
+//   - reflection / type-arg slot    `@sizeOf(Thing)`
 //   - typed array/vector-literal     `Nums.[1, 2]`
 //   - parameterized generic head     `Box(i64)`
 //   - type-as-value                  `t : Type = Thing`
@@ -28,7 +28,7 @@ describe :: ($T: Type) -> i32 {
 }
 
 main :: () -> i32 {
-    sz := size_of(Thing);
+    sz := @sizeOf(Thing);
     xs := Nums.[1, 2];
     x : Box(i64) = .{ v = 3 };
     t : Type = Thing;

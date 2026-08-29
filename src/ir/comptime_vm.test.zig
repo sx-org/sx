@@ -1600,7 +1600,7 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     const set_ty = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Set"), .fields = &.{} } });
     const i64_ptr = module.types.intern(.{ .pointer = .{ .pointee = .i64 } });
 
-    // fn leaf() = size_of(Set) — the read that waits for the sets to freeze.
+    // fn leaf() = @sizeOf(Set) — the read that waits for the sets to freeze.
     var lb = Fb.init(alloc, &.{}, .i64);
     const lbb = lb.block(&.{});
     const measured = lb.add(lbb, inst(.{ .open_set_layout = .{ .measured = set_ty, .query = .size } }, .i64));

@@ -1,14 +1,17 @@
 // An intrinsic binds to the registry by (module, name), not by name alone.
-// `size_of` is an intrinsic because `modules/std/core.sx` declares it; the same
-// spelling in another module names a different function, has no handler, and is
-// rejected at its own declaration span rather than at some later call site.
+// `struct_field_count` is an intrinsic because `modules/std/core.sx` declares
+// it; the same spelling in another module names a different function, has no
+// handler, and is rejected at its own declaration span rather than at some
+// later call site.
 //
 // The diagnostic names the owning module, because "unknown intrinsic" would be a
 // lie here — the name is real, the declaration is just in the wrong place.
 
-size_of :: ($T: Type) -> i64 intrinsic;
+struct_field_count :: ($T: Type) -> i64 intrinsic;
+
+P :: struct { a: i64; b: f32; }
 
 main :: () {
-    x := size_of(i64);
-    if x == 8 { return; }
+    x := struct_field_count(P);
+    if x == 2 { return; }
 }

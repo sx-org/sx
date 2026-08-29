@@ -1,7 +1,7 @@
 error: @env_type: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged
   --> examples/errors/1091-errors-persist-primitives-reject.sx:15:18
    |
-15 |     _ := size_of(@env_type(@typeOf(cl)));
+15 |     _ := @sizeOf(@env_type(@typeOf(cl)));
    |                  ^^^^^^^^^
 
 error: @call_ptr: a 'Closure' carries its environment rather than being one — 'closure' returns it unchanged
@@ -37,5 +37,5 @@ error: @env_of takes one argument, got 0
 error: @env_type takes one type: @env_type($F)
   --> examples/errors/1091-errors-persist-primitives-reject.sx:22:18
    |
-22 |     _ := size_of(@env_type(@typeOf(double), i64));
+22 |     _ := @sizeOf(@env_type(@typeOf(double), i64));
    |                  ^^^^^^^^^

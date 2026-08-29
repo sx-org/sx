@@ -406,7 +406,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     };
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
-    // size_of(T)` (dependent defaults). Those default AST nodes
+    // @sizeOf(T)` (dependent defaults). Those default AST nodes
     // are monomorphized here: while lowering a missing field's default we
     // temporarily install this instance's captured `type_bindings` (stamped by
     // `instantiateGenericStruct` into `struct_instance_bindings`, keyed by the
@@ -3943,7 +3943,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 break :blk self.builder.constFloat(-lit.value, fty);
             }
             // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
-            // address-of: `size_of(*T)`, Type-arg positions, and nested
+            // address-of: `@sizeOf(*T)`, Type-arg positions, and nested
             // `**T` (address_of over address_of resolves inside-out). Must
             // run before the operand lowers as a value — a bare type name
             // has no value to take the address of. A local/global VALUE

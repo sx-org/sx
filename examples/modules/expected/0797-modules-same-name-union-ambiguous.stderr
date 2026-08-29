@@ -1,7 +1,7 @@
 error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
   --> examples/modules/0797-modules-same-name-union-ambiguous.sx:30:19
    |
-30 |     sz := size_of(Pair);
+30 |     sz := @sizeOf(Pair);
    |                   ^^^^
 
 error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import

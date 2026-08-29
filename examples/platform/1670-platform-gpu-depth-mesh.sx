@@ -61,7 +61,7 @@ main :: () -> i32 {
     ];
     idx : [6]u32 = .[0, 1, 2, 3, 4, 5];
 
-    vbytes : i64 = size_of(MeshVertex) * 6;
+    vbytes : i64 = @sizeOf(MeshVertex) * 6;
     ibytes : i64 = 4 * 6;
     vb := gpu.create_buffer(vbytes);
     ib := gpu.create_index_buffer(ibytes);

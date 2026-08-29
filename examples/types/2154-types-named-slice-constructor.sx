@@ -74,7 +74,7 @@ main :: () -> i32 {
     print("sub={} h0={} h1={}\n", @typeName(@typeOf(h)), h[0], h[1]);
 
     hold : Holder = Holder{ data = b };
-    print("field={} size={}\n", hold.data[2], size_of(Holder));
+    print("field={} size={}\n", hold.data[2], @sizeOf(Holder));
 
     s : string = "ab";
     print("string={} slice={}\n", s.len, @typeName(@typeOf(a[0..])));

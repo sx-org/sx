@@ -73,8 +73,8 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
     var args = [_]*Node{&arg};
 
     const cases = [_]struct { name: []const u8, want: TypeId }{
-        .{ .name = "size_of", .want = .i64 },
-        .{ .name = "align_of", .want = .i64 },
+        .{ .name = "@sizeOf", .want = .i64 },
+        .{ .name = "@alignOf", .want = .i64 },
         // Reflection builtins (resolved by callee name, outside the
         // `resolveBuiltin` table) — each must keep its own result tag so a
         // pack-fn caller boxes the value with the right type.
@@ -149,7 +149,7 @@ test "plan: builtin and reflection carry kind + target" {
     var arg = node(.{ .int_literal = .{ .value = 1 } });
     var args = [_]*Node{&arg};
 
-    var so_callee = node(.{ .identifier = .{ .name = "size_of" } });
+    var so_callee = node(.{ .identifier = .{ .name = "@sizeOf" } });
     var so_call = node(.{ .call = .{ .callee = &so_callee, .args = &args } });
     const so = cr.plan(&so_call.data.call);
     try std.testing.expectEqual(CallPlan.Kind.builtin, so.kind);

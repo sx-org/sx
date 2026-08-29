@@ -15,6 +15,6 @@ ABox :: a.Box(i64);
 
 main :: () -> i32 {
     x : ABox = .{ x = 5 };
-    print("size={} tag={}\n", size_of(ABox), x.tag());
+    print("size={} tag={}\n", @sizeOf(ABox), x.tag());
     0
 }

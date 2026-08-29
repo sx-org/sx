@@ -1742,7 +1742,7 @@ test "lower: reflectionArgIsType accepts spelled types, rejects plain values" {
     // Plain values are NOT types — these are exactly the arguments the
     // strict `$T: Type` guard rejects, before a builtin could
     // reinterpret the value as a TypeId index (`type_is_unsigned(6)` → true)
-    // or size its `typeof` (`size_of(true)` → 8).
+    // or size its `typeof` (`@sizeOf(true)` → 8).
     try std.testing.expect(!l.reflectionArgIsType(&int_node));
     try std.testing.expect(!l.reflectionArgIsType(&float_node));
     try std.testing.expect(!l.reflectionArgIsType(&bool_node));
@@ -3033,7 +3033,7 @@ test "type alias: forward composite elements across all shapes adopt the real el
 test "type alias: generic-instantiation element in a composite RHS instantiates for real" {
     // `AL :: [2]Box(i64);` must instantiate the generic element for real — a
     // non-empty struct with a real size — NOT an empty size-0 nominal with a
-    // lying size_of.
+    // lying @sizeOf.
     // Uses a locally-declared generic so the bare-lower harness needs no std.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

@@ -5,4 +5,4 @@
 // module's distinct types stay live via `dep_sizes`.
 Widget :: struct { a: i64; b: i64; }
 Nums :: [2]i32;
-dep_sizes :: () -> i64 { return size_of(Widget) + size_of(Nums); }
+dep_sizes :: () -> i64 { return @sizeOf(Widget) + @sizeOf(Nums); }

@@ -156,7 +156,7 @@ std_zip_reader_embedded :: (data: string, alloc: Allocator = context.allocator) 
 std_zip_reader_source :: (source: StdZipSource, max_metadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
     size := source.size();
     if size < 0 or max_metadata < 0 { raise .InvalidArgument; }
-    raw := alloc.alloc_bytes(size_of(StdZipSourceBridge));
+    raw := alloc.alloc_bytes(@sizeOf(StdZipSourceBridge));
     if raw == null { raise .AllocationFailed; }
     bridge : *StdZipSourceBridge = raw.(*StdZipSourceBridge);
     bridge.* = .{ source = source };
@@ -396,7 +396,7 @@ StdZipWriterState :: enum {
 }
 
 std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
-    raw := alloc.alloc_bytes(size_of(StdZipMemoryOutput));
+    raw := alloc.alloc_bytes(@sizeOf(StdZipMemoryOutput));
     if raw == null { raise .AllocationFailed; }
     output : *StdZipMemoryOutput = raw.(*StdZipMemoryOutput);
     output.* = .{ bytes = ByteWriter.init(alloc) };
@@ -414,7 +414,7 @@ std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.alloca
 }
 
 std_zip_writer_sink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
-    raw := alloc.alloc_bytes(size_of(StdZipSinkBridge));
+    raw := alloc.alloc_bytes(@sizeOf(StdZipSinkBridge));
     if raw == null { raise .AllocationFailed; }
     bridge : *StdZipSinkBridge = raw.(*StdZipSinkBridge);
     bridge.* = .{ sink = target };

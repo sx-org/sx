@@ -23,7 +23,7 @@ hold :: (v: $V) -> Box(V) { Box(V){ inner = v, tag = 0 } }
 
 // The constructor reaches a `$T: Type` slot from inside a generic body too,
 // where its argument is the enclosing function's own type parameter.
-boxed_size :: (v: $V) -> i64 { size_of(Box(V)) }
+boxed_size :: (v: $V) -> i64 { @sizeOf(Box(V)) }
 
 new_box :: (v: $V) -> *Box(V) {
     p := context.allocator.create(Box(V));
@@ -41,7 +41,7 @@ main :: () {
 
     // …and as a first-class Type value.
     t : Type = Box(f64);
-    print("{} {}\n", t == Box(f64), size_of(Box(f64)));
+    print("{} {}\n", t == Box(f64), @sizeOf(Box(f64)));
 
     // Inside a generic body, over the body's own parameter.
     q := new_box(Point{ x = 1.0, y = 2.0 });

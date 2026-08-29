@@ -28,16 +28,16 @@ main :: () {
     print("sqrt: {}\n", @sqrt(9.0));
     print("sqrt-f64: {}\n", @sqrt(16.0));
 
-    // size_of
-    print("sizeof-i32: {}\n", size_of(i32));
-    print("sizeof-f64: {}\n", size_of(f64));
-    print("sizeof-struct: {}\n", size_of(Point));
+    // @sizeOf
+    print("sizeof-i32: {}\n", @sizeOf(i32));
+    print("sizeof-f64: {}\n", @sizeOf(f64));
+    print("sizeof-struct: {}\n", @sizeOf(Point));
 
-    // align_of
-    print("alignof-u8: {}\n", align_of(u8));
-    print("alignof-i32: {}\n", align_of(i32));
-    print("alignof-i64: {}\n", align_of(i64));
-    print("alignof-struct: {}\n", align_of(Point));
+    // @alignOf
+    print("alignof-u8: {}\n", @alignOf(u8));
+    print("alignof-i32: {}\n", @alignOf(i32));
+    print("alignof-i64: {}\n", @alignOf(i64));
+    print("alignof-struct: {}\n", @alignOf(Point));
 
     // @typeOf + category matching
     tv := 42;

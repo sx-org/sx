@@ -773,7 +773,7 @@ pub const Function = struct {
     /// True for a declaration whose body is the `intrinsic` keyword — its
     /// implementation lives in the compiler (see `ir/intrinsics.zig`).
     ///
-    /// An intrinsic has NO symbol of any kind: `size_of` folds to a constant,
+    /// An intrinsic has NO symbol of any kind: `@sizeOf` folds to a constant,
     /// the atomics lower to ops, the evaluate-mode ones are serviced by the VM.
     /// So the backend must not emit a declaration for one — a `declare i32
     /// @intern(ptr)` is dead weight in every module that transitively sees the

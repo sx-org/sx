@@ -553,8 +553,9 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     // (recognized contextually only inside an `asm { … }` body).
     .{ "asm", .kw_asm },
     // `intrinsic` marks a declaration whose implementation is a compiler
-    // intrinsic (`size_of :: ($T: Type) -> i64 intrinsic;`). A reserved word:
-    // the registry in `ir/intrinsics.zig` binds it by module + declared name.
+    // intrinsic (`struct_field_count :: ($T: Type) -> i64 intrinsic;`). A
+    // reserved word: the registry in `ir/intrinsics.zig` binds it by module +
+    // declared name.
     .{ "intrinsic", .kw_intrinsic },
     // `private` restricts a module-scope declaration or a struct field to its
     // declaring source file. A reserved word; `` `private `` stays usable as a

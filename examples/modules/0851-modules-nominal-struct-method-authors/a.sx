@@ -14,7 +14,7 @@ Thing :: struct {
     value :: (self: *Thing) -> i64 @get { self.state.a }
     value :: (self: *Thing, v: i64) @set { self.state.a = v + 1; }
     wrap :: (self: *Thing, $T: Type, v: T) -> AResult {
-        AResult{ value = self.state.a + size_of(T) }
+        AResult{ value = self.state.a + @sizeOf(T) }
     }
     pick :: (self: *Thing, $o: Ord) -> i64 {
         if o == .one { return self.state.a + 1; }

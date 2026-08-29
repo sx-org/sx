@@ -23,4 +23,4 @@ Padded :: @OpenVariant(v.View) ($T: Type) {
 // qualified head.
 hold :: (x: $V/v.View) -> string => x.render();
 make :: () -> v.View { return Panel{ title = "from the package" }; }
-size_here :: () -> i64 => size_of(v.View);
+size_here :: () -> i64 => @sizeOf(v.View);

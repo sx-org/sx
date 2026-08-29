@@ -14,8 +14,8 @@ P :: struct { a: i64; b: f32; }
 E :: enum { X; Y; }
 
 // Layout + reflection — folded at lowering.
-SIZE  :: @run size_of(P);        // 16
-ALIGN :: @run align_of(i64);     //  8
+SIZE  :: @run @sizeOf(P);        // 16
+ALIGN :: @run @alignOf(i64);     //  8
 NFLD  :: @run struct_field_count(P);    //  2
 IDX   :: @run variant_index(E, E.Y); // 1
 CT_SQRT :: @run @sqrt(16.0);
@@ -29,11 +29,11 @@ main :: () -> i64 {
     bad := 0;
 
     // Reflection / layout, at runtime and comptime.
-    bad = bad + check("size_of", size_of(P), 16);
-    bad = bad + check("align_of", align_of(i64), 8);
+    bad = bad + check("@sizeOf", @sizeOf(P), 16);
+    bad = bad + check("@alignOf", @alignOf(i64), 8);
     bad = bad + check("struct_field_count", struct_field_count(P), 2);
-    bad = bad + check("comptime size_of", SIZE, 16);
-    bad = bad + check("comptime align_of", ALIGN, 8);
+    bad = bad + check("comptime @sizeOf", SIZE, 16);
+    bad = bad + check("comptime @alignOf", ALIGN, 8);
     bad = bad + check("comptime struct_field_count", NFLD, 2);
     bad = bad + check("comptime variant_index", IDX, 1);
 

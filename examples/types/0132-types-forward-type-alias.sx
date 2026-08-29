@@ -15,8 +15,8 @@ C :: u8;
 main :: () -> i32 {
     v: MyChain = 7;
     n: A = 3;
-    print("chain i32:   {}\n", size_of(MyChain));
-    print("forward u8:  {}\n", size_of(A));
+    print("chain i32:   {}\n", @sizeOf(MyChain));
+    print("forward u8:  {}\n", @sizeOf(A));
     print("v + n:       {}\n", v + n.(i32));
     return v;
 }

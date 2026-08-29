@@ -2,7 +2,7 @@
 // pointer; raw_make_any(tp, data) assembles a view (UNCHECKED — the
 // caller asserts `data` points at a live, aligned value of `tp`).
 // Contract edges pinned here: byte copies through the data pointer are
-// SHALLOW and cover exactly size_of(tag) bytes; a reassembled view is a
+// SHALLOW and cover exactly @sizeOf(tag) bytes; a reassembled view is a
 // view (no ownership). Tags are per-build values — this "serializer"
 // round-trips within ONE build on purpose.
 
@@ -21,7 +21,7 @@ Store :: struct {
     count: i64;
 
     put :: (self: *Store, v: any) {
-        n := size_of(@typeOf(v));
+        n := @sizeOf(@typeOf(v));
         c.memcpy(*self.buf[self.used], raw_any_data(v), n);
         self.tags[self.count] = @typeOf(v);
         self.offs[self.count] = self.used;
@@ -56,7 +56,7 @@ main :: () -> i64 {
     // buffer and re-view them under the same tag.
     wire : [16]u8 = .[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     pv := s.get(2);
-    c.memcpy(*wire[0], raw_any_data(pv), size_of(@typeOf(pv)));
+    c.memcpy(*wire[0], raw_any_data(pv), @sizeOf(@typeOf(pv)));
     restored := raw_make_any(@typeOf(pv), *wire[0]);
     print("{}\n", restored.(Point).y);           // 9
 

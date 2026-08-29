@@ -6,7 +6,7 @@
 // emits the LOUD "type 'Pair' is ambiguous" diagnostic and poisons the result,
 // never picking a global `findByName` last-wins author:
 //
-//   - reflection / type-arg slot    `size_of(Pair)`
+//   - reflection / type-arg slot    `@sizeOf(Pair)`
 //   - typed annotation               `u : Pair = ---`
 //   - type-as-value                  `t : Type = Pair`
 //   - type-category match arm        `case Pair:`
@@ -27,7 +27,7 @@ describe :: ($T: Type) -> i32 {
 }
 
 main :: () -> i32 {
-    sz := size_of(Pair);
+    sz := @sizeOf(Pair);
     u : Pair = ---;
     t : Type = Pair;
     k := describe(i64);

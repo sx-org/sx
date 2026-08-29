@@ -6,8 +6,8 @@
 // source-keyed `.resolved` author — not whichever same-name flat import a global
 // `findByName` / `struct_template_map` pick would return:
 //
-//   - reflection / type-arg slot   `size_of(Widget)`        → 8  (own)
-//   - typed array-literal head      `Nums.[…]` / size_of    → 16 (own [2]i64)
+//   - reflection / type-arg slot   `@sizeOf(Widget)`        → 8  (own)
+//   - typed array-literal head      `Nums.[…]` / @sizeOf    → 16 (own [2]i64)
 //   - type-as-value                 `t : Type = Widget`
 //   - type-category match arm       `case Widget:`          → own identity
 //
@@ -30,9 +30,9 @@ describe :: ($T: Type) -> i32 {
 }
 
 main :: () -> i32 {
-    print("reflection={}\n", size_of(Widget));
+    print("reflection={}\n", @sizeOf(Widget));
     xs := Nums.[1, 2];
-    print("array={}\n", size_of(Nums));
+    print("array={}\n", @sizeOf(Nums));
     t : Type = Widget;
     print("typeval_eq={}\n", t == Widget);
     print("match={}\n", describe(Widget));

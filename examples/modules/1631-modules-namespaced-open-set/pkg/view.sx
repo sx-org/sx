@@ -12,7 +12,7 @@ Label :: @OpenVariant(View) {
 
 // Measured HERE, inside the declaring module: what the set is here is what it is
 // anywhere, however a consumer reached this module.
-size_here :: () -> i64 => size_of(View);
+size_here :: () -> i64 => @sizeOf(View);
 
 // A signature written in the set's own terms, for a value formed elsewhere.
 describe :: (v: View) -> string => v.render();

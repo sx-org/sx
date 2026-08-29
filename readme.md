@@ -338,11 +338,11 @@ main :: () {
 
 ## Runtime Reflection
 
-`Type` is a runtime tag (`type_of(x)`). `size_of` / `@typeInfo` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `@typeEq` ask identity.
+`Type` is a runtime tag (`type_of(x)`). `@sizeOf` / `@typeInfo` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `@typeEq` ask identity.
 
 ```sx
 describe :: (tp: Type) {
-    print("{} (size {})\n", @typeName(tp), size_of(tp));
+    print("{} (size {})\n", @typeName(tp), @sizeOf(tp));
     match @typeInfo(tp) {
         case .struct: |si| { for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); } }
         else: {}
@@ -356,7 +356,7 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 
 ## Standard Library
 
-`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `size_of` / field reflection.
+`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `@sizeOf` / field reflection.
 
 **Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
 

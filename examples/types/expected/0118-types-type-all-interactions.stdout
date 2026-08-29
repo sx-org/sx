@@ -37,9 +37,9 @@ identity(bool, true): true
 Wrap(i64).v:    42
 Wrap(string).v: wrapped
 === 9. reflection on Type ===
-size_of(i64):      8
-size_of(*u8):      8
-align_of(f64):     8
+@sizeOf(i64):      8
+@sizeOf(*u8):      8
+@alignOf(f64):     8
 struct_field_count(Point): 2
 @typeEq(i64, i64):    true
 @typeEq(i64, string): false

@@ -16,6 +16,6 @@
 @import "0771-modules-type-fn-head-ordinary-fn-no-vouch/b.sx";
 
 main :: () -> i32 {
-    print("size={}\n", size_of(Make(i64)));
+    print("size={}\n", @sizeOf(Make(i64)));
     0
 }

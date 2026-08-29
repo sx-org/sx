@@ -14,6 +14,6 @@
 @import "0769-modules-ambiguous-type-fn-head/b.sx";
 
 main :: () -> i32 {
-    print("size={}\n", size_of(Make(i64)));
+    print("size={}\n", @sizeOf(Make(i64)));
     0
 }

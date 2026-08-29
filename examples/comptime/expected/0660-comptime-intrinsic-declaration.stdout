@@ -1,6 +1,6 @@
-size_of(i64)   = 8
-align_of(i64)  = 8
-size_of(P)     = 16
+@sizeOf(i64)   = 8
+@alignOf(i64)  = 8
+@sizeOf(P)     = 16
 struct_field_count(P) = 2
 struct_field_name(P,0)= a
 @typeName(P)   = P

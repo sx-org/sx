@@ -1159,7 +1159,7 @@ private open_zip_file_mode :: (path: [:0]u8, start: i64, size: i64, writable: bo
         if actual_size < 0 { file.close(); raise .Io; }
         if actual_size < 22 { file.close(); raise .InvalidData; }
     }
-    state_raw := alloc.alloc_bytes(size_of(ZipFileReadState));
+    state_raw := alloc.alloc_bytes(@sizeOf(ZipFileReadState));
     if state_raw == null { file.close(); raise .AllocationFailed; }
     state : *ZipFileReadState = state_raw.(*ZipFileReadState);
     state.* = ZipFileReadState{ file = file, start = start, owns_file = true, writable = writable };
@@ -1568,12 +1568,12 @@ private zip_entries_reserve :: (entries: *List(ZipWriterEntry), needed: i64, all
         if new_cap > i64.max / 2 { return false; }
         new_cap *= 2;
     }
-    if new_cap > i64.max / size_of(ZipWriterEntry) { return false; }
-    raw := alloc.alloc_bytes(new_cap * size_of(ZipWriterEntry));
+    if new_cap > i64.max / @sizeOf(ZipWriterEntry) { return false; }
+    raw := alloc.alloc_bytes(new_cap * @sizeOf(ZipWriterEntry));
     if raw == null { return false; }
     new_ptr : [*]ZipWriterEntry = raw.([*]ZipWriterEntry);
     if entries.items.len > 0 {
-        c.memcpy(new_ptr, entries.items.ptr, entries.items.len * size_of(ZipWriterEntry));
+        c.memcpy(new_ptr, entries.items.ptr, entries.items.len * @sizeOf(ZipWriterEntry));
     }
     if entries.cap > 0 { alloc.dealloc_bytes(entries.items.ptr); }
     entries.items.ptr = new_ptr;
@@ -2779,7 +2779,7 @@ open_zip_writer_file_mode :: (path: [:0]u8, reserve: i64, zip64: bool, allow_rea
         if maybe_reopened == null { raise .Io; }
         file = maybe_reopened;
     }
-    state_raw := alloc.alloc_bytes(size_of(ZipFileWriteState));
+    state_raw := alloc.alloc_bytes(@sizeOf(ZipFileWriteState));
     if state_raw == null { file.close(); raise .AllocationFailed; }
     state : *ZipFileWriteState = state_raw.(*ZipFileWriteState);
     state.* = ZipFileWriteState{ file = file, start = 0, owns_file = true, buffered = true };

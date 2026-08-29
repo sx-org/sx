@@ -1,7 +1,7 @@
 //! The intrinsic registry — the single source of truth for every sx declaration
 //! whose implementation lives in the compiler:
 //!
-//!     size_of :: ($T: Type) -> i64 intrinsic;
+//!     @sizeOf :: ($T: Type) -> i64;
 //!
 //! This table IS, at once: the allow-list (an `intrinsic` declaration whose
 //! binding key is absent is a load-time diagnostic, never a dlsym or runtime
@@ -10,7 +10,7 @@
 //! checks against the library sources.
 //!
 //! **Binding key = (module, name).** The declaring module is part of the
-//! identity: `size_of` is an intrinsic *because std/core.sx declares it*, not
+//! identity: `@sizeOf` is an intrinsic *because std/core.sx declares it*, not
 //! because the name is magic. A same-named declaration in another module is a
 //! different function and gets no intrinsic dispatch.
 //!
@@ -48,8 +48,8 @@ pub const Mode = enum {
 /// serialized.
 pub const Id = enum(u16) {
     // ── std/core.sx — layout ────────────────────────────────────────────────
-    size_of,
-    align_of,
+    @"@sizeOf",
+    @"@alignOf",
     // ── std/core.sx — reflection ────────────────────────────────────────────
     @"@typeOf",
     @"@typeName",
@@ -209,8 +209,8 @@ const build = "modules/build.sx";
 /// sites keyed by `Id`.
 pub const entries = [_]Entry{
     // ── layout: folded to a `const_int` at lowering ─────────────────────────
-    .{ .id = .size_of, .module = core, .name = "size_of", .mode = .lower, .arity = 1, .ret = .i64 },
-    .{ .id = .align_of, .module = core, .name = "align_of", .mode = .lower, .arity = 1, .ret = .i64 },
+    .{ .id = .@"@sizeOf", .module = core, .name = "@sizeOf", .mode = .lower, .arity = 1, .ret = .i64 },
+    .{ .id = .@"@alignOf", .module = core, .name = "@alignOf", .mode = .lower, .arity = 1, .ret = .i64 },
 
     // ── reflection: folded at lowering when the type arg is static ──────────
     .{ .id = .@"@typeOf", .module = core, .name = "@typeOf", .mode = .lower, .arity = 1, .ret = .type_value },
@@ -393,8 +393,8 @@ pub fn find(name: []const u8, source_file: ?[]const u8) ?*const Entry {
 /// Dispatch key for a CALL SITE: the declared name alone. Sound because intrinsic
 /// names are globally unique across the registry (asserted by
 /// `intrinsics.test.zig`), and because the (module, name) binding key was already
-/// enforced at the declaration — a `size_of` reaching a call site is std/core.sx's
-/// `size_of` or it never got declared.
+/// enforced at the declaration — a `@sizeOf` reaching a call site is std/core.sx's
+/// `@sizeOf` or it never got declared.
 ///
 /// Returns null for any name that is not a registered intrinsic, including the
 /// bare names the compiler recognizes without a declaration (`cast`,

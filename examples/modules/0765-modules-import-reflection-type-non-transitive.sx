@@ -1,5 +1,5 @@
 // `@import` is non-transitive for a type named in a REFLECTION / type-arg slot
-// (`size_of(T)`, `size_of(*T)`) and in a TYPED ARRAY-LITERAL annotation
+// (`@sizeOf(T)`, `@sizeOf(*T)`) and in a TYPED ARRAY-LITERAL annotation
 // (`T.[...]`), exactly like a bare leaf annotation (0763), a parameterized head
 // (0764), and values/functions (0706): when A imports B and B imports C, A must
 // NOT see C's top-level types here either. This file imports `b.sx` (which
@@ -19,8 +19,8 @@
 @import "0765-modules-import-reflection-type-non-transitive/b.sx";
 
 main :: () -> i32 {
-    print("{}\n", size_of(Nums));
-    print("{}\n", size_of(*COnly));
+    print("{}\n", @sizeOf(Nums));
+    print("{}\n", @sizeOf(*COnly));
     xs := Nums.[1, 2];
     print("{} {}\n", xs[0], xs[1]);
     0

@@ -43,7 +43,7 @@ main :: () -> i32 {
     e: Set = Label{ n = 1 };
     print("late {}\n", e.tell());
     // One layout for the whole program: 8 tag + the 72-byte member.
-    print("size {}\n", size_of(Set));
+    print("size {}\n", @sizeOf(Set));
     0
 }
 

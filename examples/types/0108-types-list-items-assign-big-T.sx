@@ -24,11 +24,11 @@ Container :: struct {
 }
 
 main :: () -> void {
-    obj : *Container = xx context.allocator.alloc_bytes(size_of(Container));
-    c.memset(obj, 0, size_of(Container));
+    obj : *Container = xx context.allocator.alloc_bytes(@sizeOf(Container));
+    c.memset(obj, 0, @sizeOf(Container));
     obj.sentinel = 0xDEADBEEF;
 
-    print("size_of BigNode = {}\n", size_of(BigNode));
+    print("@sizeOf BigNode = {}\n", @sizeOf(BigNode));
     print("before: sentinel = {}\n", obj.sentinel);
 
     obj.do_work();

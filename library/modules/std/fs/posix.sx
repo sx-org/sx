@@ -219,7 +219,7 @@ fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
         else if OS == .linux or OS == .android { offset = 88; }
         else { @error("std/fs/posix.sx: stat modification-time offset is not defined for this target"); }
         seconds : i64 = 0;
-        fs_posix_c.memcpy(*seconds, *raw[offset], size_of(i64));
+        fs_posix_c.memcpy(*seconds, *raw[offset], @sizeOf(i64));
         return seconds, true;
     }
 }

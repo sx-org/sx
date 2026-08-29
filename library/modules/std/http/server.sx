@@ -5,7 +5,7 @@
 // seam (tls.sx) and reuses the shared types (types.sx), both flat-imported
 // so the server bodies read unqualified. Facade re-exports Server/Config/
 // Stats/EventKind under `http`.
-@import "modules/std/core.sx";         // out, size_of, Allocator, Context
+@import "modules/std/core.sx";         // out, @sizeOf, Allocator, Context
 @import "modules/std/mem.sx";          // Arena
 clib   :: @import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
 socket :: @import "modules/std/socket.sx";
@@ -3423,9 +3423,9 @@ Server :: struct {
             // views are rebuilt over the copy exactly like the accumulate
             // pool path, minus the body — the channel IS the body).
             hdr_total := he + 4;
-            job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + hdr_total).(*HandlerJob);
+            job : *HandlerJob = self.own_alloc.alloc_bytes(@sizeOf(HandlerJob) + hdr_total).(*HandlerJob);
             jb : [*]u8 = job.([*]u8);
-            raw : [*]u8 = *jb[size_of(HandlerJob)];
+            raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.read_buf, hdr_total);
             jreq := req;
             jreq.body = "";
@@ -3616,9 +3616,9 @@ Server :: struct {
             // chunked — at he + 4). A synthetic "/" path (empty-path
             // absolute-form) is a static literal, valid on any thread — no
             // rebuild.
-            job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + total).(*HandlerJob);
+            job : *HandlerJob = self.own_alloc.alloc_bytes(@sizeOf(HandlerJob) + total).(*HandlerJob);
             jb : [*]u8 = job.([*]u8);
-            raw : [*]u8 = *jb[size_of(HandlerJob)];
+            raw : [*]u8 = *jb[@sizeOf(HandlerJob)];
             clib.memcpy(raw, c.read_buf, total);
             jreq := req;
             jreq.method      = string{ ptr = raw, len = req.method.len };
@@ -3834,7 +3834,7 @@ Server :: struct {
         // Scratch buffer from own_alloc (thread-safe, and freed below) —
         // not context.allocator, which would both depend on a transient
         // scope and leak (this buffer must be reclaimed every drain).
-        batch : [*]Completion = self.own_alloc.alloc_bytes(if n > 0 then n * size_of(Completion) else 8).([*]Completion);
+        batch : [*]Completion = self.own_alloc.alloc_bytes(if n > 0 then n * @sizeOf(Completion) else 8).([*]Completion);
         i : i64 = 0;
         while i < n {
             batch[i] = ps.done[i];

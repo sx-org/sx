@@ -28,5 +28,5 @@ main :: () -> i32 {
         if ep.ev_err(evs[0]) { return 8; }
     }
     ep.ep_ctl(epfd, ep.EPOLL_CTL_DEL, 1, 0);
-    return xx size_of(ep.EpollEvent);   // 12 on x86_64
+    return xx @sizeOf(ep.EpollEvent);   // 12 on x86_64
 }

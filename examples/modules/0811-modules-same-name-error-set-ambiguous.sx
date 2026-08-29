@@ -7,7 +7,7 @@
 // diagnostic and poisons the result, never picking a global `findByName`
 // last-wins author:
 //
-//   - reflection / type-arg slot     `size_of(IoErr)`
+//   - reflection / type-arg slot     `@sizeOf(IoErr)`
 //   - typed error-value annotation    `e : IoErr = .Disk`
 //   - type-as-value                   `t : Type = IoErr`
 //   - type-category match arm         `case IoErr:`
@@ -34,7 +34,7 @@ fail_io :: () -> !IoErr {
 }
 
 main :: () -> i32 {
-    sz := size_of(IoErr);
+    sz := @sizeOf(IoErr);
     e : IoErr = .Disk;
     t : Type = IoErr;
     k := describe(i64);

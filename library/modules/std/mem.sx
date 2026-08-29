@@ -1,4 +1,4 @@
-@import "modules/std/core.sx";   // Allocator, size_of
+@import "modules/std/core.sx";   // Allocator, @sizeOf
 @import "modules/std/fmt.sx";    // print (TrackingAllocator.report)
 // GPA is the documented thread-safe allocator, so its alloc counter must
 // be updated atomically (pooled HTTP runs alloc/dealloc concurrently across
@@ -29,7 +29,7 @@ c :: @import "modules/std/c.sx";
 
 // Allocate one T. Contents are UNINITIALISED — assign before reading.
 create :: ufcs (a: Allocator, $T: Type) -> *T {
-    a.alloc_bytes(size_of(T)).(*T)
+    a.alloc_bytes(@sizeOf(T)).(*T)
 }
 
 // Allocate one T and write `value` straight into it. The argument is an
@@ -38,7 +38,7 @@ create :: ufcs (a: Allocator, $T: Type) -> *T {
 // lifetime past the frame that wrote it. A null destination — a zero-sized T,
 // or an allocator that refused — is returned unwritten.
 make :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T {
-    p := a.alloc_bytes(size_of(T)).(*T);
+    p := a.alloc_bytes(@sizeOf(T)).(*T);
     if p != null { value.write(p); }
     p
 }
@@ -50,7 +50,7 @@ destroy :: ufcs (a: Allocator, ptr: *$T) {
 
 // Allocate a []T of `count` elements. Contents are UNINITIALISED.
 alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
-    raw := a.alloc_bytes(count * size_of(T));
+    raw := a.alloc_bytes(count * @sizeOf(T));
     .{ ptr = raw.([*]T), len = count }
 }
 
@@ -66,8 +66,8 @@ alloc_string :: (size: i64) -> string {
 
 // A zeroed []T of `count` elements.
 alloc_slice :: ($T: Type, count: i64) -> []T {
-    raw := context.allocator.alloc_bytes(count * size_of(T));
-    c.memset(raw, 0, count * size_of(T));
+    raw := context.allocator.alloc_bytes(count * @sizeOf(T));
+    c.memset(raw, 0, count * @sizeOf(T));
     s : []T = ---;
     s.ptr = raw.([*]T);
     s.len = count;
@@ -116,8 +116,8 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 
 // Copy a slice into fresh storage owned by `a`.
 clone :: ufcs (src: []$T, a: Allocator) -> []T {
-    raw := a.alloc_bytes(src.len * size_of(T));
-    c.memcpy(raw, src.ptr, src.len * size_of(T));
+    raw := a.alloc_bytes(src.len * @sizeOf(T));
+    c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
     .{ ptr = raw.([*]T), len = src.len }
 }
 
@@ -127,10 +127,10 @@ clone :: ufcs (src: []$T, a: Allocator) -> []T {
 // null when the allocation fails: nothing is copied or freed and the
 // operand stays live and owned by the caller.
 resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> ?[]T {
-    raw := a.alloc_bytes(new_count * size_of(T));
+    raw := a.alloc_bytes(new_count * @sizeOf(T));
     if raw == null { return null; }
     n := if slice.len < new_count then slice.len else new_count;
-    c.memcpy(raw, slice.ptr, n * size_of(T));
+    c.memcpy(raw, slice.ptr, n * @sizeOf(T));
     a.dealloc_bytes(slice.ptr);
     .{ ptr = raw.([*]T), len = new_count }
 }

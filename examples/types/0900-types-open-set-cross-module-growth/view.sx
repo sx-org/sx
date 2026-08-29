@@ -12,4 +12,4 @@ Label :: @OpenVariant(View) {
 
 // Measured in the set's OWN module, which declares nothing but `Label` — and still
 // answers with the size the whole program settled on.
-here :: () -> i64 => size_of(View);
+here :: () -> i64 => @sizeOf(View);

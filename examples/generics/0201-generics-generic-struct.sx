@@ -81,7 +81,7 @@ main :: () {
     sx := Sx(f32).user(0.5);
     print("{}\n", sx);
 
-    print("{}\n", size_of(f32));
-    print("{}\n", size_of(Sx(f32)));
-    print("{}\n", size_of(Foo));
+    print("{}\n", @sizeOf(f32));
+    print("{}\n", @sizeOf(Sx(f32)));
+    print("{}\n", @sizeOf(Foo));
 }

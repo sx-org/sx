@@ -1,6 +1,6 @@
 // A single-type generic binding (`$R` from `Closure(..$args) -> $R`) used as a
 // generic-struct TYPE ARGUMENT inside a variadic-pack function's body —
-// `Box($R)` / `size_of(Box($R))` — must resolve `$R` to its bound TypeId.
+// `Box($R)` / `@sizeOf(Box($R))` — must resolve `$R` to its bound TypeId.
 //
 // The parser tags every `$name` expression as `comptime_pack_ref`, so a
 // single-type `$R` reaches `resolveTypeWithBindings` (the resolver
@@ -13,9 +13,9 @@
 Box :: struct ($R: Type) { v: R; }
 
 // A pack fn whose body references `$R` (the closure's return type) in a
-// type-arg slot: both `*Box($R)` (annotation) and `size_of(Box($R))`.
+// type-arg slot: both `*Box($R)` (annotation) and `@sizeOf(Box($R))`.
 boxed :: ufcs (io: Io, worker: Closure(..$args) -> $R, ..$args) -> Box($R) {
-    b : *Box($R) = xx context.allocator.alloc_bytes(size_of(Box($R)));
+    b : *Box($R) = xx context.allocator.alloc_bytes(@sizeOf(Box($R)));
     b.v = worker(..args);
     return b.*;
 }

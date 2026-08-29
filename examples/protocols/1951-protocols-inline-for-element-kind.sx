@@ -9,6 +9,6 @@ SHAPES :: .[Point, 42];
 
 main :: () {
     inline for T in SHAPES {
-        print("{}\n", size_of(T));
+        print("{}\n", @sizeOf(T));
     }
 }

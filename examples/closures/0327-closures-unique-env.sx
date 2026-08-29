@@ -23,7 +23,7 @@ main :: () {
     print("snapshot {}\n", f(1));                               // 6
 
     // One i64 field is one i64.
-    print("size {} {}\n", size_of(@typeOf(f)), size_of(i64));   // 8 8
+    print("size {} {}\n", @sizeOf(@typeOf(f)), @sizeOf(i64));   // 8 8
 
     // A field the body writes is the value's own storage, across calls.
     counter := |x: i64|_{ total = 0 } -> i64 { total += x; total };
@@ -40,7 +40,7 @@ main :: () {
     // Two fields are two i64s.
     k := 100;
     both := |x: i64|_{ n = n, k } x + n + k;
-    print("two-field {} size {}\n", both(1), size_of(@typeOf(both)));
+    print("two-field {} size {}\n", both(1), @sizeOf(@typeOf(both)));
 
     // The inner env takes the outer's `n`.
     outer := |x: i64|_{ n = n } -> i64 {

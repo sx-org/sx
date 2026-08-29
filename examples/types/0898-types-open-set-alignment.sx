@@ -1,10 +1,10 @@
 // The payload alignment an open set declares is DELIVERED, and the tag word's own
 // alignment is a floor (spec: Open Sets).
 //
-//     payload_alignment = max(declared align, align_of(tag))
+//     payload_alignment = max(declared align, @alignOf(tag))
 //
 // The slot is laid out with a payload whose element alignment IS that value, so
-// `align_of(P)` is the declared alignment, the payload's offset is aligned to it,
+// `@alignOf(P)` is the declared alignment, the payload's offset is aligned to it,
 // and an array of the set keeps every element's payload aligned. Declaring less
 // than the tag's alignment asks for nothing: the tag is in the same value, so the
 // floor applies and the set is laid out at the tag's alignment.
@@ -45,13 +45,13 @@ Word :: @OpenVariant(Plain) {
 
 main :: () -> i32 {
     // 8 tag + 8 padding to reach the 16-byte payload + 16 payload.
-    print("wide {} align {}\n", size_of(Wide), align_of(Wide));
+    print("wide {} align {}\n", @sizeOf(Wide), @alignOf(Wide));
     // An array keeps each element's payload on the declared alignment.
-    print("wide pair {}\n", size_of([2]Wide));
+    print("wide pair {}\n", @sizeOf([2]Wide));
 
     // align = 4 is below the tag's 8, so the layout uses 8.
-    print("narrow {} align {}\n", size_of(Narrow), align_of(Narrow));
-    print("plain {} align {}\n", size_of(Plain), align_of(Plain));
+    print("narrow {} align {}\n", @sizeOf(Narrow), @alignOf(Narrow));
+    print("plain {} align {}\n", @sizeOf(Plain), @alignOf(Plain));
 
     v := Vec2{};
     s := Small{ v = 3 };

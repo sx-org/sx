@@ -3281,7 +3281,7 @@ pub const LLVMEmitter = struct {
                     // nearest builtin width, so a direct view would overread.
                     // Copy-extend into a temp of the tag's width and view that
                     // instead (aliasing is lost for these fields only —
-                    // `data` must always cover size_of(tag) valid bytes).
+                    // `data` must always cover @sizeOf(tag) valid bytes).
                     const field_llvm_ty = self.toLLVMType(field.ty);
                     const norm_ty = TypeId.fromIndex(@intCast(tag_val));
                     const norm_llvm_ty = self.toLLVMType(norm_ty);

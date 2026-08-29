@@ -11,7 +11,7 @@ Box :: struct ($T: Type) {
     make :: (y: i64 = 7) -> i64 { y }
 
     sized :: (n: i64, alloc: Allocator = context.allocator, site: @SourceSite = @caller) -> i64 {
-        raw := alloc.alloc_bytes(n * size_of(T));
+        raw := alloc.alloc_bytes(n * @sizeOf(T));
         if raw == null { @panic("sized allocation failed", site); }
         alloc.dealloc_bytes(raw);
         n

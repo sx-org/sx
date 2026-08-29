@@ -103,7 +103,7 @@ use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T)
     key := hasher.state;
 
     if e := store.find(key) {
-        if e.ty != T or e.size != size_of(T) {
+        if e.ty != T or e.size != @sizeOf(T) {
             print("use_state at {}:{} changed payload type between builds\n", site.file, site.line);
             process.exit(1)
         }
@@ -115,12 +115,12 @@ use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T)
     e.* = StateEntry{
         key = key,
         ty = T,
-        size = size_of(T),
+        size = @sizeOf(T),
         data = store.gpa.create(T),
         claimed = true,
     };
     seed := default;
-    c.memcpy(e.data, *seed, size_of(T));
+    c.memcpy(e.data, *seed, @sizeOf(T));
     store.entries.append(e, store.gpa);
     State(T){ ptr = e.data }
 }

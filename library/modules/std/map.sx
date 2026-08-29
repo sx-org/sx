@@ -76,7 +76,7 @@ map_capacity_for :: (n: i64) -> i64 {
 //               hash must too — otherwise two field-equal keys built with
 //               different stack garbage in the padding hash differently and a
 //               lookup on a present, logically-equal key misses.
-//   • scalar / enum / bool / pointer leaf → raw `size_of` bytes (these have a
+//   • scalar / enum / bool / pointer leaf → raw `@sizeOf` bytes (these have a
 //               unique byte representation — no padding to skip).
 map_hash_key :: (key: $K) -> u64 {
     return map_hash_into(key, FNV_OFFSET_BASIS);
@@ -100,7 +100,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
         }
         return hh;
     }
-    return fnv1a_fold(h, *v, size_of(T));   // scalar/enum/bool/pointer leaf
+    return fnv1a_fold(h, *v, @sizeOf(T));   // scalar/enum/bool/pointer leaf
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —
@@ -385,8 +385,8 @@ HashMap :: struct ($K: Type, $V: Type) {
         nk : [*]K  = alloc.alloc(K, self.cap).ptr;
         nv : [*]V  = alloc.alloc(V, self.cap).ptr;
         c.memcpy(nm, self.metadata, self.cap);
-        c.memcpy(nk, self.keys,   self.cap * size_of(K));
-        c.memcpy(nv, self.values, self.cap * size_of(V));
+        c.memcpy(nk, self.keys,   self.cap * @sizeOf(K));
+        c.memcpy(nv, self.values, self.cap * @sizeOf(V));
         r.metadata   = nm;
         r.keys       = nk;
         r.values     = nv;
@@ -529,7 +529,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         new_cap := if self.ecap == 0 then 8 else self.ecap;
         while new_cap < n { new_cap = new_cap * 2; }
         np : [*]IMEntry(K, V) = alloc.alloc(IMEntry(K, V), new_cap).ptr;
-        if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * size_of(IMEntry(K, V))); }
+        if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * @sizeOf(IMEntry(K, V))); }
         if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
         self.entries = np;
         self.ecap = new_cap;
@@ -853,7 +853,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         r : IndexMap(K, V) = .{};
         if self.ecount == 0 { return r; }
         r.ensure_entry_cap(self.ecount, alloc);
-        c.memcpy(r.entries, self.entries, self.ecount * size_of(IMEntry(K, V)));
+        c.memcpy(r.entries, self.entries, self.ecount * @sizeOf(IMEntry(K, V)));
         r.ecount = self.ecount;
         r.reindex(alloc);
         return r;

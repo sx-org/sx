@@ -6,7 +6,7 @@
 // disambiguate — and each emits the LOUD "type 'Dir' is ambiguous" diagnostic
 // and poisons the result, never picking a global `findByName` last-wins author:
 //
-//   - reflection / type-arg slot    `size_of(Dir)`
+//   - reflection / type-arg slot    `@sizeOf(Dir)`
 //   - typed enum-value annotation    `d : Dir = .north`
 //   - type-as-value                  `t : Type = Dir`
 //   - type-category match arm        `case Dir:`
@@ -28,7 +28,7 @@ describe :: ($T: Type) -> i32 {
 }
 
 main :: () -> i32 {
-    sz := size_of(Dir);
+    sz := @sizeOf(Dir);
     d : Dir = .north;
     t : Type = Dir;
     k := describe(i64);

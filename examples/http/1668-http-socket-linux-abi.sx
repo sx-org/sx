@@ -15,7 +15,7 @@ socket :: @import "modules/std/socket.sx";
 posix   :: @import "modules/std/posix.sx";
 
 main :: () -> i32 {
-    if size_of(socket.SockAddr) != 16 { return 1; }
+    if @sizeOf(socket.SockAddr) != 16 { return 1; }
     if socket.SOL_SOCKET   != 1   { return 2; }
     if socket.SO_REUSEADDR != 2   { return 3; }
     if socket.O_NONBLOCK   != 2048 { return 4; }
@@ -35,8 +35,8 @@ main :: () -> i32 {
     if socket.IPV6_V6ONLY  != 26  { return 13; }
     if socket.IPPROTO_IPV6 != 41  { return 14; }
     if socket.SUN_PATH_MAX != 108 { return 15; }
-    if size_of(socket.SockAddrIn6) != 28 { return 16; }
-    if size_of(socket.AddrInfo)    != 48 { return 17; }
+    if @sizeOf(socket.SockAddrIn6) != 28 { return 16; }
+    if @sizeOf(socket.AddrInfo)    != 48 { return 17; }
 
     // glibc/musl addrinfo field OFFSETS — ai_addr BEFORE ai_canonname
     // (darwin is the reverse; a swap would read a canonname pointer as a

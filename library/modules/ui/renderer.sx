@@ -158,7 +158,7 @@ UIRenderer :: struct {
         self.gpu.destroy_index_buffer(self.mesh_ibuf);
         self.mesh_index_count = 0;
 
-        vbytes := vertices.len * size_of(MeshVertex);
+        vbytes := vertices.len * @sizeOf(MeshVertex);
         ibytes := indices.len * 4;
         self.mesh_vbuf = self.gpu.create_buffer(vbytes);
         self.mesh_ibuf = self.gpu.create_index_buffer(ibytes);
@@ -192,7 +192,7 @@ UIRenderer :: struct {
         self.gpu.destroy_index_buffer(self.skin_ibuf);
         self.skin_index_count = 0;
 
-        vbytes := vertices.len * size_of(SkinnedVertex);
+        vbytes := vertices.len * @sizeOf(SkinnedVertex);
         ibytes := indices.len * 4;
         self.skin_vbuf = self.gpu.create_buffer(vbytes);
         self.skin_ibuf = self.gpu.create_index_buffer(ibytes);

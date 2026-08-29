@@ -11,4 +11,4 @@ Label :: @OpenVariant(View) {
 }
 
 describe :: (v: View) -> string => v.render();
-size_here :: () -> i64 => size_of(View);
+size_here :: () -> i64 => @sizeOf(View);

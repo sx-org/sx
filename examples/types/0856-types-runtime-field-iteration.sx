@@ -12,7 +12,7 @@ Packet  :: struct { header: Header; name: string; kind: i16; }
 Color   :: enum { red; green; blue; }
 
 describe :: (tp: Type) {
-    print("{} (size {}, align {})\n", @typeName(tp), size_of(tp), align_of(tp));
+    print("{} (size {}, align {})\n", @typeName(tp), @sizeOf(tp), @alignOf(tp));
     i := 0;
     while i < struct_field_count(tp) {
         print("  +{} {}: {}\n", struct_field_offset(tp, i), struct_field_name(tp, i), @typeName(struct_field_type(tp, i)));

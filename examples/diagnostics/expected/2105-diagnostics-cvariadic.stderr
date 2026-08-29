@@ -187,37 +187,37 @@ error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, '
 error: '@VaList' is opaque — its storage is the target's and has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:159:34
     |
-159 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+159 |     printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), struct_field_count(@VaList));
     |                                  ^^^^^^^
 
 error: '@VaList' is opaque — its storage is the target's and has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:159:53
     |
-159 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+159 |     printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), struct_field_count(@VaList));
     |                                                     ^^^^^^^
 
 error: '@VaList' is opaque — its storage is the target's and has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:159:82
     |
-159 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+159 |     printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), struct_field_count(@VaList));
     |                                                                                  ^^^^^^^
 
 error: '[1]@VaList' holds a '@VaList', whose storage is the target's — it has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:160:34
     |
-160 |     printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));
+160 |     printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), struct_field_count(VaPair));
     |                                  ^^^^^^^^^^
 
 error: '?@VaList' holds a '@VaList', whose storage is the target's — it has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:160:56
     |
-160 |     printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));
+160 |     printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), struct_field_count(VaPair));
     |                                                        ^^^^^^^^
 
 error: 'VaPair' holds a '@VaList', whose storage is the target's — it has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:160:86
     |
-160 |     printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));
+160 |     printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), struct_field_count(VaPair));
     |                                                                                      ^^^^^^
 
 error: cannot construct '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'

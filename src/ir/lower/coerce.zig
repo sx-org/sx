@@ -615,7 +615,7 @@ pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
 ///   temp and points at it — the temp lives for the enclosing frame.
 /// Arbitrary-width ints are widened into their tag-normalized builtin
 /// (`anyTag` maps e.g. `@int(24, .unsigned)` → `u32`), so `data` ALWAYS points
-/// at exactly `size_of(tag)` valid bytes — the invariant every consumer (typed
+/// at exactly `@sizeOf(tag)` valid bytes — the invariant every consumer (typed
 /// unbox loads, the raw layer's shallow copies) relies on.
 pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) Ref {
     // A protocol source is never boxed as itself: the box of a protocol
@@ -1235,7 +1235,7 @@ pub fn lowerCoercedDefault(self: *Lowering, default_expr: *const Node, field_ty:
 /// type-binding context installed. When `bindings` is non-null
 /// (the field belongs to a generic struct instance), `self.type_bindings` is
 /// temporarily set to it so a default that references a type param — e.g.
-/// `sz: i64 = size_of(T)` — monomorphizes to THIS instantiation's concrete
+/// `sz: i64 = @sizeOf(T)` — monomorphizes to THIS instantiation's concrete
 /// arg before delegating to `lowerCoercedDefault`. `bindings` is non-null for
 /// any generic instance — spelled directly (`Box(i64)`) or through an alias
 /// (`BI :: Box(i64)`; the alias name carries mirrored bindings) — whether or

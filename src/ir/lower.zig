@@ -201,7 +201,7 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
         return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
-    // Type-query builtin folds (`field_count`/`size_of`/`align_of`) — delegate to
+    // Type-query builtin folds (`field_count`/`@sizeOf`/`@alignOf`) — delegate to
     // the wrapped Lowering, which can resolve the type-expr arg.
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstCallInt(node);
@@ -1731,7 +1731,7 @@ pub const Lowering = struct {
     }
 
     /// Fold a pure int-returning type-query builtin CALL to its compile-time
-    /// constant: `field_count(T)` / `size_of(T)` / `align_of(T)`. This is what
+    /// constant: `field_count(T)` / `@sizeOf(T)` / `@alignOf(T)`. This is what
     /// lets a reflection-derived count drive an `inline for` bound / array dim
     /// exactly like a plain `K :: 3` const — e.g. a `($T) -> Type` builder that
     /// loops `inline for 0..field_count(T)` to assemble a variant list (the
@@ -1753,8 +1753,8 @@ pub const Lowering = struct {
         };
         if (c.args.len != 1) return null;
         const is_fc = std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count");
-        const is_sz = std.mem.eql(u8, name, "size_of");
-        const is_al = std.mem.eql(u8, name, "align_of");
+        const is_sz = std.mem.eql(u8, name, "@sizeOf");
+        const is_al = std.mem.eql(u8, name, "@alignOf");
         if (!is_fc and !is_sz and !is_al) return null;
         // A runtime Type arg is not a compile-time integer — and resolveTypeArg
         // would emit a spurious "unresolved type" diagnostic from this
@@ -1847,7 +1847,7 @@ pub const Lowering = struct {
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
         // Prefix `*` in a type position: the value grammar parses `*T` as an
         // address_of unary (one glyph, kind-resolved), so type-position
-        // consumers (size_of, Type args, typed-literal heads) unwrap it here:
+        // consumers (@sizeOf, Type args, typed-literal heads) unwrap it here:
         // `*T` → ptrTo(T), recursively for `**T`.
         if (node.data == .unary_op and node.data.unary_op.op == .address_of) {
             const inner = self.resolveTypeWithBindings(node.data.unary_op.operand);
@@ -1885,7 +1885,7 @@ pub const Lowering = struct {
         // expression as `comptime_pack_ref` — including a single-type generic
         // binding (`$R: Type` in `Closure(..$args) -> $R`), which is NOT a
         // value pack. Such a binding lives in `type_bindings`; resolve it the
-        // same way `resolveTypeArg` does (so `Box($R)` / `size_of(Box($R))` /
+        // same way `resolveTypeArg` does (so `Box($R)` / `@sizeOf(Box($R))` /
         // a bare `-> $R` return inside a pack-fn mono resolve `$R` to its bound
         // TypeId). Without this arm the node fell through to the catch-all
         // `else` → `type_bridge` → `.unresolved` → an LLVM-emission panic.

@@ -27,7 +27,7 @@ main :: () -> i32 {
     print("small={} name={}\n", h.small, @typeName(Holder));
 
     print("widen={} name={}\n", widen(-2048), @typeName(@int(12, .signed)));
-    print("sizes={} {}\n", size_of(@int(64, .unsigned)), size_of(MyInt));
+    print("sizes={} {}\n", @sizeOf(@int(64, .unsigned)), @sizeOf(MyInt));
 
     f := || -> @int(8, .signed) { 0 };
     print("lambda={}\n", @typeEq(@typeOf(f()), i8));

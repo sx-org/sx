@@ -59,7 +59,7 @@ main :: () -> i32 {
 
     // The member at the ceiling is what the payload is sized by; the 648-byte
     // state costs the slot one pointer.
-    print("set {} state {} member {}\n", size_of(View), size_of(BoardState), size_of(Board));
+    print("set {} state {} member {}\n", @sizeOf(View), @sizeOf(BoardState), @sizeOf(Board));
 
     // The state is not in the slot, so copying the set value copies the pointer:
     // both slots see the same state.

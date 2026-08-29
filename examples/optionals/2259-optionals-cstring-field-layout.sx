@@ -27,7 +27,7 @@ COMPTIME_CSTRING  :: @run present("hi");
 COMPTIME_PROTOCOL :: @run protocol_present();
 
 main :: () -> i32 {
-    print("{}\n", size_of(S));
+    print("{}\n", @sizeOf(S));
     with    := S{ a = "hi", b = 7 };
     without := S{ a = null, b = 9 };
     print("{} {}\n", with.b, without.b);

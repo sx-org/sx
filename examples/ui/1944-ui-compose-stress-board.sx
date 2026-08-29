@@ -72,7 +72,7 @@ main :: () -> i32 {
     inner := grid.(VStack);
     print("cells {}\n", inner.children.len);
 
-    print("slot {} state {}\n", size_of(View), size_of(BoardViewState));
+    print("slot {} state {}\n", @sizeOf(View), @sizeOf(BoardViewState));
 
     root : View = screen;
     tree := RenderTree{};

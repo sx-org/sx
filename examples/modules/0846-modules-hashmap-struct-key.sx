@@ -2,7 +2,7 @@
 // STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
 // separately-constructed field-equal key is FOUND even when the padding bytes
 // of the two keys differ. `map_hash_key` skips the indeterminate padding rather
-// than hashing all size_of(K) bytes.
+// than hashing all @sizeOf(K) bytes.
 //
 // The shapes here: padded struct key found after stack churn (both map kinds),
 // struct with a string field (content-hashed), struct with an enum field, a
@@ -17,7 +17,7 @@ EK :: struct { tag: Color; x: i64; }        // enum field → leaf byte hash
 Inner :: struct { p: u8; q: i64; }
 NK :: struct { hd: Inner; z: i32; }          // nested struct
 V3 :: struct { x: i64; y: i64; z: i64; tag: Color; }             // multi-field struct VALUE
-Big :: struct { a: i64; b: i64; c: i64; d: i64; e: i64; f: i64; } // large V → size_of(V) stride
+Big :: struct { a: i64; b: i64; c: i64; d: i64; e: i64; f: i64; } // large V → @sizeOf(V) stride
 
 // Dirty the stack between two key literals so their (uninitialised) padding
 // bytes almost surely differ — the exact condition that broke raw-byte hashing.
@@ -81,7 +81,7 @@ main :: () {
     // ── non-scalar VALUES round-trip ────────────────────────────────
     // Aggregate K *and* V are supported. The section above covers struct KEYS;
     // here the focus is struct VALUES (multi-field, incl. a large-ish V that
-    // exercises the `size_of(V)` array stride) and a struct-KEY→struct-VALUE map.
+    // exercises the `@sizeOf(V)` array stride) and a struct-KEY→struct-VALUE map.
 
     // HashMap, multi-field struct value: put / get / overwrite / remove.
     vm : HashMap(i64, V3) = .{};
@@ -104,7 +104,7 @@ main :: () {
     lvm.deinit(gpa);
 
     // Struct KEY → large struct VALUE: all six fields round-trip through
-    // the `size_of(Big)`-strided values array, including after overwrite.
+    // the `@sizeOf(Big)`-strided values array, including after overwrite.
     kvm : HashMap(K, Big) = .{};
     kvm.put(K{ a = 1, b = 2 }, Big{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 }, gpa);
     kvm.put(K{ a = 9, b = 9 }, Big{ a = 10, b = 20, c = 30, d = 40, e = 50, f = 60 }, gpa);

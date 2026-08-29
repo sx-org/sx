@@ -9,9 +9,9 @@
 // `max` is a ceiling, not a reservation. The slot is laid out to the largest
 // member the program declares:
 //
-//     payload   = max(size_of(member))          — never more than `max`
+//     payload   = max(@sizeOf(member))          — never more than `max`
 //     alignment = the DECLARED align            — not a max over members
-//     size_of(P) = align_up(align_up(tag, align) + payload, align)
+//     @sizeOf(P) = align_up(align_up(tag, align) + payload, align)
 //
 // so a set whose largest member is 24 bytes is 32 (8 tag + 24), whatever `max`
 // says. A member is checked at its OWN declaration, which is why a type that
@@ -68,10 +68,10 @@ main :: () -> i32 {
     t := Tiny{ n = 7 };
     pad := Padded(i64){ inner = 5 };
 
-    print("members {} {} {} {}\n", size_of(Label), size_of(Panel), size_of(Tiny), size_of(Padded(i64)));
-    print("frame {}\n", size_of(Frame));
+    print("members {} {} {} {}\n", @sizeOf(Label), @sizeOf(Panel), @sizeOf(Tiny), @sizeOf(Padded(i64)));
+    print("frame {}\n", @sizeOf(Frame));
     // 8 tag + the largest member's payload, aligned to the declared 8.
-    print("set {} align {}\n", size_of(View), align_of(View));
+    print("set {} align {}\n", @sizeOf(View), @alignOf(View));
     print("render {} {} {} {}\n", l.render(), p.render(), t.render(), pad.render());
     0
 }

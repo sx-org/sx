@@ -61,7 +61,7 @@
 //     f.close();
 // =====================================================================
 
-@import "modules/std/core.sx";     // Allocator, size_of, string
+@import "modules/std/core.sx";     // Allocator, @sizeOf, string
 @import "modules/std/list.sx";     // List
 c :: @import "modules/std/c.sx";
 // `List`/`Object` builders take an explicit `alloc: Allocator`; bare-import
@@ -125,7 +125,7 @@ Object :: struct {
             new_cap := if self.cap == 0 then 4 else self.cap * 2;
             new_items : [*]Member = alloc.alloc(Member, new_cap).ptr;
             if self.len > 0 {
-                c.memcpy(new_items, self.items, self.len * size_of(Member));
+                c.memcpy(new_items, self.items, self.len * @sizeOf(Member));
                 alloc.dealloc_bytes(self.items);
             }
             self.items = new_items;

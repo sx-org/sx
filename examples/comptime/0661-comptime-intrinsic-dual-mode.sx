@@ -13,12 +13,12 @@ P :: struct { a: i64; b: f32; }
 CT_NAME     :: @run @typeName(P);
 CT_UNSIGNED :: @run u32 is unsigned;
 CT_SIGNED   :: @run i32 is unsigned;
-CT_SIZE     :: @run size_of(P);
+CT_SIZE     :: @run @sizeOf(P);
 
 main :: () {
     // comptime vs runtime — the two columns must match.
     print("@typeName         ct={} rt={}\n", CT_NAME, @typeName(P));
     print("is unsigned       ct={} rt={}\n", CT_UNSIGNED, u32 is unsigned);
     print("is unsigned       ct={} rt={}\n", CT_SIGNED, i32 is unsigned);
-    print("size_of           ct={} rt={}\n", CT_SIZE, size_of(P));
+    print("@sizeOf           ct={} rt={}\n", CT_SIZE, @sizeOf(P));
 }

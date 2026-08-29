@@ -18,6 +18,6 @@ ABox :: Box(i64);
 main :: () -> i32 {
     x : Box(i64) = .{ x = 1 };
     a : ABox = .{ x = 2 };
-    print("size={} alias={} x={} a={}\n", size_of(Box(i64)), size_of(ABox), x.x, a.x);
+    print("size={} alias={} x={} a={}\n", @sizeOf(Box(i64)), @sizeOf(ABox), x.x, a.x);
     0
 }

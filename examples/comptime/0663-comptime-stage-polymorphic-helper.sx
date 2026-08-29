@@ -11,7 +11,7 @@ P :: struct { a: i64; b: i64; }
 
 // A plain function — no annotation marks it comptime or runtime.
 shared :: (n: i64) -> i64 {
-    return n * 2 + size_of(P);   // an intrinsic works in either stage
+    return n * 2 + @sizeOf(P);   // an intrinsic works in either stage
 }
 
 // Compile-time root.
@@ -23,6 +23,6 @@ main :: () -> i64 {
 
     // Same function, same input, two stages — one answer.
     if rt != CT { return 1; }
-    if CT != 36 { return 2; }   // 10*2 + size_of(P)=16
+    if CT != 36 { return 2; }   // 10*2 + @sizeOf(P)=16
     return 0;
 }

@@ -1,7 +1,7 @@
 error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
   --> examples/modules/0795-modules-same-name-enum-ambiguous.sx:31:19
    |
-31 |     sz := size_of(Dir);
+31 |     sz := @sizeOf(Dir);
    |                   ^^^
 
 error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import

@@ -24,7 +24,7 @@ main :: () -> i32 {
     // out here: one set, one layout.
     xs : List(pkg.View) = .{};
     xs.append(v);
-    print("size in {} out {} held {}\n", pkg.size_here(), size_of(pkg.View), xs.len);
+    print("size in {} out {} held {}\n", pkg.size_here(), @sizeOf(pkg.View), xs.len);
 
     // The bound head, taking the member and the set itself.
     print("bound {} {}\n", render_one(pkg.Label{ text = "member" }), render_one(v));

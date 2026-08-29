@@ -19,7 +19,7 @@ Label :: @OpenVariant(Set) {
     // `Padded(Big)` becomes a member HERE — while this arm is being materialized.
     measure :: (self: *Label) -> i64 {
         p := Padded(Big){ n = 0 };
-        return size_of(Set) + self.n + p.n;
+        return @sizeOf(Set) + self.n + p.n;
     }
 }
 
@@ -35,12 +35,12 @@ Big :: struct {
 }
 
 // Lowered long before that arm exists.
-before :: () -> i64 => size_of(Set);
+before :: () -> i64 => @sizeOf(Set);
 
 main :: () -> i32 {
     v: Set = Label{ n = 1 };
-    print("before {} in-arm {} after {}\n", before(), v.measure(), size_of(Set));
-    print("members {} {}\n", size_of(Label), size_of(Padded(Big)));
+    print("before {} in-arm {} after {}\n", before(), v.measure(), @sizeOf(Set));
+    print("members {} {}\n", @sizeOf(Label), @sizeOf(Padded(Big)));
     0
 }
 

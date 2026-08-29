@@ -47,13 +47,13 @@ Triple :: @OpenVariant(Held) {
 
 main :: () -> i32 {
     // Tag only: no members, so no payload.
-    print("empty {} align {}\n", size_of(Empty), align_of(Empty));
+    print("empty {} align {}\n", @sizeOf(Empty), @alignOf(Empty));
 
     // 8 tag + the largest member (24), not the 64-byte ceiling.
-    print("held {}\n", size_of(Held));
+    print("held {}\n", @sizeOf(Held));
 
     // The wrapper is exactly one `Held` slot, and `Holder` is that plus its tag.
-    print("wrapper {} holder {}\n", size_of(Wrapper), size_of(Holder));
+    print("wrapper {} holder {}\n", @sizeOf(Wrapper), @sizeOf(Holder));
 
     t := Triple{ a = 1, b = 2, c = 3 };
     s := Single{ a = 7 };

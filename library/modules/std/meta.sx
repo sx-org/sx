@@ -148,7 +148,7 @@ TryResult :: ($T: Type) -> Type {
 // arm constructs the i-th variant of a synthesized `RaceResult`.
 //
 // LAYOUT COUPLING — MINTED ENUMS ONLY: a minted tagged-union is laid out
-// `{ i64 tag @0, payload bytes @ size_of(i64) }` (its `tag_type` is always `i64`
+// `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its `tag_type` is always `i64`
 // — the compiler's `declare`/`define` path fixes it). `make_variant` writes that
 // layout directly. It is NOT valid for a source `enum { … }` whose tag may be
 // narrower, nor for a `#packed`-backed union — spell those with a literal
@@ -158,10 +158,10 @@ TryResult :: ($T: Type) -> Type {
 // no value to carry — match it by tag).
 make_variant :: ($E: Type, idx: i64, payload: $P) -> E {
     out : E = ---;
-    c.memset(*out, 0, size_of(E));             // clear tag padding + unused payload bytes
+    c.memset(*out, 0, @sizeOf(E));             // clear tag padding + unused payload bytes
     tag_ptr : *i64 = (*out).(*i64);
     tag_ptr.* = idx;                            // tag @ offset 0 (i64)
-    pay_ptr : *P = ((*out).(i64) + size_of(i64)).(*P); // payload @ offset size_of(i64) (after the tag)
+    pay_ptr : *P = ((*out).(i64) + @sizeOf(i64)).(*P); // payload @ offset @sizeOf(i64) (after the tag)
     pay_ptr.* = payload;
     return out;
 }

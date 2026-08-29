@@ -1,5 +1,5 @@
-// The scalar reflection family accepts RUNTIME `Type` values: size_of /
-// align_of / struct_field_count / variant_count / is_flags read tag-indexed
+// The scalar reflection family accepts RUNTIME `Type` values: @sizeOf /
+// @alignOf / struct_field_count / variant_count / is_flags read tag-indexed
 // tables; @typeEq compares tags. Includes the parity pins: for each shape the
 // RUNTIME answer equals the COMPTIME fold (padded, nested, union — the layouts
 // most likely to diverge).
@@ -23,10 +23,10 @@ main :: () {
     tc : Type = Color;
     tf : Type = Flags;
 
-    check("padded-size", size_of(tp), size_of(Padded));
-    check("padded-align", align_of(tp), align_of(Padded));
-    check("nested-size", size_of(tn), size_of(Nested));
-    check("union-size", size_of(to), size_of(Overlay));
+    check("padded-size", @sizeOf(tp), @sizeOf(Padded));
+    check("padded-align", @alignOf(tp), @alignOf(Padded));
+    check("nested-size", @sizeOf(tn), @sizeOf(Nested));
+    check("union-size", @sizeOf(to), @sizeOf(Overlay));
     check("padded-sfc", struct_field_count(tp), struct_field_count(Padded));
     check("union-sfc", struct_field_count(to), struct_field_count(Overlay));
     check("color-vc", variant_count(tc), variant_count(Color));
@@ -35,5 +35,5 @@ main :: () {
     print("flags: color={} flags={}\n", is_flags(tc), is_flags(tf));
 
     av : any = Color.green;
-    print("any-tag: vc={} size={}\n", variant_count(@typeOf(av)), size_of(@typeOf(av)));
+    print("any-tag: vc={} size={}\n", variant_count(@typeOf(av)), @sizeOf(@typeOf(av)));
 }

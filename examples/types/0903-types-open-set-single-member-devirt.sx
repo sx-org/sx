@@ -31,7 +31,7 @@ main :: () -> i32 {
     print("value {} scaled {} again {}\n", c.value(), c.scale(7), c.value());
     print("through a pointer {}\n", reach(*c));
     // The slot is one tag plus the member: 8 + 8.
-    print("layout {} member {}\n", size_of(Cell), size_of(Number));
+    print("layout {} member {}\n", @sizeOf(Cell), @sizeOf(Number));
     0
 }
 

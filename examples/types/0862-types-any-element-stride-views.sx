@@ -1,5 +1,5 @@
 // any_element(av, elem, i) — element view into an array/vector held by
-// an `any`: pure stride math, `{elem, raw data + i * size_of(elem)}`.
+// an `any`: pure stride math, `{elem, raw data + i * @sizeOf(elem)}`.
 // The walker's array/vector arms re-aim ONE view per index; `elem` can
 // be a compile-time type (size folds to a constant) or a runtime Type
 // (size reads the rt table). Views alias the boxed storage.

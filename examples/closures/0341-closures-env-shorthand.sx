@@ -9,7 +9,7 @@ make_adder :: (bias: i32) -> $F/(i32) -> i32 { return |x: i32|_{ bias } -> i32 x
 main :: () {
     add := make_adder(10);
     print("adder {}\n", add(5));                                // 15
-    print("field {} {}\n", size_of(@typeOf(add)), size_of(i32)); // 4 4
+    print("field {} {}\n", @sizeOf(@typeOf(add)), @sizeOf(i32)); // 4 4
 
     n := 7;
     // Shorthand and named fields in one env.
@@ -23,7 +23,7 @@ main :: () {
 
     // `n = *n` is a named field holding an address, loaded with `.*`.
     ref := |x: i32|_{ n = *n } -> i32 x + n.*;
-    print("ref {} {}\n", ref(1), size_of(@typeOf(ref)));        // 101 8
+    print("ref {} {}\n", ref(1), @sizeOf(@typeOf(ref)));        // 101 8
     n = 200;
     print("through {}\n", ref(1));                              // 201
 }

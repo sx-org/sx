@@ -20,7 +20,7 @@ BBox :: b.Box(i64);
 main :: () -> i32 {
     ab : ABox = .{ x = 1 };
     bb : BBox = .{ x = 10, y = 20 };
-    print("alias a={} b={}\n", size_of(ABox), size_of(BBox));
+    print("alias a={} b={}\n", @sizeOf(ABox), @sizeOf(BBox));
     print("ab.x={} bb.x={} bb.y={}\n", ab.x, bb.x, bb.y);
     0
 }

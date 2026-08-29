@@ -3,7 +3,7 @@
 // error). Pins:
 //   - `*x` takes a pointer; postfix `.*` follows it;
 //   - `*T` over a TYPE operand is the pointer type as a Type value —
-//     size_of/type args, `**T` nested inside-out;
+//     @sizeOf/type args, `**T` nested inside-out;
 //   - a VALUE shadowing nothing: `*arr[i]` / `*s.field` address
 //     elements and fields (postfix binds tighter than prefix);
 //   - infix `*` stays multiplication; `a * *b` mixes both.
@@ -18,7 +18,7 @@ main :: () {
     bump(*x);
     print("value: {}\n", x);
 
-    print("types: {} {} {}\n", size_of(*i64), size_of(**i64), @typeName(*Pair));
+    print("types: {} {} {}\n", @sizeOf(*i64), @sizeOf(**i64), @typeName(*Pair));
 
     pr := Pair{ a = 5, b = 6 };
     fp := *pr.b;

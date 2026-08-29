@@ -614,7 +614,7 @@ c := vstack(1.0) {
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
 - `string` — string of characters
-- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `size_of(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
+- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
 ### Char Literals
@@ -1555,7 +1555,7 @@ or define an interface method. Map keys follow from `==`: refused.
 
 Interface types are ordinary storable types: struct fields, array
 elements, returns, and **generic type arguments** — `List(Show)` and
-`List(Hasher)` are both lists of 3-word handles, and `size_of` answers
+`List(Hasher)` are both lists of 3-word handles, and `@sizeOf` answers
 per §5.1. An interface type may itself be an instantiation argument of
 another (`Series(View)`). Constraints are refused in every storable
 position (§4).
@@ -2102,7 +2102,7 @@ positions: prefix `*` TAKES a pointer, postfix `.*` FOLLOWS one, and in a
 type position `*T` is the pointer type. In the value grammar a prefix `*`
 resolves by the KIND of its operand: a value operand is address-of; an
 operand that denotes a type yields the pointer TYPE as a Type value
-(`size_of(*T)`, generic `Type` arguments, `**T` nested inside-out). A
+(`@sizeOf(*T)`, generic `Type` arguments, `**T` nested inside-out). A
 local or global VALUE shadowing a type name stays a value — taking an
 address never silently becomes a type. Infix `*` (multiplication) is
 untouched: after an operand `*` is binary, at expression head it is
@@ -2821,8 +2821,8 @@ integer narrower than 32 bits are refused where they are written:
 a `u8` does. The tail admissibility rule above applies unchanged.
 
 `@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
-value form, so it cannot be constructed, inspected, measured (`size_of` /
-`align_of` / the reflection builtins), or copied by assignment. A local
+value form, so it cannot be constructed, inspected, measured (`@sizeOf` /
+`@alignOf` / the reflection builtins), or copied by assignment. A local
 declaration and an incoming C parameter are the only things that give a cursor
 storage, and `*name` is the only way to reach one.
 
@@ -3961,7 +3961,7 @@ re-exported name reaches what it names, so a bound written on it asks the set's 
 question.
 
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
-with its own `size_of`, its own methods, and no wrapper around it. `Self` inside
+with its own `@sizeOf`, its own methods, and no wrapper around it. `Self` inside
 the set declaration denotes the member type; each required method is monomorphized
 per member, and a member spells its own concrete receiver (`self: *Label`).
 
@@ -3975,20 +3975,20 @@ above 8 is only safe if every storage path for those values honours it.
 **Layout** is a function of the members the program declares, not of `max`:
 
 ```text
-payload    = max(size_of(member))              // ≤ max; a ceiling, not a reservation
-alignment  = max(declared align, align_of(tag))  // not a max over members
-size_of(P) = align_up(align_up(size_of(tag), alignment) + payload, alignment)
+payload    = max(@sizeOf(member))              // ≤ max; a ceiling, not a reservation
+alignment  = max(declared align, @alignOf(tag))  // not a max over members
+@sizeOf(P) = align_up(align_up(@sizeOf(tag), alignment) + payload, alignment)
 ```
 
 The tag's own alignment is a **floor**: it lives in the same value, so a set
 declared `align = 4` is laid out at 8. Above the floor the declared alignment is
-delivered — `align_of(P)` is that value, and an array of `P` keeps every element's
+delivered — `@alignOf(P)` is that value, and an array of `P` keeps every element's
 payload on it.
 
 So a set declared `max = 256` whose largest member is 24 bytes is 32 bytes, not
 264, and a set with **no members** is just its tag word. Because layout follows the
 declared members, **importing a module that declares a larger member grows the
-set** — an accepted cost, stated here because it is observable in `size_of(P)` and
+set** — an accepted cost, stated here because it is observable in `@sizeOf(P)` and
 in every `List(P)`.
 
 Growth is **transitive**: a member of one set may hold another set by value, so
@@ -4002,8 +4002,8 @@ represented is never a member and no conversion site needs a second check:
 
 | Requirement | Refused when |
 |---|---|
-| `size_of(V) ≤ max` | the member is larger than the ceiling — the diagnostic names the field that accounts for it |
-| `align_of(V) ≤ alignment` | the member needs more alignment than the payload has (the effective value above, not the raw option) |
+| `@sizeOf(V) ≤ max` | the member is larger than the ceiling — the diagnostic names the field that accounts for it |
+| `@alignOf(V) ≤ alignment` | the member needs more alignment than the payload has (the effective value above, not the raw option) |
 | finite size | the member contains the set **by value** at any depth (a field, a nested struct, an array, an optional) |
 | every required method | the member does not declare one |
 | every required method's SIGNATURE | the member answers one at other types — arity, a parameter type, or the return type. The set's declaration states them once, and `Self` there denotes the member (`(self: *Self, other: Self) -> Self` is answered by `(self: *Ok, other: Ok) -> Ok`) |
@@ -4033,7 +4033,7 @@ generic member. The
 freeze also numbers each set's members densely from 0 in the set's **own** tag space
 and writes its `tag → member Type` table.
 
-So `size_of(P)` is **not a literal baked where it is written**. Wherever it is a
+So `@sizeOf(P)` is **not a literal baked where it is written**. Wherever it is a
 value — a body, a `@run`, an argument — it is answered from the frozen layout, and
 one program therefore has **one** answer for it everywhere: a body lowered before a
 generic member's instantiation and a body lowered after it agree. The same holds for
@@ -4044,14 +4044,14 @@ than answered:
 
 ```sx
 Slot :: struct {
-    bytes: [size_of(View)]u8 = ---;   // error: the layout of the open set 'View'
+    bytes: [@sizeOf(View)]u8 = ---;   // error: the layout of the open set 'View'
 }                                     //        is not final here
 ```
 
 An array dimension is fixed where it is written, and the struct that carries it is
 registered on the spot — a member declared later in the program (or in a module the
 program imports) would contradict the number, in a layout that cannot be measured
-again. Read the size where it is a value, or bind it with `@run size_of(P)`. A set
+again. Read the size where it is a value, or bind it with `@run @sizeOf(P)`. A set
 that **no generic member can reach** settles as soon as the declarations are
 admitted, and a dimension over that set inside a body folds normally.
 
@@ -5516,7 +5516,7 @@ otherwise go; an `@` name is written as its signature alone, because the sigil
 is already the marker:
 
 ```sx
-size_of :: ($T: Type) -> i64 intrinsic;
+struct_field_count :: ($T: Type) -> i64 intrinsic;
 @volatile_load :: ($T: Type, address: *T) -> T;
 ```
 
@@ -5534,14 +5534,14 @@ n :: i64 intrinsic;
 and does not parse.
 
 An intrinsic binds to the compiler's registry by **(module, name)** — the
-declaring module is part of its identity. `size_of` is an intrinsic because
-`modules/std/core.sx` declares it, not because the name is magic; the same
-spelling in another module names an ordinary function and is rejected:
+declaring module is part of its identity. `struct_field_count` is an intrinsic
+because `modules/std/core.sx` declares it, not because the name is magic; the
+same spelling in another module names an ordinary function and is rejected:
 
 ```sx
-size_of :: ($T: Type) -> i64 intrinsic;   // ERROR outside std/core.sx:
-                                          // 'size_of' is declared by
-                                          // modules/std/core.sx
+struct_field_count :: ($T: Type) -> i64 intrinsic;
+// ERROR outside std/core.sx: 'struct_field_count' is declared by
+// modules/std/core.sx
 ```
 
 A name the registry does not carry (`unknown intrinsic 'foo'`) or a wrong
@@ -5549,7 +5549,7 @@ parameter count is a compile-time error at the declaration itself — never a
 fallback to a runtime symbol lookup.
 
 Each intrinsic is dispatched one of three ways. Most are handled at **lowering** —
-folded to a constant (`size_of`, `struct_field_count`), or lowered to dedicated IR ops
+folded to a constant (`@sizeOf`, `struct_field_count`), or lowered to dedicated IR ops
 (the atomics). Two — `@typeName` and `@typeInfo` — are
 **dual**: folded at lowering when the type argument is statically resolvable, and
 serviced by the comptime evaluator when it is only known at evaluation time. The
@@ -5584,7 +5584,7 @@ evaluator. A function reached from the runtime roots is emitted into the binary.
 A function reached from **both** does both, and must agree with itself:
 
 ```sx
-shared :: (n: i64) -> i64 { return n * 2 + size_of(P); }
+shared :: (n: i64) -> i64 { return n * 2 + @sizeOf(P); }
 
 CT :: @run shared(10);          // evaluated by the comptime evaluator
 main :: () { rt := shared(10); } // and emitted into the binary
@@ -5623,8 +5623,8 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `free(ptr: *void) -> void` — release a `malloc` allocation
 - `memcpy(dst: *void, src: *void, size: i64) -> *void` — copy `size` bytes from `src` to `dst`
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
-- `size_of($T: Type) -> i64` — size of type `T` in bytes
-- `align_of($T: Type) -> i64` — alignment of type `T` in bytes
+- `@sizeOf($T: Type) -> i64` — size of type `T` in bytes
+- `@alignOf($T: Type) -> i64` — alignment of type `T` in bytes
 - `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
 - `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
@@ -5639,14 +5639,14 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `struct_field_value(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variant_payload`.
 - `variant_count($E: Type) -> i64` / `variant_name($E: Type, idx: i64) -> string` / `variant_type($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `struct_field_*` builtin.
 - `variant_payload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `struct_field_value`).
-- `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * size_of(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
+- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
+- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `@sizeOf / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
 - `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox(v: any, $T: Type) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@elementAt` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW borrowing the receiver's storage (same borrow rules as `struct_field_value`), and an index past the count is undefined behavior.
@@ -5660,7 +5660,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `@typeName`, `@typeEq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `struct_field_count`, `variant_count`, `@typeName`, `@typeEq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`@sizeOf(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 

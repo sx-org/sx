@@ -310,7 +310,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         .tuple_type_expr,
         => return true,
         // Prefix `*` parses as address_of in the value grammar; over a
-        // static type operand it IS the pointer type (`size_of(*T)`).
+        // static type operand it IS the pointer type (`@sizeOf(*T)`).
         .unary_op => |uop| {
             if (uop.op != .address_of) return false;
             return self.isStaticTypeArg(uop.operand);
@@ -592,7 +592,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 // backstop for paths that reach the fold directly).
                 if (aty != .any and self.getProtocolInfo(aty) == null) return aty;
             }
-            // Handle type constructor calls: size_of(Sx(f32)), size_of(Complex(u32))
+            // Handle type constructor calls: @sizeOf(Sx(f32)), @sizeOf(Complex(u32))
             return self.resolveTypeCallWithBindings(&cl);
         },
         // Wrapped / structural forms (`*T`, `[N]T`, `[]T`, `?T`, fn-ptr, tuple)
@@ -616,7 +616,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .parameterized_type_expr,
         => return self.resolveTypeWithBindings(node),
         // A module-alias-qualified type name in a type-arg slot
-        // (`size_of(sel.Selection)`) parses as a field-access EXPRESSION — unlike
+        // (`@sizeOf(sel.Selection)`) parses as a field-access EXPRESSION — unlike
         // the dotted `.type_expr` a declaration annotation produces — so without
         // this arm it falls through to `else` and resolves to `.unresolved`.
         // Reconstruct the qualified `obj.field` name and resolve it
@@ -2036,7 +2036,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         .poisoned => return .unresolved,
         .not_generic => {},
     }
-    // Parameterized protocol head (`size_of(Series(f32))`,
+    // Parameterized protocol head (`@sizeOf(Series(f32))`,
     // `protocol_kind(Slot(i64))`): the same instantiation the type-expr
     // sibling materializes. Reflection over one instantiation arrives here,
     // where the head parses as a call rather than as a type expression.
@@ -2534,7 +2534,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     // structs). The default nodes are index-aligned with `field_names` — both
     // are copied straight from `tmpl.decl` in declaration order — so the raw
     // AST slice maps 1:1 onto this instance's fields. Defaults that reference a
-    // type param (e.g. `size_of(T)`) are monomorphized at the literal site
+    // type param (e.g. `@sizeOf(T)`) are monomorphized at the literal site
     // by re-installing THIS instance's `type_bindings` from
     // `struct_instance_bindings` (see `lower/expr.zig`, the generic-instance
     // default path).

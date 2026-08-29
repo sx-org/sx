@@ -1,4 +1,4 @@
-size_of(Label)=16 size_of(Rule)=4
+@sizeOf(Label)=16 @sizeOf(Rule)=4
 measured 2 expression(s), 20 bytes of storage
 kept hello
 kept ----

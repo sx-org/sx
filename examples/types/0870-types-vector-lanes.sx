@@ -15,7 +15,7 @@ main :: () {
     v : @Vector(3, f32) = .[1.0, 2.0, 3.0];
     av : any = v;
     t := @typeOf(av);
-    print("runtime: {} (size {})\n", vector_lanes(t), size_of(t));
+    print("runtime: {} (size {})\n", vector_lanes(t), @sizeOf(t));
 
     // parity: runtime table == static fold
     print("parity: {}\n", vector_lanes(t) == vector_lanes(@Vector(3, f32)));

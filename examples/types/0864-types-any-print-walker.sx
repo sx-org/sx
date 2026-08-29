@@ -46,7 +46,7 @@ print_any :: (av: any) {
             print("]");
         }
         // Leaves: the tag-driven formatter handles exact widths (sized
-        // ints load size_of bytes and extend per signedness).
+        // ints load @sizeOf bytes and extend per signedness).
         case .int:    { print("{}", av); }
         case .float:  { print("{}", av); }
         case .string: { print("{}", av); }

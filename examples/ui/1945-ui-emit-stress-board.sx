@@ -61,7 +61,7 @@ main :: () -> i32 {
     print("top {}\n", screen.children.len);
     inner := screen.children.items[1].(VStack);
     print("cells {}\n", inner.children.len);
-    print("slot {} state {}\n", size_of(View), size_of(BoardViewState));
+    print("slot {} state {}\n", @sizeOf(View), @sizeOf(BoardViewState));
 
     root : View = screen;
     tree := RenderTree{};

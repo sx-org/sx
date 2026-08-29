@@ -222,7 +222,7 @@ const ModuleConstCtx = struct {
     pub fn lookupPackLen(_: ModuleConstCtx, _: []const u8) ?i64 {
         return null;
     }
-    // A type-query builtin call (`field_count`/`size_of`/`align_of`) needs to
+    // A type-query builtin call (`field_count`/`@sizeOf`/`@alignOf`) needs to
     // resolve a type EXPRESSION arg, which this stateless module-const ctx cannot
     // do (no `resolveTypeArg` / type-param bindings). The body-lowering ctx folds
     // these; here it is null (a module const `N :: field_count(S)` folds through
@@ -538,7 +538,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
             break :blk ctx.lookupConstArrayElem(name, idx, node.span);
         },
         // A pure int-returning type-query builtin call (`field_count(T)`,
-        // `size_of(T)`, `align_of(T)`) folds to its constant when the ctx can
+        // `@sizeOf(T)`, `@alignOf(T)`) folds to its constant when the ctx can
         // resolve the type arg — the body-lowering ctx (with type-param bindings)
         // can; the stateless registration ctxs return null. This is what lets a
         // reflection-derived count drive an `inline for` bound / array dim, the

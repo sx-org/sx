@@ -30,7 +30,7 @@ resolver produces its exact bytes.
 
 | # | case (source tree under `examples/<category>/<name>.sx`) | surface | class | current | target | note |
 |---|---|---|---|---|---|---|
-| 1 | `0811-modules-same-name-error-set-ambiguous` | bare error-set ref (size_of / annotation / type-as-value / match-arm / `!E` channel) | SILENT-RESOLVE | exit 0, silent | exit 1, **5** ambiguity diags | the `type_bridge.resolveInlineErrorSet` `findByName` short-circuit interns one global last-wins `IoErr` and exits 0 |
+| 1 | `0811-modules-same-name-error-set-ambiguous` | bare error-set ref (@sizeOf / annotation / type-as-value / match-arm / `!E` channel) | SILENT-RESOLVE | exit 0, silent | exit 1, **5** ambiguity diags | the `type_bridge.resolveInlineErrorSet` `findByName` short-circuit interns one global last-wins `IoErr` and exits 0 |
 | 2 | `0813-modules-same-name-error-set-lambda-own-wins` | own error-set in lambda return channel | OWN-WINS-FAILS | exit 1 | exit 0 | the lambda `-> !E` own-author does not resolve |
 | 3 | `0814-modules-same-name-error-set-lambda-ambiguous` | ambiguous error-set in lambda return channel | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | the `!E` channel resolves silently |
 | 4 | `0815-route-all-new-surfaces-ambiguous` | `*Box` / `union{Box}` / `enum{Box}` / inline-union ambiguous | UNDER-DIAGNOSE | exit 1, **<5** diags | exit 1, **5** diags | one site is caught, the rest resolve silently |
