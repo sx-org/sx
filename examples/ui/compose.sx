@@ -53,23 +53,23 @@ FocusRegion :: render.FocusRegion;
 KeyEvent :: input.KeyEvent;
 LogicalKey :: input.LogicalKey;
 
-// `set_global_font` points `measure_text` at the renderer's glyph cache.
-measure_text :: font.measure_text;
-set_global_font :: font.set_global_font;
+// `setGlobalFont` points `measureText` at the renderer's glyph cache.
+measureText :: font.measureText;
+setGlobalFont :: font.setGlobalFont;
 
 // Element identity: the call site an element is built at, and the id that site
 // mints for it.
 SiteId :: identity.SiteId;
-site_of :: identity.site_of;
+siteOf :: identity.siteOf;
 ElementId :: identity.ElementId;
 Identity :: identity.Identity;
-element_id :: identity.element_id;
+elementId :: identity.elementId;
 
 // State: what a call site keeps across the rebuilds that reach it.
 State :: state.State;
 StateEntry :: state.StateEntry;
 StateStore :: state.StateStore;
-use_state :: state.use_state;
+useState :: state.useState;
 
 // What a build commits, and what routes pointers against it.
 CommittedUiSnapshot :: frame.CommittedUiSnapshot;
@@ -78,13 +78,13 @@ Router :: router.Router;
 HitTarget :: router.HitTarget;
 Tappable :: router.Tappable;
 tappable :: router.tappable;
-is_pressed :: router.is_pressed;
+isPressed :: router.isPressed;
 
 // Keyboard focus: what declares itself focusable, and what routes keys to it.
 FocusRouter :: focus.FocusRouter;
 Focusable :: focus.Focusable;
 focusable :: focus.focusable;
-is_focused :: focus.is_focused;
+isFocused :: focus.isFocused;
 
 // The root a program runs, and the loop that runs its frames.
 UiRoot :: loop.UiRoot;
@@ -118,7 +118,7 @@ collectViews :: sink.collectViews;
 vstack :: containers.vstack;
 hstack :: containers.hstack;
 zstack :: containers.zstack;
-fold_vstack :: containers.fold_vstack;
-fold_hstack :: containers.fold_hstack;
-render_root :: runtime.render_root;
-command_count :: runtime.command_count;
+foldVstack :: containers.foldVstack;
+foldHstack :: containers.foldHstack;
+renderRoot :: runtime.renderRoot;
+commandCount :: runtime.commandCount;

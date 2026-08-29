@@ -4,7 +4,7 @@
 // (registered into the runtime at module init, IMP bodies eagerly
 // lowered), not platform-host surface — importing the host alone must
 // not drag them in. An app that boots through
-// `UIKitPlatform.run_frame_loop` imports THIS module (the
+// `UIKitPlatform.runFrameLoop` imports THIS module (the
 // "SxAppDelegate" name handed to UIApplicationMain resolves to the
 // class registered here); an app with its own delegate classes imports
 // only the host.
@@ -19,23 +19,23 @@
 // platform through this global. It belongs to the SHELL, not the host:
 // uikit.sx is instance-pure, and an app with its own delegate classes
 // owns its own bridge.
-g_uikit_plat : *UIKitPlatform = null;
+gUikitPlat : *UIKitPlatform = null;
 
 // Boot the app through the shell: installs the bridge and hands
 // UIApplicationMain the shell's delegate class. Never returns on iOS.
-uikit_app_run :: (plat: *UIKitPlatform, frame_fn: Closure()) {
-    g_uikit_plat = plat;
-    plat.delegate_class_name = "SxAppDelegate";
-    plat.run_frame_loop(frame_fn);
+uikitAppRun :: (plat: *UIKitPlatform, frameFn: Closure()) {
+    gUikitPlat = plat;
+    plat.delegateClassName = "SxAppDelegate";
+    plat.runFrameLoop(frameFn);
 }
 
 // SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
 // UIResponder — NOT the UIApplication principal class). Method bodies
-// dispatch to UIKitPlatform methods on the shared `g_uikit_plat`.
+// dispatch to UIKitPlatform methods on the shared `gUikitPlat`.
 SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
 
     application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
-        if g_uikit_plat != null {
+        if gUikitPlat != null {
             center := NSNotificationCenter.defaultCenter();
             center.addObserver_selector_name_object(
                 self,
@@ -47,9 +47,9 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
     }
 
     sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
-        if g_uikit_plat == null { return; }
+        if gUikitPlat == null { return; }
         notif : *NSNotification = notification.(*NSNotification);
-        g_uikit_plat.keyboard_will_change_frame(notif);
+        gUikitPlat.keyboardWillChangeFrame(notif);
     }
 
     alloc :: () -> *SxAppDelegate;
@@ -65,26 +65,26 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
 SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implements = .[UISceneDelegate, UIWindowSceneDelegate]) export {
 
     scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
-        if g_uikit_plat == null { return; }
+        if gUikitPlat == null { return; }
         // The view's +layerClass override gives the platform the right
         // CAEAGLLayer / CAMetalLayer subclass.
         view : *UIView = null;
-        if g_uikit_plat.gpu_mode == .gles {
+        if gUikitPlat.gpuMode == .gles {
             view = SxGLView.alloc().init();
         } else {
             view = SxMetalView.alloc().init();
         }
-        g_uikit_plat.scene_will_connect(scene, view);
+        gUikitPlat.sceneWillConnect(scene, view);
     }
 
     window :: (self: *Self) -> ?*UIWindow {
-        if g_uikit_plat == null { return null; }
-        return g_uikit_plat.window;
+        if gUikitPlat == null { return null; }
+        return gUikitPlat.window;
     }
 
     setWindow :: (self: *Self, w: ?*UIWindow) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.window = w;
+        if gUikitPlat == null { return; }
+        gUikitPlat.window = w;
     }
 }
 
@@ -99,38 +99,38 @@ SxGLView :: @ObjcClass("SxGLView", extends = UIView) export {
     layerClass :: () => CAEAGLLayer.class();
 
     sxTick :: (self: *Self, link: *CADisplayLink) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_tick(link);
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewTick(link);
     }
 
     layoutSubviews :: (self: *Self) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_did_layout();
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewDidLayout();
     }
 
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchDown(self, touches);
     }
 
     touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchMoved(self, touches);
     }
 
     touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchUp(self, touches);
     }
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_cancel(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchCancel(self, touches);
     }
 }
 
 // SxMetalView reuses the same tick/layout/touch IMPs as SxGLView. The IMPs
-// already branch on `plat.gpu_mode` for the GL-specific bits (renderbuffer
+// already branch on `plat.gpuMode` for the GL-specific bits (renderbuffer
 // setup, etc.), so a single set of IMPs serves both view classes. Only
 // `+layerClass` differs (returns CAMetalLayer instead of CAEAGLLayer).
 SxMetalView :: @ObjcClass("SxMetalView", extends = UIView) export {
@@ -141,32 +141,32 @@ SxMetalView :: @ObjcClass("SxMetalView", extends = UIView) export {
     layerClass :: () => CAMetalLayer.class();
 
     sxTick :: (self: *Self, link: *CADisplayLink) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_tick(link);
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewTick(link);
     }
 
     layoutSubviews :: (self: *Self) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_did_layout();
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewDidLayout();
     }
 
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchDown(self, touches);
     }
 
     touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchMoved(self, touches);
     }
 
     touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchUp(self, touches);
     }
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_cancel(self, touches);
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchCancel(self, touches);
     }
 }

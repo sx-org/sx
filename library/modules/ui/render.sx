@@ -5,43 +5,43 @@
 
 RenderNodeType :: enum {
     rect;
-    rounded_rect;
+    roundedRect;
     text;
     image;
     mesh;
-    skinned_mesh;
-    clip_push;
-    clip_pop;
-    opacity_push;
-    opacity_pop;
+    skinnedMesh;
+    clipPush;
+    clipPop;
+    opacityPush;
+    opacityPop;
 }
 
 RenderNode :: struct {
     type: RenderNodeType;
     frame: Frame;
 
-    // Rect / rounded_rect
-    fill_color: Color;
-    stroke_color: Color;
-    stroke_width: f32;
-    corner_radius: f32;
+    // Rect / roundedRect
+    fillColor: Color;
+    strokeColor: Color;
+    strokeWidth: f32;
+    cornerRadius: f32;
 
     // Text
     text: string;
-    font_size: f32;
-    text_color: Color;
+    fontSize: f32;
+    textColor: Color;
 
     // Image
-    texture_id: u32;
-    uv_min: Point;
-    uv_max: Point;
+    textureId: u32;
+    uvMin: Point;
+    uvMax: Point;
 
     // Mesh: a triangle range of the renderer's current mesh — rigid or
-    // skinned, per node type — transformed by `mesh_transform` into clip
-    // space and tinted with `fill_color`.
-    mesh_index_first: i32;
-    mesh_index_count: i32;
-    mesh_transform: Mat4;
+    // skinned, per node type — transformed by `meshTransform` into clip
+    // space and tinted with `fillColor`.
+    meshIndexFirst: i32;
+    meshIndexCount: i32;
+    meshTransform: Mat4;
 
     // Opacity
     opacity: f32;
@@ -75,7 +75,7 @@ RenderTree :: struct {
 // re-supplied each frame by construction.
 HitPolicy :: enum {
     tap;          // default: a single tap fires on release
-    wait_double;  // the release arms a pending tap — a second tap within
+    waitDouble;  // the release arms a pending tap — a second tap within
                   // the window is the double, the window's end the single
     hold;         // no taps at this point — long-press / pan only
     fail;         // transparent at this point: the hit falls through to
@@ -84,16 +84,16 @@ HitPolicy :: enum {
 
 // A focus declaration: focusable elements declare beside their hit regions;
 // DECLARATION order is the tab-traversal order — no
-// registry. on_key/on_text fire at delivery from the CURRENT
+// registry. onKey/onText fire at delivery from the CURRENT
 // committed snapshot, re-supplied each frame like hit-region
-// closures; wants_keyboard is what the platform shell polls to drive
+// closures; wantsKeyboard is what the platform shell polls to drive
 // the soft keyboard.
 FocusRegion :: struct {
     id: u64;
     frame: Frame;
-    on_key: ?Closure(*KeyEvent) = null;
-    on_text: ?Closure(string) = null;
-    wants_keyboard: bool = false;
+    onKey: ?Closure(*KeyEvent) = null;
+    onText: ?Closure(string) = null;
+    wantsKeyboard: bool = false;
 }
 
 // An interactive region declared during render: paint order = emission order,
@@ -106,14 +106,14 @@ HitRegion :: struct {
     // Tap registration IS the region declaration: the router runs the CURRENT
     // committed snapshot's handler at recognition — fire-time resolution,
     // never a retained callback.
-    on_tap: ?Closure() = null;
+    onTap: ?Closure() = null;
 }
 
 // Stateful builder — views use this to emit render nodes
 
 RenderContext :: struct {
     tree: *RenderTree;
-    clip_depth: i64;
+    clipDepth: i64;
     opacity: f32;
     depth: i64;
     // Optional hit/focus sinks: the frame loop points these at the
@@ -125,102 +125,102 @@ RenderContext :: struct {
     init :: (tree: *RenderTree) -> RenderContext {
         RenderContext{
             tree = tree,
-            clip_depth = 0,
+            clipDepth = 0,
             opacity = 1.0,
             depth = 0
         }
     }
 
-    hit_region :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null, on_tap: ?Closure() = null) {
+    hitRegion :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null, onTap: ?Closure() = null) {
         if self.hits != null {
-            self.hits.append(.{ id = id, frame = frame, policy = policy, on_tap = on_tap });
+            self.hits.append(.{ id = id, frame = frame, policy = policy, onTap = onTap });
         }
     }
 
-    focus_region :: (self: *RenderContext, id: u64, frame: Frame, on_key: ?Closure(*KeyEvent) = null, on_text: ?Closure(string) = null, wants_keyboard: bool = false) {
+    focusRegion :: (self: *RenderContext, id: u64, frame: Frame, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false) {
         if self.focuses != null {
-            self.focuses.append(.{ id = id, frame = frame, on_key = on_key, on_text = on_text, wants_keyboard = wants_keyboard });
+            self.focuses.append(.{ id = id, frame = frame, onKey = onKey, onText = onText, wantsKeyboard = wantsKeyboard });
         }
     }
 
-    add_rect :: (self: *RenderContext, frame: Frame, fill: Color) {
+    addRect :: (self: *RenderContext, frame: Frame, fill: Color) {
         self.tree.add(.{
             type = .rect,
             frame = frame,
-            fill_color = fill,
+            fillColor = fill,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    add_rounded_rect :: (self: *RenderContext, frame: Frame, fill: Color, radius: f32) {
+    addRoundedRect :: (self: *RenderContext, frame: Frame, fill: Color, radius: f32) {
         self.tree.add(.{
-            type = .rounded_rect,
+            type = .roundedRect,
             frame = frame,
-            fill_color = fill,
-            corner_radius = radius,
+            fillColor = fill,
+            cornerRadius = radius,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    add_stroked_rect :: (self: *RenderContext, frame: Frame, fill: Color, stroke: Color, stroke_w: f32, radius: f32) {
+    addStrokedRect :: (self: *RenderContext, frame: Frame, fill: Color, stroke: Color, strokeW: f32, radius: f32) {
         self.tree.add(.{
-            type = .rounded_rect,
+            type = .roundedRect,
             frame = frame,
-            fill_color = fill,
-            stroke_color = stroke,
-            stroke_width = stroke_w,
-            corner_radius = radius,
+            fillColor = fill,
+            strokeColor = stroke,
+            strokeWidth = strokeW,
+            cornerRadius = radius,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    add_text :: (self: *RenderContext, frame: Frame, text: string, font_size: f32, color: Color) {
+    addText :: (self: *RenderContext, frame: Frame, text: string, fontSize: f32, color: Color) {
         self.tree.add(.{
             type = .text,
             frame = frame,
             text = text,
-            font_size = font_size,
-            text_color = color,
+            fontSize = fontSize,
+            textColor = color,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    add_image :: (self: *RenderContext, frame: Frame, texture_id: u32) {
-        self.add_image_uv(frame, texture_id, Point.zero(), Point{ x = 1.0, y = 1.0 });
+    addImage :: (self: *RenderContext, frame: Frame, textureId: u32) {
+        self.addImageUv(frame, textureId, Point.zero(), Point{ x = 1.0, y = 1.0 });
     }
 
-    add_image_uv :: (self: *RenderContext, frame: Frame, texture_id: u32, uv_min: Point, uv_max: Point) {
+    addImageUv :: (self: *RenderContext, frame: Frame, textureId: u32, uvMin: Point, uvMax: Point) {
         self.tree.add(.{
             type = .image,
             frame = frame,
-            texture_id = texture_id,
-            uv_min = uv_min,
-            uv_max = uv_max,
+            textureId = textureId,
+            uvMin = uvMin,
+            uvMax = uvMax,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    // Draw a triangle range of the mesh the renderer holds (UIRenderer.set_mesh).
+    // Draw a triangle range of the mesh the renderer holds (UIRenderer.setMesh).
     // `transform` takes mesh positions all the way to clip space, so the node
     // carries no frame; depth testing is on for the range and off again after
     // it.
-    add_mesh :: (self: *RenderContext, index_first: i32, index_count: i32, transform: Mat4, tint: Color) {
+    addMesh :: (self: *RenderContext, indexFirst: i32, indexCount: i32, transform: Mat4, tint: Color) {
         self.tree.add(.{
             type = .mesh,
-            mesh_index_first = index_first,
-            mesh_index_count = index_count,
-            mesh_transform = transform,
-            fill_color = tint,
+            meshIndexFirst = indexFirst,
+            meshIndexCount = indexCount,
+            meshTransform = transform,
+            fillColor = tint,
             opacity = self.opacity,
             depth = self.depth,
         });
@@ -228,54 +228,54 @@ RenderContext :: struct {
     }
 
     // Draw a triangle range of the skinned mesh the renderer holds
-    // (UIRenderer.set_skinned_mesh), skinned against the palette last given
-    // to UIRenderer.set_bone_palette. `transform` takes skinned positions to
+    // (UIRenderer.setSkinnedMesh), skinned against the palette last given
+    // to UIRenderer.setBonePalette. `transform` takes skinned positions to
     // clip space; depth testing is on for the range and off again after it.
-    add_skinned_mesh :: (self: *RenderContext, index_first: i32, index_count: i32, transform: Mat4, tint: Color) {
+    addSkinnedMesh :: (self: *RenderContext, indexFirst: i32, indexCount: i32, transform: Mat4, tint: Color) {
         self.tree.add(.{
-            type = .skinned_mesh,
-            mesh_index_first = index_first,
-            mesh_index_count = index_count,
-            mesh_transform = transform,
-            fill_color = tint,
+            type = .skinnedMesh,
+            meshIndexFirst = indexFirst,
+            meshIndexCount = indexCount,
+            meshTransform = transform,
+            fillColor = tint,
             opacity = self.opacity,
             depth = self.depth,
         });
         self.depth += 1;
     }
 
-    push_clip :: (self: *RenderContext, frame: Frame) {
+    pushClip :: (self: *RenderContext, frame: Frame) {
         self.tree.add(.{
-            type = .clip_push,
+            type = .clipPush,
             frame = frame,
             depth = self.depth,
         });
-        self.clip_depth += 1;
+        self.clipDepth += 1;
     }
 
-    pop_clip :: (self: *RenderContext) {
+    popClip :: (self: *RenderContext) {
         self.tree.add(.{
-            type = .clip_pop,
+            type = .clipPop,
             depth = self.depth,
         });
-        self.clip_depth -= 1;
+        self.clipDepth -= 1;
     }
 
-    push_opacity :: (self: *RenderContext, alpha: f32) {
+    pushOpacity :: (self: *RenderContext, alpha: f32) {
         prev := self.opacity;
         self.opacity = prev * alpha;
         self.tree.add(.{
-            type = .opacity_push,
+            type = .opacityPush,
             opacity = self.opacity,
             depth = self.depth,
         });
     }
 
-    pop_opacity :: (self: *RenderContext, prev_opacity: f32) {
+    popOpacity :: (self: *RenderContext, prevOpacity: f32) {
         self.tree.add(.{
-            type = .opacity_pop,
+            type = .opacityPop,
             depth = self.depth,
         });
-        self.opacity = prev_opacity;
+        self.opacity = prevOpacity;
     }
 }

@@ -12,7 +12,7 @@
 // Two phases, measured separately:
 //   BUILD — construct the tree BUILDS times (one construction is too short
 //           for a stable clock sample)
-//   WALK  — render_root repeatedly; the command list is truncated each
+//   WALK  — renderRoot repeatedly; the command list is truncated each
 //           walk so the pass is one frame, not an unbounded append
 //
 // NOT a corpus example: it runs for seconds.

@@ -1,4 +1,4 @@
-// One font_size means ONE size: a run measures the same whether it took the
+// One fontSize means ONE size: a run measures the same whether it took the
 // ASCII fast path (stbtt) or the shaping path (kbts). The two disagreed
 // because they scaled font units differently, so adding a single non-ASCII
 // character silently resized the whole string.
@@ -18,7 +18,7 @@
 @import "modules/ui/surface_select.sx";
 
 main :: () {
-    surface := open_pixel_surface(64, 32);
+    surface := openPixelSurface(64, 32);
     if surface == null {
         print("scale parity skipped: no display/GPU on this host\n");
         return;
@@ -28,9 +28,9 @@ main :: () {
     // byte, so the WHOLE run shapes through kbts — including the same A and B.
     // Subtracting the middot leaves the identical pair, measured by the other
     // path.
-    ascii := measure_text("AB", 20.0).width;
-    dot := measure_text("·", 20.0).width;
-    shaped := measure_text("AB·", 20.0).width - dot;
+    ascii := measureText("AB", 20.0).width;
+    dot := measureText("·", 20.0).width;
+    shaped := measureText("AB·", 20.0).width - dot;
 
     delta := if shaped > ascii then shaped - ascii else ascii - shaped;
     process.assert(delta < 0.01, "the two shaping paths scale font units identically");

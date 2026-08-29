@@ -1,5 +1,5 @@
 // Depth-tested indexed mesh through the GPU protocol's 3D path:
-// create_index_buffer / set_index_buffer / set_depth_mode / draw_indexed
+// createIndexBuffer / setIndexBuffer / setDepthMode / drawIndexed
 // over MeshVertex-stride vertices, rendered windowless and read back.
 //
 // The near triangle is drawn FIRST and the far one second, so the far
@@ -44,9 +44,9 @@ main :: () -> i32 {
     inline if @host.os != .macos { print("depth center rgba: 0 255 0 255\n"); return 0; }
 
     gpu : MetalGPU = .{};
-    if !gpu.init_offscreen(W, H) { print("offscreen init failed\n"); return 1; }
+    if !gpu.initOffscreen(W, H) { print("offscreen init failed\n"); return 1; }
 
-    sh := gpu.create_shader(MSL_MESH, "");
+    sh := gpu.createShader(MSL_MESH, "");
     if sh == 0 { print("shader failed\n"); return 1; }
 
     // Two overlapping triangles: the first at z=0.2 (nearer in Metal's
@@ -63,38 +63,38 @@ main :: () -> i32 {
 
     vbytes : i64 = @sizeOf(MeshVertex) * 6;
     ibytes : i64 = 4 * 6;
-    vb := gpu.create_buffer(vbytes);
-    ib := gpu.create_index_buffer(ibytes);
+    vb := gpu.createBuffer(vbytes);
+    ib := gpu.createIndexBuffer(ibytes);
     if vb == 0 { print("vertex buffer failed\n"); return 1; }
     if ib == 0 { print("index buffer failed\n"); return 1; }
-    gpu.update_buffer(vb, *verts[0], vbytes);
-    gpu.update_index_buffer(ib, *idx[0], ibytes);
+    gpu.updateBuffer(vb, *verts[0], vbytes);
+    gpu.updateIndexBuffer(ib, *idx[0], ibytes);
 
     green : [4]f32 = .[0.0, 1.0, 0.0, 1.0];
     red   : [4]f32 = .[1.0, 0.0, 0.0, 1.0];
 
-    gpu.set_depth_mode(.less);
-    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
-    gpu.set_shader(sh);
-    gpu.set_vertex_buffer(vb);
-    gpu.set_index_buffer(ib);
+    gpu.setDepthMode(.less);
+    if !gpu.beginFrame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    gpu.setShader(sh);
+    gpu.setVertexBuffer(vb);
+    gpu.setIndexBuffer(ib);
 
-    gpu.set_vertex_constants(1, *green[0], 16);
-    gpu.draw_indexed(0, 3);
-    gpu.set_vertex_constants(1, *red[0], 16);
-    gpu.draw_indexed(3, 3);
-    gpu.end_frame(0.0);
+    gpu.setVertexConstants(1, *green[0], 16);
+    gpu.drawIndexed(0, 3);
+    gpu.setVertexConstants(1, *red[0], 16);
+    gpu.drawIndexed(3, 3);
+    gpu.endFrame(0.0);
 
     n : i64 = (W * H * 4);
     px : [*]u8 = xx context.allocator.allocBytes(n);
-    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
+    if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
 
     o : i64 = (((H / 2) * W + (W / 2)) * 4);
     print("depth center rgba: {} {} {} {}\n", px[o], px[o + 1], px[o + 2], px[o + 3]);
 
-    gpu.destroy_index_buffer(ib);
-    gpu.destroy_buffer(vb);
-    gpu.destroy_shader(sh);
+    gpu.destroyIndexBuffer(ib);
+    gpu.destroyBuffer(vb);
+    gpu.destroyShader(sh);
 
     if px[o] != 0 { return 1; }
     if px[o + 1] != 255 { return 1; }

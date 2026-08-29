@@ -2,7 +2,7 @@
 //
 // Each declares itself into `fluent.View` and answers the three methods the set
 // declares, at the types the set declares them. Text measures through the
-// foundation's `measure_text`, so a component sizes on the metrics the renderer
+// foundation's `measureText`, so a component sizes on the metrics the renderer
 // will draw with.
 //
 // A component that owns a surface owns the padding inside it; what a caller puts
@@ -16,31 +16,31 @@
 
 // One box, one command: a stroke rides ON the fill, a radius rounds what is
 // drawn, and a plain fill is the unrounded rect.
-paint_box :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border: ?Stroke) {
+paintBox :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border: ?Stroke) {
     if s := border {
-        rc.add_stroked_rect(frame, fill, s.color, s.width, corner);
+        rc.addStrokedRect(frame, fill, s.color, s.width, corner);
         return;
     }
     if corner > 0.0 {
-        rc.add_rounded_rect(frame, fill, corner);
+        rc.addRoundedRect(frame, fill, corner);
     } else {
-        rc.add_rect(frame, fill);
+        rc.addRect(frame, fill);
     }
 }
 
 Label :: @OpenVariant(View) {
     text: string = "";
-    font_size: f32 = 16.0;
+    fontSize: f32 = 16.0;
     color: Color = COLOR_WHITE;
 
-    size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
-        measure_text(self.text, self.font_size)
+    sizeThatFits :: (self: *Label, proposal: ProposedSize) -> Size {
+        measureText(self.text, self.fontSize)
     }
 
     layout :: (self: *Label, bounds: Frame) {}
 
     render :: (self: *Label, rc: *RenderContext, frame: Frame) {
-        rc.add_text(frame, self.text, self.font_size, self.color);
+        rc.addText(frame, self.text, self.fontSize, self.color);
     }
 }
 
@@ -53,7 +53,7 @@ Rect :: @OpenVariant(View) {
     width: f32 = 0.0;
     height: f32 = 0.0;
 
-    size_that_fits :: (self: *Rect, proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *Rect, proposal: ProposedSize) -> Size {
         Size{
             width = proposal.width ?? self.width,
             height = proposal.height ?? self.height,
@@ -63,22 +63,22 @@ Rect :: @OpenVariant(View) {
     layout :: (self: *Rect, bounds: Frame) {}
 
     render :: (self: *Rect, rc: *RenderContext, frame: Frame) {
-        paint_box(rc, frame, self.fill, self.corner, self.border);
+        paintBox(rc, frame, self.fill, self.corner, self.border);
     }
 }
 
 Button :: @OpenVariant(View) {
     label: string = "";
-    font_size: f32 = 16.0;
-    text_color: Color = COLOR_WHITE;
+    fontSize: f32 = 16.0;
+    textColor: Color = COLOR_WHITE;
     fill: Color = Color{ r = 51, g = 102, b = 230, a = 255 };
     corner: f32 = 6.0;
     border: ?Stroke = null;
     padding: EdgeInsets = EdgeInsets.symmetric(12.0, 6.0);
     modifier: Modifier = .{};
 
-    size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
-        text := measure_text(self.label, self.font_size);
+    sizeThatFits :: (self: *Button, proposal: ProposedSize) -> Size {
+        text := measureText(self.label, self.fontSize);
         pad := self.padding.horizontal() + self.modifier.padding.horizontal();
         vpad := self.padding.vertical() + self.modifier.padding.vertical();
         Size{
@@ -90,15 +90,15 @@ Button :: @OpenVariant(View) {
     layout :: (self: *Button, bounds: Frame) {}
 
     render :: (self: *Button, rc: *RenderContext, frame: Frame) {
-        paint_box(rc, frame, self.fill, self.corner, self.border);
-        text := measure_text(self.label, self.font_size);
-        rc.add_text(
+        paintBox(rc, frame, self.fill, self.corner, self.border);
+        text := measureText(self.label, self.fontSize);
+        rc.addText(
             Frame.make(
-                frame.origin.x + align_h(.center, text.width, frame.size.width),
-                frame.origin.y + align_v(.center, text.height, frame.size.height),
+                frame.origin.x + alignH(.center, text.width, frame.size.width),
+                frame.origin.y + alignV(.center, text.height, frame.size.height),
                 text.width,
                 text.height,
             ),
-            self.label, self.font_size, self.text_color);
+            self.label, self.fontSize, self.textColor);
     }
 }

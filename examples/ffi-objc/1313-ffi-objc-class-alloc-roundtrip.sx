@@ -34,8 +34,8 @@ main :: () -> i32 {
 
         // [SxFoo alloc] — invokes the synthesized +alloc IMP.
         sel_alloc : SEL = sel_registerName("alloc".ptr);
-        msg_fn : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
-        instance : *void = msg_fn(cls, sel_alloc);
+        msgFn : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        instance : *void = msgFn(cls, sel_alloc);
         if instance == null { print("FAIL: +alloc returned null\n"); return 1; }
 
         // Verify __sx_state was set on the new instance.

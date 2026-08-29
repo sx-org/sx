@@ -43,11 +43,11 @@ RenderContext :: struct {
         RenderContext{ tree = tree, opacity = 1.0 }
     }
 
-    add_rect :: (self: *RenderContext, frame: Frame, fill: Color) {
+    addRect :: (self: *RenderContext, frame: Frame, fill: Color) {
         self.tree.add(.{ kind = .rect, frame = frame, fill = fill, opacity = self.opacity });
     }
 
-    add_text :: (self: *RenderContext, frame: Frame, text: string) {
+    addText :: (self: *RenderContext, frame: Frame, text: string) {
         self.tree.add(.{ kind = .text, frame = frame, text = text, opacity = self.opacity });
     }
 }

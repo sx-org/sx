@@ -13,9 +13,9 @@ ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
 
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
-move :: (x: f32, y: f32) -> InputEvent => .pointer_move(.{ pointer = .{ value = 1 }, position = at(x, y) });
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
+down :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ pointer = .{ value = 1 }, position = at(x, y) });
+move :: (x: f32, y: f32) -> InputEvent => .pointerMove(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ pointer = .{ value = 1 }, position = at(x, y) });
 
 send :: (r: *Router, ev: InputEvent) {
     e := ev;
@@ -33,7 +33,7 @@ main :: () -> i32 {
     tally := Tally{};
 
     push .{ compose_ui = *identity, compose_input = *router } {
-        identity.begin_build();
+        identity.beginBuild();
 
         // A handler captures by value, so what it carries to fire time is the
         // pointer, not the counters.
@@ -55,23 +55,23 @@ main :: () -> i32 {
         snap := CommittedUiSnapshot.init(context.allocator);
         project(*root, Size{ width = 100.0, height = 80.0 }, *snap);
         router.observe(*snap);
-        print("regions {} nodes {}\n", snap.hit_list.len, snap.scene.nodes.len);
+        print("regions {} nodes {}\n", snap.hitList.len, snap.scene.nodes.len);
 
-        top_id := ElementId{ value = snap.hit_list.items[0].id };
+        top_id := ElementId{ value = snap.hitList.items[0].id };
 
         // A tap on the top row.
         send(*router, down(20.0, 10.0));
-        pressed_top := is_pressed(top_id);
+        pressed_top := isPressed(top_id);
         send(*router, up(20.0, 10.0));
-        print("top {} pressed {} after {}\n", tally.top, pressed_top, is_pressed(top_id));
+        print("top {} pressed {} after {}\n", tally.top, pressed_top, isPressed(top_id));
 
         // The point stays captured across a move that leaves the region and
         // comes back; leaving drops the press, returning restores it.
         send(*router, down(20.0, 10.0));
         send(*router, move(20.0, 60.0));
-        left := is_pressed(top_id);
+        left := isPressed(top_id);
         send(*router, move(20.0, 10.0));
-        back := is_pressed(top_id);
+        back := isPressed(top_id);
         send(*router, up(20.0, 10.0));
         print("wander {} {} taps {}\n", left, back, tally.top);
 
@@ -94,7 +94,7 @@ main :: () -> i32 {
         // A rebuild without the top row: the captured sequence has nothing
         // left to tap, so the up that follows fires nothing.
         send(*router, down(20.0, 10.0));
-        identity.begin_build();
+        identity.beginBuild();
         rest : View = vstack(0.0) {
             Rect{ fill = ui.COLOR_GREEN, height = 40.0 }
         };
@@ -102,7 +102,7 @@ main :: () -> i32 {
         project(*rest, Size{ width = 100.0, height = 80.0 }, *next);
         router.observe(*next);
         send(*router, up(20.0, 10.0));
-        print("vanished {} {}\n", tally.top, is_pressed(top_id));
+        print("vanished {} {}\n", tally.top, isPressed(top_id));
 
         next.deinit();
         snap.deinit()

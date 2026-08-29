@@ -10,80 +10,80 @@
 // handle borrows the named object's storage, never copies it (same class as
 // Platform/Allocator/Io).
 GPU :: interface {
-    // Bind the GPU to a backend-specific render target. pixel_w/pixel_h
+    // Bind the GPU to a backend-specific render target. pixelW/pixelH
     // are the drawable's pixel dimensions; call resize when they change.
-    init :: (self: *Self, target: *void, pixel_w: i32, pixel_h: i32) -> bool;
+    init :: (self: *Self, target: *void, pixelW: i32, pixelH: i32) -> bool;
     shutdown :: (self: *Self);
 
-    resize :: (self: *Self, pixel_w: i32, pixel_h: i32);
+    resize :: (self: *Self, pixelW: i32, pixelH: i32);
 
-    begin_frame :: (self: *Self, clear: ClearColor) -> bool;
+    beginFrame :: (self: *Self, clear: ClearColor) -> bool;
 
-    // target_time is the host clock time at which the drawable should be
+    // targetTime is the host clock time at which the drawable should be
     // presented, in the units the platform's display-link callback
     // reports; zero means present as soon as possible. Backends that can
     // schedule presentation use it to cap the pipeline at one frame so a
     // frame lands on the same vsync as the host's own compositing; the
     // rest ignore it.
-    end_frame :: (self: *Self, target_time: f64);
+    endFrame :: (self: *Self, targetTime: f64);
 
-    create_shader :: (self: *Self, vsrc: string, fsrc: string) -> ShaderHandle;
-    create_buffer :: (self: *Self, size_bytes: i64) -> BufferHandle;
-    create_index_buffer :: (self: *Self, size_bytes: i64) -> IndexHandle;
-    update_index_buffer :: (self: *Self, buf: IndexHandle, data: *void, size_bytes: i64);
-    update_buffer :: (self: *Self, buf: BufferHandle, data: *void, size_bytes: i64);
+    createShader :: (self: *Self, vsrc: string, fsrc: string) -> ShaderHandle;
+    createBuffer :: (self: *Self, sizeBytes: i64) -> BufferHandle;
+    createIndexBuffer :: (self: *Self, sizeBytes: i64) -> IndexHandle;
+    updateIndexBuffer :: (self: *Self, buf: IndexHandle, data: *void, sizeBytes: i64);
+    updateBuffer :: (self: *Self, buf: BufferHandle, data: *void, sizeBytes: i64);
     // Sub-buffer write at a byte offset. A backend may read buffer
     // contents when the GPU executes the draw rather than when the draw
     // is recorded, so re-using one slice across several draws in a frame
     // is a race the last writer wins: a renderer that issues more than
     // one draw per frame must advance its write offset between flushes.
-    update_buffer_at :: (self: *Self, buf: BufferHandle, data: *void, size_bytes: i64, byte_offset: i64);
-    create_texture :: (self: *Self, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle;
-    update_texture_region :: (self: *Self, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void);
+    updateBufferAt :: (self: *Self, buf: BufferHandle, data: *void, sizeBytes: i64, byteOffset: i64);
+    createTexture :: (self: *Self, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle;
+    updateTextureRegion :: (self: *Self, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void);
 
     // Release a GPU resource. Implementations release the backing object and
     // null the slot so the handle becomes inert. Calling with handle 0 or
     // an already-destroyed handle is a no-op. Handles are not re-used; the
     // backing List entry stays at its index with a null sentinel.
-    destroy_shader :: (self: *Self, sh: ShaderHandle);
-    destroy_buffer :: (self: *Self, buf: BufferHandle);
-    destroy_index_buffer :: (self: *Self, buf: IndexHandle);
-    destroy_texture :: (self: *Self, tex: TextureHandle);
+    destroyShader :: (self: *Self, sh: ShaderHandle);
+    destroyBuffer :: (self: *Self, buf: BufferHandle);
+    destroyIndexBuffer :: (self: *Self, buf: IndexHandle);
+    destroyTexture :: (self: *Self, tex: TextureHandle);
 
-    set_shader :: (self: *Self, sh: ShaderHandle);
-    set_vertex_buffer :: (self: *Self, buf: BufferHandle);
-    set_index_buffer :: (self: *Self, buf: IndexHandle);
-    set_texture :: (self: *Self, slot: u32, tex: TextureHandle);
-    set_vertex_constants :: (self: *Self, slot: u32, data: *void, size_bytes: i64);
-    set_scissor :: (self: *Self, x: i32, y: i32, w: i32, h: i32);
-    disable_scissor :: (self: *Self);
+    setShader :: (self: *Self, sh: ShaderHandle);
+    setVertexBuffer :: (self: *Self, buf: BufferHandle);
+    setIndexBuffer :: (self: *Self, buf: IndexHandle);
+    setTexture :: (self: *Self, slot: u32, tex: TextureHandle);
+    setVertexConstants :: (self: *Self, slot: u32, data: *void, sizeBytes: i64);
+    setScissor :: (self: *Self, x: i32, y: i32, w: i32, h: i32);
+    disableScissor :: (self: *Self);
 
     // Sticky across frames — the mode holds until changed, including
-    // over begin_frame, which clears the depth buffer to the far plane
+    // over beginFrame, which clears the depth buffer to the far plane
     // alongside the color clear.
-    set_depth_mode :: (self: *Self, mode: DepthMode);
+    setDepthMode :: (self: *Self, mode: DepthMode);
 
     // Copy `count` BoneMatrix out of `data` into the backend's palette;
-    // every later draw_skinned pushes that copy. Sticky like
-    // set_depth_mode: the palette holds across shader changes and over
+    // every later drawSkinned pushes that copy. Sticky like
+    // setDepthMode: the palette holds across shader changes and over
     // frame boundaries. A null pointer, or a count outside
     // [0, GPU_MAX_BONES], leaves the palette unchanged. The palette
-    // occupies vertex-constant slot 8, so set_vertex_constants must not
+    // occupies vertex-constant slot 8, so setVertexConstants must not
     // use that slot.
-    set_bone_palette :: (self: *Self, data: *void, count: i32);
+    setBonePalette :: (self: *Self, data: *void, count: i32);
 
     // Vertices are the 2D renderer layout (64 bytes), not MeshVertex.
-    draw_triangles :: (self: *Self, vertex_offset: i32, vertex_count: i32);
+    drawTriangles :: (self: *Self, vertexOffset: i32, vertexCount: i32);
 
     // Triangles over the bound index buffer, u32 indices, sourcing
     // MeshVertex-stride vertices from the bound vertex buffer.
-    // index_offset counts indices, not bytes.
-    draw_indexed :: (self: *Self, index_offset: i32, index_count: i32);
+    // indexOffset counts indices, not bytes.
+    drawIndexed :: (self: *Self, indexOffset: i32, indexCount: i32);
 
     // Triangles over the bound index buffer, u32 indices, sourcing
     // SkinnedVertex-stride vertices from the bound vertex buffer and
     // skinning them in the vertex stage against the current bone
-    // palette. index_offset counts indices, not bytes. An empty palette
+    // palette. indexOffset counts indices, not bytes. An empty palette
     // issues no draw.
-    draw_skinned :: (self: *Self, index_offset: i32, index_count: i32);
+    drawSkinned :: (self: *Self, indexOffset: i32, indexCount: i32);
 }

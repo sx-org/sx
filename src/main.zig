@@ -813,7 +813,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     // Post-link build driver. Either the user registered an `onBuild(cb)`
-    // override (bundling is `@run onBuild(bundle_main);` — bundle_main runs the
+    // override (bundling is `@run onBuild(bundleMain);` — bundleMain runs the
     // emit+link core then wraps the `.app`/`.apk`), or we run the stdlib
     // `defaultPipeline` (emit + link; it fails with a precise hint if a bundle was
     // requested via `--bundle`/`--apk` but no bundler was registered). The CLI

@@ -31,14 +31,14 @@ BoardView :: @OpenVariant(View) {
     state: *BoardViewState = null;
     side: f32 = 0.0;
 
-    size_that_fits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *BoardView, proposal: ProposedSize) -> Size {
         Size{ width = self.side, height = self.side }
     }
 
     layout :: (self: *BoardView, bounds: Frame) {}
 
     render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, Color.rgb(26, 26, 26));
+        rc.addRect(frame, Color.rgb(26, 26, 26));
     }
 }
 
@@ -76,8 +76,8 @@ main :: () -> i32 {
 
     root : View = screen;
     tree := RenderTree{};
-    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
-    print("commands {}\n", command_count(*tree));
+    renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", commandCount(*tree));
     0
 }
 

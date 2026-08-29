@@ -4,27 +4,27 @@
 
 // The one host event stream. INPUT is the normalized InputEvent —
 // consumers push `.input` payloads into their root's InputQueue for
-// the §6.9 router. quit/window_resize are lifecycle events, outside the
+// the §6.9 router. quit/windowResize are lifecycle events, outside the
 // normalized input surface.
 PlatformEvent :: enum {
     quit;
-    window_resize: Size;
+    windowResize: Size;
     input: InputEvent;
 }
 
 FrameContext :: struct {
-    viewport_w: f32;
-    viewport_h: f32;
-    pixel_w: i32;
-    pixel_h: i32;
-    dpi_scale: f32;
-    delta_time: f32;
+    viewportW: f32;
+    viewportH: f32;
+    pixelW: i32;
+    pixelH: i32;
+    dpiScale: f32;
+    deltaTime: f32;
     // The host clock time at which the next vsync will present the frame
     // we're about to render. On iOS this is CADisplayLink.targetTimestamp;
-    // forward it to MetalGPU.end_frame() to schedule presentDrawable:atTime:
+    // forward it to MetalGPU.endFrame() to schedule presentDrawable:atTime:
     // so our drawable hits the same vsync as UIKit's compositor. Other
     // platforms leave it 0 (Metal then falls back to immediate present).
-    target_present_time: f64;
+    targetPresentTime: f64;
 }
 
 KeyboardState :: struct {

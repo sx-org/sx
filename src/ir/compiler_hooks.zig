@@ -36,7 +36,7 @@ pub const BuildConfig = struct {
     /// compiler invokes the callback with the opaque handle as its arg.
     post_link_takes_options: bool = false,
     /// Alternative to `post_link_callback_fn`: the qualified name of
-    /// a module whose `bundle_main` function should be called
+    /// a module whose `bundleMain` function should be called
     /// post-link.
     post_link_module: ?[]const u8 = null,
 

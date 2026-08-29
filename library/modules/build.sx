@@ -4,7 +4,7 @@
 @import "modules/std.sx";
 @import "modules/compiler.sx";
 // The sx-side `.app`/`.apk` bundler. `defaultPipeline` delegates to its
-// `bundle_main` when a bundle was requested. The bundler is compile-time-only
+// `bundleMain` when a bundle was requested. The bundler is compile-time-only
 // (comptime-only, never emitted into the binary), and the build↔bundle import
 // cycle resolves like the std↔build one.
 @import "modules/platform/bundle.sx";
@@ -49,8 +49,8 @@ assetDirSrcAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 assetDirDestAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 
 // Name-based alternative to `onBuild`. The compiler resolves
-// `<module_name>.bundle_main` after linking.
-setPostLinkModule :: ufcs (self: BuildOptions, module_name: [:0]u8) intrinsic;
+// `<moduleName>.bundleMain` after linking.
+setPostLinkModule :: ufcs (self: BuildOptions, moduleName: [:0]u8) intrinsic;
 
 // Path of the freshly-linked binary, only meaningful while a
 // post-link callback is running. Returns "" before linking.
@@ -103,7 +103,7 @@ keystorePath :: ufcs (self: BuildOptions) -> string intrinsic;
 // `@JniClass("path") { ... }` decls collected during
 // lowering. The Android bundler walks `0..jniMainCount()` and
 // for each entry writes a `.java` file at
-// `<stage>/java/<runtime_path>.java`, compiles via javac + d8, and
+// `<stage>/java/<runtimePath>.java`, compiles via javac + d8, and
 // bundles the resulting classes.dex into the APK.
 jniMainCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
 jniMainRuntimePathAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
@@ -121,7 +121,7 @@ onBuild :: (cb: (opt: BuildOptions) -> bool) intrinsic;
 //
 // `emitAndLink` is the build CORE: emit the sx object, gather the C companion
 // objects, and link them into the output with the build's libraries / frameworks /
-// flags / target. Shared by `defaultPipeline` AND `platform.bundle.bundle_main`
+// flags / target. Shared by `defaultPipeline` AND `platform.bundle.bundleMain`
 // (which wraps it with the per-target `.app` / `.apk` bundling) so a bundler
 // override doesn't re-implement emit+link.
 emitAndLink :: (opt: BuildOptions) -> bool {
@@ -136,17 +136,17 @@ emitAndLink :: (opt: BuildOptions) -> bool {
 // codegen (everything is sx-driven — there is no auto-emit/auto-link). It emits +
 // links the program via `emitAndLink`. A user overrides the whole pipeline with
 // their own `@run onBuild(custom);` in main.sx (last-wins) — e.g. bundling is
-// `@import "modules/platform/bundle.sx"; @run onBuild(bundle_main);`, where
-// `bundle_main` runs `emitAndLink` then wraps the binary into a `.app` / `.apk`.
+// `@import "modules/platform/bundle.sx"; @run onBuild(bundleMain);`, where
+// `bundleMain` runs `emitAndLink` then wraps the binary into a `.app` / `.apk`.
 // The compiler FORCE-LOWERS this well-known name and auto-invokes it after codegen
 // when no `onBuild` override was registered (no library `@run` needed).
 //
 // When a bundle was requested (`--bundle`/`--apk` or `setBundlePath`), delegate
-// to the per-target bundler (`bundle_main` runs the emit+link core then wraps the
+// to the per-target bundler (`bundleMain` runs the emit+link core then wraps the
 // `.app`/`.apk`); otherwise just emit + link.
 defaultPipeline :: (opt: BuildOptions) -> bool {
     if opt.bundlePath().len > 0 {
-        return bundle_main(opt);
+        return bundleMain(opt);
     }
     return emitAndLink(opt);
 }

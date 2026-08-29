@@ -29,7 +29,7 @@ fs      :: @import "modules/std/fs.sx";
 mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 
 // ── BIO bridge (abi(.c) callbacks) ──────────────────────────────────
-// mbedTLS hands each its p_bio ctx = the *TlsSession (set via set_bio); the
+// mbedTLS hands each its pBio ctx = the *TlsSession (set via set_bio); the
 // thunk reads its fd and issues one raw nonblocking read/write, translating
 // the result into the byte count OR an mbedTLS WANT_* sentinel. EINTR is
 // retried in-thunk (a readiness loop has nothing else to do with it).
@@ -63,7 +63,7 @@ tlsBioRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 
 // ── per-connection session (impls TlsConn) ──────────────────────────
 // Heap-allocated by TlsServer.accept so its address is stable for set_bio's
-// p_bio and for mbedTLS's own pointer into ssl. Owns the SslContext by value
+// pBio and for mbedTLS's own pointer into ssl. Owns the SslContext by value
 // + the fd + the allocator that minted it (to free itself in close).
 TlsSession :: struct {
     ssl: mbedtls.SslContext;
@@ -432,9 +432,9 @@ freeAlpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
 }
 
 // the SNI handshake callback (abi(.c) — mbedTLS calls it mid-handshake
-// with p_sni = the *TlsServer). Exact ASCII-case-insensitive match against
+// with pSni = the *TlsServer). Exact ASCII-case-insensitive match against
 // the table selects that entry's cert/key for THIS handshake; no match keeps
-// the default own_cert (return 0 either way — never abort on unknown names,
+// the default ownCert (return 0 either way — never abort on unknown names,
 // clients legitimately connect by IP/other names and get the default
 // identity). A set_hs_own_cert failure aborts rather than serving the wrong
 // identity.

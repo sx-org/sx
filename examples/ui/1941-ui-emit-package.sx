@@ -24,8 +24,8 @@ main :: () -> i32 {
 
     root : View = stack;
     tree := RenderTree{};
-    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
-    print("commands {}\n", command_count(*tree));
+    renderRoot(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", commandCount(*tree));
     0
 }
 

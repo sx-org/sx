@@ -1,4 +1,4 @@
-// load_fn writes get_proc(name).(T) into *slot. load_gl fills every
+// loadFn writes getProc(name).(T) into *slot. loadGl fills every
 // GL entry that way — a null stub is enough to exercise the loader.
 @import "modules/std.sx";
 @import "modules/ffi/opengl.sx";
@@ -8,6 +8,6 @@ stub :: (name: cstring) -> *void abi(.c) {
 }
 
 main :: () {
-    load_gl(stub);
+    loadGl(stub);
     print("loaded\n");
 }

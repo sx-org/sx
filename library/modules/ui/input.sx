@@ -60,7 +60,7 @@ LogicalKey :: enum {
 // modifiers.
 InputHeader :: struct {
     root: UiRootId = .{ value = 0 };
-    time_ns: u64 = 0;
+    timeNs: u64 = 0;
     device: InputDeviceId = .{ value = 0 };
     modifiers: InputModifiers = .{};
 }
@@ -96,14 +96,14 @@ TextEvent :: struct {
 }
 
 InputEvent :: enum {
-    pointer_down: PointerEvent;
-    pointer_move: PointerEvent;
-    pointer_up: PointerEvent;
-    pointer_cancel: PointerEvent;
-    pointer_hover: PointerEvent;    // no contact — never coalesces with moves
+    pointerDown: PointerEvent;
+    pointerMove: PointerEvent;
+    pointerUp: PointerEvent;
+    pointerCancel: PointerEvent;
+    pointerHover: PointerEvent;    // no contact — never coalesces with moves
     scroll: ScrollEvent;
-    key_down: KeyEvent;
-    key_up: KeyEvent;
+    keyDown: KeyEvent;
+    keyUp: KeyEvent;
     text: TextEvent;
 }
 
@@ -129,7 +129,7 @@ InputQueue :: struct {
         // Owned payloads: copy on entry, before any queue placement.
         match ev {
             case .text: |t| {
-                self.events.append(.text(self.copy_text(t)), self.gpa);
+                self.events.append(.text(self.copyText(t)), self.gpa);
                 return;
             }
             else: {}
@@ -137,9 +137,9 @@ InputQueue :: struct {
         if self.events.len > 0 {
             last := *self.events.items[self.events.len - 1];
             match ev {
-                case .pointer_move: |p| {
+                case .pointerMove: |p| {
                     match last {
-                        case .pointer_move: |lp| {
+                        case .pointerMove: |lp| {
                             if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
                                 self.events.items[self.events.len - 1] = ev;
                                 return;
@@ -147,9 +147,9 @@ InputQueue :: struct {
                         }
                     }
                 }
-                case .pointer_hover: |p| {
+                case .pointerHover: |p| {
                     match last {
-                        case .pointer_hover: |lp| {
+                        case .pointerHover: |lp| {
                             if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
                                 self.events.items[self.events.len - 1] = ev;
                                 return;
@@ -175,7 +175,7 @@ InputQueue :: struct {
         self.events.append(ev, self.gpa);
     }
 
-    copy_text :: (self: *InputQueue, t: TextEvent) -> TextEvent {
+    copyText :: (self: *InputQueue, t: TextEvent) -> TextEvent {
         raw : [*]u8 = (self.gpa.allocBytes(t.text.len)).([*]u8);
         c.memcpy(raw, t.text.ptr, t.text.len);
         owned : string = ---;

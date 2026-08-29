@@ -35,8 +35,8 @@ main :: () -> i32 {
         if method == null { print("FAIL: class method not on metaclass\n"); return 1; }
 
         // Invoke via objc_msgSend: [SxFoo answer] → 42.
-        msg_fn : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
-        result : i32 = msg_fn(cls, sel_answer);
+        msgFn : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
+        result : i32 = msgFn(cls, sel_answer);
         if result != 42 { print("FAIL: expected 42, got {}\n", result); return 1; }
 
         print("class method: {}\n", result);

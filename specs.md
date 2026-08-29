@@ -1099,7 +1099,7 @@ Allocator :: interface {
     deallocBytes :: (self: *Self, ptr: *void);
 }
 View      :: interface {
-    size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
+    sizeThatFits :: (self: *Self, proposal: ProposedSize) -> Size;
     layout         :: (self: *Self, bounds: Frame);
     render         :: (self: *Self, ctx: *RenderContext, frame: Frame);
 }
@@ -1468,7 +1468,7 @@ coercion. On a concrete rvalue it is the same error.
 names `?I` / `?i64`). `*T = null` is the null pointer.
 
 **`---` is uninit.** A non-optional I slot may be `---` (LLVM undef, no
-handle). `parent_allocator: Allocator = ---` is the GPU dummy: `init`
+handle). `parentAllocator: Allocator = ---` is the GPU dummy: `init`
 writes the field. A statically-constructed struct cannot take `---` at
 an I field — the operand of a static position names a module-scope
 global (§6.6).
@@ -3615,7 +3615,7 @@ List :: struct ($T: Type) {
 
 // Call sites:
 list.append(42);                         // alloc = current context.allocator
-list.append(42, self.parent_allocator);  // alloc = the named long-lived owner
+list.append(42, self.parentAllocator);  // alloc = the named long-lived owner
 ```
 
 The trailing `site: @SourceSite = @caller` rides the same mechanism: a growth
@@ -4333,15 +4333,15 @@ For C interop with tagged unions (e.g. SDL_Event), a struct can be used as the b
 // Inline layout
 SDL_Event :: enum struct { tag: u32; _: u32; payload: [30]u32; } {
     quit :: 0x100;
-    key_down :: 0x300: SDL_KeyData;
-    key_up :: 0x301: SDL_KeyData;
+    keyDown :: 0x300: SDL_KeyData;
+    keyUp :: 0x301: SDL_KeyData;
 }
 
 // Named layout
 EventLayout :: struct { tag: u32; _: u32; payload: [30]u32; }
 SDL_Event :: enum EventLayout {
     quit :: 0x100;
-    key_down :: 0x300: SDL_KeyData;
+    keyDown :: 0x300: SDL_KeyData;
 }
 ```
 
@@ -4912,7 +4912,7 @@ likewise snapshotted into a fresh temp rather than written back.)
 - Range positions have no storage — `*` on a range capture is a compile error.
 
 ```sx
-events := plat.poll_events();        // []Event
+events := plat.pollEvents();        // []Event
 for *ev in events {                  // ev : *Event — no copy
     pipeline.dispatch_event(ev);     // passes the pointer
 }
@@ -6159,7 +6159,7 @@ Users opt in **explicitly** from their own `@run` block:
     opts := buildOptions();
     opts.setBundlePath("MyApp.app");
     opts.setBundleId("com.example.app");
-    onBuild(bundle_main);
+    onBuild(bundleMain);
 }
 ```
 
@@ -6172,7 +6172,7 @@ Two registration forms:
 | Setter | Behavior |
 |--------|----------|
 | `onBuild(cb: (opt: BuildOptions) -> bool)` | First-class function value. Preferred. |
-| `BuildOptions.setPostLinkModule(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundle_main` post-link. |
+| `BuildOptions.setPostLinkModule(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundleMain` post-link. |
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
 `bundlePath` is set and no callback was registered, the compiler
@@ -6266,9 +6266,9 @@ locally-unwrapped optionals).
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 `d8`, `keytool`, `apksigner`, etc. through `run`.
 
-### Apple `.app` flow (`bundle.sx::bundle_main`)
+### Apple `.app` flow (`bundle.sx::bundleMain`)
 
-`bundle_main` branches on `isAndroid()` first; the remaining body is
+`bundleMain` branches on `isAndroid()` first; the remaining body is
 the Apple path. Per target:
 
 | Step | macOS | iOS sim | iOS device |
@@ -6280,7 +6280,7 @@ the Apple path. Per target:
 | Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `provisioningProfile()` set |
 | Codesign | ad-hoc (`-`) | ad-hoc | `--sign <identity> --entitlements <ent>` |
 
-### Android `.apk` flow (`bundle.sx::android_bundle_main`)
+### Android `.apk` flow (`bundle.sx::androidBundleMain`)
 
 The Android branch:
 
@@ -6290,7 +6290,7 @@ The Android branch:
 4. **Manifest** — user-supplied via `setManifestPath()`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
-5. **Compile `main = true` Java sources** — write each entry's `java_source` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
+5. **Compile `main = true` Java sources** — write each entry's `javaSource` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
 6. **`aapt2 link -I <android.jar> --manifest <m> -o <unaligned>`**.
 7. **Append archives** — `zip -q -r <unaligned> lib/`, then `zip -q <unaligned> classes.dex` (if dex was produced), then `zip` each registered asset dir at its `dest` path.
 8. **`zipalign -f 4 <unaligned> <aligned>`**.

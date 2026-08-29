@@ -10,7 +10,7 @@ PixelSurface :: interface {
     render :: (self: *Self, tree: *RenderTree);
     // Tightly packed TOP-DOWN RGBA of the last render, owned by `alloc`
     // (backends normalize their native origin before handing over).
-    read_rgba :: (self: *Self, alloc: Allocator) -> string;
+    readRgba :: (self: *Self, alloc: Allocator) -> string;
     width :: (self: *Self) -> i64;
     height :: (self: *Self) -> i64;
 }

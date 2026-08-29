@@ -25,14 +25,14 @@
 
 @framework "UIKit";
 
-UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 @import "modules/build.sx";
 @import "modules/platform/bundle.sx";
 
 configure :: () {
     opts := buildOptions();
     opts.setBundlePath("/tmp/SxDeviceProbe.app");
-    onBuild(bundle_main);
+    onBuild(bundleMain);
 }
 @run configure();
 

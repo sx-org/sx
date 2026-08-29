@@ -453,7 +453,7 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 // `--apk <path>` on the CLI is a transitional alias that feeds
-// `bundle_path` so the auto-fallback to `platform.bundle.bundle_main`
+// `bundle_path` so the auto-fallback to `platform.bundle.bundleMain`
 // fires; programs that opt in via `onBuild` reach the
 // sx bundler directly.
 

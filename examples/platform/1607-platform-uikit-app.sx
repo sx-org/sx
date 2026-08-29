@@ -16,7 +16,7 @@
 
 @framework "UIKit";
 
-UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 
 // IMP for application:didFinishLaunchingWithOptions:
 //   Obj-C: -(BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts

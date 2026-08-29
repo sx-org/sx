@@ -1,4 +1,4 @@
-// `build_block_convert(args: []Type, $ret: Type)
+// `buildBlockConvert(args: []Type, $ret: Type)
 // -> string` emits the per-shape source body for the generic
 // `Into(Block) for Closure(..$args) -> $R` impl.
 // Per-call-shape monomorphisation of the impl body re-runs the
@@ -7,7 +7,7 @@
 //
 // The builder is exercised directly (no `@insert`, no impl wiring) — three
 // pack shapes through the same `void`-returning wrapper plus one non-void
-// `i32`-returning wrapper to pin the `return typed_fn(...)` branch. The
+// `i32`-returning wrapper to pin the `return typedFn(...)` branch. The
 // expected output captures the generated source verbatim, so formatting
 // drift surfaces here rather than as a downstream compile error.
 
@@ -15,11 +15,11 @@
 @import "modules/ffi/objc_block.sx";
 
 preview_void :: (..$args) -> string {
-    return build_block_convert($args, void);
+    return buildBlockConvert($args, void);
 }
 
 preview_i32 :: (..$args) -> string {
-    return build_block_convert($args, i32);
+    return buildBlockConvert($args, i32);
 }
 
 run_all :: () {

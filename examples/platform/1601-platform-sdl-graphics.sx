@@ -83,17 +83,17 @@ main :: () {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     window := SDL_CreateWindow("sx GL cube", xx WIDTH, xx HEIGHT, SDL_WINDOW_OPENGL);
-    gl_ctx := SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, gl_ctx);
+    glCtx := SDL_GL_CreateContext(window);
+    SDL_GL_MakeCurrent(window, glCtx);
     SDL_GL_SetSwapInterval(1);
 
-    load_gl(SDL_GL_GetProcAddress);
+    loadGl(SDL_GL_GetProcAddress);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
     print("create program: {}\n{}\n", VERT_SHADER_SRC, FRAG_SHADER_SRC);
-    program := create_program(VERT_SHADER_SRC, FRAG_SHADER_SRC);
+    program := createProgram(VERT_SHADER_SRC, FRAG_SHADER_SRC);
     glUseProgram(program);
 
     mvp_loc : i32 = glGetUniformLocation(program, "uMVP");
@@ -177,19 +177,19 @@ main :: () {
         while SDL_PollEvent(event) {
             match event {
                 case .quit: running = false;
-                case .key_up: |e| {
+                case .keyUp: |e| {
                     match e.key {
                         case .escape: running = false;
                         //case .
                     }
                 }
-                case .window_exposed: |e| {
+                case .windowExposed: |e| {
                     
                 }
-                case .key_down: |e| {
+                case .keyDown: |e| {
                     k : u32 = xx e.key;
                     print("ts={} wid={} sc={} key={}\n",
-                        e.timestamp, e.window_id, e.scancode, k);
+                        e.timestamp, e.windowId, e.scancode, k);
                 }                
             }
         }
@@ -233,7 +233,7 @@ main :: () {
         SDL_GL_SwapWindow(window);
     }
 
-    SDL_GL_DestroyContext(gl_ctx);
+    SDL_GL_DestroyContext(glCtx);
     SDL_DestroyWindow(window);
     SDL_Quit();
 }

@@ -18,9 +18,9 @@
 // Trampoline matching `void (^)(int, void*)` — the C ABI Apple's
 // runtime calls. Forwards through to the sx closure with the
 // standard `(__sx_ctx, env, ...args)` shape.
-__block_invoke_void_i32_p :: (block_self: *Block, arg0: i32, arg1: *void) abi(.c) {
-    typed_fn : (*void, i32, *void) -> void = block_self.sx_fn.((*void, i32, *void) -> void);
-    typed_fn(block_self.sx_env, arg0, arg1);
+__block_invoke_void_i32_p :: (blockSelf: *Block, arg0: i32, arg1: *void) abi(.c) {
+    typedFn : (*void, i32, *void) -> void = blockSelf.sxFn.((*void, i32, *void) -> void);
+    typedFn(blockSelf.sxEnv, arg0, arg1);
 }
 
 impl Into(Block) for Closure(i32, *void) -> void {
@@ -32,8 +32,8 @@ impl Into(Block) for Closure(i32, *void) -> void {
             reserved = 0,
             invoke = (*__block_invoke_void_i32_p).(*void),
             descriptor = *__sx_block_descriptor,
-            sx_env = self.env,
-            sx_fn = self.fnPtr,
+            sxEnv = self.env,
+            sxFn = self.fnPtr,
         }
     }
 }
