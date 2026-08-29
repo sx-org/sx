@@ -222,8 +222,9 @@ const Expansion = struct {
     }
 
     /// The comptime facts a driver folds against, established before the scan
-    /// that would otherwise establish them: the two target enums the OS / ARCH
-    /// constants are tags of, and the module constants a condition can name.
+    /// that would otherwise establish them: the two target enums `@host`'s os
+    /// and arch fields are tags of, and the module constants a condition can
+    /// name.
     fn primeTargetFacts(ex: *Expansion, decls: []const *Node) void {
         var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
         defer seen.deinit();

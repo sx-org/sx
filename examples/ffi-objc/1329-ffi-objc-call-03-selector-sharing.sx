@@ -13,7 +13,7 @@
 @import "modules/build.sx";
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // Three calls, same selector, same nil receiver. These
         // emit three `sel_registerName("init")` calls. After 1.5 the
         // emit collapses to one (cached SEL global).
@@ -27,7 +27,7 @@ main :: () -> i32 {
 
         print("ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

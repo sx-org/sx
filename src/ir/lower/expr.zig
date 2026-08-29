@@ -473,7 +473,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     // not silently dropped. (A punned bare-ident that misses a field
                     // was already reclassified as positional by `has_names` above, so
                     // anything unmatched here is a genuine, mistaken named field — a
-                    // typo or a field removed by an `inline if OS` branch.)
+                    // typo or a field removed by an `inline if @host.os` branch.)
                     .missing => if (self.diagnostics) |d|
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
@@ -4515,7 +4515,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // `@error("msg");` that survived comptime pruning into live code —
         // fire at lower time (specs: the directive fires when REACHED; a
         // pruned `inline if` arm never lowers, so per-monomorphization
-        // rejection works exactly like the module-scope OS-match form).
+        // rejection works exactly like the module-scope `inline match` form).
         // Inside a monomorphized body the diagnostic anchors at the
         // OUTERMOST instantiation call site — the user call that forced the
         // instantiation — with the directive's own location as a note; a

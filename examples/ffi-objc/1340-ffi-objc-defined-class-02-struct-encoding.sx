@@ -41,7 +41,7 @@ SxMover :: @ObjcClass("SxMover") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         m := SxMover.alloc();
         if m == null { print("FAIL: alloc returned null\n"); return 1; }
 
@@ -53,7 +53,7 @@ main :: () -> i32 {
         release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
         release_fn(m, sel_release);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("at: (7.500000, 8.250000)\n");
     }
     0

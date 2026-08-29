@@ -12,7 +12,7 @@
 @import "modules/ffi/objc.sx";
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // ── Nil-recv quick smoke ───────────────────────────────────
         nil_cls := @ObjcCall(*void, null, "class");
         print("nil class    = {}\n", nil_cls == null);
@@ -34,7 +34,7 @@ main :: () -> i32 {
         h := @ObjcCall(i64, ns_object, "hash");
         print("hash non-zero = {}\n", h != 0);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

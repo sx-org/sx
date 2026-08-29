@@ -26,7 +26,7 @@ SxFoo :: @ObjcClass("SxFoo") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // sx-defined class round-trip.
         f := SxFoo.alloc();
         cls_f : Class = f.class;
@@ -41,7 +41,7 @@ main :: () -> i32 {
 
         print("class accessor: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("class accessor: ok\n");
     }
     0

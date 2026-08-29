@@ -261,7 +261,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
             return !inner;
         },
         // A bare identifier naming a module const folds through the const's
-        // value expression (`ENABLED :: false`, chains, `F :: OS == .ios`).
+        // value expression (`ENABLED :: false`, chains, `F :: @host.os == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
         .identifier => |id| {
             const info = self.program_index.module_const_map.get(id.name) orelse return null;
@@ -1937,9 +1937,9 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
 // ── Source-const folding ────────────────────────────────────────
 
 /// Resolve a name to a compile-time integer across the three const tables.
-/// A comptime binding (generic value param / inline-for cursor) or a
-/// `@run`/`OS`/`ARCH` comptime constant wins first; otherwise the name is a
-/// SOURCE-AWARE module const, folded with nested leaves resolved own-wins.
+/// A comptime binding (generic value param / inline-for cursor) wins first;
+/// otherwise the name is a SOURCE-AWARE module const, folded with nested
+/// leaves resolved own-wins.
 pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,

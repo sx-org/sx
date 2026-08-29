@@ -8,8 +8,7 @@
 // small and churns only when the bindings change. ir-only on the aarch64-macOS
 // dev host (target x86_64-linux mismatches host arch+os → the runner asserts
 // .exit + .ir + .stderr from `sx ir --target`); runtime behavior validates on a
-// linux runner (see the module header's VALIDATION NOTE). The `inline if ARCH`
-// in epoll.sx is resolved by the compiler's flatten pre-pass, so no build.sx.
+// linux runner (see the module header's VALIDATION NOTE).
 ep :: @import "modules/std/net/epoll.sx";
 
 main :: () -> i32 {

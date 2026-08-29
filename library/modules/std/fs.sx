@@ -5,7 +5,7 @@
 // File is a small by-value handle whose portable slot holds either a POSIX
 // descriptor or the bits of a Win32 HANDLE.
 
-inline if OS == .windows {
+inline if @host.os == .windows {
     @import "modules/std/fs/windows.sx";
 } else {
     @import "modules/std/fs/posix.sx";

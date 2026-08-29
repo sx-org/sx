@@ -1,0 +1,7 @@
+// `@host` is the only target fact. A bare `OS` names nothing, so it fails
+// through the ordinary unresolved-identifier path.
+@import "modules/std.sx";
+
+main :: () {
+    print("{}\n", OS);
+}

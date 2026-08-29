@@ -53,7 +53,7 @@ main :: () -> i32 {
 
         // Kill the readiness queue out from under the loop: every wait()
         // from here on fails immediately.
-        inline if OS == .linux {
+        inline if @host.os == .linux {
             socket.close(srv.loop.epfd);
         } else {
             socket.close(srv.loop.kq);

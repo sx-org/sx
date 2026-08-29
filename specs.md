@@ -105,6 +105,10 @@ other type:
 site := @SourceSite{ file = "fake.sx", declaration = "tests.fake", line = 1 };
 ```
 
+Not every contract is a type you construct or a function you call: `@host`
+(§8) is a declared struct whose single value the compiler forms per
+compilation, read by field access (`@host.os`).
+
 Which `@` names exist, and which module owns each canonical declaration, is a
 compiler registry. An `@` declaration in any other file is rejected. The owning
 module is the one resolved from a **library root**, matched by identity on disk
@@ -925,8 +929,8 @@ v5 := Vec4{x = 1.0,
 A named field must name a **declared field** of the struct. An explicit
 `name = expr` that names no field is a compile error (`field 'X' not found on
 type 'T'`) — it is never silently dropped, so a typo or a field removed by an
-`inline if OS` branch is caught. (Bare-identifier shorthand that happens to match
-no field is instead read as a *positional* element, not an error.)
+`inline if @host.os` branch is caught. (Bare-identifier shorthand that happens
+to match no field is instead read as a *positional* element, not an error.)
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -1244,7 +1248,7 @@ conformance on comptime facts — the dead branch's impl never exists,
 joins no set, and emits nothing:
 
 ```sx
-inline if OS == .ios {
+inline if @host.os == .ios {
     impl View for CameraButton { … }
 }
 ```
@@ -4750,10 +4754,10 @@ Arms select in order (a specific type name may precede its category);
 `else:` matches when nothing else does; with no match and no `else:` the
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `@error(…)` arm fires only when SELECTED — the un-selected case is
-the OS-match discipline. The static classifier mirrors the runtime tag
+the target-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, and `case interface:` claims the interface types.
 A constraint matches no arm of either classifier. Inline branches lower in
-statement position (like `inline if OS`), so value-producing arms use
+statement position (like `inline if @host.os`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
 semantics.
 
@@ -5722,13 +5726,12 @@ compile-time rejection spelling — a compiler-maintained contract, sibling of
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:
 
-- The comptime conditional flatten pass drops non-taken module-scope
-  `inline if` arms before the directive can fire — the idiomatic way to
-  reject an unsupported target in an exhaustive `inline if OS`/`inline if
-  ARCH` without a silent fallback:
+- Module-scope expansion drops non-taken `inline if` arms before the
+  directive can fire — the idiomatic way to reject an unsupported target in
+  an exhaustive `inline match @host.os` without a silent fallback:
 
 ```sx
-inline match OS {
+inline match @host.os {
     case .macos: errno_location :: () -> *i32 extern libc "__error";
     case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
     else:        @error("errno_location: unsupported target — add its libc symbol.");
@@ -5811,7 +5814,7 @@ configure_build :: () {
     opts.add_link_flag("-lm");
     opts.set_output_path("out/my_program");
 
-    inline if OS == .wasm {
+    inline if @host.os == .wasm {
         opts.set_output_path("sx-out/wasm/app.html");
         opts.add_link_flag("-sUSE_SDL=3");
         opts.add_link_flag("-sALLOW_MEMORY_GROWTH=1");
@@ -5830,23 +5833,29 @@ configure_build :: () {
 
 Build flags from `add_link_flag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
 
-### Compiler Constants
+### The Target Facts — `@host`
 
-The `modules/build.sx` module provides compile-time constants set by the compiler based on the target:
+`@host` is the target fact. `modules/std/target.sx` declares it, and the
+compiler forms its single value per compilation from the build target. Read it
+by field access; the read resolves by name, so no import is needed — in an
+`inline if` or in a value position. Import `modules/std/target.sx` to name the
+`OperatingSystem` / `Architecture` type, or to read `@host` whole. Using
+`@host` as a type is an ordinary type reference to that declaration.
 
-| Constant | Type | Description |
-|----------|------|-------------|
-| `OS` | `OperatingSystem` | Target OS: `.macos`, `.linux`, `.windows`, `.wasm`, `.unknown` |
-| `ARCH` | `Architecture` | Target arch: `.aarch64`, `.x86_64`, `.wasm32`, `.unknown` |
-| `POINTER_SIZE` | `i64` | Pointer width in bytes (8 for 64-bit, 4 for wasm32) |
+| Field | Type | Value |
+|-------|------|-------|
+| `@host.os` | `OperatingSystem` | `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown` |
+| `@host.arch` | `Architecture` | `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown` |
+| `@host.pointerSize` | `i64` | Pointer width in bytes (8 for 64-bit, 4 for wasm32) |
+| `@host.isSimulator` | `bool` | `true` on an iOS Simulator target |
 
 These are used with `inline if` for compile-time conditional compilation:
 
 ```sx
-inline if OS == .wasm {
+inline if @host.os == .wasm {
     // Only compiled when targeting wasm
 }
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     // Only compiled on 64-bit platforms
 }
 ```
@@ -5854,11 +5863,12 @@ inline if POINTER_SIZE == 8 {
 A statically-dead `inline if` branch is dropped **whole**: its statements are
 not lowered and its type annotations are not resolved, so a type that exists
 only on another target (or behind a disabled feature const) never errors from
-a pruned branch (`inline if OS == .ios { u : *UIKitPlatform = …; }` compiles
-for every target). The condition folds for `OS`/`ARCH`/`POINTER_SIZE`
-comparisons, `and`/`or` combinations, bool literals, and module consts with a
-bool-literal value (`ENABLED :: false`); an unfoldable condition falls back to
-a runtime `if`, where both branches are checked as usual.
+a pruned branch (`inline if @host.os == .ios { u : *UIKitPlatform = …; }`
+compiles for every target). The condition folds for comparisons, `and` / `or`,
+`not`, bool literals, module consts with a bool-literal value
+(`ENABLED :: false`), and a field read of a comptime struct; an unfoldable
+condition falls back to a runtime `if`, where both branches are checked as
+usual.
 
 ---
 

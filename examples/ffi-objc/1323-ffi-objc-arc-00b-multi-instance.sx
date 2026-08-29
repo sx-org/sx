@@ -21,7 +21,7 @@ SxMultiProbe :: @ObjcClass("SxMultiProbe", extends = NSObject) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         gpa := GPA.init();
         tracker := TrackingAllocator.init(gpa);
 
@@ -64,7 +64,7 @@ main :: () -> i32 {
 
         print("multi-instance round-trip: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

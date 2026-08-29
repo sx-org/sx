@@ -103,7 +103,7 @@ frame :: () {
 }
 
 main :: () -> i32 {
-    inline if OS != .ios { return 0; }
+    inline if @host.os != .ios { return 0; }
 
     plat := context.allocator.make(UIKitPlatform{ gpu_mode = .metal });
     if !plat.init("Metal Clear", 0, 0) { return 1; }

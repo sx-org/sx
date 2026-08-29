@@ -43,11 +43,10 @@
 // correctness (syscall behavior, the kernel-filled event array, EPOLLRDHUP
 // semantics) needs a linux runner.
 //
-// No `@import "modules/build.sx"` despite the `inline if ARCH` below: a
-// top-level `inline if OS/ARCH/POINTER_SIZE` conditional is resolved by the
-// compiler's flatten pre-pass (imports.zig — name-matched against the target),
-// NOT by reading build.sx's `ARCH` global as a value. Skipping the import keeps
-// this module's IR self-contained (libc only) — no std/compiler/bundle baggage.
+// No `@import "modules/build.sx"` despite the `inline if @host.arch` below: a
+// `@host` field read resolves against the compiler's target facts by name, so
+// the conditional needs no import. Skipping it keeps this module's IR
+// self-contained (libc only) — no std/compiler/bundle baggage.
 c     :: @import "modules/std/c.sx";
 posix :: @import "modules/std/posix.sx";
 libc  :: c.libc;   // epoll_* are module-specific — bind through the shared handle
@@ -55,7 +54,7 @@ libc  :: c.libc;   // epoll_* are module-specific — bind through the shared ha
 // struct epoll_event, arch-exact (see the header). Both variants expose the
 // same three load-bearing fields — `events`, `data_lo` (the fd), `data_hi` — so
 // consumer code is arch-agnostic; the aarch64 `pad` is never touched.
-inline if ARCH == .x86_64 {
+inline if @host.arch == .x86_64 {
     EpollEvent :: struct {
         events:  u32 = 0;
         data_lo: u32 = 0;   // the fd (union's low 32 bits)

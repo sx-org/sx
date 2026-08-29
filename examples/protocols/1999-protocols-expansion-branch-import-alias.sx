@@ -9,7 +9,7 @@
 @import "modules/std.sx";
 @import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     alias :: @import "./1999-protocols-expansion-branch-import-alias-mod.sx";
 } else {
     NARROW :: 1;

@@ -18,7 +18,7 @@ fragment float4 fmain() { return float4(1.0); }
 MSL;
 
 main :: () -> i32 {
-    inline if OS != .macos { print("format ok, shader handle: 1\n"); return 0; }
+    inline if @host.os != .macos { print("format ok, shader handle: 1\n"); return 0; }
 
     gpu : *MetalGPU = xx context.allocator.alloc_bytes(@sizeOf(MetalGPU));
     c.memset(gpu, 0, @sizeOf(MetalGPU));

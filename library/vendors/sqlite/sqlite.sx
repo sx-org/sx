@@ -59,7 +59,7 @@
 @import "modules/build.sx";
 
 configure_sqlite :: () {
-    inline if OS == .linux {
+    inline if @host.os == .linux {
         build_options().add_link_flag("-lm");
     }
 }

@@ -6,7 +6,7 @@
 // answer is.
 @import "modules/std.sx";
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     @import "./1992-protocols-expansion-branch-import-wide.sx";
 } else {
     NARROW :: 1;

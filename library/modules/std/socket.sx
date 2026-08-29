@@ -3,9 +3,8 @@
 // The sockaddr_in layout, the SOL_SOCKET / SO_REUSEADDR option codes, the
 // fcntl O_NONBLOCK bit, the errno values, and the errno-slot symbol all differ
 // between darwin (BSD) and Linux-family libcs (glibc/musl/bionic). Each is
-// branched on `OS` below, in two independent top-level `inline if` blocks whose
-// decls the compiler's flatten pre-pass splices into module scope (same mechanism
-// as event.sx's per-OS `Loop`). An unsupported target (e.g. windows) matches
+// branched on `@host.os` below, in two independent top-level `inline if` blocks.
+// An unsupported target (e.g. windows) matches
 // NEITHER block, so
 // `SockAddr` / `O_NONBLOCK` / `errno_slot` / … stay undefined and the first use
 // is a loud compile error — never a silent darwin-default fallback.
@@ -249,7 +248,7 @@ resolve :: (host: string, port: i64) -> (Addr, bool) {
 }
 
 // ── per-OS: Linux-family / Emscripten musl ───────────────────────────
-inline if OS == .linux or OS == .android or OS == .wasm {
+inline if @host.os == .linux or @host.os == .android or @host.os == .wasm {
     // linux/bionic/Emscripten sockaddr_in: no sin_len; sin_family is the
     // 2-byte sa_family_t.
     SockAddr :: struct {
@@ -275,7 +274,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
 
     // ── per-OS io-timeout surface ──────────────────────────────
     SO_ERROR :i32: 4;
-    inline match OS {
+    inline match @host.os {
         case .wasm:
             // Emscripten is wasm32 with 64-bit time_t and 32-bit suseconds_t.
             // Its time64 socket-option numbers are distinct from 64-bit Linux.
@@ -371,7 +370,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
 }
 
 // ── per-OS: darwin (macOS / iOS / BSD) ───────────────────────────────
-inline if OS == .macos or OS == .ios {
+inline if @host.os == .macos or @host.os == .ios {
     // darwin sockaddr_in: leading sin_len:u8, then sin_family:u8.
     SockAddr :: struct {
         sin_len:    u8;

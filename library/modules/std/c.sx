@@ -1,6 +1,6 @@
 // modules/std/c.sx — THE single libc surface. Mirrors Zig's `std.c`: one
 // declaration site for every raw libc/POSIX symbol the stdlib touches, with
-// per-OS quirks (errno location symbol) resolved HERE via `inline if OS`.
+// per-OS quirks (errno location symbol) resolved HERE via `inline if @host.os`.
 //
 // Every module that needs a libc symbol imports THIS and calls `c.read(...)`
 // etc. — no module redeclares `libc :: @library "c"` or its own `extern`
@@ -8,7 +8,7 @@
 // extern decls by symbol (rejecting a divergent signature), so a single
 // canonical decl here is both the source of truth and drift-proof.
 //
-// Dependency-free by design: imports NOTHING. `inline if OS` is resolved by
+// Dependency-free by design: imports NOTHING. `inline if @host.os` is resolved by
 // the compiler's module-scope expansion and needs no import (see
 // std/target.sx), so
 // even the lowest-level modules (core, map, io) can depend on this with no
@@ -49,7 +49,7 @@ fcntl  :: (fd: i32, cmd: i32, ..args: []i32) -> i32 extern libc;
 // std/time.sx owns the clock-id policy; this module owns the raw C ABI type.
 // Native 64-bit targets use two C longs. Emscripten keeps time_t at i64 on
 // wasm32 but C long at i32, padding timespec back to 16 bytes.
-inline match POINTER_SIZE {
+inline match @host.pointerSize {
     case 4: Timespec :: struct {
         sec:  i64;
         nsec: i32;
@@ -67,7 +67,7 @@ clock_gettime :: (clock_id: i32, ts: *Timespec) -> i32 extern libc;
 // libc `struct tm` (broken-down civil time). The two trailing POSIX fields
 // exist where the target ABI provides them; Windows/wasm layouts differ only
 // there. std/time.sx owns the civil-time policy; this module owns the ABI.
-inline match OS {
+inline match @host.os {
     case .windows: Tm :: struct {
         sec: i32; min: i32; hour: i32; mday: i32; mon: i32; year: i32; wday: i32; yday: i32; isdst: i32;
     }
@@ -80,11 +80,11 @@ inline match OS {
         gmtoff: i64; zone: *u8;
     }
 }
-inline match OS {
+inline match @host.os {
     case .windows: localtime_s :: (result: *Tm, source: *i64) -> i32 extern libc "localtime_s";
     else: localtime_r :: (source: *i64, result: *Tm) -> *Tm extern libc "localtime_r";
 }
-inline match OS {
+inline match @host.os {
     case .windows: mktime :: (value: *Tm) -> i64 extern libc "_mktime64";
     else: mktime :: (value: *Tm) -> i64 extern libc "mktime";
 }
@@ -92,7 +92,7 @@ inline match OS {
 // ── Emscripten ──────────────────────────────────────────────────────────────
 // Kept in the canonical C surface but exposed only on the target that supplies
 // them, so native programs do not carry target-inapplicable externs.
-inline match OS {
+inline match @host.os {
     case .wasm:
         emscripten_set_main_loop  :: (func: *void, fps: i32, sim_infinite: i32) extern libc;
         emscripten_run_script_int :: (script: [:0]u8) -> i32 extern libc;
@@ -130,7 +130,7 @@ signal  :: (sig: i32, handler: usize) -> usize extern libc;
 // NO silent fallback: the symbol differs per libc, so an unsupported OS must
 // add its own case — the `else` forces a loud compile error rather than binding
 // the wrong symbol (e.g. windows is `_errno`, NOT `__errno_location`).
-inline match OS {
+inline match @host.os {
     case .macos:  errno_location :: () -> *i32 extern libc "__error";
     case .ios:    errno_location :: () -> *i32 extern libc "__error";
     case .linux:  errno_location :: () -> *i32 extern libc "__errno_location";

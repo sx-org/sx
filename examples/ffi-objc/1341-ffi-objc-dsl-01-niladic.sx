@@ -21,7 +21,7 @@ length_imp :: (self: *void, _cmd: *void) -> i32 abi(.c) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(ns_object, "SxProbeNiladic".ptr, 0);
         sel := sel_registerName("length".ptr);
@@ -32,7 +32,7 @@ main :: () -> i32 {
         n := inst.length();
         print("length = {}\n", n);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

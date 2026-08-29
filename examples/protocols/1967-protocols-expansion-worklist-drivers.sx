@@ -24,7 +24,7 @@ impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 
 // A condition that queries no impl folds on the spot, and the branch it takes
 // writes another conformer into the same protocol.
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
 }
 
@@ -47,7 +47,7 @@ inline if Panel is Tally { COUNTED :: 1; } else { COUNTED :: 0; }
 // negative is uttered rather than parked.
 inline if Loose is View { SEEN :: 1; } else { SEEN :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     impl Tally for Loose { count :: (self: *Loose) -> i64 { self.n * 2 } }
 }
 

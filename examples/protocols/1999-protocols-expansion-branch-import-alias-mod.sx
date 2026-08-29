@@ -3,7 +3,7 @@
 // the alias's views expand, well after the branch that brought it was taken.
 @import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     impl Mark for Slot { tag :: (self: *Slot) -> i64 { self.n * 7 } }
 } else {
     NARROW :: 1;

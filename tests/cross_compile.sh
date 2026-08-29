@@ -28,7 +28,7 @@ mkdir -p "$TMP_DIR"
 TUPLES=(
     "android|examples/1336-ffi-objc-call-10-os-gate.sx"
     "android|examples/1401-ffi-jni-call-02-void.sx"
-    # The inverse OS gate: `inline if OS == .android
+    # The inverse OS gate: `inline if @host.os == .android
     # { #jni_call(...) }` must strip its body before lowering on iOS so
     # emit_llvm doesn't try to use libjvm symbols the iOS SDK lacks.
     "ios-sim|examples/1401-ffi-jni-call-02-void.sx"

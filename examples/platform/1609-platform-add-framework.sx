@@ -1,6 +1,6 @@
 // BuildOptions.add_framework registers an Apple framework at comptime,
 // equivalent to a top-level `@framework "Name"` directive. The advantage:
-// you can gate it with `inline if OS == .ios { ... }` or similar logic,
+// you can gate it with `inline if @host.os == .ios { ... }` or similar logic,
 // keeping the framework off non-Apple builds.
 
 @import "modules/std.sx";

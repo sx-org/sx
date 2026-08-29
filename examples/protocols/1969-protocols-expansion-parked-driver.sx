@@ -26,7 +26,7 @@ Panel :: struct { n: i64; }
 // question parks, and resumes once that driver is decided: `Widget` conforms.
 inline if Widget is View { FIRST :: 1; } else { FIRST :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 } else {
     impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }

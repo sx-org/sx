@@ -18,7 +18,7 @@ combine_imp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         ns_object := objc_getClass("NSObject".ptr);
         my_cls := objc_allocateClassPair(ns_object, "SxComboProbe".ptr, 0);
 
@@ -34,7 +34,7 @@ main :: () -> i32 {
         r := @ObjcCall(i32, instance, "combine:and:", 7, 42);
         print("combine(7, 42) = {}\n", r);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

@@ -28,7 +28,7 @@ SxWeakHolder :: @ObjcClass("SxWeakHolder", extends = NSObject) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         gpa := GPA.init();
         tracker := TrackingAllocator.init(gpa);
 
@@ -52,7 +52,7 @@ main :: () -> i32 {
 
         print("weak property: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

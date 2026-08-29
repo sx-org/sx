@@ -8,17 +8,16 @@
 // (comptime-only, never emitted into the binary), and the build↔bundle import
 // cycle resolves like the std↔build one.
 @import "modules/platform/bundle.sx";
-// The target facts — OS / ARCH / POINTER_SIZE + the OperatingSystem /
-// Architecture enums — live in a dependency-free module (std/target.sx) so
-// low-level code can name the enum TYPES without the build/std baggage.
-// build.sx imports it (flat) so those decls stay registered in the standard
-// import graph (build.sx is reachable from std.sx — dropping the import would
-// shift every std program's type table). This is NOT a re-export: flat import
-// only splices the names into build.sx's own scope, never into build.sx's
-// importers. Consumers need no import anyway — the compiler resolves OS / ARCH
-// / POINTER_SIZE by name (comptime constants, for both `inline if` and value
-// reads); a module that names OperatingSystem / Architecture imports
-// std/target.sx directly.
+// The target facts — `@host` + the OperatingSystem / Architecture enums — live
+// in a dependency-free module (std/target.sx) so low-level code can name the
+// enum TYPES without the build/std baggage. build.sx imports it (flat) so
+// those decls stay registered in the standard import graph (build.sx is
+// reachable from std.sx — dropping the import would shift every std program's
+// type table). This is NOT a re-export: flat import only splices the names into
+// build.sx's own scope, never into build.sx's importers. Consumers need no
+// import anyway — the compiler resolves a `@host` field read by name (for both
+// `inline if` and value reads); a module that names OperatingSystem /
+// Architecture imports std/target.sx directly.
 @import "modules/std/target.sx";
 
 // An opaque compile-time build-configuration handle. `build_options()` hands one

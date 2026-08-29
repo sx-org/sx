@@ -46,8 +46,8 @@ kqb :: @import "modules/std/net/kqueue.sx";
 // linux. The epoll import is scoped to the linux branch so darwin never pulls
 // epoll's types into the concurrency examples' type tables (the same
 // std-barrel-drift rule std.event.Loop follows); `block_on_fd` / the run loop
-// reference `ep` only inside their own `inline if OS == .linux` arms.
-inline if OS == .linux {
+// reference `ep` only inside their own `inline if @host.os == .linux` arms.
+inline if @host.os == .linux {
     ep :: @import "modules/std/net/epoll.sx";
 }
 
@@ -59,7 +59,7 @@ PROT_RW   :: 3;          // PROT_READ | PROT_WRITE
 // unsupported target matches no case → MAP_AP undefined → a loud compile error
 // on use rather than a silent wrong flag. (The fiber runtime is aarch64-only
 // anyway — the swap_context asm — so only these two platforms are wired.)
-inline match OS {
+inline match @host.os {
     case .linux: MAP_AP :: 0x22;      // linux MAP_PRIVATE (0x2) | MAP_ANON (0x20)
     case .macos: MAP_AP :: 0x1002;    // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
 }
@@ -383,7 +383,7 @@ Scheduler :: struct {
         // kqueue on darwin, epoll on linux. `self.kq` holds whichever — it is
         // just "the readiness queue fd".
         if self.kq < 0 {
-            inline match OS {
+            inline match @host.os {
                 case .linux: self.kq = ep.ep_create();
                 case .macos: self.kq = kqb.kqueue();
             }
@@ -397,7 +397,7 @@ Scheduler :: struct {
         // darwin EV_ONESHOT auto-removes the registration on fire; epoll's
         // EPOLLONESHOT only DISABLES it, so the linux paths additionally
         // EPOLL_CTL_DEL on fire (run) and on early-wake (cancel_io_waiter_for).
-        inline match OS {
+        inline match @host.os {
             case .linux: {
                 if !ep.ep_ctl(self.kq, ep.EPOLL_CTL_ADD, fd, ep.EPOLLIN | ep.EPOLLONESHOT) {
                     print("sched: epoll_ctl() failed to register fd {} for read readiness\n", fd);
@@ -472,7 +472,7 @@ Scheduler :: struct {
                 // BLOCK on the readiness queue until ≥1 fd fires (timeout -1 =
                 // forever), then for each fired event match the fd back to its
                 // io-waiter, evict the record, and wake the fiber.
-                inline match OS {
+                inline match @host.os {
                     case .linux: {
                         evbuf : [MAXEV]ep.EpollEvent = ---;
                         n := ep.ep_wait(self.kq, .{ ptr = *evbuf[0], len = MAXEV }, MAXEV, -1);
@@ -1001,7 +1001,7 @@ cancel_io_waiter_for :: (self: *Scheduler, f: *Fiber) {
             // harmlessly (a never-fired one-shot the drain ignores); epoll's
             // EPOLLONESHOT registration stays enabled — it could fire later with
             // no waiter, and blocks a re-arm of the same fd — so remove it.
-            inline match OS {
+            inline match @host.os {
                 case .linux: {
                     fd := self.io_waiters.items[i].fd;
                     remove_io_waiter(self, i);

@@ -16,7 +16,7 @@
 @import "modules/build.sx";
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // Manual retain/release on an NSObject instance — the
         // `defer obj.release();` pattern is the canonical sx idiom.
         obj := NSObject.alloc().init();
@@ -43,7 +43,7 @@ main :: () -> i32 {
 
         print("autoreleasepool: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

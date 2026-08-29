@@ -29,7 +29,7 @@ SxFoo :: @ObjcClass("SxFoo") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         cls : Class = objc_getClass("SxFoo".ptr);
         if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
 
@@ -43,7 +43,7 @@ main :: () -> i32 {
 
         print("IMP: bump ok, add: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("IMP: bump ok, add: ok\n");
     }
     0

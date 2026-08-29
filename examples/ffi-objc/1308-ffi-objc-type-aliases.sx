@@ -21,7 +21,7 @@ NSObjectAlias :: @ObjcClass("NSObject") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // id - any Obj-C instance pointer.
         nsobj : id = NSObjectAlias.alloc().init();
 
@@ -38,7 +38,7 @@ main :: () -> i32 {
         flag : BOOL = obj.isKindOfClass(ns_cls);
         print("isKindOfClass: {}\n", flag);  // 1 (true)
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("isKindOfClass: 1\n");  // skip — runtime not present
     }
     0
