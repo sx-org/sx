@@ -4,7 +4,7 @@
 // `comptime_vm.callCompilerFn`. They are the building blocks of the sx-driven
 // build pipeline; the default `build` implementation that orchestrates
 // them lives in `modules/build.sx`. They are reached from the post-link build
-// driver (a callback registered via `set_post_link_callback`), which always runs
+// driver (a callback registered via `onBuild`), which always runs
 // on the comptime VM (`core.invokeByFuncId`) — the one evaluator that can
 // allocate/grow the `List`s the driver builds.
 //
@@ -18,19 +18,19 @@
 // The C companion object files for this build (`@import c { @source ... }`,
 // compiled to `.o`) and the `@library` link names. The sx driver passes them to
 // the linker. Answered from the compiler's accumulated build state.
-c_object_paths :: () -> List(string) intrinsic;
-link_libraries :: () -> List(string) intrinsic;
+cObjectPaths :: () -> List(string) intrinsic;
+linkLibraries :: () -> List(string) intrinsic;
 
 // Verify + emit the codegen'd module to its object file; returns the path. An
 // ACTION — the sx driver calls this; the compiler does not emit on its own.
-emit_object :: () -> string intrinsic;
+emitObject :: () -> string intrinsic;
 
 // Build-config metadata the sx driver passes to `link` (the merged CLI + `@run`
 // build config the compiler accumulated for this build).
-build_output     :: () -> string intrinsic;        // the output binary path
-build_target     :: () -> string intrinsic;        // the target triple ("" = host)
-build_frameworks :: () -> List(string) intrinsic;  // `-framework` names
-build_flags      :: () -> List(string) intrinsic;  // extra link flags
+buildOutput     :: () -> string intrinsic;        // the output binary path
+buildTarget     :: () -> string intrinsic;        // the target triple ("" = host)
+buildFrameworks :: () -> List(string) intrinsic;  // `-framework` names
+buildFlags      :: () -> List(string) intrinsic;  // extra link flags
 
 // Link `objects` into `output`, with the given libraries / frameworks / link
 // flags / target triple. The one genuine ACTION primitive — the compiler owns

@@ -57,7 +57,7 @@ pub const Options = struct {
 /// Inject a `static { System.loadLibrary("<lib>"); }` block into an already-
 /// rendered Java source. Used when the output path isn't known until after
 /// `@run` blocks execute — `collectJniMainEmissions` runs during lowering,
-/// before `BuildOptions.set_output_path(...)` has populated the lib name.
+/// before `BuildOptions.setOutputPath(...)` has populated the lib name.
 /// Returns a newly-allocated string; caller owns it.
 pub fn injectLoadLibrary(allocator: Allocator, java_source: []const u8, lib_name: []const u8) ![]u8 {
     const marker = " {\n";

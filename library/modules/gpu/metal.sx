@@ -11,8 +11,8 @@
 // Metal symbol named.
 //
 // Linking is per-target via the consumer's build.sx:
-//   opts.add_framework("Metal")
-//   opts.add_framework("QuartzCore")   // CAMetalLayer lives here
+//   opts.addFramework("Metal")
+//   opts.addFramework("QuartzCore")   // CAMetalLayer lives here
 // `@framework "Metal"` below adds it to Apple-target link lines
 // automatically.
 

@@ -589,7 +589,7 @@ const BuildHooksCtx = struct {
     base_config: sx.target.TargetConfig,
     has_jni_main: bool,
 
-    /// `emit_object()` — emit the already verified/optimized module to its object file,
+    /// `emitObject()` — emit the already verified/optimized module to its object file,
     /// return the path. The sx driver calls this; the compiler does not emit on its own.
     fn emitObject(ctx_opaque: *anyopaque) anyerror![]const u8 {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
@@ -611,7 +611,7 @@ const BuildHooksCtx = struct {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         if (objects.len == 0) return error.NoObjects;
         var cfg = self.base_config;
-        // The passed `flags` are already the full merged set (`build_flags()` returns
+        // The passed `flags` are already the full merged set (`buildFlags()` returns
         // the merged CLI + `@run` flags), so use them as-is rather than re-unioning.
         cfg.extra_link_flags = flags;
         try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main);
@@ -631,11 +631,11 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("parse");
 
-    // Auto-import the stdlib build driver so `default_pipeline` (+ the build
+    // Auto-import the stdlib build driver so `defaultPipeline` (+ the build
     // primitives) is always present to drive the build — the program need not
     // import the prelude (e.g. minimal asm tests). A flat import is idempotent if
     // it's already pulled in transitively. BUILD-path only: the JIT `sx run` path
-    // emits + executes in-process and never invokes default_pipeline.
+    // emits + executes in-process and never invokes defaultPipeline.
     if (comp.root) |r| {
         const imp = try allocator.create(sx.ast.Node);
         imp.* = .{ .span = r.span, .source_file = input_path, .data = .{ .import_decl = .{ .path = "modules/build.sx", .name = null } } };
@@ -662,13 +662,13 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     const obj_path = try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
 
     // Codegen only. There is NO auto-emit / auto-link: the build is driven
-    // entirely by the sx `default_pipeline` (or a user `@run on_build(...)`
-    // override), invoked after codegen below. `emit_object` (verify + object
+    // entirely by the sx `defaultPipeline` (or a user `@run onBuild(...)`
+    // override), invoked after codegen below. `emitObject` (verify + object
     // emission) and `link` run as sx-called ACTIONS through the build hooks.
     // The `--cache` object cache does not reach this path: it short-circuits
     // codegen, and the sx build program that runs after codegen may call
-    // `emit_object`, which needs the codegen'd module in memory —
-    // `default_pipeline` always does, an `on_build` override drives the build
+    // `emitObject`, which needs the codegen'd module in memory —
+    // `defaultPipeline` always does, an `onBuild` override drives the build
     // itself and need not. `.sx-cache` here holds only the C-import objects
     // c_import.zig writes.
     _ = enable_cache;
@@ -722,8 +722,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
     }
 
-    // NO auto-link here — the sx `default_pipeline` (or a user `on_build`
-    // override) calls `link` (and `emit_object`) as actions through these hooks.
+    // NO auto-link here — the sx `defaultPipeline` (or a user `onBuild`
+    // override) calls `link` (and `emitObject`) as actions through these hooks.
     // The ctx lives on this stack frame so it outlives the callback below.
     var build_ctx = BuildHooksCtx{
         .comp = &comp,
@@ -740,8 +740,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     };
 
     // Make the linked binary's path + bundling config visible to the
-    // post-link callback via `BuildOptions.binary_path()`,
-    // `BuildOptions.bundle_path()`, etc. CLI flags
+    // post-link callback via `BuildOptions.binaryPath()`,
+    // `BuildOptions.bundlePath()`, etc. CLI flags
     // (`--bundle Foo.app`, `--bundle-id`, ...) feed in here so the sx
     // bundler doesn't need a separate code path.
     if (comp.ir_emitter) |*e| {
@@ -749,7 +749,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.build_hooks = &build_hooks;
         // `--apk <path>` is a transitional alias for the bundle_path
         // → post_link_module = "platform.bundle" auto-fallback. The
-        // sx Android bundler reads `bundle_path()` regardless of which
+        // sx Android bundler reads `bundlePath()` regardless of which
         // CLI flag the user typed.
         if (e.build_config.bundle_path == null) e.build_config.bundle_path = merged_config.bundle_path orelse merged_config.apk_path;
         if (e.build_config.bundle_id == null) e.build_config.bundle_id = merged_config.bundle_id;
@@ -763,9 +763,9 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
             e.build_config.target_triple = std.mem.span(t);
         } else {
             // Host build (no `--target`): expose the HOST triple so the sx
-            // bundler's `is_macos()`/`is_ios()`/… predicates resolve correctly.
+            // bundler's `isMacos()`/`isIos()`/… predicates resolve correctly.
             // Left empty, a host macOS `.app` would get the flat iOS-style layout
-            // (is_macos() == false) instead of `Contents/MacOS/`.
+            // (isMacos() == false) instead of `Contents/MacOS/`.
             const host = sx.llvm_api.c.LLVMGetDefaultTargetTriple();
             defer sx.llvm_api.c.LLVMDisposeMessage(host);
             e.build_config.target_triple = allocator.dupe(u8, std.mem.span(host)) catch null;
@@ -773,7 +773,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.target_frameworks = fws;
         e.build_config.target_framework_paths = merged_config.framework_paths;
         // The sx-driven build pipeline reads these via the
-        // `c_object_paths()` / `link_libraries()` / `build_*()` primitives. Slices
+        // `cObjectPaths()` / `linkLibraries()` / `buildOutput()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
         e.build_config.c_object_paths = c_obj_paths;
         e.build_config.link_libraries = libs;
@@ -787,7 +787,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         // two parallel slices since BuildConfig hooks return strings.
         const jni_decls = comp.getJniMainEmissions();
         if (jni_decls.len > 0) {
-            // If the output path was set via `BuildOptions.set_output_path`
+            // If the output path was set via `BuildOptions.setOutputPath`
             // (i.e. from a @run block, not CLI -o), the Java sources were
             // rendered during lowering before we knew the .so basename and
             // they're missing the `static { System.loadLibrary(...); }`
@@ -812,10 +812,10 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
     }
 
-    // Post-link build driver. Either the user registered an `on_build(cb)`
-    // override (bundling is `@run on_build(bundle_main);` — bundle_main runs the
+    // Post-link build driver. Either the user registered an `onBuild(cb)`
+    // override (bundling is `@run onBuild(bundle_main);` — bundle_main runs the
     // emit+link core then wraps the `.app`/`.apk`), or we run the stdlib
-    // `default_pipeline` (emit + link; it fails with a precise hint if a bundle was
+    // `defaultPipeline` (emit + link; it fails with a precise hint if a bundle was
     // requested via `--bundle`/`--apk` but no bundler was registered). The CLI
     // bundle flags only feed `BuildConfig` (bundle_path/id/…) — there is no Zig
     // bundler shim; bundling is entirely sx-driven. A `false` return fails the build.
@@ -829,8 +829,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
             return error.CompileError;
         }
     } else {
-        // No override → run the force-lowered stdlib `default_pipeline`.
-        const ret_opt = comp.invokeByName("default_pipeline", true) catch |err| {
+        // No override → run the force-lowered stdlib `defaultPipeline`.
+        const ret_opt = comp.invokeByName("defaultPipeline", true) catch |err| {
             printInterpBailDiag(&comp, "default build pipeline", err);
             return error.CompileError;
         };
@@ -840,7 +840,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
                 return error.CompileError;
             }
         } else {
-            std.debug.print("error: default build pipeline 'default_pipeline' not found (is the prelude imported?)\n", .{});
+            std.debug.print("error: default build pipeline 'defaultPipeline' not found (is the prelude imported?)\n", .{});
             return error.CompileError;
         }
     }

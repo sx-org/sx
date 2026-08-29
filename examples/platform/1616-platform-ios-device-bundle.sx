@@ -2,7 +2,7 @@
 // 1615-platform-ios-sim-bundle.sx because the device path adds three steps that
 // don't run on the simulator: provisioning profile embed, entitlements
 // extraction (`security cms` + `plutil` pipeline resolving the
-// wildcard `<TEAM>.*` → `<TEAM>.<bundle_id>`), and codesign with
+// wildcard `<TEAM>.*` → `<TEAM>.<bundleId>`), and codesign with
 // `--entitlements`.
 //
 // Build:
@@ -30,9 +30,9 @@ UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delega
 @import "modules/platform/bundle.sx";
 
 configure :: () {
-    opts := build_options();
-    opts.set_bundle_path("/tmp/SxDeviceProbe.app");
-    on_build(bundle_main);
+    opts := buildOptions();
+    opts.setBundlePath("/tmp/SxDeviceProbe.app");
+    onBuild(bundle_main);
 }
 @run configure();
 

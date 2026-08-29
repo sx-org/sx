@@ -60,7 +60,7 @@
 
 configure_sqlite :: () {
     inline if @host.os == .linux {
-        build_options().add_link_flag("-lm");
+        buildOptions().addLinkFlag("-lm");
     }
 }
 @run configure_sqlite();

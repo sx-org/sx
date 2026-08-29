@@ -1,10 +1,10 @@
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-// The `on_build` override. A user `@run on_build(build);` replaces the
-// stdlib `default_pipeline` as the build driver; the compiler invokes it after
+// The `onBuild` override. A user `@run onBuild(build);` replaces the
+// stdlib `defaultPipeline` as the build driver; the compiler invokes it after
 // codegen with the `BuildOptions` handle. This build GROWS a `List` on the build
-// VM then DELEGATES to `default_pipeline` for the real emit + link, so a
+// VM then DELEGATES to `defaultPipeline` for the real emit + link, so a
 // working binary is still produced → "runtime main".
 
 build :: (opt: BuildOptions) -> bool {
@@ -13,8 +13,8 @@ build :: (opt: BuildOptions) -> bool {
     names.append("beta");
     names.append("gamma");
     if names.len != 3 { return false; }
-    return default_pipeline(opt);
+    return defaultPipeline(opt);
 }
-@run on_build(build);
+@run onBuild(build);
 
 main :: () { print("runtime main\n"); }

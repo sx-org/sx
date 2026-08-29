@@ -156,7 +156,7 @@ pub const Root = struct {
 ///   `compiler` library binds via `abi(.zig)`.
 /// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
 ///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
-///   Covers the compiler-API surface (`intern`/`find_type`/`build_options`/… —
+///   Covers the compiler-API surface (`rawIntern`/`rawFindType`/`buildOptions`/… —
 ///   bodiless decls whose Zig/VM handler is the impl) AND user compiler-domain
 ///   functions like post-link callbacks (bodied, but emit-skipped). The ABI alone
 ///   marks it — there is no `extern <lib>` and no fake `@library "compiler"`.

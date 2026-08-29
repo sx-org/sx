@@ -8,7 +8,7 @@
 //
 // Covers all three Apple targets from a single `bundle_main` entry:
 // macOS, iOS simulator, iOS device. Per-platform branching is keyed
-// off `BuildOptions.is_macos()` / `is_ios_simulator()` / `is_ios_device()`
+// off `BuildOptions.isMacos()` / `isIosSimulator()` / `isIosDevice()`
 // so the bundle layout, Info.plist shape, framework embedding,
 // provisioning, entitlements, and codesigning ceremony each match the
 // platform's requirements.
@@ -17,50 +17,50 @@
 // callback in their own `@run` block. Example:
 //
 //     @run {
-//         opts := build_options();
-//         opts.set_bundle_path("MyApp.app");
-//         opts.set_bundle_id("co.example.myapp");
-//         opts.set_post_link_callback(platform.bundle.bundle_main);
+//         opts := buildOptions();
+//         opts.setBundlePath("MyApp.app");
+//         opts.setBundleId("co.example.myapp");
+//         onBuild(bundle_main);
 //     }
 // =====================================================================
 
 // `bundle_main` is the post-link callback — it runs in the comptime evaluator
 // (interp/VM) after `target.link()`, NEVER in the shipped binary. Marked
 // compile-time-only (nothing runtime-reachable calls it), so the backend does
-// not emit it and its `build_options()`
+// not emit it and its `buildOptions()`
 // compiler-API call is permitted (it would otherwise be rejected as a
 // comptime-only function called at runtime).
 bundle_main :: (opts: BuildOptions) -> bool {
     // Run the standard build core first (emit the object + link the binary) — an
-    // `on_build` override REPLACES default_pipeline, so the bundler owns the whole
+    // `onBuild` override REPLACES defaultPipeline, so the bundler owns the whole
     // pipeline: emit + link, then wrap the linked binary into the `.app` / `.apk`.
-    if !emit_and_link(opts) { return false; }
+    if !emitAndLink(opts) { return false; }
 
-    binary := opts.binary_path();
-    bundle := opts.bundle_path();
-    bid    := opts.bundle_id();
+    binary := opts.binaryPath();
+    bundle := opts.bundlePath();
+    bid    := opts.bundleId();
 
     if bundle.len == 0 {
         // No bundle requested — emit+link already done. Build succeeded.
         return true;
     }
     if bid.len == 0 {
-        out("error: bundle requires bundle_id (set via set_bundle_id() or --bundle-id)\n");
+        out("error: bundle requires bundleId (set via setBundleId() or --bundle-id)\n");
         return false;
     }
     if binary.len == 0 {
-        out("error: bundle: empty binary_path (compiler bug)\n");
+        out("error: bundle: empty binaryPath (compiler bug)\n");
         return false;
     }
 
-    if opts.is_android() {
+    if opts.isAndroid() {
         return android_bundle_main(opts, binary, bundle, bid);
     }
 
     // Device builds without a real identity will be rejected by the
     // device, so fail fast with a clear hint.
-    if opts.is_ios_device() {
-        if opts.codesign_identity().len == 0 or opts.provisioning_profile().len == 0 {
+    if opts.isIosDevice() {
+        if opts.codesignIdentity().len == 0 or opts.provisioningProfile().len == 0 {
             out("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
             return false;
         }
@@ -89,7 +89,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
 
     // Apple .app layout: macOS goes through `Contents/{MacOS,Resources}`;
     // iOS / iOS-sim lay everything flat at the bundle root.
-    is_mac := opts.is_macos();
+    is_mac := opts.isMacos();
     macos_dir := if is_mac then concat(bundle, "/Contents/MacOS") else bundle;
     plist_dir := if is_mac then concat(bundle, "/Contents")       else bundle;
     asset_root := if is_mac then concat(bundle, "/Contents/Resources") else bundle;
@@ -127,7 +127,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
 
     // Embed the provisioning profile if supplied. Required for device
     // installs; harmless (and usually omitted) elsewhere.
-    profile := opts.provisioning_profile();
+    profile := opts.provisioningProfile();
     if profile.len > 0 {
         if !embed_provisioning_profile(profile, bundle) {
             return false;
@@ -138,11 +138,11 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // macOS: `<bundle>/Contents/Resources/<dest>/`. iOS: `<bundle>/<dest>/`.
     // Android (Week 7) will zip them into the APK at the same relative path.
     // Recursive copy shells out to `cp -R` until fs.sx grows `list_dir`.
-    asset_count := opts.asset_dir_count();
+    asset_count := opts.assetDirCount();
     j : i64 = 0;
     while j < asset_count {
-        src := opts.asset_dir_src_at(j);
-        dest := opts.asset_dir_dest_at(j);
+        src := opts.assetDirSrcAt(j);
+        dest := opts.assetDirDestAt(j);
         if !copy_asset_dir(src, dest, asset_root) {
             out("error: bundle: failed to copy asset dir '");
             out(src);
@@ -159,8 +159,8 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // Only `-F` paths can contain frameworks that belong in the app. SDK
     // system frameworks (UIKit/Foundation/Metal/...) are linked from the OS
     // and must not be copied or warned about as "not embedded".
-    if opts.is_ios() and opts.framework_path_count() > 0 {
-        fw_count := opts.framework_count();
+    if opts.isIos() and opts.frameworkPathCount() > 0 {
+        fw_count := opts.frameworkCount();
         if fw_count > 0 {
             fw_dir := concat(bundle, "/Frameworks");
             fw_dir_z := str_to_cstr(fw_dir);
@@ -170,7 +170,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
             }
             i : i64 = 0;
             while i < fw_count {
-                fw_name := opts.framework_at(i);
+                fw_name := opts.frameworkAt(i);
                 // A framework present in a user `-F` path is copied. Names not
                 // found there are SDK system frameworks and need no embedding.
                 embed_framework(opts, fw_name, fw_dir);
@@ -181,10 +181,10 @@ bundle_main :: (opts: BuildOptions) -> bool {
 
     // Codesign. Device builds need real identity + extracted
     // entitlements; sim/macOS default to ad-hoc ("-").
-    identity := opts.codesign_identity();
+    identity := opts.codesignIdentity();
     if identity.len == 0 { identity = "-"; }
     ent_path := "";
-    if opts.is_ios_device() {
+    if opts.isIosDevice() {
         if profile.len > 0 {
             if e := extract_entitlements(profile, bid) {
                 ent_path = e;
@@ -197,7 +197,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
     if !codesign(bundle, identity, ent_path) {
         return false;
     }
-    if opts.is_ios_device() and !profile_accepts_bundle_certificate(profile, bundle) {
+    if opts.isIosDevice() and !profile_accepts_bundle_certificate(profile, bundle) {
         out("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
         return false;
     }
@@ -226,9 +226,9 @@ IOS_MIN_OS : string : "14.0";
 // carry the keys the iOS launcher needs (UIDeviceFamily,
 // LSRequiresIPhoneOS, UIApplicationSceneManifest, DTPlatformName,
 // MinimumOSVersion); macOS doesn't need any of those.
-build_info_plist :: (opts: BuildOptions, exe_name: string, bundle_id: string) -> string {
-    if opts.is_ios() {
-        platform_key := if opts.is_ios_simulator() then "iPhoneSimulator" else "iPhoneOS";
+build_info_plist :: (opts: BuildOptions, exe_name: string, bundleId: string) -> string {
+    if opts.isIos() {
+        platform_key := if opts.isIosSimulator() then "iPhoneSimulator" else "iPhoneOS";
         return format(@string PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -277,7 +277,7 @@ build_info_plist :: (opts: BuildOptions, exe_name: string, bundle_id: string) ->
     <string>{}</string>
 </dict>
 </plist>
-PLIST, xml.escape(bundle_id), xml.escape(exe_name), xml.escape(exe_name), IOS_MIN_OS, platform_key);
+PLIST, xml.escape(bundleId), xml.escape(exe_name), xml.escape(exe_name), IOS_MIN_OS, platform_key);
     }
 
     // macOS (and any non-iOS Apple target) — the minimal plist both
@@ -301,7 +301,7 @@ PLIST, xml.escape(bundle_id), xml.escape(exe_name), xml.escape(exe_name), IOS_MI
     <string>0.1</string>
 </dict>
 </plist>
-PLIST, xml.escape(bundle_id), xml.escape(exe_name), xml.escape(exe_name))
+PLIST, xml.escape(bundleId), xml.escape(exe_name), xml.escape(exe_name))
 }
 
 // Read a `.mobileprovision` and write it to
@@ -333,7 +333,7 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
     src_z := str_to_cstr(src);
     if !exists(src_z) {
         // Treating missing src as "nothing to do" lets a project
-        // register `add_asset_dir("assets", "assets")` unconditionally
+        // register `addAssetDir("assets", "assets")` unconditionally
         // and only ship assets when the dir is present.
         return true;
     }
@@ -376,10 +376,10 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
 // doesn't expose `list_dir` / `walk` yet.
 embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool {
     subdir := concat(name, ".framework");
-    path_count := opts.framework_path_count();
+    path_count := opts.frameworkPathCount();
     i : i64 = 0;
     while i < path_count {
-        base := opts.framework_path_at(i);
+        base := opts.frameworkPathAt(i);
         candidate := concat(base, "/");
         candidate = concat(candidate, subdir);
         candidate_z := str_to_cstr(candidate);
@@ -454,7 +454,7 @@ profile_accepts_bundle_certificate :: (profile: string, bundle: string) -> bool 
 // `MIInstallerErrorDomain error 13` / `0xe8008015`.
 // Writes the resolved entitlements to `.sx-tmp/entitlements.plist`
 // and returns that path on success.
-extract_entitlements :: (profile: string, bundle_id: string) -> ?string {
+extract_entitlements :: (profile: string, bundleId: string) -> ?string {
     sx_tmp := str_to_cstr(".sx-tmp");
     create_dir_all(sx_tmp);
 
@@ -532,7 +532,7 @@ extract_entitlements :: (profile: string, bundle_id: string) -> ?string {
     //    or a wildcard for the team. Rewriting an unrelated explicit App ID
     //    would make codesign pass locally but installd reject the bundle.
     resolved_app_id := concat(team, ".");
-    resolved_app_id = concat(resolved_app_id, bundle_id);
+    resolved_app_id = concat(resolved_app_id, bundleId);
     wildcard_app_id := concat(team, ".*");
     cmd_profile_id := concat("plutil -extract Entitlements.application-identifier raw -o - \"", profile_plist);
     cmd_profile_id = concat(cmd_profile_id, "\"");
@@ -559,7 +559,7 @@ extract_entitlements :: (profile: string, bundle_id: string) -> ?string {
         out("error: provisioning profile application-identifier '");
         out(profile_app_id);
         out("' does not allow bundle id '");
-        out(bundle_id);
+        out(bundleId);
         out("'\n");
         return null;
     }
@@ -629,7 +629,7 @@ codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
 //      a dex was produced + zip each registered asset dir.
 //   7. `zipalign -f 4 <unaligned> <aligned>`.
 //   8. Ensure debug keystore (via `keytool`) at $HOME/.android or
-//      `set_keystore_path()` override.
+//      `setKeystorePath()` override.
 //   9. `apksigner sign --ks ... --out <apk> <aligned>`.
 // =====================================================================
 
@@ -652,7 +652,7 @@ absolutify :: (path: string) -> string {
     path
 }
 
-android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bundle_id: string) -> bool {
+android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bundleId: string) -> bool {
     // The bundler `cd`s into the stage dir for `zip` steps, so any
     // relative path the caller gave us would resolve against the wrong
     // cwd. Pin everything to absolute paths up front.
@@ -706,7 +706,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     }
 
     // libsxhello.so must literally start with "lib" for Android's
-    // loader. The user's -o path already does (build_options enforces
+    // loader. The user's -o path already does (buildOptions enforces
     // it). Copy by basename into the staging lib dir.
     so_basename := basename(binary);
     so_dest := path_join(lib_dir, so_basename);
@@ -716,13 +716,13 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     }
 
     // Manifest: user-supplied or auto-generated.
-    manifest := opts.manifest_path();
+    manifest := opts.manifestPath();
     manifest_used := "";
     lib_name := lib_name_from_so_basename(so_basename);
     if manifest.len > 0 {
         manifest_used = manifest;
     } else {
-        generated_xml := build_android_manifest(opts, bundle_id, lib_name);
+        generated_xml := build_android_manifest(opts, bundleId, lib_name);
         generated_path := path_join(stage, "AndroidManifest.xml");
         if !write_file(str_to_cstr(generated_path), generated_xml) {
             out("error: apk: failed to write AndroidManifest.xml\n");
@@ -732,7 +732,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     }
 
     // Compile each `main = true` decl's Java source.
-    jm_count := opts.jni_main_count();
+    jm_count := opts.jniMainCount();
     if jm_count > 0 {
         if !compile_jni_main_sources(opts, stage, android_jar, d8_path) {
             return false;
@@ -776,12 +776,12 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
 
     // Asset dirs go in at their `dest` path inside the APK. The Zig
     // path used a hardcoded `assets/` walk; the sx form respects every
-    // `add_asset_dir(src, dest)` pair the user registered.
-    asset_count := opts.asset_dir_count();
+    // `addAssetDir(src, dest)` pair the user registered.
+    asset_count := opts.assetDirCount();
     j : i64 = 0;
     while j < asset_count {
-        src := opts.asset_dir_src_at(j);
-        dest := opts.asset_dir_dest_at(j);
+        src := opts.assetDirSrcAt(j);
+        dest := opts.assetDirDestAt(j);
         if !zip_asset_dir(src, dest, unaligned) {
             return false;
         }
@@ -808,7 +808,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     }
 
     // Debug keystore (auto-generated on first use) + apksigner.
-    keystore := opts.keystore_path();
+    keystore := opts.keystorePath();
     if keystore.len == 0 {
         if home := env("HOME") {
             keystore = path_join(home, ".android/debug.keystore");
@@ -947,11 +947,11 @@ lib_name_from_so_basename :: (basename: string) -> string {
 build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string) -> string {
     pkg_esc := xml.escape(package);
     lib_esc := xml.escape(lib_name);
-    if opts.jni_main_count() > 0 {
+    if opts.jniMainCount() > 0 {
         // First `main = true` decl drives the Activity. The runtime_path
         // uses `/` separators; Java fully-qualified class names use
         // `.` so we rewrite.
-        runtime_path := opts.jni_main_runtime_path_at(0);
+        runtime_path := opts.jniMainRuntimePathAt(0);
         cls := slash_to_dot(runtime_path);
         cls_esc := xml.escape(cls);
         return format(@string MANIFEST
@@ -1064,11 +1064,11 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
     // javac argv + class path to d8 argv.
     javac_files := "";
     d8_files := "";
-    count := opts.jni_main_count();
+    count := opts.jniMainCount();
     i : i64 = 0;
     while i < count {
-        runtime_path := opts.jni_main_runtime_path_at(i);
-        java_source := opts.jni_main_java_source_at(i);
+        runtime_path := opts.jniMainRuntimePathAt(i);
+        java_source := opts.jniMainJavaSourceAt(i);
         pkg := dir_part(runtime_path);
         cls := last_slash_component(runtime_path);
 
@@ -1192,14 +1192,14 @@ zip_asset_dir :: (src: string, dest: string, apk: string) -> bool {
 // Generate the Android debug keystore on first use. The defaults
 // match what Android Studio creates: alias `androiddebugkey`, password
 // `android` for both store and key, RSA-2048, 10000-day validity.
-ensure_debug_keystore :: (keystore_path: string) -> bool {
-    if exists(str_to_cstr(keystore_path)) { return true; }
+ensure_debug_keystore :: (keystorePath: string) -> bool {
+    if exists(str_to_cstr(keystorePath)) { return true; }
     // mkdir -p the parent dir if needed.
-    parent := dir_part(keystore_path);
+    parent := dir_part(keystorePath);
     if parent.len > 0 {
         create_dir_all(str_to_cstr(parent));
     }
-    cmd := concat("keytool -genkeypair -keystore \"", keystore_path);
+    cmd := concat("keytool -genkeypair -keystore \"", keystorePath);
     cmd = concat(cmd, "\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=Android Debug,O=Android,C=US\" 2>&1");
     if r := run(str_to_cstr(cmd)) {
         if r.exit_code != 0 {

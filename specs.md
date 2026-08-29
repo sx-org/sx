@@ -5579,7 +5579,7 @@ whether it runs at compile time or at runtime; what decides is **reachability**.
 
 - **Compile-time roots**: `@run`, type construction, `@insert`, module-scope
   `inline if` / `inline match` / `inline for`, and a build callback registered
-  with `on_build`. A `::` whose initializer is a call is not a compile-time
+  with `onBuild`. A `::` whose initializer is a call is not a compile-time
   root.
 - **Runtime roots**: `main`, exported definitions, and anything named by global
   data (an interface vtable, an open set's tag table, the default `Context`).
@@ -5810,14 +5810,14 @@ The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build 
 @import "modules/build.sx";
 
 configure_build :: () {
-    opts := build_options();
-    opts.add_link_flag("-lm");
-    opts.set_output_path("out/my_program");
+    opts := buildOptions();
+    opts.addLinkFlag("-lm");
+    opts.setOutputPath("out/my_program");
 
     inline if @host.os == .wasm {
-        opts.set_output_path("sx-out/wasm/app.html");
-        opts.add_link_flag("-sUSE_SDL=3");
-        opts.add_link_flag("-sALLOW_MEMORY_GROWTH=1");
+        opts.setOutputPath("sx-out/wasm/app.html");
+        opts.addLinkFlag("-sUSE_SDL=3");
+        opts.addLinkFlag("-sALLOW_MEMORY_GROWTH=1");
     }
 }
 @run configure_build();
@@ -5827,11 +5827,11 @@ configure_build :: () {
 
 | Method | Description |
 |--------|-------------|
-| `build_options()` | Returns a `BuildOptions` value for the current compilation |
-| `opts.add_link_flag(flag)` | Appends a linker flag (merged with CLI flags) |
-| `opts.set_output_path(path)` | Sets the output binary path (overridden by CLI `-o`) |
+| `buildOptions()` | Returns a `BuildOptions` value for the current compilation |
+| `opts.addLinkFlag(flag)` | Appends a linker flag (merged with CLI flags) |
+| `opts.setOutputPath(path)` | Sets the output binary path (overridden by CLI `-o`) |
 
-Build flags from `add_link_flag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
+Build flags from `addLinkFlag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
 
 ### The Target Facts — `@host`
 
@@ -6119,7 +6119,7 @@ a warnings-only build still exits 0.
 | `--target <target>` | Target triple or shorthand (default: host) |
 | `--cpu <name>` | CPU name (default: generic) |
 | `--opt <level>` | Optimization: `none`/`0`, `less`/`1`, `default`/`2`, `aggressive`/`3` |
-| `-o <path>` | Output path (overrides `set_output_path`) |
+| `-o <path>` | Output path (overrides `setOutputPath`) |
 
 ### Target Shorthands
 
@@ -6156,10 +6156,10 @@ Users opt in **explicitly** from their own `@run` block:
 @import "modules/platform/bundle.sx";
 
 @run {
-    opts := build_options();
-    opts.set_bundle_path("MyApp.app");
-    opts.set_bundle_id("com.example.app");
-    opts.set_post_link_callback(bundle_main);
+    opts := buildOptions();
+    opts.setBundlePath("MyApp.app");
+    opts.setBundleId("com.example.app");
+    onBuild(bundle_main);
 }
 ```
 
@@ -6171,13 +6171,13 @@ Two registration forms:
 
 | Setter | Behavior |
 |--------|----------|
-| `BuildOptions.set_post_link_callback(cb: () -> bool)` | First-class function value. Preferred. |
-| `BuildOptions.set_post_link_module(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundle_main` post-link. |
+| `onBuild(cb: (opt: BuildOptions) -> bool)` | First-class function value. Preferred. |
+| `BuildOptions.setPostLinkModule(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundle_main` post-link. |
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
-`bundle_path` is set and no callback was registered, the compiler
+`bundlePath` is set and no callback was registered, the compiler
 auto-falls-back to `post_link_module = "platform.bundle"`. The sx
-bundler reads `bundle_path()` regardless of which flag the user used.
+bundler reads `bundlePath()` regardless of which flag the user used.
 The callback returns `false` to fail the build.
 
 ### BuildOptions surface
@@ -6190,37 +6190,36 @@ evaluator services them, and they have no runtime form. Setters accumulate
 config; accessors read it back inside the build callback.
 
 The callback itself is an ordinary sx function — default ABI, implicit Context —
-registered with `on_build`. Nothing marks it compile-time: it stays out of the
+registered with `onBuild`. Nothing marks it compile-time: it stays out of the
 binary because no runtime root reaches it.
 
 | Method | Read / write | Purpose |
 |--------|--------------|---------|
-| `add_link_flag(flag)` | write | extra linker flag |
-| `add_framework(name)` | write | `-framework <name>` (Apple) |
-| `set_output_path(path)` | write | linked binary path |
-| `set_wasm_shell(path)` | write | custom WASM shell template |
-| `add_asset_dir(src, dest)` | write | bundle a directory of runtime assets |
-| `set_post_link_callback(cb)` | write | first-class callback (preferred) |
-| `set_post_link_module(name)` | write | name-based callback fallback |
-| `set_bundle_path(path)` | write | `.app` / `.apk` output |
-| `set_bundle_id(id)` | write | iOS `CFBundleIdentifier` / Android package |
-| `set_codesign_identity(name)` | write | Apple signing identity (`-` = ad-hoc) |
-| `set_provisioning_profile(path)` | write | iOS device `.mobileprovision` |
-| `set_manifest_path(path)` | write | Android AndroidManifest.xml override |
-| `set_keystore_path(path)` | write | Android keystore override |
-| `binary_path()` | read | path of the freshly-linked binary |
-| `bundle_path() / bundle_id()` | read | mirror of the setters |
-| `codesign_identity() / provisioning_profile()` | read | Apple codesign params |
-| `manifest_path() / keystore_path()` | read | Android overrides |
-| `target_triple()` | read | canonicalized target triple |
-| `is_macos() / is_ios() / is_ios_device() / is_ios_simulator() / is_android()` | read | per-target predicates |
-| `framework_count() / framework_at(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
-| `framework_path_count() / framework_path_at(i)` | read | linker `-F` search paths |
-| `jni_main_count() / jni_main_runtime_path_at(i) / jni_main_java_source_at(i)` | read | `main = true` emissions for the APK bundler |
-| `asset_dir_count() / asset_dir_src_at(i) / asset_dir_dest_at(i)` | read | iterate registered asset trees |
+| `addLinkFlag(flag)` | write | extra linker flag |
+| `addFramework(name)` | write | `-framework <name>` (Apple) |
+| `setOutputPath(path)` | write | linked binary path |
+| `setWasmShell(path)` | write | custom WASM shell template |
+| `addAssetDir(src, dest)` | write | bundle a directory of runtime assets |
+| `setPostLinkModule(name)` | write | name-based callback fallback |
+| `setBundlePath(path)` | write | `.app` / `.apk` output |
+| `setBundleId(id)` | write | iOS `CFBundleIdentifier` / Android package |
+| `setCodesignIdentity(name)` | write | Apple signing identity (`-` = ad-hoc) |
+| `setProvisioningProfile(path)` | write | iOS device `.mobileprovision` |
+| `setManifestPath(path)` | write | Android AndroidManifest.xml override |
+| `setKeystorePath(path)` | write | Android keystore override |
+| `binaryPath()` | read | path of the freshly-linked binary |
+| `bundlePath() / bundleId()` | read | mirror of the setters |
+| `codesignIdentity() / provisioningProfile()` | read | Apple codesign params |
+| `manifestPath() / keystorePath()` | read | Android overrides |
+| `targetTriple()` | read | canonicalized target triple |
+| `isMacos() / isIos() / isIosDevice() / isIosSimulator() / isAndroid()` | read | per-target predicates |
+| `frameworkCount() / frameworkAt(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
+| `frameworkPathCount() / frameworkPathAt(i)` | read | linker `-F` search paths |
+| `jniMainCount() / jniMainRuntimePathAt(i) / jniMainJavaSourceAt(i)` | read | `main = true` emissions for the APK bundler |
+| `assetDirCount() / assetDirSrcAt(i) / assetDirDestAt(i)` | read | iterate registered asset trees |
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
-that read after-the-fact (`binary_path`, `bundle_path`, etc.) return
+that read after-the-fact (`binaryPath`, `bundlePath`, etc.) return
 the value that was either set in `@run` or forwarded from a CLI flag.
 
 ### `fs.sx` and `process.sx` stdlib modules
@@ -6269,16 +6268,16 @@ bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 
 ### Apple `.app` flow (`bundle.sx::bundle_main`)
 
-`bundle_main` branches on `is_android()` first; the remaining body is
+`bundle_main` branches on `isAndroid()` first; the remaining body is
 the Apple path. Per target:
 
 | Step | macOS | iOS sim | iOS device |
 |------|-------|---------|------------|
 | Stage `<bundle>` (rm-rf + mkdir + copy binary + set exe bit) | ✓ | ✓ | ✓ |
 | Write `Info.plist` | minimal `CFBundle*` | + `UIDeviceFamily` + `LSRequiresIPhoneOS` + `UIApplicationSceneManifest` + `DTPlatformName=iPhoneSimulator` | + same with `DTPlatformName=iPhoneOS` |
-| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `provisioning_profile()` set |
+| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `provisioningProfile()` set |
 | Embed `Frameworks/<Name>.framework/` (recursive `cp -R` per `-F` search path) | — | when present | when present |
-| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundle_id>`) | — | — | when `provisioning_profile()` set |
+| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `provisioningProfile()` set |
 | Codesign | ad-hoc (`-`) | ad-hoc | `--sign <identity> --entitlements <ent>` |
 
 ### Android `.apk` flow (`bundle.sx::android_bundle_main`)
@@ -6288,7 +6287,7 @@ The Android branch:
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
 3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copy_file` from the linked output.
-4. **Manifest** — user-supplied via `set_manifest_path()`, or synthesized:
+4. **Manifest** — user-supplied via `setManifestPath()`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
 5. **Compile `main = true` Java sources** — write each entry's `java_source` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.

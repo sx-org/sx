@@ -1,7 +1,7 @@
 // Android `.apk` bundle smoke test.
 //
 // `sx build --target android --apk <out.apk> --bundle-id <id> -o <lib.so>`
-// cross-compiles for aarch64-linux-android and runs the sx default_pipeline
+// cross-compiles for aarch64-linux-android and runs the sx defaultPipeline
 // → bundle_main, which drives javac/d8/aapt2/zipalign/apksigner to produce a
 // signed APK containing `AndroidManifest.xml`, `classes.dex`,
 // `lib/arm64-v8a/<lib.so>`, and `META-INF/` signatures. The `.build` `apk`
