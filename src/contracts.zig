@@ -57,8 +57,8 @@ pub const Contract = struct {
 /// One field of a contract's required shape, in declaration order.
 pub const Field = struct {
     name: []const u8,
-    /// The type as SPELLED in the declaration. A contract's fields are
-    /// primitives, so the spelling is the whole check.
+    /// The type as SPELLED in the declaration, a named type's `type_expr`
+    /// spelling included: the spelling is the whole check.
     type_name: []const u8,
 };
 
@@ -164,6 +164,18 @@ pub const entries = [_]Contract{
         .fields = &.{
             .{ .name = "data", .type_name = "*void" },
             .{ .name = "type_id", .type_name = "Type" },
+        },
+    },
+    // The target facts. Stdlib declares the TYPE; the compiler injects the one
+    // value of it, under this same name, from the build's target.
+    .{
+        .name = "@host",
+        .module = "modules/std/target.sx",
+        .fields = &.{
+            .{ .name = "os", .type_name = "OperatingSystem" },
+            .{ .name = "arch", .type_name = "Architecture" },
+            .{ .name = "pointerSize", .type_name = "i64" },
+            .{ .name = "isSimulator", .type_name = "bool" },
         },
     },
     // Formed, never declared.
@@ -357,6 +369,21 @@ test "the @SourceSite shape is the one lowering builds" {
         .{ .name = "column", .type_name = "i32" },
         .{ .name = "ordinal", .type_name = "u64" },
         .{ .name = "id", .type_name = "u64" },
+    };
+    try std.testing.expectEqual(want.len, c.fields.len);
+    for (want, c.fields) |a, b| {
+        try std.testing.expectEqualStrings(a.name, b.name);
+        try std.testing.expectEqualStrings(a.type_name, b.type_name);
+    }
+}
+
+test "the @host shape is the one injection fills" {
+    const c = find("@host").?;
+    const want = [_]Field{
+        .{ .name = "os", .type_name = "OperatingSystem" },
+        .{ .name = "arch", .type_name = "Architecture" },
+        .{ .name = "pointerSize", .type_name = "i64" },
+        .{ .name = "isSimulator", .type_name = "bool" },
     };
     try std.testing.expectEqual(want.len, c.fields.len);
     for (want, c.fields) |a, b| {

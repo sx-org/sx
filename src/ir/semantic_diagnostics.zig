@@ -1249,9 +1249,8 @@ pub const UnknownTypeChecker = struct {
         }
     }
 
-    /// Does a contract field's declared type spell `want`? A contract's fields
-    /// are primitives and optionals of primitives, so the spelling is the whole
-    /// check.
+    /// Does a contract field's declared type spell `want`? The spelling is the
+    /// whole check, a named type's `type_expr` spelling included.
     fn fieldTypeMatches(node: *const Node, want: []const u8) bool {
         return switch (node.data) {
             .type_expr => |te| std.mem.eql(u8, te.name, want),
