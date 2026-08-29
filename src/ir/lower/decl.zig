@@ -487,19 +487,28 @@ pub fn injectComptimeConstants(self: *Lowering) void {
     // POINTER_SIZE: i64 (4 for wasm32, 8 for wasm64 and other 64-bit targets)
     const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
     self.comptime_constants.put("POINTER_SIZE", .{ .int_val = ptr_size }) catch {};
+
+    const fields = self.alloc.alloc(Lowering.ComptimeValue.Field, 4) catch return;
+    fields[0] = .{ .name = "os", .value = targetEnumValue(self, "OperatingSystem", os_variant) };
+    fields[1] = .{ .name = "arch", .value = targetEnumValue(self, "Architecture", arch_variant) };
+    fields[2] = .{ .name = "pointerSize", .value = .{ .int_val = ptr_size } };
+    fields[3] = .{ .name = "isSimulator", .value = .{ .bool_val = tc.isIOSSimulator() } };
+    self.comptime_constants.put("@host", .{ .struct_val = fields }) catch {};
 }
 
 fn putTargetConstant(self: *Lowering, name: []const u8, enum_name: []const u8, variant: []const u8) void {
+    self.comptime_constants.put(name, targetEnumValue(self, enum_name, variant)) catch {};
+}
+
+fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) Lowering.ComptimeValue {
     const enum_name_id = self.module.types.internString(enum_name);
     if (self.module.types.findByName(enum_name_id)) |enum_ty| {
         const info = self.module.types.get(enum_ty);
         if (info == .@"enum") {
-            const tag = self.findVariantIndex(info.@"enum".variants, variant);
-            self.comptime_constants.put(name, .{ .enum_tag = .{ .ty = enum_ty, .tag = tag } }) catch {};
-            return;
+            return .{ .enum_tag = .{ .ty = enum_ty, .tag = self.findVariantIndex(info.@"enum".variants, variant) } };
         }
     }
-    self.comptime_constants.put(name, .{ .target_variant = variant }) catch {};
+    return .{ .target_variant = variant };
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {
