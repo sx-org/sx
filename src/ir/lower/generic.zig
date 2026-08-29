@@ -328,7 +328,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                 if (std.mem.eql(u8, cn, "@typeOf") and cl.args.len == 1) {
                     const aty = self.inferExprType(cl.args[0]);
                     // An `any` or PROTOCOL operand answers the runtime
-                    // type_id word — freezing it statically would say
+                    // typeId word — freezing it statically would say
                     // "any"/"Drawable" where the value knows "Point".
                     if (aty == .any or self.getProtocolInfo(aty) != null) return false;
                 }
@@ -383,7 +383,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
         .call => |cl| {
             // `@typeOf(x)` resolves statically when `x`'s type is
             // known — except an `any`/PROTOCOL operand, whose `@typeOf` is
-            // the runtime type_id word.
+            // the runtime typeId word.
             if (cl.callee.data == .identifier and
                 std.mem.eql(u8, cl.callee.data.identifier.name, "@typeOf") and
                 cl.args.len == 1)
@@ -586,7 +586,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 cl.args.len == 1)
             {
                 const aty = self.inferExprType(cl.args[0]);
-                // `any`/protocol operands answer the runtime type_id —
+                // `any`/protocol operands answer the runtime typeId —
                 // never fold to the static erased type here (the callers'
                 // isStaticTypeArg gates route them dynamic; this is the
                 // backstop for paths that reach the fold directly).

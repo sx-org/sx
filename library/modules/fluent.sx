@@ -45,10 +45,10 @@
 // contract-independent; association with a block contract is by use site, not by
 // a monomorphic type argument (constraints are not runtime type args).
 @BuildShape :: struct {
-    static_expressions: i32 = 0;
-    dynamic_regions: i32 = 0;
-    known_bytes: ?i64 = null;
-    max_alignment: i64 = 1;
+    staticExpressions: i32 = 0;
+    dynamicRegions: i32 = 0;
+    knownBytes: ?i64 = null;
+    maxAlignment: i64 = 1;
 }
 
 // The collecting sink every package can build on: it keeps what the block

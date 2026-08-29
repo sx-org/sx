@@ -94,7 +94,7 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 @unbox :: (v: any, $T: Type) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
-// The `{data, type_id}` layout is private; these two are the stable contract
+// The `{data, typeId}` layout is private; these two are the stable contract
 // over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
 // writes names and re-resolves, never raw tags; byte copies through the data
 // pointer are SHALLOW — interior pointers are not followed; and a view carries
@@ -586,13 +586,13 @@ Into :: constraint(Target: Type) {
 
 // Fat-value ABI views. Compiler-maintained contracts: the compiler recognizes
 // these declarations by (module, name) identity. Ergonomic accessors stay the
-// normal path — `.ptr` / `.len` on a slice or string, `.fn_ptr` / `.env` on a
+// normal path — `.ptr` / `.len` on a slice or string, `.fnPtr` / `.env` on a
 // closure. Nullary `@Slice` is this erased `{ptr, len}` view; `@Slice(T, Len)`
 // is the typed fat pointer (`@Slice(T, i64)` is `[]T`). A string's `.len` is
 // a byte count; a slice's is an element count.
 
 @Closure :: struct {
-    fn_ptr: *void;
+    fnPtr: *void;
     env: *void;
 }
 
@@ -603,12 +603,12 @@ Into :: constraint(Target: Type) {
 
 @Protocol :: struct {
     ctx: *void;
-    type_id: Type;
+    typeId: Type;
 }
 
 @Any :: struct {
     data: *void;
-    type_id: Type;
+    typeId: Type;
 }
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.

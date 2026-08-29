@@ -281,7 +281,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         if (info == .@"struct" and info.@"struct".is_protocol) return existing;
     }
 
-    // Value struct: {ctx, __type_id, __vtable} — the type_id word mirrors
+    // Value struct: {ctx, __type_id, __vtable} — that word mirrors
     // registerProtocolDecl's layout.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString("ctx"), .ty = void_ptr_ty }) catch unreachable;
@@ -847,7 +847,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 /// Emit the process-wide default Context as an LLVM static constant.
 ///
 ///   @__sx_default_context = internal constant %Context {
-///     %Allocator { ptr null, i64 <CAllocator type_id>,      (each field in
+///     %Allocator { ptr null, i64 <CAllocator typeId>,       (each field in
 ///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
 ///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
 ///     %Io { … },                                     its protocol's own

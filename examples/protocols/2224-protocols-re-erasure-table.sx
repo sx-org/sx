@@ -1,4 +1,4 @@
-// `p.(Q)` between interfaces is one runtime read of the `(type_id, Q)` table.
+// `p.(Q)` between interfaces is one runtime read of the `(typeId, Q)` table.
 // The soft form answers null on a miss; the unconsumed form panics on the same
 // null. Both conformers reach `I`; only one of them reaches `Q`.
 @import "modules/std.sx";

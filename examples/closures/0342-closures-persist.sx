@@ -1,8 +1,8 @@
 // `closure(f, alloc)` gives a callable's environment a home that outlives the
-// forming frame, and erases the value to the `{fn_ptr, env}` pair a `Closure`
+// forming frame, and erases the value to the `{fnPtr, env}` pair a `Closure`
 // slot takes. Every callable shape persists: a unique lambda, a bare function,
 // an `impl (sig) for T` nominal. A `Closure` is returned unchanged — same
-// `fn_ptr`, same `env` — so `closure` composes. A capture-free environment is
+// `fnPtr`, same `env` — so `closure` composes. A capture-free environment is
 // zero-sized, so it funds nothing and carries a null env.
 
 @import "modules/std.sx";

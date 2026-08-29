@@ -82,10 +82,10 @@ pub const entries = [_]Contract{
         .name = "@BuildShape",
         .module = "modules/fluent.sx",
         .fields = &.{
-            .{ .name = "static_expressions", .type_name = "i32" },
-            .{ .name = "dynamic_regions", .type_name = "i32" },
-            .{ .name = "known_bytes", .type_name = "?i64" },
-            .{ .name = "max_alignment", .type_name = "i64" },
+            .{ .name = "staticExpressions", .type_name = "i32" },
+            .{ .name = "dynamicRegions", .type_name = "i32" },
+            .{ .name = "knownBytes", .type_name = "?i64" },
+            .{ .name = "maxAlignment", .type_name = "i64" },
         },
     },
     // The C-variadic cursor. Its declared shape is empty and stays empty: the
@@ -146,7 +146,7 @@ pub const entries = [_]Contract{
         .name = "@Closure",
         .module = "modules/std/core.sx",
         .fields = &.{
-            .{ .name = "fn_ptr", .type_name = "*void" },
+            .{ .name = "fnPtr", .type_name = "*void" },
             .{ .name = "env", .type_name = "*void" },
         },
     },
@@ -155,7 +155,7 @@ pub const entries = [_]Contract{
         .module = "modules/std/core.sx",
         .fields = &.{
             .{ .name = "ctx", .type_name = "*void" },
-            .{ .name = "type_id", .type_name = "Type" },
+            .{ .name = "typeId", .type_name = "Type" },
         },
     },
     .{
@@ -163,7 +163,7 @@ pub const entries = [_]Contract{
         .module = "modules/std/core.sx",
         .fields = &.{
             .{ .name = "data", .type_name = "*void" },
-            .{ .name = "type_id", .type_name = "Type" },
+            .{ .name = "typeId", .type_name = "Type" },
         },
     },
     // The target facts. Stdlib declares the TYPE; the compiler injects the one
@@ -389,6 +389,24 @@ test "the @host shape is the one injection fills" {
     for (want, c.fields) |a, b| {
         try std.testing.expectEqualStrings(a.name, b.name);
         try std.testing.expectEqualStrings(a.type_name, b.type_name);
+    }
+}
+
+test "the recognized field spellings are the ones the compiler matches on" {
+    // `conversions.zig` gates the raw-view conversions on these names,
+    // `lower/expr.zig` keys a closure literal's slots on them, and
+    // `lower/build_block.zig` synthesizes `@BuildShape` by them, so a rename on
+    // one side alone stops matching in silence.
+    const want = [_]struct { name: []const u8, fields: []const []const u8 }{
+        .{ .name = "@BuildShape", .fields = &.{ "staticExpressions", "dynamicRegions", "knownBytes", "maxAlignment" } },
+        .{ .name = "@Closure", .fields = &.{ "fnPtr", "env" } },
+        .{ .name = "@Protocol", .fields = &.{ "ctx", "typeId" } },
+        .{ .name = "@Any", .fields = &.{ "data", "typeId" } },
+    };
+    for (want) |w| {
+        const c = find(w.name).?;
+        try std.testing.expectEqual(w.fields.len, c.fields.len);
+        for (w.fields, c.fields) |a, b| try std.testing.expectEqualStrings(a, b.name);
     }
 }
 

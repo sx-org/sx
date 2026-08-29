@@ -1234,7 +1234,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // else: {…} }`. Concrete arms (named, builtin, and composite types) may
     // bind the typed value; category arms are tag SETS and bind nothing; arms
     // overlap first-wins with a loud unreachable-arm diagnostic.
-    // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
+    // A PROTOCOL subject type-switches through its {ctx, typeId} prefix
     // view — the scrutinee/captures are exactly the any switch's, over the
     // concrete value the protocol erases.
     if (self.getProtocolInfo(subject_ty) != null) {
@@ -1744,8 +1744,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // tag, so dispatching on it selects the silently-wrong arm; `@typeOf(a)`
     // is the correct spelling and yields `.type_value` directly).
     const tag = if (is_any_switch)
-        // The type switch dispatches on the view's type_id word (field 1,
-        // the {data, type_id} layout) — exactly what `@typeOf(av)` reads —
+        // The type switch dispatches on the view's typeId word (field 1,
+        // the {data, typeId} layout) — exactly what `@typeOf(av)` reads —
         // never on the payload.
         self.builder.structGet(subject, 1, .type_value)
     else if (is_type_match) subject else if (is_optional_match) self.builder.emit(.{ .optional_has_value = .{ .operand = subject } }, .bool) else if (is_error_set_match) subject else blk: {

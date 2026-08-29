@@ -18,7 +18,7 @@ impl Into(Block) for Closure(..$args) -> $R {
             invoke = null,
             descriptor = *__sx_block_descriptor,
             sx_env = self.env,
-            sx_fn = self.fn_ptr,
+            sx_fn = self.fnPtr,
         }
     }
 }
