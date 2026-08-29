@@ -20,7 +20,7 @@ Widget :: struct { on_tap: ?Closure(i64) -> void; }
 main :: () {
     n := 5;
     unique := |x: i64|_{ n } -> i64 x + n;
-    print("env-type {} {}\n", @sizeOf(@env_type(@typeOf(unique))), @sizeOf(i64));
+    print("env-type {} {}\n", @sizeOf(@envType(@typeOf(unique))), @sizeOf(i64));
 
     lam := closure(unique);
     print("lambda {}\n", lam(1));                              // 6

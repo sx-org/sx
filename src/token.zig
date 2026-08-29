@@ -137,7 +137,7 @@ pub const Tag = enum(u8) {
     at_flags, // @flags (inside @import c { ... })
     at_get, // `name :: (self) -> R @get => expr;` — a no-paren property accessor method (read via field syntax)
     at_set, // `name :: (self, value) @set { ... }` — the write counterpart of @get (`obj.name = rhs` dispatches here)
-    at_context_extend, // `@context_extend name: Type = default;` — top-level Context field declaration
+    at_context_extend, // `@contextExtend name: Type = default;` — top-level Context field declaration
     triple_minus, // ---
     minus_minus,
 

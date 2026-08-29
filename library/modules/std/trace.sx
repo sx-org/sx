@@ -88,7 +88,7 @@ print_current :: () {
 // Dump the comptime (`@run`) interpreter call-frame chain. At
 // comptime the interpreter walks its active sx frames and appends them to the
 // build output; in compiled code this folds to nothing (there is no
-// interpreter stack — the only caller is a dead `@is_comptime()` branch).
+// interpreter stack — the only caller is a dead `@isComptime()` branch).
 // Frame source locations await IR-offset resolution, so only names print.
 print_interpreter_frames :: () {
     __interp_print_frames();

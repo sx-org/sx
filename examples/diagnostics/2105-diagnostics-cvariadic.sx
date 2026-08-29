@@ -9,8 +9,8 @@
 // across, as `f32` promotes to `f64`. What is refused is a width C has no
 // variadic slot for, and every aggregate.
 //
-// Reading a tail is the same rule from the other side. `@va_start` needs a tail
-// to open, `@va_arg` asks for the type the promotions LEAVE in the slot, and the
+// Reading a tail is the same rule from the other side. `@vaStart` needs a tail
+// to open, `@vaArg` asks for the type the promotions LEAVE in the slot, and the
 // `@VaList` cursor itself is opaque: it has no value form, no published layout,
 // and no way out of the frame whose tail it reads.
 //
@@ -88,34 +88,34 @@ hands_one_back :: (ap: *@VaList) -> @VaList { return *ap; }
 
 no_tail :: () -> i64 {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     return 0;
 }
 
 escapes :: (n: i32, ..) -> *@VaList abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     return *ap;
 }
 
 ends_a_borrow :: (ap: *@VaList) -> i64 {
-    @va_end(ap);
+    @vaEnd(ap);
     return 0;
 }
 
 reads :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    narrow := @va_arg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
-    single := @va_arg(f32, *ap);  // an `f32` argument sits in it as `f64`
-    aggregate := @va_arg(Pair, *ap);
+    @vaStart(*ap);
+    narrow := @vaArg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
+    single := @vaArg(f32, *ap);  // an `f32` argument sits in it as `f64`
+    aggregate := @vaArg(Pair, *ap);
     printf("%d\n", *ap);          // the cursor cannot leave this frame
     copied := ap;                 // no value form to copy
     word := ap.w0;                // no published fields
-    later := ||_{ ap } -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    later := ||_{ ap } -> i64 { return @vaArg(i64, *ap); }; // a closure may outlive the frame
     rows: [1]@VaList = ---;
     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
-    @va_end(*ap);
+    @vaEnd(*ap);
     return xx narrow;
 }
 
@@ -124,8 +124,8 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
 // mis-signed function type is refused where it is written.
 boundary_actuals :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     lent: *@VaList = *ap;
     unusable: NotC = ---;
     also_unusable: CBorrow = ---;
@@ -134,8 +134,8 @@ boundary_actuals :: (n: i32, ..) -> i64 abi(.c) {
 
 // An incoming list is borrowed already open: its caller started it and ends it.
 walks_a_borrowed_list :: (n: i32, ap: @VaList) -> i64 export {
-    @va_start(*ap);
-    @va_end(*ap);
+    @vaStart(*ap);
+    @vaEnd(*ap);
     return c_reader(n, ap);
 }
 

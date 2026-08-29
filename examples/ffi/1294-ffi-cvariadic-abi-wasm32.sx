@@ -10,11 +10,11 @@
 
 sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(i32, *ap);
+        total += @vaArg(i32, *ap);
     }
     return total;
 }
@@ -24,7 +24,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
 read_ints :: (n: i32, ap: @VaList) -> i64 abi(.c) {
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(i32, *ap);
+        total += @vaArg(i32, *ap);
     }
     return total;
 }
@@ -35,26 +35,26 @@ forward :: (n: i32, ap: *@VaList) -> i64 {
 
 own_forward :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return forward(n, *ap);
 }
 
 twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     dup: @VaList = ---;
-    @va_copy(*dup, *ap);
-    defer @va_end(*dup);
+    @vaCopy(*dup, *ap);
+    defer @vaEnd(*dup);
 
     first: i64 = 0;
     for i in 0..n {
-        first += @va_arg(i32, *ap);
+        first += @vaArg(i32, *ap);
     }
     second: i64 = 0;
     for i in 0..n {
-        second += @va_arg(i32, *dup);
+        second += @vaArg(i32, *dup);
     }
     return first * 100 + second;
 }
@@ -66,11 +66,11 @@ Summer :: (i32, ..) -> i64 abi(.c);
 // width, so the reader names it rather than a fixed one.
 sum_addresses :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(isize, *ap);
+        total += @vaArg(isize, *ap);
     }
     return total;
 }

@@ -19,9 +19,9 @@ c_probe :: (n: i32, ..) -> i64 extern;
 
 probe :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
-    return @va_arg(i32, *ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
+    return @vaArg(i32, *ap);
 }
 
 Probe :: (i32, ..) -> i64 abi(.c);

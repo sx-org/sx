@@ -24,11 +24,11 @@ c_sum_ints :: (n: i32, ..) -> i64 extern;
 
 sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(i32, *ap);
+        total += @vaArg(i32, *ap);
     }
     return total;
 }

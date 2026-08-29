@@ -161,18 +161,18 @@ pub const Id = enum(u16) {
     atomic_cmpxchg,
     atomic_cmpxchg_weak,
     // std/core.sx declares these two; the `@` is part of the name.
-    @"@volatile_load",
-    @"@volatile_store",
+    @"@volatileLoad",
+    @"@volatileStore",
     @"@printf",
-    @"@is_comptime",
+    @"@isComptime",
     @"@error",
-    @"@va_start",
-    @"@va_arg",
-    @"@va_copy",
-    @"@va_end",
-    @"@env_type",
-    @"@env_of",
-    @"@call_ptr",
+    @"@vaStart",
+    @"@vaArg",
+    @"@vaCopy",
+    @"@vaEnd",
+    @"@envType",
+    @"@envOf",
+    @"@callPtr",
 };
 
 pub const Entry = struct {
@@ -343,15 +343,15 @@ pub const entries = [_]Entry{
     // directly and `@run` sees an ordinary access. The `@` is part of the name:
     // these are compiler-maintained contracts (contracts.zig) as well as
     // intrinsics.
-    .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
-    .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
+    .{ .id = .@"@volatileLoad", .module = core, .name = "@volatileLoad", .mode = .lower, .arity = 2 },
+    .{ .id = .@"@volatileStore", .module = core, .name = "@volatileStore", .mode = .lower, .arity = 3 },
 
-    // The persist primitives. `@env_type` folds to a type, so it also answers
-    // in a type-argument slot; `@env_of` carries its argument's env through at
-    // that type, and `@call_ptr` resolves — or synthesizes — the trampoline.
-    .{ .id = .@"@env_type", .module = core, .name = "@env_type", .mode = .lower, .arity = 1, .ret = .type_value },
-    .{ .id = .@"@env_of", .module = core, .name = "@env_of", .mode = .lower, .arity = 1 },
-    .{ .id = .@"@call_ptr", .module = core, .name = "@call_ptr", .mode = .lower, .arity = 1 },
+    // The persist primitives. `@envType` folds to a type, so it also answers
+    // in a type-argument slot; `@envOf` carries its argument's env through at
+    // that type, and `@callPtr` resolves — or synthesizes — the trampoline.
+    .{ .id = .@"@envType", .module = core, .name = "@envType", .mode = .lower, .arity = 1, .ret = .type_value },
+    .{ .id = .@"@envOf", .module = core, .name = "@envOf", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@callPtr", .module = core, .name = "@callPtr", .mode = .lower, .arity = 1 },
 
     // Expanded at lowering into calls to the emission primitives core.sx
     // declares beside it — one per format segment, one per argument. The
@@ -363,16 +363,16 @@ pub const entries = [_]Entry{
     // Lowered to the `is_comptime` IR op, which the two backends answer
     // differently: the VM reads `true`, compiled code folds `false`. One lowered
     // body serves both stages, so the answer cannot be folded here.
-    .{ .id = .@"@is_comptime", .module = core, .name = "@is_comptime", .mode = .lower, .arity = 0, .ret = .bool },
+    .{ .id = .@"@isComptime", .module = core, .name = "@isComptime", .mode = .lower, .arity = 0, .ret = .bool },
     .{ .id = .@"@error", .module = core, .name = "@error", .mode = .lower, .arity = 2 },
 
     // Lowered to the four cursor IR ops. A cursor walks arguments a real call
     // frame delivered, so there is no VM arm: `@run` over one bails loudly
     // rather than inventing a frame to read.
-    .{ .id = .@"@va_start", .module = core, .name = "@va_start", .mode = .lower, .arity = 1, .ret = .void },
-    .{ .id = .@"@va_arg", .module = core, .name = "@va_arg", .mode = .lower, .arity = 2 },
-    .{ .id = .@"@va_copy", .module = core, .name = "@va_copy", .mode = .lower, .arity = 2, .ret = .void },
-    .{ .id = .@"@va_end", .module = core, .name = "@va_end", .mode = .lower, .arity = 1, .ret = .void },
+    .{ .id = .@"@vaStart", .module = core, .name = "@vaStart", .mode = .lower, .arity = 1, .ret = .void },
+    .{ .id = .@"@vaArg", .module = core, .name = "@vaArg", .mode = .lower, .arity = 2 },
+    .{ .id = .@"@vaCopy", .module = core, .name = "@vaCopy", .mode = .lower, .arity = 2, .ret = .void },
+    .{ .id = .@"@vaEnd", .module = core, .name = "@vaEnd", .mode = .lower, .arity = 1, .ret = .void },
 };
 
 /// Look up an intrinsic by its declared name. `source_file` is the declaration's

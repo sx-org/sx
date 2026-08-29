@@ -120,7 +120,7 @@ test "@import lexes as a directive; @importing is an @-name" {
 test "a #name lexes as invalid then a word" {
     const names = [_][]const u8{
         "import",          "library", "framework", "using", "include", "source",
-        "define",          "flags",   "identity",  "get",   "set",    "context_extend",
+        "define",          "flags",   "identity",  "get",   "set",    "contextExtend",
         "string",
     };
     for (names) |name| {
@@ -285,15 +285,15 @@ test "lex octal / separators: tag + span" {
     }
 }
 
-// `@context_extend` lexes as its dedicated directive token; a longer
+// `@contextExtend` lexes as its dedicated directive token; a longer
 // identifier continuing past the directive spelling stays `.at_identifier`
 // (the table requires a non-identifier boundary).
-test "@context_extend lexes as a directive; @context_extended is an @-name" {
-    var tl = try lexT("@context_extend ui");
+test "@contextExtend lexes as a directive; @contextExtended is an @-name" {
+    var tl = try lexT("@contextExtend ui");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{ .at_context_extend, .identifier, .eof }, tl.tags);
 
-    var tl2 = try lexT("@context_extended");
+    var tl2 = try lexT("@contextExtended");
     defer deinitT(&tl2);
     try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
 }

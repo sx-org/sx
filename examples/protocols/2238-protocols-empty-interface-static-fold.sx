@@ -1,5 +1,5 @@
 // An empty `interface` is the same 3-word handle as a method-bearing one, so
-// its static initializers fold the same way: a `@context_extend` default and an
+// its static initializers fold the same way: a `@contextExtend` default and an
 // ordinary global both erase a named global instance into a borrow of that
 // symbol, with a 0-slot vtable.
 @import "modules/std.sx";
@@ -11,7 +11,7 @@ impl Marker for Sq {}
 
 the_sq : Sq = .{ n = 1 };
 
-@context_extend mark: Marker = the_sq;
+@contextExtend mark: Marker = the_sq;
 
 standing : Marker = the_sq;
 

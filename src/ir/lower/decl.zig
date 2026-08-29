@@ -225,7 +225,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // (extern-ref validation, C-import collection) sees the expanded program.
     const decls = self.expandModuleDrivers(source_decls);
     root.data.root.decls = decls;
-    // Pass 0b: collect every `@context_extend` declaration program-wide into
+    // Pass 0b: collect every `@contextExtend` declaration program-wide into
     // ProgramIndex (sorted, validated). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert but the collected list
     // still powers the registered-field diagnostic.
@@ -237,7 +237,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // layout the admission checks measure.
     admitOpenVariants(self, decls);
     // Pass 1a': assemble the program Context — append the collected
-    // `@context_extend` fields to the registered Context struct. Must run
+    // `@contextExtend` fields to the registered Context struct. Must run
     // after `scanDecls` (every named type an extension can reference is
     // registered) and before `emitDefaultContextGlobal` / any body lowering
     // (both consume the assembled layout via findByName("Context")).

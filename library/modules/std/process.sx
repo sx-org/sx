@@ -388,10 +388,10 @@ free_argv :: (vec: [*]?cstring, n: i64) {
 // no `defer` cleanup runs, no error-trace frames are pushed —
 // it's the POSIX `_exit(2)` syscall. At comptime (`@run`) it terminates the
 // COMPILER with the same code after printing a diagnostic naming the call site
-// (`site` defaults to `@caller`); in compiled code the `@is_comptime()`
+// (`site` defaults to `@caller`); in compiled code the `@isComptime()`
 // branch folds away to just the syscall.
 exit :: (code: u8, site: @SourceSite = @caller) -> noreturn {
-    if @is_comptime() {
+    if @isComptime() {
         print("\nprocess.exit({}) called from {} at {}:{}\n", code, site.declaration, site.file, site.line);
         trace.print_interpreter_frames();
     }

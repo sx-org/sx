@@ -378,17 +378,17 @@ fn cursorBinding(self: *Lowering, name: []const u8) ?lower.Binding {
 fn cursorIntrinsic(name: []const u8) ?intrinsics.Id {
     const id = intrinsics.findByName(name) orelse return null;
     return switch (id) {
-        .@"@va_start", .@"@va_arg", .@"@va_copy", .@"@va_end" => id,
+        .@"@vaStart", .@"@vaArg", .@"@vaCopy", .@"@vaEnd" => id,
         else => null,
     };
 }
 
-/// Lower `@va_start` / `@va_arg` / `@va_copy` / `@va_end`, or return null when
+/// Lower `@vaStart` / `@vaArg` / `@vaCopy` / `@vaEnd`, or return null when
 /// `name` is not one of them.
 pub fn tryLowerIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     const id = cursorIntrinsic(name) orelse return null;
     const expected: usize = switch (id) {
-        .@"@va_arg", .@"@va_copy" => 2,
+        .@"@vaArg", .@"@vaCopy" => 2,
         else => 1,
     };
     if (c.args.len != expected) {
@@ -397,24 +397,24 @@ pub fn tryLowerIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) 
     }
 
     switch (id) {
-        .@"@va_start" => {
+        .@"@vaStart" => {
             requireVariadicDefinition(self, name, c.callee.span);
             const cursor = ownedCursor(self, c.args[0], name) orelse return Ref.none;
             self.builder.emitVoid(.{ .va_start = .{ .operand = cursor } }, .void);
             return Ref.none;
         },
-        .@"@va_end" => {
+        .@"@vaEnd" => {
             const cursor = ownedCursor(self, c.args[0], name) orelse return Ref.none;
             self.builder.emitVoid(.{ .va_end = .{ .operand = cursor } }, .void);
             return Ref.none;
         },
-        .@"@va_copy" => {
+        .@"@vaCopy" => {
             const dst = ownedCursor(self, c.args[0], name) orelse return Ref.none;
             const src = borrowedCursor(self, c.args[1], name) orelse return Ref.none;
             self.builder.emitVoid(.{ .va_copy = .{ .dst = dst, .src = src } }, .void);
             return Ref.none;
         },
-        .@"@va_arg" => {
+        .@"@vaArg" => {
             const read_ty = argumentType(self, c.args[0]) orelse return Ref.none;
             const cursor = borrowedCursor(self, c.args[1], name) orelse return Ref.none;
             return self.builder.emit(.{ .va_arg = .{ .operand = cursor } }, read_ty);
@@ -423,7 +423,7 @@ pub fn tryLowerIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) 
     }
 }
 
-/// `@va_start` opens a cursor over the enclosing call's tail, so it needs one:
+/// `@vaStart` opens a cursor over the enclosing call's tail, so it needs one:
 /// the definition being lowered must end its parameter list in a bare `..`.
 fn requireVariadicDefinition(self: *Lowering, name: []const u8, span: ast.Span) void {
     if (self.current_fn_decl) |fd| {
@@ -434,7 +434,7 @@ fn requireVariadicDefinition(self: *Lowering, name: []const u8, span: ast.Span) 
 }
 
 /// The address of a cursor this function OWNS: `*name`, where `name` is a local
-/// of type `@VaList`. `@va_start`, `@va_end`, and `@va_copy`'s destination act
+/// of type `@VaList`. `@vaStart`, `@vaEnd`, and `@vaCopy`'s destination act
 /// on the owner's storage — an incoming list and a borrowed `*@VaList` both
 /// belong to another frame, which ends them itself.
 fn ownedCursor(self: *Lowering, node: *const Node, name: []const u8) ?Ref {
@@ -476,7 +476,7 @@ fn localCursorSlot(self: *Lowering, node: *const Node) ?struct { slot: Ref, borr
     };
 }
 
-/// The type `@va_arg` reads. The caller asks for what the C default argument
+/// The type `@vaArg` reads. The caller asks for what the C default argument
 /// promotions leave in the slot, so the types those promotions REPLACE are
 /// refused by the name the caller wrote, and the rest must be what a C ABI can
 /// pass through a tail at all.

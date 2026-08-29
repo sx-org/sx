@@ -12,13 +12,13 @@ main :: () -> i32 {
     cl : Closure(i64) -> i64 = |x: i64| x + 1;
     print("erased {}\n", cl(1));
 
-    _ := @sizeOf(@env_type(@typeOf(cl)));
-    _ := @call_ptr(@typeOf(cl));
-    _ := @env_of(cl);
-    _ := @call_ptr(i64);
+    _ := @sizeOf(@envType(@typeOf(cl)));
+    _ := @callPtr(@typeOf(cl));
+    _ := @envOf(cl);
+    _ := @callPtr(i64);
 
-    _ := @call_ptr(@typeOf(double), i64);
-    _ := @env_of();
-    _ := @sizeOf(@env_type(@typeOf(double), i64));
+    _ := @callPtr(@typeOf(double), i64);
+    _ := @envOf();
+    _ := @sizeOf(@envType(@typeOf(double), i64));
     return 0;
 }

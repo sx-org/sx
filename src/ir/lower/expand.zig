@@ -474,7 +474,7 @@ const Expansion = struct {
     /// wrote plus what taken groups have spliced — and, where the program has
     /// one, the implicit Context. The Context is a single program-global
     /// layout, so it cannot be read before it is settled: while any undecided
-    /// driver could still write a `@context_extend`, the fact is not
+    /// driver could still write a `@contextExtend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
     /// against an open set whose layout is not final. Once nothing can
     /// contribute, the decided space registers (incrementally — a declaration is
@@ -507,7 +507,7 @@ const Expansion = struct {
     }
 
     /// Register the decided declaration space the way `lowerRoot` registers the
-    /// whole program: the `@context_extend` collection, then the scan. Both are
+    /// whole program: the `@contextExtend` collection, then the scan. Both are
     /// incremental — a declaration is registered once, whichever pass reached
     /// it first — so a group spliced since the last evaluation is all that is
     /// added, and the whole-program pass later adds only what expansion never

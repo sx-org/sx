@@ -317,20 +317,20 @@ test "parser: non-Closure call followed by '->' still fails" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// `@context_extend name: Type = default;` parses at top level to a
+// `@contextExtend name: Type = default;` parses at top level to a
 // `.context_extend_decl` node carrying {name, name_span, type_expr,
 // default_expr}; the `= default` clause may be ABSENT (default_expr == null —
 // the collection pass rejects it, not the parser); and it
 // declares no module-scope name (`declName` is null — the field lives in the
 // program-global Context namespace).
-test "parser: @context_extend parses to context_extend_decl" {
+test "parser: @contextExtend parses to context_extend_decl" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\@context_extend ui: ?*i64 = null;
-        \\@context_extend bare: i64;
+        \\@contextExtend ui: ?*i64 = null;
+        \\@contextExtend bare: i64;
         \\
     ;
     var parser = try Parser.init(alloc, src);
@@ -351,16 +351,16 @@ test "parser: @context_extend parses to context_extend_decl" {
     try std.testing.expect(bare.default_expr == null);
 }
 
-// `@context_extend` is top-level-only — statement position is a parse error,
+// `@contextExtend` is top-level-only — statement position is a parse error,
 // not a generic expression-parse fallthrough.
-test "parser: @context_extend rejected in statement position" {
+test "parser: @contextExtend rejected in statement position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
         \\f :: () {
-        \\    @context_extend x: i64 = 0;
+        \\    @contextExtend x: i64 = 0;
         \\}
         \\
     ;
@@ -1454,27 +1454,27 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// `@context_extend`'s default is optional; the `;` is what ends the
+// `@contextExtend`'s default is optional; the `;` is what ends the
 // declaration, so a split default still binds.
-test "parser: a @context_extend default reads through a line break" {
+test "parser: a @contextExtend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var split = try Parser.init(alloc,
-        \\@context_extend depth: i64
+        \\@contextExtend depth: i64
         \\    = 3
     );
     const split_decls = (try split.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 1), split_decls.len);
     try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
 
-    var same = try Parser.init(alloc, "@context_extend depth: i64 = 3\n");
+    var same = try Parser.init(alloc, "@contextExtend depth: i64 = 3\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
 
     // Absent default, and the declaration below is its own.
     var bare = try Parser.init(alloc,
-        \\@context_extend depth: i64;
+        \\@contextExtend depth: i64;
         \\LIMIT :: 9;
     );
     const bare_decls = (try bare.parse()).data.root.decls;
@@ -1696,22 +1696,22 @@ test "parser: an `@` function declaration is its signature, with an intrinsic bo
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(),
-        \\@va_arg :: ($T: Type, list: *@VaList) -> T;
-        \\@va_end :: (list: *@VaList);
+        \\@vaArg :: ($T: Type, list: *@VaList) -> T;
+        \\@vaEnd :: (list: *@VaList);
     );
     const root = try parser.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
 
     const arg = decls[0].data.fn_decl;
-    try std.testing.expectEqualStrings("@va_arg", arg.name);
+    try std.testing.expectEqualStrings("@vaArg", arg.name);
     try std.testing.expect(arg.body.data == .intrinsic_expr);
     try std.testing.expectEqual(@as(usize, 2), arg.params.len);
     try std.testing.expect(arg.return_type != null);
 
     // An omitted return annotation is sx's canonical void.
     const end = decls[1].data.fn_decl;
-    try std.testing.expectEqualStrings("@va_end", end.name);
+    try std.testing.expectEqualStrings("@vaEnd", end.name);
     try std.testing.expect(end.body.data == .intrinsic_expr);
     try std.testing.expect(end.return_type == null);
 }
@@ -1719,7 +1719,7 @@ test "parser: an `@` function declaration is its signature, with an intrinsic bo
 test "parser: an `@` function declaration takes no `intrinsic` marker" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "@va_end :: (list: *@VaList) intrinsic;");
+    var parser = try Parser.init(arena.allocator(), "@vaEnd :: (list: *@VaList) intrinsic;");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 

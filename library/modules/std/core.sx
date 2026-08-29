@@ -117,25 +117,25 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // or an aggregate. The access is one typed load/store of `T`, so an aggregate
 // `T` moves as a whole rather than field by field. `value` converts to `T` the
 // way any typed parameter does.
-@volatile_load  :: ($T: Type, address: *T) -> T;
-@volatile_store :: ($T: Type, address: *T, value: T);
+@volatileLoad  :: ($T: Type, address: *T) -> T;
+@volatileStore :: ($T: Type, address: *T, value: T);
 
 // The persist primitives `closure` (std/mem.sx) is written over.
 //
-// `@env_type(F)` is the environment a value of callable type `F` IS: the env
+// `@envType(F)` is the environment a value of callable type `F` IS: the env
 // struct of a `|…|_{ … }` literal, the state of an `impl (sig) for T` nominal,
-// the pointer word of a bare function. `@env_of(f)` is that environment as an
+// the pointer word of a bare function. `@envOf(f)` is that environment as an
 // initializer, so `make` writes it straight into the storage it funds.
-// `@call_ptr(F)` is the trampoline `(env: *void, params…) -> R` an erased
+// `@callPtr(F)` is the trampoline `(env: *void, params…) -> R` an erased
 // value dispatches through; a nominal and a bare function get one synthesized.
 //
-// A callable value IS its environment, so `@env_of(f)` has type `F` and
-// `@env_type(F)` is `F`. All three refuse a `Closure`: it carries an
+// A callable value IS its environment, so `@envOf(f)` has type `F` and
+// `@envType(F)` is `F`. All three refuse a `Closure`: it carries an
 // environment rather than being one, which is the arm where `closure` returns
 // its argument unchanged.
-@env_type :: ($F: Type) -> Type;
-@env_of :: (f: $F) -> F;
-@call_ptr :: ($F: Type) -> *void;
+@envType :: ($F: Type) -> Type;
+@envOf :: (f: $F) -> F;
+@callPtr :: ($F: Type) -> *void;
 
 // Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
 // same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
@@ -150,7 +150,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // Where the code is running: `true` under the comptime evaluator, `false` in
 // compiled code. The same lowered body serves both stages, so the answer is the
 // backend's rather than a fold.
-@is_comptime :: () -> bool;
+@isComptime :: () -> bool;
 
 // Write `msg` and stop the program. `site` defaults to the call site, so the
 // message carries `file:line:` unless the caller passes a site with no line.
@@ -170,7 +170,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
     } else {
         @printf("{}:{}: {}\n", site.file, site.line, msg);
     }
-    if @is_comptime() {
+    if @isComptime() {
         c.exit(1);
     }
     c.abort()
@@ -289,19 +289,19 @@ __sx_printf_f64 :: (f: f64) {
 //
 //     tally :: (n: i32, ..) -> i64 abi(.c) {
 //         ap: @VaList = ---;
-//         @va_start(*ap);
+//         @vaStart(*ap);
 //         total: i64 = 0;
-//         for i in 0..n { total += @va_arg(i32, *ap); }
-//         @va_end(*ap);
+//         for i in 0..n { total += @vaArg(i32, *ap); }
+//         @vaEnd(*ap);
 //         return total;
 //     }
 //
-// The cursor is owned by the function that declares it: `@va_start`, `@va_copy`
-// into it, and `@va_end` all take the address of a local. A `*@VaList` passed on
-// to a helper is a borrow — it reads with `@va_arg` and leaves the ending to the
-// owner. Every cursor a `@va_start` or a `@va_copy` opens is ended once.
+// The cursor is owned by the function that declares it: `@vaStart`, `@vaCopy`
+// into it, and `@vaEnd` all take the address of a local. A `*@VaList` passed on
+// to a helper is a borrow — it reads with `@vaArg` and leaves the ending to the
+// owner. Every cursor a `@vaStart` or a `@vaCopy` opens is ended once.
 //
-// `@va_arg` reads the type C's default argument promotions leave in the slot, so
+// `@vaArg` reads the type C's default argument promotions leave in the slot, so
 // it asks for `i32` where the caller wrote a `u8` and `f64` where it wrote an
 // `f32`.
 //
@@ -315,14 +315,14 @@ __sx_printf_f64 :: (f: f64) {
 // It is place-only: a call names a live list, `f(fmt, ap)` from a `@VaList`
 // local or parameter and `f(fmt, ap.*)` from a `*@VaList` borrow. An incoming
 // list is borrowed already open, so the callee reads and copies it but leaves
-// `@va_start` and `@va_end` to its caller.
+// `@vaStart` and `@vaEnd` to its caller.
 @VaList :: struct {
 }
 
-@va_start :: (list: *@VaList);
-@va_arg   :: ($T: Type, list: *@VaList) -> T;
-@va_copy  :: (dst: *@VaList, src: *@VaList);
-@va_end   :: (list: *@VaList);
+@vaStart :: (list: *@VaList);
+@vaArg   :: ($T: Type, list: *@VaList) -> T;
+@vaCopy  :: (dst: *@VaList, src: *@VaList);
+@vaEnd   :: (list: *@VaList);
 
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
@@ -550,7 +550,7 @@ Io :: interface {
 // --- Context ---
 //
 // The dynamically-scoped capability bag. The struct is declared EMPTY: the
-// compiler assembles 100% of its fields from the program's `@context_extend`
+// compiler assembles 100% of its fields from the program's `@contextExtend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
 // like any user field. `__sx_default_context` is emitted from the assembled
@@ -562,7 +562,7 @@ Io :: interface {
 // There is no untyped escape slot: a module that wants to carry a payload
 // declares its own typed field:
 //
-//     @context_extend logger: ?*Logger = null;
+//     @contextExtend logger: ?*Logger = null;
 //
 // Guideline (not enforced): prefer one POINTER per concern over fat inline
 // values — every `push` copies the whole Context, so a 2 KB inline field
@@ -572,7 +572,7 @@ Context :: struct {}
 
 // The JNIEnv* the JVM hands a native method. `null` is the unchecked
 // sentinel. DSL dispatch and helpers read `context.jni`.
-@context_extend jni: *void = null;
+@contextExtend jni: *void = null;
 
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
 // `val.(T, alloc)`, falls through the built-in conversion ladder to an

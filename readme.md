@@ -292,11 +292,11 @@ main :: () {
 }
 push .{ allocator = my_arena } { do_work(); }
 
-@context_extend logger: ?*Logger = null;
+@contextExtend logger: ?*Logger = null;
 push .{ logger = *my_logger } { serve(); }
 ```
 
-`Context` is assembled from every `@context_extend`. Defaults are required and comptime.
+`Context` is assembled from every `@contextExtend`. Defaults are required and comptime.
 
 ## Quick Sort Example
 
@@ -360,9 +360,9 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 
 **Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
 
-**Volatile** — `@volatile_load(T, addr)` / `@volatile_store(T, addr, v)` from `core.sx`. Not atomic.
+**Volatile** — `@volatileLoad(T, addr)` / `@volatileStore(T, addr, v)` from `core.sx`. Not atomic.
 
-**C-variadic** — a trailing `..` on an `abi(.c)` / `extern` / `export` signature. Read with `@VaList` / `@va_start` / `@va_arg` / `@va_end` / `@va_copy`. Promotions apply (`f32` → `f64`). See specs.
+**C-variadic** — a trailing `..` on an `abi(.c)` / `extern` / `export` signature. Read with `@VaList` / `@vaStart` / `@vaArg` / `@vaEnd` / `@vaCopy`. Promotions apply (`f32` → `f64`). See specs.
 
 **Async** — `context.io.async` / `await` / `sleep`. Default `Io` is blocking. A `Scheduler` as `context.io` is fibers (aarch64, M:1):
 

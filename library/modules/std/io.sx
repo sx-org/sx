@@ -40,7 +40,7 @@ CBlockingIo :: struct {}
 // ordinary `push .{ io = s }`.
 c_blocking_io : CBlockingIo = .{};
 
-@context_extend io: Io = c_blocking_io;
+@contextExtend io: Io = c_blocking_io;
 
 impl Io for CBlockingIo {
     // No fiber bootstrap in the blocking model: the generic `async`

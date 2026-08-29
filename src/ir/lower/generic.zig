@@ -132,7 +132,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.currentFunc().is_get = fd.is_get;
     self.builder.currentFunc().is_set = fd.is_set;
     // A monomorph keeps the declaration's C shape: the convention, the bare
-    // `..` tail, and the declaration itself, which `@va_start` reads its tail
+    // `..` tail, and the declaration itself, which `@vaStart` reads its tail
     // requirement from.
     self.builder.currentFunc().call_conv = if (ast.isEffectiveCSignature(fd)) .c else .default;
     self.builder.currentFunc().is_c_variadic = fd.is_c_variadic;
@@ -2014,17 +2014,17 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             },
         };
     }
-    // @env_type($F) -> Type — the environment a callable value IS. Folds here
+    // @envType($F) -> Type — the environment a callable value IS. Folds here
     // like `pointee_type` so it answers in a type-argument slot.
-    if (std.mem.eql(u8, callee_name, "@env_type")) {
+    if (std.mem.eql(u8, callee_name, "@envType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, cl.callee.span, "@env_type takes one type: @env_type($F)", .{});
+                d.addFmt(.err, cl.callee.span, "@envType takes one type: @envType($F)", .{});
             return .unresolved;
         }
         const t = self.resolveTypeArg(cl.args[0]);
         if (t == .unresolved) return .unresolved;
-        return self.persistEnvType("@env_type", t, cl.callee.span) orelse .unresolved;
+        return self.persistEnvType("@envType", t, cl.callee.span) orelse .unresolved;
     }
     if (resolveFormedType(self, callee_name, cl.args, cl.callee.span)) |ty| return ty;
     // Generic-struct head: route through the single layout choke-point (CP-1).
@@ -2095,7 +2095,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // `.call` resolver owns these folds — delegate with the same arg nodes.
     if (!pt.is_raw and (std.mem.eql(u8, base_name, "struct_field_type") or
         std.mem.eql(u8, base_name, "variant_type") or
-        std.mem.eql(u8, base_name, "@env_type") or
+        std.mem.eql(u8, base_name, "@envType") or
         std.mem.eql(u8, base_name, "pointee_type")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);

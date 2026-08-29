@@ -1,4 +1,4 @@
-// `allocator` and `io` are ordinary `@context_extend`
+// `allocator` and `io` are ordinary `@contextExtend`
 // declarations (std/mem.sx, std/io.sx) whose defaults are the erasure of the
 // stdlib's own instance globals — a BORROW, so the default context's
 // receivers are real addresses, never null:

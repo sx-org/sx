@@ -711,7 +711,7 @@ fn endTrampoline(self: *Lowering, result: Ref, ret: TypeId) void {
     self.builder.finalize();
 }
 
-/// `@call_ptr` for a bare function type: the env holds the pointer, and the
+/// `@callPtr` for a bare function type: the env holds the pointer, and the
 /// trampoline loads it and calls through.
 fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInfo) FuncId {
     const saved = BuilderState.save(self);
@@ -728,7 +728,7 @@ fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInf
     return t.id;
 }
 
-/// `@call_ptr` for an `impl (sig) for T`: the env IS the receiver, so the
+/// `@callPtr` for an `impl (sig) for T`: the env IS the receiver, so the
 /// trampoline hands it to `call` as `self`.
 fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
     const target = self.fn_decl_fids.get(cn.fd) orelse return null;

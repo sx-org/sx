@@ -12,7 +12,7 @@ Sink :: struct ($T: Type) {
     emit :: (self: *Sink(T), v: T) { self.items.append(v); }
 }
 
-@context_extend ui_sink: *Sink(View) = null;
+@contextExtend ui_sink: *Sink(View) = null;
 
 place :: (v: View) -> View {
     if context.ui_sink != null { context.ui_sink.emit(v); }
