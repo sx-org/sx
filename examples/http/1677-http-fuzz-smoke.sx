@@ -3,7 +3,7 @@
 // "HTTP/1.1 " + a 3-digit status or a clean close; split sends drive the
 // partial-read resume paths in read_more / try_serve_one; an interleaved
 // plain GET keeps proving liveness. One server serves every iteration under
-// a GPA, so net-zero alloc_count at the end is the leak gate.
+// a GPA, so net-zero allocCount at the end is the leak gate.
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
 
@@ -300,8 +300,8 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }
 
-        mutbuf : [*]u8  = xx context.allocator.alloc_bytes(MUTBUF);
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(8192);
+        mutbuf : [*]u8  = xx context.allocator.allocBytes(MUTBUF);
+        scratch : [*]u8 = xx context.allocator.allocBytes(8192);
 
         rng : Rng = .{ s = SEED };
 
@@ -327,10 +327,10 @@ main :: () -> i32 {
             it += 1;
         }
 
-        context.allocator.dealloc_bytes(mutbuf);
-        context.allocator.dealloc_bytes(scratch);
+        context.allocator.deallocBytes(mutbuf);
+        context.allocator.deallocBytes(scratch);
         srv.close();
-        leaked = gpa.alloc_count;
+        leaked = gpa.allocCount;
     }
 
     if failed {

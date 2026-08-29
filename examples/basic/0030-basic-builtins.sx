@@ -100,13 +100,13 @@ main :: () {
     print("fieldname-enum0: {}\n", variantName(Color, 0));
     print("fieldname-enum2: {}\n", variantName(Color, 2));
 
-    // structFieldValue (use any_to_string to avoid sext-on-any bug)
+    // structFieldValue (use anyToString to avoid sext-on-any bug)
     fv_pt := Point{ 11, 22 };
     out("fieldval0: ");
-    out(any_to_string(structFieldValue(fv_pt, 0)));
+    out(anyToString(structFieldValue(fv_pt, 0)));
     out("\n");
     out("fieldval1: ");
-    out(any_to_string(structFieldValue(fv_pt, 1)));
+    out(anyToString(structFieldValue(fv_pt, 1)));
     out("\n");
 
     // variantIndex on plain enum

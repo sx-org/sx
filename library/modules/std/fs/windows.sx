@@ -102,19 +102,19 @@ fs_read_file :: (path: [:0]u8) -> ?string {
     handle := fs_open_handle(path, 0); if !fs_file_is_valid(handle) { return null; }
     size := fs_file_seek(handle, 0, 2);
     if size < 0 or fs_file_seek(handle, 0, 0) < 0 { fs_file_close(handle); return null; }
-    result := alloc_string(size);
+    result := allocString(size);
     at := 0;
     while at < size {
         made := fs_file_read(handle, result[at..]);
         if made <= 0 {
             fs_file_close(handle);
-            context.allocator.dealloc_bytes(result.ptr);
+            context.allocator.deallocBytes(result.ptr);
             return null;
         }
         at += made;
     }
     if !fs_file_close(handle) {
-        context.allocator.dealloc_bytes(result.ptr);
+        context.allocator.deallocBytes(result.ptr);
         return null;
     }
     result
@@ -179,10 +179,10 @@ fs_create_dir_all :: (path: [:0]u8) -> bool {
     }
     // Do not recurse below a drive root such as C:\\.
     if last > 0 and !(last == 2 and path[1] == ':') {
-        parent := alloc_string(last);
+        parent := allocString(last);
         fs_windows_c.memcpy(parent.ptr, path.ptr, last);
         parent_ok := fs_create_dir_all(parent);
-        context.allocator.dealloc_bytes(parent.ptr);
+        context.allocator.deallocBytes(parent.ptr);
         if !parent_ok { return false; }
     }
     fs_create_dir(path) or fs_exists(path)

@@ -113,7 +113,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     rc : i32 = 1;
     push .{ allocator = gpa } { rc = run(); }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("HTTPS ok: bad-cert rejected, handshake-failure dropped, 200 served; net-zero GPA\n");

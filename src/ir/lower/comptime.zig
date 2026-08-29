@@ -1486,8 +1486,8 @@ fn lowerComptimeCallArgsMode(
     }
 
     // Pin the lowering to the metaprogram's OWN module for the body (and
-    // its return type + anything it `@insert`s, e.g. `build_format` /
-    // `any_to_string` inside `std.print` / `log.*`), so those bare names
+    // its return type + anything it `@insert`s, e.g. `buildFormat` /
+    // `anyToString` inside `std.print` / `log.*`), so those bare names
     // resolve in the defining module's visibility context rather than the
     // call site's. The call-site ARGS above are deliberately lowered
     // BEFORE this, in the caller's context. Mirrors `lowerFunctionBodyInto`,

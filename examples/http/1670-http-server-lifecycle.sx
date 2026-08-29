@@ -17,8 +17,8 @@
 //      close runs. Workers finish during pool shutdown and queue
 //      completions into ps.done that nothing drains; close must free
 //      each completion's response bytes.
-// The whole loop runs under a GPA whose alloc_count is bumped atomically
-// on every alloc/dealloc — so a non-zero alloc_count at the end is a leak.
+// The whole loop runs under a GPA whose allocCount is bumped atomically
+// on every alloc/dealloc — so a non-zero allocCount at the end is a leak.
 // The atomic counter is what makes the pooled gate trustworthy: the loop
 // thread and worker threads bump it concurrently.
 @import "modules/std.sx";
@@ -139,13 +139,13 @@ serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
     big_n := 40000;
     hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
     req_len : i64 = hdr.len + big_n;
-    rbuf : [*]u8 = xx context.allocator.alloc_bytes(req_len);
+    rbuf : [*]u8 = xx context.allocator.allocBytes(req_len);
     cstd.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
     while f < big_n { rbuf[hdr.len + f] = 97 + (f % 26).(u8); f += 1; }
     r2 := roundtrip(*srv, c, string{ ptr = rbuf, len = req_len }, scratch, cap);
     ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
-    context.allocator.dealloc_bytes(rbuf);
+    context.allocator.deallocBytes(rbuf);
     if !ok { print("large POST bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
 
     socket.close(c);
@@ -213,7 +213,7 @@ main :: () -> i32 {
     leaked : i64 = 0;
     push .{ allocator = gpa } {
         cap : i64 = 50000;
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
 
         r := 0;
         while r < rounds {
@@ -226,8 +226,8 @@ main :: () -> i32 {
             r += 1;
         }
 
-        context.allocator.dealloc_bytes(scratch);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(scratch);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

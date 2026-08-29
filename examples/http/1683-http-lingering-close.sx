@@ -61,7 +61,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -75,7 +75,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── flood a junk burst; do NOT read anything yet ──────────────
-        junk : [*]u8 = xx context.allocator.alloc_bytes(JUNK_LEN);
+        junk : [*]u8 = xx context.allocator.allocBytes(JUNK_LEN);
         i : i64 = 0;
         while i < JUNK_LEN { junk[i] = 88; i += 1; }   // 'X': never a header end
         ca := dial_port(PORT);
@@ -176,9 +176,9 @@ main :: () -> i32 {
         socket.close(cb);
 
         srv.close();
-        context.allocator.dealloc_bytes(junk);
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(junk);
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

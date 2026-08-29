@@ -188,7 +188,7 @@ RouteCtx :: struct {
         // writer reports overflow rather than truncating.
         cap : i64 = 65536;
         buf : [*]u8 = context.allocator.alloc(u8, cap).ptr;
-        n, e := json.write_to_buffer(v, string{ ptr = buf, len = cap });
+        n, e := json.writeToBuffer(v, string{ ptr = buf, len = cap });
         if e { return false; }
         self.resp.status = status;
         self.resp.content_type = "application/json";

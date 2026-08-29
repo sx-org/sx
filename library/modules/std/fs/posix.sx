@@ -82,7 +82,7 @@ fs_read_file :: (path: [:0]u8) -> ?string {
     size := fs_posix_c.lseek(fd, 0, FS_POSIX_SEEK_END);
     if size < 0 { fs_posix_c.close(fd); return null; }
     if fs_posix_c.lseek(fd, 0, FS_POSIX_SEEK_SET) < 0 { fs_posix_c.close(fd); return null; }
-    buf := alloc_string(size);
+    buf := allocString(size);
     at := 0;
     ok := true;
     while at < size {
@@ -92,7 +92,7 @@ fs_read_file :: (path: [:0]u8) -> ?string {
     }
     close_ok := fs_posix_c.close(fd) == 0;
     if !ok or !close_ok {
-        context.allocator.dealloc_bytes(buf.ptr);
+        context.allocator.deallocBytes(buf.ptr);
         return null;
     }
     buf
@@ -162,10 +162,10 @@ fs_create_dir_all :: (path: [:0]u8) -> bool {
         last -= 1;
     }
     if last > 0 {
-        parent := alloc_string(last);
+        parent := allocString(last);
         fs_posix_c.memcpy(parent.ptr, path.ptr, last);
         parent_ok := fs_create_dir_all(parent);
-        context.allocator.dealloc_bytes(parent.ptr);
+        context.allocator.deallocBytes(parent.ptr);
         if !parent_ok { return false; }
     }
     fs_create_dir(path)
@@ -184,7 +184,7 @@ fs_copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
         return false;
     }
     ok := true;
-    buf := alloc_string(65536);
+    buf := allocString(65536);
     loop := true;
     while loop {
         n := fs_posix_c.read(src_fd, buf.ptr, 65536);
@@ -199,7 +199,7 @@ fs_copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
             }
         }
     }
-    context.allocator.dealloc_bytes(buf.ptr);
+    context.allocator.deallocBytes(buf.ptr);
     src_close_ok := fs_posix_c.close(src_fd) == 0;
     dst_close_ok := fs_posix_c.close(dst_fd) == 0;
     ok and src_close_ok and dst_close_ok
@@ -236,7 +236,7 @@ fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────
-// `path_join` is in std.sx (used widely beyond fs). These are the
+// `pathJoin` is in std.sx (used widely beyond fs). These are the
 // fs-adjacent helpers — basename/dirname operate purely on text.
 
 fs_basename :: (p: string) -> string {

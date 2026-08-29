@@ -1,2 +1,2 @@
-alloc_count   = 1
-dealloc_count = 1
+allocCount   = 1
+deallocCount = 1

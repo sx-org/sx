@@ -85,9 +85,9 @@ context (next section).
 ### The frame: an embedded `Frame`, not a PC
 
 **A runtime frame is a pointer to a compile-time-interned
-`Frame {file, line, col, func, line_text}`.** The lowerer already knows the push
+`Frame {file, line, col, func, lineText}`.** The lowerer already knows the push
 site's source location (the instruction's span + the enclosing function),
-so the location — *and the offending source line itself* (`line_text`, for the
+so the location — *and the offending source line itself* (`lineText`, for the
 `^` caret snippet) — is baked into read-only data at compile time and the
 formatter reads it directly. No PC capture, no DWARF, no symbolizer, no runtime
 file read.
@@ -126,7 +126,7 @@ IR-level `Frame` global visible to the interpreter, forcing comptime onto
 the pointer-deref path.
 
 `Frame` is defined **once** in sx (`trace.sx`/std), and its runtime layout —
-`{ string file, i32 line, i32 col, string func, string line_text }` — is
+`{ string file, i32 line, i32 col, string func, string lineText }` — is
 mirrored by the cached LLVM **literal (anonymous) struct type** `getFrameStructType()`
 (`src/ir/emit_llvm.zig`). The reflection builder
 (`src/backend/llvm/reflection.zig`) assembles each push site's global as an
@@ -134,7 +134,7 @@ LLVM **named-struct constant** over that cached type via
 `LLVMConstNamedStruct` — a type-safe LLVM struct, not hand-packed bytes
 (which would risk the "8-bytes-assumed" clobber class of bug). It does
 **not** derive the layout from the sx `Frame` `TypeId`, nor route through
-the normal struct-emission path. `file`/`func`/`line_text` strings are
+the normal struct-emission path. `file`/`func`/`lineText` strings are
 interned into a shared pool so a path shared by N push sites is stored once
 — the table stays tiny. The `file` field is the source basename (full paths
 live in DWARF), so trace output is machine-independent and snapshot-testable.
@@ -179,7 +179,7 @@ last"), with a best-effort source snippet + `^` caret. The snippet reads
 the source file if available (always true under `sx run`); it degrades to
 the bare `file:line:col` line when the source isn't present. The
 formatter lives in [`library/modules/trace.sx`](../library/modules/trace.sx)
-(`to_string` / `print_current`); the failable-`main` reporter is
+(`toString` / `printCurrent`); the failable-`main` reporter is
 `sx_trace_report_unhandled` in `sx_trace.c`.
 
 ### Build-mode gating
@@ -256,7 +256,7 @@ both the trace path and the DWARF path.
 | [`src/errors.zig`](../src/errors.zig) | `SourceLoc.compute(source, offset) → {line, col}`; the `import_sources` map type |
 | [`src/ir/inst.zig`](../src/ir/inst.zig) | `Inst.span`, `Function.source_file`, the `Op` union (home of the `.trace_frame` op) |
 | [`library/vendors/sx_trace_runtime/sx_trace.c`](../library/vendors/sx_trace_runtime/sx_trace.c) | the thread-local ring buffer + `sx_trace_report_unhandled` |
-| [`library/modules/trace.sx`](../library/modules/trace.sx) | the formatter (`to_string` / `print_current`) |
+| [`library/modules/trace.sx`](../library/modules/trace.sx) | the formatter (`toString` / `printCurrent`) |
 | [`src/llvm_api.zig`](../src/llvm_api.zig) | binds `llvm-c/Core.h` + `llvm-c/DebugInfo.h` |
 | [`src/target.zig`](../src/target.zig) | `TargetConfig.opt_level` (the gate) + `is_aot` |
 
@@ -305,7 +305,7 @@ traces and DWARF can never disagree:
 compiler so the JIT resolves `sx_trace_*` via `dlsym`; auto-injected as a
 `@source` for AOT when `needs_trace_runtime` is set.
 
-**Formatter (run time)** — `trace.sx` `to_string()` loops `sx_trace_len()` / `sx_trace_frame_at(i)` and resolves each `u64` through
+**Formatter (run time)** — `trace.sx` `toString()` loops `sx_trace_len()` / `sx_trace_frame_at(i)` and resolves each `u64` through
 a **read-side context-split primitive** (the mirror of the `.trace_frame` op):
 
 - compiled: cast the `u64` → `*Frame`, load the fields.
@@ -317,7 +317,7 @@ machine — a compiled program formats compiled frames, a `@run` formats
 comptime frames. It then prints `func at file:line:col` + a best-effort
 source snippet.
 
-**Consumers** — a `catch` handler calling `trace.print_current()`, and
+**Consumers** — a `catch` handler calling `trace.printCurrent()`, and
 the failable-`main` wrapper, whose `ret` path in `emit_llvm`
 (`emitFailableMainRet`) calls `sx_trace_report_unhandled` in `sx_trace.c`.
 

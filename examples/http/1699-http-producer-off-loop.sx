@@ -241,7 +241,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 1310720;   // 1.25 MB — the 1 MB stream + framing + head
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -336,8 +336,8 @@ main :: () -> i32 {
         if obs.prod_tid == 0 { print("producer never ran\n"); failed = 1; }
         if obs.prod_tid == obs.main_tid { print("producer ran ON the loop thread\n"); failed = 1; }
 
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

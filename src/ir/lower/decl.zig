@@ -318,7 +318,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // exists, but nothing CALLS it from sx — so without this it stays a bodiless
     // stub the build VM can't run. No-ops when build.sx isn't imported.
     self.lazyLowerFunction("defaultPipeline");
-    // Pass 3: lower deferred functions (any_to_string etc.) now that all types are registered
+    // Pass 3: lower deferred functions (anyToString etc.) now that all types are registered
     self.lowerDeferredTypeFns();
     // Pass 4: target-specific entry-point sanity checks
     self.checkRequiredEntryPoints();
@@ -3635,7 +3635,7 @@ pub fn registerNamespaceQualifiedFns(self: *Lowering, ns_name: []const u8, own_d
 
 pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.FnDecl, short: []const u8) void {
     // Only PLAIN free functions need a qualified identity. Generic /
-    // comptime / pack functions (`@Vector`, `print`, `any_to_string`) are
+    // comptime / pack functions (`@Vector`, `print`, `anyToString`) are
     // dispatched by monomorphization off their BARE template name, not the
     // plain `resolveFuncByName` / `lazyLowerFunction` path that trips the
     // collision assert; registering a qualified alias for them
@@ -3776,10 +3776,10 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     if (fd.type_params.len > 0) return; // generics handled by monomorphization
 
     // Defer functions with type-category matches until all types are registered.
-    // any_to_string uses `match type { case slice: ... }` which compiles a switch
+    // anyToString uses `match type { case slice: ... }` which compiles a switch
     // with type tags from resolveTypeCategoryTags. This must happen AFTER main is
     // fully lowered so all types ([]i32, List__i32, etc.) are in the TypeTable.
-    if (!self.processing_deferred and std.mem.eql(u8, name, "any_to_string")) {
+    if (!self.processing_deferred and std.mem.eql(u8, name, "anyToString")) {
         self.deferred_type_fns.append(self.alloc, name) catch {};
         return;
     }

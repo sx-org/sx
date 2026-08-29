@@ -8,7 +8,7 @@
 // the metaprogram's defining-module pin, so every node in the variadic pack is
 // stamped with the caller's source — like the fixed comptime param (`$fmt`) —
 // and the bare names `caller_num` / `caller_two` are checked where they are
-// visible. The metaprogram's OWN code (build_format / any_to_string) still
+// visible. The metaprogram's OWN code (buildFormat / anyToString) still
 // resolves in `std.sx`, so the defining-context pin stays intact.
 //
 // Two pack positions lock that EVERY pack arg is stamped, not just the first.

@@ -141,8 +141,8 @@ Pool :: struct {
         // Free-before-raise: nothing past `p` is allocated yet, so the
         // mutex-setup failure only needs to release `p`. The cond-setup
         // failure additionally tears down the already-init'd mutex.
-        if !p.mu.setup() { alloc.dealloc_bytes(p); raise .Init; }
-        if !p.nonempty.setup() { p.mu.destroy(); alloc.dealloc_bytes(p); raise .Init; }
+        if !p.mu.setup() { alloc.deallocBytes(p); raise .Init; }
+        if !p.nonempty.setup() { p.mu.destroy(); alloc.deallocBytes(p); raise .Init; }
         p.tasks = alloc.alloc(PoolTask, backlog).ptr;
         p.cap = backlog;
         p.threads = alloc.alloc(usize, workers).ptr;
@@ -192,9 +192,9 @@ Pool :: struct {
         // tasks/threads first, then the Pool struct last (no field of
         // self is read after this point).
         a := self.own_alloc;
-        if self.tasks != null { a.dealloc_bytes(self.tasks); }
-        if self.threads != null { a.dealloc_bytes(self.threads); }
-        a.dealloc_bytes(self);
+        if self.tasks != null { a.deallocBytes(self.tasks); }
+        if self.threads != null { a.deallocBytes(self.threads); }
+        a.deallocBytes(self);
     }
 }
 

@@ -1,14 +1,14 @@
-// any_to_string handles optionals through a `case optional:` arm and a dispatch
+// anyToString handles optionals through a `case optional:` arm and a dispatch
 // table entry mapping `?T` TypeIds to the optional category.
 //
 // The variadic auto-unwrap path (packVariadicCallArgs) short-circuits direct
 // `print("{}\n", opt)` calls — it stringifies optionals to either the inner
 // value's repr or `"null"` BEFORE boxing as any. Everywhere else that boxes an
-// optional and reads it back through any_to_string (struct field printing,
+// optional and reads it back through anyToString (struct field printing,
 // `opt : any`) reaches the `case optional:` arm.
 //
 // Each ?T variant routes through `case optional:` — the repr-classified
-// table walk — to either the inner value's `any_to_string` representation
+// table walk — to either the inner value's `anyToString` representation
 // or the literal `"null"`.
 
 @import "modules/std.sx";

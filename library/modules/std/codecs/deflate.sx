@@ -133,7 +133,7 @@ decode_prefix :: (data: string, max_output: i64 = 1073741824, alloc: Allocator =
 decode :: (data: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
     result := try decode_prefix(data, max_output, alloc);
     if result.consumed != data.len {
-        alloc.dealloc_bytes(result.bytes.ptr);
+        alloc.deallocBytes(result.bytes.ptr);
         raise .InvalidData;
     }
     result.bytes

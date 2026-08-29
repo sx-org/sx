@@ -6,7 +6,7 @@
 // the loaded array value — scalarizes into one SelectionDAG node per
 // element, so neither appears here.
 //
-// Results print via out/int_to_string.
+// Results print via out/intToString.
 
 @import "modules/std.sx";
 
@@ -34,9 +34,9 @@ big :: () -> i64 {
 }
 
 main :: () -> i32 {
-    out(int_to_string(checksum()));
+    out(intToString(checksum()));
     out("\n");
-    out(int_to_string(big()));
+    out(intToString(big()));
     out("\n");
     return 0;
 }

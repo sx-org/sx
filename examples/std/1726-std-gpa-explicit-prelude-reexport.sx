@@ -5,6 +5,6 @@
 
 main :: () -> i32 {
     gpa := GPA.init();
-    if gpa.alloc_count != 0 { return 1; }
+    if gpa.allocCount != 0 { return 1; }
     0
 }

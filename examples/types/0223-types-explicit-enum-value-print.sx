@@ -1,5 +1,5 @@
 // Printing a payload-less enum variant that carries an EXPLICIT value
-// (`K :: 7`). `enum_to_string` maps the runtime value back to a variant name
+// (`K :: 7`). `enumToString` maps the runtime value back to a variant name
 // via `variantIndex(T, val)` then `structFieldName(T, idx)`. `variantIndex`
 // returns the SEQUENTIAL variant ordinal (the inverse of `variantValue`), not
 // the raw explicit value, so `structFieldName` is indexed in range.

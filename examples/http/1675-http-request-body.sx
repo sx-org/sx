@@ -16,7 +16,7 @@
 // early, present the assembled body — NOT handler-visible per-chunk
 // streaming, which a run-to-completion handler cannot yield/await for.
 //
-// The whole run is under a GPA; net-zero alloc_count after close proves
+// The whole run is under a GPA; net-zero allocCount after close proves
 // no per-request / decode leak. Single-thread tick harness (1633-style).
 @import "modules/std.sx";
 mem  :: @import "modules/std/mem.sx";
@@ -28,7 +28,7 @@ PORT :: 18975;
 // server decoded it EXACTLY. /len returns the body length as text.
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/len" {
-        resp.body = int_to_string(req.body.len);
+        resp.body = intToString(req.body.len);
         return;
     }
     resp.body = req.body;
@@ -183,7 +183,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); return 1; }
 
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(8192);
+        scratch : [*]u8 = xx context.allocator.allocBytes(8192);
 
         // ── 1. fixed Content-Length body still works (200, exact body) ──
         if rc == 0 {
@@ -316,10 +316,10 @@ main :: () -> i32 {
             }
         }
 
-        context.allocator.dealloc_bytes(scratch);
+        context.allocator.deallocBytes(scratch);
         srv.close();
 
-        leaked = gpa.alloc_count;
+        leaked = gpa.allocCount;
     }
 
     if rc != 0 { return xx rc; }

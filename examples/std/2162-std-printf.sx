@@ -9,11 +9,11 @@ Refusing :: struct {
 }
 
 impl Allocator for Refusing {
-    alloc_bytes :: (self: *Refusing, size: i64) -> *void {
+    allocBytes :: (self: *Refusing, size: i64) -> *void {
         self.calls += 1;
         return null;
     }
-    dealloc_bytes :: (self: *Refusing, ptr: *void) {}
+    deallocBytes :: (self: *Refusing, ptr: *void) {}
 }
 
 main :: () {

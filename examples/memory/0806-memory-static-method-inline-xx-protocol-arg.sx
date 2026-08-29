@@ -17,7 +17,7 @@ Box :: struct {
     init :: (parent_alloc: Allocator, size: i64) -> *Box {
         self : *Box = xx c.libc_malloc(@sizeOf(Box));
         self.parent = parent_alloc;
-        self.first_ptr = self.parent.alloc_bytes(size);
+        self.first_ptr = self.parent.allocBytes(size);
         self
     }
 }
@@ -25,12 +25,12 @@ Box :: struct {
 make_box :: (parent_alloc: Allocator, size: i64) -> *Box {
     self : *Box = xx c.libc_malloc(@sizeOf(Box));
     self.parent = parent_alloc;
-    self.first_ptr = self.parent.alloc_bytes(size);
+    self.first_ptr = self.parent.allocBytes(size);
     self
 }
 
 main :: () -> i32 {
-    g_gpa : GPA = .{ alloc_count = 0 };
+    g_gpa : GPA = .{ allocCount = 0 };
 
     a : Allocator = xx *g_gpa;
     b1 := Box.init(a, 64);

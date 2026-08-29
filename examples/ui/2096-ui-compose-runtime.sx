@@ -115,13 +115,13 @@ main :: () -> i32 {
             quiet.queue.push(up(50.0, 10.0));
             spin.frame()
         }
-        warm := tracker.alloc_count;
+        warm := tracker.allocCount;
         for 0..64 {
             quiet.queue.push(down(50.0, 10.0));
             quiet.queue.push(up(50.0, 10.0));
             spin.frame()
         }
-        steady = tracker.alloc_count - warm;
+        steady = tracker.allocCount - warm;
         ran = spin.frames;
         taps_seen = seen;
 
@@ -129,7 +129,7 @@ main :: () -> i32 {
         spin.deinit()
     }
     print("frames {} taps {} steady_allocs {} outstanding {}\n",
-        ran, taps_seen, steady, tracker.leak_count());
+        ran, taps_seen, steady, tracker.leakCount());
 
     // A builder written under one allocator, handed to a loop made under
     // another. The loop is told which allocator the closure's environment came
@@ -156,7 +156,7 @@ main :: () -> i32 {
         far.deinit()
     }
     print("far_built {} owner_outstanding {} elsewhere_outstanding {}\n",
-        built, owner.leak_count(), elsewhere.leak_count());
+        built, owner.leakCount(), elsewhere.leakCount());
 
     // The same question asked of a snapshot outside any loop. A caller that
     // projects one tree over and over reuses the three lists it filled the
@@ -175,14 +175,14 @@ main :: () -> i32 {
             };
             snap := CommittedUiSnapshot.init(solo);
             project(*tree, Size{ width = 100.0, height = 40.0 }, *snap);
-            warm := solo.alloc_count;
+            warm := solo.allocCount;
             for 0..32 {
                 project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
             }
-            settled = solo.alloc_count - warm;
-            freed := solo.dealloc_count;
+            settled = solo.allocCount - warm;
+            freed := solo.deallocCount;
             snap.deinit();
-            returned = solo.dealloc_count - freed;
+            returned = solo.deallocCount - freed;
         }
         marks.deinit()
     }

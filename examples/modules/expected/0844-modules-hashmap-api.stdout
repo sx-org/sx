@@ -51,4 +51,4 @@ g11-old-returned: ok
 g14-empty-iter: ok
 g15-clear-pristine: ok
 g15-deinit-pristine: ok
-g16-get_ptr-null-miss: ok
+g16-getPtr-null-miss: ok

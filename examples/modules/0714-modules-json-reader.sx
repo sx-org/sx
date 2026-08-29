@@ -95,7 +95,7 @@ main :: () -> ! {
 
     // ── 3. Round-trip back through the writer ────────────────────────
     buf : [256]u8 = ---;
-    n := try write_to_buffer(root, string{ ptr = *buf[0], len = 256 });
+    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 256 });
     rt := string{ ptr = *buf[0], len = n };
     report("round-trip", rt == src);
 
@@ -108,7 +108,7 @@ main :: () -> ! {
 
     fbuf : [32]u8 = ---;
     fv := try parse("1.5", arena);
-    fn := try write_to_buffer(fv, string{ ptr = *fbuf[0], len = 32 });
+    fn := try writeToBuffer(fv, string{ ptr = *fbuf[0], len = 32 });
     report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
 
     // Empty container literals (the manifest/db.json use these).

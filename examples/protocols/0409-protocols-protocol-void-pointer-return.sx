@@ -12,13 +12,13 @@ main :: () -> i32 {
     gpa := GPA.init();
     alloc : Allocator = gpa;
 
-    p_direct := gpa.alloc_bytes(64);
+    p_direct := gpa.allocBytes(64);
     print("direct: null? {}\n", p_direct == null);
 
-    p_protocol := alloc.alloc_bytes(64);
+    p_protocol := alloc.allocBytes(64);
     print("protocol: null? {}\n", p_protocol == null);
 
-    print("alloc_count: {}\n", gpa.alloc_count);
+    print("allocCount: {}\n", gpa.allocCount);
 
     0
 }

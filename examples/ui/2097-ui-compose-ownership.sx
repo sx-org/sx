@@ -58,7 +58,7 @@ main :: () -> i32 {
         marks.deinit()
     }
     print("identity sites {} distinct {} home {} away {}\n",
-        sites, distinct, home.leak_count(), away.leak_count());
+        sites, distinct, home.leakCount(), away.leakCount());
 
     // StateStore: one entry block per claim, and the list over them.
     entries := 0;
@@ -80,7 +80,7 @@ main :: () -> i32 {
         tally.deinit()
     }
     print("state entries {} value {} row {} home {} away {}\n",
-        entries, counted, row, home.leak_count(), away.leak_count());
+        entries, counted, row, home.leakCount(), away.leakCount());
 
     // Router: the sequence a down captures against the committed frame.
     regions := 0;
@@ -106,7 +106,7 @@ main :: () -> i32 {
         pointers.deinit()
     }
     print("router regions {} captured {} home {} away {}\n",
-        regions, captured, home.leak_count(), away.leak_count());
+        regions, captured, home.leakCount(), away.leakCount());
 
     // CommittedUiSnapshot: the fill runs while `away` is ambient and the
     // release while neither tracker is, and the three buffers still come from
@@ -129,27 +129,27 @@ main :: () -> i32 {
                     hit.* += 1;
                 }))
             };
-            made := home.alloc_count;
+            made := home.allocCount;
             push .{ allocator = away } {
                 project(*tree, Size{ width = 60.0, height = 40.0 }, *shot)
             }
-            filled = home.alloc_count - made;
+            filled = home.allocCount - made;
 
             keys := FocusRouter.init();
             keys.observe(*shot);
-            still := home.alloc_count + away.alloc_count;
+            still := home.allocCount + away.allocCount;
             keys.request_focus(.{ value = shot.focus_list.items[0].id });
             stroke := key(.enter);
             keys.dispatch(*stroke);
-            spent = home.alloc_count + away.alloc_count - still;
+            spent = home.allocCount + away.allocCount - still;
         }
     }
-    gave := home.dealloc_count;
+    gave := home.deallocCount;
     shot.deinit();
-    returned = home.dealloc_count - gave;
+    returned = home.deallocCount - gave;
     labels.deinit();
     print("snapshot filled {} returned {} home {} away {}\n",
-        filled, returned, home.leak_count(), away.leak_count());
+        filled, returned, home.leakCount(), away.leakCount());
     print("focus struck {} spent {}\n", struck, spent);
 
     // A `discard` is where a snapshot's allocator moves: it lets the buffers go
@@ -166,19 +166,19 @@ main :: () -> i32 {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             };
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved);
-            untouched = second.end_index == 0;
+            untouched = second.endIndex == 0;
             moved.discard(second);
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
         }
     }
     hits := moved.hit_list.len;
-    retargeted := second.end_index > 0;
+    retargeted := second.endIndex > 0;
     moved.deinit();
     first.deinit();
     second.deinit();
     stamps.deinit();
     print("retarget before {} after {} hits {} home {} away {}\n",
-        untouched, retargeted, hits, home.leak_count(), away.leak_count());
+        untouched, retargeted, hits, home.leakCount(), away.leakCount());
 
     // UiRoot and FrameLoop: the root's carriers and arenas are the root
     // allocator's, and the builder environment comes from the allocator
@@ -209,7 +209,7 @@ main :: () -> i32 {
         spin.deinit()
     }
     print("root built {} taps {} home {} away {}\n",
-        built, taken, home.leak_count(), away.leak_count());
+        built, taken, home.leakCount(), away.leakCount());
 
     scratch.deinit();
     0

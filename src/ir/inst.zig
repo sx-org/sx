@@ -91,7 +91,7 @@ pub const Op = union(enum) {
     /// `false`. Lets stdlib (`process.exit`, `@panic`) take a comptime-only
     /// diagnostic branch that dead-codes out of compiled binaries.
     is_comptime,
-    /// `trace.print_interpreter_frames()`. At comptime the interp
+    /// `trace.printInterpreterFrames()`. At comptime the interp
     /// walks its sx call-frame chain and appends it to the output; in compiled
     /// code it's a no-op (only ever reached from a dead `@isComptime()` branch,
     /// where there is no interpreter stack to walk).

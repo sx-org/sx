@@ -54,8 +54,8 @@ pub const CoercionResolver = struct {
         array_to_slice, // [N]T → []T (materialize backing storage + header)
         slice_len_convert, // @Slice(T,A) → @Slice(T,B) (rebuild the header on B's length word)
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
-        string_to_cstring, // literal-only implicit; other strings need to_cstring
-        cstring_to_string_reject, // explicit from_cstring required (diagnostic)
+        string_to_cstring, // literal-only implicit; other strings need toCstring
+        cstring_to_string_reject, // explicit fromCstring required (diagnostic)
         error_set_retype, // error set → error set, tags legal in the destination
         none, // nothing applies — pass the value through
     };

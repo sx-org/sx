@@ -7,7 +7,7 @@
 escape :: (s: string) -> string {
     result := "";
     i := 0;
-    seg_start := 0;
+    segStart := 0;
     while i < s.len {
         c := s[i];
         ent := "";
@@ -17,16 +17,16 @@ escape :: (s: string) -> string {
         if c == '"' { ent = "&quot;"; }
         if c == '\'' { ent = "&apos;"; }
         if ent.len > 0 {
-            if i > seg_start {
-                result = concat(result, substr(s, seg_start, i - seg_start));
+            if i > segStart {
+                result = concat(result, substr(s, segStart, i - segStart));
             }
             result = concat(result, ent);
-            seg_start = i + 1;
+            segStart = i + 1;
         }
         i += 1;
     }
-    if seg_start < s.len {
-        result = concat(result, substr(s, seg_start, s.len - seg_start));
+    if segStart < s.len {
+        result = concat(result, substr(s, segStart, s.len - segStart));
     }
     result
 }

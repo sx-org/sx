@@ -504,10 +504,10 @@ EncodedProducer :: struct {
     alloc: Allocator;
 
     init :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
-        input := alloc.alloc_bytes(SOURCE_PIECE);
+        input := alloc.allocBytes(SOURCE_PIECE);
         if input == null { raise .AllocationFailed; }
         encoder := Encoder.init(encoding, level, alloc) catch |e| {
-            alloc.dealloc_bytes(input);
+            alloc.deallocBytes(input);
             raise e;
         };
         EncodedProducer{
@@ -561,7 +561,7 @@ EncodedProducer :: struct {
 
     deinit :: (self: *EncodedProducer) {
         self.encoder.deinit();
-        if self.input != null { self.alloc.dealloc_bytes(self.input); self.input = null; }
+        if self.input != null { self.alloc.deallocBytes(self.input); self.input = null; }
         self.finished = true;
     }
 }
@@ -570,7 +570,7 @@ create_encoded_producer :: (encoding: Encoding, level: i64, source: Producer, so
     result := alloc.create(EncodedProducer);
     if result == null { return null; }
     state := EncodedProducer.init(encoding, level, source, source_ctx, alloc) catch {
-        alloc.dealloc_bytes(result);
+        alloc.deallocBytes(result);
         return null;
     };
     result.* = state;
@@ -580,5 +580,5 @@ create_encoded_producer :: (encoding: Encoding, level: i64, source: Producer, so
 destroy_encoded_producer :: (state: *EncodedProducer, alloc: Allocator) {
     if state == null { return; }
     state.deinit();
-    alloc.dealloc_bytes(state);
+    alloc.deallocBytes(state);
 }

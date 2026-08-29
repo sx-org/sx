@@ -1,6 +1,6 @@
 // The VM materializes a declared global as an instance of its own and keeps
 // the mapping back to the global, so a carried allocator handle survives the
-// escape: `context.allocator` is a borrow of the process-wide `c_allocator`
+// escape: `context.allocator` is a borrow of the process-wide `cAllocator`
 // instance, and the escaped handle relocates to that global's symbol with its
 // method words resolved to their thunks. Allocating through the escaped handle
 // at runtime is allocating through the real allocator.

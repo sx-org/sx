@@ -575,7 +575,7 @@ ascii_ieq :: (a: string, b_lower: string) -> bool {
 // ── alloc-free serialization primitives ────────────────────────
 
 // Decimal digits of a non-negative n written into dst; returns the count.
-// The serializer's alloc-free twin of int_to_string (which concats through
+// The serializer's alloc-free twin of intToString (which concats through
 // the context allocator).
 dec_into :: (n: i64, dst: [*]u8) -> i64 {
     if n == 0 { dst[0] = '0'; return 1; }

@@ -72,7 +72,7 @@ main :: () -> i32 {
         }
 
         srv.close();
-        leaked = gpa.alloc_count;
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

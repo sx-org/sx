@@ -12,7 +12,7 @@
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch
 // predictor pins it:
-//   DIRECT  — `arena.alloc_bytes(n)` on the concrete receiver. No handle at
+//   DIRECT  — `arena.allocBytes(n)` on the concrete receiver. No handle at
 //             all: the floor a devirtualized dispatch can reach.
 //   BORROW  — the same loop through a handle erased AT THE SITE, so the
 //             receiver's conformer is statically known. Whether that fact
@@ -23,7 +23,7 @@
 //             loaded from the pushed Context, so the receiver is dynamic —
 //             this is the lane that measures a real dispatch.
 //   DEFAULT — `context.allocator` as the program starts, i.e. the folded
-//             default-context handle over `c_allocator`. Measures the
+//             default-context handle over `cAllocator`. Measures the
 //             malloc/free round trip through the same handle shape.
 //
 // The next three are the ADVERSARIAL matrix: 20 named conformers (B00..B19,
@@ -146,7 +146,7 @@ B00 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B00 {
-    alloc_bytes :: (self: *B00, size: i64) -> *void {
+    allocBytes :: (self: *B00, size: i64) -> *void {
         self.n = self.n + 1;
         a := (size + 7) & (0 - 8);
         if self.off + a > self.cap { self.off = 0; }
@@ -154,7 +154,7 @@ impl Allocator for B00 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B00, ptr: *void) { self.n = self.n - 1; }
+    deallocBytes :: (self: *B00, ptr: *void) { self.n = self.n - 1; }
 }
 
 B01 :: struct {
@@ -164,7 +164,7 @@ B01 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B01 {
-    alloc_bytes :: (self: *B01, size: i64) -> *void {
+    allocBytes :: (self: *B01, size: i64) -> *void {
         self.n = self.n + 2;
         a := (size + 15) & (0 - 16);
         if self.off + a > self.cap { self.off = 0; }
@@ -172,7 +172,7 @@ impl Allocator for B01 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B01, ptr: *void) { self.n = self.n - 2; }
+    deallocBytes :: (self: *B01, ptr: *void) { self.n = self.n - 2; }
 }
 
 B02 :: struct {
@@ -182,7 +182,7 @@ B02 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B02 {
-    alloc_bytes :: (self: *B02, size: i64) -> *void {
+    allocBytes :: (self: *B02, size: i64) -> *void {
         self.n = self.n + 3;
         a := (size + 31) & (0 - 32);
         if self.off + a > self.cap { self.off = 0; }
@@ -190,7 +190,7 @@ impl Allocator for B02 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B02, ptr: *void) { self.n = self.n - 3; }
+    deallocBytes :: (self: *B02, ptr: *void) { self.n = self.n - 3; }
 }
 
 B03 :: struct {
@@ -200,7 +200,7 @@ B03 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B03 {
-    alloc_bytes :: (self: *B03, size: i64) -> *void {
+    allocBytes :: (self: *B03, size: i64) -> *void {
         self.n = self.n + 4;
         a := (size + 63) & (0 - 64);
         if self.off + a > self.cap { self.off = 0; }
@@ -208,7 +208,7 @@ impl Allocator for B03 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B03, ptr: *void) { self.n = self.n - 4; }
+    deallocBytes :: (self: *B03, ptr: *void) { self.n = self.n - 4; }
 }
 
 B04 :: struct {
@@ -218,7 +218,7 @@ B04 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B04 {
-    alloc_bytes :: (self: *B04, size: i64) -> *void {
+    allocBytes :: (self: *B04, size: i64) -> *void {
         self.n = self.n + 5;
         a := (size + 7) & (0 - 8);
         if self.off + a > self.cap { self.off = 0; }
@@ -226,7 +226,7 @@ impl Allocator for B04 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B04, ptr: *void) { self.n = self.n - 5; }
+    deallocBytes :: (self: *B04, ptr: *void) { self.n = self.n - 5; }
 }
 
 B05 :: struct {
@@ -236,7 +236,7 @@ B05 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B05 {
-    alloc_bytes :: (self: *B05, size: i64) -> *void {
+    allocBytes :: (self: *B05, size: i64) -> *void {
         self.n = self.n + 6;
         a := (size + 15) & (0 - 16);
         if self.off + a > self.cap { self.off = 0; }
@@ -244,7 +244,7 @@ impl Allocator for B05 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B05, ptr: *void) { self.n = self.n - 6; }
+    deallocBytes :: (self: *B05, ptr: *void) { self.n = self.n - 6; }
 }
 
 B06 :: struct {
@@ -254,7 +254,7 @@ B06 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B06 {
-    alloc_bytes :: (self: *B06, size: i64) -> *void {
+    allocBytes :: (self: *B06, size: i64) -> *void {
         self.n = self.n + 7;
         a := (size + 31) & (0 - 32);
         if self.off + a > self.cap { self.off = 0; }
@@ -262,7 +262,7 @@ impl Allocator for B06 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B06, ptr: *void) { self.n = self.n - 7; }
+    deallocBytes :: (self: *B06, ptr: *void) { self.n = self.n - 7; }
 }
 
 B07 :: struct {
@@ -272,7 +272,7 @@ B07 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B07 {
-    alloc_bytes :: (self: *B07, size: i64) -> *void {
+    allocBytes :: (self: *B07, size: i64) -> *void {
         self.n = self.n + 8;
         a := (size + 63) & (0 - 64);
         if self.off + a > self.cap { self.off = 0; }
@@ -280,7 +280,7 @@ impl Allocator for B07 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B07, ptr: *void) { self.n = self.n - 8; }
+    deallocBytes :: (self: *B07, ptr: *void) { self.n = self.n - 8; }
 }
 
 B08 :: struct {
@@ -290,7 +290,7 @@ B08 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B08 {
-    alloc_bytes :: (self: *B08, size: i64) -> *void {
+    allocBytes :: (self: *B08, size: i64) -> *void {
         self.n = self.n + 9;
         a := (size + 7) & (0 - 8);
         if self.off + a > self.cap { self.off = 0; }
@@ -298,7 +298,7 @@ impl Allocator for B08 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B08, ptr: *void) { self.n = self.n - 9; }
+    deallocBytes :: (self: *B08, ptr: *void) { self.n = self.n - 9; }
 }
 
 B09 :: struct {
@@ -308,7 +308,7 @@ B09 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B09 {
-    alloc_bytes :: (self: *B09, size: i64) -> *void {
+    allocBytes :: (self: *B09, size: i64) -> *void {
         self.n = self.n + 10;
         a := (size + 15) & (0 - 16);
         if self.off + a > self.cap { self.off = 0; }
@@ -316,7 +316,7 @@ impl Allocator for B09 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B09, ptr: *void) { self.n = self.n - 10; }
+    deallocBytes :: (self: *B09, ptr: *void) { self.n = self.n - 10; }
 }
 
 B10 :: struct {
@@ -326,7 +326,7 @@ B10 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B10 {
-    alloc_bytes :: (self: *B10, size: i64) -> *void {
+    allocBytes :: (self: *B10, size: i64) -> *void {
         self.n = self.n + 11;
         a := (size + 31) & (0 - 32);
         if self.off + a > self.cap { self.off = 0; }
@@ -334,7 +334,7 @@ impl Allocator for B10 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B10, ptr: *void) { self.n = self.n - 11; }
+    deallocBytes :: (self: *B10, ptr: *void) { self.n = self.n - 11; }
 }
 
 B11 :: struct {
@@ -344,7 +344,7 @@ B11 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B11 {
-    alloc_bytes :: (self: *B11, size: i64) -> *void {
+    allocBytes :: (self: *B11, size: i64) -> *void {
         self.n = self.n + 12;
         a := (size + 63) & (0 - 64);
         if self.off + a > self.cap { self.off = 0; }
@@ -352,7 +352,7 @@ impl Allocator for B11 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B11, ptr: *void) { self.n = self.n - 12; }
+    deallocBytes :: (self: *B11, ptr: *void) { self.n = self.n - 12; }
 }
 
 B12 :: struct {
@@ -362,7 +362,7 @@ B12 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B12 {
-    alloc_bytes :: (self: *B12, size: i64) -> *void {
+    allocBytes :: (self: *B12, size: i64) -> *void {
         self.n = self.n + 13;
         a := (size + 7) & (0 - 8);
         if self.off + a > self.cap { self.off = 0; }
@@ -370,7 +370,7 @@ impl Allocator for B12 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B12, ptr: *void) { self.n = self.n - 13; }
+    deallocBytes :: (self: *B12, ptr: *void) { self.n = self.n - 13; }
 }
 
 B13 :: struct {
@@ -380,7 +380,7 @@ B13 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B13 {
-    alloc_bytes :: (self: *B13, size: i64) -> *void {
+    allocBytes :: (self: *B13, size: i64) -> *void {
         self.n = self.n + 14;
         a := (size + 15) & (0 - 16);
         if self.off + a > self.cap { self.off = 0; }
@@ -388,7 +388,7 @@ impl Allocator for B13 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B13, ptr: *void) { self.n = self.n - 14; }
+    deallocBytes :: (self: *B13, ptr: *void) { self.n = self.n - 14; }
 }
 
 B14 :: struct {
@@ -398,7 +398,7 @@ B14 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B14 {
-    alloc_bytes :: (self: *B14, size: i64) -> *void {
+    allocBytes :: (self: *B14, size: i64) -> *void {
         self.n = self.n + 15;
         a := (size + 31) & (0 - 32);
         if self.off + a > self.cap { self.off = 0; }
@@ -406,7 +406,7 @@ impl Allocator for B14 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B14, ptr: *void) { self.n = self.n - 15; }
+    deallocBytes :: (self: *B14, ptr: *void) { self.n = self.n - 15; }
 }
 
 B15 :: struct {
@@ -416,7 +416,7 @@ B15 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B15 {
-    alloc_bytes :: (self: *B15, size: i64) -> *void {
+    allocBytes :: (self: *B15, size: i64) -> *void {
         self.n = self.n + 16;
         a := (size + 63) & (0 - 64);
         if self.off + a > self.cap { self.off = 0; }
@@ -424,7 +424,7 @@ impl Allocator for B15 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B15, ptr: *void) { self.n = self.n - 16; }
+    deallocBytes :: (self: *B15, ptr: *void) { self.n = self.n - 16; }
 }
 
 B16 :: struct {
@@ -434,7 +434,7 @@ B16 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B16 {
-    alloc_bytes :: (self: *B16, size: i64) -> *void {
+    allocBytes :: (self: *B16, size: i64) -> *void {
         self.n = self.n + 17;
         a := (size + 7) & (0 - 8);
         if self.off + a > self.cap { self.off = 0; }
@@ -442,7 +442,7 @@ impl Allocator for B16 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B16, ptr: *void) { self.n = self.n - 17; }
+    deallocBytes :: (self: *B16, ptr: *void) { self.n = self.n - 17; }
 }
 
 B17 :: struct {
@@ -452,7 +452,7 @@ B17 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B17 {
-    alloc_bytes :: (self: *B17, size: i64) -> *void {
+    allocBytes :: (self: *B17, size: i64) -> *void {
         self.n = self.n + 18;
         a := (size + 15) & (0 - 16);
         if self.off + a > self.cap { self.off = 0; }
@@ -460,7 +460,7 @@ impl Allocator for B17 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B17, ptr: *void) { self.n = self.n - 18; }
+    deallocBytes :: (self: *B17, ptr: *void) { self.n = self.n - 18; }
 }
 
 B18 :: struct {
@@ -470,7 +470,7 @@ B18 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B18 {
-    alloc_bytes :: (self: *B18, size: i64) -> *void {
+    allocBytes :: (self: *B18, size: i64) -> *void {
         self.n = self.n + 19;
         a := (size + 31) & (0 - 32);
         if self.off + a > self.cap { self.off = 0; }
@@ -478,7 +478,7 @@ impl Allocator for B18 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B18, ptr: *void) { self.n = self.n - 19; }
+    deallocBytes :: (self: *B18, ptr: *void) { self.n = self.n - 19; }
 }
 
 B19 :: struct {
@@ -488,7 +488,7 @@ B19 :: struct {
     n: i64 = 0;
 }
 impl Allocator for B19 {
-    alloc_bytes :: (self: *B19, size: i64) -> *void {
+    allocBytes :: (self: *B19, size: i64) -> *void {
         self.n = self.n + 20;
         a := (size + 63) & (0 - 64);
         if self.off + a > self.cap { self.off = 0; }
@@ -496,7 +496,7 @@ impl Allocator for B19 {
         self.off = self.off + a;
         return p;
     }
-    dealloc_bytes :: (self: *B19, ptr: *void) { self.n = self.n - 20; }
+    deallocBytes :: (self: *B19, ptr: *void) { self.n = self.n - 20; }
 }
 
 
@@ -565,7 +565,7 @@ direct_lane :: (arena: *Arena) -> i64 {
     sink := 0;
     i := 0;
     while i < ALLOCS {
-        p := arena.alloc_bytes(16);
+        p := arena.allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -582,7 +582,7 @@ borrow_lane :: (arena: *Arena) -> i64 {
     sink := 0;
     i := 0;
     while i < ALLOCS {
-        p := a.alloc_bytes(16);
+        p := a.allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -599,7 +599,7 @@ ctx_lane :: (arena: *Arena) -> i64 {
         sink := 0;
         i := 0;
         while i < ALLOCS {
-            p := context.allocator.alloc_bytes(16);
+            p := context.allocator.allocBytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
@@ -616,12 +616,12 @@ default_lane :: () -> i64 {
     sink := 0;
     i := 0;
     while i < ALLOCS {
-        p := context.allocator.alloc_bytes(16);
+        p := context.allocator.allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
         escaped = p;
-        context.allocator.dealloc_bytes(p);
+        context.allocator.deallocBytes(p);
         i = i + 1;
     }
     el := mono_ns() - t0;
@@ -637,7 +637,7 @@ interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
     sink := 0;
     i := 0;
     while i < ALLOCS {
-        p := h[idx[i & IDXMASK]].alloc_bytes(16);
+        p := h[idx[i & IDXMASK]].allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -656,7 +656,7 @@ rotate_lane :: (h: []Allocator) -> i64 {
     i := 0;
     k := 0;
     while i < ALLOCS {
-        p := h[k].alloc_bytes(16);
+        p := h[k].allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -678,7 +678,7 @@ ctx_ptr_lane :: (arena: *Arena) -> i64 {
         sink := 0;
         i := 0;
         while i < ALLOCS {
-            p := context.ap.alloc_bytes(16);
+            p := context.ap.allocBytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
@@ -700,7 +700,7 @@ interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
     sink := 0;
     i := 0;
     while i < ALLOCS {
-        p := ps[idx[i & IDXMASK]].alloc_bytes(16);
+        p := ps[idx[i & IDXMASK]].allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -717,7 +717,7 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
     i := 0;
     k := 0;
     while i < ALLOCS {
-        p := ps[k].alloc_bytes(16);
+        p := ps[k].allocBytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
         sink = sink + b[0];
@@ -739,7 +739,7 @@ push_h16_lane :: (arena: *Arena) -> i64 {
     i := 0;
     while i < ALLOCS {
         push .{ allocator = arena } {
-            p := context.allocator.alloc_bytes(16);
+            p := context.allocator.allocBytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
             sink = sink + b[0];
@@ -758,7 +758,7 @@ push_ptr_lane :: (arena: *Arena) -> i64 {
     i := 0;
     while i < ALLOCS {
         push .{ ap = *ah } {
-            p := context.ap.alloc_bytes(16);
+            p := context.ap.allocBytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
             sink = sink + b[0];

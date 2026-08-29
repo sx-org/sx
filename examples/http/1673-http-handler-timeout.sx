@@ -112,8 +112,8 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        sbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);   // slow-conn scratch
-        fbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);   // fast-conn scratch
+        sbuf : [*]u8 = xx context.allocator.allocBytes(cap);   // slow-conn scratch
+        fbuf : [*]u8 = xx context.allocator.allocBytes(cap);   // fast-conn scratch
 
         cfg : http.Config = .{
             port = PORT,
@@ -213,9 +213,9 @@ main :: () -> i32 {
         srv.close();   // joins the slow worker; its late completion (if any
                        // still pending) is freed by close's drain — net-zero.
 
-        context.allocator.dealloc_bytes(sbuf);
-        context.allocator.dealloc_bytes(fbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(sbuf);
+        context.allocator.deallocBytes(fbuf);
+        leaked = gpa.allocCount;
     }
 
     // (4) net-zero allocations: the timed-out completion's buffer was freed.

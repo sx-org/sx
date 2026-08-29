@@ -216,7 +216,7 @@ GlyphCache :: struct {
         self.font_data_size = file_size;
 
         // Init stbtt_fontinfo
-        self.font_info = self.parent_allocator.alloc_bytes(FONTINFO_SIZE);
+        self.font_info = self.parent_allocator.allocBytes(FONTINFO_SIZE);
         c.memset(self.font_info, 0, FONTINFO_SIZE);
         stbtt_InitFont(self.font_info, font_data, 0);
 
@@ -247,7 +247,7 @@ GlyphCache :: struct {
         self.atlas_width = GLYPH_ATLAS_W;
         self.atlas_height = GLYPH_ATLAS_H;
         bitmap_size : i64 = (self.atlas_width * self.atlas_height).(i64);
-        self.bitmap = self.parent_allocator.alloc_bytes(bitmap_size);
+        self.bitmap = self.parent_allocator.allocBytes(bitmap_size);
         c.memset(self.bitmap, 0, bitmap_size);
 
         // Shelf packer init
@@ -263,10 +263,10 @@ GlyphCache :: struct {
         // Init hash table (256 slots)
         self.hash_cap = 256;
         hash_bytes : i64 = self.hash_cap * 4;  // u32 per slot
-        self.hash_keys = self.parent_allocator.alloc_bytes(hash_bytes);
+        self.hash_keys = self.parent_allocator.allocBytes(hash_bytes);
         c.memset(self.hash_keys, 0, hash_bytes);
         val_bytes : i64 = self.hash_cap * 8;  // i64 per slot (i32 would suffice but alignment)
-        self.hash_vals = self.parent_allocator.alloc_bytes(val_bytes);
+        self.hash_vals = self.parent_allocator.allocBytes(val_bytes);
 
         // Create the atlas texture. In GPU-protocol mode we create empty and
         // let the first `flush()` push the (zero-initialized) bitmap via
@@ -411,10 +411,10 @@ GlyphCache :: struct {
 
         self.hash_cap = old_cap * 2;
         hash_bytes : i64 = self.hash_cap * 4;
-        self.hash_keys = self.parent_allocator.alloc_bytes(hash_bytes);
+        self.hash_keys = self.parent_allocator.allocBytes(hash_bytes);
         c.memset(self.hash_keys, 0, hash_bytes);
         val_bytes : i64 = self.hash_cap * 8;
-        self.hash_vals = self.parent_allocator.alloc_bytes(val_bytes);
+        self.hash_vals = self.parent_allocator.allocBytes(val_bytes);
 
         // Rehash
         mask := self.hash_cap - 1;
@@ -432,8 +432,8 @@ GlyphCache :: struct {
             i += 1;
         }
 
-        self.parent_allocator.dealloc_bytes(old_keys);
-        self.parent_allocator.dealloc_bytes(old_vals);
+        self.parent_allocator.deallocBytes(old_keys);
+        self.parent_allocator.deallocBytes(old_vals);
     }
 
     // Upload dirty atlas to GPU. On the Metal path, defer the upload to
@@ -494,7 +494,7 @@ GlyphCache :: struct {
         new_w := self.atlas_width * 2;
         new_h := self.atlas_height * 2;
         new_size : i64 = (new_w * new_h).(i64);
-        new_bitmap : [*]u8 = (self.parent_allocator.alloc_bytes(new_size)).([*]u8);
+        new_bitmap : [*]u8 = (self.parent_allocator.allocBytes(new_size)).([*]u8);
         c.memset(new_bitmap, 0, new_size);
 
         // Copy old rows into new bitmap
@@ -506,7 +506,7 @@ GlyphCache :: struct {
             y += 1;
         }
 
-        self.parent_allocator.dealloc_bytes(self.bitmap);
+        self.parent_allocator.deallocBytes(self.bitmap);
         self.bitmap = new_bitmap;
         self.atlas_width = new_w;
         self.atlas_height = new_h;

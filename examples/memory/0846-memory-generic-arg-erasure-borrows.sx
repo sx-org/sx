@@ -13,11 +13,11 @@ Tracker :: struct {
     deallocs: i64;
 }
 impl Allocator for Tracker {
-    alloc_bytes :: (self: *Tracker, size: i64) -> *void {
+    allocBytes :: (self: *Tracker, size: i64) -> *void {
         self.allocs += 1;
         c.libc_malloc(size)
     }
-    dealloc_bytes :: (self: *Tracker, ptr: *void) {
+    deallocBytes :: (self: *Tracker, ptr: *void) {
         self.deallocs += 1;
         c.libc_free(ptr);
     }
@@ -25,18 +25,18 @@ impl Allocator for Tracker {
 
 CountA :: struct { n: i64; }
 impl Allocator for CountA {
-    alloc_bytes :: (self: *CountA, size: i64) -> *void { self.n += 1; c.libc_malloc(size) }
-    dealloc_bytes :: (self: *CountA, ptr: *void) { c.libc_free(ptr); }
+    allocBytes :: (self: *CountA, size: i64) -> *void { self.n += 1; c.libc_malloc(size) }
+    deallocBytes :: (self: *CountA, ptr: *void) { c.libc_free(ptr); }
 }
 
 poke :: (a: Allocator) {
-    p := a.alloc_bytes(8);
-    a.dealloc_bytes(p);
+    p := a.allocBytes(8);
+    a.deallocBytes(p);
 }
 
 gen_poke :: (s: $P, a: Allocator) {
-    p := a.alloc_bytes(8);
-    a.dealloc_bytes(p);
+    p := a.allocBytes(8);
+    a.deallocBytes(p);
     _ = s;
 }
 

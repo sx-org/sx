@@ -634,7 +634,7 @@ pub const Vm = struct {
     /// see `emitDefaultContextGlobalEarly`). Laying that constant into
     /// comptime memory gives a context whose fn slots are real func-refs, so
     /// a comptime body that allocates via `context.allocator` dispatches
-    /// through `call_indirect` to the thunk to `CAllocator.alloc_bytes` to
+    /// through `call_indirect` to the thunk to `CAllocator.allocBytes` to
     /// `libc_malloc` to the VM's native `malloc` — all on the VM, no host
     /// heap. No hand-built shadow context exists: if the global is absent
     /// (std not imported, or its defaults not yet constructible at this
@@ -1082,7 +1082,7 @@ pub const Vm = struct {
                 const sty = ins.ty;
                 // `string`/`any` are builtin TWO-WORD aggregates (`{ptr@0, len@8}` /
                 // `{tag@0, value@8}`) — a literal like `string{ ptr = p, len = n }`
-                // (e.g. `from_cstring`) struct_inits one. Lay each operand as an
+                // (e.g. `fromCstring`) struct_inits one. Lay each operand as an
                 // 8-byte word; the other builtins have no aggregate literal form.
                 if (sty == .string or sty == .any) {
                     const a = self.machine.allocBytes(16, 8);
@@ -1358,9 +1358,9 @@ pub const Vm = struct {
                 const fid: u64 = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1].index() else 0;
                 return .{ .value = (fid << 32) | @as(u64, ins.span.start) };
             },
-            // Dump the comptime call-frame chain (`trace.print_interpreter_frames`) —
+            // Dump the comptime call-frame chain (`trace.printInterpreterFrames`) —
             // walks the active `call_stack` (skipping the last frame, the
-            // `print_interpreter_frames` fn itself) and writes `  at <name>` lines
+            // `printInterpreterFrames` fn itself) and writes `  at <name>` lines
             // straight to fd 1 (consistent with `out`'s now-direct libc `write`).
             .interp_print_frames => {
                 const module = self.module orelse return self.failMsg("comptime interp_print_frames: no module");
@@ -1380,7 +1380,7 @@ pub const Vm = struct {
                 return .{ .value = null_addr };
             },
             // Unpack a comptime frame `(func_id << 32 | span.start)` and build a
-            // `Frame { file, line, col, func, line_text }` aggregate in comptime memory.
+            // `Frame { file, line, col, func, lineText }` aggregate in comptime memory.
             // `ins.ty` is the `Frame` struct, so each field's type/offset comes from
             // the table.
             .trace_resolve => |u| {
@@ -1411,7 +1411,7 @@ pub const Vm = struct {
                 const sfields = table.get(fty).@"struct".fields;
                 if (sfields.len != 5) return self.failMsg("comptime trace_resolve: Frame struct is not 5 fields");
                 const addr = self.machine.allocBytes(table.typeSizeBytes(fty), table.typeAlignBytes(fty));
-                // { file, line, col, func, line_text } — positional field order.
+                // { file, line, col, func, lineText } — positional field order.
                 try self.writeField(table, addr + fieldOffset(table, fty, 0), sfields[0].ty, try self.makeStringValue(table, file));
                 try self.writeField(table, addr + fieldOffset(table, fty, 1), sfields[1].ty, @bitCast(line));
                 try self.writeField(table, addr + fieldOffset(table, fty, 2), sfields[2].ty, @bitCast(col));
@@ -2657,7 +2657,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 .cstring => vname = "cstring",
                 .any => vname = "any",
                 .noreturn => vname = "noreturn",
-                .type_value => vname = "type_value",
+                .type_value => vname = "typeValue",
                 .usize, .isize => {
                     vname = "int";
                     payload = .{ .int = .{ .bits = ptr_bits, .signed = tid == .isize } };
@@ -2707,7 +2707,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
-            .type_value, .unresolved => vname = "type_value",
+            .type_value, .unresolved => vname = "typeValue",
             .tagged_union => |u| {
                 vname = "enum";
                 for (u.fields, 0..) |f, i| try Row.push(self, &rows, &.{
@@ -2771,7 +2771,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 payload = .{ .one_type = p.pointee };
             },
             .many_pointer => |mp| {
-                vname = "many_pointer";
+                vname = "manyPointer";
                 payload = .{ .one_type = mp.element };
             },
             .optional => |o| {

@@ -11,7 +11,7 @@
 @import "modules/std.sx";
 
 build :: (args: []Type, $ret: Type) -> string {
-    return concat("len=", int_to_string(args.len));
+    return concat("len=", intToString(args.len));
 }
 
 probe :: (..$args) -> string {

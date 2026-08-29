@@ -4391,7 +4391,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.emit(.{ .is_comptime = {} }, .bool);
     }
     if (std.mem.eql(u8, name, "__interp_print_frames")) {
-        // Backs `trace.print_interpreter_frames()`: dumps the interp call
+        // Backs `trace.printInterpreterFrames()`: dumps the interp call
         // chain at comptime, no-op in compiled code.
         return self.builder.emit(.{ .interp_print_frames = {} }, .void);
     }
@@ -6144,7 +6144,7 @@ pub fn resolveCallParamTypes(
                         // meaning under this call site's bindings. Resolving them
                         // unbound INTERNS the poison (`[]unresolved`) into the
                         // TypeTable, where `resolveTypeCategoryTags`'s category
-                        // scan later hands it to `any_to_string`'s `case slice`
+                        // scan later hands it to `anyToString`'s `case slice`
                         // arm and monomorphizes an uncompilable
                         // `slice_to_string__unresolved`. Bind first,
                         // receiver prepended so positions line up with

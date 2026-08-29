@@ -26,21 +26,21 @@ main :: () -> i32 {
         tracker := TrackingAllocator.init(gpa);
 
         push .{ allocator = tracker } {
-            alloc_before   := tracker.alloc_count;
-            dealloc_before := tracker.dealloc_count;
+            alloc_before   := tracker.allocCount;
+            dealloc_before := tracker.deallocCount;
 
             f1 := SxMultiProbe.alloc();
             f2 := SxMultiProbe.alloc();
             f3 := SxMultiProbe.alloc();
 
-            alloc_after_three := tracker.alloc_count - alloc_before;
+            alloc_after_three := tracker.allocCount - alloc_before;
 
             f1.release();
             f2.release();
             f3.release();
 
-            alloc_delta   := tracker.alloc_count   - alloc_before;
-            dealloc_delta := tracker.dealloc_count - dealloc_before;
+            alloc_delta   := tracker.allocCount   - alloc_before;
+            dealloc_delta := tracker.deallocCount - dealloc_before;
 
             // alloc_delta MAY include extras from autorelease/etc. but
             // each SxMultiProbe.alloc contributes at least 1. Check the

@@ -22,7 +22,7 @@ asserts, per iteration:
   still round-trip `200 OK`,
 - **net-zero leak** — the whole run sits under a `GPA`; one server is
   reused across all iterations, so a per-request leak accumulates and the
-  final `alloc_count != 0` fails the test.
+  final `allocCount != 0` fails the test.
 
 It is **deterministic** (fixed `SEED`, no time/`Math.random`) so its
 golden output is stable, and **bounded** (`ITERATIONS = 400`) so it fits

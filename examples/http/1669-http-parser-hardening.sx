@@ -179,7 +179,7 @@ main :: () -> i32 {
     print("malformed HTTP version -> 400\n");
 
     // ── over-long single header line → 431 (max_header_line = 256) ─────
-    big : [*]u8 = xx context.allocator.alloc_bytes(700);
+    big : [*]u8 = xx context.allocator.allocBytes(700);
     f := 0;
     while f < 700 { big[f] = 120; f += 1; }   // 'x'
     longline := concat("GET /ok HTTP/1.1\r\nX-Big: ", concat(string{ ptr = big, len = 700 }, "\r\n\r\n"));

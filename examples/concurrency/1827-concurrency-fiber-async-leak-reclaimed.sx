@@ -1,8 +1,8 @@
 // The unified `context.io.async` layer reclaims its per-task heap once a future is
 // AWAITED. Each `async`
 // allocates: the `Future`, the `ThunkBox`, the completion-closure env, the worker's
-// env, and the spawn_raw fiber-body env. With ownership wired through, ALL of it is
-// freed: the box + envs by `sx_run_boxed_closure` the instant the worker completes,
+// env, and the spawnRaw fiber-body env. With ownership wired through, ALL of it is
+// freed: the box + envs by `sxRunBoxedClosure` the instant the worker completes,
 // the fiber-body env at fiber reap, and the `Future` by the last of {worker,
 // `await`} (the two-flag handshake). A tracking `GPA` shows that after running +
 // awaiting three workers and `deinit`, the live-allocation count returns to the
@@ -26,7 +26,7 @@ main :: () -> i64 {
     push .{ allocator = gpa } {
         s := sched.Scheduler.init();
         ps := *s;
-        pbase.* = gpa.alloc_count;            // baseline: scheduler is live, no tasks yet
+        pbase.* = gpa.allocCount;            // baseline: scheduler is live, no tasks yet
         push .{ io = s, allocator = gpa } {
             ps.spawn(||_{ psum } {
                 a := context.io.async(|| -> (i64, !IoErr) { try context.io.sleep(10); 100 });
@@ -37,7 +37,7 @@ main :: () -> i64 {
             ps.run();
         }
         s.deinit();
-        pafter.* = gpa.alloc_count;           // after run + await-all + deinit
+        pafter.* = gpa.allocCount;           // after run + await-all + deinit
     }
 
     print("sum: {}\n", sum);

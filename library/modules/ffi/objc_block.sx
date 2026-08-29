@@ -23,7 +23,7 @@
 // API and use it instead.
 
 // `build_block_convert` (below) is a comptime metaprogram that emits sx source
-// with `concat` / `int_to_string`; those live in std.sx. A metaprogram body
+// with `concat` / `intToString`; those live in std.sx. A metaprogram body
 // resolves its bare names in its OWN module, so this module must
 // import std.sx itself rather than relying on the call site's visibility.
 @import "modules/std.sx";
@@ -99,7 +99,7 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     i : i64 = 0;
     while i < args.len {
         code = concat(code, ", arg");
-        code = concat(code, int_to_string(i));
+        code = concat(code, intToString(i));
         code = concat(code, ": ");
         code = concat(code, @typeName(args[i]));
         i = i + 1;
@@ -133,7 +133,7 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     i = 0;
     while i < args.len {
         code = concat(code, ", arg");
-        code = concat(code, int_to_string(i));
+        code = concat(code, intToString(i));
         i = i + 1;
     }
     code = concat(code, "); } ");

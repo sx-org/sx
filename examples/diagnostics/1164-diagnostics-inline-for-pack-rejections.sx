@@ -8,7 +8,7 @@
 
 Show :: constraint { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
-impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }
+impl Show for IntBox { show :: (self: *IntBox) -> string { intToString(self.v) } }
 
 leak :: (..xs: Show) {
     inline for x in xs {

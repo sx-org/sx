@@ -42,7 +42,7 @@ checksum :: (buf: [*]u8, len: i64) -> i64 {
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     // 8 MB pattern body from the per-request arena (serialize copies it).
-    b : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN);
+    b : [*]u8 = xx context.allocator.allocBytes(BODY_LEN);
     i : i64 = 0;
     while i < BODY_LEN { b[i] = xx ((i * 13 + 7) % 251); i += 1; }
     resp.body = string{ ptr = b, len = BODY_LEN };
@@ -69,7 +69,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = BODY_LEN + 4096;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -106,7 +106,7 @@ main :: () -> i32 {
         // Flood garbage while the response is in flight. The server buffers
         // up to read_buf_cap then hits the grow-failure branch, which must not
         // serialize a 431 over the draining response.
-        junk : [*]u8 = xx context.allocator.alloc_bytes(FLOOD_LEN);
+        junk : [*]u8 = xx context.allocator.allocBytes(FLOOD_LEN);
         i : i64 = 0;
         while i < FLOOD_LEN { junk[i] = 88; i += 1; }   // 'X': no CRLF, no header end
         fsent : i64 = 0;
@@ -183,9 +183,9 @@ main :: () -> i32 {
 
         socket.close(ca);
         srv.close();
-        context.allocator.dealloc_bytes(junk);
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(junk);
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

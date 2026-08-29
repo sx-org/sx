@@ -381,7 +381,7 @@ pub const Reflection = struct {
         defer placed.deinit(self.e.alloc);
         const P = tag_size; // payload base offset
 
-        var vname: []const u8 = "type_value";
+        var vname: []const u8 = "typeValue";
         if (tid.isBuiltin()) {
             switch (tid) {
                 .bool => vname = "bool",
@@ -390,7 +390,7 @@ pub const Reflection = struct {
                 .cstring => vname = "cstring",
                 .any => vname = "any",
                 .noreturn => vname = "noreturn",
-                .type_value, .unresolved => vname = "type_value",
+                .type_value, .unresolved => vname = "typeValue",
                 .usize, .isize => {
                     vname = "int";
                     placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
@@ -432,7 +432,7 @@ pub const Reflection = struct {
             .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
-            .type_value, .unresolved => vname = "type_value",
+            .type_value, .unresolved => vname = "typeValue",
             .usize, .isize => {
                 vname = "int";
                 placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
@@ -467,7 +467,7 @@ pub const Reflection = struct {
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(p.pointee), .size = 8 }) catch unreachable;
             },
             .many_pointer => |mp| {
-                vname = "many_pointer";
+                vname = "manyPointer";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(mp.element), .size = 8 }) catch unreachable;
             },
             .optional => |o| {

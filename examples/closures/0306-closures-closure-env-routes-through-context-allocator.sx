@@ -16,11 +16,11 @@ Tracer :: struct {
 }
 
 impl Allocator for Tracer {
-    alloc_bytes :: (self: *Tracer, size: i64) -> *void {
+    allocBytes :: (self: *Tracer, size: i64) -> *void {
         self.count += 1;
         return c.libc_malloc(size);
     }
-    dealloc_bytes :: (self: *Tracer, ptr: *void) {
+    deallocBytes :: (self: *Tracer, ptr: *void) {
         c.libc_free(ptr);
     }
 }

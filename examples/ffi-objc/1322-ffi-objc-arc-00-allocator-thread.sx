@@ -5,7 +5,7 @@
 // 2. The state struct's first field is `__sx_allocator` (captures the
 //    tracker so -dealloc can free through it).
 // 3. `f.release()` drives refcount → 0 → -dealloc fires → reads the
-//    captured allocator → calls tracker.dealloc_bytes(state).
+//    captured allocator → calls tracker.deallocBytes(state).
 // 4. The alloc/dealloc deltas around the call pair balance to (+1, +1)
 //    — exactly one sx-defined-class state struct round-trips.
 //
@@ -30,20 +30,20 @@ main :: () -> i32 {
 
         push .{ allocator = tracker } {
             // Snapshot BEFORE the sx-defined alloc.
-            alloc_before   := tracker.alloc_count;
-            dealloc_before := tracker.dealloc_count;
+            alloc_before   := tracker.allocCount;
+            dealloc_before := tracker.deallocCount;
 
             f := SxAllocProbe.alloc();
 
             // Snapshot AFTER alloc, BEFORE release.
-            alloc_after_alloc   := tracker.alloc_count;
-            dealloc_after_alloc := tracker.dealloc_count;
+            alloc_after_alloc   := tracker.allocCount;
+            dealloc_after_alloc := tracker.deallocCount;
 
             f.release();
 
             // Snapshot AFTER release.
-            alloc_after_release   := tracker.alloc_count;
-            dealloc_after_release := tracker.dealloc_count;
+            alloc_after_release   := tracker.allocCount;
+            dealloc_after_release := tracker.deallocCount;
 
             // Verify deltas (do all asserts before any print).
             alloc_delta_a   := alloc_after_alloc   - alloc_before;

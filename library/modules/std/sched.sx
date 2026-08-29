@@ -30,14 +30,14 @@
 @import "modules/std/list.sx";
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx";
-// True cancellation: `suspend_raw` reads the spawned fiber's cancel
+// True cancellation: `suspendRaw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fib_tramp re-emit).
 @import "modules/std/atomic.sx";
 // `race` synthesizes its result type (a tagged-union mirroring the input tuple's
 // labels) and constructs the winner variant by runtime index — both need the
-// metatype WRITE side (`make_enum`/`make_variant`/`VariantInfo`/`structFieldType`).
+// metatype WRITE side (`makeEnum`/`makeVariant`/`VariantInfo`/`structFieldType`).
 // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
 // safe to pull in here.
 @import "modules/std/meta.sx";
@@ -97,7 +97,7 @@ Fiber :: struct {
     // dispatch would otherwise leave in force. This is what lets a fiber-backed
     // `Io` scheduler be reached as `context.io` INSIDE a worker (the whole point
     // of folding the scheduler behind `context.io`): a worker's
-    // `context.io.suspend_raw`/`ready` resolve to the scheduler that spawned it,
+    // `context.io.suspendRaw`/`ready` resolve to the scheduler that spawned it,
     // not the blocking default. Behavior-preserving for fibers spawned under the
     // default context (the capture just re-pushes that same default).
     //
@@ -114,19 +114,19 @@ Fiber :: struct {
     dctx: Context;
     // True cancellation: back-ref to this fiber's task cancel flag
     // (the `Future.canceled` `Atomic(bool)`, erased to `*void`), set from
-    // `SpawnOpts.cancel_flag` at `spawn_raw`. `suspend_raw` consults it and
+    // `SpawnOpts.cancelFlag` at `spawnRaw`. `suspendRaw` consults it and
     // raises `IoErr.Canceled` when set, so a cancelled worker abandons its body
     // at its next suspend. `null` for a fiber spawned with no cancel channel
-    // (a bare `spawn`, or `spawn_raw` with `cancel_flag = null`).
-    cancel_flag: *void = null;
+    // (a bare `spawn`, or `spawnRaw` with `cancelFlag = null`).
+    cancelFlag: *void = null;
 }
 
 // A pending virtual-time timer: wake `fiber` once the virtual clock reaches
-// `deadline_ms`. Stored in `Scheduler.timers` (a `List`) in insertion order, so
+// `deadlineMs`. Stored in `Scheduler.timers` (a `List`) in insertion order, so
 // a linear min-scan that takes the FIRST entry at the minimum deadline gives a
 // stable FIFO tiebreak for equal deadlines.
 Timer :: struct {
-    deadline_ms: i64;
+    deadlineMs: i64;
     fiber: *Fiber;
 }
 
@@ -300,8 +300,8 @@ Scheduler :: struct {
     // Read the VIRTUAL clock — the simulated millisecond time. Advances only as
     // timers fire (in `run`), never from a real wall clock, so two runs of the
     // same fiber program observe identical timestamps. A fiber that just woke
-    // from `sleep(ms)` sees `now_ms()` equal to its deadline.
-    now_ms :: (self: *Scheduler) -> i64 {
+    // from `sleep(ms)` sees `nowMs()` equal to its deadline.
+    nowMs :: (self: *Scheduler) -> i64 {
         return self.clock_ms;
     }
 
@@ -329,7 +329,7 @@ Scheduler :: struct {
             print("sched: sleep({}) — negative duration would rewind the virtual clock\n", ms);
             c.abort();
         }
-        t : Timer = .{ deadline_ms = self.clock_ms + ms, fiber = cur };
+        t : Timer = .{ deadlineMs = self.clock_ms + ms, fiber = cur };
         // Long-lived-container rule: a timer outlives this `sleep` call's scope
         // (it survives in `self.timers` until the scheduler fires it), so grow
         // through the captured `own_allocator`, never the transient current one.
@@ -460,7 +460,7 @@ Scheduler :: struct {
             if idx >= 0 {
                 t := self.timers.items[idx];
                 remove_timer(self, idx);
-                self.clock_ms = t.deadline_ms;   // advance VIRTUAL time forward
+                self.clock_ms = t.deadlineMs;    // advance VIRTUAL time forward
                 self.wake(t.fiber);              // re-enqueue the sleeper → drain again
                 continue;
             }
@@ -597,8 +597,8 @@ Scheduler :: struct {
 //     }
 //
 // (fibers inherit the spawn-time context) is what makes this reach a
-// WORKER: a fiber spawned through `spawn_raw` runs under the pushed context, so
-// its own `context.io.suspend_raw`/`ready` resolve back to THIS scheduler, not
+// WORKER: a fiber spawned through `spawnRaw` runs under the pushed context, so
+// its own `context.io.suspendRaw`/`ready` resolve back to THIS scheduler, not
 // the blocking default. The methods are thin adapters over the existing fiber
 // primitives (`spawn`/`suspend_self`/`wake`/`Timer`/`clock_ms`).
 impl Io for Scheduler {
@@ -608,16 +608,16 @@ impl Io for Scheduler {
     // opaque handle (the `Future` stashes it in `task`). The fiber inherits this
     // call's context, so the worker sees this scheduler as `context.io`.
     // CONTRACT: `arg` must outlive the fiber's FIRST RUN (i.e. survive until
-    // `run`/`poll` schedules it), not merely until `spawn_raw` returns — the fiber
+    // `run`/`poll` schedules it), not merely until `spawnRaw` returns — the fiber
     // dereferences it later, on its own stack. A stack local that dies before the
     // driver loop runs is a use-after-free (the `async` layer keeps it alive by
     // owning it on the heap `Future`).
-    spawn_raw :: (self: *Scheduler, entry: *void, arg: *void, opts: SpawnOpts) -> *void {
+    spawnRaw :: (self: *Scheduler, entry: *void, arg: *void, opts: SpawnOpts) -> *void {
         // A null entry would jump to 0x0 once the fiber runs — bail loudly at the
         // spawn site (where the caller is) instead of crashing deep in the loop.
         // (A non-fn garbage pointer is undetectable — the caller owns that.)
         if entry == null {
-            print("sched: spawn_raw called with a null entry function\n");
+            print("sched: spawnRaw called with a null entry function\n");
             c.abort();
         }
         // A written env makes the body a value, so `spawn`'s `closure` funds its
@@ -626,23 +626,23 @@ impl Io for Scheduler {
             entry_fn := entry.((*void) -> void);
             entry_fn(arg);
         });
-        // Stash the cancel-flag back-ref: `suspend_raw` consults it on
+        // Stash the cancel-flag back-ref: `suspendRaw` consults it on
         // this fiber to raise `IoErr.Canceled`. `null` for an uncancellable spawn.
-        f.cancel_flag = opts.cancel_flag;
+        f.cancelFlag = opts.cancelFlag;
         return f;
     }
 
     // Park the running fiber until a matching `ready`. `IoErr.Canceled` is
     // raised INSTEAD of parking when the task is already cancelled, and again
     // on resumption when a `cancel` landed while parked.
-    suspend_raw :: (self: *Scheduler, park: *ParkToken) -> !IoErr.Canceled {
+    suspendRaw :: (self: *Scheduler, park: *ParkToken) -> !IoErr.Canceled {
         // PRE-PARK check: if this fiber's task was
         // already cancelled before it reached this suspend, deliver immediately —
         // do NOT park (a park with no pending waker would deadlock; the cancel's
         // `ready` already fired as a no-op against a not-yet-suspended fiber).
         if self.fiber_canceled(self.current) {
             // A timer / fd-waiter armed by a higher-level suspend (e.g.
-            // `io.sleep`'s `arm_timer`) just before this call would be ORPHANED:
+            // `io.sleep`'s `armTimer`) just before this call would be ORPHANED:
             // raising without parking means this fiber never `wake`s (the path
             // that normally evicts its timer), yet it runs to its end and is
             // reaped — a later timer fire would then `wake` freed memory (UAF).
@@ -663,14 +663,14 @@ impl Io for Scheduler {
     }
 
     // True iff fiber `f`'s task carries a cancel flag that is set. The flag is a
-    // `*Atomic(bool)` back-ref (`Fiber.cancel_flag`, erased to `*void`) to the
+    // `*Atomic(bool)` back-ref (`Fiber.cancelFlag`, erased to `*void`) to the
     // owning `Future.canceled`. A null flag (uncancellable spawn / bare fiber)
     // is never cancelled. A null `f` (called outside a fiber) likewise can't be
     // cancelled — the caller's own loud `suspend_self` guard handles that path.
     fiber_canceled :: (self: *Scheduler, f: *Fiber) -> bool {
         if f == null { return false; }
-        if f.cancel_flag == null { return false; }
-        flag : *Atomic(bool) = f.cancel_flag.(*Atomic(bool));
+        if f.cancelFlag == null { return false; }
+        flag : *Atomic(bool) = f.cancelFlag.(*Atomic(bool));
         return flag.load(.acquire);
     }
 
@@ -688,7 +688,7 @@ impl Io for Scheduler {
     // virtual clock). Returns the new virtual clock after a timer fire, or -1 when
     // the ready queue AND the timer set are both empty (the program is quiescent).
     //
-    // `deadline_ms` is RESERVED — the virtual-time single-step jumps the clock to
+    // `deadlineMs` is RESERVED — the virtual-time single-step jumps the clock to
     // the earliest timer regardless of any real-time budget, so there is nothing
     // for a deadline to bound here (it matches `CBlockingIo.poll`'s stub shape; a
     // real-clock `Io` would honor it). Named for protocol conformance, intentionally
@@ -699,7 +699,7 @@ impl Io for Scheduler {
     // `-1` ("quiescent") is indistinguishable from "fibers are fd-blocked", bail
     // loudly if any io-waiter is pending: a `poll`-only driver can't make progress
     // on fds and must use `run` instead.
-    poll :: (self: *Scheduler, deadline_ms: i64) -> i64 {
+    poll :: (self: *Scheduler, deadlineMs: i64) -> i64 {
         while self.ready_head != null {
             f := dequeue(self);
             self.current = f;
@@ -716,7 +716,7 @@ impl Io for Scheduler {
         if idx >= 0 {
             t := self.timers.items[idx];
             remove_timer(self, idx);
-            self.clock_ms = t.deadline_ms;
+            self.clock_ms = t.deadlineMs;
             self.wake(t.fiber);
             return self.clock_ms;
         }
@@ -728,35 +728,35 @@ impl Io for Scheduler {
     }
 
     // The VIRTUAL clock (deterministic) — NOT a wall clock, so a fiber program's
-    // timestamps are reproducible (mirrors `now_ms` on the struct).
-    now_ms :: (self: *Scheduler) -> i64 { return self.clock_ms; }
+    // timestamps are reproducible (mirrors `nowMs` on the struct).
+    nowMs :: (self: *Scheduler) -> i64 { return self.clock_ms; }
 
-    // Arm a virtual-time timer that re-readies the CURRENT fiber at `deadline_ms`
-    // (the caller suspends separately via `suspend_raw`). Does not suspend. Returns
+    // Arm a virtual-time timer that re-readies the CURRENT fiber at `deadlineMs`
+    // (the caller suspends separately via `suspendRaw`). Does not suspend. Returns
     // null (there is no timer-cancel handle). The fired timer wakes the fiber
     // through the same `wake` path the run loop uses.
-    arm_timer :: (self: *Scheduler, deadline_ms: i64, park: ParkToken) -> *void {
+    armTimer :: (self: *Scheduler, deadlineMs: i64, park: ParkToken) -> *void {
         // MUST be called from inside a fiber — the timer wakes `self.current`, so a
         // null current would arm a `fiber = null` timer that segfaults `wake` when
         // it fires. Bail loudly, exactly like `sleep`/`suspend_self`/`block_on_fd`.
         if self.current == null {
-            print("sched: arm_timer() called outside a fiber (no running fiber to wake)\n");
+            print("sched: armTimer() called outside a fiber (no running fiber to wake)\n");
             c.abort();
         }
-        t : Timer = .{ deadline_ms = deadline_ms, fiber = self.current };
+        t : Timer = .{ deadlineMs = deadlineMs, fiber = self.current };
         self.timers.append(t, self.own_allocator);
         return null;
     }
 
     // The running fiber as a `ParkToken`, for fan-in registration (`race`): the
     // caller stamps this handle into several futures' `park` slots so ANY of
-    // their completions `ready`s it, then parks once via `suspend_raw`. MUST be
+    // their completions `ready`s it, then parks once via `suspendRaw`. MUST be
     // called from inside a fiber (race parks `current`); a null current would
     // register a `null` waiter no completion can wake — bail loudly, mirroring
-    // `suspend_self` / `sleep` / `arm_timer`.
-    current_park :: (self: *Scheduler) -> ParkToken {
+    // `suspend_self` / `sleep` / `armTimer`.
+    currentPark :: (self: *Scheduler) -> ParkToken {
         if self.current == null {
-            print("sched: current_park() called outside a fiber (no running fiber)\n");
+            print("sched: currentPark() called outside a fiber (no running fiber)\n");
             c.abort();
         }
         return .{ handle = self.current };
@@ -895,9 +895,9 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
 // body has returned by the time a `.done` fiber is reaped, so nothing reads the
 // captures again.)
 reap_fiber :: (self: *Scheduler, f: *Fiber) {
-    f.body_alloc.dealloc_bytes(f.body.env);
+    f.body_alloc.deallocBytes(f.body.env);
     c.munmap(f.stack_region, f.stack_len);
-    self.own_allocator.dealloc_bytes(f);
+    self.own_allocator.deallocBytes(f);
 }
 
 // --- intrusive FIFO ready-queue -------------------------------------------
@@ -940,7 +940,7 @@ earliest_timer :: (self: *Scheduler) -> i64 {
     while i < self.timers.len {
         // Strict `<` so equal deadlines do NOT displace the earlier (lower)
         // index — that is the FIFO tiebreak.
-        if self.timers.items[i].deadline_ms < self.timers.items[best].deadline_ms {
+        if self.timers.items[i].deadlineMs < self.timers.items[best].deadlineMs {
             best = i;
         }
         i = i + 1;
@@ -1036,7 +1036,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 }
 
 // The public API lives as methods on `Scheduler` (above): `init`, `spawn`,
-// `yield_now`, `suspend_self`, `wake`, `run`, `now_ms`, `sleep`.
+// `yield_now`, `suspend_self`, `wake`, `run`, `nowMs`, `sleep`.
 
 // --- Structured first-wins `race` over `context.io` Futures ------------------
 //
@@ -1048,13 +1048,13 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // the input tuple's labels: each variant's NAME is the tuple label, its payload is
 // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
 // positional-tuple form (`._0`/`._1`) is rejected — `structFieldName` yields "" for
-// an unnamed element, which `make_enum` rejects as a duplicate-name collision.
+// an unnamed element, which `makeEnum` rejects as a duplicate-name collision.
 //
-// It runs over the `Io` PROTOCOL (`current_park`/`suspend_raw`/`ready`), so it is
+// It runs over the `Io` PROTOCOL (`currentPark`/`suspendRaw`/`ready`), so it is
 // colorblind: under the fiber scheduler it really parks/wakes; under the blocking
 // `CBlockingIo` every future is born `.ready`, so the winner scan returns
 // immediately and it never parks. Lives here (not io.sx) because the `RaceResult`
-// synthesis needs the metatype WRITE side (`make_enum`/`make_variant`), and
+// synthesis needs the metatype WRITE side (`makeEnum`/`makeVariant`), and
 // meta.sx imports only std.sx — pulling it into the io.sx prelude part-file would
 // cycle.
 //
@@ -1068,7 +1068,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // `structFieldType(T, i)` = `*Future(R)`, `pointeeType` strips the pointer to `Future(R)`,
 // and field 0 of `Future` is `value: R` (the `Value :: R` type member is not a
 // data field). One nominal type per distinct `T` (type-fn identity), so the decl,
-// every `make_variant(RaceResult(T), …)` call, and the `-> RaceResult(T)` return
+// every `makeVariant(RaceResult(T), …)` call, and the `-> RaceResult(T)` return
 // all name the SAME union.
 RaceResult :: ($T: Type) -> Type {
     vs : [structFieldCount(T)]VariantInfo = ---;
@@ -1078,7 +1078,7 @@ RaceResult :: ($T: Type) -> Type {
             payload = structFieldType(pointeeType(structFieldType(T, i)), 0),  // *Future(R) -> Future(R) -> R
         };
     }
-    return make_enum("RaceResult", vs[0..structFieldCount(T)]);
+    return makeEnum("RaceResult", vs[0..structFieldCount(T)]);
 }
 
 // Structured first-wins race over the `Io` protocol. Suspends the calling fiber
@@ -1086,20 +1086,20 @@ RaceResult :: ($T: Type) -> Type {
 // winner's value, then CANCELS every loser and returns immediately.
 //
 // MUST be called from inside a fiber under a suspending `Io` (there must be a
-// `current` to park) — `current_park` bails loudly on a null current. Under
+// `current` to park) — `currentPark` bails loudly on a null current. Under
 // `CBlockingIo` the futures are already `.ready`, so the winner scan returns
-// without ever calling `current_park`/`suspend_raw`.
+// without ever calling `currentPark`/`suspendRaw`.
 //
 // TRUE-CANCEL SEMANTIC: each loser was parked mid-suspend when cancelled;
 // `cancel(f)` flips its sticky flag and wakes its worker fiber, whose next
-// `suspend_raw` raises `Canceled` and unwinds the body — its post-suspend work
+// `suspendRaw` raises `Canceled` and unwinds the body — its post-suspend work
 // never runs. `race` does NOT join the losers (they unwind on their own next turn),
 // so it returns at winner-time. The winner's value is taken from `f.value`.
 race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // First winner. Scan for an already-`.ready` future (lowest index
     // wins on a same-tick tie → deterministic). If none, register THIS coordinator
-    // (`current_park`) as the waiter on every still-`.pending` future's `park`
-    // slot and park once via `suspend_raw`; any completion `ready`s us. On wake
+    // (`currentPark`) as the waiter on every still-`.pending` future's `park`
+    // slot and park once via `suspendRaw`; any completion `ready`s us. On wake
     // DEREGISTER from ALL of them (clear our handle): a later loser completion must
     // never `ready` a coordinator that has since moved on (the spurious/lost-wakeup
     // hazard `wake` guards). A spurious wake with nothing ready re-registers + re-parks.
@@ -1109,7 +1109,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
             if winner_idx < 0 and futures[i].state == .ready { winner_idx = i; }
         }
         if winner_idx >= 0 { break; }
-        me := io.current_park();
+        me := io.currentPark();
         any_pending := false;
         inline for i in 0..structFieldCount(T) {
             if futures[i].state == .pending { futures[i].park.handle = me.handle; any_pending = true; }
@@ -1124,10 +1124,10 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
             print("sched: race — all futures settled without a winner (all failed/canceled)\n");
             c.abort();
         }
-        // The coordinator is the user's fiber (no cancel flag), so `suspend_raw`
+        // The coordinator is the user's fiber (no cancel flag), so `suspendRaw`
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
-        io.suspend_raw(*pk) catch {};
+        io.suspendRaw(*pk) catch {};
         inline for i in 0..structFieldCount(T) {
             if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
         }
@@ -1140,12 +1140,12 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     result : RaceResult(T) = ---;
     inline for i in 0..structFieldCount(T) {
         if i == winner_idx {
-            result = make_variant(RaceResult(T), i, futures[i].value);
+            result = makeVariant(RaceResult(T), i, futures[i].value);
         }
     }
 
     // Cancel every still-IN-FLIGHT loser. With true cancellation a
-    // parked loser's next `suspend_raw` raises `Canceled` and unwinds its body;
+    // parked loser's next `suspendRaw` raises `Canceled` and unwinds its body;
     // its `park` was cleared above, so its completion `ready`s nobody. No join —
     // `race` returns now. Only `.pending` losers are cancelled: a loser that
     // already settled (`.ready`/`.failed`) is done — cancelling it would do

@@ -65,7 +65,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
             total += n;
         }
-        resp.body = concat("len=", concat(int_to_string(total), concat(" sum=", int_to_string(h))));
+        resp.body = concat("len=", concat(intToString(total), concat(" sum=", intToString(h))));
         return;
     }
     if req.path == "/reject" {
@@ -199,7 +199,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 65536;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -217,7 +217,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: Content-Length 200000 streamed, split delivery ────
-        body : [*]u8 = xx context.allocator.alloc_bytes(CL_BODY_LEN);
+        body : [*]u8 = xx context.allocator.allocBytes(CL_BODY_LEN);
         sum1 : i64 = 0;
         i : i64 = 0;
         while i < CL_BODY_LEN {
@@ -241,9 +241,9 @@ main :: () -> i32 {
         if num_after(resp1, "sum=") != sum1 { print("case1: bad sum\n"); failed = 1; }
 
         // ── case 2: chunked streamed on the SAME conn (keep-alive) ────
-        ch1 : [*]u8 = xx context.allocator.alloc_bytes(CH1);
-        ch2 : [*]u8 = xx context.allocator.alloc_bytes(CH2);
-        ch3 : [*]u8 = xx context.allocator.alloc_bytes(CH3);
+        ch1 : [*]u8 = xx context.allocator.allocBytes(CH1);
+        ch2 : [*]u8 = xx context.allocator.allocBytes(CH2);
+        ch3 : [*]u8 = xx context.allocator.allocBytes(CH3);
         sum2 : i64 = 0;
         i = 0;
         while i < CH1 { ch1[i] = xx ((i * 3 + 1) % 251); sum2 = (sum2 * 31 + ch1[i]) % 1000000007; i += 1; }
@@ -341,12 +341,12 @@ main :: () -> i32 {
         if obs.count_rc != -1 { print("case5: read_body rc {} (want -1)\n", obs.count_rc); failed = 1; }
         if obs.count_got != COUNT_SENT { print("case5: got {} bytes (want {})\n", obs.count_got, COUNT_SENT); failed = 1; }
 
-        context.allocator.dealloc_bytes(body);
-        context.allocator.dealloc_bytes(ch1);
-        context.allocator.dealloc_bytes(ch2);
-        context.allocator.dealloc_bytes(ch3);
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(body);
+        context.allocator.deallocBytes(ch1);
+        context.allocator.deallocBytes(ch2);
+        context.allocator.deallocBytes(ch3);
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

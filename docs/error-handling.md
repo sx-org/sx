@@ -491,7 +491,7 @@ it from a handler:
 ```sx
 v := parse(s) catch |e| {
   log.error("parse failed: {}", e);
-  trace.print_current();
+  trace.printCurrent();
   return default;
 };
 ```
@@ -556,7 +556,7 @@ The runtime's I/O channel is one set:
 IoErr :: error { Failed; Canceled }
 ```
 
-`Io.suspend_raw` is `-> !IoErr.Canceled` — it fails only by cancellation,
+`Io.suspendRaw` is `-> !IoErr.Canceled` — it fails only by cancellation,
 and its channel says so. `await` is `-> ($R, !IoErr)`: a cancelled future
 raises `.Canceled`, a failed one `.Failed`. An async worker is a lambda,
 so it writes its channel out:

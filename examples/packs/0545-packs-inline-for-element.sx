@@ -14,7 +14,7 @@
 Show :: constraint { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
 StrBox :: struct { s: string; }
-impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }
+impl Show for IntBox { show :: (self: *IntBox) -> string { intToString(self.v) } }
 impl Show for StrBox { show :: (self: *StrBox) -> string { self.s } }
 
 bare :: (..xs: Show) {

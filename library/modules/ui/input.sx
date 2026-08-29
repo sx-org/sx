@@ -176,7 +176,7 @@ InputQueue :: struct {
     }
 
     copy_text :: (self: *InputQueue, t: TextEvent) -> TextEvent {
-        raw : [*]u8 = (self.gpa.alloc_bytes(t.text.len)).([*]u8);
+        raw : [*]u8 = (self.gpa.allocBytes(t.text.len)).([*]u8);
         c.memcpy(raw, t.text.ptr, t.text.len);
         owned : string = ---;
         owned.ptr = raw;
@@ -196,7 +196,7 @@ InputQueue :: struct {
     clear :: (self: *InputQueue) {
         for e in self.events {
             match e {
-                case .text: |t| { self.gpa.dealloc_bytes(t.text.ptr); true }
+                case .text: |t| { self.gpa.deallocBytes(t.text.ptr); true }
                 else: false
             } { }
         }

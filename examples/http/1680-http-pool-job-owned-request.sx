@@ -115,7 +115,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 65536;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -131,7 +131,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── connection A: POST /slow with a known body ────────────────
-        a_body : [*]u8 = xx context.allocator.alloc_bytes(A_BODY_LEN);
+        a_body : [*]u8 = xx context.allocator.allocBytes(A_BODY_LEN);
         i : i64 = 0;
         while i < A_BODY_LEN { a_body[i] = xx ((i * 7) % 251); i += 1; }
         a_body_s := string{ ptr = a_body, len = A_BODY_LEN };
@@ -165,7 +165,7 @@ main :: () -> i32 {
         // the read buffer while the worker still holds its request. B's body
         // is a DIFFERENT pattern, so a view-holding worker's checksum would
         // see B's bytes (or freed memory), never A's.
-        b_body : [*]u8 = xx context.allocator.alloc_bytes(B_BODY_LEN);
+        b_body : [*]u8 = xx context.allocator.allocBytes(B_BODY_LEN);
         i = 0;
         while i < B_BODY_LEN { b_body[i] = xx (255 - (i % 199)); i += 1; }
 
@@ -213,10 +213,10 @@ main :: () -> i32 {
             failed = 1;
         }
 
-        context.allocator.dealloc_bytes(a_body);
-        context.allocator.dealloc_bytes(b_body);
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(a_body);
+        context.allocator.deallocBytes(b_body);
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

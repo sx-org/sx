@@ -10,16 +10,16 @@ print_any :: (..args: []any) {
     for it in args {
         type := @typeOf(it);
         match type {
-            case int: out(int_to_string(xx it));
+            case int: out(intToString(xx it));
             case string: out(it.(string));
-            case bool: out(bool_to_string(it.(bool)));
-            case float: out(float_to_string(xx it));
+            case bool: out(boolToString(it.(bool)));
+            case float: out(floatToString(xx it));
             case Point: {
                 p := it.(Point);
                 out("(");
-                out(int_to_string(p.x));
+                out(intToString(p.x));
                 out(",");
-                out(int_to_string(p.y));
+                out(intToString(p.y));
                 out(")");
             }
         }
@@ -40,7 +40,7 @@ main :: () -> i32 {
     print_any("point:", p, 99);
 
     // Test count
-    out(int_to_string(count(1, 2, 3)));
+    out(intToString(count(1, 2, 3)));
     out("\n");
 
     0

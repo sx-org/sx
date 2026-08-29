@@ -1,7 +1,7 @@
 // HashMap / IndexMap struct keys are hashed
 // STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
 // separately-constructed field-equal key is FOUND even when the padding bytes
-// of the two keys differ. `map_hash_key` skips the indeterminate padding rather
+// of the two keys differ. `mapHashKey` skips the indeterminate padding rather
 // than hashing all @sizeOf(K) bytes.
 //
 // The shapes here: padded struct key found after stack churn (both map kinds),
@@ -100,7 +100,7 @@ main :: () {
     lvm.put(8, V3{ x = 4, y = 5, z = 6, tag = .Blue }, gpa);
     lvm.put(7, V3{ x = 9, y = 9, z = 9, tag = .Green }, gpa);            // overwrite, order kept
     g2c := if v := lvm.get(7) { v.x == 9 and v.y == 9 and v.z == 9 and v.tag == .Green } else { false };
-    report("g2-indexmap-struct-val", g2c and lvm.key_at(0) == 7 and lvm.key_at(1) == 8 and lvm.len == 2);
+    report("g2-indexmap-struct-val", g2c and lvm.keyAt(0) == 7 and lvm.keyAt(1) == 8 and lvm.len == 2);
     lvm.deinit(gpa);
 
     // Struct KEY → large struct VALUE: all six fields round-trip through

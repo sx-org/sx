@@ -94,10 +94,10 @@ main :: () -> i64 {
 
         ps.run();
 
-        after_run   = gpa.alloc_count;
+        after_run   = gpa.allocCount;
         kq_open_run = s.kq >= 0;
         ps.deinit();
-        after_deinit = gpa.alloc_count;
+        after_deinit = gpa.allocCount;
         kq_after     = s.kq;
     }
 

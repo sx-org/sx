@@ -17,7 +17,7 @@
 //      init a SECOND server on the SAME port and serve a request —
 //      proves no leaked FD/port and no global state (SO_REUSEADDR is set
 //      by init).
-//   3. NET-ZERO LEAK: the whole thing runs under a GPA whose alloc_count
+//   3. NET-ZERO LEAK: the whole thing runs under a GPA whose allocCount
 //      is bumped on every alloc/dealloc, asserted zero after both servers
 //      are stopped + closed.
 @import "modules/std.sx";
@@ -117,7 +117,7 @@ main :: () -> i32 {
     leaked : i64 = 0;
     push .{ allocator = gpa } {
         cap : i64 = 8192;
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
@@ -130,7 +130,7 @@ main :: () -> i32 {
 
         // ── server #1 ────────────────────────────────────────────────
         srv, se := http.Server.init(cfg, handler, 0);
-        if se { print("server1 init failed\n"); context.allocator.dealloc_bytes(scratch); rc = 1; }
+        if se { print("server1 init failed\n"); context.allocator.deallocBytes(scratch); rc = 1; }
         else {
             // An IDLE keep-alive connection: complete one request, then
             // leave the socket open (CONN_KEEPALIVE on the server). It
@@ -226,8 +226,8 @@ main :: () -> i32 {
         // allocates transient format scratch through this same GPA, which
         // would be outstanding at the read and masquerade as a leak. All
         // success reporting happens AFTER the scope closes (mirrors 1670).
-        context.allocator.dealloc_bytes(scratch);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(scratch);
+        leaked = gpa.allocCount;
     }
 
     if rc != 0 { return rc; }

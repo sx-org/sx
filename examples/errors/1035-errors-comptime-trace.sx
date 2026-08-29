@@ -1,6 +1,6 @@
 // Comptime return-trace resolution. A `@run` block that
 // raises, propagates via `try`, and catches the error, then formats the trace
-// with `trace.print_current()`. At comptime a frame is a packed
+// with `trace.printCurrent()`. At comptime a frame is a packed
 // `(func_id, span.start)` (not a `*Frame`); the interpreter's `.trace_resolve`
 // unpacks it and resolves `file:line:col` via the module + source map — so the
 // comptime trace prints the same `func at file:line:col` form as a runtime one.
@@ -22,7 +22,7 @@ mid :: () -> !TErr {
 probe :: () {
     mid() catch |e| {
         print("comptime caught {}\n", e);
-        trace.print_current();
+        trace.printCurrent();
     };
 }
 

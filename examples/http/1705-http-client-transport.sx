@@ -104,7 +104,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     rc : i32 = 1;
     push .{ allocator = gpa } { rc = run(); }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("client transport ok: resolve + unix dialing, chunked decoded + keep-alive, TLS verified (and wrong-trust refused), connect + io timeouts bounded; net-zero GPA\n");
@@ -135,36 +135,36 @@ run :: () -> i32 {
     http.Client.close_conn(*conn_a);
 
     // ── C. chunked response, then keep-alive reuse on the same conn ──
-    bc : [*]u8 = xx context.allocator.alloc_bytes(CHUNK_TOTAL + 8192);
+    bc : [*]u8 = xx context.allocator.allocBytes(CHUNK_TOTAL + 8192);
     conn_c, ec := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
-    if ec { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 13; }
+    if ec { context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 13; }
     sc := http.Client.send_on(*conn_c, "GET", "/chunky", "t", "", "");
-    if sc { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 14; }
+    if sc { http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 14; }
     rvc, rce := http.Client.recv_on(*conn_c, bc, CHUNK_TOTAL + 8192);
-    if rce { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15; }
+    if rce { http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 15; }
     if rvc.status != 200 or !check_body(rvc.body) {
-        http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15;
+        http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 15;
     }
     // keep-alive: the chunked framing must be FULLY consumed — a second
     // request on the same conn parses cleanly.
     sc2 := http.Client.send_on(*conn_c, "GET", "/", "t", "", "");
-    if sc2 { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 16; }
+    if sc2 { http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 16; }
     rc2, rc2e := http.Client.recv_on(*conn_c, bc, 4096);
-    if rc2e { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17; }
+    if rc2e { http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 17; }
     if rc2.status != 200 or rc2.body != "pong" {
-        http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17;
+        http.Client.close_conn(*conn_c); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 17;
     }
     http.Client.close_conn(*conn_c);
     // The same chunked response into a buffer that cannot
     // hold it must be `ClientErr.TooLarge` — the grow-and-retry signal — never
     // "malformed framing".
     conn_c2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
-    if ec2 { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    if ec2 { context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 18; }
     sc3 := http.Client.send_on(*conn_c2, "GET", "/chunky", "t", "", "");
-    if sc3 { http.Client.close_conn(*conn_c2); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    if sc3 { http.Client.close_conn(*conn_c2); context.allocator.deallocBytes(bc); srv.stop(); t.join(); return 18; }
     _, rce2 := http.Client.recv_on(*conn_c2, bc, 4096);
     http.Client.close_conn(*conn_c2);
-    context.allocator.dealloc_bytes(bc);
+    context.allocator.deallocBytes(bc);
     if rce2 != .TooLarge { srv.stop(); t.join(); return 19; }
 
     // ── B. unix-socket dialing (fresh server on a path) ──

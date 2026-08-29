@@ -897,8 +897,8 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
     // `@context.extend` declaration (the struct decl itself is empty —
     // allocator/io are declared in std/mem.sx and std/io.sx like any user
     // field), so the whole initializer flows through the declaration-default
-    // serializer; the stateless thunk tables come from the `xx c_allocator` /
-    // `xx c_blocking_io` erasure folds. A field with NO matching declaration
+    // serializer; the stateless thunk tables come from the `xx cAllocator` /
+    // `xx cBlockingIo` erasure folds. A field with NO matching declaration
     // (a hand-declared Context struct with its own fields, outside std) has
     // no constructible default — emit no global at all rather than a
     // silently zero-filled one; consumers of the default context diagnose at
@@ -1504,7 +1504,7 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
     const alloc_ty = self.builder.getRefType(allocator);
     const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);
     const cs = self.builder.current_span;
-    return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, .{ .start = cs.start, .end = cs.end });
+    return emitProtocolDispatch(self, allocator, pd, "allocBytes", &.{size_ref}, .{ .start = cs.start, .end = cs.end });
 }
 
 /// Postfix erasure `expr.(I)` — an interface handle BORROWS its referent, so

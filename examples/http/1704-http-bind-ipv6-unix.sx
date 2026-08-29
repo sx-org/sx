@@ -105,7 +105,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     rc : i32 = 1;
     push .{ allocator = gpa } { rc = run(); }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("bind ok: [::1] v6-only-loopback, 127.0.0.1, dual-stack both families + localhost resolve, ipv6_only refuses v4, unix socket served + unlinked, guards loud; net-zero GPA\n");

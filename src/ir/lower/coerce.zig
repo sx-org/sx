@@ -1887,7 +1887,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // string → cstring: ONLY a string LITERAL coerces implicitly — its
         // bytes are a terminated constant (Odin's literal blessing). Any
         // other string may be an unterminated view, so it must materialize
-        // through `to_cstring`.
+        // through `toCstring`.
         // The destination is `.cstring` OR a `[*]u8`/`[*]i8` C byte pointer
         // (the C-import synthesis of `char const *`) — the emitted value is
         // the data pointer, typed as the DESTINATION.
@@ -1897,17 +1897,17 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "only a string LITERAL coerces to '{s}' implicitly; an arbitrary string may be an unterminated view — materialize it with to_cstring(s)", .{self.formatTypeName(dst_ty)});
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "only a string LITERAL coerces to '{s}' implicitly; an arbitrary string may be an unterminated view — materialize it with toCstring(s)", .{self.formatTypeName(dst_ty)});
             }
             return val;
         },
         // cstring → string: the length is implicit (strlen), so the
-        // conversion is never silent — `from_cstring(c)` is the zero-copy
-        // view, `substr(from_cstring(c), 0, ...)` the owned copy.
+        // conversion is never silent — `fromCstring(c)` is the zero-copy
+        // view, `substr(fromCstring(c), 0, ...)` the owned copy.
         .cstring_to_string_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with from_cstring(c)", .{});
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with fromCstring(c)", .{});
             }
             return val;
         },

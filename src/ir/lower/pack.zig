@@ -1435,8 +1435,8 @@ pub fn monomorphizePackFn(
     self.materialisePackSlice(&scope, pack_name, pack_param_slots.items, arg_types);
 
     // Pin to the metaprogram's OWN module for the BODY lowering only, so its
-    // bare names (and anything it `@insert`s — e.g. `build_format` /
-    // `any_to_string` inside `std.print`) resolve in the defining module's
+    // bare names (and anything it `@insert`s — e.g. `buildFormat` /
+    // `anyToString` inside `std.print`) resolve in the defining module's
     // visibility context, not the call site's. The comptime-param call-site
     // args above were deliberately lowered FIRST, in the caller's context.
     // Mirrors `lowerFunctionBodyInto`, which switches to `func.source_file`;

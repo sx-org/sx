@@ -73,7 +73,7 @@ sum_doubles :: (n: i32, ..) -> f64 abi(.c) {
 // A borrowed `*@VaList` reads on behalf of the owner and leaves the ending to
 // it.
 take_text :: (ap: *@VaList) -> i64 {
-    return cstring_len(@vaArg(cstring, ap));
+    return cstringLen(@vaArg(cstring, ap));
 }
 
 total_text :: (n: i32, ..) -> i64 abi(.c) {

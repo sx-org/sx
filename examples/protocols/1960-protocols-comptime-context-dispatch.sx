@@ -11,11 +11,11 @@
 
 Counting :: struct { calls: i64; parent: Allocator; }
 impl Allocator for Counting {
-    alloc_bytes :: (self: *Counting, size: i64) -> *void {
+    allocBytes :: (self: *Counting, size: i64) -> *void {
         self.calls = self.calls + 1;
-        return self.parent.alloc_bytes(size);
+        return self.parent.allocBytes(size);
     }
-    dealloc_bytes :: (self: *Counting, ptr: *void) { self.parent.dealloc_bytes(ptr); }
+    deallocBytes :: (self: *Counting, ptr: *void) { self.parent.deallocBytes(ptr); }
 }
 
 // The list grows through `context.allocator`, which the `push` has bound to

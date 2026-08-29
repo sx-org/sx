@@ -63,7 +63,7 @@ band_of :: (bits: i64) -> i64 {
 
 survives :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
-    n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    n, we := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     if we { return false; }
     v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
     if pe { return false; }

@@ -29,15 +29,15 @@ StringBuilder :: struct {
     // parameter to name, so the panic carries no location.
     reserve :: (self: *StringBuilder, n: i64) {
         if self.cap >= n { return; }
-        new_cap := if self.cap == 0 then 16 else self.cap;
-        while new_cap < n and new_cap <= i64.max / 2 { new_cap = new_cap * 2; }
-        if new_cap < n { new_cap = n; }
-        raw := self.alloc.alloc_bytes(new_cap);
+        newCap := if self.cap == 0 then 16 else self.cap;
+        while newCap < n and newCap <= i64.max / 2 { newCap = newCap * 2; }
+        if newCap < n { newCap = n; }
+        raw := self.alloc.allocBytes(newCap);
         if raw == null { @panic("StringBuilder: out of memory", @SourceSite{}); }
         if self.bytes.len > 0 { c.memcpy(raw, self.bytes.ptr, self.bytes.len); }
-        if self.cap > 0 { self.alloc.dealloc_bytes(self.bytes.ptr); }
+        if self.cap > 0 { self.alloc.deallocBytes(self.bytes.ptr); }
         self.bytes.ptr = raw.([*]u8);
-        self.cap = new_cap;
+        self.cap = newCap;
     }
 
     finish :: (self: *StringBuilder) -> string {
@@ -79,7 +79,7 @@ impl Writer for FdWriter {
 
 // Write `n` items with `sep` between them; `body(i)` writes item `i`. The call
 // consumes `body` before returning, so a capturing lambda stays on the stack.
-write_each :: ufcs (w: Writer, n: i64, sep: string, body: $F/(i64) -> void) {
+writeEach :: ufcs (w: Writer, n: i64, sep: string, body: $F/(i64) -> void) {
     i := 0;
     while i < n {
         if i > 0 { w.write(sep); }

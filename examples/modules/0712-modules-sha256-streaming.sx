@@ -3,7 +3,7 @@
 // The chunk boundary must not affect the result: feeding the same bytes
 // one-shot, one byte at a time, split mid-block, and split exactly on a
 // 64-byte block boundary all yield the same digest, anchored to a pinned
-// value. Then `sha256_file` of a written temp file must equal the
+// value. Then `sha256File` of a written temp file must equal the
 // in-memory digest of the same bytes — the streaming file path agrees
 // with the buffered path.
 //
@@ -53,20 +53,20 @@ stream_split :: (data: string, at: i64) -> [64]u8 {
 }
 
 main :: () {
-    check("oneshot-pinned",    sha256_hex(MSG), PIN);
+    check("oneshot-pinned",    sha256Hex(MSG), PIN);
     check("byte-at-a-time",    stream_by_byte(MSG), PIN);
     check("split-mid-block",   stream_split(MSG, 30), PIN);   // 30: mid first block
     check("split-on-boundary", stream_split(MSG, 64), PIN);   // 64: exact block edge
 
-    // sha256_file (streaming) must equal the in-memory digest.
+    // sha256File (streaming) must equal the in-memory digest.
     if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path := ".sx-tmp/sx_0712_stream.bin";
     if !write_file(path, MSG) { print("file-write: FAIL\n"); return; }
 
-    maybe := sha256_file(path);
+    maybe := sha256File(path);
     if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
     file_digest := maybe?!;
-    mem_digest := sha256_hex(MSG);
+    mem_digest := sha256Hex(MSG);
 
     fv := string{ ptr = *file_digest[0], len = 64 };
     mv := string{ ptr = *mem_digest[0],  len = 64 };

@@ -120,7 +120,7 @@ main :: () {
     out("for:");
     for it in farr {
         out(" ");
-        out(int_to_string(it));
+        out(intToString(it));
     }
     out("\n");
 
@@ -135,7 +135,7 @@ main :: () {
     out("for-idx:");
     for _, ix in farr, 0.. {
         out(" ");
-        out(int_to_string(ix));
+        out(intToString(ix));
     }
     out("\n");
 

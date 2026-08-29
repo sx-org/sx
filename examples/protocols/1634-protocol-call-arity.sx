@@ -1,12 +1,12 @@
 // A protocol method call must arity-check like a
-// plain call. `Allocator.dealloc_bytes` declares (ptr); calling it with
+// plain call. `Allocator.deallocBytes` declares (ptr); calling it with
 // an extra argument must not compile and drop the extra.
 @import "modules/std.sx";
 
 main :: () -> i32 {
     gpa := GPA.init();
     a : Allocator = gpa;
-    p := a.alloc_bytes(64);
-    a.dealloc_bytes(p, 12345);
+    p := a.allocBytes(64);
+    a.deallocBytes(p, 12345);
     return 0;
 }
