@@ -787,7 +787,7 @@ pub fn intTypeRange(name: []const u8) ?IntRange {
 
 pub const GlobalInfo = struct { id: inst.GlobalId, ty: TypeId };
 
-/// One `@contextExtend` declaration, collected program-wide by
+/// One `@context.extend` declaration, collected program-wide by
 /// `collectContextExtensions` (design/context-extension.md). Three consumers
 /// read these entries: Context assembly, the no-context registered-field
 /// diagnostic, and LSP per-field provenance — so each entry keeps its spans
@@ -801,7 +801,7 @@ pub const ContextFieldDecl = struct {
     type_expr: *const ast.Node,
     /// Declared default value; null = missing, which the collection pass rejects.
     default_expr: ?*const ast.Node,
-    /// Span of the whole `@contextExtend … ;` declaration.
+    /// Span of the whole `@context.extend … ;` declaration.
     span: ast.Span,
     /// Declaring source file — `Node.source_file` as stamped by import
     /// resolution. This is the same normalized spelling the program index
@@ -913,7 +913,7 @@ pub const ProgramIndex = struct {
     globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──
-    /// Every `@contextExtend` declaration in the compilation, sorted by
+    /// Every `@context.extend` declaration in the compilation, sorted by
     /// (declaring module path, field name). Collected UNCONDITIONALLY —
     /// also in no-context builds, where the declarations are inert but the
     /// list still powers the registered-field diagnostic. Set once by

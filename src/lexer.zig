@@ -239,7 +239,7 @@ pub const Lexer = struct {
                     .{ "@flags", Tag.at_flags },
                     .{ "@get", Tag.at_get },
                     .{ "@set", Tag.at_set },
-                    .{ "@contextExtend", Tag.at_context_extend },
+                    .{ "@context.extend", Tag.at_context_extend },
                 };
                 inline for (directives) |d| {
                     const keyword = d[0];

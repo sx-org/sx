@@ -1,7 +1,7 @@
-// Context-ready waits on a `@contextExtend` a branch could still IMPORT.
+// Context-ready waits on a `@context.extend` a branch could still IMPORT.
 //
 // The program Context is ONE layout, so an evaluation that reads it must see
-// the one the whole program ends up with. A `@contextExtend` written in a
+// the one the whole program ends up with. A `@context.extend` written in a
 // module an unexpanded branch imports is a field that layout may still gain —
 // no differently from one written in the branch itself — so the run below
 // cannot start while the branch is undecided.

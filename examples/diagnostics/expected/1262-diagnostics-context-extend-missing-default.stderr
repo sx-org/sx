@@ -1,5 +1,5 @@
-error: @contextExtend 'logger' has no default value — the default context must be constructible before `main` runs
+error: @context.extend 'logger' has no default value — the default context must be constructible before `main` runs
   --> examples/diagnostics/1262-diagnostics-context-extend-missing-default.sx:8:1
    |
- 8 | @contextExtend logger: ?*i64;
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 | @context.extend logger: ?*i64;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

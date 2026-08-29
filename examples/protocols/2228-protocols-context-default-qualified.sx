@@ -8,7 +8,7 @@ m :: @import "2228-protocols-context-default-qualified/mod.sx";
 P :: interface { a :: (self: *Self) -> i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 
-@contextExtend probe: P = m.the_w;
+@context.extend probe: P = m.the_w;
 
 CT :: @run context.probe.a();
 

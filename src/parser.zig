@@ -129,7 +129,7 @@ pub const Parser = struct {
                 .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
                 .at_identifier => if (std.mem.eql(u8, self.tokens.slice(self.tok), "@error"))
                     return self.fail("'private' is not allowed on '@error'"),
-                .at_context_extend => return self.fail("'private' is not allowed on '@contextExtend'"),
+                .at_context_extend => return self.fail("'private' is not allowed on '@context.extend'"),
                 .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
                 .kw_private => return self.fail("duplicate 'private'"),
                 else => {},
@@ -231,7 +231,7 @@ pub const Parser = struct {
             return self.parseErrorDirective();
         }
 
-        // Top-level `@contextExtend name: Type = default;` — declares a field
+        // Top-level `@context.extend name: Type = default;` — declares a field
         // of the program's assembled Context.
         if (self.tokens.tag(self.tok) == .at_context_extend) return self.parseContextExtend(start);
 
@@ -3054,7 +3054,7 @@ pub const Parser = struct {
         if (self.isErrorContractCall()) {
             return self.parseErrorDirective();
         }
-        // `@contextExtend` is a top-level-only directive: the Context is
+        // `@context.extend` is a top-level-only directive: the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
         // letting it fall through to a generic expression-parse failure. A
@@ -3063,7 +3063,7 @@ pub const Parser = struct {
         // Context field is exactly what the expansion scheduler weighs.
         if (self.tokens.tag(self.tok) == .at_context_extend) {
             if (!self.in_module_expansion) {
-                return self.fail("'@contextExtend' is only allowed at top level (module scope)");
+                return self.fail("'@context.extend' is only allowed at top level (module scope)");
             }
             return self.parseContextExtend(self.tokens.start(self.tok));
         }
@@ -4613,12 +4613,12 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }
 
-    /// Parse `@contextExtend name: Type = default;` — a field of the
+    /// Parse `@context.extend name: Type = default;` — a field of the
     /// program's assembled Context. `current` is the directive token.
     fn parseContextExtend(self: *Parser, start: u32) anyerror!*Node {
         self.advance();
         if (!self.isIdentLike()) {
-            return self.fail("expected field name after '@contextExtend'");
+            return self.fail("expected field name after '@context.extend'");
         }
         const field_name = self.tokens.slice(self.tok);
         const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };

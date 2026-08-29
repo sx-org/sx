@@ -772,7 +772,7 @@ pub const ErrorDirective = struct {
     message: []const u8,
 };
 
-/// `@contextExtend name: Type = default;` — a top-level directive declaring a
+/// `@context.extend name: Type = default;` — a top-level directive declaring a
 /// field the program's assembled Context carries (design/context-extension.md).
 /// It declares no module-scope name (`declName` is null): the field lives in the
 /// program-global Context namespace, collected across all modules.

@@ -1,10 +1,10 @@
 testdata/lexical/drift/directive-drift.sx:1:12: 'expand' -> 'ns.expand' [use]
-testdata/lexical/drift/directive-drift.sx:1:35: 'builtin' -> 'ns.builtin' [use]
+testdata/lexical/drift/directive-drift.sx:1:36: 'builtin' -> 'ns.builtin' [use]
 --- a/testdata/lexical/drift/directive-drift.sx
 +++ b/testdata/lexical/drift/directive-drift.sx
 @@ -1,1 +1,1 @@
--@identity #expand @contextExtend #builtin
-+@identity #ns.expand @contextExtend #builtin
+-@identity #expand @context.extend #builtin
++@identity #ns.expand @context.extend #builtin
 @@ -1,1 +1,1 @@
--@identity #expand @contextExtend #builtin
-+@identity #expand @contextExtend #ns.builtin
+-@identity #expand @context.extend #builtin
++@identity #expand @context.extend #ns.builtin

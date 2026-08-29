@@ -551,7 +551,7 @@ pub const Server = struct {
         }
 
         // Bare `context` identifier — the whole assembled Context in one
-        // hover (builtin prefix + every `@contextExtend` field, each with
+        // hover (builtin prefix + every `@context.extend` field, each with
         // its declaring module).
         if (extractIdentAtOffset(doc.source, offset)) |name| {
             if (std.mem.eql(u8, name, "context") and findSymbolByName(sema.symbols, "context") == null) {
@@ -784,7 +784,7 @@ pub const Server = struct {
         if (extractDotPrefix(doc.source, cursor_offset)) |prefix| {
             if (doc.sema orelse doc.last_good_sema) |sema| {
                 // `context.` — the assembled Context's fields: the builtin
-                // prefix plus every `@contextExtend` field in the workspace.
+                // prefix plus every `@context.extend` field in the workspace.
                 if (std.mem.eql(u8, prefix, "context") and findSymbolByName(sema.symbols, "context") == null) {
                     try self.appendContextFieldCompletions(&items, sema, doc);
                     if (items.items.len > 0) {
@@ -2180,14 +2180,14 @@ pub const Server = struct {
     // Context fields are PROGRAM-GLOBAL — no import gating — so every
     // lookup here spans the whole document store — the server's workspace is
     // the editor-side approximation of "the compilation". The heavy lifting
-    // rides sema's (owner, name) member-ref index: `@contextExtend` records
+    // rides sema's (owner, name) member-ref index: `@context.extend` records
     // a member DEF owned by "Context", `context.field` reads and push-literal
     // field names record member USES, and references fall out of the existing
     // cross-document member machinery with no code here.
 
     const ContextExtendHit = struct { doc: *const Document, ce: sx.ast.ContextExtendDecl, span: sx.ast.Span };
 
-    /// Find the `@contextExtend <name>` declaration across all loaded
+    /// Find the `@context.extend <name>` declaration across all loaded
     /// documents. Deterministic on multi-hit (a compile error anyway): the
     /// lexicographically-smallest declaring path wins.
     fn findContextExtendDecl(store: *DocumentStore, name: []const u8) ?ContextExtendHit {
@@ -2209,7 +2209,7 @@ pub const Server = struct {
         return best;
     }
 
-    /// Every `@contextExtend` declaration in the store, in sort order
+    /// Every `@context.extend` declaration in the store, in sort order
     /// (declaring path, field name) — the completion / enumeration source.
     fn collectContextExtendDecls(store: *DocumentStore, allocator: std.mem.Allocator) []ContextExtendHit {
         var hits = std.ArrayList(ContextExtendHit).empty;
@@ -2236,7 +2236,7 @@ pub const Server = struct {
     }
 
     /// The member-ref DEF site for (owner, name) across all loaded documents
-    /// — `@contextExtend` decls and struct-decl fields both record one.
+    /// — `@context.extend` decls and struct-decl fields both record one.
     fn findMemberDefAcrossDocs(store: *DocumentStore, owner: []const u8, name: []const u8) ?struct { doc: *const Document, span: sx.ast.Span } {
         var it = store.by_path.iterator();
         while (it.next()) |entry| {
@@ -2263,7 +2263,7 @@ pub const Server = struct {
     }
 
     /// Go-to-definition for a Context field named `member`: the
-    /// `@contextExtend` declaration (extension fields) or the builtin field's
+    /// `@context.extend` declaration (extension fields) or the builtin field's
     /// member DEF in core.sx's Context struct.
     fn sendContextFieldDef(self: *Server, id_json: []const u8, origin_doc: *const Document, member: []const u8, origin: sx.ast.Span) !bool {
         self.documents.loadWorkspaceFiles();
@@ -2306,7 +2306,7 @@ pub const Server = struct {
 
     /// Hover for the bare `context` identifier: the WHOLE assembled Context in
     /// one place — the builtin prefix (from the Context struct decl) plus
-    /// every `@contextExtend` field, each with its declaring module. The
+    /// every `@context.extend` field, each with its declaring module. The
     /// tooling recovery of the "one visible struct" property the assembled
     /// design trades away in source.
     fn formatContextHover(self: *Server, sema: SemaResult, doc: *const Document) !?[]const u8 {
@@ -2338,7 +2338,7 @@ pub const Server = struct {
     }
 
     /// Append completion items for every Context field: the builtin prefix
-    /// (from the Context struct decl) + all `@contextExtend` fields (with
+    /// (from the Context struct decl) + all `@context.extend` fields (with
     /// declared type + declaring file as detail).
     fn appendContextFieldCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), sema: SemaResult, doc: *const Document) !void {
         self.documents.loadWorkspaceFiles();
@@ -3845,7 +3845,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
 // ---- Context extension LSP (design/context-extension.md, context-lsp unit) ----
 
 // Definition targets for Context fields resolve program-wide: the
-// `@contextExtend` declaration is found across documents, and the reading
+// `@context.extend` declaration is found across documents, and the reading
 // document needs NO import of the declaring module — the LSP twin of the
 // program-global rule.
 test "lsp/context: cross-file field def resolves without an import" {
@@ -3855,7 +3855,7 @@ test "lsp/context: cross-file field def resolves without an import" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "@contextExtend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3880,7 +3880,7 @@ test "lsp/context: cross-file field def resolves without an import" {
     try std.testing.expectEqualStrings("Context", use.owner);
 }
 
-// Find-all-references from the `@contextExtend` declaration lists every
+// Find-all-references from the `@context.extend` declaration lists every
 // `context.field` read and push-literal patch site program-wide.
 test "lsp/context: references span reads and push sites across documents" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3889,7 +3889,7 @@ test "lsp/context: references span reads and push sites across documents" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "@contextExtend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3920,18 +3920,18 @@ test "lsp/context: hover carries type, default, and declaring module" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "@contextExtend ui_scale: f64 = 1.5;";
+    const decl_src: [:0]const u8 = "@context.extend ui_scale: f64 = 1.5;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
 
     const hover = (try server.formatContextFieldHover(decl_doc, "ui_scale")) orelse return error.TestUnexpectedResult;
-    try std.testing.expect(std.mem.indexOf(u8, hover, "@contextExtend ui_scale: f64 = 1.5;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hover, "@context.extend ui_scale: f64 = 1.5;") != null);
     try std.testing.expect(std.mem.indexOf(u8, hover, "ui_mod.sx") != null);
 }
 
-// Completion after `context.` includes every `@contextExtend` field with its
+// Completion after `context.` includes every `@context.extend` field with its
 // declared type and declaring file.
 test "lsp/context: completion lists extension fields" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3939,7 +3939,7 @@ test "lsp/context: completion lists extension fields" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "@contextExtend ui_scale: f64 = 1.5;\n@contextExtend frame_no: i64 = 0;";
+    const decl_src: [:0]const u8 = "@context.extend ui_scale: f64 = 1.5;\n@context.extend frame_no: i64 = 0;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3987,7 +3987,7 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\Context :: struct { allocator: i64; }
-        \\@contextExtend ui_scale: f64 = 1.5;
+        \\@context.extend ui_scale: f64 = 1.5;
     ;
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -4435,13 +4435,13 @@ test "lsp/hover: a Context field carries its doc block" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "// How far to trace.\n@contextExtend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "// How far to trace.\n@context.extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx.sx", src, 1);
     try store.analyzeDocument(doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
     try std.testing.expectEqualStrings(
-        "// How far to trace.\n\n```sx\n@contextExtend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
+        "// How far to trace.\n\n```sx\n@context.extend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
         (try server.formatContextFieldHover(doc, "trace_depth")) orelse return error.TestUnexpectedResult,
     );
 }

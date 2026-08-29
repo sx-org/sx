@@ -1,22 +1,22 @@
-# Context extension — `@contextExtend`
+# Context extension — `@context.extend`
 
 The Context is sx's dynamically-scoped capability bag, threaded as the hidden
 `__sx_ctx` pointer parameter and spread+patched by `push`. Its fields are not
 built in: the compiler assembles the program's `Context` struct from every
-`@contextExtend` declaration in the compilation, so the stdlib, user
+`@context.extend` declaration in the compilation, so the stdlib, user
 libraries, and the application all extend it through one mechanism.
 
 ```sx
-@contextExtend ui: ?*Ui = null;
-@contextExtend frame_stats: FrameStats = .{};
+@context.extend ui: ?*Ui = null;
+@context.extend frame_stats: FrameStats = .{};
 ```
 
 ## Rules
 
-- **Mechanism.** `@contextExtend` is a top-level declaration. Any module —
+- **Mechanism.** `@context.extend` is a top-level declaration. Any module —
   stdlib or user — declares the field it carries, and the assembled `Context`
   is exactly the set of those declarations. There is no primordial prefix:
-  `allocator` and `io` are ordinary `@contextExtend` declarations in
+  `allocator` and `io` are ordinary `@context.extend` declarations in
   `modules/std/mem.sx` and `modules/std/io.sx`.
 
 - **Push is spread+patch.** `push .{ field = v } { … }` seeds from the ambient
@@ -29,7 +29,7 @@ libraries, and the application all extend it through one mechanism.
   compiled contributes no field, and reading it is an ordinary "no such field"
   error. Context fields have no per-source scoping.
 
-- **One flat namespace.** Two `@contextExtend` declarations of the same field
+- **One flat namespace.** Two `@context.extend` declarations of the same field
   name are a hard compile error naming BOTH declaration sites. No merging, no
   own-wins, no per-source resolution.
 
@@ -47,13 +47,13 @@ libraries, and the application all extend it through one mechanism.
   has a guaranteed cross-program offset: every access, compiler-internal ones
   included, compiles against the assembled layout BY NAME.
 
-- **Grammar.** `@contextExtend <name> : <type> = <default> ;`, at top level
+- **Grammar.** `@context.extend <name> : <type> = <default> ;`, at top level
   only — which includes a top-level `inline if` branch or `inline for` body,
   whose statements are module scope after comptime flattening. An untaken branch
   declares no field; an undecided driver that could declare one holds the
   Context open, and comptime reads of the Context wait for it (protocols §7.9).
 
-- **No-context builds.** A `@contextExtend` declaration is inert in a
+- **No-context builds.** A `@context.extend` declaration is inert in a
   freestanding build, so a library carrying one stays importable there. USING
   the context (`push`, `context.field`) is an error that enumerates the full
   registered field list with each field's declaring module:
@@ -86,7 +86,7 @@ fields with no special casing.
 ## Editor support
 
 The assembled Context carries per-field provenance: each field records the span
-and file of its `@contextExtend` declaration. The editor analyzer builds the
+and file of its `@context.extend` declaration. The editor analyzer builds the
 same assembled struct the compiler does through the shared collection pass —
 never a second implementation — which gives:
 
@@ -97,12 +97,12 @@ never a second implementation — which gives:
   (`ui: ?*Ui = null — declared by modules/ui/pipeline.sx`).
 - **Completion** after `context.` and inside `push .{ `, listing the full
   assembled field set with types.
-- **References**: find-all-references on a `@contextExtend` declaration lists
+- **References**: find-all-references on a `@context.extend` declaration lists
   every push-site and read of that field program-wide.
 
 ## Compiler areas
 
-1. Parser: the `@contextExtend` directive → an ast decl node.
+1. Parser: the `@context.extend` directive → an ast decl node.
 2. Program-index collection pass (the scanDecls/pass-0a family): gather every
    declaration, sort by (module path, field name), detect collisions.
 3. Context struct finalization before any lowering resolves it —

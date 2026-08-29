@@ -292,11 +292,11 @@ main :: () {
 }
 push .{ allocator = my_arena } { do_work(); }
 
-@contextExtend logger: ?*Logger = null;
+@context.extend logger: ?*Logger = null;
 push .{ logger = *my_logger } { serve(); }
 ```
 
-`Context` is assembled from every `@contextExtend`. Defaults are required and comptime.
+`Context` is assembled from every `@context.extend`. Defaults are required and comptime.
 
 ## Quick Sort Example
 

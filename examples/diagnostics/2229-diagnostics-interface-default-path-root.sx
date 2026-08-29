@@ -14,6 +14,6 @@ the_box : Box = .{ w = .{ v = 9 } };
 S :: struct { inner: P; }
 holder : S = .{ inner = the_box.w };
 
-@contextExtend probe: P = the_box.w;
+@context.extend probe: P = the_box.w;
 
 main :: () { print("{}\n", holder.inner.a()); }

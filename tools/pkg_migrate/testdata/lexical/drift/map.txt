@@ -1,4 +1,4 @@
 identity=ns
 expand=ns
-contextExtend=ns
+extend=ns
 builtin=ns
