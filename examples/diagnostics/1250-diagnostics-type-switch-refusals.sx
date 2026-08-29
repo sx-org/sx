@@ -4,7 +4,7 @@
 //      concrete arm);
 //   2. value patterns don't apply to an `any` subject (the payload is
 //      never the scrutinee — matching it is the silently-wrong dispatch).
-// (Protocol values as SUBJECTS type-switch since the RTTI type_id word —
+// (Protocol values as SUBJECTS type-switch since the RTTI typeId word —
 // pinned positively in types/0873.)
 @import "modules/std.sx";
 

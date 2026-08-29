@@ -26,8 +26,8 @@ Plan :: struct {
 }
 
 make_plan :: (shape: @BuildShape, policy: PlanPolicy) -> Plan {
-    reserved : i64 = if policy.reserve_static then shape.known_bytes ?? 0 else 0;
-    capacity : i32 = if policy.reserve_static then shape.static_expressions else 0;
+    reserved : i64 = if policy.reserve_static then shape.knownBytes ?? 0 else 0;
+    capacity : i32 = if policy.reserve_static then shape.staticExpressions else 0;
     Plan{
         shape = shape,
         static_capacity = capacity,
@@ -65,10 +65,10 @@ panel :: (content: $B/@BuildBlock(Drawable)) -> i32 {
         dynamic_chunk = 8,
     });
     print("shape static={} dynamic={} known={} align={}\n",
-        shape.static_expressions,
-        shape.dynamic_regions,
-        shape.known_bytes ?? -1,
-        shape.max_alignment);
+        shape.staticExpressions,
+        shape.dynamicRegions,
+        shape.knownBytes ?? -1,
+        shape.maxAlignment);
     print("plan capacity={} reserved={} chunk={}\n",
         plan.static_capacity,
         plan.reserved_bytes,

@@ -423,10 +423,10 @@ main :: () {
         dummy_fn :: (env: *void, x: i32) -> i32 {
             return x * 2;
         }
-        fn_ptr : *void = xx dummy_fn;
+        fnPtr : *void = xx dummy_fn;
         null_env : *void = xx 0;
-        c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = null_env };
-        print("closure-type: fn_ptr-nonnull={}\n", c.fn_ptr != null_env);
+        c : Closure(i32) -> i32 = .{ fnPtr = fnPtr, env = null_env };
+        print("closure-type: fnPtr-nonnull={}\n", c.fnPtr != null_env);
         print("closure-type: env-null={}\n", c.env == null_env);
     }
 
@@ -438,9 +438,9 @@ main :: () {
             return x + e.n;
         }
         env := Env{ n = 5 };
-        fn_ptr : *void = xx impl_fn;
+        fnPtr : *void = xx impl_fn;
         env_ptr : *void = *env;
-        c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = env_ptr };
+        c : Closure(i32) -> i32 = .{ fnPtr = fnPtr, env = env_ptr };
         print("closure-call: {}\n", c(10));
     }
 

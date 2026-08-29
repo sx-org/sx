@@ -74,7 +74,7 @@ block-lambda: 100
 hello block
 named-fn-type: 7
 xx-fnptr: 142
-closure-type: fn_ptr-nonnull=true
+closure-type: fnPtr-nonnull=true
 closure-type: env-null=true
 closure-call: 15
 auto-promote: 20

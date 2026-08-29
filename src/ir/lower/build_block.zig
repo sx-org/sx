@@ -493,21 +493,21 @@ fn countStaticExpression(self: *Lowering, node: *const Node, protocol: TypeId, f
 
 fn shapeLiteral(self: *Lowering, facts: ShapeFacts, span: ast.Span, src: ?[]const u8) *Node {
     var fields = std.ArrayList(ast.StructFieldInit).empty;
-    self.appendIntField(&fields, "static_expressions", facts.static_expressions, span, src);
-    self.appendIntField(&fields, "dynamic_regions", facts.dynamic_regions, span, src);
+    self.appendIntField(&fields, "staticExpressions", facts.static_expressions, span, src);
+    self.appendIntField(&fields, "dynamicRegions", facts.dynamic_regions, span, src);
     if (facts.bytes_known) {
         fields.append(self.alloc, .{
-            .name = "known_bytes",
+            .name = "knownBytes",
             .value = self.synthNode(.{ .int_literal = .{ .value = facts.known_bytes } }, span, src),
         }) catch {};
     } else {
         fields.append(self.alloc, .{
-            .name = "known_bytes",
+            .name = "knownBytes",
             .value = self.synthNode(.{ .null_literal = {} }, span, src),
         }) catch {};
     }
-    self.appendIntField(&fields, "max_alignment", facts.max_alignment, span, src);
-    // Named `@BuildShape{ … }` so `known_bytes: ?i64` resolves against the
+    self.appendIntField(&fields, "maxAlignment", facts.max_alignment, span, src);
+    // Named `@BuildShape{ … }` so `knownBytes: ?i64` resolves against the
     // library declaration rather than an anonymous struct.
     return self.synthNode(.{ .struct_literal = .{
         .struct_name = "@BuildShape",

@@ -1,10 +1,10 @@
 // Raw-view retrieval through the shared xx/.(T) conversion engine: the
-// fat-value views @Closure {fn_ptr, env}, @Slice {ptr, len} (slices AND
-// strings), and @Protocol {ctx, type_id} come back via `v.(@Protocol)` or
+// fat-value views @Closure {fnPtr, env}, @Slice {ptr, len} (slices AND
+// strings), and @Protocol {ctx, typeId} come back via `v.(@Protocol)` or
 // `xx v`. The protocol pair is a MODELED conversion built field-wise —
 // {ctx, __type_id} is the prefix BOTH protocol layouts share (default
 // {ctx, __type_id, vtable} and `inline` {ctx, __type_id, fn_ptrs…}),
-// byte-identical to an any {data, type_id} — never a bit reinterpret, so
+// byte-identical to an any {data, typeId} — never a bit reinterpret, so
 // an `inline`-kind value can't leak a wrong word and the result is a real value
 // that works in ARG POSITION (a reinterpret width-mismatched there).
 // Recovery targets are exempt from the phase-2 downcast refusal; other
@@ -24,7 +24,7 @@ main :: () {
     cl : Closure(i64) -> i64 = closure(|x: i64|_{ n } -> i64 { x + n });
     r1 : @Closure = xx cl;
     r2 := cl.(@Closure);
-    print("closure: {} {}\n", r1.fn_ptr == r2.fn_ptr, r1.env == r2.env);
+    print("closure: {} {}\n", r1.fnPtr == r2.fnPtr, r1.env == r2.env);
 
     // slice and string -> @Slice
     s : []i64 = .[1, 2, 3];
@@ -39,13 +39,13 @@ main :: () {
     pr : @Protocol = xx sz;
     wc : *Widget = xx sz.(@Protocol).ctx;
     print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx == *w, pr.ctx == sz.(@Protocol).ctx);
-    print("default type_id: {}\n", sz.(@Protocol).type_id == @typeOf(sz));
+    print("default typeId: {}\n", sz.(@Protocol).typeId == @typeOf(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
     a : Allocator = ga;
     print("inline: {}\n", a.(@Protocol).ctx == *ga);
-    print("inline type_id: {}\n", a.(@Protocol).type_id == @typeOf(a));
+    print("inline typeId: {}\n", a.(@Protocol).typeId == @typeOf(a));
 
     // a real constructed value: passes through call args
     print("arg: {}\n", take_raw(a.(@Protocol)) == *ga);

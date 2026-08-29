@@ -4573,8 +4573,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (c.args.len < 1) return self.builder.constType(.void);
         const arg_ty = self.inferExprType(c.args[0]);
         if (arg_ty == .any) {
-            // Runtime: the held value's type is the view's type_id word
-            // (field 1 — the {data, type_id} layout). Read it out AS the
+            // Runtime: the held value's type is the view's typeId word
+            // (field 1 — the {data, typeId} layout). Read it out AS the
             // 8-byte `.type_value` handle.
             const val = self.lowerExpr(c.args[0]);
             return self.builder.structGet(val, 1, .type_value);
@@ -4586,7 +4586,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             const slot = self.openSetSlotAddress(arg_ty, val, c.args[0]);
             return self.openSetMemberTypeId(arg_ty, slot);
         } else if (self.getProtocolInfo(arg_ty) != null) {
-            // A PROTOCOL value answers its CONCRETE type — the type_id
+            // A PROTOCOL value answers its CONCRETE type — the typeId
             // word at slot 1, same position as an any's.
             const val = self.lowerExpr(c.args[0]);
             return self.protocolTypeIdWord(val);

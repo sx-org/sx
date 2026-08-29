@@ -1360,8 +1360,8 @@ test "emit: closure_create" {
     b.finalize();
 
     // func f(e: *void) -> closure { return closure_create(tramp, e); }
-    // A non-constant env keeps the {fn_ptr, env} aggregate non-constant so
-    // the insertvalue isn't folded (a null env + constant fn_ptr would fold).
+    // A non-constant env keeps the {fnPtr, env} aggregate non-constant so
+    // the insertvalue isn't folded (a null env + constant fnPtr would fold).
     const env_ty = module.types.ptrTo(.void);
     _ = b.beginFunction(str(&module, "mkclose"), &[_]inst_mod.Function.Param{
         .{ .name = str(&module, "e"), .ty = env_ty },

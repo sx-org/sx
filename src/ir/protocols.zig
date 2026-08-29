@@ -552,10 +552,10 @@ pub const ProtocolResolver = struct {
         // Field 0: ctx: *void. Field 1: __type_id — the concrete type's
         // TypeId, stamped at erasure (RTTI, Agra's Option-B ruling). The
         // {ctx, __type_id} prefix is byte-identical to an `any`
-        // {data, type_id}, so downcasts and the protocol type switch read
+        // {data, typeId}, so downcasts and the protocol type switch read
         // the prefix through the any machinery. Dunder name: a protocol
-        // METHOD named `type_id` must not collide (same reason as
-        // `__vtable`); the public spelling is @Protocol's `type_id`.
+        // METHOD named `typeId` must not collide (same reason as
+        // `__vtable`); the public spelling is @Protocol's `typeId`.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),

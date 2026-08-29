@@ -1980,7 +1980,7 @@ pub const Ops = struct {
     }
 
     pub fn emitCallClosure(self: Ops, instruction: *const Inst, call_op: CallIndirect) void {
-        // Closure: { fn_ptr, env }.
+        // Closure: { fnPtr, env }.
         //
         // ABI (when module.has_implicit_ctx):
         //   trampoline signature: (__sx_ctx, env, args...)
@@ -2614,7 +2614,7 @@ pub const Ops = struct {
                 // { T, i1 } → extract has_value flag
                 self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, num_fields - 1, "oh.has"));
             } else {
-                // ?Closure {fn_ptr, env} → check if fn_ptr is null
+                // ?Closure {fnPtr, env} → check if fnPtr is null
                 const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, val, 0, "oh.fn");
                 self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oh.nn"));
             }
@@ -2646,10 +2646,10 @@ pub const Ops = struct {
                 }
                 self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
             } else {
-                // ?Closure {fn_ptr, env}: check if fn_ptr is null
+                // ?Closure {fnPtr, env}: check if fnPtr is null
                 const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.fn");
                 const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oc.nn");
-                // Select the full closure struct, not just the fn_ptr
+                // Select the full closure struct, not just the fnPtr
                 self.e.mapRef(c.LLVMBuildSelect(self.e.builder, is_nonnull, a, b_val, "oc.sel"));
             }
         } else {
@@ -2765,12 +2765,12 @@ pub const Ops = struct {
     }
 
     // ── Box/Unbox Any ──────────────────────────────────────
-    // `any` = { data: i64 @0, type_id: i64 @8 } where the data word is the
+    // `any` = { data: i64 @0, typeId: i64 @8 } where the data word is the
     // ADDRESS of the value (a borrow — Odin's Raw_Any {data, id}, same
-    // order). The {ptr, type_id} prefix is SHARED with protocol values.
+    // order). The {ptr, typeId} prefix is SHARED with protocol values.
     // Lowering guarantees box_any's operand is a pointer (borrowed lvalue
     // storage or a spilled frame temp) pointing at exactly
-    // @sizeOf(type_id) bytes.
+    // @sizeOf(typeId) bytes.
     pub fn emitBoxAny(self: Ops, ba: BoxAny) void {
         const addr = self.e.resolveRef(ba.operand);
         if (c.LLVMGetTypeKind(c.LLVMTypeOf(addr)) != c.LLVMPointerTypeKind) {

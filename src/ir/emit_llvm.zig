@@ -2770,7 +2770,7 @@ pub const LLVMEmitter = struct {
         if ((val_kind == c.LLVMFloatTypeKind or val_kind == c.LLVMDoubleTypeKind) and param_kind == c.LLVMIntegerTypeKind) {
             return c.LLVMBuildFPToSI(self.builder, val, param_ty, "ca.fptosi");
         }
-        // Ptr → Struct (closure auto-promotion: fn_ptr → {fn_ptr, null_env})
+        // Ptr → Struct (closure auto-promotion: fnPtr → {fnPtr, null_env})
         if (val_kind == c.LLVMPointerTypeKind and param_kind == c.LLVMStructTypeKind) {
             const num_fields = c.LLVMCountStructElementTypes(param_ty);
             if (num_fields == 2) {
@@ -2999,7 +2999,7 @@ pub const LLVMEmitter = struct {
     pub fn getClosureStructType(self: *LLVMEmitter) c.LLVMTypeRef {
         if (self.closure_struct_type) |t| return t;
         var field_types = [_]c.LLVMTypeRef{
-            self.cached_ptr, // fn_ptr
+            self.cached_ptr, // fnPtr
             self.cached_ptr, // env
         };
         self.closure_struct_type = c.LLVMStructTypeInContext(self.context, &field_types, 2, 0);

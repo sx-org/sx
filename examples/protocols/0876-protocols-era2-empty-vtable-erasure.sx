@@ -14,7 +14,7 @@ main :: () {
 
     m := sq.(Marker);
     print("marker type: {}\n", @typeOf(m) == Sq);
-    print("marker raw:  {}\n", m.(@Protocol).type_id == Sq);
+    print("marker raw:  {}\n", m.(@Protocol).typeId == Sq);
 
     back := m.(Sq);
     print("downcast:    {}\n", back.side);

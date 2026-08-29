@@ -56,12 +56,12 @@ help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
 error: 'content' is a '@BuildBlock(Drawable)' and cannot be captured by a closure
   --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:45:19
    |
-45 |     later := ||_{ content } { elsewhere(content.shape().static_expressions); };
+45 |     later := ||_{ content } { elsewhere(content.shape().staticExpressions); };
    |                   ^^^^^^^
 
 help: replay it where it was received ('.run(*sink)'), or collect what you need into storage the closure can reach
    |
-45 |     later := ||_{ content } { elsewhere(content.shape().static_expressions); };
+45 |     later := ||_{ content } { elsewhere(content.shape().staticExpressions); };
    |                   ^^^^^^^
 
 error: '@BuildBlock(Drawable)' has no 'replay' — a build block's operations are '.run(sink)', '.shape()', and '.site()'

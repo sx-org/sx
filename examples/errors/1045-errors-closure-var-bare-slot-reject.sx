@@ -1,6 +1,6 @@
 // A closure VALUE (a pre-bound variable) cannot be passed into a bare
 // function-pointer slot `(...) -> ...`. The bare ABI calls
-// `fn_ptr(ctx, args)` with no env channel, so a closure's environment can't be
+// `fnPtr(ctx, args)` with no env channel, so a closure's environment can't be
 // carried — passing one is unsound (drops env / shifts args / segfaults on a
 // capturing closure). Only a closure LITERAL crosses this boundary (lowerLambda
 // emits a static adapter); a variable is rejected with a pointer to the idiom.

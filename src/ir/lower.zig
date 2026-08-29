@@ -619,7 +619,7 @@ pub const Lowering = struct {
     /// and are decided at a use site that sees both.
     protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)),
     /// One tag-indexed conformance table per contract a RUNTIME question
-    /// reached: an interface's `(type_id, Q) → vtable-or-null`, a constraint's
+    /// reached: an interface's `(typeId, Q) → vtable-or-null`, a constraint's
     /// conformer bits. Minted on first read, filled when the impls are final.
     conformance_tables: std.AutoArrayHashMapUnmanaged(TypeId, inst_mod.GlobalId) = .empty,
     /// Exact receiver type recorded when a nullary-protocol impl method is

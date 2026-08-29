@@ -618,7 +618,7 @@ c := vstack(1.0) {
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
 - `string` — string of characters
-- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
+- `any` — type-erased BORROW, represented as `{ data: pointer, typeId: i64 }` — the data word (word 0) is the ADDRESS of the value, the typeId word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, typeId}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
 ### Char Literals
@@ -1373,7 +1373,7 @@ Show handle │ ctx *────┼─►referent  │ vtable *──┼─► 
 
 Slot 0 is the referent's address; slot 1 is the referent's concrete type
 id, stamped where the handle is built. The first two words are
-byte-identical to an `any` `{data, type_id}` — an interface handle *is*
+byte-identical to an `any` `{data, typeId}` — an interface handle *is*
 an `any` of its referent, extended with dispatch information. `@typeOf`,
 the downcast, the type switch, and `@Interface` all read this prefix.
 
@@ -1504,13 +1504,13 @@ program's job.
 
 Every handle answers `@typeOf` with its referent's concrete type id,
 read from slot 1. The downcast `p.(T)` and the type switch on a handle
-subject follow the same source: a runtime type_id compare. There is no
+subject follow the same source: a runtime typeId compare. There is no
 implicit opening of a handle; the type switch is the opening construct.
 
 ##### 6.2 `@Interface`
 
 ```sx
-@Interface :: struct { ctx: *void; type_id: Type; }
+@Interface :: struct { ctx: *void; typeId: Type; }
 ```
 
 `p.(@Interface)` (and `xx p` at an `@Interface` target) builds the pair
@@ -1520,7 +1520,7 @@ prefix copy of the handle.
 ##### 6.3 The `any` bridge
 
 Boxing a handle into `any` yields a view of the **referent**: `{data =
-ctx, type_id = concrete}` — the handle's byte prefix. The reverse
+ctx, typeId = concrete}` — the handle's byte prefix. The reverse
 direction is refused: a postfix assertion with an *interface* target on
 an `any` receiver is a compile error (an `any`'s tag is always a
 concrete type, so the assertion could only ever fail) — assert the
@@ -1534,9 +1534,9 @@ concrete type behind `p` is not statically known, so only the compiler
 can perform it.
 
 The conformance check and the result's vtable word are one runtime read
-of a link-time `(type_id, Q) → vtable-or-null` table over the pairs with
+of a link-time `(typeId, Q) → vtable-or-null` table over the pairs with
 a **program-unique** impl. The result handle reuses `p`'s ctx and
-type_id and takes the table's vtable-or-null (same referent, new
+typeId and takes the table's vtable-or-null (same referent, new
 dispatch word). A pair with visibility-disjoint duplicate impls (§3) is
 absent from the table and reads null: the site-local visibility that
 arbitrates an ordinary coercion does not exist at a dynamic conversion.
@@ -1776,11 +1776,11 @@ structural on the argument tuple after alias resolution — no
 display-name truncation participates in any symbol or cache key.
 
 **Emission points.** Vtables emit on first use of a pair. Marker/empty
-vtables are emitted like any other. The `(type_id, Q) → vtable-or-null`
+vtables are emitted like any other. The `(typeId, Q) → vtable-or-null`
 re-erasure table of §6.4 emits per target interface when a re-erasure
 to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe on
 an erased receiver exists. The result handle reuses `p`'s ctx and
-type_id and takes the table's vtable-or-null (same referent, new
+typeId and takes the table's vtable-or-null (same referent, new
 dispatch word).
 
 Coherence (§3) is diagnosed before codegen, so every conformance
@@ -1822,7 +1822,7 @@ owns the declaration and no compiler change follows an edit to it.
 | static interface position whose initializer is `g.field` | compile error — the path root must be a module namespace |
 | `free` on: an interface handle / constraint-typed anything | compile error in each case (a handle owns nothing; a constraint has no values at all) |
 | `p.(@Interface)` | field-wise build per layout |
-| `p.(Q)`, different interface | runtime read of the `(type_id, Q)` table (§6.4); all three temperaments read the same null |
+| `p.(Q)`, different interface | runtime read of the `(typeId, Q)` table (§6.4); all three temperaments read the same null |
 | `s.(I)`, operand already `I` | the handle, copied |
 | `any` holding an interface handle | never arises from boxing a handle (that boxes the referent) |
 | `av.(I)` — interface target on an `any` receiver | compile error; a constraint target refuses as a constraint |
@@ -3187,18 +3187,18 @@ would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
 **Raw-view retrieval.** The fat-value raw views (`@Closure`
-`{fn_ptr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
-`@Interface` `{ctx, type_id}`, and `@Any` `{data, type_id}`) are
+`{fnPtr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
+`@Interface` `{ctx, typeId}`, and `@Any` `{data, typeId}`) are
 retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
 `p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
 see below). The interface case is a MODELED conversion built field-wise, not
 a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a handle
 `{ctx, __type_id, vtable}`, so the result is a real value usable in
 any position (argument, return, store). `@Interface` mirrors exactly that
-prefix — byte-identical to an `any` `{data, type_id}`; the handle
+prefix — byte-identical to an `any` `{data, typeId}`; the handle
 is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
-temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
+temperaments — the receiver reads as its `{ctx, typeId}` prefix view);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-interface target is refused,
 since ctx addresses the referent),
@@ -3239,12 +3239,12 @@ reports its own call site.
 
 **`av.(@Any)` is the raw-view retrieval, not an assertion** — the one
 target exempt from the three temperaments: it answers the view's own
-`{data, type_id}` pair, built field-wise (name-AND-shape gated, so only
+`{data, typeId}` pair, built field-wise (name-AND-shape gated, so only
 the std `@Any` shape triggers). The exemption is the bare postfix
 target only: the soft form `.(?@Any)` still asserts the boxed payload,
 and `xx av` keeps its unchecked-unbox meaning for EVERY target, `@Any`
 included (the assert helpers' generic `xx av` depends on it).
-`raw_make_any(r.type_id, r.data)` reassembles a working view from the
+`raw_make_any(r.typeId, r.data)` reassembles a working view from the
 pair.
 
 **Optional chaining**: `o?.(T)` maps the cast over an optional receiver —
@@ -3260,8 +3260,8 @@ An optional TARGET flattens — `ap?.(?i64)` is `?i64`, one null level, never
 pointing at `?.(T)` / unwrap-first, and `x?.(T)` on a non-optional receiver
 is likewise refused. Unchecked unboxing stays `xx`.
 An **interface-handle** receiver's checked downcast (`p.(Square)`) is live:
-a handle carries its referent's `type_id` word and reads as its
-`{ctx, type_id}` prefix view, and the check is a compare against that
+a handle carries its referent's `typeId` word and reads as its
+`{ctx, typeId}` prefix view, and the check is a compare against that
 word — a target the receiver's interface has no conformer for simply
 never matches. The same three temperaments apply (`try p.(Square)` /
 unconsumed panic / `p.(?Square)` soft). See the handle-receiver
@@ -4717,7 +4717,7 @@ match av {
   dead arm. Value patterns (`case 5:`) are a compile error: the payload is
   never the scrutinee.
 - **Subjects**: `any`, INTERFACE handles, and OPEN SET values. A handle
-  subject switches through its `{ctx, type_id}` prefix view; a
+  subject switches through its `{ctx, typeId}` prefix view; a
   set subject switches on the member its
   tag names, and its arms name members with an `else:` arm REQUIRED
   (see Open Sets) — same arms, same captures, over the concrete value
@@ -5011,7 +5011,7 @@ else. That type is **unique** to the literal, is written only through a binder �
 is a zero-sized value, and a two-field env is those two fields.
 
 `Closure(…) -> R` is the **erased** form of a callable — a fat pointer
-`{ fn_ptr, env }` (16 bytes), against a bare function pointer's 8. A unique
+`{ fnPtr, env }` (16 bytes), against a bare function pointer's 8. A unique
 lambda becomes one through [`closure`](#persisting--closure), which is where the
 env's storage is decided.
 
@@ -5042,7 +5042,7 @@ run(f, 10);
 A unique lambda is storage like any other value, so a **copy forks**: the copy
 carries its own env fields and the two run independently. Sharing one env is a
 pointer — `*$F/(i32) -> i32`. An erased `Closure` is the other way round: its
-`{ fn_ptr, env }` copies **alias** the one env the pointer names.
+`{ fnPtr, env }` copies **alias** the one env the pointer names.
 
 **Captures are by value.** A field holds the value the capture expression had
 where the literal is written; assigning the outer name afterwards changes
@@ -5061,7 +5061,7 @@ result := f(10);
 ```
 A unique lambda is monomorphized with its env as the receiver, a function pointer
 calls directly, a `Closure` prepends the env pointer and calls indirectly through
-`fn_ptr`, and a callable nominal calls its `impl`'s `call`.
+`fnPtr`, and a callable nominal calls its `impl`'s `call`.
 
 #### Auto-Promotion
 A **function pointer** and an **empty-env** lambda promote to `Closure` where one
@@ -5094,7 +5094,7 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
         case closure: return f;
         else: {
             p := alloc.make(@envOf(f));
-            return .{ fn_ptr = @callPtr(F), env = p };
+            return .{ fnPtr = @callPtr(F), env = p };
         }
     }
 }
@@ -5139,7 +5139,7 @@ parameter — is a `Closure`, so anything capturing that reaches it goes through
 `closure` first.
 
 #### Optional Closures
-`?Closure` is supported for nullable callbacks. Uses `fn_ptr == null` as the none sentinel (zero overhead — same layout as `Closure`).
+`?Closure` is supported for nullable callbacks. Uses `fnPtr == null` as the none sentinel (zero overhead — same layout as `Closure`).
 ```sx
 Button :: struct {
     label: string;
@@ -5647,7 +5647,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `variant_count($E: Type) -> i64` / `variant_name($E: Type, idx: i64) -> string` / `variant_type($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `struct_field_*` builtin.
 - `variant_payload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `struct_field_value`).
 - `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.

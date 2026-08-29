@@ -1,7 +1,7 @@
 // Optional closures: `?Closure(...) -> R`.
 //
 // Runtime repr is the sentinel form — the optional IS the closure struct
-// `{fn_ptr, env}`; has_value = `fn_ptr != null`, no separate flag word.
+// `{fnPtr, env}`; has_value = `fnPtr != null`, no separate flag word.
 // Present vs null truthiness, `== null` / `!= null`, force-unwrap +
 // call-through (with and without captures), `??` coalesce, pass-as-param,
 // return, and args + non-void return.

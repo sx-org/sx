@@ -302,7 +302,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // the two {ptr, len} fat pointers — a slice (`sl : []T = .{ ptr = …,
     // len = … }`, used throughout the stdlib/corpus) and the builtin `string`
     // (`string{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
-    // (`c : Closure(i32) -> i32 = .{ fn_ptr = …, env = … }`, the {fn_ptr, env}
+    // (`c : Closure(i32) -> i32 = .{ fnPtr = …, env = … }`, the {fnPtr, env}
     // pair, exercised by examples/types/0129).
     // Any other resolved target — a scalar builtin (`x : i64 = .{ a = 1 }`),
     // an enum, a pointer, ... — would reach `structInit` against a
@@ -767,7 +767,7 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
     return true;
 }
 
-/// Slot type of a `{ptr,len}` fat pointer or `{fn_ptr,env}` closure literal,
+/// Slot type of a `{ptr,len}` fat pointer or `{fnPtr,env}` closure literal,
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
     const is_string = ty == .string;
@@ -784,7 +784,7 @@ fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usi
         return null;
     }
     if (is_closure) {
-        const is_fn = if (name) |n| std.mem.eql(u8, n, "fn_ptr") else index == 0;
+        const is_fn = if (name) |n| std.mem.eql(u8, n, "fnPtr") else index == 0;
         const is_env = if (name) |n| std.mem.eql(u8, n, "env") else index == 1;
         if (is_fn or is_env) return self.module.types.ptrTo(.void);
         return null;
@@ -2014,11 +2014,11 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
         }
     }
 
-    // Closure field access: .fn_ptr → field 0, .env → field 1
+    // Closure field access: .fnPtr → field 0, .env → field 1
     if (!obj_ty.isBuiltin()) {
         const cinfo = self.module.types.get(obj_ty);
         if (cinfo == .closure) {
-            if (std.mem.eql(u8, field, "fn_ptr")) {
+            if (std.mem.eql(u8, field, "fnPtr")) {
                 const fn_ptr_ty = self.module.types.ptrTo(.void);
                 return self.builder.structGet(obj, 0, fn_ptr_ty);
             } else if (std.mem.eql(u8, field, "env")) {
@@ -4198,7 +4198,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // unconsumed-failable rule, scoped to assertion forms).
             if (self.inferExprType(pc.operand) == .any) {
                 // `av.(@Any)` is the raw-view RETRIEVAL — the view's own
-                // {data, type_id} words, built field-wise; NOT an
+                // {data, typeId} words, built field-wise; NOT an
                 // assertion about the boxed payload. POSTFIX-only:
                 // `xx av` keeps the unbox meaning for every target
                 // (@Any included) — the assert helpers' generic
@@ -4240,9 +4240,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 break :blk self.lowerCall(&syn_call);
             }
             // A PROTOCOL receiver with a concrete (non-recovery) target is
-            // the checked DOWNCAST: with the type_id word
+            // the checked DOWNCAST: with the typeId word
             // it is exactly the any assertion over the value's
-            // {ctx, type_id} prefix view — the operand wraps in an
+            // {ctx, typeId} prefix view — the operand wraps in an
             // `xx …: any` (the modeled protocol_to_any conversion) and the
             // SAME helpers serve all three temperaments. Recovery /
             // conversion targets (p.(*T), p.(@Protocol), p.(any),

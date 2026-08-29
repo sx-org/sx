@@ -1556,11 +1556,11 @@ pub const Vm = struct {
             .ret => |u| return .{ .ret = frame.get(u.operand.index()) },
             .ret_void => return .ret_void,
 
-            // T → any: a 16-byte view `{ data: addr @0, type_id: i64 @8 }` (the
+            // T → any: a 16-byte view `{ data: addr @0, typeId: i64 @8 }` (the
             // borrow representation — the LLVM layout; Odin Raw_Any order,
             // prefix-shared with protocol values). The operand IS the
             // value's comptime ADDRESS (lowering borrows lvalue storage or
-            // spills to an alloca); the type_id is the source TypeId index
+            // spills to an alloca); the typeId is the source TypeId index
             // (lowering pre-normalizes arbitrary-width ints).
             .box_any => |ba| {
                 const table = try self.requireTable();
@@ -1576,7 +1576,7 @@ pub const Vm = struct {
             // pointed-at address (VM convention: aggregate value = its address).
             .unbox_any => |ua| {
                 const table = try self.requireTable();
-                const base = frame.get(ua.operand.index()); // Addr of the {data, type_id} view
+                const base = frame.get(ua.operand.index()); // Addr of the {data, typeId} view
                 const data = try self.machine.readWord(base, 8);
                 switch (kindOf(table, ins.ty)) {
                     .word => return .{ .value = try self.readField(table, data, ins.ty) },
@@ -2445,8 +2445,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Resolve the `TypeId` a reflection builtin (`type_name` / `type_is_unsigned`)
     /// queries, given the arg's IR type `aty` and its register word `w`. A
-    /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, type_id@8 }` yields
-    /// its type_id (the boxed value's runtime type), unless it == `type_value` — a
+    /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, typeId@8 }` yields
+    /// its typeId (the boxed value's runtime type), unless it == `type_value` — a
     /// boxed Type (the `@typeOf(x)` shape) whose real id sits behind the data
     /// pointer.
     fn reflectArgTypeId(self: *Vm, aty: TypeId, w: Reg) Error!TypeId {

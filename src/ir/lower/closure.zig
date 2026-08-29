@@ -187,7 +187,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 }
 
 /// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
-/// `LambdaKind` it is, and which type the resulting `{fn_ptr, env}` value
+/// `LambdaKind` it is, and which type the resulting `{fnPtr, env}` value
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
