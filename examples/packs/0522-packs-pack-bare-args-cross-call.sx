@@ -20,7 +20,7 @@
 // being comptime-only.
 //
 // The element type is `[]Type` (a bare `$args` is the list of the
-// pack args' TYPES, each an 8-byte `.type_value`). Declaring it
+// pack args' TYPES, each an 8-byte `.typeValue`). Declaring it
 // `[]any` (16-byte boxes) reads every element past the first at the
 // wrong stride, which the byte-accurate comptime VM rejects.
 

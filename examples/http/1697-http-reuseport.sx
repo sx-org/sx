@@ -75,7 +75,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg1 : http.Config = .{ port = PORT, max_conn = 8, reuse_port = true };
         srv1, e1 := http.Server.init(cfg1, route_one, 0);
@@ -114,8 +114,8 @@ main :: () -> i32 {
         // must not cascade srv2's buffers into the leak report's noise.
         if !e2 { srv2.close(); }
         srv1.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

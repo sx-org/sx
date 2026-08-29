@@ -1,4 +1,4 @@
-// The app-boot idiom for MetalGPU: `alloc_bytes` + `memset(0)` (struct
+// The app-boot idiom for MetalGPU: `allocBytes` + `memset(0)` (struct
 // field defaults are NOT applied on this path) + two-phase
 // `init(null, 0, 0)`, then shader compilation before any layer exists.
 // `init` establishes the layer-mode pixel format explicitly: the memset value 0
@@ -20,7 +20,7 @@ MSL;
 main :: () -> i32 {
     inline if @host.os != .macos { print("format ok, shader handle: 1\n"); return 0; }
 
-    gpu : *MetalGPU = xx context.allocator.alloc_bytes(@sizeOf(MetalGPU));
+    gpu : *MetalGPU = xx context.allocator.allocBytes(@sizeOf(MetalGPU));
     c.memset(gpu, 0, @sizeOf(MetalGPU));
     if !gpu.init(null, 0, 0) { return 1; }
 

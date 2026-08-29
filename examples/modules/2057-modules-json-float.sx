@@ -11,7 +11,7 @@ report :: (label: string, ok: bool) {
 
 emits :: (f: f64, want: string) -> bool {
     buf : [64]u8 = ---;
-    n, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    n, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     if e { return false; }
     string{ ptr = *buf[0], len = n } == want
 }
@@ -31,13 +31,13 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 
 write_raises :: (f: f64, want: JsonError) -> bool {
     buf : [64]u8 = ---;
-    _, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    _, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     e == want
 }
 
 round_trips :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
-    n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    n, we := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     if we { return false; }
     v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
     if pe { return false; }
@@ -52,7 +52,7 @@ FAR_ZEROS :: 12000;
 far_overflow_raises :: (alloc: Allocator) -> bool {
     tail := "1e999999999";
     len := 2 + FAR_ZEROS + tail.len;
-    src : [*]u8 = xx alloc.alloc_bytes(len);
+    src : [*]u8 = xx alloc.allocBytes(len);
     src[0] = '0';
     src[1] = '.';
     i := 0;
@@ -120,7 +120,7 @@ main :: () -> ! {
 
     tree := try parse(MIXED, arena);
     buf : [256]u8 = ---;
-    n := try write_to_buffer(tree, string{ ptr = *buf[0], len = 256 });
+    n := try writeToBuffer(tree, string{ ptr = *buf[0], len = 256 });
     report("mixed-document-round-trips", string{ ptr = *buf[0], len = n } == MIXED);
     o := tree.object;
     report("bare-integer-stays-int", o.items[0].val.int == 0 - 7);

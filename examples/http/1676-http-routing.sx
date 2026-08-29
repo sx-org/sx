@@ -212,10 +212,10 @@ main :: () -> i32 {
     okall := false;
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
         okall = run_suite(scratch, cap);
-        context.allocator.dealloc_bytes(scratch);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(scratch);
+        leaked = gpa.allocCount;
     }
     if !okall { return 1; }
     if leaked != 0 {

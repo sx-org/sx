@@ -8,7 +8,7 @@
 // double-wrapped `[][]T` signature does not match the `[N x T]`
 // the call-site marshalling emits.
 //
-// The stdlib `path_join` uses the form
+// The stdlib `pathJoin` uses the form
 // (`(..parts: []string) -> string`); it lives in `modules/std.sx`
 // and is called here from another module. Two- and three-arg
 // shapes round-trip the slice through the function-call
@@ -18,9 +18,9 @@
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    print("{}\n", path_join());
-    print("{}\n", path_join("a"));
-    print("{}\n", path_join("a", "b"));
-    print("{}\n", path_join("a", "b", "c", "d"));
+    print("{}\n", pathJoin());
+    print("{}\n", pathJoin("a"));
+    print("{}\n", pathJoin("a", "b"));
+    print("{}\n", pathJoin("a", "b", "c", "d"));
     return 0;
 }

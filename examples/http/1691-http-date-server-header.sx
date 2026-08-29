@@ -195,7 +195,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
         srv, se := http.Server.init(cfg, route, 0);
@@ -244,8 +244,8 @@ main :: () -> i32 {
         check_date(r, before, after, "pooled Date", *failed);
         srvp.close();
 
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

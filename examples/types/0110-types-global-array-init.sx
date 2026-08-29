@@ -9,7 +9,7 @@ main :: () {
     out("VALS: ");
     i := 0;
     while i < 4 {
-        out(int_to_string(VALS[i]));
+        out(intToString(VALS[i]));
         out(" ");
         i = i + 1;
     }

@@ -33,4 +33,4 @@ g10-order: ok
 g12-pop-survivors-resolve: ok
 g13-reinsert-tail: ok
 g14-empty-iter: ok
-g16-get_ptr-null-miss: ok
+g16-getPtr-null-miss: ok

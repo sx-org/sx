@@ -19,8 +19,8 @@ inline if @host.pointerSize == 0 {
 }
 
 budget :: () -> i64 {
-    p := context.allocator.alloc_bytes(64);
-    context.allocator.dealloc_bytes(p);
+    p := context.allocator.allocBytes(64);
+    context.allocator.deallocBytes(p);
     return 12;
 }
 

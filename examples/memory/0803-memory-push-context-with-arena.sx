@@ -13,7 +13,7 @@ main :: () -> void {
     new_ctx := context;
     new_ctx.allocator = arena;
     push new_ctx {
-        ptr := context.allocator.alloc_bytes(128);
+        ptr := context.allocator.allocBytes(128);
         out("inside push\n");
     }
     out("after push\n");

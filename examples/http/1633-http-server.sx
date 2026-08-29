@@ -159,14 +159,14 @@ main :: () -> i32 {
 
     // ── 5b. a body past READ_BUF_INITIAL forces the buffer to grow ────
     big_n := 50000;
-    payload : [*]u8 = (context.allocator.alloc_bytes(big_n)).([*]u8);
+    payload : [*]u8 = (context.allocator.allocBytes(big_n)).([*]u8);
     f := 0;
     while f < big_n { payload[f] = 97 + (f % 26).(u8); f += 1; }
-    breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(int_to_string(big_n), "\r\n\r\n"));
+    breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(intToString(big_n), "\r\n\r\n"));
     breq = concat(breq, string{ ptr = payload, len = big_n });
     c2b := dial();
     if c2b < 0 { print("dial2b failed\n"); return 1; }
-    bigbuf : [*]u8 = (context.allocator.alloc_bytes((big_n + 4096))).([*]u8);
+    bigbuf : [*]u8 = (context.allocator.allocBytes((big_n + 4096))).([*]u8);
     socket.write(c2b, breq.ptr, breq.len);
     btotal : i64 = 0;
     btries := 0;
@@ -180,7 +180,7 @@ main :: () -> i32 {
     }
     bresp := string{ ptr = bigbuf, len = btotal };
     if !contains(bresp, "HTTP/1.1 200 OK") { print("case5b: big echo not 200\n"); return 1; }
-    if !contains(bresp, concat("Content-Length: ", int_to_string(big_n))) { print("case5b: wrong echo length\n"); return 1; }
+    if !contains(bresp, concat("Content-Length: ", intToString(big_n))) { print("case5b: wrong echo length\n"); return 1; }
     if bigbuf[btotal - 1] != 97 + ((big_n - 1) % 26).(u8) { print("case5b: tail byte wrong\n"); return 1; }
     socket.close(c2b);
     print("big body grows the buffer and echoes intact\n");

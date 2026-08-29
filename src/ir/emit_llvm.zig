@@ -2980,7 +2980,7 @@ pub const LLVMEmitter = struct {
             self.cached_i32, // line
             self.cached_i32, // col
             str_ty, // func
-            str_ty, // line_text (the source line, for the snippet)
+            str_ty, // lineText (the source line, for the snippet)
         };
         self.frame_struct_type = c.LLVMStructTypeInContext(self.context, &field_types, 5, 0);
         return self.frame_struct_type.?;

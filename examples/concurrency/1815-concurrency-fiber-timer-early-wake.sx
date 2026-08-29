@@ -41,6 +41,6 @@ main :: () -> i64 {
     print("log:");
     i := 0; while i < st.n { print(" {}", st.log[i]); i = i + 1; }
     print("\n");
-    print("clock: {}  n_suspended: {}\n", s.now_ms(), s.n_suspended);
+    print("clock: {}  n_suspended: {}\n", s.nowMs(), s.n_suspended);
     return 0;
 }

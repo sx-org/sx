@@ -85,12 +85,12 @@ load_crt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
     ok := false;
     if data := fs.read_file(path) {
         n : i64 = data.len;
-        p : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
+        p : [*]u8 = xx context.allocator.allocBytes(n + 1);
         if n > 0 { clib.memcpy(p, data.ptr, n); }
         p[n] = 0;
         ok = mbedtls.mbedtls_x509_crt_parse(crt, p, xx (n + 1)) == 0;
-        context.allocator.dealloc_bytes(p);
-        context.allocator.dealloc_bytes(data.ptr);
+        context.allocator.deallocBytes(p);
+        context.allocator.deallocBytes(data.ptr);
     }
     return ok;
 }
@@ -99,12 +99,12 @@ load_key :: (pk: *mbedtls.PkContext, path: [:0]u8, drbg: *mbedtls.CtrDrbg) -> bo
     ok := false;
     if data := fs.read_file(path) {
         n : i64 = data.len;
-        p : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
+        p : [*]u8 = xx context.allocator.allocBytes(n + 1);
         if n > 0 { clib.memcpy(p, data.ptr, n); }
         p[n] = 0;
         ok = mbedtls.mbedtls_pk_parse_key(pk, p, xx (n + 1), null, 0, mbedtls.mbedtls_ctr_drbg_random, drbg) == 0;
-        context.allocator.dealloc_bytes(p);
-        context.allocator.dealloc_bytes(data.ptr);
+        context.allocator.deallocBytes(p);
+        context.allocator.deallocBytes(data.ptr);
     }
     return ok;
 }
@@ -251,7 +251,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     rc : i32 = 1;
     push .{ allocator = gpa } { rc = run(); }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("TLS features ok: ALPN negotiated + bogus offer rejected, SNI served the alt cert, default fallback held, cert-less client refused; net-zero GPA\n");

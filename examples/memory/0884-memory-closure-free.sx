@@ -22,7 +22,7 @@ main :: () {
         free(cl);
     }
     print("call: {}\n", r);
-    print("context form: allocs {} outstanding {}\n", ta.alloc_count, ta.leak_count());
+    print("context form: allocs {} outstanding {}\n", ta.allocCount, ta.leakCount());
 
     // Explicit form: env allocated under the tracker, freed AFTER the
     // push scope ended — free(cl2, ta) pairs the allocator explicitly,
@@ -35,12 +35,12 @@ main :: () {
     r2 := cl2(6);
     free(cl2, ta);
     print("call: {}\n", r2);
-    print("explicit form: allocs {} outstanding {}\n", ta.alloc_count, ta.leak_count());
+    print("explicit form: allocs {} outstanding {}\n", ta.allocCount, ta.leakCount());
 
     // Capture-free closure: env is null — free is a no-op, no dealloc
     // reaches the allocator, nothing crashes.
-    before := ta.dealloc_count;
+    before := ta.deallocCount;
     k := |x: i64| -> i64 { x * 2 };
     free(k, ta);
-    print("null env: no-op {}\n", ta.dealloc_count == before);
+    print("null env: no-op {}\n", ta.deallocCount == before);
 }

@@ -323,7 +323,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     t, te := thread.Thread.spawn(server_entry, *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
-    storage : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 8192);
+    storage : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 8192);
     if storage == null {
         srv.stop(); t.join(); srv.close(); runner.deinit(); return false;
     }
@@ -349,7 +349,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     }
     if ok { ok = fairness_case(app, port, storage, BODY_LEN + 8192); }
 
-    context.allocator.dealloc_bytes(storage);
+    context.allocator.deallocBytes(storage);
     srv.stop();
     t.join();
     srv.close();
@@ -361,15 +361,15 @@ main :: () -> i32 {
     gpa := GPA.init();
     ok := true;
     push .{ allocator = gpa } {
-        raw := context.allocator.alloc_bytes(BODY_LEN);
+        raw := context.allocator.allocBytes(BODY_LEN);
         if raw == null { return 2; }
         body : string = .{ ptr = raw.([*]u8), len = BODY_LEN };
         i : i64 = 0;
         while i < body.len { body.ptr[i] = ('a' + ((i / 97) % 17)).(u8); i += 1; }
-        gz := gzip.encode(body) catch { context.allocator.dealloc_bytes(raw); return 2; };
+        gz := gzip.encode(body) catch { context.allocator.deallocBytes(raw); return 2; };
         zl := zlib.encode(body) catch {
-            context.allocator.dealloc_bytes(gz.ptr);
-            context.allocator.dealloc_bytes(raw);
+            context.allocator.deallocBytes(gz.ptr);
+            context.allocator.deallocBytes(raw);
             return 2;
         };
         app : App = .{
@@ -383,12 +383,12 @@ main :: () -> i32 {
         ok = run_mode(*app, 0, PORT_INLINE);
         if ok { ok = run_mode(*app, 1, PORT_POOL); }
         if ok { ok = run_mode(*app, 2, PORT_FIBER); }
-        context.allocator.dealloc_bytes(zl.ptr);
-        context.allocator.dealloc_bytes(gz.ptr);
-        context.allocator.dealloc_bytes(raw);
+        context.allocator.deallocBytes(zl.ptr);
+        context.allocator.deallocBytes(gz.ptr);
+        context.allocator.deallocBytes(raw);
     }
-    if !ok or gpa.alloc_count != 0 {
-        print("http content-encoding mode matrix failed; leaks={}\n", gpa.alloc_count);
+    if !ok or gpa.allocCount != 0 {
+        print("http content-encoding mode matrix failed; leaks={}\n", gpa.allocCount);
         return 1;
     }
     print("http content-encoding inline/pool/fiber framing, faults, policy, fairness ok\n");

@@ -46,8 +46,8 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     }
     if req.path == "/body" {
         // echo "<len>:<checksum>" of the decoded body
-        resp.body = concat(int_to_string(req.body.len),
-                     concat(":", int_to_string(checksum(req.body))));
+        resp.body = concat(intToString(req.body.len),
+                     concat(":", intToString(checksum(req.body))));
         return;
     }
     resp.body = "plain-ok";
@@ -143,7 +143,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 32768;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
         req_arena := mem.Arena.init(gpa, 65536);
 
         cfg : http.Config = .{
@@ -164,8 +164,8 @@ main :: () -> i32 {
             r1 := "GET /hdr HTTP/1.1\r\nHost: t\r\n";
             i := 0;
             while i < 24 {
-                r1 = concat(r1, concat("X-Probe-", concat(int_to_string(i),
-                       concat(": val-", concat(int_to_string(i), "\r\n")))));
+                r1 = concat(r1, concat("X-Probe-", concat(intToString(i),
+                       concat(": val-", concat(intToString(i), "\r\n")))));
                 i += 1;
             }
             r1 = concat(r1, "\r\n");
@@ -182,7 +182,7 @@ main :: () -> i32 {
         chk : i64 = 0;
         push .{ allocator = req_arena } {
             // build the full decoded body first for the expected checksum
-            full : [*]u8 = xx context.allocator.alloc_bytes(body_want);
+            full : [*]u8 = xx context.allocator.allocBytes(body_want);
             i := 0;
             while i < body_want { full[i] = xx (65 + (i % 26)); i += 1; }
             chk = checksum(string{ ptr = full, len = body_want });
@@ -202,7 +202,7 @@ main :: () -> i32 {
         resp2 := read_response(*srv, ca, rbuf, cap);
         expect2 : string = "";
         push .{ allocator = req_arena } {   // arena-owned, freed at deinit
-            expect2 = concat(int_to_string(body_want), concat(":", int_to_string(chk)));
+            expect2 = concat(intToString(body_want), concat(":", intToString(chk)));
         }
         ok2 := contains(resp2, "HTTP/1.1 200 OK") and contains(resp2, expect2);
         if !ok2 {
@@ -222,8 +222,8 @@ main :: () -> i32 {
         socket.close(ca);
         srv.close();
         req_arena.deinit();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

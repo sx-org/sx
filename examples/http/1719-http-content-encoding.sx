@@ -240,14 +240,14 @@ exact_capacity_decodes :: (plain: string, packed: string) -> bool {
     }
     socket.close(pair[1]);
     cap := head.len + plain.len;
-    storage := context.allocator.alloc_bytes(cap);
+    storage := context.allocator.allocBytes(cap);
     if storage == null { socket.close(pair[0]); return false; }
     response, e := http.Client.recv(pair[0], xx storage, cap);
     socket.close(pair[0]);
     ok := !e and response.decoded_from != null and response.decoded_from?! == http.ContentCoding.gzip
         and response.header("content-encoding").len == 0
         and same(response.body, plain);
-    context.allocator.dealloc_bytes(storage);
+    context.allocator.deallocBytes(storage);
     ok
 }
 
@@ -282,7 +282,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
     opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 5000 };
     conn, oe := http.Client.open("127.0.0.1", port, opts);
     if oe { srv.stop(); t.join(); srv.close(); return false; }
-    storage : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 4096);
+    storage : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 4096);
     ok := true;
 
     // The default client advertises both codings; the server tie-breaks gzip.
@@ -296,7 +296,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
     // visible and prevent a compressed Content-Length from sizing plain data.
     double_bytes, double_decode := gzip.decode(fixed.body, BODY_LEN);
     if !double_decode {
-        context.allocator.dealloc_bytes(double_bytes.ptr);
+        context.allocator.deallocBytes(double_bytes.ptr);
         ok = false;
     }
 
@@ -446,7 +446,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         else {
             explicit := gzip.decode(raw_fixed.body, BODY_LEN) catch { ok = false; "" };
             if ok { ok = same(explicit, app.body[..FIXED_LEN]); }
-            if explicit.ptr != null { context.allocator.dealloc_bytes(explicit.ptr); }
+            if explicit.ptr != null { context.allocator.deallocBytes(explicit.ptr); }
         }
         raw_stacked, rse := request_on(*raw_conn, "/stacked",
             "Accept-Encoding: br, gzip\r\n", storage, BODY_LEN + 4096);
@@ -483,7 +483,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         http.Client.close_conn(*bad_conn);
     }
 
-    context.allocator.dealloc_bytes(storage);
+    context.allocator.deallocBytes(storage);
     srv.stop();
     t.join();
     srv.close();
@@ -494,7 +494,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     result : i32 = 1;
     push .{ allocator = gpa } {
-        raw := context.allocator.alloc_bytes(BODY_LEN);
+        raw := context.allocator.allocBytes(BODY_LEN);
         if raw == null { return 2; }
         body : string = .{ ptr = raw.([*]u8), len = BODY_LEN };
         i : i64 = 0;
@@ -503,7 +503,7 @@ main :: () -> i32 {
             body.ptr[i] = ('a' + ((i / 97) % 17)).(u8);
             i += 1;
         }
-        body_packed := gzip.encode(body) catch { context.allocator.dealloc_bytes(raw); return 2; };
+        body_packed := gzip.encode(body) catch { context.allocator.deallocBytes(raw); return 2; };
         app : App = .{ body = body, packed = body_packed };
 
         ok := run_server_cases(*app, 0, PORT_INLINE);
@@ -533,19 +533,19 @@ main :: () -> i32 {
             if ok {
                 unpacked := gzip.decode(packed, 4096) catch { ok = false; "" };
                 if ok { ok = same(unpacked, TGS_JSON); }
-                if unpacked.ptr != null { context.allocator.dealloc_bytes(unpacked.ptr); }
+                if unpacked.ptr != null { context.allocator.deallocBytes(unpacked.ptr); }
             }
             if ok { ok = exact_capacity_decodes(TGS_JSON, packed); }
-            if packed.ptr != null { context.allocator.dealloc_bytes(packed.ptr); }
+            if packed.ptr != null { context.allocator.deallocBytes(packed.ptr); }
         }
 
-        context.allocator.dealloc_bytes(body_packed.ptr);
-        context.allocator.dealloc_bytes(raw);
+        context.allocator.deallocBytes(body_packed.ptr);
+        context.allocator.deallocBytes(raw);
         if ok { result = 0; }
     }
     if result != 0 { print("std.http content encoding failed\n"); return result; }
-    if gpa.alloc_count != 0 {
-        print("std.http content encoding leaked {} allocations\n", gpa.alloc_count);
+    if gpa.allocCount != 0 {
+        print("std.http content encoding leaked {} allocations\n", gpa.allocCount);
         return 3;
     }
     print("std.http gzip/deflate fixed+streamed ok; identity/malformed/.tgs ok; net-zero GPA\n");

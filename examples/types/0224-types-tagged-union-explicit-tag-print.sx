@@ -1,7 +1,7 @@
 // Printing a PAYLOAD-LESS variant of a TAGGED UNION (an enum that also has
 // payload-carrying variants) whose variants carry EXPLICIT tag values.
 //
-// `enum_to_string` (fmt.sx) recovers a variant name via
+// `enumToString` (fmt.sx) recovers a variant name via
 // `structFieldName(T, variantIndex(T, val))`. `variantIndex` returns the
 // SEQUENTIAL variant ordinal — the inverse of the explicit tag value — so
 // `structFieldName` is indexed in range. A payload-less variant of a tagged

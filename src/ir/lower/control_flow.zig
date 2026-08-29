@@ -1342,7 +1342,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     }
 
     // Determine if the match produces a value (has non-void arms)
-    // For type-category matches (inside any_to_string), only produce value when force_block_value
+    // For type-category matches (inside anyToString), only produce value when force_block_value
     // For regular enum/optional matches, always produce value if arms are non-void
     // Under `error_only` no merge is typed, so the ordinary arm-type
     // unification never runs: an error arm and an ordinary arm are not
@@ -1987,7 +1987,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             self.builder.switchToBlock(default_bb.?);
             if (is_type_match) {
                 // For type-category matches, unrecognized tags should skip to merge
-                // (e.g., optional types not covered by any_to_string categories)
+                // (e.g., optional types not covered by anyToString categories)
                 if (has_value_merge) {
                     const default_val = self.builder.constUndef(result_type);
                     self.builder.br(merge_bb, &.{default_val});

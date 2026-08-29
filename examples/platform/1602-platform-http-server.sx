@@ -80,7 +80,7 @@ Connection: close\r
 Content-Length: {}\r
 \r\n{}", body.len, body);
 
-    write(client, to_cstring(response), response.len);
+    write(client, toCstring(response), response.len);
     logger := context.logger?!;
     log(logger, format("served request #{}", logger.count + 1));
 }

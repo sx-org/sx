@@ -64,7 +64,7 @@ impl PixelSurface for GlOffscreen {
         wl := self.w.(i64);
         hl := self.h.(i64);
         n := wl * hl * 4;
-        raw : [*]u8 = (alloc.alloc_bytes(n)).([*]u8);
+        raw : [*]u8 = (alloc.allocBytes(n)).([*]u8);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadPixels(0, 0, self.w, self.h, GL_RGBA, GL_UNSIGNED_BYTE, raw);
 

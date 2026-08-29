@@ -75,7 +75,7 @@ main :: () -> i32 {
     sh.counter = 0;
     pool, pe := thread.Pool.create(4, 128);
     if pe { print("pool create failed\n"); return 1; }
-    args : [*]AddArg = (context.allocator.alloc_bytes(100 * @sizeOf(AddArg))).([*]AddArg);
+    args : [*]AddArg = (context.allocator.allocBytes(100 * @sizeOf(AddArg))).([*]AddArg);
     n := 0;
     while n < 100 {
         args[n] = AddArg{ sh = *sh, v = (n + 1) };

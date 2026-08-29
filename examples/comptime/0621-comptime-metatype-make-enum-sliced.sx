@@ -15,7 +15,7 @@ build_axis :: () -> Type {
         VariantInfo{ name = "south", payload = void },
         VariantInfo{ name = "west",  payload = void },
     ];
-    return make_enum("Axis", dirs[0..2]);   // first two only — a comptime subslice
+    return makeEnum("Axis", dirs[0..2]);   // first two only — a comptime subslice
 }
 
 Axis :: build_axis();

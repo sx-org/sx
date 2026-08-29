@@ -227,7 +227,7 @@ fib_body :: (self: *Fiber) export "fib_body" {
 STACK :: 131072;
 
 boot :: (f: *Fiber) {
-    base : *void = context.allocator.alloc_bytes(STACK);
+    base : *void = context.allocator.allocBytes(STACK);
     top : u64 = (xx base) + STACK;
     top = top - (top % 16);
     f.ctx.regs[0]  = xx f;            // x19 = self

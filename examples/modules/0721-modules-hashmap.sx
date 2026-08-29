@@ -23,8 +23,8 @@ main :: () {
     report("basic-len", m.len == 5);
 
     sum_keys : i64 = 0;
-    it := m.next_used(0);
-    while it < m.cap { sum_keys += m.keys[it]; it = m.next_used(it + 1); }
+    it := m.nextUsed(0);
+    while it < m.cap { sum_keys += m.keys[it]; it = m.nextUsed(it + 1); }
     report("basic-iter-sum", sum_keys == total);          // 0+1+2+3+4 = 10
 
     got_all := true;
@@ -68,10 +68,10 @@ main :: () {
     // iterate: count entries, confirm key == value for every live slot
     cnt : i64 = 0;
     kv_ok := true;
-    gi := g.next_used(0);
+    gi := g.nextUsed(0);
     while gi < g.cap {
         if g.keys[gi] != g.values[gi] { kv_ok = false; }
-        cnt += 1; gi = g.next_used(gi + 1);
+        cnt += 1; gi = g.nextUsed(gi + 1);
     }
     report("grow-iter-count", cnt == N);
     report("grow-iter-kv", kv_ok);
@@ -106,8 +106,8 @@ main :: () {
     report("str-miss", !s.contains("delta"));
     s.put("beta", 20, gpa);
     report("str-overwrite", s.get("beta")?! == 20 and s.len == 3);
-    // get_ptr: mutate in place
-    if p := s.get_ptr("alpha") { p.* = 111; }
+    // getPtr: mutate in place
+    if p := s.getPtr("alpha") { p.* = 111; }
     report("str-get-ptr", s.get("alpha")?! == 111);
     s.deinit(gpa);
     s.deinit(gpa);                                     // idempotent

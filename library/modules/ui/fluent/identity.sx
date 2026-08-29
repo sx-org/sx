@@ -37,7 +37,7 @@ ELEMENT_DOMAIN :: "ui.fluent.element.v1";
 // Resumes the hash from the site fingerprint the compiler already folded.
 site_hasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
     hasher := SourceSiteHasher{ state = site.key };
-    hasher.write_string(domain);
+    hasher.writeString(domain);
     hasher
 }
 
@@ -89,6 +89,6 @@ element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
     process.assert(context.fluent_ui != null, "element_id outside a fluent build — push .{ fluent_ui = *root.identity }");
     occurrence := context.fluent_ui.next_occurrence(site.key);
     hasher := site_hasher(site, ELEMENT_DOMAIN);
-    hasher.write_u64_le(occurrence.(u64));
+    hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

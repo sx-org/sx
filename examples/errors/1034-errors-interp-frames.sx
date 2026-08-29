@@ -1,4 +1,4 @@
-// `trace.print_interpreter_frames()`. At comptime (`@run`) it
+// `trace.printInterpreterFrames()`. At comptime (`@run`) it
 // dumps the interpreter's active sx call-frame chain (most recent call last) to
 // the build output; in compiled code it folds to nothing (no interpreter stack
 // — the only real caller is `process.exit`'s dead `@isComptime()` branch). The
@@ -9,7 +9,7 @@
 trace :: @import "modules/std/trace.sx";
 
 probe :: () {
-    trace.print_interpreter_frames();    // dumps the chain: __run_0 → inner → probe
+    trace.printInterpreterFrames();    // dumps the chain: __run_0 → inner → probe
 }
 
 inner :: () {

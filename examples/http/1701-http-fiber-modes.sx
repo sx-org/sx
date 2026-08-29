@@ -62,7 +62,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
             total += n;
         }
-        resp.body = concat("len=", concat(int_to_string(total), concat(" sum=", int_to_string(h))));
+        resp.body = concat("len=", concat(intToString(total), concat(" sum=", intToString(h))));
         return;
     }
     if req.path == "/chunky" {
@@ -216,7 +216,7 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 131072;   // 128 KB — the chunked body + framing + heads
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
@@ -231,7 +231,7 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: accumulate-fiber body + read_body cursor ──────────
-        body : [*]u8 = xx context.allocator.alloc_bytes(SUM_LEN);
+        body : [*]u8 = xx context.allocator.allocBytes(SUM_LEN);
         sum : i64 = 0;
         i : i64 = 0;
         while i < SUM_LEN {
@@ -301,9 +301,9 @@ main :: () -> i32 {
         srv.close();
         runner.deinit();
 
-        context.allocator.dealloc_bytes(body);
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(body);
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

@@ -59,7 +59,7 @@ Mat4 :: struct {
         m
     }
 
-    rotate_x :: (angle: f32) -> Mat4 {
+    rotateX :: (angle: f32) -> Mat4 {
         c := @cos(angle);
         s := @sin(angle);
         m := Mat4.identity();
@@ -70,7 +70,7 @@ Mat4 :: struct {
         m
     }
 
-    rotate_y :: (angle: f32) -> Mat4 {
+    rotateY :: (angle: f32) -> Mat4 {
         c := @cos(angle);
         s := @sin(angle);
         m := Mat4.identity();
@@ -81,7 +81,7 @@ Mat4 :: struct {
         m
     }
 
-    rotate_z :: (angle: f32) -> Mat4 {
+    rotateZ :: (angle: f32) -> Mat4 {
         c := @cos(angle);
         s := @sin(angle);
         m := Mat4.identity();
@@ -105,10 +105,10 @@ Mat4 :: struct {
     }
 
     perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
-        half_tan := @sin(fov * 0.5) / @cos(fov * 0.5);
+        halfTan := @sin(fov * 0.5) / @cos(fov * 0.5);
         m := Mat4.zero();
-        m.data[0] = 1.0 / (aspect * half_tan);
-        m.data[5] = 1.0 / half_tan;
+        m.data[0] = 1.0 / (aspect * halfTan);
+        m.data[5] = 1.0 / halfTan;
         m.data[10] = 0.0 - (far + near) / (far - near);
         m.data[11] = 0.0 - 1.0;
         m.data[14] = 0.0 - 2.0 * far * near / (far - near);

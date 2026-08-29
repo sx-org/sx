@@ -1,7 +1,7 @@
 // Comptime `@run` formatting of an `any` that holds a `Type`.
 //
 // `print("{}", at)` where `at: any` holds a `Type` value routes through
-// `format` → `write_any`, whose `t := @typeOf(val)` lowers (for an
+// `format` → `writeAny`, whose `t := @typeOf(val)` lowers (for an
 // `.any` operand) to `struct_get(val, 0)` — reading the any-Type's tag.
 // At runtime a `Type` value is the aggregate `{ tag=.any, value=tid }`,
 // so the read works and the type's name prints. The comptime interpreter

@@ -12,21 +12,21 @@ FailingAllocator :: struct {
 }
 
 impl Allocator for FailingAllocator {
-    alloc_bytes :: (self: *FailingAllocator, size: i64) -> *void {
+    allocBytes :: (self: *FailingAllocator, size: i64) -> *void {
         self.sequence += 1;
         if self.fail_at > 0 and self.sequence == self.fail_at {
             self.failures += 1;
             return null;
         }
-        raw := self.parent.alloc_bytes(size);
+        raw := self.parent.allocBytes(size);
         if raw != null { self.live += 1; }
         raw
     }
 
-    dealloc_bytes :: (self: *FailingAllocator, ptr: *void) {
+    deallocBytes :: (self: *FailingAllocator, ptr: *void) {
         if ptr == null { return; }
         self.live -= 1;
-        self.parent.dealloc_bytes(ptr);
+        self.parent.deallocBytes(ptr);
     }
 }
 
@@ -43,7 +43,7 @@ bytes_equal :: (left: string, right: string) -> bool {
 check_image :: (image: png.Image, expected: string, alloc: Allocator) -> bool {
     encoded := png.encode(image, .{ level = 6 }, alloc) catch |e| { return false; };
     matches := bytes_equal(encoded, expected);
-    alloc.dealloc_bytes(encoded.ptr);
+    alloc.deallocBytes(encoded.ptr);
     matches
 }
 
@@ -68,7 +68,7 @@ check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, botto
 raises :: (image: png.Image, options: png.EncodeOptions, want: png.Error, alloc: Allocator) -> bool {
     encoded, failure := png.encode(image, options, alloc);
     if !failure {
-        alloc.dealloc_bytes(encoded.ptr);
+        alloc.deallocBytes(encoded.ptr);
         return false;
     }
     failure == want
@@ -92,10 +92,10 @@ allocation_case :: (fail_at: i64) -> (bool, i64) {
     };
     encoded, failure := png.encode(image, .{}, failing);
     success := !failure;
-    if !failure { failing.dealloc_bytes(encoded.ptr); }
+    if !failure { failing.deallocBytes(encoded.ptr); }
     expected := if fail_at == 0 then success and failing.failures == 0
                 else !success and failure == .AllocationFailed and failing.failures == 1;
-    return expected and failing.live == 0 and gpa.alloc_count == 0, failing.sequence;
+    return expected and failing.live == 0 and gpa.allocCount == 0, failing.sequence;
 }
 
 main :: () -> i32 {
@@ -196,7 +196,7 @@ main :: () -> i32 {
         fail_at += 1;
     }
 
-    if gpa.alloc_count != 0 { return 19; }
+    if gpa.allocCount != 0 { return 19; }
     print("std.png ok\n");
     0
 }

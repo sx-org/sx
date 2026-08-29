@@ -19,5 +19,5 @@ main :: () {
     b := Box(i64).make(3);
     print("{}\n", b.v);
 
-    print("{} {}\n", List(i64).with_capacity(8).cap, List(i64).with_capacity(8).len);
+    print("{} {}\n", List(i64).withCapacity(8).cap, List(i64).withCapacity(8).len);
 }

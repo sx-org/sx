@@ -1,10 +1,10 @@
 // A capacity past `i64.max / @sizeOf(T)` has no representable byte count, so
-// `grow_to` aborts instead of multiplying into a wrapped allocation size.
+// `growTo` aborts instead of multiplying into a wrapped allocation size.
 //
 // aborts (exit 134) after the message — macOS-pinned.
 @import "modules/std.sx";
 
 main :: () {
     xs : List(i64) = .{};
-    xs.ensure_capacity(i64.max / @sizeOf(i64) + 1);
+    xs.ensureCapacity(i64.max / @sizeOf(i64) + 1);
 }

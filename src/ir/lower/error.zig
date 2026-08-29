@@ -1611,7 +1611,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         self.builder.condBr(is_err, handle_bb, &.{}, merge_bb, &.{});
         self.builder.switchToBlock(handle_bb);
         _ = self.runCatchBody(ce, err_val, err_set, null);
-        // The handler can inspect the trace (`trace.print_current()`); the
+        // The handler can inspect the trace (`trace.printCurrent()`); the
         // absorption clear fires once it completes WITHOUT re-raising (a
         // fall-through). A diverging body (`raise` / `return`) keeps /
         // discards the buffer on its own path (reconciles

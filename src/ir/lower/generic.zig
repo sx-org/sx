@@ -428,7 +428,7 @@ pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
 /// type-fn call in a `$E: Type` argument slot would otherwise never be seen as a
 /// type and the param would fail to bind ("cannot infer generic type parameter").
 /// This lets a synthesized result type flow as a type argument, e.g.
-/// `make_variant(RaceResult(T), i, winner.value)` in the `race` runtime.
+/// `makeVariant(RaceResult(T), i, winner.value)` in the `race` runtime.
 pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
     if (node.data != .call) return false;
     const cl = node.data.call;
@@ -2738,7 +2738,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         if (self.returnExprMintsType(ret_node)) {
             // A body with LOCALS before its `return` (e.g. `vs := …; return
-            // make_enum(…, vs)`) needs its full body comptime-evaluated so those
+            // makeEnum(…, vs)`) needs its full body comptime-evaluated so those
             // locals resolve; the bare return-expr path leaves them unresolved.
             // A no-prelude body stays on the simpler `evalComptimeType` path.
             const has_prelude = fd.body.data == .block and blk: {

@@ -136,7 +136,7 @@ error: cannot use a value of type '?*i32' where 'bool' is expected; test presenc
 149 |     flags(1, absent);            // the element type's own refusal, on the tail
     |     ^^^^^^^^^^^^^^^^
 
-error: 'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with from_cstring(c)
+error: 'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with fromCstring(c)
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:150:5
     |
 150 |     texts(1, held);

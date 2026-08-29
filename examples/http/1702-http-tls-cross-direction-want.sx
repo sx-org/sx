@@ -274,7 +274,7 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         rc = run(*acc);
     }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("cross-want ok: R served via write-arm, W retries={} declared={}, B body streamed; net-zero GPA\n",

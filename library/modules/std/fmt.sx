@@ -1,11 +1,11 @@
-// Formatting + string helpers: the `*_to_string` family, the `Writer` value
+// Formatting + string helpers: the `*ToString` family, the `Writer` value
 // walk, and the comptime `format` / `print` pair. Consumers never import this
 // file directly — std.sx re-exports every public name here.
 @import "modules/std/core.sx";
 @import "modules/std/writer.sx";
 c :: @import "modules/std/c.sx";
 
-int_to_string :: (n: i64) -> string {
+intToString :: (n: i64) -> string {
     if n == 0 { return "0"; }
     neg := n < 0;
     // Extract digits straight from `n` without ever negating it: `0 - n`
@@ -29,13 +29,13 @@ int_to_string :: (n: i64) -> string {
 
 // Unsigned decimal of `n`'s 64 bits — renders the full u64 range
 // (0 .. 18446744073709551615).
-uint_to_string :: (n: i64) -> string {
+uintToString :: (n: i64) -> string {
     if n == 0 { return "0"; }
     // Long division by 10 across the four unsigned 16-bit limbs, most
     // significant first. Each step folds the running remainder into the
     // next limb; the per-step accumulator stays well within i64
     // (max 9*65536 + 65535), so signed `/` and `%` are exact.
-    g := decompose_u16x4(n);
+    g := decomposeU16x4(n);
     digits : [20]u8 = ---;
     tmp := string{ ptr = *digits[0], len = 20 };
     i := 19;
@@ -54,18 +54,18 @@ uint_to_string :: (n: i64) -> string {
     substr(tmp, i + 1, 19 - i)
 }
 
-bool_to_string :: (b: bool) -> string {
+boolToString :: (b: bool) -> string {
     if b then "true" else "false"
 }
 
-float_to_string :: (f: f64) -> string {
+floatToString :: (f: f64) -> string {
     neg := f < 0.0;
     v := if neg then 0.0 - f else f;
-    int_part := v.(i64);
-    frac := ((v - int_part.(f64)) * 1000000.0).(i64);
+    intPart := v.(i64);
+    frac := ((v - intPart.(f64)) * 1000000.0).(i64);
     if frac < 0 { frac = 0 - frac; }
-    istr := int_to_string(int_part);
-    fstr := int_to_string(frac);
+    istr := intToString(intPart);
+    fstr := intToString(frac);
     zeros := "000000";
     sb := StringBuilder.init();
     if neg { sb.write("-"); }
@@ -76,7 +76,7 @@ float_to_string :: (f: f64) -> string {
     sb.finish()
 }
 
-hex_group :: (buf: string, offset: i64, val: i64) {
+hexGroup :: (buf: string, offset: i64, val: i64) {
     i := offset + 3;
     v := val;
     while i >= offset {
@@ -93,7 +93,7 @@ hex_group :: (buf: string, offset: i64, val: i64) {
 // back into 0..65535 — so callers get correct unsigned arithmetic out
 // of a signed-only integer type. Shared by the hex and unsigned-decimal
 // formatters.
-decompose_u16x4 :: (n: i64) -> [4]i64 {
+decomposeU16x4 :: (n: i64) -> [4]i64 {
     g0 := n % 65536;
     if g0 < 0 { g0 = g0 + 65536; }
     r1 := (n - g0) / 65536;
@@ -113,16 +113,16 @@ decompose_u16x4 :: (n: i64) -> [4]i64 {
     limbs
 }
 
-int_to_hex_string :: (n: i64) -> string {
+intToHexString :: (n: i64) -> string {
     if n == 0 { return "0"; }
 
-    g := decompose_u16x4(n);
+    g := decomposeU16x4(n);
     digits : [16]u8 = ---;
     buf := string{ ptr = *digits[0], len = 16 };
-    hex_group(buf, 0, g[0]);
-    hex_group(buf, 4, g[1]);
-    hex_group(buf, 8, g[2]);
-    hex_group(buf, 12, g[3]);
+    hexGroup(buf, 0, g[0]);
+    hexGroup(buf, 4, g[1]);
+    hexGroup(buf, 8, g[2]);
+    hexGroup(buf, 12, g[3]);
 
     // Skip leading zeros (keep at least 1 digit)
     start := 0;
@@ -155,14 +155,14 @@ last :: ufcs (s: []$T) -> ?$T {
 
 // ── cstring: the C-boundary string ────────────────────────────────────
 // `cstring` is ONE pointer to a null-terminated u8 buffer — C's `char *`.
-// It carries no length (`cstring_len` walks to the terminator) and
+// It carries no length (`cstringLen` walks to the terminator) and
 // crosses `extern` boundaries verbatim in both directions; `?cstring`
 // is the nullable case (null pointer = absent). String LITERALS coerce
 // to `cstring` implicitly — their bytes are terminated constants; every
-// other `string` must materialize through `to_cstring`.
+// other `string` must materialize through `toCstring`.
 
 // Byte length of `c` (strlen — O(n), walks to the terminator).
-cstring_len :: (c: cstring) -> i64 {
+cstringLen :: (c: cstring) -> i64 {
     p : [*]u8 = c.([*]u8);
     n := 0;
     while p[n] != '\0' { n += 1; }
@@ -171,13 +171,13 @@ cstring_len :: (c: cstring) -> i64 {
 
 // A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
 // shares C's buffer — `substr` it if it must outlive the source.
-from_cstring :: (c: cstring) -> string {
+fromCstring :: (c: cstring) -> string {
     p : [*]u8 = c.([*]u8);
-    string{ ptr = p, len = cstring_len(c) }
+    string{ ptr = p, len = cstringLen(c) }
 }
 
 // An owned, terminated copy of `s` as a `cstring`.
-to_cstring :: (s: string) -> cstring {
+toCstring :: (s: string) -> cstring {
     sb := StringBuilder.init();
     sb.reserve(s.len + 1);
     sb.write(s);
@@ -189,7 +189,7 @@ to_cstring :: (s: string) -> cstring {
 // components and collapses duplicate separators at component
 // boundaries. Used for bundle paths where Apple .app and Android APK
 // both expect POSIX-style paths.
-path_join :: (..parts: []string) -> string {
+pathJoin :: (..parts: []string) -> string {
     result := "";
     i := 0;
     while i < parts.len {
@@ -214,7 +214,7 @@ path_join :: (..parts: []string) -> string {
     result
 }
 
-struct_to_string :: (s: $T) -> string {
+structToString :: (s: $T) -> string {
     // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a TYPE
     // value prints its name.
     result := "{";
@@ -223,56 +223,56 @@ struct_to_string :: (s: $T) -> string {
         if i > 0 { result = concat(result, ", "); }
         result = concat(result, structFieldName(T, i));
         result = concat(result, ": ");
-        result = concat(result, any_to_string(structFieldValue(s, i)));
+        result = concat(result, anyToString(structFieldValue(s, i)));
         i += 1;
     }
     concat(result, "}")
 }
 
-vector_to_string :: (v: $T) -> string {
+vectorToString :: (v: $T) -> string {
     result := "[";
     i := 0;
     while i < v.len {
         if i > 0 { result = concat(result, ", "); }
         elem : any = v[i];
-        result = concat(result, any_to_string(elem));
+        result = concat(result, anyToString(elem));
         i += 1;
     }
     concat(result, "]")
 }
 
-array_to_string :: (a: $T) -> string {
+arrayToString :: (a: $T) -> string {
     result := "[";
     i := 0;
     while i < a.len {
         if i > 0 { result = concat(result, ", "); }
         elem : any = a[i];
-        result = concat(result, any_to_string(elem));
+        result = concat(result, anyToString(elem));
         i += 1;
     }
     concat(result, "]")
 }
 
-slice_to_string :: (items: []$T) -> string {
+sliceToString :: (items: []$T) -> string {
     result := "[";
     i := 0;
     while i < items.len {
         if i > 0 { result = concat(result, ", "); }
         elem : any = items[i];
-        result = concat(result, any_to_string(elem));
+        result = concat(result, anyToString(elem));
         i += 1;
     }
     concat(result, "]")
 }
 
-pointer_to_string :: (p: $T) -> string {
+pointerToString :: (p: $T) -> string {
     addr : i64 = p.(i64);
     if addr == 0 { "null" } else {
-        concat(@typeName(T), concat("@0x", int_to_hex_string(addr)))
+        concat(@typeName(T), concat("@0x", intToHexString(addr)))
     }
 }
 
-flags_to_string :: (val: $T) -> string {
+flagsToString :: (val: $T) -> string {
     v := val.(i64);
     result := "";
     i := 0;
@@ -288,43 +288,43 @@ flags_to_string :: (val: $T) -> string {
     result
 }
 
-enum_to_string :: (u: $T) -> string {
-    if isFlags(T) { return flags_to_string(u); }
+enumToString :: (u: $T) -> string {
+    if isFlags(T) { return flagsToString(u); }
     idx := variantIndex(T, u);
     result := concat(".", variantName(T, idx));
     payload := variantPayload(u, idx);
-    pstr := any_to_string(payload);
+    pstr := anyToString(payload);
     if pstr.len > 0 {
         result = concat(result, concat("(", concat(pstr, ")")));
     }
     result
 }
 
-optional_to_string :: (o: $T) -> string {
+optionalToString :: (o: $T) -> string {
     if o == null { return "null"; }
-    return any_to_string(o);
+    return anyToString(o);
 }
 
 // The value walk: ONE compiled body renders every type. The boxed view's
 // `@typeInfo` picks the shape and every part is a view into the same storage,
 // so no type monomorphizes and nothing is copied.
-write_any :: (w: Writer, val: any) {
+writeAny :: (w: Writer, val: any) {
     t := @typeOf(val);
     match @typeInfo(t) {
         case .void: {}
-        case .bool: w.write(bool_to_string(@unbox(val, bool)));
+        case .bool: w.write(boolToString(@unbox(val, bool)));
         case .string: w.write(@unbox(val, string));
         // A category arm binds the widened reading its whole tag set shares,
         // so one arm covers every width.
         case .int: {
             match val {
-                case unsigned: |n| { w.write(uint_to_string(n)); }
-                case signed: |n| { w.write(int_to_string(n)); }
+                case unsigned: |n| { w.write(uintToString(n)); }
+                case signed: |n| { w.write(intToString(n)); }
             }
         }
         case .float: {
             match val {
-                case float: |f| { w.write(float_to_string(f)); }
+                case float: |f| { w.write(floatToString(f)); }
             }
         }
         case .struct: |si| {
@@ -334,7 +334,7 @@ write_any :: (w: Writer, val: any) {
                 if fi > 0 { w.write(", "); }
                 w.write(si.fields[fi].name);
                 w.write(": ");
-                write_any(w, @field(val, fi));
+                writeAny(w, @field(val, fi));
                 fi += 1;
             }
             w.write("}");
@@ -362,7 +362,7 @@ write_any :: (w: Writer, val: any) {
                 w.write(live.name);
                 if !@typeEq(live.payload, void) {
                     w.write("(");
-                    write_any(w, @field(val, idx));
+                    writeAny(w, @field(val, idx));
                     w.write(")");
                 }
             }
@@ -375,23 +375,23 @@ write_any :: (w: Writer, val: any) {
             pt := @typeOf(p);
             match @typeInfo(pt) {
                 case .void: {}
-                case .struct: write_any(w, p);
+                case .struct: writeAny(w, p);
                 else: {
                     w.write("{");
-                    write_any(w, p);
+                    writeAny(w, p);
                     w.write("}");
                 }
             }
         }
-        case .array: write_elements(w, val);
-        case .vector: write_elements(w, val);
-        case .slice: write_elements(w, val);
-        case .pointer: write_pointer(w, val);
-        case .many_pointer: write_pointer(w, val);
+        case .array: writeElements(w, val);
+        case .vector: writeElements(w, val);
+        case .slice: writeElements(w, val);
+        case .pointer: writePointer(w, val);
+        case .manyPointer: writePointer(w, val);
         case .optional: {
-            if p := @inner(val) { write_any(w, p); } else { w.write("null"); }
+            if p := @inner(val) { writeAny(w, p); } else { w.write("null"); }
         }
-        case .type_value: {
+        case .typeValue: {
             tv := @unbox(val, Type);
             w.write(@typeName(tv));
         }
@@ -399,40 +399,40 @@ write_any :: (w: Writer, val: any) {
     }
 }
 
-write_elements :: (w: Writer, val: any) {
+writeElements :: (w: Writer, val: any) {
     w.write("[");
     n := @len(val);
     i := 0;
     while i < n {
         if i > 0 { w.write(", "); }
-        write_any(w, @elementAt(val, i));
+        writeAny(w, @elementAt(val, i));
         i += 1;
     }
     w.write("]");
 }
 
-write_pointer :: (w: Writer, val: any) {
+writePointer :: (w: Writer, val: any) {
     p := @unbox(val, *void);
     if p == null { w.write("null"); return; }
     pt := @typeOf(val);
     w.write(@typeName(pt));
     w.write("@0x");
-    w.write(int_to_hex_string(p.(i64)));
+    w.write(intToHexString(p.(i64)));
 }
 
-any_to_string :: (val: any) -> string {
+anyToString :: (val: any) -> string {
     sb := StringBuilder.init();
-    write_any(sb, val);
+    writeAny(sb, val);
     sb.flush();
     sb.finish()
 }
 
-emit_segment :: (code: string, sink: string, start: i64, end: i64) -> string {
+emitSegment :: (code: string, sink: string, start: i64, end: i64) -> string {
     r := concat(code, sink);
     r = concat(r, ".write(fmt[");
-    r = concat(r, int_to_string(start));
+    r = concat(r, intToString(start));
     r = concat(r, "..");
-    r = concat(r, int_to_string(end));
+    r = concat(r, intToString(end));
     concat(r, "]); ")
 }
 
@@ -440,28 +440,28 @@ emit_segment :: (code: string, sink: string, start: i64, end: i64) -> string {
 // `Writer` in scope at the `@insert` site, alongside `fmt` and `args`. A
 // literal run goes out as a view into `fmt`, a `{}` as its argument's
 // rendering, and `{{` / `}}` carry one brace through.
-build_format :: (fmt: string, sink: string) -> string {
+buildFormat :: (fmt: string, sink: string) -> string {
     code := "";
-    seg_start := 0;
+    segStart := 0;
     i := 0;
-    arg_idx := 0;
+    argIdx := 0;
     while i < fmt.len {
         if fmt[i] == '{' {
             if i + 1 < fmt.len {
                 if fmt[i + 1] == '}' {
-                    if i > seg_start { code = emit_segment(code, sink, seg_start, i); }
-                    code = concat(code, "write_any(");
+                    if i > segStart { code = emitSegment(code, sink, segStart, i); }
+                    code = concat(code, "writeAny(");
                     code = concat(code, sink);
                     code = concat(code, ", args[");
-                    code = concat(code, int_to_string(arg_idx));
+                    code = concat(code, intToString(argIdx));
                     code = concat(code, "]); ");
-                    arg_idx += 1;
+                    argIdx += 1;
                     i += 2;
-                    seg_start = i;
+                    segStart = i;
                 } else if fmt[i + 1] == '{' {
-                    code = emit_segment(code, sink, seg_start, i + 1);
+                    code = emitSegment(code, sink, segStart, i + 1);
                     i += 2;
-                    seg_start = i;
+                    segStart = i;
                 } else {
                     i += 1;
                 }
@@ -471,9 +471,9 @@ build_format :: (fmt: string, sink: string) -> string {
         } else if fmt[i] == '}' {
             if i + 1 < fmt.len {
                 if fmt[i + 1] == '}' {
-                    code = emit_segment(code, sink, seg_start, i + 1);
+                    code = emitSegment(code, sink, segStart, i + 1);
                     i += 2;
-                    seg_start = i;
+                    segStart = i;
                 } else {
                     i += 1;
                 }
@@ -484,20 +484,20 @@ build_format :: (fmt: string, sink: string) -> string {
             i += 1;
         }
     }
-    if seg_start < fmt.len { code = emit_segment(code, sink, seg_start, fmt.len); }
+    if segStart < fmt.len { code = emitSegment(code, sink, segStart, fmt.len); }
     code
 }
 
 format :: ($fmt: string, ..$args) -> string {
     sb := StringBuilder.init();
-    @insert build_format(fmt, "sb");
+    @insert buildFormat(fmt, "sb");
     sb.flush();
     return sb.finish();
 }
 
 print :: ($fmt: string, ..$args) {
     w := FdWriter.init(1);
-    @insert build_format(fmt, "w");
+    @insert buildFormat(fmt, "w");
     w.flush();
 }
 

@@ -939,7 +939,7 @@ pub const ProtocolResolver = struct {
                 self.recordProtocolImplMethod(proto.ty, proto_name, concrete_ty, method_fd, source, false);
                 // Record it as a protocol-impl method so the "declared `!`
                 // but never errors" warning skips it: a `!` on a protocol
-                // method is part of the contract (e.g. `Io.suspend_raw`), so
+                // method is part of the contract (e.g. `Io.suspendRaw`), so
                 // a conforming impl can't drop it even if its body never raises.
                 self.l.impl_method_names.put(qualified, {}) catch {};
                 impl_methods.put(method_fd.name, {}) catch {};

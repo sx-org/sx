@@ -9,7 +9,7 @@
 //
 // TRUE cancellation: the workers sleep 10/20/30 ms (deterministic
 // virtual clock), so `a` wins at t=10. The losers `b`/`c` are parked mid-`sleep`
-// when cancelled; their next `suspend_raw` raises `Canceled` and unwinds the body,
+// when cancelled; their next `suspendRaw` raises `Canceled` and unwinds the body,
 // so their POST-SLEEP `rec(...)` NEVER runs and `race` returns at WINNER-time. The
 // completion log therefore shows ONLY `a @ 10ms`, and the final virtual clock is
 // 10 — NOT 30, which is what letting losers run to their natural end would
@@ -32,9 +32,9 @@ main :: () -> i64 {
     push .{ io = s } {
         ps.spawn(||_{ pl } {
             // Three async workers, DIFFERENT result types and sleep durations.
-            a := context.io.async(||_{ pl } -> (i64,  !IoErr) { try context.io.sleep(10); rec(pl, 1, context.io.now_ms()); 111 });
-            b := context.io.async(||_{ pl } -> (bool, !IoErr) { try context.io.sleep(20); rec(pl, 2, context.io.now_ms()); true });
-            c := context.io.async(||_{ pl } -> (f64,  !IoErr) { try context.io.sleep(30); rec(pl, 3, context.io.now_ms()); 2.5 });
+            a := context.io.async(||_{ pl } -> (i64,  !IoErr) { try context.io.sleep(10); rec(pl, 1, context.io.nowMs()); 111 });
+            b := context.io.async(||_{ pl } -> (bool, !IoErr) { try context.io.sleep(20); rec(pl, 2, context.io.nowMs()); true });
+            c := context.io.async(||_{ pl } -> (f64,  !IoErr) { try context.io.sleep(30); rec(pl, 3, context.io.nowMs()); 2.5 });
 
             // Race them. `a` (sleep 10) wins; `b` and `c` are cancelled — their
             // post-sleep work never runs (true cancellation).
@@ -58,6 +58,6 @@ main :: () -> i64 {
         print("  task {} @ {}ms\n", lg.id[i], lg.at[i]);
         i = i + 1;
     }
-    print("final virtual clock: {}ms\n", s.now_ms());
+    print("final virtual clock: {}ms\n", s.nowMs());
     return 0;
 }

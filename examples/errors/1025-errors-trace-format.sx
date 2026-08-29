@@ -1,6 +1,6 @@
 // Error return-trace formatting. `library/modules/std/trace.sx`
 // reads the trace buffer (populated by the raise/try push wiring) and
-// renders it. `trace.print_current()` writes the trace to stderr; the catch
+// renders it. `trace.printCurrent()` writes the trace to stderr; the catch
 // handler sees the full chain because the absorption clear fires at handler
 // EXIT, not entry. Frame locations are placeholders; the count + ordering
 // carry the meaning.
@@ -29,7 +29,7 @@ mid :: (n: i32) -> !E {
 main :: () -> i32 {
     mid(-1) catch |e| {
         print("[stdout] caught {}\n", e);   // tag name via the always-linked table
-        trace.print_current();               // [stderr] the 2-frame trace
+        trace.printCurrent();               // [stderr] the 2-frame trace
     };
     print("[stdout] recovered; trace buffer now empty (len {})\n", sx_trace_len());
     return 0;

@@ -15,7 +15,7 @@ Box :: struct ($R: Type) { v: R; }
 // A pack fn whose body references `$R` (the closure's return type) in a
 // type-arg slot: both `*Box($R)` (annotation) and `@sizeOf(Box($R))`.
 boxed :: ufcs (io: Io, worker: Closure(..$args) -> $R, ..$args) -> Box($R) {
-    b : *Box($R) = xx context.allocator.alloc_bytes(@sizeOf(Box($R)));
+    b : *Box($R) = xx context.allocator.allocBytes(@sizeOf(Box($R)));
     b.v = worker(..args);
     return b.*;
 }

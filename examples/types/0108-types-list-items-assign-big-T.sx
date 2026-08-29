@@ -24,7 +24,7 @@ Container :: struct {
 }
 
 main :: () -> void {
-    obj : *Container = xx context.allocator.alloc_bytes(@sizeOf(Container));
+    obj : *Container = xx context.allocator.allocBytes(@sizeOf(Container));
     c.memset(obj, 0, @sizeOf(Container));
     obj.sentinel = 0xDEADBEEF;
 

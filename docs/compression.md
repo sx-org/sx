@@ -9,10 +9,10 @@ separate `deflate`, `zlib`, `gzip`, `png`, and `zip` namespaces.
 @import "modules/std.sx";
 
 packed := try gzip.encode("hello");
-defer context.allocator.dealloc_bytes(packed.ptr);
+defer context.allocator.deallocBytes(packed.ptr);
 
 plain := try gzip.decode(packed, 1024);
-defer context.allocator.dealloc_bytes(plain.ptr);
+defer context.allocator.deallocBytes(plain.ptr);
 ```
 
 The implementation does not import a C codec or use a system compression
@@ -120,7 +120,7 @@ image : png.Image = .{
     format = .rgba,
 };
 bytes := try png.encode(image, .{ level = 6 });
-defer context.allocator.dealloc_bytes(bytes.ptr);
+defer context.allocator.deallocBytes(bytes.ptr);
 ```
 
 A zero stride means tightly packed rows. Positive strides describe top-down

@@ -61,7 +61,7 @@ ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
 // bytes are backed by `alloc` (string values are VIEWS, so they must
 // outlive `build`).
 build :: (alloc: Allocator) -> Value {
-    ebytes : [*]u8 = xx alloc.alloc_bytes(8);
+    ebytes : [*]u8 = xx alloc.allocBytes(8);
     ebytes[0] = 34;    // "   -> \"
     ebytes[1] = 92;    // \   -> \\
     ebytes[2] = 8;     // BS  -> \b
@@ -105,7 +105,7 @@ main :: () -> ! {
     root := build(a);
 
     buf : [512]u8 = ---;
-    n := try write_to_buffer(root, string{ ptr = *buf[0], len = 512 });
+    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 512 });
     canon := string{ ptr = *buf[0], len = n };
     print("doc: {}\n", canon);                 // golden pins the exact bytes
     report("rt-exact", canon == EXPECT);
@@ -115,7 +115,7 @@ main :: () -> ! {
     // for byte (writer/reader are inverses on the canonical form).
     tree2 := try parse(canon, a);
     buf2 : [512]u8 = ---;
-    n2 := try write_to_buffer(tree2, string{ ptr = *buf2[0], len = 512 });
+    n2 := try writeToBuffer(tree2, string{ ptr = *buf2[0], len = 512 });
     canon2 := string{ ptr = *buf2[0], len = n2 };
     report("rt-idempotent", canon2 == canon);
 
@@ -176,12 +176,12 @@ main :: () -> ! {
     report("dec-esc-ctrl", ectrl.str == string{ ptr = *cexp[0], len = 3 });
 
     // Raw multi-byte UTF-8 (>= 0x80) round-trips writer -> reader unchanged.
-    ubytes : [*]u8 = xx a.alloc_bytes(7);
+    ubytes : [*]u8 = xx a.allocBytes(7);
     ubytes[0] = 0x41; ubytes[1] = 0xC3; ubytes[2] = 0xA9;
     ubytes[3] = 0xF0; ubytes[4] = 0x9F; ubytes[5] = 0x98; ubytes[6] = 0x80;
     uval : Value = .str(string{ ptr = ubytes, len = 7 });
     ubuf : [64]u8 = ---;
-    un := try write_to_buffer(uval, string{ ptr = *ubuf[0], len = 64 });
+    un := try writeToBuffer(uval, string{ ptr = *ubuf[0], len = 64 });
     uback := try parse(string{ ptr = *ubuf[0], len = un }, a);
     report("rt-utf8", uback.str == string{ ptr = *ubytes[0], len = 7 });
 
@@ -190,7 +190,7 @@ main :: () -> ! {
     fexp := try parse("2.5E-3", a);
     report("fraction-is-float", ffrac.float == 1.5);
     report("exponent-is-float", fexp.float == 0.0025);
-    fn := try write_to_buffer(ffrac, string{ ptr = *fbuf[0], len = 64 });
+    fn := try writeToBuffer(ffrac, string{ ptr = *fbuf[0], len = 64 });
     report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
 
     // ── PART C. malformed-input matrix — one assertion per variant + edge ─

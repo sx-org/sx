@@ -928,7 +928,7 @@ pub const Lowering = struct {
     inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
-    /// is part of the contract — e.g. `Io.suspend_raw`); a conforming impl
+    /// is part of the contract — e.g. `Io.suspendRaw`); a conforming impl
     /// MUST keep the `!` even when its concrete body never raises, so the
     /// "declared `!` but never errors — drop the `!`" warning (a free-fn
     /// linting hint) is a false positive for these. The empty-inferred-set

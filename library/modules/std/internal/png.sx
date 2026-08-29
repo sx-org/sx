@@ -40,7 +40,7 @@ png_encode_bytes :: (
     level: i64,
     alloc: Allocator,
 ) -> (string, !Error) {
-    filtered_raw := alloc.alloc_bytes(filtered_len);
+    filtered_raw := alloc.allocBytes(filtered_len);
     if filtered_raw == null { raise .AllocationFailed; }
     filtered := string{ ptr = filtered_raw, len = filtered_len };
     filtered_row_bytes := row_bytes + 1;
@@ -64,10 +64,10 @@ png_encode_bytes :: (
     }
 
     compressed := zlib_compress(filtered, level, alloc) catch |e| {
-        alloc.dealloc_bytes(filtered_raw);
+        alloc.deallocBytes(filtered_raw);
         raise e;
     };
-    alloc.dealloc_bytes(filtered_raw);
+    alloc.deallocBytes(filtered_raw);
 
     // PNG limits each chunk to 2^31-1 bytes. Ordinary images use one IDAT;
     // unusually large streams are split without changing the zlib payload.
@@ -76,19 +76,19 @@ png_encode_bytes :: (
     if idat_chunks == 0 { idat_chunks = 1; }
 
     if compressed.len > i64.max - 45 {
-        alloc.dealloc_bytes(compressed.ptr);
+        alloc.deallocBytes(compressed.ptr);
         raise .TooLarge;
     }
     output_len := compressed.len + 45;
     if idat_chunks > (i64.max - output_len) / 12 {
-        alloc.dealloc_bytes(compressed.ptr);
+        alloc.deallocBytes(compressed.ptr);
         raise .TooLarge;
     }
     output_len += idat_chunks * 12;
 
     out := ByteWriter.init(alloc);
     if !out.ensure_capacity(output_len) {
-        alloc.dealloc_bytes(compressed.ptr);
+        alloc.deallocBytes(compressed.ptr);
         out.deinit();
         raise .AllocationFailed;
     }
@@ -120,7 +120,7 @@ png_encode_bytes :: (
         at += take;
     }
     png_write_chunk(*out, "IEND", "");
-    alloc.dealloc_bytes(compressed.ptr);
+    alloc.deallocBytes(compressed.ptr);
 
     if out.failed {
         out.deinit();
@@ -210,7 +210,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr)
 
     // Pass 2: concatenate the zlib stream.
     if idat_total < 1 { raise .TruncatedData; }
-    idat_raw := alloc.alloc_bytes(idat_total);
+    idat_raw := alloc.allocBytes(idat_total);
     if idat_raw == null { raise .AllocationFailed; }
     idat := string{ ptr = idat_raw, len = idat_total };
     at := 0;
@@ -234,18 +234,18 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr)
     filtered_row_bytes := row_bytes + 1;
     need := filtered_row_bytes * height;
     filtered := decompress_exact(idat, need, alloc) catch |e| {
-        alloc.dealloc_bytes(idat_raw);
+        alloc.deallocBytes(idat_raw);
         raise .DecompressionFailed;
     };
-    alloc.dealloc_bytes(idat_raw);
+    alloc.deallocBytes(idat_raw);
     if filtered.len != need {
-        alloc.dealloc_bytes(filtered.ptr);
+        alloc.deallocBytes(filtered.ptr);
         raise .TruncatedData;
     }
 
-    out_raw := alloc.alloc_bytes(row_bytes * height);
+    out_raw := alloc.allocBytes(row_bytes * height);
     if out_raw == null {
-        alloc.dealloc_bytes(filtered.ptr);
+        alloc.deallocBytes(filtered.ptr);
         raise .AllocationFailed;
     }
     out := string{ ptr = out_raw, len = row_bytes * height };
@@ -255,8 +255,8 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr)
     while r < height {
         f := filtered[r * filtered_row_bytes].(i64);
         if f < 0 or f > 4 {
-            alloc.dealloc_bytes(filtered.ptr);
-            alloc.dealloc_bytes(out_raw);
+            alloc.deallocBytes(filtered.ptr);
+            alloc.deallocBytes(out_raw);
             raise .InvalidFilter;
         }
         c := 0;
@@ -275,7 +275,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !DecodeErr)
         }
         r += 1;
     }
-    alloc.dealloc_bytes(filtered.ptr);
+    alloc.deallocBytes(filtered.ptr);
 
     result : DecodedPng = .{ pixels = out, width = width, height = height, channels = channels };
     result

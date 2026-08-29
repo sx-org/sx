@@ -84,7 +84,7 @@ Router :: struct {
             if Router.declares(snap, self.sequences.items[i].element) {
                 i += 1;
             } else {
-                self.sequences.swap_remove(i)
+                self.sequences.swapRemove(i)
             }
         }
     }
@@ -142,7 +142,7 @@ Router :: struct {
     drop :: (self: *Router, pointer: PointerId) {
         i := self.find(pointer);
         if i >= 0 {
-            self.sequences.swap_remove(i)
+            self.sequences.swapRemove(i)
         }
     }
 
@@ -182,7 +182,7 @@ Router :: struct {
                 i := self.find(p.pointer);
                 if i < 0 then return;
                 s := self.sequences.items[i];
-                self.sequences.swap_remove(i);
+                self.sequences.swapRemove(i);
                 if s.inside and self.covers(p.position, s.element) {
                     self.fire(s.element)
                 }

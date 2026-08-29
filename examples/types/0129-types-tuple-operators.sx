@@ -60,9 +60,9 @@ main :: () {
         print("{}\n", pkg.cwd_greet());       // cwd-import-ok
     }
 
-    // ── alloc_slice ──────────────────────────────────────────
+    // ── allocSlice ──────────────────────────────────────────
     {
-        items := alloc_slice(i64, 5);
+        items := allocSlice(i64, 5);
         items[0] = 10;
         items[1] = 20;
         items[2] = 30;
@@ -72,8 +72,8 @@ main :: () {
         print("alloc[0]: {}\n", items[0]);            // alloc[0]: 10
         print("alloc[4]: {}\n", items[4]);            // alloc[4]: 50
 
-        // alloc_slice with u8
-        bytes := alloc_slice(u8, 3);
+        // allocSlice with u8
+        bytes := allocSlice(u8, 3);
         bytes[0] = 65;
         bytes[1] = 66;
         bytes[2] = 67;
@@ -89,12 +89,12 @@ main :: () {
     {
         gpa := GPA.init();
         a : Allocator = gpa;
-        p1 := a.alloc_bytes(64);
-        p2 := a.alloc_bytes(128);
-        print("gpa allocs: {}\n", gpa.alloc_count);         // gpa allocs: 2
-        a.dealloc_bytes(p1);
-        a.dealloc_bytes(p2);
-        print("gpa final: {}\n", gpa.alloc_count);          // gpa final: 0
+        p1 := a.allocBytes(64);
+        p2 := a.allocBytes(128);
+        print("gpa allocs: {}\n", gpa.allocCount);         // gpa allocs: 2
+        a.deallocBytes(p1);
+        a.deallocBytes(p2);
+        print("gpa final: {}\n", gpa.allocCount);          // gpa final: 0
     }
 
     // ── Arena backed by GPA (multi-chunk) ───────────────────
@@ -103,15 +103,15 @@ main :: () {
         arena := Arena.init(gpa3, 32);
         a : Allocator = arena;
         // First chunk fits 80 usable bytes
-        a1 := a.alloc_bytes(40);
-        a2 := a.alloc_bytes(40);
+        a1 := a.allocBytes(40);
+        a2 := a.allocBytes(40);
         // Counts: just the first chunk = 1. Arena.init returns the
         // state by value; the local IS the Arena struct, no parent
         // allocation for the state itself.
-        print("arena chunks: {}\n", gpa3.alloc_count);        // arena chunks: 1
+        print("arena chunks: {}\n", gpa3.allocCount);        // arena chunks: 1
         // Overflow → new chunk
-        a3 := a.alloc_bytes(16);
-        print("arena overflow: {}\n", gpa3.alloc_count);      // arena overflow: 2
+        a3 := a.allocBytes(16);
+        print("arena overflow: {}\n", gpa3.allocCount);      // arena overflow: 2
         // Verify memory works across chunks
         p1 : [*]u8 = xx a1;
         p3 : [*]u8 = xx a3;
@@ -121,12 +121,12 @@ main :: () {
         print("arena a3: {}\n", p3[0]);                       // arena a3: 99
         // Reset retains the first chunk
         arena.reset();
-        print("arena reset idx: {}\n", arena.end_index);      // arena reset idx: 0
-        print("arena reset gpa: {}\n", gpa3.alloc_count);     // arena reset gpa: 1
+        print("arena reset idx: {}\n", arena.endIndex);      // arena reset idx: 0
+        print("arena reset gpa: {}\n", gpa3.allocCount);     // arena reset gpa: 1
         // Deinit frees all chunks (caller's local is the state — no
         // dealloc of the struct itself).
         arena.deinit();
-        print("arena deinit: {}\n", gpa3.alloc_count);        // arena deinit: 0
+        print("arena deinit: {}\n", gpa3.allocCount);        // arena deinit: 0
     }
 
     // ── BufAlloc from stack array ───────────────────────────
@@ -134,10 +134,10 @@ main :: () {
         stack_buf : [128]u8 = ---;
         buf := BufAlloc.init(*stack_buf[0], 128);
         a : Allocator = buf;
-        b1 := a.alloc_bytes(24);
-        b2 := a.alloc_bytes(24);
+        b1 := a.allocBytes(24);
+        b2 := a.allocBytes(24);
         print("buf pos: {}\n", buf.pos);                    // buf pos: 48
-        b3 := a.alloc_bytes(200);
+        b3 := a.allocBytes(200);
         b3_i : i64 = xx b3;
         print("buf overflow: {}\n", b3_i);                  // buf overflow: 0
         buf.reset();
@@ -814,14 +814,14 @@ main :: () {
         p_f5 := Panel{ title = "main", on_resize = p_f5_cb };
         p_f5.on_resize(p_f5.title, 800, 600);
 
-        step3 :: (a: Allocator) -> *void { a.alloc_bytes(8) }
+        step3 :: (a: Allocator) -> *void { a.allocBytes(8) }
         step2 :: (a: Allocator) -> *void { step3(a) }
         step1 :: (a: Allocator) -> *void { step2(a) }
         gpa_e6 := GPA.init();
         a_e6 : Allocator = gpa_e6;
         ptr_e6 := step1(a_e6);
         print("closure-chain-call: {}\n", ptr_e6 != null);
-        a_e6.dealloc_bytes(ptr_e6);
+        a_e6.deallocBytes(ptr_e6);
 
         // TEMPORARILY DISABLED — closure-in-loop causes infinite loop (index_gep element size issue?)
         // cl_arr : [5]Closure(i32) -> i32 = ---;
@@ -878,9 +878,9 @@ main :: () {
         push .{ allocator = a_l2 } {
             f_l2 : Closure(i32) -> i32 = closure(|x: i32|_{ n_l2 } -> i32 x + n_l2);
             result_l2 = f_l2(10);
-            a_l2.dealloc_bytes(f_l2.env);
+            a_l2.deallocBytes(f_l2.env);
         }
-        print("closure-gpa: {} allocs={}\n", result_l2, gpa_l2.alloc_count);
+        print("closure-gpa: {} allocs={}\n", result_l2, gpa_l2.allocCount);
 
         val_a10 : ?i32 = 42;
         f_a10 := ||_{ val_a10 = val_a10 } -> i32 {
@@ -1005,10 +1005,10 @@ main :: () {
 
         gpa_e17 := GPA.init();
         a_e17 : Allocator = gpa_e17;
-        alloc_fn := |size: i64|_{ a_e17 = a_e17 } -> *void a_e17.alloc_bytes(size);
+        alloc_fn := |size: i64|_{ a_e17 = a_e17 } -> *void a_e17.allocBytes(size);
         ptr_e17 := alloc_fn(32);
         print("closure-proto-cap: {}\n", ptr_e17 != null);
-        a_e17.dealloc_bytes(ptr_e17);
+        a_e17.deallocBytes(ptr_e17);
 
         make_scaler :: (factor: i32) -> $F/(i32) -> i32 {
             return |x: i32|_{ factor = factor } -> i32 x * factor;

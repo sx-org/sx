@@ -25,7 +25,7 @@ ResultOf :: ($T: Type) -> Type {
             payload = structFieldType(pointeeType(structFieldType(T, i)), 0),  // *Box(A) -> Box(A) -> A
         };
     }
-    return make_enum("ResultOf", vs[0..structFieldCount(T)]);
+    return makeEnum("ResultOf", vs[0..structFieldCount(T)]);
 }
 
 Handles :: struct { a: *Box(i64); b: *Box(bool); c: *Box(f64) };

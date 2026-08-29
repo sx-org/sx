@@ -78,7 +78,7 @@ main :: () -> i32 {
     ];
 
     n : i64 = (W * H * 4);
-    px : [*]u8 = xx context.allocator.alloc_bytes(n);
+    px : [*]u8 = xx context.allocator.allocBytes(n);
     center : i64 = (((H / 2) * W + (W / 2)) * 4);
     // Column 51 of row 32 sits inside the bone-0 range as authored.
     bone0 : i64 = (((H / 2) * W + 51) * 4);

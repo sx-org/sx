@@ -70,7 +70,7 @@ UIRenderer :: struct {
     init :: (self: *UIRenderer) {
         // Allocate vertex scratch (CPU side) — same for both backends.
         buf_size := MAX_UI_VERTICES * UI_VERTEX_BYTES;
-        self.vertices = context.allocator.alloc_bytes(buf_size).([*]f32);
+        self.vertices = context.allocator.allocBytes(buf_size).([*]f32);
         c.memset(self.vertices, 0, buf_size);
         self.vertex_count = 0;
         self.dpi_scale = 1.0;

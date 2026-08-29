@@ -588,7 +588,7 @@ pub const ExprTyper = struct {
                 // `.(a = x, b = y)`) so the inferred type carries them — this is
                 // the type bound to a generic `$T` when a named-tuple literal is
                 // passed DIRECTLY as a call argument. Without it `field_name(T, i)`
-                // reflected the empty string and a `make_enum` over those labels
+                // reflected the empty string and a `makeEnum` over those labels
                 // silently collided on "" (the `race` result synthesis). Mirrors
                 // `lowerTupleLiteral`'s name capture so the inferred type and the
                 // lowered value's type agree.

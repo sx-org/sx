@@ -39,7 +39,7 @@ main :: () -> i64 {
     ps := *s;
     push .{ io = s, allocator = ctx_h } {
         ps.spawn(||_{ po, pgpa, pctx, pa, a_h, arena_h } {
-            held := pctx.leak_count();
+            held := pctx.leakCount();
 
             n := 41;
             f := context.io.async(||_{ n } -> (i64, !IoErr) n, a_h);
@@ -52,14 +52,14 @@ main :: () -> i64 {
             po.wrote = g.await() ?? 0;
             po.outer = hits;
 
-            po.ctx_held = pctx.leak_count() - held;
-            po.level = pa.alloc_count == pa.dealloc_count;
+            po.ctx_held = pctx.leakCount() - held;
+            po.level = pa.allocCount == pa.deallocCount;
 
-            before := pgpa.alloc_count;
+            before := pgpa.allocCount;
             k := 6;
             h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena_h);
             po.arena_read = h.await() ?? 0;
-            po.growth = pgpa.alloc_count - before;
+            po.growth = pgpa.allocCount - before;
         });
         ps.run();
     }
@@ -69,6 +69,6 @@ main :: () -> i64 {
     print("read {} level {} ctx holds {}\n", out.read, out.level, out.ctx_held);
     print("wrote {} outer {}\n", out.wrote, out.outer);
     print("arena {} gpa growth {}\n", out.arena_read, out.growth);
-    print("task level {} gpa outstanding {}\n", a.alloc_count == a.dealloc_count, gpa.alloc_count);
+    print("task level {} gpa outstanding {}\n", a.allocCount == a.deallocCount, gpa.allocCount);
     return 0;
 }

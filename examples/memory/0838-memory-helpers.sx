@@ -1,6 +1,6 @@
 // Typed allocation helpers over the Allocator protocol (std/mem.sx):
 // create/destroy (one T), alloc/free (slices), clone, resize, and the
-// bytes-level mem_realloc. Declared `ufcs` — the dot spelling
+// bytes-level memRealloc. Declared `ufcs` — the dot spelling
 // (`context.allocator.create(Session)`) and the direct call both hit the
 // same generic machinery. Contents are UNINITIALISED by design
 // (Zig-aligned): assign before reading. TrackingAllocator balances to
@@ -58,14 +58,14 @@ main :: () {
     print("shrink: {} {} len={}\n", ws[0], ws[1], ws.len);
     ws.free(a);
 
-    // mem_realloc — bytes level
-    raw := a.alloc_bytes(8);
+    // memRealloc — bytes level
+    raw := a.allocBytes(8);
     q : *i64 = xx raw;
     q.* = 1234;
-    raw2 := mem_realloc(a, raw, 8, 16, 8);
+    raw2 := memRealloc(a, raw, 8, 16, 8);
     q2 : *i64 = xx raw2;
     print("realloc: {}\n", q2.*);
-    a.dealloc_bytes(raw2);
+    a.deallocBytes(raw2);
 
     tracker.report();
 }

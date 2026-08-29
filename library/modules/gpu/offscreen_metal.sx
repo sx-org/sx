@@ -53,7 +53,7 @@ impl PixelSurface for MetalOffscreen {
 
     read_rgba :: (self: *MetalOffscreen, alloc: Allocator) -> string {
         n := self.w.(i64) * self.h.(i64) * 4;
-        raw : [*]u8 = (alloc.alloc_bytes(n)).([*]u8);
+        raw : [*]u8 = (alloc.allocBytes(n)).([*]u8);
         self.gpu.read_offscreen(raw);
         out : string = ---;
         out.ptr = raw;

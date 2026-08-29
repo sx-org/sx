@@ -1,6 +1,6 @@
 // Zero is the empty request and null is the empty answer: every allocator
-// returns null for `alloc_bytes(0)` and allocates nothing, and
-// `dealloc_bytes(null)` does nothing. So `create` / `make` of a zero-sized
+// returns null for `allocBytes(0)` and allocates nothing, and
+// `deallocBytes(null)` does nothing. So `create` / `make` of a zero-sized
 // type hand back null, `make` writes no initializer into it, and nothing is
 // funded — which is what lets a capture-free environment be erased without
 // reaching the heap.
@@ -15,13 +15,13 @@ main :: () {
     gpa := GPA.init();
     a := gpa.(Allocator);
 
-    raw := a.alloc_bytes(0);
-    a.dealloc_bytes(null);
+    raw := a.allocBytes(0);
+    a.deallocBytes(null);
     one := create(a, Empty);
     two := make(a, Empty{});
     many := alloc(a, Empty, 4);
     print("bytes {} create {} make {} alloc {}\n", raw == null, one == null, two == null, many.ptr == null);
-    print("outstanding {}\n", gpa.alloc_count);
+    print("outstanding {}\n", gpa.allocCount);
 
     // A refused allocation is the same shape: no write into a null destination.
     buf : [8]u8 = ---;
@@ -31,10 +31,10 @@ main :: () {
     print("refused {}\n", make(small, Cell{ v = 2 }) == null);
 
     arena := Arena.init(a, 256);
-    print("arena {}\n", arena.alloc_bytes(0) == null);
+    print("arena {}\n", arena.allocBytes(0) == null);
     arena.deinit();
 
     tracker := TrackingAllocator.init(a);
-    tracker.dealloc_bytes(null);
-    print("tracked {} {}\n", tracker.alloc_count, tracker.dealloc_count);
+    tracker.deallocBytes(null);
+    print("tracked {} {}\n", tracker.allocCount, tracker.deallocCount);
 }

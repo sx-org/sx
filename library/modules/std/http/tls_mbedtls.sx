@@ -187,7 +187,7 @@ TlsServer :: struct {
         // Parse the cert chain (PEM: buflen must include the trailing NUL).
         cbuf, cn := nul_dup(a, cert_pem);
         rc := mbedtls.mbedtls_x509_crt_parse(*self.cert, cbuf, cn);
-        a.dealloc_bytes(cbuf);
+        a.deallocBytes(cbuf);
         if rc != 0 {
             // Partial-parse hygiene, same as require_client_cert: a retried
             // setup must not append onto leftovers from the failed call.
@@ -199,7 +199,7 @@ TlsServer :: struct {
         // Parse the private key (the DRBG seeds any PEM-decryption RNG).
         kbuf, kn := nul_dup(a, key_pem);
         rk := mbedtls.mbedtls_pk_parse_key(*self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
-        a.dealloc_bytes(kbuf);
+        a.deallocBytes(kbuf);
         if rk != 0 { return false; }
 
         // Server-side stream config; wire the RNG + own cert/key.
@@ -229,9 +229,9 @@ TlsServer :: struct {
                 cb : []u8 = .{ ptr = cert.ptr, len = cert.len };
                 kb : []u8 = .{ ptr = key.ptr,  len = key.len };
                 ok = self.setup(cb, kb, a);
-                context.allocator.dealloc_bytes(key.ptr);
+                context.allocator.deallocBytes(key.ptr);
             }
-            context.allocator.dealloc_bytes(cert.ptr);
+            context.allocator.deallocBytes(cert.ptr);
         }
         return ok;
     }
@@ -299,9 +299,9 @@ TlsServer :: struct {
             if mbedtls.mbedtls_pk_parse_key(*e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, *self.drbg) == 0 {
                 ok = true;
             }
-            self.a.dealloc_bytes(kbuf);
+            self.a.deallocBytes(kbuf);
         }
-        self.a.dealloc_bytes(cbuf);
+        self.a.deallocBytes(cbuf);
         if !ok {
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
@@ -338,9 +338,9 @@ TlsServer :: struct {
                 cb : []u8 = .{ ptr = cert.ptr, len = cert.len };
                 kb : []u8 = .{ ptr = key.ptr,  len = key.len };
                 ok = self.add_sni_cert(name, cb, kb);
-                context.allocator.dealloc_bytes(key.ptr);
+                context.allocator.deallocBytes(key.ptr);
             }
-            context.allocator.dealloc_bytes(cert.ptr);
+            context.allocator.deallocBytes(cert.ptr);
         }
         return ok;
     }
@@ -356,7 +356,7 @@ TlsServer :: struct {
         if self.ca_set { return false; }
         buf, n := nul_dup(self.a, ca_pem);
         rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
-        self.a.dealloc_bytes(buf);
+        self.a.deallocBytes(buf);
         if rc != 0 {
             // x509_crt_parse APPENDS and can partially succeed (positive rc
             // = some certs parsed). Reset the chain so a retried call can't
@@ -376,7 +376,7 @@ TlsServer :: struct {
         if data := fs.read_file(ca_path) {
             b : []u8 = .{ ptr = data.ptr, len = data.len };
             ok = self.require_client_cert(b);
-            context.allocator.dealloc_bytes(data.ptr);
+            context.allocator.deallocBytes(data.ptr);
         }
         return ok;
     }
@@ -408,7 +408,7 @@ TlsServer :: struct {
             e := self.sni.items[i];
             mbedtls.mbedtls_x509_crt_free(*e.cert);
             mbedtls.mbedtls_pk_free(*e.pkey);
-            self.a.dealloc_bytes(e.name);
+            self.a.deallocBytes(e.name);
             self.a.destroy(e);
             i += 1;
         }
@@ -425,10 +425,10 @@ TlsServer :: struct {
 free_alpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
     i : i64 = 0;
     while i < n {
-        a.dealloc_bytes(vec[i]);
+        a.deallocBytes(vec[i]);
         i += 1;
     }
-    a.dealloc_bytes(vec);
+    a.deallocBytes(vec);
 }
 
 // the SNI handshake callback (abi(.c) — mbedTLS calls it mid-handshake
@@ -535,7 +535,7 @@ TlsClientConfig :: struct {
         if !self.setup_base(a) { return false; }
         buf, n := nul_dup(a, ca_pem);
         rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
-        a.dealloc_bytes(buf);
+        a.deallocBytes(buf);
         if rc != 0 {
             // partial-parse hygiene (same as the server's trust paths)
             mbedtls.mbedtls_x509_crt_free(*self.ca);
@@ -553,7 +553,7 @@ TlsClientConfig :: struct {
         if data := fs.read_file(ca_path) {
             b : []u8 = .{ ptr = data.ptr, len = data.len };
             ok = self.setup(b, a);
-            context.allocator.dealloc_bytes(data.ptr);
+            context.allocator.deallocBytes(data.ptr);
         }
         return ok;
     }

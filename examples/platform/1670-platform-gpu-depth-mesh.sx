@@ -86,7 +86,7 @@ main :: () -> i32 {
     gpu.end_frame(0.0);
 
     n : i64 = (W * H * 4);
-    px : [*]u8 = xx context.allocator.alloc_bytes(n);
+    px : [*]u8 = xx context.allocator.allocBytes(n);
     if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
 
     o : i64 = (((H / 2) * W + (W / 2)) * 4);

@@ -1,5 +1,5 @@
 @import "modules/std/core.sx";   // @SourceSite
-@import "modules/std/fmt.sx";    // print, concat, substr, to_cstring, from_cstring
+@import "modules/std/fmt.sx";    // print, concat, substr, toCstring, fromCstring
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 posix :: @import "modules/std/posix.sx";
@@ -57,7 +57,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
     if f.(i64) == 0 { return null; }
 
     out := "";
-    buf := alloc_string(4096);
+    buf := allocString(4096);
     loop := true;
     while loop {
         n := fread(buf.ptr, 1, 4096, f);
@@ -87,9 +87,9 @@ decode_status :: (raw: i32) -> i32 {
 // Read an environment variable. Returns null if unset; an empty
 // string if set to "".
 env :: (name: [:0]u8) -> ?string {
-    p := getenv(to_cstring(name));
+    p := getenv(toCstring(name));
     if p == null { return null; }
-    v := from_cstring(p);
+    v := fromCstring(p);
     if v.len == 0 { return ""; }
     substr(v, 0, v.len)
 }
@@ -103,7 +103,7 @@ find_executable :: (name: [:0]u8) -> ?string {
     // (executable names like `codesign`, `javac`, `aapt2`).
     cmd := concat("command -v ", name);
     // Need null-terminated for popen.
-    cmd_z := alloc_string(cmd.len);
+    cmd_z := allocString(cmd.len);
     c.memcpy(cmd_z.ptr, cmd.ptr, cmd.len);
     if r := run(cmd_z) {
         if r.exit_code != 0 { return null; }
@@ -256,7 +256,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
     vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
     i := 0;
     while i < argv.len {
-        vec[i] = to_cstring(argv[i]);
+        vec[i] = toCstring(argv[i]);
         i += 1;
     }
     vec[argv.len] = null;
@@ -368,10 +368,10 @@ set_cloexec :: (fd: i32) -> bool {
 free_argv :: (vec: [*]?cstring, n: i64) {
     i := 0;
     while i < n {
-        if p := vec[i] { context.allocator.dealloc_bytes(p); }
+        if p := vec[i] { context.allocator.deallocBytes(p); }
         i += 1;
     }
-    context.allocator.dealloc_bytes(vec);
+    context.allocator.deallocBytes(vec);
 }
 
 // ── Process termination ───────────────────────────────
@@ -393,7 +393,7 @@ free_argv :: (vec: [*]?cstring, n: i64) {
 exit :: (code: u8, site: @SourceSite = @caller) -> noreturn {
     if @isComptime() {
         print("\nprocess.exit({}) called from {} at {}:{}\n", code, site.declaration, site.file, site.line);
-        trace.print_interpreter_frames();
+        trace.printInterpreterFrames();
     }
     c.exit(code)
 }

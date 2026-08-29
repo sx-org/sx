@@ -156,14 +156,14 @@ std_zip_reader_embedded :: (data: string, alloc: Allocator = context.allocator) 
 std_zip_reader_source :: (source: StdZipSource, max_metadata: i64 = 67108864, alloc: Allocator = context.allocator) -> (StdZipReaderState, !Error) {
     size := source.size();
     if size < 0 or max_metadata < 0 { raise .InvalidArgument; }
-    raw := alloc.alloc_bytes(@sizeOf(StdZipSourceBridge));
+    raw := alloc.allocBytes(@sizeOf(StdZipSourceBridge));
     if raw == null { raise .AllocationFailed; }
     bridge : *StdZipSourceBridge = raw.(*StdZipSourceBridge);
     bridge.* = .{ source = source };
     reader_source := ZipReadSource{ ctx = bridge, size = size, read = std_zip_source_read };
     owned := open_zip_source(reader_source, true, alloc, max_metadata) catch |e| {
         failure := bridge.failure;
-        alloc.dealloc_bytes(raw);
+        alloc.deallocBytes(raw);
         if failure != null { raise failure; }
         raise e;
     };
@@ -180,7 +180,7 @@ std_zip_reader_deinit :: (state: *StdZipReaderState) {
     alloc := state.owned.alloc;
     state.owned.deinit();
     if state.source_bridge != null {
-        alloc.dealloc_bytes(state.source_bridge);
+        alloc.deallocBytes(state.source_bridge);
         state.source_bridge = null;
     }
     state.closed = true;
@@ -396,7 +396,7 @@ StdZipWriterState :: enum {
 }
 
 std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
-    raw := alloc.alloc_bytes(@sizeOf(StdZipMemoryOutput));
+    raw := alloc.allocBytes(@sizeOf(StdZipMemoryOutput));
     if raw == null { raise .AllocationFailed; }
     output : *StdZipMemoryOutput = raw.(*StdZipMemoryOutput);
     output.* = .{ bytes = ByteWriter.init(alloc) };
@@ -414,14 +414,14 @@ std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.alloca
 }
 
 std_zip_writer_sink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
-    raw := alloc.alloc_bytes(@sizeOf(StdZipSinkBridge));
+    raw := alloc.allocBytes(@sizeOf(StdZipSinkBridge));
     if raw == null { raise .AllocationFailed; }
     bridge : *StdZipSinkBridge = raw.(*StdZipSinkBridge);
     bridge.* = .{ sink = target };
     sink := ZipSink{ ctx = bridge, write = std_zip_sink_write };
     writer := ZipStreamWriter.init_mode(sink, zip64, alloc);
     if !writer.active {
-        alloc.dealloc_bytes(raw);
+        alloc.deallocBytes(raw);
         raise .InvalidArgument;
     }
     payload : StdZipBorrowedSinkWriter = .{ writer = writer, bridge = bridge, alloc = alloc };
@@ -441,7 +441,7 @@ std_zip_writer_from_reader :: (source: *StdZipReaderState, force_zip64: bool = f
     defer { if !ready { std_zip_writer_deinit(*state); } }
     source_comment := source.owned.reader.comment;
     if source_comment.len > 0 {
-        comment_raw := alloc.alloc_bytes(source_comment.len);
+        comment_raw := alloc.allocBytes(source_comment.len);
         if comment_raw == null { raise .AllocationFailed; }
         comment : string = .{ ptr = comment_raw, len = source_comment.len };
         i := 0;
@@ -636,14 +636,14 @@ std_zip_writer_close :: (state: *StdZipWriterState) -> !Error {
         case .memory: {
             if !state.*.memory.writer.end() { ok = false; }
             state.*.memory.output.bytes.deinit();
-            state.*.memory.alloc.dealloc_bytes(state.*.memory.output);
+            state.*.memory.alloc.deallocBytes(state.*.memory.output);
             if state.*.memory.owns_default_comment and state.*.memory.default_comment.ptr != null {
-                state.*.memory.alloc.dealloc_bytes(state.*.memory.default_comment.ptr);
+                state.*.memory.alloc.deallocBytes(state.*.memory.default_comment.ptr);
             }
         }
         case .sink: {
             if !state.*.sink.writer.end() { ok = false; }
-            state.*.sink.alloc.dealloc_bytes(state.*.sink.bridge);
+            state.*.sink.alloc.deallocBytes(state.*.sink.bridge);
         }
         case .file: {
             if !state.*.file.owned.end() { ok = false; }
@@ -663,14 +663,14 @@ std_zip_writer_deinit :: (state: *StdZipWriterState) {
         case .memory: {
             state.*.memory.writer.deinit();
             state.*.memory.output.bytes.deinit();
-            state.*.memory.alloc.dealloc_bytes(state.*.memory.output);
+            state.*.memory.alloc.deallocBytes(state.*.memory.output);
             if state.*.memory.owns_default_comment and state.*.memory.default_comment.ptr != null {
-                state.*.memory.alloc.dealloc_bytes(state.*.memory.default_comment.ptr);
+                state.*.memory.alloc.deallocBytes(state.*.memory.default_comment.ptr);
             }
         }
         case .sink: {
             state.*.sink.writer.deinit();
-            state.*.sink.alloc.dealloc_bytes(state.*.sink.bridge);
+            state.*.sink.alloc.deallocBytes(state.*.sink.bridge);
         }
         case .file: { state.*.file.owned.deinit(); }
         case .update_file: {

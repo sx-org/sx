@@ -152,7 +152,7 @@ pub const Ops = struct {
         // (the `.type_value` builtin TypeId), distinct from the 16-byte boxed
         // `.any`. Flowing a Type into an `Any` slot boxes it via the standard
         // box-any coercion (`{ tag = .any.index(), value = tid }`); `case type:`
-        // in `any_to_string` then matches tag == `.any.index()`, and runtime
+        // in `anyToString` then matches tag == `.any.index()`, and runtime
         // `type_name(t)` reads the TypeId through `reflectArgTypeId` (`.bare`
         // when the arg is `.type_value`, `.boxed` when it is an Any).
         const val = c.LLVMConstInt(self.e.cached_i64, tid.index(), 0);
@@ -1492,7 +1492,7 @@ pub const Ops = struct {
             // GATE on `!enclosing.isComptimeOnly()`: only a call reached from a REAL
             // runtime body (e.g. `main`) is an actual `@run` fold site. An
             // `is_comptime` callee that appears INSIDE another comptime wrapper's
-            // body (`make_enum` / `declare` / `define` called from a `__ctype`
+            // body (`makeEnum` / `declare` / `define` called from a `__ctype`
             // type-fn wrapper) is DEAD LLVM — never executed — and the VM
             // evaluates the whole wrapper itself; standalone-folding such a nested
             // call would mis-`tryEval` it (wrong arg count) and emit a spurious

@@ -1095,8 +1095,8 @@ Hasher    :: interface {
     sum :: (self: *Self) -> u64;
 }
 Allocator :: interface {
-    alloc_bytes   :: (self: *Self, size: i64) -> *void;
-    dealloc_bytes :: (self: *Self, ptr: *void);
+    allocBytes   :: (self: *Self, size: i64) -> *void;
+    deallocBytes :: (self: *Self, ptr: *void);
 }
 View      :: interface {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
@@ -1571,9 +1571,9 @@ statically-constructed value. In each of them the one operand that
 coerces names a **module-scope global**:
 
 ```sx
-c_allocator : CAllocator = .{};
-@context.extend allocator: Allocator = c_allocator;    // bare global
-fallback : Allocator = mem.c_allocator;                // module-qualified
+cAllocator : CAllocator = .{};
+@context.extend allocator: Allocator = cAllocator;    // bare global
+fallback : Allocator = mem.cAllocator;                // module-qualified
 ```
 
 The initializer is a bare or module-qualified path whose **root** is a
@@ -2198,7 +2198,7 @@ the chain leaves the checked zone.
 
 `cstring` is the C-boundary string: ONE pointer to a null-terminated u8
 buffer — exactly C's `char *`. It is thin (8 bytes, no length field;
-`cstring_len` walks to the terminator, O(n)) and crosses `extern`
+`cstringLen` walks to the terminator, O(n)) and crosses `extern`
 boundaries verbatim in BOTH directions. `?cstring` is the nullable case
 and lowers to the same bare pointer (null = absent) — the natural type
 for `getenv`-style returns and optional `char *` parameters.
@@ -2209,10 +2209,10 @@ Conversion discipline (Odin's model):
   are terminated constants in the binary, so the conversion is free.
 - Any **other** `string` does NOT coerce: it may be an unterminated view
   (`string{ptr, len}` windows, writer output). Materialize an owned,
-  terminated copy with `to_cstring(s)`.
+  terminated copy with `toCstring(s)`.
 - `cstring` does not coerce to `string` implicitly — the length is an
-  O(n) strlen the code must ask for. `from_cstring(c)` is the zero-copy
-  view (shares C's buffer); `substr(from_cstring(c), 0, n)` the owned
+  O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
+  view (shares C's buffer); `substr(fromCstring(c), 0, n)` the owned
   copy.
 - `xx` bit-casts `cstring` ↔ `*u8` / `[*]u8` / integer-pointer values
   for low-level interop.
@@ -2418,7 +2418,7 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 |--------|---------|-------|
 | `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
 | `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
-| `const char*` (return) | `cstring` | the pointer, verbatim; `from_cstring` to view |
+| `const char*` (return) | `cstring` | the pointer, verbatim; `fromCstring` to view |
 | nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
 | `const char**` | `*[:0]u8` | address of `[:0]u8` — `.ptr` at offset 0 |
@@ -2697,7 +2697,7 @@ which erases one conformance per instantiated carrier.
 Functions can accept a variable number of arguments using `..name: []Type` syntax:
 ```sx
 print :: (fmt: string, ..args: []any) { ... }
-path_join :: (..parts: []string) -> string { ... }
+pathJoin :: (..parts: []string) -> string { ... }
 ```
 - The leading `..` marks the parameter as variadic; the declared type is the
   slice the body sees (so `..parts: []string` makes `parts` a `[]string` inside).
@@ -3608,7 +3608,7 @@ definition site. This is the mechanism that lets stdlib containers like
 List :: struct ($T: Type) {
     append :: (list: *List(T), item: T, alloc: Allocator = context.allocator,
                site: @SourceSite = @caller) {
-        list.grow_to(list.items.len + 1, alloc, site);
+        list.growTo(list.items.len + 1, alloc, site);
         // ... stores `item` ...
     }
 }
@@ -3661,7 +3661,7 @@ The fields the compiler fills:
 however many times it runs, and they are unchanged by instantiation order,
 optimization level, or edits to unrelated declarations. A library that needs
 per-iteration identity combines the site with an occurrence count or an
-explicit key. `id` is exactly `source_site_key_id(source_site_key(site))` —
+explicit key. `id` is exactly `sourceSiteKeyId(sourceSiteKey(site))` —
 `modules/std/source_site.sx` states that computation in ordinary sx, and the
 compiler must agree with it.
 
@@ -4658,8 +4658,8 @@ When switching on a `Type` value (from `@typeOf`), category keywords match all r
 ```sx
 type := @typeOf(val);
 match type {
-    case unsigned: result = uint_to_string(xx val);
-    case int:      result = int_to_string(xx val);
+    case unsigned: result = uintToString(xx val);
+    case int:      result = intToString(xx val);
     case struct:   result = struct_to_string_over_views(type, val);
     case enum:     result = enum_walk_over_tables(type, val);
 }
@@ -4743,8 +4743,8 @@ kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case closure:  { env := x.(@Closure).env; if env != null { a.dealloc_bytes(env); } }
-        case slice:    a.dealloc_bytes(xx x.ptr);
+        case closure:  { env := x.(@Closure).env; if env != null { a.deallocBytes(env); } }
+        case slice:    a.deallocBytes(xx x.ptr);
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -5108,8 +5108,8 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
   three refuse a `Closure`, which carries an env rather than being one.
 - A `Closure` argument is returned unchanged, so `closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
-  `make` does not write a null dest; `alloc_bytes(0)` returns null and
-  allocates nothing; `dealloc_bytes(null)` is a no-op.
+  `make` does not write a null dest; `allocBytes(0)` returns null and
+  allocates nothing; `deallocBytes(null)` is a no-op.
   `p := alloc.make(@envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
 - `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
@@ -5423,12 +5423,12 @@ A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are 
 **`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
-c_allocator : CAllocator = .{};
-@context.extend allocator: Allocator = c_allocator;
+cAllocator : CAllocator = .{};
+@context.extend allocator: Allocator = cAllocator;
 
 // std/io.sx
-c_blocking_io : CBlockingIo = .{};
-@context.extend io: Io = c_blocking_io;
+cBlockingIo : CBlockingIo = .{};
+@context.extend io: Io = cBlockingIo;
 ```
 Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
@@ -5746,7 +5746,7 @@ inline match @host.os {
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
         case closure:  { ... }
-        case slice:    a.dealloc_bytes(xx x.ptr);
+        case slice:    a.deallocBytes(xx x.ptr);
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -6075,7 +6075,7 @@ main :: () -> i32 {
 
 ```
 modules/std.sx        the prelude — print/format, string ops (concat, substr,
-                      path_join, ...), List(T), Context + push, the Allocator
+                      pathJoin, ...), List(T), Context + push, the Allocator
                       interface; plus the namespace tail: mem / xml / log /
                       fs / process / socket / json / cli / hash / test ::
                       @import "modules/std/<m>.sx"
@@ -6093,7 +6093,7 @@ modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 ```
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
-`json.parse`, `fs.exists`, `hash.sha256_hex`, `log.warn`, ... through the
+`json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
 carried namespace tail (see Namespace Alias Carry). Direct file imports
 (`@import "modules/std/json.sx"`) remain available for bare access.
 
@@ -6660,7 +6660,7 @@ io_slot = inner;   // ERROR — Both is not IoErr
 
 No dest-typed thunk, environment stash, or hidden allocation stands behind a slot
 assignment: the channel matches or the assignment is rejected. An interface or
-protocol method keeps the channel it is written with — `Io.suspend_raw` is
+protocol method keeps the channel it is written with — `Io.suspendRaw` is
 `!IoErr.Canceled`, not `!IoErr`.
 
 A generic callability bound `$F/() -> ($R, !)` accepts any failable channel,
@@ -6810,14 +6810,14 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   (`catch`, a succeeding chain attempt, a value terminator, a destructure)
   clears the buffer.
 - **Resolution is in-process — no DWARF, no OS symbolizer.** A runtime frame is
-  a pointer to a compile-time-interned `Frame { file, line, col, func, line_text }`
+  a pointer to a compile-time-interned `Frame { file, line, col, func, lineText }`
   stamped at the push site; the formatter reads it directly (deterministic,
   identical across OS/target, works under the JIT and a signed iOS `.app`). A
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
 - **Mode.** On by default in debug; release no-ops the push points.
   **Comptime (`@run`) is always traced.**
-- **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
+- **Formatting** lives in `library/modules/trace.sx` (`trace.printCurrent()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
   caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
   can step sx source — that is a debugger artifact, separate from trace
@@ -6829,7 +6829,7 @@ trace** — the chain of `raise` / `try` sites the error passed through.
 IoErr :: error { Failed; Canceled }
 ```
 
-`Io.suspend_raw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
+`Io.suspendRaw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
 worker is a lambda, so it writes its channel out
 (`context.io.async(|| -> (i64, !IoErr) try compute(a, b))`).
 

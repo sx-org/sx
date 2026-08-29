@@ -23,7 +23,7 @@ main :: () -> i32 {
     print("sub: {}\n", a.sub(b).length());
     print("scale: {}\n", a.scale(3.0).length());
 
-    q := Quat.from_axis_angle(Vec3{ x = 0.0, y = 0.0, z = 1.0 }, PI * 0.5);
+    q := Quat.fromAxisAngle(Vec3{ x = 0.0, y = 0.0, z = 1.0 }, PI * 0.5);
     r := q.rotate(a);
     print("rotate dot y: {}\n", r.dot(b));
     print("rotate length: {}\n", r.length());
@@ -35,7 +35,7 @@ main :: () -> i32 {
 
     print("identity dot: {}\n", Quat.identity().rotate(v).dot(v));
 
-    mm := q.to_mat4();
+    mm := q.toMat4();
     print("mat4 col0: {} {}\n", mm.data[0], mm.data[1]);
     print("mat4 col1: {} {}\n", mm.data[4], mm.data[5]);
     print("mat4 m22: {}\n", mm.data[10]);

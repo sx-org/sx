@@ -25,7 +25,7 @@ c :: @import "modules/std/c.sx";
 //
 // `rawRegisterType`'s `Member` is the `{ name, ty }` shape it decodes. The
 // `kind` codes match the read-side `rawTypeKind`:
-//   1 struct · 2 enum (payloadless) · 3 tagged_union.
+//   1 struct · 2 enum (payloadless) · 3 tagged-union.
 Member :: struct { name: string; ty: Type; }
 
 rawDeclareType  :: (name: string) -> Type intrinsic;
@@ -62,19 +62,19 @@ declare :: (name: string) -> Type {
 // `define(handle, info)` is plain sx over `rawRegisterType`: match the `TypeInfo`
 // union, collect the members into a `[]Member`, and register with the kind code.
 // An all-void enum variant set is an ACTUAL enum (kind 2); any payload variant
-// makes it a tagged_union (kind 3) — `rawRegisterType` rejects a payload variant
+// makes it a tagged-union (kind 3) — `rawRegisterType` rejects a payload variant
 // under kind 2, so the kind is chosen from whether every payload is `void`.
 define :: (handle: Type, info: TypeInfo) -> Type {
     match info {
         case .enum: |e| {
             mems : List(Member) = .{};
-            all_void := true;
+            allVoid := true;
             for v in e.variants {
                 mems.append(Member{ name = v.name, ty = v.payload });
-                if v.payload != void { all_void = false; }
+                if v.payload != void { allVoid = false; }
             }
             kind := KIND_TAGGED_UNION;
-            if all_void { kind = KIND_ENUM; }
+            if allVoid { kind = KIND_ENUM; }
             return rawRegisterType(handle, kind, mems.items[0..mems.len]);
         }
         case .struct: |s| {
@@ -106,15 +106,15 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // Because `variants` is an ordinary comptime value, a caller can ASSEMBLE it in
 // a local (conditionally, in a loop, from type args) before minting — see
 // `examples/0620`. `define` decodes the slice via `decodeVariantElements`. The
-// channel constructors above are the special-cased shapes; `make_enum` is the
+// channel constructors above are the special-cased shapes; `makeEnum` is the
 // open-ended one every other constructor could be written over.
 //
 // Call it from a non-generic `() -> Type` builder (whose whole body is
 // comptime-evaluated, so locals are in scope) or inline with a literal arg
-// (`E :: make_enum("E", .[ … ])`). A *generic* type-fn comptime-evaluates only
+// (`E :: makeEnum("E", .[ … ])`). A *generic* type-fn comptime-evaluates only
 // its return EXPRESSION, so build the list inline in the return there, not in a
 // preceding local.
-make_enum :: (name: string, variants: []VariantInfo) -> Type {
+makeEnum :: (name: string, variants: []VariantInfo) -> Type {
     return define(declare(name), .enum(.{ variants = variants }));
 }
 
@@ -139,29 +139,29 @@ TryResult :: ($T: Type) -> Type {
 // ── Constructing a minted tagged-union VALUE by variant index ─────────────────
 //
 // The read side reflects a type's members (`structFieldCount`/`structFieldName`/
-// `structFieldType`) and a value's active payload (`structFieldValue`); `make_variant` is
+// `structFieldType`) and a value's active payload (`structFieldValue`); `makeVariant` is
 // the missing WRITE side. It builds a value of a MINTED tagged-union `E` (one
-// made by `make_enum` / `define(declare, .enum(...))`) whose active variant is
+// made by `makeEnum` / `define(declare, .enum(...))`) whose active variant is
 // `idx`, carrying `payload`. Needed when the variant is selected at RUNTIME but
 // the union was synthesized at comptime so its labels can't be spelled as a
 // literal `.label(payload)` — e.g. the `race` result: an `inline for i in 0..N`
 // arm constructs the i-th variant of a synthesized `RaceResult`.
 //
 // LAYOUT COUPLING — MINTED ENUMS ONLY: a minted tagged-union is laid out
-// `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its `tag_type` is always `i64`
-// — the compiler's `declare`/`define` path fixes it). `make_variant` writes that
+// `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its tag type is always `i64`
+// — the compiler's `declare`/`define` path fixes it). `makeVariant` writes that
 // layout directly. It is NOT valid for a source `enum { … }` whose tag may be
 // narrower, nor for a `#packed`-backed union — spell those with a literal
 // `.label(…)`. Contract (caller-guaranteed, no runtime check, like any raw
 // construction): `0 <= idx < structFieldCount(E)`, and `payload`'s type IS variant
 // `idx`'s payload type. `payload` must be non-void (a payload-less variant has
 // no value to carry — match it by tag).
-make_variant :: ($E: Type, idx: i64, payload: $P) -> E {
+makeVariant :: ($E: Type, idx: i64, payload: $P) -> E {
     out : E = ---;
     c.memset(*out, 0, @sizeOf(E));             // clear tag padding + unused payload bytes
-    tag_ptr : *i64 = (*out).(*i64);
-    tag_ptr.* = idx;                            // tag @ offset 0 (i64)
-    pay_ptr : *P = ((*out).(i64) + @sizeOf(i64)).(*P); // payload @ offset @sizeOf(i64) (after the tag)
-    pay_ptr.* = payload;
+    tagPtr : *i64 = (*out).(*i64);
+    tagPtr.* = idx;                             // tag @ offset 0 (i64)
+    payPtr : *P = ((*out).(i64) + @sizeOf(i64)).(*P); // payload @ offset @sizeOf(i64) (after the tag)
+    payPtr.* = payload;
     return out;
 }

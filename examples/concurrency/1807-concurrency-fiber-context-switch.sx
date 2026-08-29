@@ -3,7 +3,7 @@
 // registers + SP/LR into `*from` and loads them from `*to`, then `ret`s onto
 // `to`'s stack (SP-in ≠ SP-out by design — why it must be `.naked`, not `.c`).
 // A fiber is bootstrapped by hand: its saved context starts with SP = the top
-// of a fresh `alloc_bytes` stack, LR = a global-asm trampoline, and x19 = the
+// of a fresh `allocBytes` stack, LR = a global-asm trampoline, and x19 = the
 // `*Fiber` (the trampoline moves it to x0 and `bl`s the exported entry).
 //
 // This is the foundational switch + an indirect survival harness:
@@ -114,7 +114,7 @@ fib_body :: (self: *Fiber) export "fib_body" {
 STACK :: 131072;
 
 boot :: (f: *Fiber) {
-    base : *void = context.allocator.alloc_bytes(STACK);
+    base : *void = context.allocator.allocBytes(STACK);
     top : u64 = (xx base) + STACK;
     top = top - (top % 16);          // 16-byte aligned stack top (AAPCS)
     f.ctx.regs[0]  = xx f;           // x19 = self

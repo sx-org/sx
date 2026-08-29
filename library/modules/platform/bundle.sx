@@ -212,7 +212,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
 // buffer for libc / `[:0]u8` callees. Allocated from
 // `context.allocator` like the rest of the bundling stage.
 str_to_cstr :: (s: string) -> [:0]u8 {
-    buf := alloc_string(s.len);
+    buf := allocString(s.len);
     c.memcpy(buf.ptr, s.ptr, s.len);
     buf
 }
@@ -647,7 +647,7 @@ absolutify :: (path: string) -> string {
             if cwd[cwd.len - 1] == '\n' { cwd = substr(cwd, 0, cwd.len - 1); }
         }
         if cwd.len == 0 { return path; }
-        return path_join(cwd, path);
+        return pathJoin(cwd, path);
     }
     path
 }
@@ -665,30 +665,30 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
         return false;
     }
 
-    build_tools := find_highest_subdir(path_join(sdk, "build-tools"));
+    build_tools := find_highest_subdir(pathJoin(sdk, "build-tools"));
     if build_tools.len == 0 {
         out("error: no build-tools under ");
         out(sdk);
         out("/build-tools\n");
         return false;
     }
-    platform_dir := find_highest_subdir(path_join(sdk, "platforms"));
+    platform_dir := find_highest_subdir(pathJoin(sdk, "platforms"));
     if platform_dir.len == 0 {
         out("error: no platforms under ");
         out(sdk);
         out("/platforms\n");
         return false;
     }
-    android_jar := path_join(platform_dir, "android.jar");
+    android_jar := pathJoin(platform_dir, "android.jar");
 
-    aapt2_path     := path_join(build_tools, "aapt2");
-    zipalign_path  := path_join(build_tools, "zipalign");
-    apksigner_path := path_join(build_tools, "apksigner");
-    d8_path        := path_join(build_tools, "d8");
+    aapt2_path     := pathJoin(build_tools, "aapt2");
+    zipalign_path  := pathJoin(build_tools, "zipalign");
+    apksigner_path := pathJoin(build_tools, "apksigner");
+    d8_path        := pathJoin(build_tools, "d8");
 
     // Staging dir alongside the apk output.
     stage := concat(apk_path, ".stage");
-    lib_dir := path_join(stage, "lib/arm64-v8a");
+    lib_dir := pathJoin(stage, "lib/arm64-v8a");
 
     // Clean previous stage. `rm -rf` via shell until fs.sx grows
     // `delete_dir_all`.
@@ -709,7 +709,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     // loader. The user's -o path already does (buildOptions enforces
     // it). Copy by basename into the staging lib dir.
     so_basename := basename(binary);
-    so_dest := path_join(lib_dir, so_basename);
+    so_dest := pathJoin(lib_dir, so_basename);
     if !copy_file(str_to_cstr(binary), str_to_cstr(so_dest)) {
         out("error: apk: failed to copy .so into stage\n");
         return false;
@@ -723,7 +723,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
         manifest_used = manifest;
     } else {
         generated_xml := build_android_manifest(opts, bundleId, lib_name);
-        generated_path := path_join(stage, "AndroidManifest.xml");
+        generated_path := pathJoin(stage, "AndroidManifest.xml");
         if !write_file(str_to_cstr(generated_path), generated_xml) {
             out("error: apk: failed to write AndroidManifest.xml\n");
             return false;
@@ -811,7 +811,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     keystore := opts.keystorePath();
     if keystore.len == 0 {
         if home := env("HOME") {
-            keystore = path_join(home, ".android/debug.keystore");
+            keystore = pathJoin(home, ".android/debug.keystore");
         } else {
             out("error: apk: cannot locate $HOME for default keystore\n");
             return false;
@@ -882,7 +882,7 @@ discover_android_sdk :: () -> string {
     if h := env("ANDROID_HOME") { return h; }
     if h := env("ANDROID_SDK_ROOT") { return h; }
     if home := env("HOME") {
-        candidate := path_join(home, "Library/Android/sdk");
+        candidate := pathJoin(home, "Library/Android/sdk");
         if exists(str_to_cstr(candidate)) { return candidate; }
     }
     ""
@@ -906,7 +906,7 @@ find_highest_subdir :: (parent: string) -> string {
             else { break; }
         }
         if name.len == 0 { return ""; }
-        return path_join(parent, name);
+        return pathJoin(parent, name);
     }
     ""
 }
@@ -1004,7 +1004,7 @@ MANIFEST, pkg_esc, lib_esc, lib_esc, lib_esc)
 
 // `co/swipelab/sxchess/SxApp` → `co.swipelab.sxchess.SxApp`.
 slash_to_dot :: (path: string) -> string {
-    buf := alloc_string(path.len);
+    buf := allocString(path.len);
     i := 0;
     while i < path.len {
         c := path[i];
@@ -1042,8 +1042,8 @@ dir_part :: (path: string) -> string {
 // --output <stage>` so `<stage>/classes.dex` lands where the
 // orchestrator can zip it into the APK.
 compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: string, d8_path: string) -> bool {
-    java_root := path_join(stage, "java");
-    classes_root := path_join(stage, "classes");
+    java_root := pathJoin(stage, "java");
+    classes_root := pathJoin(stage, "classes");
     if !create_dir_all(str_to_cstr(java_root)) {
         out("error: apk: cannot create java root\n");
         return false;
@@ -1072,12 +1072,12 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
         pkg := dir_part(runtime_path);
         cls := last_slash_component(runtime_path);
 
-        pkg_dir := if pkg.len > 0 then path_join(java_root, pkg) else java_root;
+        pkg_dir := if pkg.len > 0 then pathJoin(java_root, pkg) else java_root;
         if !create_dir_all(str_to_cstr(pkg_dir)) {
             out("error: apk: cannot create java pkg dir\n");
             return false;
         }
-        java_path := path_join(pkg_dir, concat(cls, ".java"));
+        java_path := pathJoin(pkg_dir, concat(cls, ".java"));
         if !write_file(str_to_cstr(java_path), java_source) {
             out("error: apk: cannot write .java for ");
             out(runtime_path);
@@ -1087,8 +1087,8 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
         if javac_files.len > 0 { javac_files = concat(javac_files, " "); }
         javac_files = concat(javac_files, concat("\"", concat(java_path, "\"")));
 
-        class_subpath := if pkg.len > 0 then path_join(pkg, concat(cls, ".class")) else concat(cls, ".class");
-        class_path := path_join(classes_root, class_subpath);
+        class_subpath := if pkg.len > 0 then pathJoin(pkg, concat(cls, ".class")) else concat(cls, ".class");
+        class_path := pathJoin(classes_root, class_subpath);
         if d8_files.len > 0 { d8_files = concat(d8_files, " "); }
         d8_files = concat(d8_files, concat("\"", concat(class_path, "\"")));
         i += 1;
@@ -1139,7 +1139,7 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
 // lookup via `command -v`.
 discover_javac :: () -> string {
     if jh := env("JAVA_HOME") {
-        cand := path_join(jh, "bin/javac");
+        cand := pathJoin(jh, "bin/javac");
         if exists(str_to_cstr(cand)) { return cand; }
     }
     if path := find_executable("javac") { return path; }

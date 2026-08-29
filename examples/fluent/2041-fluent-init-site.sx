@@ -23,7 +23,7 @@ report :: (tag: string, value: $I/@Init($T)) -> i32 {
         return 0;
     }
     print("{}: {}:{} in {} ordinal {} parity={}\n", tag, s?!.file, s?!.line, s?!.declaration,
-        s?!.ordinal, s?!.id == source_site_key_id(source_site_key(s?!)));
+        s?!.ordinal, s?!.id == sourceSiteKeyId(sourceSiteKey(s?!)));
     s?!.line
 }
 

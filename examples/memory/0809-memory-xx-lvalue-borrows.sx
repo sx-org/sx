@@ -12,11 +12,11 @@ main :: () -> i32 {
     tracker := TrackingAllocator.init(gpa);
 
     push .{ allocator = tracker } {
-        p := context.allocator.alloc_bytes(128);
-        context.allocator.dealloc_bytes(p);
+        p := context.allocator.allocBytes(128);
+        context.allocator.deallocBytes(p);
     }
 
-    print("alloc_count   = {}\n", tracker.alloc_count);
-    print("dealloc_count = {}\n", tracker.dealloc_count);
+    print("allocCount   = {}\n", tracker.allocCount);
+    print("deallocCount = {}\n", tracker.deallocCount);
     return 0;
 }

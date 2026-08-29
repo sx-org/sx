@@ -42,7 +42,7 @@
 // `sqlite3_stmt*`, `sqlite3_blob*`, `sqlite3_backup*` are opaque and
 // never dereferenced; `usize` keeps out-params single-level `*usize`
 // instead of `**void`). Whole C strings cross as `cstring` — IN via
-// `to_cstring` (literals coerce), OUT as `?cstring` copied through
+// `toCstring` (literals coerce), OUT as `?cstring` copied through
 // `sq_from_cstr` before sqlite's buffer dies on the next
 // step/finalize/close. `prepare_v2/v3` and `bind_text/blob` take
 // `[*]u8` + explicit byte length instead, so un-terminated sx string
@@ -329,10 +329,10 @@ SqliteErr :: error {
 
 // Copy the C string at `p` (null = empty) into context.allocator —
 // sqlite's buffer dies on the next step/finalize/close, so the view from
-// `from_cstring` must not escape.
+// `fromCstring` must not escape.
 sq_from_cstr :: (p: ?cstring) -> string {
     if p == null { return ""; }
-    v := from_cstring(p);
+    v := fromCstring(p);
     if v.len == 0 { return ""; }
     return substr(v, 0, v.len);
 }
@@ -341,7 +341,7 @@ sq_from_cstr :: (p: ?cstring) -> string {
 sq_copy_bytes :: (p: ?*u8, n: i64) -> string {
     if n <= 0 { return ""; }
     if q := p {
-        raw : [*]u8 = (context.allocator.alloc_bytes(n + 1)).([*]u8);
+        raw : [*]u8 = (context.allocator.allocBytes(n + 1)).([*]u8);
         c.memcpy(raw, q, n);
         raw[n] = 0;
         return string{ ptr = raw, len = n };
@@ -365,7 +365,7 @@ sqlite_threadsafe :: () -> bool {
     return sqlite3_threadsafe() != 0;
 }
 sqlite_compileoption_used :: (name: string) -> bool {
-    return sqlite3_compileoption_used(to_cstring(name)) != 0;
+    return sqlite3_compileoption_used(toCstring(name)) != 0;
 }
 // The n'th compile option ("" past the end).
 sqlite_compileoption_get :: (n: i32) -> string {
@@ -377,12 +377,12 @@ sqlite_errstr :: (code: i32) -> string {
 }
 // True iff `sql` ends in a complete SQL statement.
 sqlite_complete :: (sql: string) -> bool {
-    return sqlite3_complete(to_cstring(sql)) != 0;
+    return sqlite3_complete(toCstring(sql)) != 0;
 }
 // `n` bytes from SQLite's CSPRNG.
 sqlite_randomness :: (n: i32) -> string {
     len : i64 = n;
-    raw : [*]u8 = (context.allocator.alloc_bytes(len + 1)).([*]u8);
+    raw : [*]u8 = (context.allocator.allocBytes(len + 1)).([*]u8);
     sqlite3_randomness(n, raw);
     raw[len] = 0;
     return string{ ptr = raw, len = len };
@@ -409,13 +409,13 @@ sqlite_hard_heap_limit :: (n: i64) -> i64 {
 // GLOB / LIKE / case-insensitive compare, sqlite's own semantics.
 // strglob/strlike answer 0 on MATCH (C convention) — exposed as bools.
 sqlite_strglob :: (glob: string, s: string) -> bool {
-    return sqlite3_strglob(to_cstring(glob), to_cstring(s)) == 0;
+    return sqlite3_strglob(toCstring(glob), toCstring(s)) == 0;
 }
 sqlite_strlike :: (like: string, s: string, esc: u32) -> bool {
-    return sqlite3_strlike(to_cstring(like), to_cstring(s), esc) == 0;
+    return sqlite3_strlike(toCstring(like), toCstring(s), esc) == 0;
 }
 sqlite_stricmp :: (a: string, b: string) -> i32 {
-    return sqlite3_stricmp(to_cstring(a), to_cstring(b));
+    return sqlite3_stricmp(toCstring(a), toCstring(b));
 }
 
 // ── prepared statements ───────────────────────────────────────────────
@@ -468,7 +468,7 @@ SqliteStmt :: struct {
     }
     // 1-based index of a named parameter (":name" / "@name" / "?N"), 0 if absent.
     parameter_index :: (self: *SqliteStmt, name: string) -> i32 {
-        return sqlite3_bind_parameter_index(self.handle, to_cstring(name));
+        return sqlite3_bind_parameter_index(self.handle, toCstring(name));
     }
     // The name of parameter `idx` ("" for nameless `?` parameters).
     parameter_name :: (self: *SqliteStmt, idx: i32) -> string {
@@ -583,7 +583,7 @@ Sqlite :: struct {
 
     open :: (path: string) -> (Sqlite, !SqliteErr) {
         h : usize = 0;
-        rc := sqlite3_open(to_cstring(path), *h);
+        rc := sqlite3_open(toCstring(path), *h);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
             raise .Open;
@@ -593,7 +593,7 @@ Sqlite :: struct {
 
     open_v2 :: (path: string, flags: i32) -> (Sqlite, !SqliteErr) {
         h : usize = 0;
-        rc := sqlite3_open_v2(to_cstring(path), *h, flags, 0);
+        rc := sqlite3_open_v2(toCstring(path), *h, flags, 0);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
             raise .Open;
@@ -615,7 +615,7 @@ Sqlite :: struct {
     // Run one or more ;-separated statements with no result rows
     // (DDL, pragmas, BEGIN/COMMIT). Detail via errmsg on failure.
     exec :: (self: *Sqlite, sql: string) -> !SqliteErr {
-        rc := sqlite3_exec(self.handle, to_cstring(sql), 0, 0, 0);
+        rc := sqlite3_exec(self.handle, toCstring(sql), 0, 0, 0);
         if rc != SQLITE_OK { raise .Exec; }
         return;
     }
@@ -668,14 +668,14 @@ Sqlite :: struct {
     }
     // SQLITE_TXN_NONE / _READ / _WRITE for the "main" schema.
     txn_state :: (self: *Sqlite) -> i32 {
-        return sqlite3_txn_state(self.handle, to_cstring("main"));
+        return sqlite3_txn_state(self.handle, toCstring("main"));
     }
     db_filename :: (self: *Sqlite) -> string {
-        return sq_from_cstr(sqlite3_db_filename(self.handle, to_cstring("main")));
+        return sq_from_cstr(sqlite3_db_filename(self.handle, toCstring("main")));
     }
     // 1 readonly, 0 read-write, -1 no such database name.
     db_readonly :: (self: *Sqlite) -> i32 {
-        return sqlite3_db_readonly(self.handle, to_cstring("main"));
+        return sqlite3_db_readonly(self.handle, toCstring("main"));
     }
     cacheflush :: (self: *Sqlite) {
         sqlite3_db_cacheflush(self.handle);
@@ -708,7 +708,7 @@ Sqlite :: struct {
         nn : i32 = 0;
         pk : i32 = 0;
         ai : i32 = 0;
-        rc := sqlite3_table_column_metadata(self.handle, to_cstring("main"), to_cstring(table), to_cstring(column), *dt, *cs, *nn, *pk, *ai);
+        rc := sqlite3_table_column_metadata(self.handle, toCstring("main"), toCstring(table), toCstring(column), *dt, *cs, *nn, *pk, *ai);
         if rc != SQLITE_OK { raise .Metadata; }
         dtp : ?*u8 = if dt != 0 then dt.(*u8).(?*u8) else null;
         csp : ?*u8 = if cs != 0 then cs.(*u8).(?*u8) else null;
@@ -722,7 +722,7 @@ Sqlite :: struct {
     // The whole "main" database as bytes (a valid database image).
     serialize :: (self: *Sqlite) -> (string, !SqliteErr) {
         size : i64 = 0;
-        p := sqlite3_serialize(self.handle, to_cstring("main"), *size, 0);
+        p := sqlite3_serialize(self.handle, toCstring("main"), *size, 0);
         if q := p {
             out := sq_copy_bytes(q, size);
             sqlite3_free(q);
@@ -738,7 +738,7 @@ Sqlite :: struct {
         if buf == 0 { raise .Serialize; }
         bp : [*]u8 = buf.([*]u8);
         c.memcpy(bp, bytes.ptr, bytes.len);
-        rc := sqlite3_deserialize(self.handle, to_cstring("main"), buf, bytes.len, bytes.len,
+        rc := sqlite3_deserialize(self.handle, toCstring("main"), buf, bytes.len, bytes.len,
                                   SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
         if rc != SQLITE_OK { raise .Serialize; }
         return;
@@ -755,7 +755,7 @@ SqliteBlob :: struct {
 
     open :: (db: *Sqlite, table: string, column: string, rowid: i64, writable: bool) -> (SqliteBlob, !SqliteErr) {
         h : usize = 0;
-        rc := sqlite3_blob_open(db.handle, to_cstring("main"), to_cstring(table), to_cstring(column),
+        rc := sqlite3_blob_open(db.handle, toCstring("main"), toCstring(table), toCstring(column),
                                 rowid, if writable then 1 else 0, *h);
         if rc != SQLITE_OK { raise .Blob; }
         return SqliteBlob{ handle = h };
@@ -772,7 +772,7 @@ SqliteBlob :: struct {
     }
     read :: (self: *SqliteBlob, offset: i32, n: i32) -> (string, !SqliteErr) {
         len : i64 = n;
-        raw : [*]u8 = (context.allocator.alloc_bytes(len + 1)).([*]u8);
+        raw : [*]u8 = (context.allocator.allocBytes(len + 1)).([*]u8);
         rc := sqlite3_blob_read(self.handle, raw, n, offset);
         if rc != SQLITE_OK { raise .Blob; }
         raw[len] = 0;
@@ -798,7 +798,7 @@ SqliteBackup :: struct {
     handle: usize;
 
     init :: (dst: *Sqlite, src: *Sqlite) -> (SqliteBackup, !SqliteErr) {
-        h := sqlite3_backup_init(dst.handle, to_cstring("main"), src.handle, to_cstring("main"));
+        h := sqlite3_backup_init(dst.handle, toCstring("main"), src.handle, toCstring("main"));
         if h == 0 { raise .Backup; }
         return SqliteBackup{ handle = h };
     }

@@ -10,14 +10,14 @@
 // parks the fiber off-queue. `s.run` drives ready fibers to quiescence, then
 // fires the earliest pending timer: it advances `clock_ms` to that deadline and
 // `wake`s the sleeper (re-readying it), and repeats until both the ready queue
-// AND the timer set are empty. So a fiber that just woke reads `now_ms()` equal
+// AND the timer set are empty. So a fiber that just woke reads `nowMs()` equal
 // to its own deadline.
 //
 // WHAT THIS PROVES.
 //   - Deadline-ordered wake (NOT spawn order): spawn A, B, C in that order;
 //     A sleep(30), B sleep(10), C sleep(20). Wakes fire B(10), C(20), A(30) —
 //     reordered by deadline, not by spawn order.
-//   - Virtual timestamps: each fiber on wake reads `now_ms()` == its deadline
+//   - Virtual timestamps: each fiber on wake reads `nowMs()` == its deadline
 //     (10, 20, 30) — the virtual clock lands exactly on the firing deadline.
 //   - FIFO tiebreak: two fibers D, E both sleep(15) — they wake in spawn
 //     (insertion) order D then E, the deterministic equal-deadline contract.
@@ -49,12 +49,12 @@ main :: () -> i64 {
     pl := *lg;
 
     // Spawn order A, B, C, D, E — but the WAKE order is set by deadline.
-    ps.spawn(||_{ ps, pl } { ps.sleep(30); rec(pl, 1, ps.now_ms()); });   // A: latest
-    ps.spawn(||_{ ps, pl } { ps.sleep(10); rec(pl, 2, ps.now_ms()); });   // B: earliest
-    ps.spawn(||_{ ps, pl } { ps.sleep(20); rec(pl, 3, ps.now_ms()); });   // C: middle
+    ps.spawn(||_{ ps, pl } { ps.sleep(30); rec(pl, 1, ps.nowMs()); });   // A: latest
+    ps.spawn(||_{ ps, pl } { ps.sleep(10); rec(pl, 2, ps.nowMs()); });   // B: earliest
+    ps.spawn(||_{ ps, pl } { ps.sleep(20); rec(pl, 3, ps.nowMs()); });   // C: middle
     // Same-deadline FIFO pair: D before E, both at t=15 → wake D then E.
-    ps.spawn(||_{ ps, pl } { ps.sleep(15); rec(pl, 4, ps.now_ms()); });   // D
-    ps.spawn(||_{ ps, pl } { ps.sleep(15); rec(pl, 5, ps.now_ms()); });   // E
+    ps.spawn(||_{ ps, pl } { ps.sleep(15); rec(pl, 4, ps.nowMs()); });   // D
+    ps.spawn(||_{ ps, pl } { ps.sleep(15); rec(pl, 5, ps.nowMs()); });   // E
 
     s.run();
 
@@ -66,7 +66,7 @@ main :: () -> i64 {
         print("  id={} @ {}ms\n", lg.ids[i], lg.ts[i]);
         i = i + 1;
     }
-    print("final virtual clock: {}ms\n", s.now_ms());
+    print("final virtual clock: {}ms\n", s.nowMs());
     print("spawned: {}\n", s.n_spawned);
     return 0;
 }
