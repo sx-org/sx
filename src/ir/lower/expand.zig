@@ -667,7 +667,15 @@ const Expansion = struct {
                 };
                 return ex.driveCondition(cd.value, src, depth + 1);
             },
-            .field_access => return ex.driveQualifiedCondition(node, src, depth),
+            // A comptime STRUCT root is a value, not a namespace: the field
+            // projects here, and a miss is unfoldable rather than a name the
+            // driver waits on.
+            .field_access => |fa| {
+                const on_struct = if (ex.self.evalComptimeValue(fa.object)) |root| root == .struct_val else false;
+                if (!on_struct) return ex.driveQualifiedCondition(node, src, depth);
+                const v = ex.self.evalComptimeValue(node) orelse return null;
+                return if (v == .bool_val) v.bool_val else null;
+            },
             .comptime_expr => |ce| {
                 if (!ex.self.expansion.claimRun(node)) return null;
                 defer ex.self.expansion.releaseRun(node);
