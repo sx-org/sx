@@ -55,7 +55,7 @@ call-scoped `[N]I`; the array does not invent referents.
 `.{ }` is a struct literal. It never forms a handle and is never `?T`
 absence. `?T` none is `null`. `null` does not type at a non-optional slot
 (`x : I = null`, `x : i64 = null`). `---` is uninit (LLVM undef, no handle);
-`parent_allocator: Allocator = ---` is the GPU dummy. A statically-constructed
+`parentAllocator: Allocator = ---` is the GPU dummy. A statically-constructed
 struct cannot take `---` at an I field.
 
 ## Static positions

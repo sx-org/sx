@@ -1,9 +1,9 @@
 // The kbts_font_info2 binding must match the upstream struct byte for byte:
 // kbts_GetFontInfo2 dispatches on the caller-supplied `Size`, so a layout one
 // array element short computes a size that matches NO version, the call fills
-// nothing, and units_per_em reads back 0.
+// nothing, and unitsPerEm reads back 0.
 // The string arrays carry the upstream COUNT of 13. Declaring them [7] makes
-// `scale = font_size / units_per_em` divide by zero, so every shaped
+// `scale = fontSize / unitsPerEm` divide by zero, so every shaped
 // (non-ASCII) run measures NaN and draws nothing — silently, since ASCII takes
 // a separate stbtt path.
 //

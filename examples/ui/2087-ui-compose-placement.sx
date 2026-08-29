@@ -19,7 +19,7 @@ show :: (tree: *RenderTree) {
         print("  {} at {},{} {}x{} corner {} opacity {}\n", n.type,
             n.frame.origin.x.(i64), n.frame.origin.y.(i64),
             n.frame.size.width.(i64), n.frame.size.height.(i64),
-            n.corner_radius.(i64), n.opacity);
+            n.cornerRadius.(i64), n.opacity);
     }
 }
 
@@ -40,7 +40,7 @@ main :: () -> i32 {
         corner = 8.0,
         padding = ui.EdgeInsets.symmetric(6.0, 2.0),
     });
-    card_size := card.size_that_fits(ProposedSize.flexible());
+    card_size := card.sizeThatFits(ProposedSize.flexible());
     print("card {}x{}\n", card_size.width.(i64), card_size.height.(i64));
     draw(*card, Frame.make(0.0, 0.0, card_size.width, card_size.height));
 
@@ -51,7 +51,7 @@ main :: () -> i32 {
         bg = ui.COLOR_DARK_GRAY,
         margin = ui.EdgeInsets.all(4.0),
     });
-    same_size := same.size_that_fits(ProposedSize.flexible());
+    same_size := same.sizeThatFits(ProposedSize.flexible());
     print("same {}x{}\n", same_size.width.(i64), same_size.height.(i64));
 
     // A ring instead of a fill; a fixed size centres the box in the bounds and
@@ -76,7 +76,7 @@ main :: () -> i32 {
 
     // Hidden measures zero and draws nothing.
     gone : View = place(Label{ text = "gone" }, Mod{ hidden = true });
-    gone_size := gone.size_that_fits(ProposedSize.flexible());
+    gone_size := gone.sizeThatFits(ProposedSize.flexible());
     print("hidden {}x{}\n", gone_size.width.(i64), gone_size.height.(i64));
     draw(*gone, Frame.make(0.0, 0.0, 40.0, 16.0));
 
@@ -96,22 +96,22 @@ main :: () -> i32 {
 
 // ** stdout **
 // card 52x28
-//   .rounded_rect at 4,4 44x20 corner 8 opacity 1.000000
+//   .roundedRect at 4,4 44x20 corner 8 opacity 1.000000
 //   .text 'card' at 10,6 32x16
 // same 52x28
 // chip
-//   .rounded_rect at 10,8 40x24 corner 4 opacity 1.000000
+//   .roundedRect at 10,8 40x24 corner 4 opacity 1.000000
 //   .text '9' at 10,8 40x24
 // faded
-//   .opacity_push at 0,0 0x0 corner 0 opacity 0.500000
+//   .opacityPush at 0,0 0x0 corner 0 opacity 0.500000
 //   .rect at 0,0 40x16 corner 0 opacity 0.500000
-//   .clip_push at 0,0 40x16 corner 0 opacity 0.000000
+//   .clipPush at 0,0 40x16 corner 0 opacity 0.000000
 //   .text 'dim' at 0,0 40x16
-//   .clip_pop at 0,0 0x0 corner 0 opacity 0.000000
-//   .opacity_pop at 0,0 0x0 corner 0 opacity 0.000000
+//   .clipPop at 0,0 0x0 corner 0 opacity 0.000000
+//   .opacityPop at 0,0 0x0 corner 0 opacity 0.000000
 // hidden 0x0
 // screen
-//   .rounded_rect at 2,2 40x28 corner 6 opacity 1.000000
+//   .roundedRect at 2,2 40x28 corner 6 opacity 1.000000
 //   .text 'ok' at 14,8 16x16
 //   .rect at 1,35 32x16 corner 0 opacity 1.000000
 //   .text 'deep' at 1,35 32x16

@@ -21,9 +21,9 @@
 ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
-key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
+down :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ pointer = .{ value = 1 }, position = at(x, y) });
+key :: (k: LogicalKey) -> InputEvent => .keyDown(.{ logical = k });
 
 Cursor :: struct {
     row: i64 = 0;
@@ -47,12 +47,12 @@ main :: () -> i32 {
     distinct := false;
     marks := Identity.init(home);
     push .{ compose_ui = *marks, allocator = away } {
-        marks.begin_build();
-        a := element_id();
-        b := element_id();
-        c := element_id();
-        d := element_id();
-        e := element_id();
+        marks.beginBuild();
+        a := elementId();
+        b := elementId();
+        c := elementId();
+        d := elementId();
+        e := elementId();
         sites = marks.counts.len;
         distinct = a.value != b.value and b.value != c.value and c.value != d.value and d.value != e.value;
         marks.deinit()
@@ -67,12 +67,12 @@ main :: () -> i32 {
     tally := Identity.init(home);
     store := StateStore.init(home);
     push .{ compose_ui = *tally, compose_state = *store, allocator = away } {
-        tally.begin_build();
-        store.begin_build();
-        n := use_state(i64, 1);
+        tally.beginBuild();
+        store.beginBuild();
+        n := useState(i64, 1);
         n.set(n.get() + 41);
-        seat := use_state(Cursor, .{ row = 2, col = 3 });
-        store.commit_build();
+        seat := useState(Cursor, .{ row = 2, col = 3 });
+        store.commitBuild();
         entries = store.entries.len;
         counted = n.get();
         row = seat.get().row;
@@ -89,7 +89,7 @@ main :: () -> i32 {
     taps := Router.init(home);
     live := CommittedUiSnapshot.init(home);
     push .{ compose_ui = *pointers, compose_input = *taps, allocator = away } {
-        pointers.begin_build();
+        pointers.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
@@ -99,8 +99,8 @@ main :: () -> i32 {
         taps.observe(*live);
         held := down(30.0, 10.0);
         taps.dispatch(*held);
-        regions = live.hit_list.len;
-        captured = taps.pressed(live.hit_list.items[0].id);
+        regions = live.hitList.len;
+        captured = taps.pressed(live.hitList.items[0].id);
         taps.deinit();
         live.deinit();
         pointers.deinit()
@@ -120,7 +120,7 @@ main :: () -> i32 {
     labels := Identity.init(home);
     shot := CommittedUiSnapshot.init(home);
     push .{ compose_ui = *labels } {
-        labels.begin_build();
+        labels.beginBuild();
         hit := *struck;
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
@@ -138,7 +138,7 @@ main :: () -> i32 {
             keys := FocusRouter.init();
             keys.observe(*shot);
             still := home.allocCount + away.allocCount;
-            keys.request_focus(.{ value = shot.focus_list.items[0].id });
+            keys.requestFocus(.{ value = shot.focusList.items[0].id });
             stroke := key(.enter);
             keys.dispatch(*stroke);
             spent = home.allocCount + away.allocCount - still;
@@ -160,7 +160,7 @@ main :: () -> i32 {
     moved := CommittedUiSnapshot.init(first);
     untouched := true;
     push .{ compose_ui = *stamps } {
-        stamps.begin_build();
+        stamps.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
@@ -171,7 +171,7 @@ main :: () -> i32 {
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
         }
     }
-    hits := moved.hit_list.len;
+    hits := moved.hitList.len;
     retargeted := second.endIndex > 0;
     moved.deinit();
     first.deinit();
@@ -191,7 +191,7 @@ main :: () -> i32 {
         seen := *taken;
         spin := FrameLoop.init(*app, closure(||_{ builds, seen } -> View {
             builds.* += 1;
-            n := use_state(i64, 0);
+            n := useState(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ seen } {

@@ -9,19 +9,19 @@ Modifier :: struct {
     opacity: f32 = 1.0;
     padding: EdgeInsets = .{};
 
-    with_opacity :: (self: Modifier, alpha: f32) -> Modifier {
+    withOpacity :: (self: Modifier, alpha: f32) -> Modifier {
         Modifier{ opacity = alpha, padding = self.padding }
     }
 
-    with_padding :: (self: Modifier, insets: EdgeInsets) -> Modifier {
+    withPadding :: (self: Modifier, insets: EdgeInsets) -> Modifier {
         Modifier{ opacity = self.opacity, padding = insets }
     }
 }
 
-with_opacity :: ufcs (m: Modifier, alpha: f32) -> Modifier {
-    m.with_opacity(alpha)
+withOpacity :: ufcs (m: Modifier, alpha: f32) -> Modifier {
+    m.withOpacity(alpha)
 }
 
-with_padding :: ufcs (m: Modifier, insets: EdgeInsets) -> Modifier {
-    m.with_padding(insets)
+withPadding :: ufcs (m: Modifier, insets: EdgeInsets) -> Modifier {
+    m.withPadding(insets)
 }

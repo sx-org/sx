@@ -10,12 +10,12 @@ Hit :: struct {
 match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
     st := try db.prepare("SELECT rowid, bm25(docs) FROM docs WHERE docs MATCH ?1 ORDER BY rank");
     defer st.finalize();
-    try st.bind_text(1, query);
+    try st.bindText(1, query);
     n : i64 = 0;
     while n < out.len {
         rc := try st.step();
         if rc != sq.SQLITE_ROW { break; }
-        out[n] = Hit{ rowid = st.column_int64(0), score = st.column_double(1) };
+        out[n] = Hit{ rowid = st.columnInt64(0), score = st.columnDouble(1) };
         n += 1;
     }
     return n;
@@ -24,10 +24,10 @@ match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
 match_title :: (db: *sq.Sqlite, query: string) -> (string, !) {
     st := try db.prepare("SELECT title FROM docs WHERE docs MATCH ?1");
     defer st.finalize();
-    try st.bind_text(1, query);
+    try st.bindText(1, query);
     rc := try st.step();
     if rc != sq.SQLITE_ROW { return ""; }
-    return st.column_text(0);
+    return st.columnText(0);
 }
 
 main :: () -> i32 {
@@ -65,6 +65,6 @@ main :: () -> i32 {
     miss := match_hits(*db, "monomorphization", hits[..]) catch { print("miss query failed: {}\n", db.errmsg()); return 1; };
     print("rows for an absent term: {}\n", miss);
 
-    print("vendored sqlite {} fts5 ok\n", sq.sqlite_version());
+    print("vendored sqlite {} fts5 ok\n", sq.sqliteVersion());
     0
 }

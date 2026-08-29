@@ -27,7 +27,7 @@ the full-text round trip.
 ## Bound surface
 
 `sqlite.sx` maps the full practical C API (~100 functions): connection
-lifecycle + open_v2 flags, errors (extended codes included), statements
+lifecycle + openV2 flags, errors (extended codes included), statements
 with the complete bind/column families, parameter and column
 introspection (built with `SQLITE_ENABLE_COLUMN_METADATA`), incremental
 blob I/O, the online backup API, serialize/deserialize, and the library

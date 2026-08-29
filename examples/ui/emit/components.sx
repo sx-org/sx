@@ -13,7 +13,7 @@ Label :: @OpenVariant(View) {
     modifier: Modifier = .{};
     measured: Size = .{};
 
-    size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *Label, proposal: ProposedSize) -> Size {
         w := self.text.len * 8;
         Size{ width = w, height = 16.0 }
     }
@@ -23,7 +23,7 @@ Label :: @OpenVariant(View) {
     }
 
     render :: (self: *Label, rc: *RenderContext, frame: Frame) {
-        rc.add_text(frame, self.text);
+        rc.addText(frame, self.text);
     }
 }
 
@@ -32,7 +32,7 @@ Button :: @OpenVariant(View) {
     modifier: Modifier = .{};
     fill: Color = .{ r = 0.2, g = 0.4, b = 0.9, a = 1.0 };
 
-    size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *Button, proposal: ProposedSize) -> Size {
         w := self.label.len * 8;
         pad := self.modifier.padding.horizontal();
         Size{ width = w + pad, height = 24.0 + self.modifier.padding.vertical() }
@@ -41,7 +41,7 @@ Button :: @OpenVariant(View) {
     layout :: (self: *Button, bounds: Frame) {}
 
     render :: (self: *Button, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, self.fill);
-        rc.add_text(frame, self.label);
+        rc.addRect(frame, self.fill);
+        rc.addText(frame, self.label);
     }
 }

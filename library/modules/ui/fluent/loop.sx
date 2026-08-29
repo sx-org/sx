@@ -99,22 +99,22 @@ UiRoot :: struct {
     }
 }
 
-// The builder runs under the root's context, so `use_state`, `element_id` and
+// The builder runs under the root's context, so `useState`, `elementId` and
 // the press/focus queries all reach this root's carriers.
 FrameLoop :: struct {
     root: *UiRoot;
     build: Closure() -> View;
-    build_allocator: Allocator;
+    buildAllocator: Allocator;
     frames: i64 = 0;
 
-    // `build_allocator` is the allocator that made `build`'s environment — the
+    // `buildAllocator` is the allocator that made `build`'s environment — the
     // one ambient where the literal is written, which need not be the one
     // ambient here. The free is paired with it.
-    init :: (root: *UiRoot, build: Closure() -> View, build_allocator: Allocator) -> FrameLoop =>
-        .{ root = root, build = build, build_allocator = build_allocator };
+    init :: (root: *UiRoot, build: Closure() -> View, buildAllocator: Allocator) -> FrameLoop =>
+        .{ root = root, build = build, buildAllocator = buildAllocator };
 
     deinit :: (self: *FrameLoop) {
-        free(self.build, self.build_allocator)
+        free(self.build, self.buildAllocator)
     }
 
     frame :: (self: *FrameLoop) {
@@ -126,16 +126,16 @@ FrameLoop :: struct {
         r.arenas[r.parity].reset();
         push .{
             allocator = r.arenas[r.parity],
-            fluent_ui = *r.identity,
-            fluent_state = *r.store,
-            fluent_input = *r.taps,
-            fluent_focus = *r.focus,
+            fluentUi = *r.identity,
+            fluentState = *r.store,
+            fluentInput = *r.taps,
+            fluentFocus = *r.focus,
         } {
             r.pump();
-            r.identity.begin_build();
-            r.store.begin_build();
+            r.identity.beginBuild();
+            r.store.beginBuild();
             tree := self.build();
-            r.store.commit_build();
+            r.store.commitBuild();
             r.commit(*tree)
         }
         self.frames += 1;

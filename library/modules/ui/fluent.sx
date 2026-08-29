@@ -62,19 +62,19 @@ FocusRegion :: render.FocusRegion;
 KeyEvent :: input.KeyEvent;
 LogicalKey :: input.LogicalKey;
 
-measure_text :: font.measure_text;
-set_global_font :: font.set_global_font;
+measureText :: font.measureText;
+setGlobalFont :: font.setGlobalFont;
 
 SiteId :: identity.SiteId;
-site_of :: identity.site_of;
+siteOf :: identity.siteOf;
 ElementId :: identity.ElementId;
 Identity :: identity.Identity;
-element_id :: identity.element_id;
+elementId :: identity.elementId;
 
 State :: state.State;
 StateEntry :: state.StateEntry;
 StateStore :: state.StateStore;
-use_state :: state.use_state;
+useState :: state.useState;
 
 CommittedUiSnapshot :: frame.CommittedUiSnapshot;
 project :: frame.project;
@@ -82,12 +82,12 @@ Router :: router.Router;
 HitTarget :: router.HitTarget;
 Tappable :: router.Tappable;
 tappable :: router.tappable;
-is_pressed :: router.is_pressed;
+isPressed :: router.isPressed;
 
 FocusRouter :: focus.FocusRouter;
 Focusable :: focus.Focusable;
 focusable :: focus.focusable;
-is_focused :: focus.is_focused;
+isFocused :: focus.isFocused;
 
 UiRoot :: loop.UiRoot;
 FrameLoop :: loop.FrameLoop;
@@ -115,7 +115,7 @@ collectViews :: sink.collectViews;
 vstack :: containers.vstack;
 hstack :: containers.hstack;
 zstack :: containers.zstack;
-fold_vstack :: containers.fold_vstack;
-fold_hstack :: containers.fold_hstack;
-render_root :: runtime.render_root;
-command_count :: runtime.command_count;
+foldVstack :: containers.foldVstack;
+foldHstack :: containers.foldHstack;
+renderRoot :: runtime.renderRoot;
+commandCount :: runtime.commandCount;

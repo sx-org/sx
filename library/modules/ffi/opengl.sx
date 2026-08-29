@@ -109,77 +109,77 @@ GL_CLAMP_TO_EDGE         :u32: 0x812F;
 
 // Loader: call once after creating GL context
 // Pass in a proc loader (e.g. SDL_GL_GetProcAddress)
-load_fn :: (slot: *$T, name: cstring, get_proc: (cstring) -> *void abi(.c)) {
-    slot.* = get_proc(name).(T);
+loadFn :: (slot: *$T, name: cstring, getProc: (cstring) -> *void abi(.c)) {
+    slot.* = getProc(name).(T);
 }
 
-load_gl :: (get_proc: (cstring) -> *void abi(.c)) {
-    load_fn(*glClearColor, "glClearColor", get_proc);
-    load_fn(*glClear, "glClear", get_proc);
-    load_fn(*glEnable, "glEnable", get_proc);
-    load_fn(*glDisable, "glDisable", get_proc);
-    load_fn(*glViewport, "glViewport", get_proc);
-    load_fn(*glFlush, "glFlush", get_proc);
-    load_fn(*glDrawArrays, "glDrawArrays", get_proc);
-    load_fn(*glPolygonMode, "glPolygonMode", get_proc);
-    load_fn(*glLineWidth, "glLineWidth", get_proc);
-    load_fn(*glCreateShader, "glCreateShader", get_proc);
-    load_fn(*glShaderSource, "glShaderSource", get_proc);
-    load_fn(*glCompileShader, "glCompileShader", get_proc);
-    load_fn(*glGetShaderiv, "glGetShaderiv", get_proc);
-    load_fn(*glGetShaderInfoLog, "glGetShaderInfoLog", get_proc);
-    load_fn(*glCreateProgram, "glCreateProgram", get_proc);
-    load_fn(*glAttachShader, "glAttachShader", get_proc);
-    load_fn(*glLinkProgram, "glLinkProgram", get_proc);
-    load_fn(*glGetProgramiv, "glGetProgramiv", get_proc);
-    load_fn(*glGetProgramInfoLog, "glGetProgramInfoLog", get_proc);
-    load_fn(*glUseProgram, "glUseProgram", get_proc);
-    load_fn(*glDeleteShader, "glDeleteShader", get_proc);
-    load_fn(*glGenVertexArrays, "glGenVertexArrays", get_proc);
-    load_fn(*glGenBuffers, "glGenBuffers", get_proc);
-    load_fn(*glBindVertexArray, "glBindVertexArray", get_proc);
-    load_fn(*glBindBuffer, "glBindBuffer", get_proc);
-    load_fn(*glBufferData, "glBufferData", get_proc);
-    load_fn(*glVertexAttribPointer, "glVertexAttribPointer", get_proc);
-    load_fn(*glEnableVertexAttribArray, "glEnableVertexAttribArray", get_proc);
-    load_fn(*glGetUniformLocation, "glGetUniformLocation", get_proc);
-    load_fn(*glUniformMatrix4fv, "glUniformMatrix4fv", get_proc);
-    load_fn(*glUniform3f, "glUniform3f", get_proc);
-    load_fn(*glUniform4fv, "glUniform4fv", get_proc);
-    load_fn(*glDepthFunc, "glDepthFunc", get_proc);
-    load_fn(*glUniform1f, "glUniform1f", get_proc);
-    load_fn(*glScissor, "glScissor", get_proc);
-    load_fn(*glBufferSubData, "glBufferSubData", get_proc);
-    load_fn(*glGenTextures, "glGenTextures", get_proc);
-    load_fn(*glBindTexture, "glBindTexture", get_proc);
-    load_fn(*glTexImage2D, "glTexImage2D", get_proc);
-    load_fn(*glTexParameteri, "glTexParameteri", get_proc);
-    load_fn(*glBlendFunc, "glBlendFunc", get_proc);
-    load_fn(*glReadPixels, "glReadPixels", get_proc);
-    load_fn(*glActiveTexture, "glActiveTexture", get_proc);
-    load_fn(*glUniform1i, "glUniform1i", get_proc);
-    load_fn(*glPixelStorei, "glPixelStorei", get_proc);
-    load_fn(*glTexSubImage2D, "glTexSubImage2D", get_proc);
-    load_fn(*glDeleteTextures, "glDeleteTextures", get_proc);
-    load_fn(*glDeleteBuffers, "glDeleteBuffers", get_proc);
-    load_fn(*glDrawElements, "glDrawElements", get_proc);
-    load_fn(*glDepthMask, "glDepthMask", get_proc);
+loadGl :: (getProc: (cstring) -> *void abi(.c)) {
+    loadFn(*glClearColor, "glClearColor", getProc);
+    loadFn(*glClear, "glClear", getProc);
+    loadFn(*glEnable, "glEnable", getProc);
+    loadFn(*glDisable, "glDisable", getProc);
+    loadFn(*glViewport, "glViewport", getProc);
+    loadFn(*glFlush, "glFlush", getProc);
+    loadFn(*glDrawArrays, "glDrawArrays", getProc);
+    loadFn(*glPolygonMode, "glPolygonMode", getProc);
+    loadFn(*glLineWidth, "glLineWidth", getProc);
+    loadFn(*glCreateShader, "glCreateShader", getProc);
+    loadFn(*glShaderSource, "glShaderSource", getProc);
+    loadFn(*glCompileShader, "glCompileShader", getProc);
+    loadFn(*glGetShaderiv, "glGetShaderiv", getProc);
+    loadFn(*glGetShaderInfoLog, "glGetShaderInfoLog", getProc);
+    loadFn(*glCreateProgram, "glCreateProgram", getProc);
+    loadFn(*glAttachShader, "glAttachShader", getProc);
+    loadFn(*glLinkProgram, "glLinkProgram", getProc);
+    loadFn(*glGetProgramiv, "glGetProgramiv", getProc);
+    loadFn(*glGetProgramInfoLog, "glGetProgramInfoLog", getProc);
+    loadFn(*glUseProgram, "glUseProgram", getProc);
+    loadFn(*glDeleteShader, "glDeleteShader", getProc);
+    loadFn(*glGenVertexArrays, "glGenVertexArrays", getProc);
+    loadFn(*glGenBuffers, "glGenBuffers", getProc);
+    loadFn(*glBindVertexArray, "glBindVertexArray", getProc);
+    loadFn(*glBindBuffer, "glBindBuffer", getProc);
+    loadFn(*glBufferData, "glBufferData", getProc);
+    loadFn(*glVertexAttribPointer, "glVertexAttribPointer", getProc);
+    loadFn(*glEnableVertexAttribArray, "glEnableVertexAttribArray", getProc);
+    loadFn(*glGetUniformLocation, "glGetUniformLocation", getProc);
+    loadFn(*glUniformMatrix4fv, "glUniformMatrix4fv", getProc);
+    loadFn(*glUniform3f, "glUniform3f", getProc);
+    loadFn(*glUniform4fv, "glUniform4fv", getProc);
+    loadFn(*glDepthFunc, "glDepthFunc", getProc);
+    loadFn(*glUniform1f, "glUniform1f", getProc);
+    loadFn(*glScissor, "glScissor", getProc);
+    loadFn(*glBufferSubData, "glBufferSubData", getProc);
+    loadFn(*glGenTextures, "glGenTextures", getProc);
+    loadFn(*glBindTexture, "glBindTexture", getProc);
+    loadFn(*glTexImage2D, "glTexImage2D", getProc);
+    loadFn(*glTexParameteri, "glTexParameteri", getProc);
+    loadFn(*glBlendFunc, "glBlendFunc", getProc);
+    loadFn(*glReadPixels, "glReadPixels", getProc);
+    loadFn(*glActiveTexture, "glActiveTexture", getProc);
+    loadFn(*glUniform1i, "glUniform1i", getProc);
+    loadFn(*glPixelStorei, "glPixelStorei", getProc);
+    loadFn(*glTexSubImage2D, "glTexSubImage2D", getProc);
+    loadFn(*glDeleteTextures, "glDeleteTextures", getProc);
+    loadFn(*glDeleteBuffers, "glDeleteBuffers", getProc);
+    loadFn(*glDrawElements, "glDrawElements", getProc);
+    loadFn(*glDepthMask, "glDepthMask", getProc);
 
-    load_fn(*glGenFramebuffers, "glGenFramebuffers", get_proc);
-    load_fn(*glGenRenderbuffers, "glGenRenderbuffers", get_proc);
-    load_fn(*glBindFramebuffer, "glBindFramebuffer", get_proc);
-    load_fn(*glBindRenderbuffer, "glBindRenderbuffer", get_proc);
-    load_fn(*glFramebufferRenderbuffer, "glFramebufferRenderbuffer", get_proc);
-    load_fn(*glGetRenderbufferParameteriv, "glGetRenderbufferParameteriv", get_proc);
-    load_fn(*glCheckFramebufferStatus, "glCheckFramebufferStatus", get_proc);
+    loadFn(*glGenFramebuffers, "glGenFramebuffers", getProc);
+    loadFn(*glGenRenderbuffers, "glGenRenderbuffers", getProc);
+    loadFn(*glBindFramebuffer, "glBindFramebuffer", getProc);
+    loadFn(*glBindRenderbuffer, "glBindRenderbuffer", getProc);
+    loadFn(*glFramebufferRenderbuffer, "glFramebufferRenderbuffer", getProc);
+    loadFn(*glGetRenderbufferParameteriv, "glGetRenderbufferParameteriv", getProc);
+    loadFn(*glCheckFramebufferStatus, "glCheckFramebufferStatus", getProc);
 }
 
 
 // --- Shader utilities ---
 
-create_program :: (vert_src: [:0]u8, frag_src: [:0]u8) -> u32 {
-    vs := compile_shader(GL_VERTEX_SHADER, vert_src);
-    fs := compile_shader(GL_FRAGMENT_SHADER, frag_src);
+createProgram :: (vertSrc: [:0]u8, fragSrc: [:0]u8) -> u32 {
+    vs := compileShader(GL_VERTEX_SHADER, vertSrc);
+    fs := compileShader(GL_FRAGMENT_SHADER, fragSrc);
 
     prog := glCreateProgram();
     glAttachShader(prog, vs);
@@ -189,8 +189,8 @@ create_program :: (vert_src: [:0]u8, frag_src: [:0]u8) -> u32 {
     status : i32 = 0;
     glGetProgramiv(prog, GL_LINK_STATUS, *status);
     if status == GL_FALSE {
-        log_buf: [512]u8 = ---;
-        glGetProgramInfoLog(prog, 512, null, *log_buf[0]);
+        logBuf: [512]u8 = ---;
+        glGetProgramInfoLog(prog, 512, null, *logBuf[0]);
     }
 
     glDeleteShader(vs);
@@ -198,16 +198,16 @@ create_program :: (vert_src: [:0]u8, frag_src: [:0]u8) -> u32 {
     return prog;
 }
 
-compile_shader :: (shader_type : u32, source: [:0]u8) -> u32 {
-    shader := glCreateShader(shader_type);
+compileShader :: (shaderType : u32, source: [:0]u8) -> u32 {
+    shader := glCreateShader(shaderType);
     glShaderSource(shader, 1, source, null);
     glCompileShader(shader);
 
     status : i32 = 0;
     glGetShaderiv(shader, GL_COMPILE_STATUS, *status);
     if status == GL_FALSE {
-        log_buf : [512]u8 = ---;
-        glGetShaderInfoLog(shader, 512, null, *log_buf[0]);
+        logBuf : [512]u8 = ---;
+        glGetShaderInfoLog(shader, 512, null, *logBuf[0]);
     }
     return shader;
 }

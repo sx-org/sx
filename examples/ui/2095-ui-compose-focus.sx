@@ -12,9 +12,9 @@
 @import "modules/ui/input.sx";
 ui :: @import "modules/ui/types.sx";
 
-key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
-shifted :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k, header = .{ modifiers = .{ shift = true } } });
-released :: (k: LogicalKey) -> InputEvent => .key_up(.{ logical = k });
+key :: (k: LogicalKey) -> InputEvent => .keyDown(.{ logical = k });
+shifted :: (k: LogicalKey) -> InputEvent => .keyDown(.{ logical = k, header = .{ modifiers = .{ shift = true } } });
+released :: (k: LogicalKey) -> InputEvent => .keyUp(.{ logical = k });
 typed :: (s: string) -> InputEvent => .text(.{ text = s });
 
 send :: (f: *FocusRouter, ev: InputEvent) {
@@ -36,7 +36,7 @@ main :: () -> i32 {
     log := Log{};
 
     push .{ compose_ui = *identity, compose_focus = *focus } {
-        identity.begin_build();
+        identity.beginBuild();
         tally := *log;
 
         // Three focusable rows; the last one asks for the soft keyboard and
@@ -65,19 +65,19 @@ main :: () -> i32 {
         project(*root, Size{ width = 60.0, height = 60.0 }, *snap);
         focus.observe(*snap);
 
-        first := ElementId{ value = snap.focus_list.items[0].id };
-        second := ElementId{ value = snap.focus_list.items[1].id };
-        third := ElementId{ value = snap.focus_list.items[2].id };
+        first := ElementId{ value = snap.focusList.items[0].id };
+        second := ElementId{ value = snap.focusList.items[1].id };
+        third := ElementId{ value = snap.focusList.items[2].id };
 
         print("regions {} focused {} keyboard {}\n",
-            snap.focus_list.len, is_focused(first), focus.wants_keyboard());
+            snap.focusList.len, isFocused(first), focus.wantsKeyboard());
 
         // With nothing focused a key reaches nobody.
         send(*focus, key(.enter));
         print("unfocused {} {} {}\n", log.a, log.b, log.c);
 
         // The request names the element; the key then lands on it.
-        focus.request_focus(second);
+        focus.requestFocus(second);
         send(*focus, key(.enter));
         print("requested {} {} {} last {}\n", log.a, log.b, log.c, log.last);
 
@@ -86,13 +86,13 @@ main :: () -> i32 {
         print("release {}\n", log.b);
 
         // Declaration order is the traversal order, and it wraps.
-        focus.focus_next();
+        focus.focusNext();
         send(*focus, key(.space));
-        print("next {} keyboard {} c {}\n", is_focused(third), focus.wants_keyboard(), log.c);
-        focus.focus_next();
-        print("wrapped {} keyboard {}\n", is_focused(first), focus.wants_keyboard());
-        focus.focus_prev();
-        print("back {}\n", is_focused(third));
+        print("next {} keyboard {} c {}\n", isFocused(third), focus.wantsKeyboard(), log.c);
+        focus.focusNext();
+        print("wrapped {} keyboard {}\n", isFocused(first), focus.wantsKeyboard());
+        focus.focusPrev();
+        print("back {}\n", isFocused(third));
 
         // Text rides its own channel to the same region.
         send(*focus, typed("abc"));
@@ -101,20 +101,20 @@ main :: () -> i32 {
         // Tab is the router's own key: from nothing it enters at the first
         // region, it walks declaration order and wraps, shift walks back, and
         // none of it reaches a handler.
-        focus.clear_focus();
+        focus.clearFocus();
         send(*focus, key(.tab));
-        print("tab entered {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c);
+        print("tab entered {} keys {} {} {}\n", isFocused(first), log.a, log.b, log.c);
         send(*focus, key(.tab));
-        print("tab stepped {}\n", is_focused(second));
+        print("tab stepped {}\n", isFocused(second));
         send(*focus, key(.tab));
         send(*focus, key(.tab));
-        print("tab wrapped {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c);
+        print("tab wrapped {} keys {} {} {}\n", isFocused(first), log.a, log.b, log.c);
         send(*focus, shifted(.tab));
-        print("shift tab {}\n", is_focused(third));
+        print("shift tab {}\n", isFocused(third));
 
         // A rebuild without the focused row: its element is gone, so the keys
         // that follow reach nobody.
-        identity.begin_build();
+        identity.beginBuild();
         rest : View = vstack(0.0) {
             focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 });
             focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
@@ -123,11 +123,11 @@ main :: () -> i32 {
         project(*rest, Size{ width = 60.0, height = 60.0 }, *next);
         focus.observe(*next);
         send(*focus, key(.enter));
-        print("dropped {} c {} regions {}\n", is_focused(third), log.c, next.focus_list.len);
+        print("dropped {} c {} regions {}\n", isFocused(third), log.c, next.focusList.len);
 
         // Traversal enters the new frame from its end.
-        focus.focus_prev();
-        print("entered {}\n", is_focused(.{ value = next.focus_list.items[1].id }));
+        focus.focusPrev();
+        print("entered {}\n", isFocused(.{ value = next.focusList.items[1].id }));
 
         next.deinit();
         snap.deinit()

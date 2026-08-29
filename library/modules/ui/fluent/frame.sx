@@ -28,8 +28,8 @@ CommittedUiSnapshot :: struct {
     revision: i64 = 0;
     root: UiRootId = .{ value = 0 };
     scene: RenderTree = .{};
-    hit_list: List(HitRegion) = .{};
-    focus_list: List(FocusRegion) = .{};
+    hitList: List(HitRegion) = .{};
+    focusList: List(FocusRegion) = .{};
     // What made the buffers the three lists hold, and what they go back to.
     buffers: Allocator;
 
@@ -38,8 +38,8 @@ CommittedUiSnapshot :: struct {
     // Empties the lists for the next fill and keeps their capacity.
     reset :: (self: *CommittedUiSnapshot) {
         self.scene.clear();
-        self.hit_list.len = 0;
-        self.focus_list.len = 0;
+        self.hitList.len = 0;
+        self.focusList.len = 0;
     }
 
     // Drops the buffers instead of reusing them, for a caller whose fills come
@@ -48,15 +48,15 @@ CommittedUiSnapshot :: struct {
     // change legal.
     discard :: (self: *CommittedUiSnapshot, next: Allocator) {
         self.scene.nodes.detach();
-        self.hit_list.detach();
-        self.focus_list.detach();
+        self.hitList.detach();
+        self.focusList.detach();
         self.buffers = next;
     }
 
     deinit :: (self: *CommittedUiSnapshot) {
         self.scene.nodes.deinit(self.buffers);
-        self.hit_list.deinit(self.buffers);
-        self.focus_list.deinit(self.buffers)
+        self.hitList.deinit(self.buffers);
+        self.focusList.deinit(self.buffers)
     }
 }
 
@@ -69,8 +69,8 @@ project :: (root: *View, viewport: Size, snap: *CommittedUiSnapshot) {
     push .{ allocator = snap.buffers } {
         root.layout(bounds);
         rc := RenderContext.init(*snap.scene);
-        rc.hits = *snap.hit_list;
-        rc.focuses = *snap.focus_list;
+        rc.hits = *snap.hitList;
+        rc.focuses = *snap.focusList;
         root.render(*rc, bounds)
     }
     snap.revision += 1;

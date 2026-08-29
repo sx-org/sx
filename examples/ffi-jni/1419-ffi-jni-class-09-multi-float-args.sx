@@ -2,7 +2,7 @@
 // CallFloatMethod, including when several such calls are inlined as args
 // to a single outer call (`f(o.a(), o.b(), o.c())`) — the shape that
 // carries an Android `MotionEvent.getX()` + `getY()` pair into
-// `sx_android_push_touch`.
+// `sxAndroidPushTouch`.
 //
 // The bodies are gated behind a runtime-false flag so the JNI lookups never
 // execute (no JVM in the test runtime), while the codegen path still emits

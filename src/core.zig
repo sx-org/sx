@@ -46,7 +46,7 @@ pub const Compilation = struct {
     ir_emitter: ?ir.LLVMEmitter = null,
     /// Lowered IR module, kept alive past `generateCode` so post-link
     /// callbacks can re-enter the interpreter to invoke sx functions
-    /// (e.g. `platform.bundle.bundle_main` after `target.link`).
+    /// (e.g. `platform.bundle.bundleMain` after `target.link`).
     ir_module: ?*ir.Module = null,
     /// C sources requested by the lowering pass (not in the user's AST).
     /// E.g. the JNI env TL runtime when `context.jni` is used. Merged with

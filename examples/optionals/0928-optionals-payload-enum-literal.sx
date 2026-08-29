@@ -4,7 +4,7 @@
 // Pinned in every destination position (return, typed local, call
 // argument), with plain, struct-literal, and
 // nested-union payloads; the platform stream's real shape
-// (`-> ?PlatformEvent { return .input(.key_up(.{ ... })); }`) is the
+// (`-> ?PlatformEvent { return .input(.keyUp(.{ ... })); }`) is the
 // motivating case.
 @import "modules/std.sx";
 

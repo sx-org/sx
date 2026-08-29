@@ -23,10 +23,10 @@ SiteId :: struct {
     line: i32 = 0;
 }
 
-// Written as a parameter default — `site: SiteId = site_of(@caller)` — which
+// Written as a parameter default — `site: SiteId = siteOf(@caller)` — which
 // is the only position `@caller` is legal in, and which makes the CALLER's
 // site the one a component records.
-site_of :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line };
+siteOf :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line };
 
 ElementId :: struct { value: u64 = 0; }
 
@@ -35,7 +35,7 @@ ElementId :: struct { value: u64 = 0; }
 ELEMENT_DOMAIN :: "ui.compose.element.v1";
 
 // Resumes the hash from the site fingerprint the compiler already folded.
-site_hasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
+siteHasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
     hasher := SourceSiteHasher{ state = site.key };
     hasher.writeString(domain);
     hasher
@@ -57,13 +57,13 @@ Identity :: struct {
 
     // Every site starts the build at occurrence zero, which is what makes an
     // unchanged tree hand out unchanged ids.
-    begin_build :: (self: *Identity) {
+    beginBuild :: (self: *Identity) {
         for *c in self.counts {
             c.count = 0;
         }
     }
 
-    next_occurrence :: (self: *Identity, key: u64) -> i64 {
+    nextOccurrence :: (self: *Identity, key: u64) -> i64 {
         for c, i in self.counts, 0.. {
             if c.key == key {
                 n := c.count;
@@ -85,10 +85,10 @@ Identity :: struct {
 // The id of the element being built at THIS call site. A component mints it
 // while the tree is built and carries it into render, where it names the hit
 // and focus regions the element declares.
-element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
+elementId :: (site: SiteId = siteOf(@caller)) -> ElementId {
     process.assert(context.compose_ui != null, "element_id outside a compose build — push .{ compose_ui = *root.identity }");
-    occurrence := context.compose_ui.next_occurrence(site.key);
-    hasher := site_hasher(site, ELEMENT_DOMAIN);
+    occurrence := context.compose_ui.nextOccurrence(site.key);
+    hasher := siteHasher(site, ELEMENT_DOMAIN);
     hasher.writeU64Le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

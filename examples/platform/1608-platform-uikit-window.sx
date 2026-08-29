@@ -15,7 +15,7 @@
 
 @framework "UIKit";
 
-UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 
 g_window : *void = ---;
 
@@ -28,7 +28,7 @@ window_setter :: (self: *void, _cmd: *void, w: *void) abi(.c) {
     g_window = w;
 }
 
-scene_will_connect :: (self: *void, _cmd: *void, scene: *void, session: *void, options: *void) abi(.c) {
+sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, options: *void) abi(.c) {
     _ := self;
     _ := _cmd;
     _ := session;
@@ -102,7 +102,7 @@ main :: () -> i32 {
     if window_scene_proto != null { class_addProtocol(SxSceneDelegate, window_scene_proto); }
     class_addMethod(SxSceneDelegate,
         sel_registerName("scene:willConnectToSession:options:".ptr),
-        xx scene_will_connect, "v@:@@@".ptr);
+        xx sceneWillConnect, "v@:@@@".ptr);
     class_addMethod(SxSceneDelegate,
         sel_registerName("window".ptr),
         xx window_getter, "@@:".ptr);

@@ -1,7 +1,7 @@
 // The generic `Into(Block) for Closure(..$args) -> $R` impl in stdlib covers every
 // closure shape: the compiler monomorphises the impl body per call shape and emits
 // a dedicated `__invoke` `abi(.c)` trampoline plus Block literal (via
-// `@insert build_block_convert($args, $R);`). The shape here
+// `@insert buildBlockConvert($args, $R);`). The shape here
 // (`Closure(i64, i64) -> void`) resolves through it like any other.
 //
 // The block is invoked directly through `b.invoke` (a typed `abi(.c)` fn-pointer) —

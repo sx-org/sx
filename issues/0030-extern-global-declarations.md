@@ -20,7 +20,7 @@ extern g_metal_gpu : *MetalGPU;          // ← the compiler rejects this form
 
 load :: (self: *ChessPieces, path: [:0]u8) {
     inline if @host.os == .ios {
-        tex := g_metal_gpu.create_texture(w, h, .rgba8, xx pixels);
+        tex := g_metal_gpu.createTexture(w, h, .rgba8, xx pixels);
     }
 }
 ```

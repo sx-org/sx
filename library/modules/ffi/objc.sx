@@ -5,8 +5,8 @@
 // argument and return shape. The idiom:
 //
 //     Msg :: (recv: *void, sel: *void, arg: [*]u8) -> *void;
-//     msg_fn : Msg = objc_msgSend.(Msg);
-//     result := msg_fn(receiver, selector, c_str);
+//     msgFn : Msg = objc_msgSend.(Msg);
+//     result := msgFn(receiver, selector, cStr);
 
 @import "modules/std.sx";
 

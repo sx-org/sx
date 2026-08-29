@@ -3,12 +3,12 @@
 // UITouch events into the platform stream, and on every vsync clears
 // the screen
 // to a color that advances on each tap. Each tap also toggles the
-// on-screen keyboard so safe_insets.bottom can be observed growing /
+// on-screen keyboard so safeInsets.bottom can be observed growing /
 // shrinking under it.
 //
 // To visualize the safe-area / keyboard inset, the frame draws a red
-// bar at the bottom whose height equals `safe_insets.bottom`. The
-// platform interpolates `keyboard_height` over the keyboard's own
+// bar at the bottom whose height equals `safeInsets.bottom`. The
+// platform interpolates `keyboardHeight` over the keyboard's own
 // animation duration, so the bar slides in lockstep with iOS's
 // keyboard.
 //
@@ -39,28 +39,28 @@ g_keyboard_up : bool = false;
 g_loaded : bool = false;
 
 tap_frame :: () {
-    fc := g_uikit_plat.begin_frame();
+    fc := gUikitPlat.beginFrame();
 
     if !g_loaded {
         // Cache the GL fn-ptrs we use beyond what modules/ffi/opengl.sx loads.
-        glEnable_  = xx ios_gl_proc("glEnable".ptr);
-        glDisable_ = xx ios_gl_proc("glDisable".ptr);
-        glScissor_ = xx ios_gl_proc("glScissor".ptr);
+        glEnable_  = xx iosGlProc("glEnable".ptr);
+        glDisable_ = xx iosGlProc("glDisable".ptr);
+        glScissor_ = xx iosGlProc("glScissor".ptr);
         g_loaded = true;
     }
 
-    events := g_uikit_plat.poll_events();
+    events := gUikitPlat.pollEvents();
     i : i64 = 0;
     while i < events.len {
         ev := events.ptr[i];
         match ev {
-            case .input: |ie| { match ie { case .pointer_down: {
+            case .input: |ie| { match ie { case .pointerDown: {
                 g_color_index += 1;
                 if g_keyboard_up {
-                    g_uikit_plat.hide_keyboard();
+                    gUikitPlat.hideKeyboard();
                     g_keyboard_up = false;
                 } else {
-                    g_uikit_plat.show_keyboard();
+                    gUikitPlat.showKeyboard();
                     g_keyboard_up = true;
                 }
             } } }
@@ -73,22 +73,22 @@ tap_frame :: () {
     g : f32 = if phase == 1 then 0.8 else 0.1;
     b : f32 = if phase == 2 then 0.8 else 0.1;
 
-    glViewport(0, 0, fc.pixel_w, fc.pixel_h);
+    glViewport(0, 0, fc.pixelW, fc.pixelH);
     glClearColor(r, g, b, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Bottom bar = the interpolated safe-area bottom inset.
-    insets := g_uikit_plat.safe_insets();
-    bar_h_px : i32 = xx (insets.bottom * fc.dpi_scale);
+    insets := gUikitPlat.safeInsets();
+    bar_h_px : i32 = xx (insets.bottom * fc.dpiScale);
     if bar_h_px > 0 {
         glEnable_(GL_SCISSOR_TEST);
-        glScissor_(0, 0, fc.pixel_w, bar_h_px);
+        glScissor_(0, 0, fc.pixelW, bar_h_px);
         glClearColor(0.95, 0.25, 0.25, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
         glDisable_(GL_SCISSOR_TEST);
     }
 
-    g_uikit_plat.end_frame();
+    gUikitPlat.endFrame();
 }
 
 main :: () -> void {
@@ -97,5 +97,5 @@ main :: () -> void {
     inline if @host.os != .ios { return; }
     plat : *UIKitPlatform = xx c.libcMalloc(@sizeOf(UIKitPlatform));
     plat.init("SxUIKitPlatform", 0, 0);
-    uikit_app_run(plat, tap_frame);
+    uikitAppRun(plat, tap_frame);
 }

@@ -6,31 +6,31 @@
 // =====================================================================
 // platform.bundle — sx-side Apple `.app` bundler.
 //
-// Covers all three Apple targets from a single `bundle_main` entry:
+// Covers all three Apple targets from a single `bundleMain` entry:
 // macOS, iOS simulator, iOS device. Per-platform branching is keyed
 // off `BuildOptions.isMacos()` / `isIosSimulator()` / `isIosDevice()`
 // so the bundle layout, Info.plist shape, framework embedding,
 // provisioning, entitlements, and codesigning ceremony each match the
 // platform's requirements.
 //
-// Wiring: users opt in by registering `bundle_main` as the post-link
+// Wiring: users opt in by registering `bundleMain` as the post-link
 // callback in their own `@run` block. Example:
 //
 //     @run {
 //         opts := buildOptions();
 //         opts.setBundlePath("MyApp.app");
 //         opts.setBundleId("co.example.myapp");
-//         onBuild(bundle_main);
+//         onBuild(bundleMain);
 //     }
 // =====================================================================
 
-// `bundle_main` is the post-link callback — it runs in the comptime evaluator
+// `bundleMain` is the post-link callback — it runs in the comptime evaluator
 // (interp/VM) after `target.link()`, NEVER in the shipped binary. Marked
 // compile-time-only (nothing runtime-reachable calls it), so the backend does
 // not emit it and its `buildOptions()`
 // compiler-API call is permitted (it would otherwise be rejected as a
 // comptime-only function called at runtime).
-bundle_main :: (opts: BuildOptions) -> bool {
+bundleMain :: (opts: BuildOptions) -> bool {
     // Run the standard build core first (emit the object + link the binary) — an
     // `onBuild` override REPLACES defaultPipeline, so the bundler owns the whole
     // pipeline: emit + link, then wrap the linked binary into the `.app` / `.apk`.
@@ -54,7 +54,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
     }
 
     if opts.isAndroid() {
-        return android_bundle_main(opts, binary, bundle, bid);
+        return androidBundleMain(opts, binary, bundle, bid);
     }
 
     // Device builds without a real identity will be rejected by the
@@ -66,13 +66,13 @@ bundle_main :: (opts: BuildOptions) -> bool {
         }
     }
 
-    bundle_z := str_to_cstr(bundle);
+    bundleZ := strToCstr(bundle);
 
     // Clean previous bundle. `rm -rf` via shell until fs.sx grows
-    // `delete_dir_all`.
-    rm_cmd := concat("rm -rf \"", concat(bundle, "\""));
-    rm_z := str_to_cstr(rm_cmd);
-    if r := run(rm_z) {
+    // `deleteDirAll`.
+    rmCmd := concat("rm -rf \"", concat(bundle, "\""));
+    rmZ := strToCstr(rmCmd);
+    if r := run(rmZ) {
         if r.exitCode != 0 {
             out("error: bundle: failed to clean ");
             out(bundle);
@@ -80,7 +80,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
             return false;
         }
     }
-    if !createDirAll(bundle_z) {
+    if !createDirAll(bundleZ) {
         out("error: bundle: cannot create dir ");
         out(bundle);
         out("\n");
@@ -89,38 +89,38 @@ bundle_main :: (opts: BuildOptions) -> bool {
 
     // Apple .app layout: macOS goes through `Contents/{MacOS,Resources}`;
     // iOS / iOS-sim lay everything flat at the bundle root.
-    is_mac := opts.isMacos();
-    macos_dir := if is_mac then concat(bundle, "/Contents/MacOS") else bundle;
-    plist_dir := if is_mac then concat(bundle, "/Contents")       else bundle;
-    asset_root := if is_mac then concat(bundle, "/Contents/Resources") else bundle;
-    if is_mac {
-        if !createDirAll(str_to_cstr(macos_dir)) {
+    isMac := opts.isMacos();
+    macosDir := if isMac then concat(bundle, "/Contents/MacOS") else bundle;
+    plistDir := if isMac then concat(bundle, "/Contents")       else bundle;
+    assetRoot := if isMac then concat(bundle, "/Contents/Resources") else bundle;
+    if isMac {
+        if !createDirAll(strToCstr(macosDir)) {
             out("error: bundle: cannot create Contents/MacOS\n");
             return false;
         }
-        if !createDirAll(str_to_cstr(asset_root)) {
+        if !createDirAll(strToCstr(assetRoot)) {
             out("error: bundle: cannot create Contents/Resources\n");
             return false;
         }
     }
 
-    exe_name := basename(binary);
-    binary_z := str_to_cstr(binary);
-    exe_dest := concat(macos_dir, "/");
-    exe_dest = concat(exe_dest, exe_name);
-    exe_dest_z := str_to_cstr(exe_dest);
-    if !copyFile(binary_z, exe_dest_z) {
+    exeName := basename(binary);
+    binaryZ := strToCstr(binary);
+    exeDest := concat(macosDir, "/");
+    exeDest = concat(exeDest, exeName);
+    exeDestZ := strToCstr(exeDest);
+    if !copyFile(binaryZ, exeDestZ) {
         out("error: bundle: copy binary failed\n");
         return false;
     }
-    setMode(exe_dest_z, 493); // 0o755 = preserve executable bit
+    setMode(exeDestZ, 493); // 0o755 = preserve executable bit
 
     // Write Info.plist. Per-target shape — iOS needs UIDeviceFamily +
     // UIApplicationSceneManifest + DTPlatformName, macOS doesn't.
-    plist := build_info_plist(opts, exe_name, bid);
-    plist_path := concat(plist_dir, "/Info.plist");
-    plist_path_z := str_to_cstr(plist_path);
-    if !writeFile(plist_path_z, plist) {
+    plist := buildInfoPlist(opts, exeName, bid);
+    plistPath := concat(plistDir, "/Info.plist");
+    plistPathZ := strToCstr(plistPath);
+    if !writeFile(plistPathZ, plist) {
         out("error: bundle: write Info.plist failed\n");
         return false;
     }
@@ -129,7 +129,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // installs; harmless (and usually omitted) elsewhere.
     profile := opts.provisioningProfile();
     if profile.len > 0 {
-        if !embed_provisioning_profile(profile, bundle) {
+        if !embedProvisioningProfile(profile, bundle) {
             return false;
         }
     }
@@ -137,13 +137,13 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // Copy any user-registered asset directories into the bundle.
     // macOS: `<bundle>/Contents/Resources/<dest>/`. iOS: `<bundle>/<dest>/`.
     // Android (Week 7) will zip them into the APK at the same relative path.
-    // Recursive copy shells out to `cp -R` until fs.sx grows `list_dir`.
-    asset_count := opts.assetDirCount();
+    // Recursive copy shells out to `cp -R` until fs.sx grows `listDir`.
+    assetCount := opts.assetDirCount();
     j : i64 = 0;
-    while j < asset_count {
+    while j < assetCount {
         src := opts.assetDirSrcAt(j);
         dest := opts.assetDirDestAt(j);
-        if !copy_asset_dir(src, dest, asset_root) {
+        if !copyAssetDir(src, dest, assetRoot) {
             out("error: bundle: failed to copy asset dir '");
             out(src);
             out("'\n");
@@ -155,25 +155,25 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // iOS apps load user-supplied dynamic frameworks from
     // `<bundle>.app/Frameworks/<Name>.framework/<Name>` via the
     // `@executable_path/Frameworks` rpath set at link time. Recursive
-    // copy lives in `embed_framework` until fs.sx grows `list_dir`.
+    // copy lives in `embedFramework` until fs.sx grows `listDir`.
     // Only `-F` paths can contain frameworks that belong in the app. SDK
     // system frameworks (UIKit/Foundation/Metal/...) are linked from the OS
     // and must not be copied or warned about as "not embedded".
     if opts.isIos() and opts.frameworkPathCount() > 0 {
-        fw_count := opts.frameworkCount();
-        if fw_count > 0 {
-            fw_dir := concat(bundle, "/Frameworks");
-            fw_dir_z := str_to_cstr(fw_dir);
-            if !createDirAll(fw_dir_z) {
+        fwCount := opts.frameworkCount();
+        if fwCount > 0 {
+            fwDir := concat(bundle, "/Frameworks");
+            fwDirZ := strToCstr(fwDir);
+            if !createDirAll(fwDirZ) {
                 out("error: bundle: cannot create Frameworks dir\n");
                 return false;
             }
             i : i64 = 0;
-            while i < fw_count {
-                fw_name := opts.frameworkAt(i);
+            while i < fwCount {
+                fwName := opts.frameworkAt(i);
                 // A framework present in a user `-F` path is copied. Names not
                 // found there are SDK system frameworks and need no embedding.
-                embed_framework(opts, fw_name, fw_dir);
+                embedFramework(opts, fwName, fwDir);
                 i += 1;
             }
         }
@@ -183,21 +183,21 @@ bundle_main :: (opts: BuildOptions) -> bool {
     // entitlements; sim/macOS default to ad-hoc ("-").
     identity := opts.codesignIdentity();
     if identity.len == 0 { identity = "-"; }
-    ent_path := "";
+    entPath := "";
     if opts.isIosDevice() {
         if profile.len > 0 {
-            if e := extract_entitlements(profile, bid) {
-                ent_path = e;
+            if e := extractEntitlements(profile, bid) {
+                entPath = e;
             } else {
                 out("error: bundle: failed to extract entitlements from provisioning profile\n");
                 return false;
             }
         }
     }
-    if !codesign(bundle, identity, ent_path) {
+    if !codesign(bundle, identity, entPath) {
         return false;
     }
-    if opts.isIosDevice() and !profile_accepts_bundle_certificate(profile, bundle) {
+    if opts.isIosDevice() and !profileAcceptsBundleCertificate(profile, bundle) {
         out("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
         return false;
     }
@@ -211,7 +211,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
 // Copy a sx string (slice) into a freshly-allocated null-terminated
 // buffer for libc / `[:0]u8` callees. Allocated from
 // `context.allocator` like the rest of the bundling stage.
-str_to_cstr :: (s: string) -> [:0]u8 {
+strToCstr :: (s: string) -> [:0]u8 {
     buf := allocString(s.len);
     c.memcpy(buf.ptr, s.ptr, s.len);
     buf
@@ -226,9 +226,9 @@ IOS_MIN_OS : string : "14.0";
 // carry the keys the iOS launcher needs (UIDeviceFamily,
 // LSRequiresIPhoneOS, UIApplicationSceneManifest, DTPlatformName,
 // MinimumOSVersion); macOS doesn't need any of those.
-build_info_plist :: (opts: BuildOptions, exe_name: string, bundleId: string) -> string {
+buildInfoPlist :: (opts: BuildOptions, exeName: string, bundleId: string) -> string {
     if opts.isIos() {
-        platform_key := if opts.isIosSimulator() then "iPhoneSimulator" else "iPhoneOS";
+        platformKey := if opts.isIosSimulator() then "iPhoneSimulator" else "iPhoneOS";
         return format(@string PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -277,7 +277,7 @@ build_info_plist :: (opts: BuildOptions, exe_name: string, bundleId: string) -> 
     <string>{}</string>
 </dict>
 </plist>
-PLIST, xml.escape(bundleId), xml.escape(exe_name), xml.escape(exe_name), IOS_MIN_OS, platform_key);
+PLIST, xml.escape(bundleId), xml.escape(exeName), xml.escape(exeName), IOS_MIN_OS, platformKey);
     }
 
     // macOS (and any non-iOS Apple target) — the minimal plist both
@@ -301,18 +301,18 @@ PLIST, xml.escape(bundleId), xml.escape(exe_name), xml.escape(exe_name), IOS_MIN
     <string>0.1</string>
 </dict>
 </plist>
-PLIST, xml.escape(bundleId), xml.escape(exe_name), xml.escape(exe_name))
+PLIST, xml.escape(bundleId), xml.escape(exeName), xml.escape(exeName))
 }
 
 // Read a `.mobileprovision` and write it to
 // `<bundle>/embedded.mobileprovision`. iOS device installer rejects
 // the app without this file when a profile-bound identity is used.
-embed_provisioning_profile :: (profile: string, bundle: string) -> bool {
-    profile_z := str_to_cstr(profile);
-    if data := readFile(profile_z) {
+embedProvisioningProfile :: (profile: string, bundle: string) -> bool {
+    profileZ := strToCstr(profile);
+    if data := readFile(profileZ) {
         dest := concat(bundle, "/embedded.mobileprovision");
-        dest_z := str_to_cstr(dest);
-        if !writeFile(dest_z, data) {
+        destZ := strToCstr(dest);
+        if !writeFile(destZ, data) {
             out("error: bundle: failed to write embedded.mobileprovision\n");
             return false;
         }
@@ -324,29 +324,29 @@ embed_provisioning_profile :: (profile: string, bundle: string) -> bool {
     false
 }
 
-// Recursive-copy `<src_dir>` (relative to the build CWD) into
+// Recursive-copy `<srcDir>` (relative to the build CWD) into
 // `<bundle>/<dest>/`. Creates intermediate dirs as needed. Returns
-// true if `src_dir` doesn't exist (callers can register optional
+// true if `srcDir` doesn't exist (callers can register optional
 // asset trees without failing the build). Shells out to `cp -R`
-// because fs.sx exposes no `list_dir` / `walk`.
-copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
-    src_z := str_to_cstr(src);
-    if !exists(src_z) {
+// because fs.sx exposes no `listDir` / `walk`.
+copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
+    srcZ := strToCstr(src);
+    if !exists(srcZ) {
         // Treating missing src as "nothing to do" lets a project
         // register `addAssetDir("assets", "assets")` unconditionally
         // and only ship assets when the dir is present.
         return true;
     }
-    dest_full := concat(bundle, "/");
-    dest_full = concat(dest_full, dest);
-    // Parent of dest_full must exist for `cp -R src dest_full` to
-    // place src as dest_full's contents. We pre-create dest_full so cp
+    destFull := concat(bundle, "/");
+    destFull = concat(destFull, dest);
+    // Parent of destFull must exist for `cp -R src destFull` to
+    // place src as destFull's contents. We pre-create destFull so cp
     // works in "copy src contents into existing dir" mode by appending
     // a trailing `/` to src.
-    dest_full_z := str_to_cstr(dest_full);
-    if !createDirAll(dest_full_z) {
+    destFullZ := strToCstr(destFull);
+    if !createDirAll(destFullZ) {
         out("error: bundle: cannot create asset dest '");
-        out(dest_full);
+        out(destFull);
         out("'\n");
         return false;
     }
@@ -355,10 +355,10 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
     // *inside* dest as `dest/src/`, which is the wrong shape.
     cmd := concat("cp -R \"", src);
     cmd = concat(cmd, "/.\" \"");
-    cmd = concat(cmd, dest_full);
+    cmd = concat(cmd, destFull);
     cmd = concat(cmd, "\" 2>&1");
-    cmd_z := str_to_cstr(cmd);
-    if r := run(cmd_z) {
+    cmdZ := strToCstr(cmd);
+    if r := run(cmdZ) {
         if r.exitCode != 0 {
             out("error: cp -R failed:\n");
             out(r.stdout);
@@ -371,20 +371,20 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
 }
 
 // Recursive-copy `<name>.framework` from one of the user's `-F` search
-// paths into `<dest_dir>`. Walks the framework paths in order; first
+// paths into `<destDir>`. Walks the framework paths in order; first
 // hit wins. Falls back to a `cp -R` subprocess because fs.sx
-// doesn't expose `list_dir` / `walk` yet.
-embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool {
+// doesn't expose `listDir` / `walk` yet.
+embedFramework :: (opts: BuildOptions, name: string, destDir: string) -> bool {
     subdir := concat(name, ".framework");
-    path_count := opts.frameworkPathCount();
+    pathCount := opts.frameworkPathCount();
     i : i64 = 0;
-    while i < path_count {
+    while i < pathCount {
         base := opts.frameworkPathAt(i);
         candidate := concat(base, "/");
         candidate = concat(candidate, subdir);
-        candidate_z := str_to_cstr(candidate);
-        if exists(candidate_z) {
-            dest := concat(dest_dir, "/");
+        candidateZ := strToCstr(candidate);
+        if exists(candidateZ) {
+            dest := concat(destDir, "/");
             dest = concat(dest, subdir);
             // Shell-quoting is conservative — paths may contain
             // spaces (e.g. user's home dir on macOS). Wrap each path
@@ -393,8 +393,8 @@ embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool 
             cmd = concat(cmd, "\" \"");
             cmd = concat(cmd, dest);
             cmd = concat(cmd, "\"");
-            cmd_z := str_to_cstr(cmd);
-            if r := run(cmd_z) {
+            cmdZ := strToCstr(cmd);
+            if r := run(cmdZ) {
                 if r.exitCode != 0 {
                     out("error: cp -R ");
                     out(candidate);
@@ -419,7 +419,7 @@ embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool 
 // every DeveloperCertificates entry in the decoded profile and fail locally
 // with an actionable diagnostic instead of deferring to installd's opaque
 // 0xe8008015 error.
-profile_accepts_bundle_certificate :: (profile: string, bundle: string) -> bool {
+profileAcceptsBundleCertificate :: (profile: string, bundle: string) -> bool {
     tmp := ".sx-tmp/profile-cert-check";
     cmd := concat("rm -rf \"", tmp);
     cmd = concat(cmd, "\"; mkdir -p \"");
@@ -441,7 +441,7 @@ profile_accepts_bundle_certificate :: (profile: string, bundle: string) -> bool 
     cmd = concat(cmd, "/profile.plist\" | base64 -D | shasum -a 256 | cut -d ' ' -f 1); if [ \"$leaf\" = \"$cert\" ]; then ok=0; break; fi; i=$((i + 1)); done; rm -rf \"");
     cmd = concat(cmd, tmp);
     cmd = concat(cmd, "\"; exit $ok");
-    if r := run(str_to_cstr(cmd)) {
+    if r := run(strToCstr(cmd)) {
         return r.exitCode == 0;
     }
     false
@@ -454,20 +454,20 @@ profile_accepts_bundle_certificate :: (profile: string, bundle: string) -> bool 
 // `MIInstallerErrorDomain error 13` / `0xe8008015`.
 // Writes the resolved entitlements to `.sx-tmp/entitlements.plist`
 // and returns that path on success.
-extract_entitlements :: (profile: string, bundleId: string) -> ?string {
-    sx_tmp := str_to_cstr(".sx-tmp");
-    createDirAll(sx_tmp);
+extractEntitlements :: (profile: string, bundleId: string) -> ?string {
+    sxTmp := strToCstr(".sx-tmp");
+    createDirAll(sxTmp);
 
-    profile_plist := ".sx-tmp/profile.plist";
-    ent_path := ".sx-tmp/entitlements.plist";
+    profilePlist := ".sx-tmp/profile.plist";
+    entPath := ".sx-tmp/entitlements.plist";
 
     // 1. security cms -D -i <profile> -o profile.plist
     cmd1 := concat("security cms -D -i \"", profile);
     cmd1 = concat(cmd1, "\" -o \"");
-    cmd1 = concat(cmd1, profile_plist);
+    cmd1 = concat(cmd1, profilePlist);
     cmd1 = concat(cmd1, "\" 2>&1");
-    cmd1_z := str_to_cstr(cmd1);
-    if r := run(cmd1_z) {
+    cmd1Z := strToCstr(cmd1);
+    if r := run(cmd1Z) {
         if r.exitCode != 0 {
             out("error: failed to decode provisioning profile:\n");
             out(r.stdout);
@@ -479,12 +479,12 @@ extract_entitlements :: (profile: string, bundleId: string) -> ?string {
     }
 
     // 2. plutil -extract Entitlements xml1 -o entitlements.plist profile.plist
-    cmd2 := concat("plutil -extract Entitlements xml1 -o \"", ent_path);
+    cmd2 := concat("plutil -extract Entitlements xml1 -o \"", entPath);
     cmd2 = concat(cmd2, "\" \"");
-    cmd2 = concat(cmd2, profile_plist);
+    cmd2 = concat(cmd2, profilePlist);
     cmd2 = concat(cmd2, "\" 2>&1");
-    cmd2_z := str_to_cstr(cmd2);
-    if r := run(cmd2_z) {
+    cmd2Z := strToCstr(cmd2);
+    if r := run(cmd2Z) {
         if r.exitCode != 0 {
             out("error: failed to extract entitlements:\n");
             out(r.stdout);
@@ -499,11 +499,11 @@ extract_entitlements :: (profile: string, bundleId: string) -> ?string {
     //    `ApplicationIdentifierPrefix.0`. Using
     //    `com.apple.developer.team-identifier` would confuse plutil —
     //    dots in plutil paths are interpreted as path separators.
-    cmd3 := concat("plutil -extract ApplicationIdentifierPrefix.0 raw -o - \"", profile_plist);
+    cmd3 := concat("plutil -extract ApplicationIdentifierPrefix.0 raw -o - \"", profilePlist);
     cmd3 = concat(cmd3, "\"");
-    cmd3_z := str_to_cstr(cmd3);
+    cmd3Z := strToCstr(cmd3);
     team := "";
-    if r := run(cmd3_z) {
+    if r := run(cmd3Z) {
         if r.exitCode != 0 {
             out("error: profile missing ApplicationIdentifierPrefix:\n");
             out(r.stdout);
@@ -531,33 +531,33 @@ extract_entitlements :: (profile: string, bundleId: string) -> ?string {
     // 4. Ensure the profile's application identifier is either this exact app
     //    or a wildcard for the team. Rewriting an unrelated explicit App ID
     //    would make codesign pass locally but installd reject the bundle.
-    resolved_app_id := concat(team, ".");
-    resolved_app_id = concat(resolved_app_id, bundleId);
-    wildcard_app_id := concat(team, ".*");
-    cmd_profile_id := concat("plutil -extract Entitlements.application-identifier raw -o - \"", profile_plist);
-    cmd_profile_id = concat(cmd_profile_id, "\"");
-    profile_app_id := "";
-    if r := run(str_to_cstr(cmd_profile_id)) {
+    resolvedAppId := concat(team, ".");
+    resolvedAppId = concat(resolvedAppId, bundleId);
+    wildcardAppId := concat(team, ".*");
+    cmdProfileId := concat("plutil -extract Entitlements.application-identifier raw -o - \"", profilePlist);
+    cmdProfileId = concat(cmdProfileId, "\"");
+    profileAppId := "";
+    if r := run(strToCstr(cmdProfileId)) {
         if r.exitCode != 0 {
             out("error: profile missing application-identifier\n");
             return null;
         }
-        profile_app_id = r.stdout;
-        while profile_app_id.len > 0 {
-            last := profile_app_id[profile_app_id.len - 1];
-            if last == '\n' { profile_app_id = substr(profile_app_id, 0, profile_app_id.len - 1); }
-            else if last == '\r' { profile_app_id = substr(profile_app_id, 0, profile_app_id.len - 1); }
-            else if last == ' ' { profile_app_id = substr(profile_app_id, 0, profile_app_id.len - 1); }
-            else if last == '\t' { profile_app_id = substr(profile_app_id, 0, profile_app_id.len - 1); }
+        profileAppId = r.stdout;
+        while profileAppId.len > 0 {
+            last := profileAppId[profileAppId.len - 1];
+            if last == '\n' { profileAppId = substr(profileAppId, 0, profileAppId.len - 1); }
+            else if last == '\r' { profileAppId = substr(profileAppId, 0, profileAppId.len - 1); }
+            else if last == ' ' { profileAppId = substr(profileAppId, 0, profileAppId.len - 1); }
+            else if last == '\t' { profileAppId = substr(profileAppId, 0, profileAppId.len - 1); }
             else { break; }
         }
     } else {
         out("error: plutil application-identifier spawn failed\n");
         return null;
     }
-    if profile_app_id != wildcard_app_id and profile_app_id != resolved_app_id {
+    if profileAppId != wildcardAppId and profileAppId != resolvedAppId {
         out("error: provisioning profile application-identifier '");
-        out(profile_app_id);
+        out(profileAppId);
         out("' does not allow bundle id '");
         out(bundleId);
         out("'\n");
@@ -566,12 +566,12 @@ extract_entitlements :: (profile: string, bundleId: string) -> ?string {
 
     // 5. Resolve a wildcard to the concrete application identifier. Replacing
     //    an already-exact value with itself is harmless.
-    cmd4 := concat("plutil -replace application-identifier -string \"", resolved_app_id);
+    cmd4 := concat("plutil -replace application-identifier -string \"", resolvedAppId);
     cmd4 = concat(cmd4, "\" \"");
-    cmd4 = concat(cmd4, ent_path);
+    cmd4 = concat(cmd4, entPath);
     cmd4 = concat(cmd4, "\" 2>&1");
-    cmd4_z := str_to_cstr(cmd4);
-    if r := run(cmd4_z) {
+    cmd4Z := strToCstr(cmd4);
+    if r := run(cmd4Z) {
         if r.exitCode != 0 {
             out("error: failed to resolve application-identifier:\n");
             out(r.stdout);
@@ -582,25 +582,25 @@ extract_entitlements :: (profile: string, bundleId: string) -> ?string {
         return null;
     }
 
-    ent_path
+    entPath
 }
 
-// Codesign the bundle. Empty `ent_path` means no `--entitlements`
+// Codesign the bundle. Empty `entPath` means no `--entitlements`
 // flag (macOS / iOS-sim / ad-hoc). Folds stderr into stdout so a
 // failing run hands the user a useful diagnostic.
-codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
+codesign :: (bundle: string, identity: string, entPath: string) -> bool {
     cmd := concat("codesign --force --sign \"", identity);
     cmd = concat(cmd, "\" --timestamp=none");
-    if ent_path.len > 0 {
+    if entPath.len > 0 {
         cmd = concat(cmd, " --entitlements \"");
-        cmd = concat(cmd, ent_path);
+        cmd = concat(cmd, entPath);
         cmd = concat(cmd, "\"");
     }
     cmd = concat(cmd, " \"");
     cmd = concat(cmd, bundle);
     cmd = concat(cmd, "\" 2>&1");
-    cmd_z := str_to_cstr(cmd);
-    if r := run(cmd_z) {
+    cmdZ := strToCstr(cmd);
+    if r := run(cmdZ) {
         if r.exitCode != 0 {
             out("error: codesign failed:\n");
             out(r.stdout);
@@ -639,7 +639,7 @@ codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
 absolutify :: (path: string) -> string {
     if path.len == 0 { return path; }
     if path[0] == '/' { return path; }
-    if r := run(str_to_cstr("pwd")) {
+    if r := run(strToCstr("pwd")) {
         if r.exitCode != 0 { return path; }
         cwd := r.stdout;
         // Strip trailing newline that `pwd` emits.
@@ -652,55 +652,55 @@ absolutify :: (path: string) -> string {
     path
 }
 
-android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bundleId: string) -> bool {
+androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundleId: string) -> bool {
     // The bundler `cd`s into the stage dir for `zip` steps, so any
     // relative path the caller gave us would resolve against the wrong
     // cwd. Pin everything to absolute paths up front.
-    apk_path = absolutify(apk_path);
+    apkPath = absolutify(apkPath);
     binary = absolutify(binary);
 
-    sdk := discover_android_sdk();
+    sdk := discoverAndroidSdk();
     if sdk.len == 0 {
         out("error: cannot locate Android SDK \xe2\x80\x94 set $ANDROID_HOME\n");
         return false;
     }
 
-    build_tools := find_highest_subdir(pathJoin(sdk, "build-tools"));
-    if build_tools.len == 0 {
+    buildTools := findHighestSubdir(pathJoin(sdk, "build-tools"));
+    if buildTools.len == 0 {
         out("error: no build-tools under ");
         out(sdk);
         out("/build-tools\n");
         return false;
     }
-    platform_dir := find_highest_subdir(pathJoin(sdk, "platforms"));
-    if platform_dir.len == 0 {
+    platformDir := findHighestSubdir(pathJoin(sdk, "platforms"));
+    if platformDir.len == 0 {
         out("error: no platforms under ");
         out(sdk);
         out("/platforms\n");
         return false;
     }
-    android_jar := pathJoin(platform_dir, "android.jar");
+    androidJar := pathJoin(platformDir, "android.jar");
 
-    aapt2_path     := pathJoin(build_tools, "aapt2");
-    zipalign_path  := pathJoin(build_tools, "zipalign");
-    apksigner_path := pathJoin(build_tools, "apksigner");
-    d8_path        := pathJoin(build_tools, "d8");
+    aapt2Path     := pathJoin(buildTools, "aapt2");
+    zipalignPath  := pathJoin(buildTools, "zipalign");
+    apksignerPath := pathJoin(buildTools, "apksigner");
+    d8Path        := pathJoin(buildTools, "d8");
 
     // Staging dir alongside the apk output.
-    stage := concat(apk_path, ".stage");
-    lib_dir := pathJoin(stage, "lib/arm64-v8a");
+    stage := concat(apkPath, ".stage");
+    libDir := pathJoin(stage, "lib/arm64-v8a");
 
     // Clean previous stage. `rm -rf` via shell until fs.sx grows
-    // `delete_dir_all`.
-    rm_cmd := concat("rm -rf \"", stage);
-    rm_cmd = concat(rm_cmd, "\"");
-    if r := run(str_to_cstr(rm_cmd)) {
+    // `deleteDirAll`.
+    rmCmd := concat("rm -rf \"", stage);
+    rmCmd = concat(rmCmd, "\"");
+    if r := run(strToCstr(rmCmd)) {
         if r.exitCode != 0 {
             out("error: apk: failed to clean stage dir\n");
             return false;
         }
     }
-    if !createDirAll(str_to_cstr(lib_dir)) {
+    if !createDirAll(strToCstr(libDir)) {
         out("error: apk: cannot create stage lib dir\n");
         return false;
     }
@@ -708,48 +708,48 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     // libsxhello.so must literally start with "lib" for Android's
     // loader. The user's -o path already does (buildOptions enforces
     // it). Copy by basename into the staging lib dir.
-    so_basename := basename(binary);
-    so_dest := pathJoin(lib_dir, so_basename);
-    if !copyFile(str_to_cstr(binary), str_to_cstr(so_dest)) {
+    soBasename := basename(binary);
+    soDest := pathJoin(libDir, soBasename);
+    if !copyFile(strToCstr(binary), strToCstr(soDest)) {
         out("error: apk: failed to copy .so into stage\n");
         return false;
     }
 
     // Manifest: user-supplied or auto-generated.
     manifest := opts.manifestPath();
-    manifest_used := "";
-    lib_name := lib_name_from_so_basename(so_basename);
+    manifestUsed := "";
+    libName := libNameFromSoBasename(soBasename);
     if manifest.len > 0 {
-        manifest_used = manifest;
+        manifestUsed = manifest;
     } else {
-        generated_xml := build_android_manifest(opts, bundleId, lib_name);
-        generated_path := pathJoin(stage, "AndroidManifest.xml");
-        if !writeFile(str_to_cstr(generated_path), generated_xml) {
+        generatedXml := buildAndroidManifest(opts, bundleId, libName);
+        generatedPath := pathJoin(stage, "AndroidManifest.xml");
+        if !writeFile(strToCstr(generatedPath), generatedXml) {
             out("error: apk: failed to write AndroidManifest.xml\n");
             return false;
         }
-        manifest_used = generated_path;
+        manifestUsed = generatedPath;
     }
 
     // Compile each `main = true` decl's Java source.
-    jm_count := opts.jniMainCount();
-    if jm_count > 0 {
-        if !compile_jni_main_sources(opts, stage, android_jar, d8_path) {
+    jmCount := opts.jniMainCount();
+    if jmCount > 0 {
+        if !compileJniMainSources(opts, stage, androidJar, d8Path) {
             return false;
         }
     }
 
     // aapt2 link → unaligned apk with manifest + resources.
-    unaligned := concat(apk_path, ".unaligned");
-    aapt_cmd := concat("\"", aapt2_path);
-    aapt_cmd = concat(aapt_cmd, "\" link -I \"");
-    aapt_cmd = concat(aapt_cmd, android_jar);
-    aapt_cmd = concat(aapt_cmd, "\" --manifest \"");
-    aapt_cmd = concat(aapt_cmd, manifest_used);
-    aapt_cmd = concat(aapt_cmd, "\" -o \"");
-    aapt_cmd = concat(aapt_cmd, unaligned);
-    aapt_cmd = concat(aapt_cmd, "\" 2>&1");
-    if r := run(str_to_cstr(aapt_cmd)) {
+    unaligned := concat(apkPath, ".unaligned");
+    aaptCmd := concat("\"", aapt2Path);
+    aaptCmd = concat(aaptCmd, "\" link -I \"");
+    aaptCmd = concat(aaptCmd, androidJar);
+    aaptCmd = concat(aaptCmd, "\" --manifest \"");
+    aaptCmd = concat(aaptCmd, manifestUsed);
+    aaptCmd = concat(aaptCmd, "\" -o \"");
+    aaptCmd = concat(aaptCmd, unaligned);
+    aaptCmd = concat(aaptCmd, "\" 2>&1");
+    if r := run(strToCstr(aaptCmd)) {
         if r.exitCode != 0 {
             out("error: aapt2 link failed:\n");
             out(r.stdout);
@@ -765,11 +765,11 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     // directories and zip is on every macOS/Linux host by default.
     // Need to cd into stage so the relative `lib/` path is preserved
     // in the zip archive.
-    if !run_in_dir(stage, concat("zip -q -r \"", concat(unaligned, "\" lib/"))) {
+    if !runInDir(stage, concat("zip -q -r \"", concat(unaligned, "\" lib/"))) {
         return false;
     }
-    if jm_count > 0 {
-        if !run_in_dir(stage, concat("zip -q \"", concat(unaligned, "\" classes.dex"))) {
+    if jmCount > 0 {
+        if !runInDir(stage, concat("zip -q \"", concat(unaligned, "\" classes.dex"))) {
             return false;
         }
     }
@@ -777,26 +777,26 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
     // Asset dirs go in at their `dest` path inside the APK. The Zig
     // path used a hardcoded `assets/` walk; the sx form respects every
     // `addAssetDir(src, dest)` pair the user registered.
-    asset_count := opts.assetDirCount();
+    assetCount := opts.assetDirCount();
     j : i64 = 0;
-    while j < asset_count {
+    while j < assetCount {
         src := opts.assetDirSrcAt(j);
         dest := opts.assetDirDestAt(j);
-        if !zip_asset_dir(src, dest, unaligned) {
+        if !zipAssetDir(src, dest, unaligned) {
             return false;
         }
         j += 1;
     }
 
     // zipalign → aligned apk.
-    aligned := concat(apk_path, ".aligned");
-    align_cmd := concat("\"", zipalign_path);
-    align_cmd = concat(align_cmd, "\" -f 4 \"");
-    align_cmd = concat(align_cmd, unaligned);
-    align_cmd = concat(align_cmd, "\" \"");
-    align_cmd = concat(align_cmd, aligned);
-    align_cmd = concat(align_cmd, "\" 2>&1");
-    if r := run(str_to_cstr(align_cmd)) {
+    aligned := concat(apkPath, ".aligned");
+    alignCmd := concat("\"", zipalignPath);
+    alignCmd = concat(alignCmd, "\" -f 4 \"");
+    alignCmd = concat(alignCmd, unaligned);
+    alignCmd = concat(alignCmd, "\" \"");
+    alignCmd = concat(alignCmd, aligned);
+    alignCmd = concat(alignCmd, "\" 2>&1");
+    if r := run(strToCstr(alignCmd)) {
         if r.exitCode != 0 {
             out("error: zipalign failed:\n");
             out(r.stdout);
@@ -817,18 +817,18 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
             return false;
         }
     }
-    if !ensure_debug_keystore(keystore) {
+    if !ensureDebugKeystore(keystore) {
         return false;
     }
-    sign_cmd := concat("\"", apksigner_path);
-    sign_cmd = concat(sign_cmd, "\" sign --ks \"");
-    sign_cmd = concat(sign_cmd, keystore);
-    sign_cmd = concat(sign_cmd, "\" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out \"");
-    sign_cmd = concat(sign_cmd, apk_path);
-    sign_cmd = concat(sign_cmd, "\" \"");
-    sign_cmd = concat(sign_cmd, aligned);
-    sign_cmd = concat(sign_cmd, "\" 2>&1");
-    if r := run(str_to_cstr(sign_cmd)) {
+    signCmd := concat("\"", apksignerPath);
+    signCmd = concat(signCmd, "\" sign --ks \"");
+    signCmd = concat(signCmd, keystore);
+    signCmd = concat(signCmd, "\" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out \"");
+    signCmd = concat(signCmd, apkPath);
+    signCmd = concat(signCmd, "\" \"");
+    signCmd = concat(signCmd, aligned);
+    signCmd = concat(signCmd, "\" 2>&1");
+    if r := run(strToCstr(signCmd)) {
         if r.exitCode != 0 {
             out("error: apksigner failed:\n");
             out(r.stdout);
@@ -841,12 +841,12 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
 
     // Clean up intermediates (keep stage/ in case users want to
     // inspect it).
-    deleteFile(str_to_cstr(unaligned));
-    deleteFile(str_to_cstr(aligned));
-    run(str_to_cstr(concat("rm -rf \"", concat(stage, "\""))));
+    deleteFile(strToCstr(unaligned));
+    deleteFile(strToCstr(aligned));
+    run(strToCstr(concat("rm -rf \"", concat(stage, "\""))));
 
     out("apk: ");
-    out(apk_path);
+    out(apkPath);
     out("\n");
     true
 }
@@ -856,12 +856,12 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
 // Run `cmd` under a `cd <dir> && ...` shell wrapping. process.run
 // has no cwd arg, so it is composed via the shell.
 // Output is folded via `2>&1` so failures hand the user one stream.
-run_in_dir :: (dir: string, cmd: string) -> bool {
+runInDir :: (dir: string, cmd: string) -> bool {
     wrapped := concat("cd \"", dir);
     wrapped = concat(wrapped, "\" && ");
     wrapped = concat(wrapped, cmd);
     wrapped = concat(wrapped, " 2>&1");
-    if r := run(str_to_cstr(wrapped)) {
+    if r := run(strToCstr(wrapped)) {
         if r.exitCode != 0 {
             out("error: ");
             out(cmd);
@@ -878,22 +878,22 @@ run_in_dir :: (dir: string, cmd: string) -> bool {
 // Discover the Android SDK root. Honors $ANDROID_HOME /
 // $ANDROID_SDK_ROOT, otherwise picks the default install location on
 // macOS ($HOME/Library/Android/sdk).
-discover_android_sdk :: () -> string {
+discoverAndroidSdk :: () -> string {
     if h := env("ANDROID_HOME") { return h; }
     if h := env("ANDROID_SDK_ROOT") { return h; }
     if home := env("HOME") {
         candidate := pathJoin(home, "Library/Android/sdk");
-        if exists(str_to_cstr(candidate)) { return candidate; }
+        if exists(strToCstr(candidate)) { return candidate; }
     }
     ""
 }
 
 // Pick the lexicographically-highest subdir of `parent`. Equivalent to
 // `ls -1 <parent> | sort -V | tail -1`. Returns the full path or "".
-find_highest_subdir :: (parent: string) -> string {
+findHighestSubdir :: (parent: string) -> string {
     cmd := concat("ls -1 \"", parent);
     cmd = concat(cmd, "\" 2>/dev/null | sort -V | tail -1");
-    if r := run(str_to_cstr(cmd)) {
+    if r := run(strToCstr(cmd)) {
         if r.exitCode != 0 { return ""; }
         name := r.stdout;
         // Strip trailing whitespace.
@@ -914,7 +914,7 @@ find_highest_subdir :: (parent: string) -> string {
 // `libfoo.so` → `foo`. Android's `android.app.lib_name` meta-data
 // wants the trimmed name; the loader prepends `lib` and appends `.so`
 // at runtime.
-lib_name_from_so_basename :: (basename: string) -> string {
+libNameFromSoBasename :: (basename: string) -> string {
     name := basename;
     if name.len > 3 {
         if name[0] == 'l' {
@@ -944,16 +944,16 @@ lib_name_from_so_basename :: (basename: string) -> string {
 // `android:hasCode="true"` so Android loads the bundled classes.dex.
 // Otherwise it falls back to the legacy NativeActivity shape with an
 // `android.app.lib_name` meta-data entry pointing at the .so.
-build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string) -> string {
-    pkg_esc := xml.escape(package);
-    lib_esc := xml.escape(lib_name);
+buildAndroidManifest :: (opts: BuildOptions, package: string, libName: string) -> string {
+    pkgEsc := xml.escape(package);
+    libEsc := xml.escape(libName);
     if opts.jniMainCount() > 0 {
-        // First `main = true` decl drives the Activity. The runtime_path
+        // First `main = true` decl drives the Activity. The runtimePath
         // uses `/` separators; Java fully-qualified class names use
         // `.` so we rewrite.
-        runtime_path := opts.jniMainRuntimePathAt(0);
-        cls := slash_to_dot(runtime_path);
-        cls_esc := xml.escape(cls);
+        runtimePath := opts.jniMainRuntimePathAt(0);
+        cls := slashToDot(runtimePath);
+        clsEsc := xml.escape(cls);
         return format(@string MANIFEST
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -975,7 +975,7 @@ build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string
         </activity>
     </application>
 </manifest>
-MANIFEST, pkg_esc, lib_esc, cls_esc, lib_esc);
+MANIFEST, pkgEsc, libEsc, clsEsc, libEsc);
     }
     // NativeActivity fallback — the .so provides ANativeActivity_onCreate.
     format(@string MANIFEST
@@ -999,11 +999,11 @@ MANIFEST, pkg_esc, lib_esc, cls_esc, lib_esc);
         </activity>
     </application>
 </manifest>
-MANIFEST, pkg_esc, lib_esc, lib_esc, lib_esc)
+MANIFEST, pkgEsc, libEsc, libEsc, libEsc)
 }
 
 // `co/swipelab/sxchess/SxApp` → `co.swipelab.sxchess.SxApp`.
-slash_to_dot :: (path: string) -> string {
+slashToDot :: (path: string) -> string {
     buf := allocString(path.len);
     i := 0;
     while i < path.len {
@@ -1016,9 +1016,9 @@ slash_to_dot :: (path: string) -> string {
 
 // Last `/`-separated component of a forward-slash path (used to split
 // JNI runtime-class paths into pkg + class). `co/swipelab/Foo` → `Foo`.
-// `Foo` → `Foo`. `dir_part` returns the part before the last slash
+// `Foo` → `Foo`. `dirPart` returns the part before the last slash
 // (or "" if none).
-last_slash_component :: (path: string) -> string {
+lastSlashComponent :: (path: string) -> string {
     i := path.len;
     while i > 0 {
         if path[i - 1] == '/' { return substr(path, i, path.len - i); }
@@ -1027,7 +1027,7 @@ last_slash_component :: (path: string) -> string {
     path
 }
 
-dir_part :: (path: string) -> string {
+dirPart :: (path: string) -> string {
     i := path.len;
     while i > 0 {
         if path[i - 1] == '/' { return substr(path, 0, i - 1); }
@@ -1041,68 +1041,68 @@ dir_part :: (path: string) -> string {
 // the resulting class files via `d8 --release --lib <android.jar>
 // --output <stage>` so `<stage>/classes.dex` lands where the
 // orchestrator can zip it into the APK.
-compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: string, d8_path: string) -> bool {
-    java_root := pathJoin(stage, "java");
-    classes_root := pathJoin(stage, "classes");
-    if !createDirAll(str_to_cstr(java_root)) {
+compileJniMainSources :: (opts: BuildOptions, stage: string, androidJar: string, d8Path: string) -> bool {
+    javaRoot := pathJoin(stage, "java");
+    classesRoot := pathJoin(stage, "classes");
+    if !createDirAll(strToCstr(javaRoot)) {
         out("error: apk: cannot create java root\n");
         return false;
     }
-    if !createDirAll(str_to_cstr(classes_root)) {
+    if !createDirAll(strToCstr(classesRoot)) {
         out("error: apk: cannot create classes root\n");
         return false;
     }
 
-    javac := discover_javac();
+    javac := discoverJavac();
     if javac.len == 0 {
         out("error: javac not on PATH and $JAVA_HOME unset \xe2\x80\x94 install a JDK (Android Studio bundles one at $ANDROID_STUDIO/Contents/jre)\n");
         return false;
     }
 
-    // Compose javac + d8 arg lists by walking jni_main_decls. Each
-    // decl: write `<java_root>/<pkg>/<Cls>.java`, append java path to
+    // Compose javac + d8 arg lists by walking jniMainDecls. Each
+    // decl: write `<javaRoot>/<pkg>/<Cls>.java`, append java path to
     // javac argv + class path to d8 argv.
-    javac_files := "";
-    d8_files := "";
+    javacFiles := "";
+    d8Files := "";
     count := opts.jniMainCount();
     i : i64 = 0;
     while i < count {
-        runtime_path := opts.jniMainRuntimePathAt(i);
-        java_source := opts.jniMainJavaSourceAt(i);
-        pkg := dir_part(runtime_path);
-        cls := last_slash_component(runtime_path);
+        runtimePath := opts.jniMainRuntimePathAt(i);
+        javaSource := opts.jniMainJavaSourceAt(i);
+        pkg := dirPart(runtimePath);
+        cls := lastSlashComponent(runtimePath);
 
-        pkg_dir := if pkg.len > 0 then pathJoin(java_root, pkg) else java_root;
-        if !createDirAll(str_to_cstr(pkg_dir)) {
+        pkgDir := if pkg.len > 0 then pathJoin(javaRoot, pkg) else javaRoot;
+        if !createDirAll(strToCstr(pkgDir)) {
             out("error: apk: cannot create java pkg dir\n");
             return false;
         }
-        java_path := pathJoin(pkg_dir, concat(cls, ".java"));
-        if !writeFile(str_to_cstr(java_path), java_source) {
+        javaPath := pathJoin(pkgDir, concat(cls, ".java"));
+        if !writeFile(strToCstr(javaPath), javaSource) {
             out("error: apk: cannot write .java for ");
-            out(runtime_path);
+            out(runtimePath);
             out("\n");
             return false;
         }
-        if javac_files.len > 0 { javac_files = concat(javac_files, " "); }
-        javac_files = concat(javac_files, concat("\"", concat(java_path, "\"")));
+        if javacFiles.len > 0 { javacFiles = concat(javacFiles, " "); }
+        javacFiles = concat(javacFiles, concat("\"", concat(javaPath, "\"")));
 
-        class_subpath := if pkg.len > 0 then pathJoin(pkg, concat(cls, ".class")) else concat(cls, ".class");
-        class_path := pathJoin(classes_root, class_subpath);
-        if d8_files.len > 0 { d8_files = concat(d8_files, " "); }
-        d8_files = concat(d8_files, concat("\"", concat(class_path, "\"")));
+        classSubpath := if pkg.len > 0 then pathJoin(pkg, concat(cls, ".class")) else concat(cls, ".class");
+        classPath := pathJoin(classesRoot, classSubpath);
+        if d8Files.len > 0 { d8Files = concat(d8Files, " "); }
+        d8Files = concat(d8Files, concat("\"", concat(classPath, "\"")));
         i += 1;
     }
 
-    javac_cmd := concat("\"", javac);
-    javac_cmd = concat(javac_cmd, "\" -d \"");
-    javac_cmd = concat(javac_cmd, classes_root);
-    javac_cmd = concat(javac_cmd, "\" -classpath \"");
-    javac_cmd = concat(javac_cmd, android_jar);
-    javac_cmd = concat(javac_cmd, "\" --release 11 ");
-    javac_cmd = concat(javac_cmd, javac_files);
-    javac_cmd = concat(javac_cmd, " 2>&1");
-    if r := run(str_to_cstr(javac_cmd)) {
+    javacCmd := concat("\"", javac);
+    javacCmd = concat(javacCmd, "\" -d \"");
+    javacCmd = concat(javacCmd, classesRoot);
+    javacCmd = concat(javacCmd, "\" -classpath \"");
+    javacCmd = concat(javacCmd, androidJar);
+    javacCmd = concat(javacCmd, "\" --release 11 ");
+    javacCmd = concat(javacCmd, javacFiles);
+    javacCmd = concat(javacCmd, " 2>&1");
+    if r := run(strToCstr(javacCmd)) {
         if r.exitCode != 0 {
             out("error: javac failed:\n");
             out(r.stdout);
@@ -1113,15 +1113,15 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
         return false;
     }
 
-    d8_cmd := concat("\"", d8_path);
-    d8_cmd = concat(d8_cmd, "\" --release --lib \"");
-    d8_cmd = concat(d8_cmd, android_jar);
-    d8_cmd = concat(d8_cmd, "\" --output \"");
-    d8_cmd = concat(d8_cmd, stage);
-    d8_cmd = concat(d8_cmd, "\" ");
-    d8_cmd = concat(d8_cmd, d8_files);
-    d8_cmd = concat(d8_cmd, " 2>&1");
-    if r := run(str_to_cstr(d8_cmd)) {
+    d8Cmd := concat("\"", d8Path);
+    d8Cmd = concat(d8Cmd, "\" --release --lib \"");
+    d8Cmd = concat(d8Cmd, androidJar);
+    d8Cmd = concat(d8Cmd, "\" --output \"");
+    d8Cmd = concat(d8Cmd, stage);
+    d8Cmd = concat(d8Cmd, "\" ");
+    d8Cmd = concat(d8Cmd, d8Files);
+    d8Cmd = concat(d8Cmd, " 2>&1");
+    if r := run(strToCstr(d8Cmd)) {
         if r.exitCode != 0 {
             out("error: d8 failed:\n");
             out(r.stdout);
@@ -1137,10 +1137,10 @@ compile_jni_main_sources :: (opts: BuildOptions, stage: string, android_jar: str
 // Locate `javac`. Honors `$JAVA_HOME/bin/javac` first (Android
 // Studio's bundled JDK sets this on macOS), then falls back to a PATH
 // lookup via `command -v`.
-discover_javac :: () -> string {
+discoverJavac :: () -> string {
     if jh := env("JAVA_HOME") {
         cand := pathJoin(jh, "bin/javac");
-        if exists(str_to_cstr(cand)) { return cand; }
+        if exists(strToCstr(cand)) { return cand; }
     }
     if path := findExecutable("javac") { return path; }
     ""
@@ -1151,22 +1151,22 @@ discover_javac :: () -> string {
 // -r` from a temporary cwd that produces clean entries (no `../`
 // noise). Missing src is treated as "nothing to do" so projects can
 // register optional asset trees.
-zip_asset_dir :: (src: string, dest: string, apk: string) -> bool {
-    if !exists(str_to_cstr(src)) { return true; }
-    asset_root := str_to_cstr(".sx-tmp/apk-assets");
-    createDirAll(asset_root);
-    rm_cmd := concat("rm -rf \".sx-tmp/apk-assets/", concat(dest, "\""));
-    run(str_to_cstr(rm_cmd));
-    parent := if dir_part(dest).len > 0 then concat(".sx-tmp/apk-assets/", dir_part(dest)) else ".sx-tmp/apk-assets";
-    if !createDirAll(str_to_cstr(parent)) {
+zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
+    if !exists(strToCstr(src)) { return true; }
+    assetRoot := strToCstr(".sx-tmp/apk-assets");
+    createDirAll(assetRoot);
+    rmCmd := concat("rm -rf \".sx-tmp/apk-assets/", concat(dest, "\""));
+    run(strToCstr(rmCmd));
+    parent := if dirPart(dest).len > 0 then concat(".sx-tmp/apk-assets/", dirPart(dest)) else ".sx-tmp/apk-assets";
+    if !createDirAll(strToCstr(parent)) {
         out("error: apk: cannot create asset stage dir\n");
         return false;
     }
-    cp_cmd := concat("cp -R \"", src);
-    cp_cmd = concat(cp_cmd, "\" \".sx-tmp/apk-assets/");
-    cp_cmd = concat(cp_cmd, dest);
-    cp_cmd = concat(cp_cmd, "\" 2>&1");
-    if r := run(str_to_cstr(cp_cmd)) {
+    cpCmd := concat("cp -R \"", src);
+    cpCmd = concat(cpCmd, "\" \".sx-tmp/apk-assets/");
+    cpCmd = concat(cpCmd, dest);
+    cpCmd = concat(cpCmd, "\" 2>&1");
+    if r := run(strToCstr(cpCmd)) {
         if r.exitCode != 0 {
             out("error: cp -R asset dir failed:\n");
             out(r.stdout);
@@ -1180,28 +1180,28 @@ zip_asset_dir :: (src: string, dest: string, apk: string) -> bool {
     // typically gives a relative path; resolve via $(pwd) into an
     // absolute one so `cd .sx-tmp/apk-assets && zip <apk>` still
     // references the right file.
-    abs_apk := if apk.len > 0 then (if apk[0] == '/' then apk else concat("$(pwd)/", apk)) else apk;
-    zip_cmd := concat("zip -q -r \"", abs_apk);
-    zip_cmd = concat(zip_cmd, "\" \"");
-    zip_cmd = concat(zip_cmd, dest);
-    zip_cmd = concat(zip_cmd, "\"");
-    if !run_in_dir(".sx-tmp/apk-assets", zip_cmd) { return false; }
+    absApk := if apk.len > 0 then (if apk[0] == '/' then apk else concat("$(pwd)/", apk)) else apk;
+    zipCmd := concat("zip -q -r \"", absApk);
+    zipCmd = concat(zipCmd, "\" \"");
+    zipCmd = concat(zipCmd, dest);
+    zipCmd = concat(zipCmd, "\"");
+    if !runInDir(".sx-tmp/apk-assets", zipCmd) { return false; }
     true
 }
 
 // Generate the Android debug keystore on first use. The defaults
 // match what Android Studio creates: alias `androiddebugkey`, password
 // `android` for both store and key, RSA-2048, 10000-day validity.
-ensure_debug_keystore :: (keystorePath: string) -> bool {
-    if exists(str_to_cstr(keystorePath)) { return true; }
+ensureDebugKeystore :: (keystorePath: string) -> bool {
+    if exists(strToCstr(keystorePath)) { return true; }
     // mkdir -p the parent dir if needed.
-    parent := dir_part(keystorePath);
+    parent := dirPart(keystorePath);
     if parent.len > 0 {
-        createDirAll(str_to_cstr(parent));
+        createDirAll(strToCstr(parent));
     }
     cmd := concat("keytool -genkeypair -keystore \"", keystorePath);
     cmd = concat(cmd, "\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=Android Debug,O=Android,C=US\" 2>&1");
-    if r := run(str_to_cstr(cmd)) {
+    if r := run(strToCstr(cmd)) {
         if r.exitCode != 0 {
             out("error: keytool failed:\n");
             out(r.stdout);

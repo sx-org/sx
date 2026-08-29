@@ -1,7 +1,7 @@
 // iOS-only: bring up UIKitPlatform in Metal mode, clear the screen dark
 // blue each frame, then draw a colored triangle via the GPU protocol —
-// exercises create_shader (MSL compile + pipeline state), create_buffer
-// + update_buffer, set_shader, set_vertex_buffer, and draw_triangles.
+// exercises createShader (MSL compile + pipeline state), createBuffer
+// + updateBuffer, setShader, setVertexBuffer, and drawTriangles.
 //
 // Build for iOS sim:
 //   /Users/agra/projects/sx/zig-out/bin/sx build --target ios-sim \
@@ -31,7 +31,7 @@
 // `packed_*` types have 4-byte alignment so the struct doesn't get
 // padded between fields (a plain `float4` would force 16-byte alignment
 // and pad the struct out to 32 bytes per vertex). Entry-point names
-// (vmain / fmain) match what MetalGPU.create_shader looks up.
+// (vmain / fmain) match what MetalGPU.createShader looks up.
 TRI_MSL :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
@@ -65,53 +65,53 @@ TRI_VERTS : [18]f32 = .[
      0.0,  0.6,   0.0, 0.0, 1.0, 1.0,
 ];
 
-g_plat   : *UIKitPlatform = null;
+gPlat   : *UIKitPlatform = null;
 g_gpu    : *MetalGPU      = null;
 g_shader : ShaderHandle   = 0;
 g_vbuf   : BufferHandle   = 0;
 
 frame :: () {
-    if g_plat == null { return; }
+    if gPlat == null { return; }
     if g_gpu  == null { return; }
 
     // Lazy-init the GPU on the first frame where the layer is available
     // (the layer is created during -[SxAppDelegate didFinishLaunching:]
     // which fires AFTER our main() returns into UIApplicationMain).
     if g_gpu.layer == null {
-        gl_layer := g_plat.gl_layer;
-        if gl_layer == null { return; }
-        if !g_gpu.init(gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
+        glLayer := gPlat.glLayer;
+        if glLayer == null { return; }
+        if !g_gpu.init(glLayer, gPlat.pixelW, gPlat.pixelH) { return; }
     }
 
     // Compile shader + upload vertex buffer once.
     if g_shader == 0 {
-        g_shader = g_gpu.create_shader(TRI_MSL, "");
+        g_shader = g_gpu.createShader(TRI_MSL, "");
         if g_shader == 0 { return; }
     }
     if g_vbuf == 0 {
-        g_vbuf = g_gpu.create_buffer(72);  // 3 verts × 24 bytes
+        g_vbuf = g_gpu.createBuffer(72);  // 3 verts × 24 bytes
         if g_vbuf == 0 { return; }
-        g_gpu.update_buffer(g_vbuf, *TRI_VERTS, 72);
+        g_gpu.updateBuffer(g_vbuf, *TRI_VERTS, 72);
     }
 
     bg : ClearColor = .{ r = 0.07, g = 0.10, b = 0.18, a = 1.0 };
-    if !g_gpu.begin_frame(bg) { return; }
-    g_gpu.set_shader(g_shader);
-    g_gpu.set_vertex_buffer(g_vbuf);
-    g_gpu.draw_triangles(0, 3);
-    g_gpu.end_frame(0.0);
+    if !g_gpu.beginFrame(bg) { return; }
+    g_gpu.setShader(g_shader);
+    g_gpu.setVertexBuffer(g_vbuf);
+    g_gpu.drawTriangles(0, 3);
+    g_gpu.endFrame(0.0);
 }
 
 main :: () -> i32 {
     inline if @host.os != .ios { return 0; }
 
-    plat := context.allocator.make(UIKitPlatform{ gpu_mode = .metal });
+    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
     if !plat.init("Metal Clear", 0, 0) { return 1; }
-    g_plat = plat;
+    gPlat = plat;
 
     g_gpu = context.allocator.make(MetalGPU{});
 
-    uikit_app_run(plat, frame);
+    uikitAppRun(plat, frame);
     plat.shutdown();
     0
 }

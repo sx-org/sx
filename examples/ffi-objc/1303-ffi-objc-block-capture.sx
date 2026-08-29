@@ -1,5 +1,5 @@
 // A capturing closure rides through `xx ... : Block` and the
-// captured state survives across the call. The block's sx_env field
+// captured state survives across the call. The block's sxEnv field
 // holds the closure's env pointer; the invoke trampoline restores it
 // before delegating.
 

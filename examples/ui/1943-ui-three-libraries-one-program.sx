@@ -33,11 +33,11 @@ main :: () -> i32 {
     ct := c.RenderTree{};
     et := e.RenderTree{};
     ft := f.RenderTree{};
-    c.render_root(*cv, c.Size{ width = 80.0, height = 20.0 }, *ct);
-    e.render_root(*ev, e.Size{ width = 80.0, height = 20.0 }, *et);
-    f.render_root(*fv, f.Size{ width = 80.0, height = 20.0 }, *ft);
+    c.renderRoot(*cv, c.Size{ width = 80.0, height = 20.0 }, *ct);
+    e.renderRoot(*ev, e.Size{ width = 80.0, height = 20.0 }, *et);
+    f.renderRoot(*fv, f.Size{ width = 80.0, height = 20.0 }, *ft);
     print("commands {} {} {}\n",
-        c.command_count(*ct), e.command_count(*et), f.command_count(*ft));
+        c.commandCount(*ct), e.commandCount(*et), f.commandCount(*ft));
     0
 }
 

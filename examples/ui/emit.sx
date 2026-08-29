@@ -41,5 +41,5 @@ VStack :: containers.VStack;
 EmitSink :: sink.EmitSink;
 emit :: emit_mod.emit;
 vstack :: containers.vstack;
-render_root :: runtime.render_root;
-command_count :: runtime.command_count;
+renderRoot :: runtime.renderRoot;
+commandCount :: runtime.commandCount;

@@ -20,7 +20,7 @@
 //
 // The corpus compiles this file but does not run it: the pixel comparison
 // is a manual host gate, and where no display or GPU exists
-// open_pixel_surface returns null and this reports a clean skip.
+// openPixelSurface returns null and this reports a clean skip.
 @import "modules/std.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
@@ -51,7 +51,7 @@ sampled :: (px: string, w: i64, x: i64, y: i64, c: Color, what: [:0]u8) -> bool 
 }
 
 main :: () {
-    surface := open_pixel_surface(200, 120);
+    surface := openPixelSurface(200, 120);
     if surface == null {
         print("pixels skipped: no display/GPU on this host\n");
         return;
@@ -61,16 +61,16 @@ main :: () {
     tree := RenderTree.init();
     ctx := RenderContext.init(*tree);
 
-    ctx.add_rect(Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
+    ctx.addRect(Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
     // Number-pad key: dark-gray cap under a blue ring.
-    ctx.add_stroked_rect(Frame.make(20.0, 20.0, 60.0, 60.0),
+    ctx.addStrokedRect(Frame.make(20.0, 20.0, 60.0, 60.0),
         COLOR_DARK_GRAY, COLOR_BLUE, 6.0, 10.0);
     // Unselected chip: transparent interior, green ring.
-    ctx.add_stroked_rect(Frame.make(120.0, 20.0, 60.0, 60.0),
+    ctx.addStrokedRect(Frame.make(120.0, 20.0, 60.0, 60.0),
         COLOR_TRANSPARENT, COLOR_GREEN, 6.0, 10.0);
 
     s.render(*tree);
-    pixels := s.read_rgba(context.allocator);
+    pixels := s.readRgba(context.allocator);
     w := s.width();
 
     ok := true;
@@ -85,6 +85,6 @@ main :: () {
     if !sampled(pixels, w, 150, 23, COLOR_GREEN, "chip ring draws without a fill") { ok = false; }
     if !sampled(pixels, w, 150, 50, BACKDROP, "chip interior stays transparent") { ok = false; }
 
-    if !pixel_golden(pixels, w, s.height(), "examples/ui/pixels/1937-stroked-rect.png") { ok = false; }
+    if !pixelGolden(pixels, w, s.height(), "examples/ui/pixels/1937-stroked-rect.png") { ok = false; }
     if !ok { process.exit(1); }
 }

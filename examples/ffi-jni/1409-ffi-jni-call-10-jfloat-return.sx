@@ -1,6 +1,6 @@
 // `@JniCall(f32)` (jfloat return). CallFloatMethod is vtable slot 55.
 // `MotionEvent.getX()` / `getY()` return this shape into
-// `sx_android_push_touch`.
+// `sxAndroidPushTouch`.
 
 @import "modules/std.sx";
 

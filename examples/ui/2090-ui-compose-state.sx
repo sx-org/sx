@@ -1,6 +1,6 @@
 // A compose call site keeps its own state across the builds that reach it.
 //
-// `use_state` claims the entry its site owns: the first build to reach the site
+// `useState` claims the entry its site owns: the first build to reach the site
 // fills it from the default, and every later one is handed back what the
 // previous build left. Two sites never share an entry, a site reached twice in
 // one build gets one entry per occurrence, and a site a committed build stops
@@ -10,14 +10,14 @@
 
 // One site — its entry survives every frame that runs this.
 tick :: () -> i64 {
-    n := use_state(i64, 0);
+    n := useState(i64, 0);
     n.set(n.get() + 1);
     n.get()
 }
 
 // A second site, with its own entry and its own default.
 offset :: () -> i64 {
-    n := use_state(i64, 100);
+    n := useState(i64, 100);
     n.set(n.get() + 10);
     n.get()
 }
@@ -28,8 +28,8 @@ Cursor :: struct {
 }
 
 frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i64, c: i64) {
-    ui.begin_build();
-    store.begin_build();
+    ui.beginBuild();
+    store.beginBuild();
 
     counted := tick();
     shifted := if with_offset then offset() else 0;
@@ -38,7 +38,7 @@ frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i
     // of ONE site keep three entries.
     total := 0;
     for i in 0..3 {
-        cur := use_state(Cursor, .{});
+        cur := useState(Cursor, .{});
         v := cur.get();
         v.row += 1;
         v.col += i;
@@ -46,7 +46,7 @@ frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i
         total += v.row * 10 + v.col;
     }
 
-    store.commit_build();
+    store.commitBuild();
     return a = counted, b = shifted, c = total;
 }
 

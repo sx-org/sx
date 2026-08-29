@@ -6,9 +6,9 @@
 
 // Measures the root against the viewport, lays it out, and renders it into a
 // tree the caller owns.
-render_root :: (root: *View, viewport: Size, tree: *RenderTree) {
+renderRoot :: (root: *View, viewport: Size, tree: *RenderTree) {
     proposal := ProposedSize.fixed(viewport.width, viewport.height);
-    size := root.size_that_fits(proposal);
+    size := root.sizeThatFits(proposal);
     bounds := Frame.make(0.0, 0.0, size.width, size.height);
     root.layout(bounds);
     rc := RenderContext.init(tree);
@@ -17,4 +17,4 @@ render_root :: (root: *View, viewport: Size, tree: *RenderTree) {
 
 // The command count is what a test asserts against without owning the tree's
 // representation.
-command_count :: (tree: *RenderTree) -> i64 => tree.commands.len;
+commandCount :: (tree: *RenderTree) -> i64 => tree.commands.len;
