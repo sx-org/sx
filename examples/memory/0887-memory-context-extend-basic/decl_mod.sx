@@ -2,4 +2,4 @@
 // existence, never visibility.
 @import "modules/std.sx";
 
-@context_extend trace_depth: i64 = 3;
+@contextExtend trace_depth: i64 = 3;

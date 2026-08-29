@@ -79,12 +79,12 @@ test "each cursor operation takes the local's address in every statement positio
     try lower(arena.allocator(),
         \\walk :: (n: i32, ..) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
-        \\    @va_start(*ap);
+        \\    @vaStart(*ap);
         \\    dup: @VaList = ---;
-        \\    @va_copy(*dup, *ap);
-        \\    v := @va_arg(i64, *ap);
-        \\    @va_end(*ap);
-        \\    defer @va_end(*dup);
+        \\    @vaCopy(*dup, *ap);
+        \\    v := @vaArg(i64, *ap);
+        \\    @vaEnd(*ap);
+        \\    defer @vaEnd(*dup);
         \\    return v;
         \\}
         \\main :: () -> i64 { return walk(1, 7); }
@@ -178,8 +178,8 @@ test "a boundary argument names a place, not a borrow or a value" {
         \\reader :: (n: i32, ap: @VaList) -> i64 extern;
         \\walk :: (n: i32, ..) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
-        \\    @va_start(*ap);
-        \\    defer @va_end(*ap);
+        \\    @vaStart(*ap);
+        \\    defer @vaEnd(*ap);
         \\    return reader(n, *ap) + reader(n, 7);
         \\}
         \\main :: () -> i64 { return walk(1, 7); }
@@ -368,8 +368,8 @@ test "an unwrapped C boundary and an internal borrow stay legal" {
         \\borrow :: (n: i32, ap: *@VaList) -> i64 { return c_reader(n, ap.*); }
         \\own :: (n: i32, ..) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
-        \\    @va_start(*ap);
-        \\    defer @va_end(*ap);
+        \\    @vaStart(*ap);
+        \\    defer @vaEnd(*ap);
         \\    return borrow(n, *ap);
         \\}
         \\main :: () -> i64 { return own(1, 7); }
@@ -437,10 +437,10 @@ test "a generic monomorph keeps the declaration's convention and tail" {
     try lower(arena.allocator(),
         \\read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
         \\    ap: @VaList = ---;
-        \\    @va_start(*ap);
-        \\    defer @va_end(*ap);
+        \\    @vaStart(*ap);
+        \\    defer @vaEnd(*ap);
         \\    total: i64 = first;
-        \\    total += @va_arg(i32, *ap);
+        \\    total += @vaArg(i32, *ap);
         \\    return total;
         \\}
         \\main :: () -> i64 { return read_tail(i32, 40, 2); }

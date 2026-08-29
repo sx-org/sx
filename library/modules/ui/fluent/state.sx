@@ -89,7 +89,7 @@ StateStore :: struct {
     }
 }
 
-@context_extend fluent_state: *StateStore = null;
+@contextExtend fluent_state: *StateStore = null;
 
 // Claims the storage this call site owns for the build in progress.
 use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T) {

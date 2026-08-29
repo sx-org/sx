@@ -285,7 +285,7 @@ fn volatileProbeIr(alloc: std.mem.Allocator, name: [:0]const u8, volatile_access
     return alloc.dupe(u8, emitter.dumpToString());
 }
 
-test "`@volatile_load` / `@volatile_store` carry the volatile bit and no ordering" {
+test "`@volatileLoad` / `@volatileStore` carry the volatile bit and no ordering" {
     const alloc = std.testing.allocator;
     const ir_str = try volatileProbeIr(alloc, "test_volatile", true, .none);
     defer alloc.free(ir_str);

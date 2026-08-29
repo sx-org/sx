@@ -5,4 +5,4 @@
 @import "modules/std.sx";
 @import "examples/ui/emit/sink.sx";
 
-@context_extend emit_ui: *EmitSink = null;
+@contextExtend emit_ui: *EmitSink = null;

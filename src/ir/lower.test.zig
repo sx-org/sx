@@ -2776,7 +2776,7 @@ test "type alias: named-product alias registers the structural struct TypeId" {
     try std.testing.expectEqualStrings("b", module.types.getString(nt_info.@"struct".fields[1].name));
 }
 
-test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
+test "`@volatileLoad` / `@volatileStore` reach the volatile ops" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2784,8 +2784,8 @@ test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
     const src =
         \\main :: () {
         \\    slot: i64 = 1;
-        \\    v := @volatile_load(i64, *slot);
-        \\    @volatile_store(i64, *slot, v + 1);
+        \\    v := @volatileLoad(i64, *slot);
+        \\    @volatileStore(i64, *slot, v + 1);
         \\}
         \\
     ;
@@ -2824,7 +2824,7 @@ test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
     try std.testing.expectEqual(@as(usize, 1), stores);
 }
 
-test "a narrower signed value reaches `@volatile_store` sign-extended" {
+test "a narrower signed value reaches `@volatileStore` sign-extended" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2833,7 +2833,7 @@ test "a narrower signed value reaches `@volatile_store` sign-extended" {
         \\main :: () {
         \\    slot: i64 = 0;
         \\    narrow: i32 = -1;
-        \\    @volatile_store(i64, *slot, narrow);
+        \\    @volatileStore(i64, *slot, narrow);
         \\}
         \\
     ;

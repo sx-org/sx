@@ -1,7 +1,7 @@
 // A rejected branch gives the Context back.
 //
 // The same shape as 1994 with the condition inverted. While the branch is
-// undecided the imported `@context_extend` holds the layout open and the run
+// undecided the imported `@contextExtend` holds the layout open and the run
 // below cannot start; rejecting the branch retires exactly that contribution,
 // Context-ready fires, and the run executes against the layout the program
 // really has. A contribution that did not come back would leave the run

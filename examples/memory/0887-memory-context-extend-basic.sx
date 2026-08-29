@@ -1,4 +1,4 @@
-// `@context_extend` end-to-end (design/context-extension.md):
+// `@contextExtend` end-to-end (design/context-extension.md):
 // - a module declares a field; the compiler assembles the program's
 //   Context from every declaration in the compilation.
 // - the default is visible before any push (`trace_depth` reads 3,
@@ -10,7 +10,7 @@
 @import "0887-memory-context-extend-basic/decl_mod.sx";
 @import "0887-memory-context-extend-basic/reader_mod.sx";
 
-@context_extend marker: ?*i64 = null;
+@contextExtend marker: ?*i64 = null;
 
 main :: () {
     print("default trace_depth = {}\n", context.trace_depth);

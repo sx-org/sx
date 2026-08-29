@@ -14,8 +14,8 @@
 //!   - `.declared` — stdlib owns the canonical declaration, and the compiler
 //!     recognizes it by (module, name) identity plus, for a struct, its field
 //!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`, `@VaList`,
-//!     `@volatile_load`, `@volatile_store`, `@printf`, `@is_comptime`,
-//!     `@panic`, the `@va_*` cursor operations.
+//!     `@volatileLoad`, `@volatileStore`, `@printf`, `@isComptime`,
+//!     `@panic`, the `@va` cursor operations.
 //!   - `.compiler_formed` — the compiler FORMS the type; there is no
 //!     declaration anywhere, so declaring the name is an error wherever it
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
@@ -94,8 +94,8 @@ pub const entries = [_]Contract{
     .{ .name = "@VaList", .module = "modules/std/core.sx" },
     // Functions, so no field shape; their signature and lowering are the
     // intrinsic registry's (src/ir/intrinsics.zig).
-    .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
-    .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
+    .{ .name = "@volatileLoad", .module = "modules/std/core.sx" },
+    .{ .name = "@volatileStore", .module = "modules/std/core.sx" },
     .{ .name = "@printf", .module = "modules/std/core.sx" },
     .{ .name = "@sizeOf", .module = "modules/std/core.sx" },
     .{ .name = "@alignOf", .module = "modules/std/core.sx" },
@@ -110,15 +110,15 @@ pub const entries = [_]Contract{
     .{ .name = "@inner", .module = "modules/std/core.sx" },
     .{ .name = "@typeEq", .module = "modules/std/core.sx" },
     .{ .name = "@unbox", .module = "modules/std/core.sx" },
-    .{ .name = "@is_comptime", .module = "modules/std/core.sx" },
-    .{ .name = "@va_start", .module = "modules/std/core.sx" },
-    .{ .name = "@va_arg", .module = "modules/std/core.sx" },
-    .{ .name = "@va_copy", .module = "modules/std/core.sx" },
-    .{ .name = "@va_end", .module = "modules/std/core.sx" },
+    .{ .name = "@isComptime", .module = "modules/std/core.sx" },
+    .{ .name = "@vaStart", .module = "modules/std/core.sx" },
+    .{ .name = "@vaArg", .module = "modules/std/core.sx" },
+    .{ .name = "@vaCopy", .module = "modules/std/core.sx" },
+    .{ .name = "@vaEnd", .module = "modules/std/core.sx" },
     // The persist primitives `closure` is written over.
-    .{ .name = "@env_type", .module = "modules/std/core.sx" },
-    .{ .name = "@env_of", .module = "modules/std/core.sx" },
-    .{ .name = "@call_ptr", .module = "modules/std/core.sx" },
+    .{ .name = "@envType", .module = "modules/std/core.sx" },
+    .{ .name = "@envOf", .module = "modules/std/core.sx" },
+    .{ .name = "@callPtr", .module = "modules/std/core.sx" },
     // An sx body, not an intrinsic: the registry entry is what gives stdlib
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },

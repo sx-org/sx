@@ -87,8 +87,8 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
     inline match F {
         case closure: return f;
         else: {
-            p := alloc.make(@env_of(f));
-            return .{ fn_ptr = @call_ptr(F), env = p };
+            p := alloc.make(@envOf(f));
+            return .{ fn_ptr = @callPtr(F), env = p };
         }
     }
 }
@@ -176,7 +176,7 @@ impl Allocator for CAllocator {
 // `__sx_default_context` is fully built before `main` runs.
 c_allocator : CAllocator = .{};
 
-@context_extend allocator: Allocator = c_allocator;
+@contextExtend allocator: Allocator = c_allocator;
 
 // --- GPA: general purpose allocator (malloc/free wrapper) ---
 //

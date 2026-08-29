@@ -10,23 +10,23 @@ printf :: (fmt: cstring, ..) -> i32 extern;
 
 read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = first;
-    total += @va_arg(i32, *ap);
+    total += @vaArg(i32, *ap);
     return total;
 }
 
 read_list :: ($T: Type, n: i32, ap: @VaList) -> i64 abi(.c) {
     total: i64 = 0;
-    for i in 0..n { total += @va_arg($T, *ap); }
+    for i in 0..n { total += @vaArg($T, *ap); }
     return total;
 }
 
 sum :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return read_list(i32, n, ap);
 }
 

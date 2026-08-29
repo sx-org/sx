@@ -267,8 +267,8 @@ pub const Binding = struct {
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
-    /// boundary parameter. Its caller opened it and ends it, so `@va_start` /
-    /// `@va_end` here would act on another frame's list.
+    /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
+    /// `@vaEnd` here would act on another frame's list.
     borrowed_cursor: bool = false,
 };
 
@@ -461,7 +461,7 @@ pub const Lowering = struct {
     /// holds at most one, so the map is the coherence check as well as the
     /// dispatch table.
     callable_nominals: std.AutoHashMap(TypeId, lower_protocol.CallableNominal),
-    /// The `@call_ptr` trampoline synthesized for a callable type, so one type
+    /// The `@callPtr` trampoline synthesized for a callable type, so one type
     /// persists through one trampoline however many times `closure` erases it.
     persist_trampolines: std.AutoHashMap(TypeId, inst_mod.FuncId),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
@@ -677,7 +677,7 @@ pub const Lowering = struct {
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
-    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
+    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `..` tail from it
     /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
     /// it names is still unknown. Nothing at a call decides that binder, so the
     /// value the body hands back fixes the function's return type.
@@ -2375,7 +2375,7 @@ pub const Lowering = struct {
                 const ty_name = self.formatTypeName(obj_ty);
                 const id = diags.addFmtId(.err, span, "field '{s}' not found on type '{s}'", .{ field, ty_name });
                 // An unknown field on the CONTEXT enumerates the program's
-                // registered `@context_extend` fields (shared enumeration helper) —
+                // registered `@contextExtend` fields (shared enumeration helper) —
                 // covers both `context.typo` reads and `push .{ typo = … }`.
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);

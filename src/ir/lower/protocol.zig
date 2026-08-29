@@ -851,12 +851,12 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 ///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
 ///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
 ///     %Io { … },                                     its protocol's own
-///     <each @context_extend field's evaluated default>   declared layout)
+///     <each @contextExtend field's evaluated default>   declared layout)
 ///   }
 ///
 /// The initializer is built by walking the ASSEMBLED Context's fields BY
 /// NAME (`allocator`/`io` get their bespoke thunk-table values; every other
-/// field is a `@context_extend` declaration whose default folds through the
+/// field is a `@contextExtend` declaration whose default folds through the
 /// global-initializer serializer in its declaring module's context), so the
 /// constant can never drift positionally from the layout `assembleContext`
 /// produced.
@@ -895,7 +895,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
     const ctx_ty = tbl.findByName(ctx_name_id) orelse return;
 
     // One ConstantValue per ASSEMBLED field, in field order. EVERY field is a
-    // `@context_extend` declaration (the struct decl itself is empty —
+    // `@contextExtend` declaration (the struct decl itself is empty —
     // allocator/io are declared in std/mem.sx and std/io.sx like any user
     // field), so the whole initializer flows through the declaration-default
     // serializer; the stateless thunk tables come from the `xx c_allocator` /

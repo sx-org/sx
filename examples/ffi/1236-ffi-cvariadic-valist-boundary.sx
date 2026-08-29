@@ -15,7 +15,7 @@
 // spelling stands in for the other.
 //
 // An incoming list is borrowed and already open: the callee reads it with
-// `@va_arg` and forks it with `@va_copy`, but `@va_start` and `@va_end` belong
+// `@vaArg` and forks it with `@vaCopy`, but `@vaStart` and `@vaEnd` belong
 // to the owner. A traversal may move the caller-visible position, as C
 // specifies, so a second traversal reads a copy taken before the first.
 //
@@ -65,7 +65,7 @@ Api :: struct {
 sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(i32, *ap);
+        total += @vaArg(i32, *ap);
     }
     return total;
 }
@@ -73,13 +73,13 @@ sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
 sx_sum_doubles :: (n: i32, ap: @VaList) -> f64 export {
     total: f64 = 0;
     for i in 0..n {
-        total += @va_arg(f64, *ap);
+        total += @vaArg(f64, *ap);
     }
     return total;
 }
 
 count_one :: (ap: *@VaList) -> i64 {
-    return cstring_len(@va_arg(cstring, ap));
+    return cstring_len(@vaArg(cstring, ap));
 }
 
 sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
@@ -92,8 +92,8 @@ sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
 
 sx_twice :: (n: i32, ap: @VaList) -> i64 export {
     dup: @VaList = ---;
-    @va_copy(*dup, *ap);
-    defer @va_end(*dup);
+    @vaCopy(*dup, *ap);
+    defer @vaEnd(*dup);
     first := c_sum_ints(n, ap);
     second := c_sum_ints(n, dup);
     return first * 100 + second;
@@ -101,15 +101,15 @@ sx_twice :: (n: i32, ap: @VaList) -> i64 export {
 
 own_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return c_sum_ints(n, ap);
 }
 
 own_doubles :: (n: i32, ..) -> f64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return c_sum_doubles(n, ap);
 }
 
@@ -119,18 +119,18 @@ borrow_text :: (n: i32, ap: *@VaList) -> i64 {
 
 own_text :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return borrow_text(n, *ap);
 }
 
 own_twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     dup: @VaList = ---;
-    @va_copy(*dup, *ap);
-    defer @va_end(*dup);
+    @vaCopy(*dup, *ap);
+    defer @vaEnd(*dup);
     first := c_sum_ints(n, ap);
     second := c_sum_ints(n, dup);
     return first * 100 + second;
@@ -138,50 +138,50 @@ own_twice :: (n: i32, ..) -> i64 abi(.c) {
 
 own_forward_twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return sx_twice(n, ap);
 }
 
 format_direct :: (fmt: cstring, ..) -> ?cstring abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return vmprintf(fmt, ap);
 }
 
 into_direct :: (out: [*]u8, fmt: cstring, ..) -> [*]u8 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return xvsnprintf(64, out, fmt, ap);
 }
 
 append_direct :: (s: *sqlite3_str, fmt: cstring, ..) -> void abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     str_vappendf(s, fmt, ap);
 }
 
 format_field :: (api: *Api, fmt: cstring, ..) -> ?cstring abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return api.mprintf(fmt, ap);
 }
 
 into_field :: (api: *Api, out: [*]u8, fmt: cstring, ..) -> [*]u8 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return api.snprint(64, out, fmt, ap);
 }
 
 append_field :: (api: *Api, s: *sqlite3_str, fmt: cstring, ..) -> void abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     api.appendf(s, fmt, ap);
 }
 

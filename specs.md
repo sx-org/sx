@@ -123,11 +123,11 @@ the import can stand in for the canonical declaration:
 
 A contract need not be a type: an `@` name also declares a function, under the
 same (module, name) identity rule. Most are a signature with no body, which the
-compiler implements — `@volatile_load` and `@volatile_store` (§Intrinsics,
-Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@is_comptime`
-(§Compile-time Evaluation, `@is_comptime()`).
+compiler implements — `@volatileLoad` and `@volatileStore` (§Intrinsics,
+Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
+(§Compile-time Evaluation, `@isComptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over `@printf` and
-`@is_comptime`. So are the postfix assertion's three temperaments —
+`@isComptime`. So are the postfix assertion's three temperaments —
 `@cast` / `@tryCast` / `@castOrNull` (§Postfix Cast), owned by
 `modules/std/fmt.sx`.
 
@@ -1565,14 +1565,14 @@ another (`Series(View)`). Constraints are refused in every storable
 position (§4).
 
 **Static positions.** Four positions build their handle before `main`
-runs: a module-scope global's initializer, an `@context_extend` default,
+runs: a module-scope global's initializer, an `@contextExtend` default,
 an interface-typed struct-field default, and a field or element of a
 statically-constructed value. In each of them the one operand that
 coerces names a **module-scope global**:
 
 ```sx
 c_allocator : CAllocator = .{};
-@context_extend allocator: Allocator = c_allocator;    // bare global
+@contextExtend allocator: Allocator = c_allocator;     // bare global
 fallback : Allocator = mem.c_allocator;                // module-qualified
 ```
 
@@ -1654,7 +1654,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   Contribution is judged syntactically and conservatively: an unexpanded
   body mentioning `impl P for …` contributes to `P`, and one holding an
   `@import` contributes the whole surface of the module it names — the
-  impls, declaration names and `@context_extend`s that module authors,
+  impls, declaration names and `@contextExtend`s that module authors,
   transitively through its own imports and branches — because selecting
   the branch is what brings them in.
 - **Re-erasure facts depend on impl multiplicity** (the program-unique
@@ -1667,7 +1667,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
   reads it waits for that layout to settle: while any unexpanded branch
-  could still declare a `@context_extend`, the field set is not final,
+  could still declare a `@contextExtend`, the field set is not final,
   and the evaluation suspends against Context-ready exactly as it
   suspends against an open conformer set. Contribution is judged
   syntactically, like an `impl`'s. Once nothing can contribute, the
@@ -2796,32 +2796,32 @@ operations that walk it are compiler-maintained contracts declared by
 ```sx
 @VaList :: struct { }
 
-@va_start :: (list: *@VaList);
-@va_arg   :: ($T: Type, list: *@VaList) -> T;
-@va_copy  :: (dst: *@VaList, src: *@VaList);
-@va_end   :: (list: *@VaList);
+@vaStart :: (list: *@VaList);
+@vaArg   :: ($T: Type, list: *@VaList) -> T;
+@vaCopy  :: (dst: *@VaList, src: *@VaList);
+@vaEnd   :: (list: *@VaList);
 ```
 
 ```sx
 sum :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
-    for i in 0..n { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @vaArg(i32, *ap); }
     return total;
 }
 ```
 
-`@va_start` opens a cursor over the arguments past the fixed count; it is legal
-only inside a definition whose parameter list ends in `..`. `@va_arg` reads the
-next argument and advances, `@va_copy` forks a second cursor at the first's
-position, and `@va_end` closes one. Every cursor a `@va_start` or a `@va_copy`
+`@vaStart` opens a cursor over the arguments past the fixed count; it is legal
+only inside a definition whose parameter list ends in `..`. `@vaArg` reads the
+next argument and advances, `@vaCopy` forks a second cursor at the first's
+position, and `@vaEnd` closes one. Every cursor a `@vaStart` or a `@vaCopy`
 opens is closed exactly once.
 
-`@va_arg` asks for the type the promotions LEAVE in the slot, so `f32` and any
+`@vaArg` asks for the type the promotions LEAVE in the slot, so `f32` and any
 integer narrower than 32 bits are refused where they are written:
-`@va_arg(f64, …)` is how an `f32` argument reads back, and `@va_arg(i32, …)` how
+`@vaArg(f64, …)` is how an `f32` argument reads back, and `@vaArg(i32, …)` how
 a `u8` does. The tail admissibility rule above applies unchanged.
 
 `@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
@@ -2830,9 +2830,9 @@ value form, so it cannot be constructed, inspected, measured (`@sizeOf` /
 declaration and an incoming C parameter are the only things that give a cursor
 storage, and `*name` is the only way to reach one.
 
-The cursor is **owned by the function that declares it**: `@va_start`,
-`@va_end`, and `@va_copy`'s destination each take the address of a local. A
-`*@VaList` handed to another function is a **borrow** — it reads with `@va_arg`
+The cursor is **owned by the function that declares it**: `@vaStart`,
+`@vaEnd`, and `@vaCopy`'s destination each take the address of a local. A
+`*@VaList` handed to another function is a **borrow** — it reads with `@vaArg`
 and leaves the closing to the owner. A cursor cannot escape the frame whose tail
 it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field or
 a global, captured by a closure, or passed through a C-variadic tail.
@@ -2856,7 +2856,7 @@ vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for i in 0..n { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @vaArg(i32, *ap); }
     return total;
 }
 ```
@@ -2877,8 +2877,8 @@ value copy:
 ```sx
 relay :: (fmt: cstring, ..) -> i32 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return c_vformat(fmt, ap);
 }
 
@@ -2888,8 +2888,8 @@ forward :: (fmt: cstring, ap: *@VaList) -> i32 {
 ```
 
 An incoming list is **borrowed and already open**. The callee never calls
-`@va_start` or `@va_end` on it — both belong to the frame that owns the list —
-but reads it with `@va_arg` and forks it with `@va_copy`. A traversal may move
+`@vaStart` or `@vaEnd` on it — both belong to the frame that owns the list —
+but reads it with `@vaArg` and forks it with `@vaCopy`. A traversal may move
 the caller-visible position, as C specifies, so a caller that needs a second
 traversal copies first.
 
@@ -2908,7 +2908,7 @@ The full family of variadic/pack forms and how they differ:
 | `..xs: []I` *(I an interface)* | mixed, **erased** to the `I` handle | **runtime** (slice) | runtime or comptime | `I` (call interface methods) | runtime |
 | `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` — a constraint or an interface | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
-| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@va_arg(T, *ap)` reads the next | no length |
+| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@vaArg(T, *ap)` reads the next | no length |
 
 Key axis — **concrete vs erased, comptime vs runtime**:
 - `..xs: P` (pack) keeps each element's *concrete* type but is **comptime-only**:
@@ -5093,24 +5093,24 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
     inline match F {
         case closure: return f;
         else: {
-            p := alloc.make(@env_of(f));
-            return .{ fn_ptr = @call_ptr(F), env = p };
+            p := alloc.make(@envOf(f));
+            return .{ fn_ptr = @callPtr(F), env = p };
         }
     }
 }
 ```
 
-- `@env_type(F)` is the env type, `@env_of(f)` the `@Init` `make` writes, and
-  `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`. A callable value
+- `@envType(F)` is the env type, `@envOf(f)` the `@Init` `make` writes, and
+  `@callPtr(F)` the trampoline `(env: *void, params…) -> R`. A callable value
   IS its env — a unique lambda is its env struct, an `impl (sig) for T` nominal
-  its own state, a bare function its pointer word — so `@env_type(F)` is `F` and
+  its own state, a bare function its pointer word — so `@envType(F)` is `F` and
   a nominal and a bare function get a trampoline synthesized around it. All
   three refuse a `Closure`, which carries an env rather than being one.
 - A `Closure` argument is returned unchanged, so `closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
   `make` does not write a null dest; `alloc_bytes(0)` returns null and
   allocates nothing; `dealloc_bytes(null)` is a no-op.
-  `p := alloc.make(@env_of(f))` is null for a 0-sized env, so an erased empty
+  `p := alloc.make(@envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
 - `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
 
@@ -5420,34 +5420,34 @@ push .{ allocator = arena.allocator(), logger = *my_logger } {
 
 A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push some_ctx { … }`) stores it as-is — seed it from `context` first to inherit.
 
-**`Context` struct** — assembled PER PROGRAM, 100% from `@context_extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
+**`Context` struct** — assembled PER PROGRAM, 100% from `@contextExtend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
 c_allocator : CAllocator = .{};
-@context_extend allocator: Allocator = c_allocator;
+@contextExtend allocator: Allocator = c_allocator;
 
 // std/io.sx
 c_blocking_io : CBlockingIo = .{};
-@context_extend io: Io = c_blocking_io;
+@contextExtend io: Io = c_blocking_io;
 ```
 Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
-`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context_extend` fields with their declaring modules, so the demand is traceable.
+`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@contextExtend` fields with their declaring modules, so the demand is traceable.
 
-### `@context_extend` — extending the Context
+### `@contextExtend` — extending the Context
 
 Any module — stdlib or user — can declare a field the program's Context carries:
 
 ```sx
-@context_extend ui: *Ui = null;      // bare nullable pointer — the default idiom
-@context_extend frame_stats: FrameStats = .{};
+@contextExtend ui: *Ui = null;      // bare nullable pointer — the default idiom
+@contextExtend frame_stats: FrameStats = .{};
 ```
 
 `?*Ui` works too and opts the field into checked nullability (consumers must
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `@context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
+- **Grammar**: `@contextExtend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
@@ -5456,7 +5456,7 @@ sentinel, per the pointer contract.
 - **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Constraints and Interfaces, compile-time execution): an added field's default is readable at comptime; interface-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context_extend logger: *Logger = null;`).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@contextExtend logger: *Logger = null;`).
 
 ---
 
@@ -5521,7 +5521,7 @@ is already the marker:
 
 ```sx
 struct_field_count :: ($T: Type) -> i64 intrinsic;
-@volatile_load :: ($T: Type, address: *T) -> T;
+@volatileLoad :: ($T: Type, address: *T) -> T;
 ```
 
 The `@` form takes no body — no brace block, no `=> expr`, no `intrinsic`
@@ -5632,9 +5632,9 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
 - `@sizeOf($T: Type) -> i64` — size of type `T` in bytes
 - `@alignOf($T: Type) -> i64` — alignment of type `T` in bytes
-- `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
+- `@volatileLoad($T: Type, address: *T) -> T` / `@volatileStore($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
-- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
+- `@vaStart(list: *@VaList)` / `@vaArg($T: Type, list: *@VaList) -> T` / `@vaCopy(dst: *@VaList, src: *@VaList)` / `@vaEnd(list: *@VaList)` — the C-variadic cursor: `@vaStart` opens one over the tail arguments of the definition being lowered, `@vaArg` reads the next and advances, `@vaCopy` forks a second cursor at the first's position, and `@vaEnd` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
 
 ### Type Introspection
 - `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
@@ -5792,12 +5792,12 @@ response :: @run format(...);  // compile time
 response := format(...);       // mutable, runtime
 ```
 
-### `@is_comptime()`
+### `@isComptime()`
 
-`@is_comptime() -> bool` answers which machine is running the code: `true` under
+`@isComptime() -> bool` answers which machine is running the code: `true` under
 the comptime evaluator, `false` in compiled code. One lowered body serves both
 stages, so the answer is the backend's rather than a fold — in the binary the
-call folds to `false` and a `if @is_comptime() { … }` branch is dead. It carries
+call folds to `false` and a `if @isComptime() { … }` branch is dead. It carries
 the `@` sigil: a compiler-maintained contract (§Lexical Structure, The `@`
 namespace) declared by `modules/std/core.sx`, which uses it in `@panic` to exit
 the compiler where a compiled panic aborts.
@@ -6015,7 +6015,7 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@context_extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@contextExtend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6855,7 +6855,7 @@ end             = ';' | EOF   // §1 Spacing and terminators: a line break is
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
-context_extend  = '@context_extend' IDENT ':' type '=' expr end
+context_extend  = '@contextExtend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
 error_decl      = IDENT '::' set_operand ('|' set_operand)* end
 set_ref         = IDENT ('.' IDENT)*          // a named set or a qualified member; each

@@ -4,7 +4,7 @@
 // constant the LLVM backend emits and the value `@run` sees cannot diverge.
 @import "modules/std.sx";
 
-@context_extend build_tag: i64 = 1234;
+@contextExtend build_tag: i64 = 1234;
 
 TAG :: @run context.build_tag;
 

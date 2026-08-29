@@ -35,15 +35,15 @@ Relay    :: (i32, @VaList) -> i64 abi(.c);
 
 own :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return relay(n, ap);
 }
 
 own_through :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return read(n, ap);
 }
 

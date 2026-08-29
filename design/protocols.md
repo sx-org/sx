@@ -61,7 +61,7 @@ struct cannot take `---` at an I field.
 ## Static positions
 
 Four positions build their handle before `main` runs: a module-scope global's
-initializer, an `@context_extend` default, an interface-typed struct-field
+initializer, an `@contextExtend` default, an interface-typed struct-field
 default, and a field or element of a statically-constructed value. The one
 operand that coerces there names a module-scope global — a bare or
 module-qualified path whose root is a module namespace, `xx` recursing into it.

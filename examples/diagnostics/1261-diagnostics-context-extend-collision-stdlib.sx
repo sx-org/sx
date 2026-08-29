@@ -1,9 +1,9 @@
-// `allocator` is an ordinary `@context_extend` declaration in std/mem.sx, so a user
+// `allocator` is an ordinary `@contextExtend` declaration in std/mem.sx, so a user
 // redeclaring it is the ordinary two-declaration collision with both sites named.
 // The structural error halts lowering, so this is the ONE diagnostic — no
 // field-not-found cascade from stdlib code that uses `context.allocator`.
 @import "modules/std.sx";
 
-@context_extend allocator: i64 = 0;
+@contextExtend allocator: i64 = 0;
 
 main :: () {}

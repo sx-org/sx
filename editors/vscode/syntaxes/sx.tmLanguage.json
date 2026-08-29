@@ -200,7 +200,7 @@
       "patterns": [
         {
           "name": "keyword.other.directive.sx",
-          "match": "@(?:run|insert|import|library|framework|using|include|source|define|flags|identity|get|set|context_extend)(?![A-Za-z0-9_])"
+          "match": "@(?:run|insert|import|library|framework|using|include|source|define|flags|identity|get|set|contextExtend)(?![A-Za-z0-9_])"
         },
         {
           "name": "support.type.sx",

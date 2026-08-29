@@ -85,7 +85,7 @@ pub const Op = union(enum) {
     const_string: StringId,
     const_null,
     const_undef, // `---` undefined initializer
-    /// `@is_comptime()` builtin. The SAME lowered IR is run by both
+    /// `@isComptime()` builtin. The SAME lowered IR is run by both
     /// the comptime interpreter and the compiled backend, so this can't fold at
     /// lower time: the interp evaluates it to `true`, emit_llvm emits constant
     /// `false`. Lets stdlib (`process.exit`, `@panic`) take a comptime-only
@@ -93,7 +93,7 @@ pub const Op = union(enum) {
     is_comptime,
     /// `trace.print_interpreter_frames()`. At comptime the interp
     /// walks its sx call-frame chain and appends it to the output; in compiled
-    /// code it's a no-op (only ever reached from a dead `@is_comptime()` branch,
+    /// code it's a no-op (only ever reached from a dead `@isComptime()` branch,
     /// where there is no interpreter stack to walk).
     interp_print_frames,
     /// a return-trace frame value (`u64`) for the push site.

@@ -835,7 +835,7 @@ T
 // The C-ABI boundary means this frame has no implicit `context` param, so the
 // body would otherwise run under the static `__sx_default_context`. To make a
 // fiber inherit its SPAWNER's context (so `context.io` reaches a fiber-backed
-// scheduler, and `context.allocator` plus every `@context_extend` field carry
+// scheduler, and `context.allocator` plus every `@contextExtend` field carry
 // through), `spawn`
 // snapshots the live `context` into `Fiber.dctx` and the body below re-pushes it.
 // LIFETIME CONTRACT (consequence of the snapshot): every capability in the

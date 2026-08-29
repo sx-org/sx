@@ -2693,7 +2693,7 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     if (self.diagnostics) |d| {
         const span = ast.Span{ .start = 0, .end = 0 };
         const id = d.addFmtId(.err, span, "{s} requires the Context type — add `@import \"modules/std.sx\";` (or a module that imports it)", .{what});
-        // A no-context build may still COMPILE `@context_extend`
+        // A no-context build may still COMPILE `@contextExtend`
         // declarations (they are inert without Context). Show what the
         // program's context would have been, so the demand is traceable.
         self.noteRegisteredContextFields(id);
@@ -2825,18 +2825,18 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .atomic_fence,
         .atomic_cmpxchg,
         .atomic_cmpxchg_weak,
-        .@"@volatile_load",
-        .@"@volatile_store",
+        .@"@volatileLoad",
+        .@"@volatileStore",
         .@"@printf",
-        .@"@is_comptime",
+        .@"@isComptime",
         .@"@error",
-        .@"@va_start",
-        .@"@va_arg",
-        .@"@va_copy",
-        .@"@va_end",
-        .@"@env_type",
-        .@"@env_of",
-        .@"@call_ptr",
+        .@"@vaStart",
+        .@"@vaArg",
+        .@"@vaCopy",
+        .@"@vaEnd",
+        .@"@envType",
+        .@"@envOf",
+        .@"@callPtr",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -3121,18 +3121,18 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@sin",
         .@"@cos",
         .@"@floor",
-        .@"@volatile_load",
-        .@"@volatile_store",
+        .@"@volatileLoad",
+        .@"@volatileStore",
         .@"@printf",
-        .@"@is_comptime",
+        .@"@isComptime",
         .@"@error",
-        .@"@va_start",
-        .@"@va_arg",
-        .@"@va_copy",
-        .@"@va_end",
-        .@"@env_type",
-        .@"@env_of",
-        .@"@call_ptr",
+        .@"@vaStart",
+        .@"@vaArg",
+        .@"@vaCopy",
+        .@"@vaEnd",
+        .@"@envType",
+        .@"@envOf",
+        .@"@callPtr",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3364,20 +3364,20 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
 fn isVolatileIntrinsic(name: []const u8) bool {
     const id = intrinsics.findByName(name) orelse return false;
     return switch (id) {
-        .@"@volatile_load",
-        .@"@volatile_store",
+        .@"@volatileLoad",
+        .@"@volatileStore",
         => true,
 
         .@"@printf",
-        .@"@is_comptime",
+        .@"@isComptime",
         .@"@error",
-        .@"@va_start",
-        .@"@va_arg",
-        .@"@va_copy",
-        .@"@va_end",
-        .@"@env_type",
-        .@"@env_of",
-        .@"@call_ptr",
+        .@"@vaStart",
+        .@"@vaArg",
+        .@"@vaCopy",
+        .@"@vaEnd",
+        .@"@envType",
+        .@"@envOf",
+        .@"@callPtr",
         .@"@sizeOf",
         .@"@alignOf",
         .@"@typeOf",
@@ -3488,8 +3488,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
 }
 
 /// Recognize the volatile intrinsics and lower them to the volatile IR ops:
-///   @volatile_load($T, address: *T) -> T
-///   @volatile_store($T, address: *T, value: T)
+///   @volatileLoad($T, address: *T) -> T
+///   @volatileStore($T, address: *T, value: T)
 /// `T` may be any type with storage — the access is an ordinary typed
 /// load/store that the optimizer must keep, so integers, floats, pointers and
 /// aggregates all qualify. A valueless `T` (`void`, a constraint protocol, a
@@ -3501,7 +3501,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
 pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     if (!isVolatileIntrinsic(name)) return null;
 
-    const is_load = std.mem.eql(u8, name, "@volatile_load");
+    const is_load = std.mem.eql(u8, name, "@volatileLoad");
     const expected: usize = if (is_load) 2 else 3;
     if (c.args.len != expected) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "{s} expects {d} arguments", .{ name, expected });
@@ -3761,11 +3761,11 @@ fn isReflectionCall(name: []const u8) bool {
         .raw_any_data,
         .raw_make_any,
         .@"@typeInfo",
-        .@"@is_comptime",
+        .@"@isComptime",
         .@"@error",
-        .@"@env_type",
-        .@"@env_of",
-        .@"@call_ptr",
+        .@"@envType",
+        .@"@envOf",
+        .@"@callPtr",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
@@ -3787,13 +3787,13 @@ fn isReflectionCall(name: []const u8) bool {
         .atomic_fence,
         .atomic_cmpxchg,
         .atomic_cmpxchg_weak,
-        .@"@volatile_load",
-        .@"@volatile_store",
+        .@"@volatileLoad",
+        .@"@volatileStore",
         .@"@printf",
-        .@"@va_start",
-        .@"@va_arg",
-        .@"@va_copy",
-        .@"@va_end",
+        .@"@vaStart",
+        .@"@vaArg",
+        .@"@vaCopy",
+        .@"@vaEnd",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -4173,23 +4173,23 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const args_owned = self.alloc.dupe(Ref, &.{type_ref}) catch return Ref.none;
         return self.builder.callBuiltin(.@"@typeInfo", args_owned, ti_ty);
     }
-    if (std.mem.eql(u8, name, "@env_type")) {
+    if (std.mem.eql(u8, name, "@envType")) {
         if (self.persistArity(name, c)) |sentinel| return sentinel;
         const env_ty = self.persistEnvType(name, self.resolveTypeArg(c.args[0]), c.args[0].span);
         return self.builder.constType(env_ty orelse .unresolved);
     }
-    if (std.mem.eql(u8, name, "@call_ptr")) {
+    if (std.mem.eql(u8, name, "@callPtr")) {
         const ptr_void = self.module.types.ptrTo(.void);
         if (self.persistArity(name, c)) |_| return self.builder.constNull(ptr_void);
         const ty = self.resolveTypeArg(c.args[0]);
         _ = self.persistEnvType(name, ty, c.args[0].span) orelse return self.builder.constNull(ptr_void);
         const fid = lower_closure.callTrampolineOf(self, ty) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@call_ptr: '{s}' has no trampoline", .{self.formatTypeName(ty)});
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@callPtr: '{s}' has no trampoline", .{self.formatTypeName(ty)});
             return self.builder.constNull(ptr_void);
         };
         return self.builder.emit(.{ .func_ref = fid }, ptr_void);
     }
-    if (std.mem.eql(u8, name, "@env_of")) {
+    if (std.mem.eql(u8, name, "@envOf")) {
         if (self.persistArity(name, c)) |sentinel| return sentinel;
         _ = self.persistEnvType(name, self.inferExprType(c.args[0]), c.args[0].span) orelse return Ref.none;
         return self.lowerExpr(c.args[0]);
@@ -4384,7 +4384,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             .struct_type = ty,
         } }, .string);
     }
-    if (std.mem.eql(u8, name, "@is_comptime")) {
+    if (std.mem.eql(u8, name, "@isComptime")) {
         // True under the comptime interpreter, false in compiled code — the
         // op decides per backend (it can't fold here, since the same IR
         // serves both). Lets stdlib gate a comptime-only diagnostic branch.
@@ -4853,7 +4853,7 @@ pub fn persistArity(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref 
     return Ref.none;
 }
 
-/// The environment `@env_type` / `@env_of` / `@call_ptr` answer for `ty`, or
+/// The environment `@envType` / `@envOf` / `@callPtr` answer for `ty`, or
 /// null after diagnosing why it has none. An erased `Closure` is refused by
 /// design: it carries an environment instead of being one, which is why
 /// `closure` returns it unchanged.
