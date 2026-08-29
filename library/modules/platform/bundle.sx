@@ -911,7 +911,7 @@ findHighestSubdir :: (parent: string) -> string {
     ""
 }
 
-// `libfoo.so` → `foo`. Android's `android.app.libName` meta-data
+// `libfoo.so` → `foo`. Android's `android.app.lib_name` meta-data
 // wants the trimmed name; the loader prepends `lib` and appends `.so`
 // at runtime.
 libNameFromSoBasename :: (basename: string) -> string {
@@ -943,7 +943,7 @@ libNameFromSoBasename :: (basename: string) -> string {
 // android:name>` at the user's class and flips
 // `android:hasCode="true"` so Android loads the bundled classes.dex.
 // Otherwise it falls back to the legacy NativeActivity shape with an
-// `android.app.libName` meta-data entry pointing at the .so.
+// `android.app.lib_name` meta-data entry pointing at the .so.
 buildAndroidManifest :: (opts: BuildOptions, package: string, libName: string) -> string {
     pkgEsc := xml.escape(package);
     libEsc := xml.escape(libName);
