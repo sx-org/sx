@@ -627,7 +627,7 @@ pub const BuiltinId = enum(u16) {
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
-    // offsets, and variant values get their own). variant_* shares the same
+    // offsets, and variant values get their own). variant* shares the same
     // member arrays.
     rt_member_name,
     rt_member_type,

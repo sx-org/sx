@@ -1,22 +1,22 @@
-// `pointee_type($P: Type) -> Type` — comptime reflection for a pointer's target type
-// (`pointee_type(*X)` -> `X`). Folds at lower time like `struct_field_type`, so it composes
+// `pointeeType($P: Type) -> Type` — comptime reflection for a pointer's target type
+// (`pointeeType(*X)` -> `X`). Folds at lower time like `structFieldType`, so it composes
 // inside other type-arg slots — e.g. project a generic handle `*Box(A)` to its
-// payload type `A` via `struct_field_type(pointee_type(*Box(A)), 0)`. (Foundation for the
+// payload type `A` via `structFieldType(pointeeType(*Box(A)), 0)`. (Foundation for the
 // `race` result synthesis, which projects `*Task(A)` -> `A`.)
 @import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; tag: i64; }
 
 // Project a pointer-to-Box to the Box's payload type: *Box(A) -> A.
-Payload :: ($P: Type) -> Type { return struct_field_type(pointee_type(P), 0); }
+Payload :: ($P: Type) -> Type { return structFieldType(pointeeType(P), 0); }
 
 main :: () -> i32 {
     // plain pointer
-    print("pointee_type(*i64)  = {}\n", @typeName(pointee_type(*i64)));
-    print("pointee_type(*bool) = {}\n", @typeName(pointee_type(*bool)));
+    print("pointeeType(*i64)  = {}\n", @typeName(pointeeType(*i64)));
+    print("pointeeType(*bool) = {}\n", @typeName(pointeeType(*bool)));
 
     // pointer to a generic struct → the struct type
-    print("pointee_type(*Box(f64)) field0 = {}\n", @typeName(struct_field_type(pointee_type(*Box(f64)), 0)));
+    print("pointeeType(*Box(f64)) field0 = {}\n", @typeName(structFieldType(pointeeType(*Box(f64)), 0)));
 
     // composed projection, used as a real type
     v : Payload(*Box(i64)) = 42;

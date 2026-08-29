@@ -156,8 +156,8 @@ main :: () -> i32 {
     printf("%d\n", nums[0..1]);  // a slice is two words too
     sum_ints(1, pair);           // the same refusal on a named typed tail
 
-    printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), struct_field_count(@VaList));
-    printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), struct_field_count(VaPair));
+    printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), structFieldCount(@VaList));
+    printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), structFieldCount(VaPair));
     made := @VaList{};
     printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
     printf("%d\n", boundary_actuals(1, 2) + walks_a_borrowed_list(1, made));

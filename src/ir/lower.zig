@@ -1760,7 +1760,7 @@ pub const Lowering = struct {
             else => return null,
         };
         if (c.args.len != 1) return null;
-        const is_fc = std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count");
+        const is_fc = std.mem.eql(u8, name, "structFieldCount") or std.mem.eql(u8, name, "variantCount");
         const is_sz = std.mem.eql(u8, name, "@sizeOf");
         const is_al = std.mem.eql(u8, name, "@alignOf");
         if (!is_fc and !is_sz and !is_al) return null;

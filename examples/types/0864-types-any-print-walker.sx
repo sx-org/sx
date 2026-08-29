@@ -1,6 +1,6 @@
 // ONE compiled function walks ANY value — kind dispatch is a runtime
-// `@typeInfo` match, struct fields are interior views (struct_field_value),
-// array/vector elements are stride views (any_element), and the leaves feed
+// `@typeInfo` match, struct fields are interior views (structFieldValue),
+// array/vector elements are stride views (anyElement), and the leaves feed
 // the tag-driven formatter. One erasure at the root; every inner step is view
 // math, zero copies.
 
@@ -15,7 +15,7 @@ print_any :: (av: any) {
             while i < si.fields.len {
                 if i > 0 { print(", "); }
                 print("{}: ", si.fields[i].name);
-                print_any(struct_field_value(av, i));
+                print_any(structFieldValue(av, i));
                 i += 1;
             }
             print("}");
@@ -30,7 +30,7 @@ print_any :: (av: any) {
             i := 0;
             while i < ai.len {
                 if i > 0 { print(", "); }
-                print_any(any_element(av, ai.elem, i));
+                print_any(anyElement(av, ai.elem, i));
                 i += 1;
             }
             print("]");
@@ -40,7 +40,7 @@ print_any :: (av: any) {
             i := 0;
             while i < vi.lanes {
                 if i > 0 { print(", "); }
-                print_any(any_element(av, vi.elem, i));
+                print_any(anyElement(av, vi.elem, i));
                 i += 1;
             }
             print("]");

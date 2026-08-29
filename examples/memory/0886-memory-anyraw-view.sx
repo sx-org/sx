@@ -5,7 +5,7 @@
 // `xx av` keeps its unchecked-unbox meaning for every target (the
 // assert helpers' generic `xx av` depends on that), and the soft form
 // `.(?@Any)` still asserts the boxed payload.
-// `raw_make_any(r.typeId, r.data)` reassembles a view from the pair.
+// `rawMakeAny(r.typeId, r.data)` reassembles a view from the pair.
 @import "modules/std.sx";
 
 main :: () {
@@ -15,12 +15,12 @@ main :: () {
     // the raw pair mirrors the stable accessors
     r := av.(@Any);
     print("tag: {}\n", r.typeId == @typeOf(av));
-    print("data: {}\n", r.data == raw_any_data(av));
+    print("data: {}\n", r.data == rawAnyData(av));
     p : *i64 = xx r.data;
     print("payload: {}\n", p.*);
 
     // the pair reassembles into a working view
-    av2 := raw_make_any(r.typeId, r.data);
+    av2 := rawMakeAny(r.typeId, r.data);
     print("round-trip: {}\n", av2.(i64));
 
     // the assertion regime is untouched: concrete asserts still work,

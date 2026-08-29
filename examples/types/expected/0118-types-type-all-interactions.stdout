@@ -40,7 +40,7 @@ Wrap(string).v: wrapped
 @sizeOf(i64):      8
 @sizeOf(*u8):      8
 @alignOf(f64):     8
-struct_field_count(Point): 2
+structFieldCount(Point): 2
 @typeEq(i64, i64):    true
 @typeEq(i64, string): false
 === 10. ..$args walking ===

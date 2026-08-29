@@ -21,42 +21,42 @@ out :: (str: string) -> void {
 @typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
-// duals are the variant_* family below; arrays/vectors use `.len` and
+// duals are the variant* family below; arrays/vectors use `.len` and
 // native indexing instead.
-struct_field_count :: ($T: Type) -> i64 intrinsic;
-struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
+structFieldCount :: ($T: Type) -> i64 intrinsic;
+structFieldName :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
 // folds at LOWER time, so it composes inside `@typeEq` / `@typeName` / any
 // type-arg slot.
-struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
+structFieldType :: ($T: Type, idx: i64) -> Type intrinsic;
 // The i-th field's byte offset within the struct (tuples: element offset).
-struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
-// The target type of a pointer: `pointee_type(*X)` -> `X`. Comptime reflection,
-// folded at lower time like `struct_field_type` (so it composes in any type-arg
+structFieldOffset :: ($T: Type, idx: i64) -> i64 intrinsic;
+// The target type of a pointer: `pointeeType(*X)` -> `X`. Comptime reflection,
+// folded at lower time like `structFieldType` (so it composes in any type-arg
 // slot). A non-pointer argument is a loud compile error, not a silent fallthrough.
-pointee_type :: ($P: Type) -> Type intrinsic;
-struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
+pointeeType :: ($P: Type) -> Type intrinsic;
+structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
 // Enum / tagged-union variant reads — the kind-specific duals of the
-// struct_field_* family above.
-variant_count :: ($T: Type) -> i64 intrinsic;
-variant_name :: ($T: Type, idx: i64) -> string intrinsic;
-variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
-variant_payload :: (u: $T, idx: i64) -> any intrinsic;
-is_flags :: ($T: Type) -> bool intrinsic;
-variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
-variant_index :: ($T: Type, val: T) -> i64 intrinsic;
+// structField* family above.
+variantCount :: ($T: Type) -> i64 intrinsic;
+variantName :: ($T: Type, idx: i64) -> string intrinsic;
+variantType :: ($T: Type, idx: i64) -> Type intrinsic;
+variantPayload :: (u: $T, idx: i64) -> any intrinsic;
+isFlags :: ($T: Type) -> bool intrinsic;
+variantValue :: ($T: Type, idx: i64) -> i64 intrinsic;
+variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// An error value's live payload as an `any` view — the `variant_payload`
+// An error value's live payload as an `any` view — the `variantPayload`
 // sibling for error channels. A payload-free member views as `void`.
 @errorPayload :: (e: $T) -> any;
-// A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
+// A vector's lane COUNT (`vectorLanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind
 // discrimination is `@typeInfo`'s job, like the count tables.
-vector_lanes :: ($T: Type) -> i64 intrinsic;
+vectorLanes :: ($T: Type) -> i64 intrinsic;
 // INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
 // variant read loads from a value of T, sign-encoded — negative means |w|
 // bytes then sign-extend (signed backing / tag type). A payload-less enum's
@@ -65,9 +65,9 @@ vector_lanes :: ($T: Type) -> i64 intrinsic;
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
-// `{ elem,  raw_any_data(av) + idx * @sizeOf(elem) }`. The walker's array
+// `{ elem,  rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
-any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 
 // ── Boxed-value views: a value's parts, read in place ──────────────────────
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
@@ -98,10 +98,10 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
 // writes names and re-resolves, never raw tags; byte copies through the data
 // pointer are SHALLOW — interior pointers are not followed; and a view carries
-// NO lifetime — `raw_make_any` trusts the caller that `data` points at a live,
+// NO lifetime — `rawMakeAny` trusts the caller that `data` points at a live,
 // aligned value of `tp` covering @sizeOf(tp) bytes.
-raw_any_data :: (av: any) -> *void intrinsic;
-raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
+rawAnyData :: (av: any) -> *void intrinsic;
+rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 
 // A volatile access is emitted exactly as written: the optimizer may not elide
 // it, duplicate it, fuse it with a neighbour, or move it across another
@@ -331,17 +331,17 @@ __sx_printf_f64 :: (f: f64) {
 //
 // Handles are bare `u32`s so they intern no extra prelude type. Callers alias
 // them locally where it aids reading.
-raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
-raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
-raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-                                                                // 4 tuple 5 union 6 array 7 vector 8 error
-raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-raw_field_count  :: (t: u32) -> i64 intrinsic;
-raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-raw_pointer_to        :: (t: Type) -> Type intrinsic;
+rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
+rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
+rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
+                                                              // 4 tuple 5 union 6 array 7 vector 8 error
+rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+rawFieldCount   :: (t: u32) -> i64 intrinsic;
+rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+rawPointerTo    :: (t: Type) -> Type intrinsic;
 
 // ── `@typeInfo`: the reflected type shape ────────────────────────────────────
 //

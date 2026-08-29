@@ -37,7 +37,7 @@ c :: @import "modules/std/c.sx";
 @import "modules/std/atomic.sx";
 // `race` synthesizes its result type (a tagged-union mirroring the input tuple's
 // labels) and constructs the winner variant by runtime index — both need the
-// metatype WRITE side (`make_enum`/`make_variant`/`VariantInfo`/`struct_field_type`).
+// metatype WRITE side (`make_enum`/`make_variant`/`VariantInfo`/`structFieldType`).
 // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
 // safe to pull in here.
 @import "modules/std/meta.sx";
@@ -1047,7 +1047,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // time. The result is a comptime-synthesized tagged-union (`RaceResult`) mirroring
 // the input tuple's labels: each variant's NAME is the tuple label, its payload is
 // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
-// positional-tuple form (`._0`/`._1`) is rejected — `struct_field_name` yields "" for
+// positional-tuple form (`._0`/`._1`) is rejected — `structFieldName` yields "" for
 // an unnamed element, which `make_enum` rejects as a duplicate-name collision.
 //
 // It runs over the `Io` PROTOCOL (`current_park`/`suspend_raw`/`ready`), so it is
@@ -1064,21 +1064,21 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 //     match winner { case .a: |v| {…}  case .b: |v| {…} }     // losers cancelled
 
 // Synthesize the race RESULT type for a named tuple `$T` of `*Future(..)` handles.
-// `*Future(R)` projects to its result `R` via `struct_field_type(pointee_type(struct_field_type(T, i)), 0)`:
-// `struct_field_type(T, i)` = `*Future(R)`, `pointee_type` strips the pointer to `Future(R)`,
+// `*Future(R)` projects to its result `R` via `structFieldType(pointeeType(structFieldType(T, i)), 0)`:
+// `structFieldType(T, i)` = `*Future(R)`, `pointeeType` strips the pointer to `Future(R)`,
 // and field 0 of `Future` is `value: R` (the `Value :: R` type member is not a
 // data field). One nominal type per distinct `T` (type-fn identity), so the decl,
 // every `make_variant(RaceResult(T), …)` call, and the `-> RaceResult(T)` return
 // all name the SAME union.
 RaceResult :: ($T: Type) -> Type {
-    vs : [struct_field_count(T)]VariantInfo = ---;
-    inline for i in 0..struct_field_count(T) {
+    vs : [structFieldCount(T)]VariantInfo = ---;
+    inline for i in 0..structFieldCount(T) {
         vs[i] = VariantInfo{
-            name    = struct_field_name(T, i),                          // tuple label → variant name
-            payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
+            name    = structFieldName(T, i),                          // tuple label → variant name
+            payload = structFieldType(pointeeType(structFieldType(T, i)), 0),  // *Future(R) -> Future(R) -> R
         };
     }
-    return make_enum("RaceResult", vs[0..struct_field_count(T)]);
+    return make_enum("RaceResult", vs[0..structFieldCount(T)]);
 }
 
 // Structured first-wins race over the `Io` protocol. Suspends the calling fiber
@@ -1105,13 +1105,13 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // hazard `wake` guards). A spurious wake with nothing ready re-registers + re-parks.
     winner_idx : i64 = -1;
     while winner_idx < 0 {
-        inline for i in 0..struct_field_count(T) {
+        inline for i in 0..structFieldCount(T) {
             if winner_idx < 0 and futures[i].state == .ready { winner_idx = i; }
         }
         if winner_idx >= 0 { break; }
         me := io.current_park();
         any_pending := false;
-        inline for i in 0..struct_field_count(T) {
+        inline for i in 0..structFieldCount(T) {
             if futures[i].state == .pending { futures[i].park.handle = me.handle; any_pending = true; }
         }
         // No `.ready` winner and nothing still `.pending` → every racer settled
@@ -1128,7 +1128,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
         io.suspend_raw(*pk) catch {};
-        inline for i in 0..struct_field_count(T) {
+        inline for i in 0..structFieldCount(T) {
             if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
         }
     }
@@ -1138,7 +1138,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
     // comptime cursor; the runtime `if i == winner_idx` selects the one arm.
     result : RaceResult(T) = ---;
-    inline for i in 0..struct_field_count(T) {
+    inline for i in 0..structFieldCount(T) {
         if i == winner_idx {
             result = make_variant(RaceResult(T), i, futures[i].value);
         }
@@ -1150,7 +1150,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // `race` returns now. Only `.pending` losers are cancelled: a loser that
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
-    inline for i in 0..struct_field_count(T) {
+    inline for i in 0..structFieldCount(T) {
         if i != winner_idx and futures[i].state == .pending { futures[i].cancel(); }
     }
 
