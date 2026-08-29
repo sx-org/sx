@@ -71,11 +71,11 @@ XML;
     return s;
 }
 ===== testdata/lexical/drift/directive-drift.sx
-@identity #ns.expand @contextExtend #ns.builtin
+@identity #ns.expand @context.extend #ns.builtin
 ===== testdata/lexical/drift/map.txt
 identity=ns
 expand=ns
-contextExtend=ns
+extend=ns
 builtin=ns
 ===== testdata/lexical/warnings/string-no-delimiter.sx
 package :: @string 123

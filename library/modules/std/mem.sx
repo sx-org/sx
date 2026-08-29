@@ -176,7 +176,7 @@ impl Allocator for CAllocator {
 // `__sx_default_context` is fully built before `main` runs.
 c_allocator : CAllocator = .{};
 
-@contextExtend allocator: Allocator = c_allocator;
+@context.extend allocator: Allocator = c_allocator;
 
 // --- GPA: general purpose allocator (malloc/free wrapper) ---
 //

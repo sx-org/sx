@@ -91,7 +91,7 @@ pub const SemaResult = struct {
     fn_signatures: std.StringHashMap(FnSignature),
     struct_types: std.StringHashMap(StructTypeInfo),
     enum_types: std.StringHashMap([]const []const u8),
-    /// `@contextExtend` field name → declared type. The Context is assembled
+    /// `@context.extend` field name → declared type. The Context is assembled
     /// program-wide, so this is a union across every analyzed document rather
     /// than a member list on one declaration.
     context_members: std.StringHashMap(Type),

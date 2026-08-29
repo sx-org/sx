@@ -80,7 +80,7 @@ Identity :: struct {
     }
 }
 
-@contextExtend compose_ui: *Identity = null;
+@context.extend compose_ui: *Identity = null;
 
 // The id of the element being built at THIS call site. A component mints it
 // while the tree is built and carries it into render, where it names the hit

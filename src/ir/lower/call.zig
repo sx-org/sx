@@ -2693,7 +2693,7 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     if (self.diagnostics) |d| {
         const span = ast.Span{ .start = 0, .end = 0 };
         const id = d.addFmtId(.err, span, "{s} requires the Context type — add `@import \"modules/std.sx\";` (or a module that imports it)", .{what});
-        // A no-context build may still COMPILE `@contextExtend`
+        // A no-context build may still COMPILE `@context.extend`
         // declarations (they are inert without Context). Show what the
         // program's context would have been, so the demand is traceable.
         self.noteRegisteredContextFields(id);

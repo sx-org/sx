@@ -44,7 +44,7 @@ take :: ufcs (value: $I/@Init(Box)) {
     value.write(*slot);
 }
 
-@contextExtend ui_out: *List(View) = null;
+@context.extend ui_out: *List(View) = null;
 
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;

@@ -1565,14 +1565,14 @@ another (`Series(View)`). Constraints are refused in every storable
 position (§4).
 
 **Static positions.** Four positions build their handle before `main`
-runs: a module-scope global's initializer, an `@contextExtend` default,
+runs: a module-scope global's initializer, an `@context.extend` default,
 an interface-typed struct-field default, and a field or element of a
 statically-constructed value. In each of them the one operand that
 coerces names a **module-scope global**:
 
 ```sx
 c_allocator : CAllocator = .{};
-@contextExtend allocator: Allocator = c_allocator;     // bare global
+@context.extend allocator: Allocator = c_allocator;    // bare global
 fallback : Allocator = mem.c_allocator;                // module-qualified
 ```
 
@@ -1654,7 +1654,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   Contribution is judged syntactically and conservatively: an unexpanded
   body mentioning `impl P for …` contributes to `P`, and one holding an
   `@import` contributes the whole surface of the module it names — the
-  impls, declaration names and `@contextExtend`s that module authors,
+  impls, declaration names and `@context.extend`s that module authors,
   transitively through its own imports and branches — because selecting
   the branch is what brings them in.
 - **Re-erasure facts depend on impl multiplicity** (the program-unique
@@ -1667,7 +1667,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
   reads it waits for that layout to settle: while any unexpanded branch
-  could still declare a `@contextExtend`, the field set is not final,
+  could still declare a `@context.extend`, the field set is not final,
   and the evaluation suspends against Context-ready exactly as it
   suspends against an open conformer set. Contribution is judged
   syntactically, like an `impl`'s. Once nothing can contribute, the
@@ -5420,34 +5420,34 @@ push .{ allocator = arena.allocator(), logger = *my_logger } {
 
 A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push some_ctx { … }`) stores it as-is — seed it from `context` first to inherit.
 
-**`Context` struct** — assembled PER PROGRAM, 100% from `@contextExtend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
+**`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
 c_allocator : CAllocator = .{};
-@contextExtend allocator: Allocator = c_allocator;
+@context.extend allocator: Allocator = c_allocator;
 
 // std/io.sx
 c_blocking_io : CBlockingIo = .{};
-@contextExtend io: Io = c_blocking_io;
+@context.extend io: Io = c_blocking_io;
 ```
 Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
-`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@contextExtend` fields with their declaring modules, so the demand is traceable.
+`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context.extend` fields with their declaring modules, so the demand is traceable.
 
-### `@contextExtend` — extending the Context
+### `@context.extend` — extending the Context
 
 Any module — stdlib or user — can declare a field the program's Context carries:
 
 ```sx
-@contextExtend ui: *Ui = null;      // bare nullable pointer — the default idiom
-@contextExtend frame_stats: FrameStats = .{};
+@context.extend ui: *Ui = null;      // bare nullable pointer — the default idiom
+@context.extend frame_stats: FrameStats = .{};
 ```
 
 `?*Ui` works too and opts the field into checked nullability (consumers must
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `@contextExtend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
+- **Grammar**: `@context.extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
@@ -5456,7 +5456,7 @@ sentinel, per the pointer contract.
 - **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Constraints and Interfaces, compile-time execution): an added field's default is readable at comptime; interface-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@contextExtend logger: *Logger = null;`).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context.extend logger: *Logger = null;`).
 
 ---
 
@@ -6015,7 +6015,7 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@contextExtend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@context.extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6855,7 +6855,7 @@ end             = ';' | EOF   // §1 Spacing and terminators: a line break is
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
-context_extend  = '@contextExtend' IDENT ':' type '=' expr end
+context_extend  = '@context.extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
 error_decl      = IDENT '::' set_operand ('|' set_operand)* end
 set_ref         = IDENT ('.' IDENT)*          // a named set or a qualified member; each

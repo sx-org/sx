@@ -6,7 +6,7 @@
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
 
-@contextExtend ui_out: *List(View) = null;
+@context.extend ui_out: *List(View) = null;
 
 publish :: ufcs (value: $I/@Init(View)) -> string {
     item: View = ---;

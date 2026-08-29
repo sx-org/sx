@@ -23,8 +23,8 @@ the_sink : Doubler = .{ k = 3 };
 the_mark : Doubler = .{ k = 9 };
 loud : Tripler = .{ k = 7 };
 
-@contextExtend sink: Sink = the_sink;
-@contextExtend note: Mark = xx the_mark;
+@context.extend sink: Sink = the_sink;
+@context.extend note: Mark = xx the_mark;
 
 // An ordinary global takes the same static form at either vtable spelling —
 // the Context is one client of the fold, not a special case.

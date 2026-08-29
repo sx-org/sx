@@ -206,16 +206,16 @@ fn findMemberRef(sema: *const sx.sema.SemaResult, name: []const u8, owner: []con
     return null;
 }
 
-// A `@contextExtend` declaration records a member DEF owned by "Context",
+// A `@context.extend` declaration records a member DEF owned by "Context",
 // with the span of the field-name token — the anchor definition/references
 // resolve to.
-test "analyzeDocument: @contextExtend records a Context member def" {
+test "analyzeDocument: @context.extend records a Context member def" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "@contextExtend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx_decl.sx", src, 1);
     try store.analyzeDocument(doc);
 
@@ -611,7 +611,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
     try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
 }
 
-test "analyzeDocument: a @contextExtend member's type owns its method uses" {
+test "analyzeDocument: a @context.extend member's type owns its method uses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -624,7 +624,7 @@ test "analyzeDocument: a @contextExtend member's type owns its method uses" {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
-        \\@contextExtend shape: Shape;
+        \\@context.extend shape: Shape;
     ;
     const lib_doc = try store.openOrUpdate("ctx_lib.sx", lib_src, 1);
     try store.analyzeDocument(lib_doc);

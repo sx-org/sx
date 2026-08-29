@@ -162,7 +162,7 @@ FocusRouter :: struct {
     }
 }
 
-@contextExtend fluent_focus: *FocusRouter = null;
+@context.extend fluent_focus: *FocusRouter = null;
 
 // The focus state a build reads to style an element by whether the keys reach
 // it. With no router in context nothing is focused.

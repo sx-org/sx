@@ -2,15 +2,15 @@
 //
 // The condition runs, and what it runs reads `context.depth` — so it needs the
 // program Context to be settled. It is not: both branches of this very driver
-// declare a `@contextExtend`, so the layout the run would read is one only
+// declare a `@context.extend`, so the layout the run would read is one only
 // this driver could finish. The fact never fires, the drain quiesces with the
 // bookmark down, and the expansion is refused with every waiting unit named.
 @import "modules/std.sx";
 
 inline if @run { context.depth > 2 } {
-    @contextExtend depth: i64 = 3;
+    @context.extend depth: i64 = 3;
 } else {
-    @contextExtend depth: i64 = 9;
+    @context.extend depth: i64 = 9;
 }
 
 main :: () {

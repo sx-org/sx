@@ -21,8 +21,8 @@
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
 
-@contextExtend ui_out: *List(View) = null;
-@contextExtend ticks: *i64 = null;
+@context.extend ui_out: *List(View) = null;
+@context.extend ticks: *i64 = null;
 
 // A destination-first ufcs with two ordinary arguments after the receiver.
 emit_at :: ufcs (value: $I/@Init(View), a: i64, b: i64) {

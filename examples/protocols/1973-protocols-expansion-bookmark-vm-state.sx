@@ -1,7 +1,7 @@
 // A real bookmark: an evaluation parks mid-flight, its VM-local state stays
 // exactly as it left it, and the resume lands at the awaiting instruction.
 //
-// The `inline if` at the bottom can still write a `@contextExtend` — in the
+// The `inline if` at the bottom can still write a `@context.extend` — in the
 // branch it takes or the branch it does not — so the program Context cannot
 // publish while it is undecided, and the run below awaits it at the read. The
 // fact is answered by deciding that driver while the evaluation stays
@@ -29,9 +29,9 @@ probe :: () -> i64 {
 SUM :: @run probe();
 
 inline if @host.pointerSize == 8 {
-    @contextExtend depth: i64 = 3;
+    @context.extend depth: i64 = 3;
 } else {
-    @contextExtend depth: i64 = 9;
+    @context.extend depth: i64 = 9;
 }
 
 main :: () {

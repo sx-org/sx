@@ -199,7 +199,7 @@ Router :: struct {
     }
 }
 
-@contextExtend compose_input: *Router = null;
+@context.extend compose_input: *Router = null;
 
 // The press state a build reads to style an element by what the pointer is
 // doing to it. With no router in context nothing is pressed.

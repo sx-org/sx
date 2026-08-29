@@ -550,7 +550,7 @@ Io :: interface {
 // --- Context ---
 //
 // The dynamically-scoped capability bag. The struct is declared EMPTY: the
-// compiler assembles 100% of its fields from the program's `@contextExtend`
+// compiler assembles 100% of its fields from the program's `@context.extend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
 // like any user field. `__sx_default_context` is emitted from the assembled
@@ -562,7 +562,7 @@ Io :: interface {
 // There is no untyped escape slot: a module that wants to carry a payload
 // declares its own typed field:
 //
-//     @contextExtend logger: ?*Logger = null;
+//     @context.extend logger: ?*Logger = null;
 //
 // Guideline (not enforced): prefer one POINTER per concern over fat inline
 // values — every `push` copies the whole Context, so a 2 KB inline field
@@ -572,7 +572,7 @@ Context :: struct {}
 
 // The JNIEnv* the JVM hands a native method. `null` is the unchecked
 // sentinel. DSL dispatch and helpers read `context.jni`.
-@contextExtend jni: *void = null;
+@context.extend jni: *void = null;
 
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
 // `val.(T, alloc)`, falls through the built-in conversion ladder to an

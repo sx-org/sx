@@ -16,7 +16,7 @@ error: global 'holder' must be initialized by a compile-time constant
    |              ^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'probe' is a 'P' value, which borrows a global's own symbol — this path is rooted at a global VALUE ('g.field'), which has no symbol of its own
-  --> examples/diagnostics/2229-diagnostics-interface-default-path-root.sx:17:27
+  --> examples/diagnostics/2229-diagnostics-interface-default-path-root.sx:17:28
    |
-17 | @contextExtend probe: P = the_box.w;
-   |                           ^^^^^^^^^
+17 | @context.extend probe: P = the_box.w;
+   |                            ^^^^^^^^^

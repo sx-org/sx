@@ -317,20 +317,20 @@ test "parser: non-Closure call followed by '->' still fails" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// `@contextExtend name: Type = default;` parses at top level to a
+// `@context.extend name: Type = default;` parses at top level to a
 // `.context_extend_decl` node carrying {name, name_span, type_expr,
 // default_expr}; the `= default` clause may be ABSENT (default_expr == null —
 // the collection pass rejects it, not the parser); and it
 // declares no module-scope name (`declName` is null — the field lives in the
 // program-global Context namespace).
-test "parser: @contextExtend parses to context_extend_decl" {
+test "parser: @context.extend parses to context_extend_decl" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\@contextExtend ui: ?*i64 = null;
-        \\@contextExtend bare: i64;
+        \\@context.extend ui: ?*i64 = null;
+        \\@context.extend bare: i64;
         \\
     ;
     var parser = try Parser.init(alloc, src);
@@ -351,16 +351,16 @@ test "parser: @contextExtend parses to context_extend_decl" {
     try std.testing.expect(bare.default_expr == null);
 }
 
-// `@contextExtend` is top-level-only — statement position is a parse error,
+// `@context.extend` is top-level-only — statement position is a parse error,
 // not a generic expression-parse fallthrough.
-test "parser: @contextExtend rejected in statement position" {
+test "parser: @context.extend rejected in statement position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
         \\f :: () {
-        \\    @contextExtend x: i64 = 0;
+        \\    @context.extend x: i64 = 0;
         \\}
         \\
     ;
@@ -1454,27 +1454,27 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// `@contextExtend`'s default is optional; the `;` is what ends the
+// `@context.extend`'s default is optional; the `;` is what ends the
 // declaration, so a split default still binds.
-test "parser: a @contextExtend default reads through a line break" {
+test "parser: a @context.extend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var split = try Parser.init(alloc,
-        \\@contextExtend depth: i64
+        \\@context.extend depth: i64
         \\    = 3
     );
     const split_decls = (try split.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 1), split_decls.len);
     try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
 
-    var same = try Parser.init(alloc, "@contextExtend depth: i64 = 3\n");
+    var same = try Parser.init(alloc, "@context.extend depth: i64 = 3\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
 
     // Absent default, and the declaration below is its own.
     var bare = try Parser.init(alloc,
-        \\@contextExtend depth: i64;
+        \\@context.extend depth: i64;
         \\LIMIT :: 9;
     );
     const bare_decls = (try bare.parse()).data.root.decls;

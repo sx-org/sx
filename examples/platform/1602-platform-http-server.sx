@@ -13,7 +13,7 @@ Logger :: struct {
     count: i64;
 }
 
-@contextExtend logger: ?*Logger = null;
+@context.extend logger: ?*Logger = null;
 
 log :: (logger: *Logger, msg: string) {
     logger.count += 1;

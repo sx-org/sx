@@ -20,9 +20,9 @@
 // Stand-in for a Fiber: stores the spawner's snapshotted root Context.
 Fiber :: struct { root: Context; }
 
-// The per-call sentinel rides the context as a typed `@contextExtend` field
+// The per-call sentinel rides the context as a typed `@context.extend` field
 // (a real fiber carries its allocator / io the same way).
-@contextExtend sentinel: i64 = 0;
+@context.extend sentinel: i64 = 0;
 
 // Reads this call's context sentinel.
 sentinel :: () -> i64 { return context.sentinel; }

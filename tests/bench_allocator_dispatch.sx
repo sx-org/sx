@@ -42,7 +42,7 @@
 //             Isolates switch width from prediction failure.
 //
 // The last six repeat that shape against a Context field that holds a
-// POINTER to a handle (`@contextExtend ap: *Allocator`) instead of the
+// POINTER to a handle (`@context.extend ap: *Allocator`) instead of the
 // handle itself — the field shape a stdlib could choose without any
 // compiler change. Each `*`-suffixed lane pays exactly one extra dependent
 // load before the same dispatch:
@@ -549,14 +549,14 @@ fill_handles :: (h: []Allocator, slabs: [*]u8) {
 // ── The pointer-shaped Context field ─────────────────────────────────────
 //
 // A second capability slot carrying `*Allocator` rather than `Allocator`.
-// Nothing in the compiler is involved: `@contextExtend` takes the field
+// Nothing in the compiler is involved: `@context.extend` takes the field
 // type it is given, and `context.ap.method()` auto-derefs the handle, so
 // this is a shape a stdlib may pick on its own.
 //
 // The default target is a named global handle, which is what a `*Allocator`
 // field can point at in a static initializer.
 ap_default : Allocator = b00;
-@contextExtend ap: *Allocator = *ap_default;
+@context.extend ap: *Allocator = *ap_default;
 
 // ── Lanes ────────────────────────────────────────────────────────────────
 
