@@ -1,7 +1,4 @@
-// The reflected member count `@typeInfo(T).struct.fields.len` /
-// `.enum.fields.len` is a compile-time integer: it bounds an `inline for`,
-// dimensions an array, and initializes a `::` const — for a spelled type and
-// for a bound `$T` alike.
+// `@typeInfo(T).struct.fields.len` / `.enum.fields.len` is a compile-time integer.
 @import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; z: i64; }

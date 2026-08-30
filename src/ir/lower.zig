@@ -1797,13 +1797,10 @@ pub const Lowering = struct {
         return if (std.mem.eql(u8, fa.field, field)) fa else null;
     }
 
-    /// Fold the member-count projection of a reflected type —
-    /// `@typeInfo(T).struct.fields.len` / `.enum.fields.len` — to its
-    /// compile-time integer, so a reflected count drives an `inline for` bound,
-    /// an array dimension, or a `::` const exactly like `structFieldCount(T)`.
-    /// The projected variant must be the one `@typeInfo` reflects `T` into: a
-    /// mismatched kind is a wrong-variant read, not a count, so it stays
-    /// unfolded and takes the ordinary error path.
+    /// Fold `@typeInfo(T).struct.fields.len` / `.enum.fields.len` to the
+    /// reflected member count. The projected variant must be the one
+    /// `@typeInfo` reflects `T` into: a mismatched kind is a wrong-variant
+    /// read, not a count, so it stays unfolded and takes the ordinary error path.
     pub fn evalConstFieldAccessInt(self: *Lowering, node: *const Node) ?i64 {
         const count = fieldAccessNamed(node, "len") orelse return null;
         const list = fieldAccessNamed(count.object, "fields") orelse return null;
