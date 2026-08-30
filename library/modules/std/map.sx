@@ -33,8 +33,7 @@
 @import "modules/std/hash.sx";
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx";
-// The structural key hash below reflects through `@typeInfo` and
-// `structFieldValue`, both declared in `core.sx`.
+// `TypeInfo` is declared in core.sx; `@typeInfo`'s result type needs it in scope.
 
 // ── metadata byte (Zig-faithful) ─────────────────────────────────────
 // One byte per bucket: bit 7 = `used`, bits 0..6 = `fingerprint` (the top

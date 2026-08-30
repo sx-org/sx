@@ -1,10 +1,6 @@
 // Comptime member reflection (`.len` / `.name` / `.type`) over aggregate kinds
 // — struct, enum, and a positional anonymous product (`@typeOf(.{…})`).
-//
-// BOTH the name-array build and the GEP sizing are driven from one source of
-// truth (`memberCount`/`memberName`), so they cannot diverge and a reflected
-// `.name` read is always in bounds. A positional product member's name is its
-// index string `"0"`, `"1"`, …
+// A positional product member's name is its index string `"0"`, `"1"`, …
 @import "modules/std.sx";
 
 S :: struct { a: i64; b: bool; }

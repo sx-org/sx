@@ -1,22 +1,18 @@
 // Int-returning type-query builtins (`@sizeOf` / `@alignOf`) fold as comptime
-// CONSTANTS — usable as an `inline for` bound, an array dimension, and inside a
-// composed dimension expression, exactly like a plain `K :: 3` const.
+// constants, like a plain `K :: 3` const.
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    // @sizeOf as an inline-for bound
     s := 0;
     inline for i in 0..@sizeOf(i32) { s = s + i; }   // 0+1+2+3 = 6
     print("@sizeOf(i32) loop sum = {}\n", s);
 
-    // @sizeOf as an array dimension; fill it in a folded loop
     xs : [@sizeOf(i64)]i64 = ---;
     inline for i in 0..@sizeOf(i64) { xs[i] = i * 10; }
     print("array[@sizeOf(i64)] len = {}  xs[2] = {}\n", xs.len, xs[2]);
 
     print("@alignOf(f64) = {}\n", @alignOf(f64));
 
-    // composed const expression as a dim
     ys : [@alignOf(f64) + 1]i64 = ---;
     print("[@alignOf(f64) + 1] len = {}\n", ys.len);
 

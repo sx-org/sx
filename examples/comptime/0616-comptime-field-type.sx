@@ -1,6 +1,5 @@
 // A reflected member's `.type` — and a variant's `.payload` — folds at lower
-// time, so the projection composes wherever a type is spelled: inside
-// `@typeEq`, `@typeName`, or any other type-arg slot.
+// time, so the projection composes in a type-arg slot.
 @import "modules/std.sx";
 
 Point :: struct { x: i64; y: f64; on: bool; }
