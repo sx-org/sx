@@ -1682,16 +1682,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         } else {
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
-            // Null where the pattern named no value of the subject: the arm
-            // dispatches on its own index, and never claims.
-            const case_val: ?u64 = blk: {
+            // A pattern that names no value of the subject registers no case.
+            const resolved: union(enum) { value: u64, no_variant, unnamed } = blk: {
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
-                    .int_literal => |il| break :blk @as(u64, @intCast(il.value)),
-                    .char_literal => |cl| break :blk @as(u64, @intCast(cl.value)),
-                    .bool_literal => |bl| break :blk @as(u64, if (bl.value) 1 else 0),
-                    else => break :blk null,
+                    .int_literal => |il| break :blk .{ .value = @as(u64, @intCast(il.value)) },
+                    .char_literal => |cl| break :blk .{ .value = @as(u64, @intCast(cl.value)) },
+                    .bool_literal => |bl| break :blk .{ .value = @as(u64, if (bl.value) 1 else 0) },
+                    else => break :blk .unnamed,
                 };
                 // Look up variant value in the subject's type
                 if (!subject_ty.isBuiltin()) {
@@ -1701,40 +1700,44 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const vname = self.module.types.strings.get(f.name);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.tagged_union.explicit_tag_values) |vals| {
-                                    if (vi < vals.len) break :blk @as(u64, @bitCast(vals[vi]));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @as(u64, @intCast(vi));
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     } else if (ty_info == .@"enum") {
                         for (ty_info.@"enum".variants, 0..) |v, vi| {
                             const vname = self.module.types.strings.get(v);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.@"enum".explicit_values) |vals| {
-                                    if (vi < vals.len) break :blk @as(u64, @bitCast(vals[vi]));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @as(u64, @intCast(vi));
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     }
                 }
-                break :blk null;
+                break :blk .unnamed;
             };
-            if (case_val) |cv| {
-                claimCase(self, &claimed, &cases, cv, arm_blocks.items[i], pat.span);
-            } else cases.append(self.alloc, .{
-                .value = @intCast(i),
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            switch (resolved) {
+                .value => |cv| claimCase(self, &claimed, &cases, cv, arm_blocks.items[i], pat.span),
+                .no_variant => {},
+                .unnamed => {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, pat.span, "this match arm does not name a value of type '{s}'", .{self.formatTypeName(subject_ty)});
+                    }
+                },
+            }
         }
     }
 
@@ -1783,19 +1786,24 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
 
-        // An arm no switch case targets is unreachable: a type-match arm whose
-        // tags are all claimed, or a refused qualified arm. Lowering it emits
-        // invalid IR — a runtime cast with no matching type, a payload read in
-        // a block with no predecessor.
-        const refused_arm = if (arm_verdicts.items[i]) |v| switch (v) {
-            .ok => false,
-            else => true,
-        } else false;
-        if (arm.pattern != null and (refused_arm or
-            (is_type_match and arm_tag_values.items[i].len == 0)))
-        {
-            self.builder.emitUnreachable();
-            continue;
+        // A patterned arm no switch case targets is unreachable. Lowering it
+        // emits invalid IR — a runtime cast with no matching type, a payload
+        // read in a block with no predecessor.
+        if (arm.pattern != null) {
+            const bb = arm_blocks.items[i];
+            var targeted = default_bb.? == bb;
+            if (!targeted) {
+                for (cases.items) |c| {
+                    if (c.target == bb) {
+                        targeted = true;
+                        break;
+                    }
+                }
+            }
+            if (!targeted) {
+                self.builder.emitUnreachable();
+                continue;
+            }
         }
 
         var arm_scope = Scope.init(self.alloc, self.scope);

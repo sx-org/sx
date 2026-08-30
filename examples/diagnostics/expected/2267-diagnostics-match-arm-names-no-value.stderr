@@ -1,0 +1,5 @@
+error: this match arm does not name a value of type 'i32'
+  --> examples/diagnostics/2267-diagnostics-match-arm-names-no-value.sx:8:14
+   |
+ 8 |         case .green: 1;
+   |              ^^^^^^

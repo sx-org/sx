@@ -1,0 +1,12 @@
+// A match arm whose pattern names no value of the subject is refused and is
+// not a switch case.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    n: i32 = 0;
+    return match n {
+        case .green: 1;
+        case 0: 2;
+        else: 0;
+    };
+}
