@@ -1,6 +1,6 @@
 // Protocol RTTI: every protocol value carries
 // its concrete typeId at slot 1 — {ctx, typeId, vtable} / `inline`
-// {ctx, typeId, fn_ptrs…} — so the value's first two words are an
+// {ctx, typeId, fnPtrs…} — so the value's first two words are an
 // `any` {data, typeId}. What that unlocks, all pinned here:
 //   - `@typeOf(p)` answers the CONCRETE type (never folds to the static
 //     protocol type — the any-operand rule extended);
