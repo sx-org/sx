@@ -2064,14 +2064,13 @@ pub const Lowering = struct {
         // Return `.unresolved` so callers (e.g. lambda return-type inference,
         // call-site `$R` inference) treat it as not-yet-known.
         if (node.data == .type_expr and node.data.type_expr.is_generic) {
-            // A VALUE param (`$N: u32`) named in a TYPE position is bound to a
-            // compile-time integer, not a type, so `resolveBinding` above found no
-            // TYPE binding and it lands here. In the MAIN file the
-            // `UnknownTypeChecker` owns this diagnostic (and halts before codegen);
-            // an IMPORTED declaration is checker-trusted and resolves in its own
-            // source context, so this leaf is its sole guard — emit the tailored
-            // hint. A genuinely-unbound type param (`$R`, no value binding) stays
-            // a silent `.unresolved`.
+            // A VALUE param (`$N: u32`) named in a TYPE position is a
+            // compile-time integer, so `resolveBinding` above found no TYPE
+            // binding. In the MAIN file `UnknownTypeChecker` owns this
+            // diagnostic and halts before codegen; an IMPORTED declaration is
+            // checker-trusted and resolves in its own source context, so this
+            // leaf is its sole guard. A genuinely-unbound type param (`$R`, no
+            // value binding) stays a silent `.unresolved`.
             const nm = node.data.type_expr.name;
             const bound_value = (if (self.comptime_value_bindings) |cvb| cvb.contains(nm) else false) or
                 (if (self.comptime_param_nodes) |cpn| cpn.contains(nm) else false);
@@ -2082,7 +2081,7 @@ pub const Lowering = struct {
                     true;
                 if (!is_main) {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ nm, nm });
+                        d.addFmt(.err, node.span, "'{s}' is a value parameter, not a type", .{nm});
                 }
             }
             return .unresolved;

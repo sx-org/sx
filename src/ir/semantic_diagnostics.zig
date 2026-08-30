@@ -703,7 +703,8 @@ pub const UnknownTypeChecker = struct {
         defer type_vals.shrinkRetainingCapacity(save_v);
         for (type_params) |tp| in_scope.append(self.alloc, tp) catch {};
         // Value params declared `: Type` (no `$`) — using one in a type position
-        // is the $-prefix-in-cast-position misuse; track them for the tailored hint.
+        // is the $-prefix-in-cast-position misuse; track them so
+        // `checkTypeNodeForUnknown` rejects the reference.
         for (params) |p| {
             if (p.type_expr.data == .type_expr) {
                 const cn = p.type_expr.data.type_expr.name;
@@ -952,13 +953,13 @@ pub const UnknownTypeChecker = struct {
     /// (`$N: u32`) in a TYPE position is invalid — the name is a compile-time
     /// integer, not a type. The parser marks such a reference `is_generic`
     /// (same as a real type param), so the unknown-type walk would otherwise skip
-    /// it and let it reach the `.unresolved` sentinel. Emit the tailored hint; a
-    /// genuine type-param reference (or a fresh inline `$R`, not in scope) passes.
+    /// it and let it reach the `.unresolved` sentinel. A genuine type-param
+    /// reference (or a fresh inline `$R`, not in scope) passes.
     fn reportIfValueParamInTypePosition(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span, in_scope: []const ast.StructTypeParam, struct_field: bool) void {
         for (in_scope) |tp| {
             if (!std.mem.eql(u8, tp.name, name)) continue;
             if (self.isTypeParam(tp)) return;
-            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
             return;
         }
         // Not in scope. In a struct FIELD position, an `is_generic` name can
@@ -1145,9 +1146,9 @@ pub const UnknownTypeChecker = struct {
             // names a type and is valid in this position. A VALUE param
             // (`$N: u32`) is a compile-time integer, NOT a type — accepting it
             // would let the field's type leaf resolve to the `.unresolved`
-            // sentinel and panic at LLVM emission. Emit the tailored hint.
+            // sentinel and panic at LLVM emission.
             if (self.isTypeParam(tp)) return;
-            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
             return;
         }
         if (declared.contains(name)) return;
@@ -1163,7 +1164,7 @@ pub const UnknownTypeChecker = struct {
         }
         for (type_vals) |tv| {
             if (std.mem.eql(u8, tv, name)) {
-                self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+                self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
                 return;
             }
         }

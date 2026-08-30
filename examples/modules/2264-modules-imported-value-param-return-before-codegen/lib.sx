@@ -1,0 +1,3 @@
+nth :: (xs: []i64, $N: u32) -> $N {
+    return xs[0];
+}
