@@ -940,11 +940,11 @@ pub const Lowering = struct {
         bool_val: bool,
         enum_tag: struct { ty: TypeId, tag: u32 },
         /// A `@host` enum field in a program that does not declare the enum it
-        /// is a variant of: the variant NAME the target selects. It compares
-        /// against an enum literal at comptime and has no runtime reading — the
-        /// declaration a runtime read needs is exactly the one that would have
-        /// given it a tag.
-        target_variant: []const u8,
+        /// is a variant of: that enum's NAME and the variant NAME the target
+        /// selects. It compares against a variant spelling at comptime and has
+        /// no runtime reading — the declaration a runtime read needs is exactly
+        /// the one that would have given it a tag.
+        target_variant: struct { enum_name: []const u8, variant: []const u8 },
         struct_val: []const Field,
 
         pub const Field = struct {

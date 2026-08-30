@@ -500,7 +500,7 @@ fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) 
             return .{ .enum_tag = .{ .ty = enum_ty, .tag = self.findVariantIndex(info.@"enum".variants, variant) } };
         }
     }
-    return .{ .target_variant = variant };
+    return .{ .target_variant = .{ .enum_name = enum_name, .variant = variant } };
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {

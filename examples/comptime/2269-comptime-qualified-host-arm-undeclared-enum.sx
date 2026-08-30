@@ -1,0 +1,9 @@
+// A qualified `@host.os` arm resolves with no declaration of the enum in reach.
+inline match @host.os {
+    case OperatingSystem.macos: HOST_OS :: "macos";
+    case OperatingSystem.linux: HOST_OS :: "linux";
+    case OperatingSystem.windows: HOST_OS :: "windows";
+    else: @error("no qualified arm names this host's os");
+}
+
+main :: () {}
