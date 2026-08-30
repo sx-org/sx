@@ -133,7 +133,7 @@ boundaryActuals :: (n: i32, ..) -> i64 abi(.c) {
 }
 
 // An incoming list is borrowed already open: its caller started it and ends it.
-walks_a_borrowed_list :: (n: i32, ap: @VaList) -> i64 export {
+walksABorrowedList :: (n: i32, ap: @VaList) -> i64 export {
     @vaStart(*ap);
     @vaEnd(*ap);
     return c_reader(n, ap);
@@ -160,6 +160,6 @@ main :: () -> i32 {
     printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), structFieldCount(VaPair));
     made := @VaList{};
     printf("%d\n", reads(1, 2) + noTail() + endsABorrow(*made));
-    printf("%d\n", boundaryActuals(1, 2) + walks_a_borrowed_list(1, made));
+    printf("%d\n", boundaryActuals(1, 2) + walksABorrowedList(1, made));
     return 0;
 }
