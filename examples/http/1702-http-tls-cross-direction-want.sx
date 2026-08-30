@@ -182,7 +182,7 @@ FakeAcceptor :: struct {
     rdInjections: i64 = 0;   // the R/B injections that fired
     hInjections: i64 = 0;    // the H (dispatch-cross) wants that fired
     wrDeclared: i64 = 0;     // the W wants that surfaced
-    wrExtraRetries: i64 = 0;// write retries while waiting with nothing inbound
+    wrExtraRetries: i64 = 0; // write retries while waiting with nothing inbound
 }
 
 impl TlsAcceptor for FakeAcceptor {

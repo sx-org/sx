@@ -42,7 +42,7 @@ main :: () -> i32 {
     {
         h :: (x: i64) -> i64 { return x + 100; }        // outer nested fn
         {
-            h : (x: i64) -> i64 = doubleIt;            // inner var wins
+            h : (x: i64) -> i64 = doubleIt;             // inner var wins
             print("inner var: {}\n", h(3));             // 6
         }
         print("outer nested fn: {}\n", h(3));           // 103

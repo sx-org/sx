@@ -7,7 +7,7 @@ error: cannot assign to 'lib.LIB_C' — it is a constant, not a mutable global
 error: cannot assign to 'lib.libFn' — it is a function, not a mutable global
   --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:15:9
    |
-15 |     lib.libFn = .selected;        // target-directed enum must not lower
+15 |     lib.libFn = .selected;         // target-directed enum must not lower
    |         ^^^^^
 
 error: namespace 'amb' has no member 'shared'

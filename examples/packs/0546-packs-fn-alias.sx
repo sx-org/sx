@@ -13,8 +13,8 @@ packSum :: (..$args) -> i64 {
 sumAlias :: packSum;        // same-file pack alias
 
 helper2 :: r.helper;          // renamed plain, namespace RHS
-headOf :: r.firstOf;        // renamed runtime-generic, namespace RHS
-sum2 :: r.myPack;            // renamed pack, namespace RHS
+headOf :: r.firstOf;          // renamed runtime-generic, namespace RHS
+sum2 :: r.myPack;             // renamed pack, namespace RHS
 
 myPrint :: s.print;          // std's print — comptime pack + $fmt
 myFormat :: s.format;        // value-returning sibling

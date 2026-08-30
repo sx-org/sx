@@ -15,7 +15,7 @@
 
 main :: () -> i32 {
     nsClass      := objc_getClass("NSString".ptr);
-    selWithUtf8 := sel_registerName("stringWithUTF8String:".ptr);
+    selWithUtf8  := sel_registerName("stringWithUTF8String:".ptr);
     selUtf8      := sel_registerName("UTF8String".ptr);
 
     msg3 : (*void, *void, [*]u8) -> *void abi(.c) = xx objc_msgSend;

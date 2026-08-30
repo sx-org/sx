@@ -49,7 +49,7 @@ main :: () -> i32 {
     print("whole={}\n", whole(4) catch |e| -1);            // 8
     print("single={}\n", single(-1) catch |e| -1);         // -1
     print("named={}\n", named(0) catch |e| -2);            // -2
-    print("inline={}\n", inlineComposed(3) catch |e| -3); // 6
+    print("inline={}\n", inlineComposed(3) catch |e| -3);  // 6
     print("torn={}\n", tear(-1) catch |e| -4);             // -4
     return 0;
 }

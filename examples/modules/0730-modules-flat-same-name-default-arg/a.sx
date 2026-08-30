@@ -2,4 +2,4 @@
 // merge winner. `fromA` calls `cfg()` with the arg omitted — own == winner →
 // existing default-expansion path, byte-for-byte unchanged.
 cfg    :: (n: i64 = 10) -> i64 { return n; }
-fromA :: () -> i64 { return cfg(); }
+fromA  :: () -> i64 { return cfg(); }

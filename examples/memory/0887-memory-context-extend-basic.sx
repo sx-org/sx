@@ -3,7 +3,7 @@
 //   Context from every declaration in the compilation.
 // - the default is visible before any push (`traceDepth` reads 3,
 //   `marker` reads null — both straight from `__sx_default_context`).
-// - readerMod reads the field WITHOUT importing its declaring module.
+// - reader_mod reads the field WITHOUT importing its declaring module.
 // - `push .{ field = v }` spread+patches added fields exactly like
 //   builtin ones — unnamed fields inherit, the scope restores on exit.
 @import "modules/std.sx";
@@ -15,7 +15,7 @@
 main :: () {
     print("default traceDepth = {}\n", context.traceDepth);
     print("default marker is null = {}\n", context.marker == null);
-    print("reader (no import of declMod) sees {}\n", readDepth());
+    print("reader (no import of decl_mod) sees {}\n", readDepth());
 
     m : i64 = 5;
     push .{ traceDepth = 7, marker = *m } {

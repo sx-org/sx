@@ -14,7 +14,7 @@
 //       through the TLS session when present; recvOn decodes
 //       Transfer-Encoding: chunked responses in place via the SHARED
 //       types.decodeChunked (the server's own slowloris-safe decoder).
-//   tlsMbedtls.TlsClientConfig     — the client TLS provider: setupFiles
+//   tls_mbedtls.TlsClientConfig     — the client TLS provider: setupFiles
 //       (explicit trust anchor + hostname verification; a self-signed
 //       server cert can BE the anchor) or insecure() (VERIFY_NONE, loudly
 //       named).

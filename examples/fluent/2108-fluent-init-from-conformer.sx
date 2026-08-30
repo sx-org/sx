@@ -25,31 +25,31 @@ Label :: @OpenVariant(View) {
     render :: (self: *Label) -> string => self.text;
 }
 
-form_Round :: ufcs (value: $I/@Init(Round)) {
+formRound :: ufcs (value: $I/@Init(Round)) {
     slot: Round = ---;
     value.write(*slot);
     print("Round {}\n", slot.s);
 }
 
-form_opt_Round :: ufcs (value: $I/@Init(?Round)) {
+formOptRound :: ufcs (value: $I/@Init(?Round)) {
     slot: ?Round = ---;
     value.write(*slot);
     print("?Round {}\n", slot?!.s);
 }
 
-form_View :: ufcs (value: $I/@Init(View)) {
+formView :: ufcs (value: $I/@Init(View)) {
     slot: View = ---;
     value.write(*slot);
     print("View {}\n", slot.render());
 }
 
-form_opt_View :: ufcs (value: $I/@Init(?View)) {
+formOptView :: ufcs (value: $I/@Init(?View)) {
     slot: ?View = ---;
     value.write(*slot);
     print("?View {}\n", slot?!.render());
 }
 
-form_Named :: ufcs (value: $I/@Init(Named)) {
+formNamed :: ufcs (value: $I/@Init(Named)) {
     slot: Named = ---;
     value.write(*slot);
     print("Named {}\n", slot.name());
@@ -65,38 +65,38 @@ formAny :: ufcs (value: $I/@Init(any)) {
     }
 }
 
-echo_Round :: (r: Round) -> Round => r;
-echo_Label :: (l: Label) -> Label => l;
+echoRound :: (r: Round) -> Round => r;
+echoLabel :: (l: Label) -> Label => l;
 
 main :: () -> i32 {
     named := Round{ s = "downcast" };
     h : Named = *named;
 
-    form_Round(Round{ s = "argument" });
-    Round{ s = "receiver" }.form_Round();
-    form_Round(h.(Round));
-    h.(Round).form_Round();
+    formRound(Round{ s = "argument" });
+    Round{ s = "receiver" }.formRound();
+    formRound(h.(Round));
+    h.(Round).formRound();
 
-    form_opt_Round(Round{ s = "wrapped" });
-    Round{ s = "wrapped receiver" }.form_opt_Round();
+    formOptRound(Round{ s = "wrapped" });
+    Round{ s = "wrapped receiver" }.formOptRound();
 
-    form_View(Label{ text = "member" });
-    Label{ text = "member receiver" }.form_View();
+    formView(Label{ text = "member" });
+    Label{ text = "member receiver" }.formView();
 
-    form_opt_View(Label{ text = "member wrapped" });
-    Label{ text = "member wrapped receiver" }.form_opt_View();
+    formOptView(Label{ text = "member wrapped" });
+    Label{ text = "member wrapped receiver" }.formOptView();
 
-    form_Named(h);
-    h.form_Named();
+    formNamed(h);
+    h.formNamed();
 
     formAny(Round{ s = "boxed" });
     Round{ s = "boxed receiver" }.formAny();
     formAny(h);
     formAny(Label{ text = "boxed member" });
 
-    form_Round(echo_Round(Round{ s = "nested" }));
-    echo_Round(Round{ s = "nested receiver" }).form_Round();
-    form_View(echo_Label(Label{ text = "nested member" }));
-    echo_Label(Label{ text = "nested member receiver" }).form_View();
+    formRound(echoRound(Round{ s = "nested" }));
+    echoRound(Round{ s = "nested receiver" }).formRound();
+    formView(echoLabel(Label{ text = "nested member" }));
+    echoLabel(Label{ text = "nested member receiver" }).formView();
     0
 }

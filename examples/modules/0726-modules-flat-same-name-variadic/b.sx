@@ -1,5 +1,5 @@
 // b.sx is the SHADOW author for both names, with the OPPOSITE shapes:
-// `combine` is VARIADIC, `pick` is FIXED. Each `from_b_*` bare call packs
+// `combine` is VARIADIC, `pick` is FIXED. Each `fromB*` bare call packs
 // against b's OWN author's signature — combine sums its variadic pack, pick
 // subtracts its two fixed args.
 combine :: (..xs: []i64) -> i64 {

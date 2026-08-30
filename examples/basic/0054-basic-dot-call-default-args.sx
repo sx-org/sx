@@ -27,7 +27,7 @@ main :: () {
     print("{}\n", p.scaled(3));       // explicit overrides
     print("{}\n", p.bump());          // default filled on ufcs dispatch
     print("{}\n", p.bump(1));
-    print("{}\n", sumVar());         // variadic: zero args
-    print("{}\n", sumVar(1, 2, 3));  // variadic: many args
+    print("{}\n", sumVar());          // variadic: zero args
+    print("{}\n", sumVar(1, 2, 3));   // variadic: many args
     print("{}\n", here() > 0);        // @caller default
 }

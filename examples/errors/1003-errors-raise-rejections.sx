@@ -32,7 +32,7 @@ crossMember :: () -> !ParseErr {
 // Variable whose error set is not a subset of the function's set.
 makesOther :: () -> !OtherErr { return; }
 relay :: () -> !ParseErr {
-    e := makesOther();              // e : OtherErr
+    e := makesOther();               // e : OtherErr
     raise e;                         // error: OtherErr not subset of ParseErr
 }
 

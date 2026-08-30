@@ -1,8 +1,8 @@
 // A parameterised-protocol (`Into`) impl living in a
 // module reached through more than one import path must register exactly once.
 //
-//   main ─┬─ midA ─┐
-//         └─ midB ─┴─ common  (holds `impl Into(Wrapped) for i64`)
+//   main ─┬─ mid_a ─┐
+//         └─ mid_b ─┴─ common  (holds `impl Into(Wrapped) for i64`)
 //
 // Impl blocks are anonymous (no `declName`), so a name-only diamond dedup in
 // imports.zig appends the cached node once per path and the second

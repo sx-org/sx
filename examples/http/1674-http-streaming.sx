@@ -139,7 +139,7 @@ dechunk :: (buf: [*]u8, len: i64, out: [*]u8, outCap: i64) -> i64 {
             return outlen;
         }
         if p + sz > len { return -1; }            // truncated chunk data
-        if outlen + sz > outCap { return -1; }   // overflow guard
+        if outlen + sz > outCap { return -1; }    // overflow guard
         m : i64 = 0;
         while m < sz { out[outlen + m] = buf[p + m]; m += 1; }
         outlen += sz;

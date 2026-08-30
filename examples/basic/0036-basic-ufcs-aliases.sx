@@ -13,7 +13,7 @@ main :: () {
         numSum :: (a: i64, b: i64) -> i64 { a + b }
         sum :: ufcs numSum;
 
-        print("{}\n", numSum(40, 2));   // 42 — direct call
+        print("{}\n", numSum(40, 2));    // 42 — direct call
         print("{}\n", sum(40, 2));       // 42 — alias direct call
 
         compute :: (a: i64, b: i64, c: i64, d: i64) -> i64 { a + b * c - d }

@@ -3,4 +3,4 @@
 // `v` in place (×2 → 42), typed against this author rather than a.sx's
 // value-param winner.
 apply  :: (x: *i64) { x.* = x.* * 2; }
-fromB :: () -> i64 { v : i64 = 21; apply(v); return v; }
+fromB  :: () -> i64 { v : i64 = 21; apply(v); return v; }

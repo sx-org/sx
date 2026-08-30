@@ -61,7 +61,7 @@ silentBare :: () {
 main :: () -> i32 {
     total : i32 = 0;
     total = total + double(10);        // 20
-    total = total + doubleBare(10);   // 20
+    total = total + doubleBare(10);    // 20
     total = total + sign(-7);          // -1
     total = total + sum3(1, 2, 3);     // 6
     total = total + classify(1);       // 10

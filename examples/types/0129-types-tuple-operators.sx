@@ -57,7 +57,7 @@ main :: () {
         print("{}\n", pkg.add(3, 4));         // 7
         print("{}\n", pkg.mul(5, 6));         // 30
         print("{}\n", pkg.hello());           // hello from testpkg
-        print("{}\n", pkg.cwd_greet());       // cwd-import-ok
+        print("{}\n", pkg.cwdGreet());        // cwd-import-ok
     }
 
     // ── allocSlice ──────────────────────────────────────────

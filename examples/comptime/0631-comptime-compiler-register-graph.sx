@@ -8,10 +8,10 @@
 // runs at emit time, after the type table is frozen.) They take/return real
 // `Type` values (like the metatype's declare/define), and `rawRegisterType`
 // branches on the `kind` arg IN THE COMPILER — the codes match the read-side
-// `rawTypeKind`: 1 struct · 2 enum · 3 taggedUnion · 4 tuple.
+// `rawTypeKind`: 1 struct · 2 enum · 3 tagged_union · 4 tuple.
 //
 //   Suit   :: enum { hearts; spades; diamonds; }          (actual, payloadless)
-//   GraphA :: enum { selfRef: *A; toB: B; tag: u32; }   (payloads → taggedUnion)
+//   GraphA :: enum { selfRef: *A; toB: B; tag: u32; }   (payloads → tagged_union)
 //   GraphB :: enum { backA:  *A; selfB: *B; num: u32; }
 //
 // Forward `rawDeclareType` handles + `rawPointerTo` make the A<->B cycle expressible
@@ -39,7 +39,7 @@ makeSuit :: () -> Type {
 }
 Suit :: makeSuit();
 
-// The mutually-recursive A <-> B graph (payload variants → taggedUnion).
+// The mutually-recursive A <-> B graph (payload variants → tagged_union).
 buildGraph :: () -> Type {
     hA := rawDeclareType("GraphA");
     hB := rawDeclareType("GraphB");
@@ -59,7 +59,7 @@ GraphA :: buildGraph();
 
 // Reflect the minted types (read side, at @run) to confirm their kinds.
 suitKind   :: @run rawTypeKind(rawFindType(rawIntern("Suit")));   // 2 = actual enum
-graphaKind :: @run rawTypeKind(rawFindType(rawIntern("GraphA"))); // 3 = taggedUnion
+graphaKind :: @run rawTypeKind(rawFindType(rawIntern("GraphA"))); // 3 = tagged_union
 
 main :: () -> i32 {
     // Suit is a real, usable enum.

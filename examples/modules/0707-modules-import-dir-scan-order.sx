@@ -5,13 +5,13 @@
 // `types.sx` but its `makeMy` returns `MyEnum` (defined in
 // `types.sx`). The combined directory module must put `aaa_uses.sx`'s
 // transitive imports (which include `MyEnum`) into the global scan
-// stream BEFORE `aaa_uses.sx`'s own decls so the taggedUnion for
+// stream BEFORE `aaa_uses.sx`'s own decls so the tagged_union for
 // MyEnum is registered before `makeMy`'s return type is resolved.
 //
 // Appending each file's `own_decls` before its `decls` inverts that order and
 // registers `MyEnum` as a placeholder struct via the `resolveTypeName`
 // fallback. The later `enum_decl` scan then short-circuits via `findByName`
-// and never upgrades the placeholder to the real taggedUnion, surfacing as
+// and never upgrades the placeholder to the real tagged_union, surfacing as
 // "cannot infer enum type for '.b'" at the `return .b(42)` site.
 
 @import "modules/std.sx";

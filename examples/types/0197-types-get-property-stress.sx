@@ -9,7 +9,7 @@ Pt :: struct { x: i64; y: i64; }
 
 Box :: struct {
     v: i64;
-    isPos :: (self: *Box) -> bool @get => self.v > 0;          // bool
+    isPos  :: (self: *Box) -> bool @get => self.v > 0;          // bool
     neg    :: (self: *Box) -> i64  @get => -self.v;             // scalar
     origin :: (self: *Box) -> Pt   @get => .{ x = self.v, y = self.v };  // struct
     // nested: a getter that reads another getter

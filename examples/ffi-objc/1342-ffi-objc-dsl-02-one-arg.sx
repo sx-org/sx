@@ -10,7 +10,7 @@ SxProbeOneArg :: @ObjcClass("SxProbeOneArg") extern {
     addObject :: (self: *Self, val: i32) -> i32;
 }
 
-addObject_imp :: (self: *void, _cmd: *void, val: i32) -> i32 abi(.c) {
+addObjectImp :: (self: *void, _cmd: *void, val: i32) -> i32 abi(.c) {
     val * 2
 }
 
@@ -19,7 +19,7 @@ main :: () -> i32 {
         nsObject := objc_getClass("NSObject".ptr);
         cls := objc_allocateClassPair(nsObject, "SxProbeOneArg".ptr, 0);
         sel := sel_registerName("addObject:".ptr);
-        class_addMethod(cls, sel, xx addObject_imp, "i@:i".ptr);
+        class_addMethod(cls, sel, xx addObjectImp, "i@:i".ptr);
         objc_registerClassPair(cls);
 
         inst : *SxProbeOneArg = xx class_createInstance(cls, 0);

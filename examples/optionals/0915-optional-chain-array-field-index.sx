@@ -59,7 +59,7 @@ main :: () {
     print("unwrap:     {}\n", mkArr(true)?.xs[2]?!);         // 3
 
     // Struct-element array `[2]Pt`: indexing yields `?Pt`.
-    p := mkHolder(.[])?.ps[1];                              // ?Pt
+    p := mkHolder(.[])?.ps[1];                               // ?Pt
     print("struct.x:   {}\n", p?.x ?? -1);                   // 20
     print("struct.y:   {}\n", p?.y ?? -1);                   // 21
 

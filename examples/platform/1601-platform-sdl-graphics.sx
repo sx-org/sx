@@ -202,8 +202,8 @@ main :: () {
         // Build matrices
         proj  := mat4Perspective(PI / 4.0, WIDTH / HEIGHT, 0.1, 100.0);
         view  := mat4Translate(0.0, 0.0, -3.0);
-        rotY := mat4RotateY(angle);
-        rotX := mat4RotateX(angle * 0.7);
+        rotY  := mat4RotateY(angle);
+        rotX  := mat4RotateX(angle * 0.7);
         model := mat4Multiply(rotY, rotX);
         vm    := mat4Multiply(view, model);
         mvp   := mat4Multiply(proj, vm);

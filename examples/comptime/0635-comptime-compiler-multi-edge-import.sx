@@ -11,7 +11,7 @@
 
 main :: () {
     a := Suit.spades;            // bare Suit
-    print("{}\n", nameOf(a));   // passed where indirect expects s.Suit (same type)
+    print("{}\n", nameOf(a));    // passed where indirect expects s.Suit (same type)
     b := Suit.hearts;
     print("{}\n", nameOf(b));
 }

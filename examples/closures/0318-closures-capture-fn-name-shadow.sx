@@ -33,7 +33,7 @@ callReal :: () {
 
 main :: () -> i32 {
     print("{}\n", mutate());     // 42
-    print("{}\n", addOne(41));  // 42
-    callReal();                 // real-out
+    print("{}\n", addOne(41));   // 42
+    callReal();                  // real-out
     0
 }

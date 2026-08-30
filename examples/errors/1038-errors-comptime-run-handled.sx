@@ -21,7 +21,7 @@ guard :: (ok: bool) -> !E {
     return;
 }
 
-okV   :: @run parse(5);            // success → 10 (value, error stripped)
+okV    :: @run parse(5);            // success → 10 (value, error stripped)
 caught :: @run parse(-1) catch |e| 99; // Bad   → 99
 ored   :: @run parse(0) ?? 55;       // Empty → 55
 

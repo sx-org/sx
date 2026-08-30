@@ -15,8 +15,8 @@ Holder :: struct { cb: CB; }
 
 apply     :: (f: CB, x: i32) -> i32          { return f(x); }
 apply2    :: (f: CB2, a: i32, b: i32) -> i32 { return f(a, b); }
-applyB   :: (f: CB_B, x: i32) -> i32        { return f(x); }
-callHeld :: (h: Holder, x: i32) -> i32      { return h.cb(x); }
+applyB    :: (f: CB_B, x: i32) -> i32        { return f(x); }
+callHeld  :: (h: Holder, x: i32) -> i32      { return h.cb(x); }
 run0      :: (f: CB0)                         { f(); }
 make      :: () -> CB { inc := |v: i32| -> i32 v + 1; return inc; }
 
@@ -26,7 +26,7 @@ main :: () -> i32 {
 
     print("{}\n", apply(dbl, 21));       // 42
     print("{}\n", apply2(add, 20, 22));  // 42
-    print("{}\n", applyB(dbl, 21));     // 42 (alias-of-alias)
+    print("{}\n", applyB(dbl, 21));      // 42 (alias-of-alias)
 
     h := Holder{ cb = dbl };
     print("{}\n", callHeld(h, 21));        // 42 (struct field)

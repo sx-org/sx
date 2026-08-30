@@ -1,7 +1,7 @@
 // A comptime-constructed type with NO members is VALID for every kind:
 //   - an empty struct `struct {}` is a zero-size aggregate you can instantiate
 //     (`.{}`),
-//   - an empty enum and an empty taggedUnion are valid uninhabited / zero-member
+//   - an empty enum and an empty tagged_union are valid uninhabited / zero-member
 //     types — legitimate to NAME and reference even though they have no
 //     constructible value (no variant to construct).
 @import "modules/std.sx";

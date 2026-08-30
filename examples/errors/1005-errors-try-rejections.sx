@@ -34,8 +34,8 @@ widen :: () -> !A {
 }
 
 main :: () -> i32 {
-    a := badCtx();            // force badCtx to lower
-    b := badOperand();        // force badOperand to lower
+    a := badCtx();             // force badCtx to lower
+    b := badOperand();         // force badOperand to lower
     c := widen();              // force widen to lower
     return 0;
 }

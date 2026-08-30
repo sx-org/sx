@@ -1,5 +1,5 @@
 // a.sx is the first-wins winner for both names. `combine` is FIXED arity;
-// `pick` is VARIADIC. `from_a_*` call them bare — a authors the winner, so
+// `pick` is VARIADIC. `fromA*` call them bare — a authors the winner, so
 // they resolve through the existing path and pack against a's own shapes.
 combine :: (x: i64, y: i64) -> i64 { return x + y; }
 pick :: (..xs: []i64) -> i64 {

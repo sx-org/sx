@@ -40,12 +40,12 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
 
     selAlloc            := sel_registerName("alloc".ptr);
     selInit             := sel_registerName("init".ptr);
-    selInitWithScene  := sel_registerName("initWithWindowScene:".ptr);
+    selInitWithScene    := sel_registerName("initWithWindowScene:".ptr);
     selView             := sel_registerName("view".ptr);
-    selSystemBlue      := sel_registerName("systemBlueColor".ptr);
-    selSetBg           := sel_registerName("setBackgroundColor:".ptr);
-    selSetRootVc      := sel_registerName("setRootViewController:".ptr);
-    selMakeKeyVisible := sel_registerName("makeKeyAndVisible".ptr);
+    selSystemBlue       := sel_registerName("systemBlueColor".ptr);
+    selSetBg            := sel_registerName("setBackgroundColor:".ptr);
+    selSetRootVc        := sel_registerName("setRootViewController:".ptr);
+    selMakeKeyVisible   := sel_registerName("makeKeyAndVisible".ptr);
 
     msgO   : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
     msgV   : (*void, *void)               -> void abi(.c) = xx objc_msgSend;
@@ -62,7 +62,7 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
     gWindow = msgOoo(winRaw, selInitWithScene, scene);
     NSLog(nsstring("[sx] window: ok\n"));
 
-    vcRaw := msgO(UIViewController, selAlloc);
+    vcRaw  := msgO(UIViewController, selAlloc);
     vc     := msgO(vcRaw, selInit);
     msgOo(gWindow, selSetRootVc, vc);
 

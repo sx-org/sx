@@ -20,25 +20,25 @@ Button :: @OpenVariant(View) {
     render :: (self: *Button) -> string => self.text;
 }
 
-form_Label :: ufcs (value: $I/@Init(Label)) {
+formLabel :: ufcs (value: $I/@Init(Label)) {
     slot: Label = ---;
     value.write(*slot);
     print("Label {}\n", slot.text);
 }
 
-form_opt_Label :: ufcs (value: $I/@Init(?Label)) {
+formOptLabel :: ufcs (value: $I/@Init(?Label)) {
     slot: ?Label = ---;
     value.write(*slot);
     if slot != null { print("?Label {}\n", slot?!.text); } else { print("?Label null\n"); }
 }
 
-form_View :: ufcs (value: $I/@Init(View)) {
+formView :: ufcs (value: $I/@Init(View)) {
     slot: View = ---;
     value.write(*slot);
     print("View {}\n", slot.render());
 }
 
-form_opt_View :: ufcs (value: $I/@Init(?View)) {
+formOptView :: ufcs (value: $I/@Init(?View)) {
     slot: ?View = ---;
     value.write(*slot);
     print("?View {}\n", slot?!.render());
@@ -54,39 +54,39 @@ formAny :: ufcs (value: $I/@Init(any)) {
     }
 }
 
-need_View :: ufcs (v: View) { print("need View {}\n", v.render()); }
-need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v?!.render()); }
+needView :: ufcs (v: View) { print("need View {}\n", v.render()); }
+needOptView :: ufcs (v: ?View) { print("need ?View {}\n", v?!.render()); }
 needAny :: ufcs (a: any) { print("need any {}\n", @typeName(@typeOf(a))); }
 
-echo_View :: (v: View) -> View => v;
+echoView :: (v: View) -> View => v;
 
 main :: () -> i32 {
     v : View = Label{ text = "carried" };
     other : View = Button{ text = "another tag" };
 
-    form_Label(v);
-    v.form_Label();
+    formLabel(v);
+    v.formLabel();
 
-    form_opt_Label(v);
-    v.form_opt_Label();
-    form_opt_Label(other);
-    other.form_opt_Label();
+    formOptLabel(v);
+    v.formOptLabel();
+    formOptLabel(other);
+    other.formOptLabel();
 
-    form_View(v);
-    v.form_View();
-    form_opt_View(v);
-    v.form_opt_View();
+    formView(v);
+    v.formView();
+    formOptView(v);
+    v.formOptView();
     formAny(v);
     v.formAny();
     formAny(other);
 
-    need_View(v);
-    v.need_View();
-    need_opt_View(v);
+    needView(v);
+    v.needView();
+    needOptView(v);
     needAny(v);
 
-    form_View(echo_View(v));
-    echo_View(v).form_View();
-    form_Label(echo_View(v).(Label));
+    formView(echoView(v));
+    echoView(v).formView();
+    formLabel(echoView(v).(Label));
     0
 }

@@ -246,7 +246,7 @@ main :: () -> i64 {
     a : Fiber = ---;  a.base = 0x5000;
     b : Fiber = ---;  b.base = 0x6000;
     a.peer = *b.ctx;  a.next = *b.ctx;     // A yields to B, then hands B the baton
-    b.peer = *a.ctx;  b.next = *mainCtx;  // B yields to A, then returns to main
+    b.peer = *a.ctx;  b.next = *mainCtx;   // B yields to A, then returns to main
     boot(*a);  boot(*b);
     swapContext(*mainCtx, *a.ctx);
     print("A mismatches: {}\n", a.mismatches);   // 0 — every callee-saved survived

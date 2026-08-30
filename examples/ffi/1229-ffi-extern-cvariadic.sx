@@ -27,7 +27,7 @@ main :: () -> i32 {
     print("avg_doubles(3)          = {}\n", sx_ext_avg_doubles(3, 1.0, 2.0, 3.0));
 
     held: cstring = "defgh";
-    print("totalText(2)           = {}\n", sx_ext_total_text(2, "abc", held));
-    print("totalText(3)           = {}\n", sx_ext_total_text(3, "a", "bc", "def"));
+    print("total_text(2)           = {}\n", sx_ext_total_text(2, "abc", held));
+    print("total_text(3)           = {}\n", sx_ext_total_text(3, "a", "bc", "def"));
     0
 }

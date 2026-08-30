@@ -14,7 +14,7 @@
 
 @import "modules/std.sx";
 
-// A tagged union: `key` carries an i64 payload, so `Ev` is a taggedUnion
+// A tagged union: `key` carries an i64 payload, so `Ev` is a tagged_union
 // (not a plain enum). Every variant has an explicit tag value.
 Ev :: enum { quit :: 0x100; key :: 0x300: i64; resize :: 0x400: i64; }
 

@@ -9,12 +9,12 @@ PayErr :: error {
     Boxed: struct { v: i32; at: i64 };
 }
 
-bareMember  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
-voidBraces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
-emptyScalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
+bareMember   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+voidBraces   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+emptyScalar  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
 absent       :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Gone{1}; } return n; }
 sound        :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare; }          return n; }
-absentArm   :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
+absentArm    :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
 
 main :: () -> i32 {
     a := bareMember(-1) catch { 0 };

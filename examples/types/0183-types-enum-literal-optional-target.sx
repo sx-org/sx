@@ -2,10 +2,10 @@
 // optional's CHILD type and wrap.
 @import "modules/std.sx";
 
-Platform :: enum u8 { ios; android_apk; macos; linux; windows; }
+Platform :: enum u8 { ios; androidApk; macos; linux; windows; }
 
 classify :: (n: i64) -> ?Platform {
-    if n == 1 { return .android_apk; }   // return: literal into ?Platform
+    if n == 1 { return .androidApk; }    // return: literal into ?Platform
     if n == 2 { return .windows; }       // non-zero, non-adjacent variant
     return null;
 }
@@ -13,7 +13,7 @@ classify :: (n: i64) -> ?Platform {
 main :: () -> i32 {
     p := classify(1);
     if p == null { print("BUG: null\n"); return 1; }
-    if p?! != .android_apk { print("BUG: wrong variant\n"); return 2; }
+    if p?! != .androidApk { print("BUG: wrong variant\n"); return 2; }
 
     w := classify(2);
     if w == null or w?! != .windows { print("BUG: windows\n"); return 3; }

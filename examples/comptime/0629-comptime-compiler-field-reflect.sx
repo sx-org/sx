@@ -25,8 +25,8 @@ Pair  :: struct { lo: Point; hi: Point; }
 
 pair    :: @run rawFindType(rawIntern("Pair"));
 n       :: @run rawFieldCount(rawFindType(rawIntern("Pair")));
-f0Name :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 0));
-f1Name :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 1));
+f0Name  :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 0));
+f1Name  :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 1));
 // field 0's type is `Point` — read its nominal name through the type handle.
 f0Type :: @run rawTextOf(rawTypeName(rawFieldType(rawFindType(rawIntern("Pair")), 0)));
 

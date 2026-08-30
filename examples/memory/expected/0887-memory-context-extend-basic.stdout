@@ -1,6 +1,6 @@
 default traceDepth = 3
 default marker is null = true
-reader (no import of declMod) sees 3
+reader (no import of decl_mod) sees 3
 pushed traceDepth = 7
 pushed marker = 5
 reader inside push sees 7

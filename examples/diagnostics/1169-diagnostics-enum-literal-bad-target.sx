@@ -4,7 +4,7 @@
 // each get their own error.
 @import "modules/std.sx";
 
-Platform :: enum u8 { ios; android_apk; }
+Platform :: enum u8 { ios; androidApk; }
 
 main :: () -> i32 {
     a : Platform = .nonexistent;   // unknown variant: lists the real ones

@@ -12,7 +12,7 @@ amb :: @import "1226-diagnostics-qualified-global-store-nonlvalue/amb.sx";
 
 main :: () -> i32 {
     lib.LIB_C = null;              // target-directed null must not lower
-    lib.libFn = .selected;        // target-directed enum must not lower
+    lib.libFn = .selected;         // target-directed enum must not lower
     amb.shared = .{ value = 9 };   // target-directed struct must not lower
     0
 }

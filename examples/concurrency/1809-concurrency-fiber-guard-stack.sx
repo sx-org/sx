@@ -97,7 +97,7 @@ main :: () -> i64 {
     f.ctx.regs[11] = xx fib_tramp;
     f.ctx.regs[12] = top;
     swapContext(*mainCtx, *f.ctx);
-    print("guard armed: {}\n", f.guardOk);   // 1 — mprotect(PROT_NONE) succeeded
+    print("guard armed: {}\n", f.guardOk);    // 1 — mprotect(PROT_NONE) succeeded
     print("sum: {}\n", f.out);                // 20100 — fiber ran on the guarded stack
     return 0;
 }

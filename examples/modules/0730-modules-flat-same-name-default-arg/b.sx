@@ -2,4 +2,4 @@
 // arg; the omitted trailing default must come from b.sx's author (20), not the
 // first-wins winner from a.sx (10).
 cfg    :: (n: i64 = 20) -> i64 { return n; }
-fromB :: () -> i64 { return cfg(); }
+fromB  :: () -> i64 { return cfg(); }

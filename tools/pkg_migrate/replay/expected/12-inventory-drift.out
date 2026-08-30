@@ -1,5 +1,5 @@
 == D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
-(comments, string/char literals, and #string heredocs excluded by the scanner)
+(comments, string/char literals, and @string heredocs excluded by the scanner)
 
 
 == summary ==
