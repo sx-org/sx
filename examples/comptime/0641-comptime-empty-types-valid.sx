@@ -8,7 +8,7 @@
 @import "modules/std/meta.sx";
 
 EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));
-EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ variants = .[] }));
+EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ fields = .[] }));
 EmptyUnion  :: rawRegisterType(declare("EmptyUnion"), 3, .[]);
 
 main :: () -> i32 {

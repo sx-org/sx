@@ -2,7 +2,7 @@
 // value, then feed that value straight back to `define` to mint a byte-identical
 // copy. This is the inverse of `define`'s decode: `@typeInfo` reads a type's
 // variants (name + payload type) out of the type table and constructs the same
-// `.enum(EnumInfo{ variants })` value the `define` examples write by hand.
+// `.enum(EnumInfo{ fields })` value the `define` examples write by hand.
 //
 // Round-trip: `ShapeCopy` is reconstructed purely from `@typeInfo(Shape)` — no
 // literal variant list — and constructs/matches like the original.

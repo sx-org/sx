@@ -10,7 +10,7 @@
 
 mint :: () -> Type {
     h := declare("L");
-    return define(h, .enum(.{ variants = .[
+    return define(h, .enum(.{ fields = .[
         VariantInfo{ name = "cons", payload = L },     // by VALUE, not *L
         VariantInfo{ name = "nil",  payload = void },
     ] }));

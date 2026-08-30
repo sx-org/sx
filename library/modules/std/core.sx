@@ -349,13 +349,15 @@ rawPointerTo    :: (t: Type) -> Type intrinsic;
 // nominal type FROM it. Sizes are not stored — `@sizeOf(tp)` answers for any
 // kind.
 
-// One field of a struct or tuple: its name, its type, and its byte offset,
-// from the same layout walk the field accessors take. `define` ignores the
-// offset — a construction literal omits it.
+// One field of a struct or tuple: its name, its type, its byte offset, and its
+// member ordinal — offset and index come from the same layout walk the field
+// accessors take. `define` reads name and type; a construction literal omits
+// the rest.
 FieldInfo :: struct {
     name: string;
     type: Type;
     offset: i64 = 0;
+    index: i64 = 0;
 }
 
 // One variant of an enum or tagged union. `payload = void` is a tagless
@@ -385,7 +387,7 @@ MemberInfo :: struct {
 // The per-kind shapes. The type's NAME travels in `declare(name)` rather than
 // in the shape, so `define` can register a forward type whose body references
 // itself.
-EnumInfo     :: struct { variants: []VariantInfo; }
+EnumInfo     :: struct { fields: []VariantInfo; }
 StructInfo   :: struct { fields: []FieldInfo; }
 UnionInfo    :: struct { arms: []ArmInfo; }
 ErrorInfo    :: struct { members: []MemberInfo; }

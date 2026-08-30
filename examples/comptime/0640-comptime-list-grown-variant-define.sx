@@ -12,7 +12,7 @@
 @import "modules/std/meta.sx";
 
 makeEnum :: (name: string, variants: []VariantInfo) -> Type {
-    return define(declare(name), .enum(.{ variants = variants }));
+    return define(declare(name), .enum(.{ fields = variants }));
 }
 
 buildColor :: () -> Type {

@@ -1,7 +1,7 @@
 // Runtime `@typeInfo(tp)`: the const __sx_type_infos records (one per TypeId,
 // bytes matching the sx TypeInfo layout; master [N x ptr] by tag) loaded and
 // MATCHED at runtime — kind-first dispatch with typed per-arm payloads (struct
-// fields carry name+offset; enums their variants). This is the reflection
+// fields carry name+offset+index; enums their variants). This is the reflection
 // walker's core dispatch.
 @import "modules/std.sx";
 Padded :: struct { a: u8; b: i64; c: u16; }
@@ -11,8 +11,8 @@ Overlay :: union { asInt: i64; bytes: [8]u8; }
 kindOf :: (tp: Type) -> string {
     ti := @typeInfo(tp);
     match ti {
-        case .struct: |si| { return format("struct n={} f1={}@{}", si.fields.len, si.fields[1].name, si.fields[1].offset); }
-        case .enum: |ei| { return format("enum n={} v2={}", ei.variants.len, ei.variants[2].name); }
+        case .struct: |si| { return format("struct n={} f1={}@{}#{}", si.fields.len, si.fields[1].name, si.fields[1].offset, si.fields[1].index); }
+        case .enum: |ei| { return format("enum n={} v2={}", ei.fields.len, ei.fields[2].name); }
         case .union: |ui| { return format("union n={}", ui.arms.len); }
         case .int: |ii| { return format("int {}sig={}", ii.bits, ii.signed); }
         case .array: |ai| { return format("array [{}]{}", ai.len, @typeName(ai.elem)); }

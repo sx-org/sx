@@ -4,7 +4,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-Bad :: define(declare("Bad"), .enum(.{ variants = .[
+Bad :: define(declare("Bad"), .enum(.{ fields = .[
     VariantInfo{ name = "value",  payload = i64 },
     VariantInfo{ name = "closed", payload = void },
     VariantInfo{ name = "value",  payload = f64 },   // duplicate name
