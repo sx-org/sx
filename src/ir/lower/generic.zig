@@ -1057,10 +1057,9 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         tags.append(self.alloc, TypeId.isize.index()) catch {};
         // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
         // normalizes them into a builtin tag (`boxAnyOf`), but an interior
-        // VIEW (`structFieldValue` on an `any` receiver) carries the
-        // field's TRUE tag — normalization can't reach a view, so the
-        // category list must cover these tags or a view of an arb-width
-        // field falls through every arm.
+        // VIEW (`@field`) carries the member's TRUE tag — normalization
+        // can't reach a view, so the category list must cover these tags or
+        // a view of an arb-width field falls through every arm.
         for (self.module.types.infos.items, 0..) |info, idx| {
             // The builtin widths mirror into the table as `.signed`/
             // `.unsigned` infos at their builtin slots — already listed

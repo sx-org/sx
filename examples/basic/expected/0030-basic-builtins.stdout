@@ -24,8 +24,7 @@ fieldname-enum0: red
 fieldname-enum2: blue
 fieldval0: 11
 fieldval1: 22
-fieldidx: 1
-fieldidx-tagged: 0
-fieldidx-tagged2: 2
+partcount: 2
+partcount-enum: 3
 cast: 3
 cast-int-f64: 42.000000

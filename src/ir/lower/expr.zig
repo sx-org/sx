@@ -2727,7 +2727,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // element type to index by at runtime.
     // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
     // (exact parity with the tuple path above — the field itself, typed; a
-    // runtime index does NOT apply to structs, use `structFieldValue(s, j)`).
+    // runtime index does NOT apply to structs, use `@field(s, j)`).
     // This is what gives a positional anonymous struct (`t := .{1, 2}`) the
     // same `t[i]` walks a tuple literal has.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {

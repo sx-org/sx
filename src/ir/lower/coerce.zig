@@ -630,8 +630,7 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     // position funnels through here, so they all agree with `v.(any)`.
     if (self.isOpenSet(src_ty)) return self.openSetAnyView(src_ty, val, node);
     if (src_ty == .void) {
-        // A void has no storage; the view is `{void, null}` (matches the
-        // fieldless arm of field_value_get).
+        // A void has no storage; the view is `{void, null}`.
         return self.builder.boxAnyAt(self.builder.constNull(self.module.types.ptrTo(.void)), .void);
     }
     // Tag-normalize arbitrary-width ints (the tag space only has the

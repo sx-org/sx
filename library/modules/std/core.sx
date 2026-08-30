@@ -24,17 +24,12 @@ out :: (str: string) -> void {
 // folded at lower time, so it composes in any type-arg slot. A non-pointer
 // argument is a loud compile error, not a silent fallthrough.
 pointeeType :: ($P: Type) -> Type intrinsic;
-// A value's i-th member as an `any` view — the struct/tuple/untagged-union
-// read and its enum / tagged-union dual. Arrays/vectors use native indexing.
-structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
-variantPayload :: (u: $T, idx: i64) -> any intrinsic;
 isFlags :: ($T: Type) -> bool intrinsic;
-variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// An error value's live payload as an `any` view — the `variantPayload`
-// sibling for error channels. A payload-free member views as `void`.
+// An error value's live payload as an `any` view. A payload-free member
+// views as `void`.
 @errorPayload :: (e: $T) -> any;
 // A vector's lane COUNT (`vectorLanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so

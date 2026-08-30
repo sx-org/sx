@@ -1,5 +1,5 @@
 // ONE compiled function walks ANY value — kind dispatch is a runtime
-// `@typeInfo` match, struct fields are interior views (structFieldValue),
+// `@typeInfo` match, struct fields are interior views (`@field`),
 // array/vector elements are stride views (anyElement), and the leaves feed
 // the tag-driven formatter. One erasure at the root; every inner step is view
 // math, zero copies.
@@ -15,7 +15,7 @@ printAny :: (av: any) {
             while i < si.fields.len {
                 if i > 0 { print(", "); }
                 print("{}: ", si.fields[i].name);
-                printAny(structFieldValue(av, i));
+                printAny(@field(av, i));
                 i += 1;
             }
             print("}");

@@ -8,12 +8,6 @@ Point :: struct { x, y: i32; }
 
 Color :: enum { red; green; blue; }
 
-Shape :: enum {
-    circle: f32;
-    rect: struct { w, h: f32; };
-    none;
-}
-
 main :: () {
 
     // ========================================================
@@ -100,24 +94,15 @@ main :: () {
     print("fieldname-enum0: {}\n", @typeInfo(Color).enum.fields[0].name);
     print("fieldname-enum2: {}\n", @typeInfo(Color).enum.fields[2].name);
 
-    // structFieldValue (use anyToString to avoid sext-on-any bug)
+    // @field
     fvPt := Point{ 11, 22 };
-    out("fieldval0: ");
-    out(anyToString(structFieldValue(fvPt, 0)));
-    out("\n");
-    out("fieldval1: ");
-    out(anyToString(structFieldValue(fvPt, 1)));
-    out("\n");
+    print("fieldval0: {}\n", @field(fvPt, 0));
+    print("fieldval1: {}\n", @field(fvPt, 1));
 
-    // variantIndex on plain enum
+    // @len
+    print("partcount: {}\n", @len(fvPt));
     fiC : Color = .green;
-    print("fieldidx: {}\n", variantIndex(Color, fiC));
-
-    // variantIndex on tagged enum
-    fiSh : Shape = .circle(1.0);
-    print("fieldidx-tagged: {}\n", variantIndex(Shape, fiSh));
-    fiSh2 : Shape = .none;
-    print("fieldidx-tagged2: {}\n", variantIndex(Shape, fiSh2));
+    print("partcount-enum: {}\n", @len(fiC));
 
     // cast
     cval : f64 = 3.7;

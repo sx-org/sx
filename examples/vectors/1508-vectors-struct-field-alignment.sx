@@ -2,8 +2,7 @@
 // pow2-rounded size), matching LLVM's natural vector alignment — not to
 // the element alignment. The `xx @a.v - xx @a` pointer arithmetic reads
 // LLVM's real layout, so each line pins walk == codegen; the reflected
-// `.offset` must agree because interior `any` views (structFieldValue) GEP
-// with it.
+// `.offset` must agree because interior `any` views (`@field`) GEP with it.
 //
 // An sx layout walk that uses element alignment diverges silently from LLVM for
 // every vector field: wrong reflection offsets, and total-size mismatches that
@@ -36,5 +35,5 @@ main :: () {
 
     // The interior view reads the right lanes through the same offsets.
     av : any = a;
-    print("{}\n", structFieldValue(av, 1));   // [1.000000, 2.000000, 3.000000]
+    print("{}\n", @field(av, 1));   // [1.000000, 2.000000, 3.000000]
 }

@@ -54,9 +54,6 @@ pub const Id = enum(u16) {
     @"@typeOf",
     @"@typeName",
     @"@typeInfo",
-    structFieldValue,
-    variantPayload,
-    variantIndex,
     pointeeType,
     isFlags,
     @"@errorName",
@@ -205,9 +202,6 @@ pub const entries = [_]Entry{
 
     // ── reflection: folded at lowering when the type arg is static ──────────
     .{ .id = .@"@typeOf", .module = core, .name = "@typeOf", .mode = .lower, .arity = 1, .ret = .type_value },
-    .{ .id = .structFieldValue, .module = core, .name = "structFieldValue", .mode = .lower, .arity = 2, .ret = .any },
-    .{ .id = .variantPayload, .module = core, .name = "variantPayload", .mode = .lower, .arity = 2, .ret = .any },
-    .{ .id = .variantIndex, .module = core, .name = "variantIndex", .mode = .lower, .arity = 2, .ret = .i64 },
     .{ .id = .pointeeType, .module = core, .name = "pointeeType", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .isFlags, .module = core, .name = "isFlags", .mode = .lower, .arity = 1, .ret = .bool },
     .{ .id = .@"@errorName", .module = core, .name = "@errorName", .mode = .lower, .arity = 1, .ret = .string },

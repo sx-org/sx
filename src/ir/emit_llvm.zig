@@ -1959,7 +1959,6 @@ pub const LLVMEmitter = struct {
             .make_any => |ma| self.ops().emitMakeAny(ma),
 
             // ── Reflection ops ──────────────────────────────────────
-            .field_value_get => |fr| self.ops().emitFieldValueGet(fr, func_idx),
             .error_member_name_get => |u| self.ops().emitErrorMemberNameGet(u),
             .error_name_get => |u| self.ops().emitErrorNameGet(u),
             .error_owner_get => |u| self.ops().emitErrorOwnerGet(u),
@@ -3187,125 +3186,6 @@ pub const LLVMEmitter = struct {
         var args = [3]c.LLVMValueRef{ tag_i32, name_ptr, name_len };
         _ = c.LLVMBuildCall2(self.builder, reporter_ty, reporter, &args, 3, "");
         _ = c.LLVMBuildRet(self.builder, c.LLVMConstInt(self.cached_i32, 1, 0));
-    }
-
-    /// Emit field_value_get: switch on the runtime index; each case yields an
-    /// `any` VIEW `{field type tag, interior pointer}` into the receiver's
-    /// storage — no copy of the field. The base operand is the receiver's
-    /// ADDRESS (lowering borrows an lvalue receiver or spills an rvalue), so
-    /// a view into borrowed storage aliases the source: mutations of the
-    /// struct stay visible through a live view.
-    pub fn emitFieldValueGet(self: *LLVMEmitter, fr: ir_inst.FieldReflect, func_idx: u32) void {
-        const base_addr = self.resolveRef(fr.base);
-        const idx_val = self.resolveRef(fr.index);
-
-        const info = self.ir_mod.types.get(fr.struct_type);
-        const fields = switch (info) {
-            .@"struct" => |s| s.fields,
-            .@"union" => |u| u.fields,
-            .tagged_union => |u| u.fields,
-            else => &[_]TypeInfo.StructInfo.Field{},
-        };
-
-        const any_ty = self.getAnyStructType();
-        if (fields.len == 0) {
-            // No fields (e.g., plain enum) — return a void-tagged any with a
-            // null view (nothing to point at).
-            const void_tag = c.LLVMConstInt(self.cached_i64, TypeId.void.index(), 0);
-            var void_any = c.LLVMGetUndef(any_ty);
-            void_any = c.LLVMBuildInsertValue(self.builder, void_any, c.LLVMConstInt(self.cached_i64, 0, 0), 0, "fv.vval");
-            void_any = c.LLVMBuildInsertValue(self.builder, void_any, void_tag, 1, "fv.vtag");
-            self.mapRef(void_any);
-            return;
-        }
-
-        const current_func = self.func_map.get(func_idx) orelse {
-            self.mapRef(c.LLVMGetUndef(any_ty));
-            return;
-        };
-        if (c.LLVMGetTypeKind(c.LLVMTypeOf(base_addr)) != c.LLVMPointerTypeKind) {
-            @panic("emitFieldValueGet: base is not an address — field_value_get takes the receiver's ADDRESS (route the site through the borrow-or-spill lowering)");
-        }
-
-        const merge_bb = c.LLVMAppendBasicBlockInContext(self.context, current_func, "fv.merge");
-        const default_bb = c.LLVMAppendBasicBlockInContext(self.context, current_func, "fv.default");
-        const switch_inst = c.LLVMBuildSwitch(self.builder, idx_val, default_bb, @intCast(fields.len));
-
-        var case_blocks = std.ArrayList(c.LLVMBasicBlockRef).empty;
-        defer case_blocks.deinit(self.alloc);
-        var case_values = std.ArrayList(c.LLVMValueRef).empty;
-        defer case_values.deinit(self.alloc);
-
-        const base_llvm_ty = self.toLLVMType(fr.struct_type);
-        const is_tagged = info == .tagged_union;
-        const is_union = info == .@"union" or is_tagged;
-        for (fields, 0..) |field, i| {
-            const case_bb = c.LLVMAppendBasicBlockInContext(self.context, current_func, "fv.case");
-            c.LLVMAddCase(switch_inst, c.LLVMConstInt(self.cached_i64, @intCast(i), 0), case_bb);
-
-            c.LLVMPositionBuilderAtEnd(self.builder, case_bb);
-            const tag_val = self.anyTag(field.ty);
-            var any_val = c.LLVMGetUndef(any_ty);
-            if (field.ty == .void) {
-                // Void variant/field has no storage — {void, null}.
-                any_val = c.LLVMBuildInsertValue(self.builder, any_val, c.LLVMConstInt(self.cached_i64, 0, 0), 0, "fv.val");
-                any_val = c.LLVMBuildInsertValue(self.builder, any_val, c.LLVMConstInt(self.cached_i64, TypeId.void.index(), 0), 1, "fv.tag");
-            } else {
-                var field_ptr: c.LLVMValueRef = undefined;
-                if (is_union) {
-                    // Tagged union: the payload area is struct field 1 of
-                    // `{tag, [N x i8]}`. Untagged union (`[N x i8]` blob):
-                    // every arm overlays at offset 0 — the base IS the view.
-                    field_ptr = if (is_tagged)
-                        c.LLVMBuildStructGEP2(self.builder, base_llvm_ty, base_addr, 1, "fv.pp")
-                    else
-                        base_addr;
-                } else {
-                    field_ptr = c.LLVMBuildStructGEP2(self.builder, base_llvm_ty, base_addr, @intCast(i), "fv.fp");
-                }
-                if (tag_val != field.ty.index()) {
-                    // Arbitrary-width int field: the tag normalizes to the
-                    // nearest builtin width, so a direct view would overread.
-                    // Copy-extend into a temp of the tag's width and view that
-                    // instead (aliasing is lost for these fields only —
-                    // `data` must always cover @sizeOf(tag) valid bytes).
-                    const field_llvm_ty = self.toLLVMType(field.ty);
-                    const norm_ty = TypeId.fromIndex(@intCast(tag_val));
-                    const norm_llvm_ty = self.toLLVMType(norm_ty);
-                    const loaded = c.LLVMBuildLoad2(self.builder, field_llvm_ty, field_ptr, "fv.narrow");
-                    const extended = if (self.isSignedTypeEx(field.ty))
-                        c.LLVMBuildSExt(self.builder, loaded, norm_llvm_ty, "fv.sext")
-                    else
-                        c.LLVMBuildZExt(self.builder, loaded, norm_llvm_ty, "fv.zext");
-                    const tmp = self.buildEntryAlloca(norm_llvm_ty, "fv.tmp");
-                    _ = c.LLVMBuildStore(self.builder, extended, tmp);
-                    field_ptr = tmp;
-                }
-                const tag = c.LLVMConstInt(self.cached_i64, tag_val, 0);
-                const data = c.LLVMBuildPtrToInt(self.builder, field_ptr, self.cached_i64, "fv.data");
-                any_val = c.LLVMBuildInsertValue(self.builder, any_val, data, 0, "fv.val");
-                any_val = c.LLVMBuildInsertValue(self.builder, any_val, tag, 1, "fv.tag");
-            }
-            _ = c.LLVMBuildBr(self.builder, merge_bb);
-
-            case_blocks.append(self.alloc, case_bb) catch unreachable;
-            case_values.append(self.alloc, any_val) catch unreachable;
-        }
-
-        // Default block: return undef Any
-        c.LLVMPositionBuilderAtEnd(self.builder, default_bb);
-        _ = c.LLVMBuildBr(self.builder, merge_bb);
-
-        // Merge block: PHI
-        c.LLVMPositionBuilderAtEnd(self.builder, merge_bb);
-        const phi = c.LLVMBuildPhi(self.builder, any_ty, "fv.phi");
-        for (case_blocks.items, case_values.items) |bb, val| {
-            c.LLVMAddIncoming(phi, @constCast(&val), @constCast(&bb), 1);
-        }
-        const undef_any = c.LLVMGetUndef(any_ty);
-        c.LLVMAddIncoming(phi, @constCast(&undef_any), @constCast(&default_bb), 1);
-
-        self.mapRef(phi);
     }
 
     fn makeBlockKey(func_idx: u32, block_idx: u32) u64 {

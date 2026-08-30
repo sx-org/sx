@@ -2785,9 +2785,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // must decide here rather than fall through a catch-all.
         .@"@typeOf",
         .@"@typeName",
-        .structFieldValue,
-        .variantPayload,
-        .variantIndex,
         .pointeeType,
         .isFlags,
         .@"@errorName",
@@ -3081,9 +3078,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldValue,
-        .variantPayload,
-        .variantIndex,
         .pointeeType,
         .isFlags,
         .@"@errorName",
@@ -3364,9 +3358,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldValue,
-        .variantPayload,
-        .variantIndex,
         .pointeeType,
         .isFlags,
         .@"@errorName",
@@ -3707,9 +3698,6 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldValue,
-        .variantPayload,
-        .variantIndex,
         .pointeeType,
         .isFlags,
         .@"@errorName",
@@ -4325,76 +4313,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         else => {},
     };
-    if (std.mem.eql(u8, name, "structFieldValue") or std.mem.eql(u8, name, "variantPayload")) {
-        // structFieldValue(s, i) → field_value_get (structs/tuples/unions);
-        // variantPayload(u, i) → the same instruction on an enum/tagged-union
-        // receiver (each case of its runtime switch boxes the live payload).
-        // Arrays/vectors/slices are REJECTED — native indexing (`v[i]`) is
-        // typed and cheaper; the boxed-element convenience is gone by design.
-        if (c.args.len < 2) return self.builder.constInt(0, .any);
-        const struct_ty = self.inferExprType(c.args[0]);
-        const is_variant_fam = std.mem.eql(u8, name, "variantPayload");
-        if (!struct_ty.isBuiltin() and struct_ty != .unresolved) {
-            const ti = self.module.types.get(struct_ty);
-            const kind_ok = if (is_variant_fam)
-                ti == .@"enum" or ti == .tagged_union
-            else
-                ti == .@"struct" or ti == .@"union";
-            if (!kind_ok) {
-                if (self.diagnostics) |d| {
-                    if (ti == .slice or ti == .array or ti == .vector) {
-                        d.addFmt(.err, c.callee.span, "{s} is not for arrays/vectors — index natively (`v[i]`, typed) instead", .{name});
-                    } else if (is_variant_fam) {
-                        d.addFmt(.err, c.callee.span, "variantPayload expects an enum or tagged-union value; '{s}' is not one — for struct/tuple fields use structFieldValue", .{self.formatTypeName(struct_ty)});
-                    } else {
-                        d.addFmt(.err, c.callee.span, "structFieldValue expects a struct or tuple value; '{s}' is an enum — use variantPayload", .{self.formatTypeName(struct_ty)});
-                    }
-                }
-                return self.builder.constInt(0, .any);
-            }
-        }
-        const base_val = self.lowerExpr(c.args[0]);
-        const idx = self.lowerExpr(c.args[1]);
-        if (struct_ty == .any) {
-            // `any` receiver: read THROUGH the view — pure runtime table
-            // composition over the 1a machinery (the rt builtins consult the
-            // any's tag via reflectArgTypeId):
-            //   result.tag  = rt_member_type(tag, i)
-            //   result.data = av.data + rt_field_offset(tag, i)
-            // For a tagged union the offset table answers the payload offset,
-            // so `variantPayload(av, i)` composes identically. A wrong-kind
-            // tag or an out-of-range index is UB (same OOB rule as the rest
-            // of the runtime field family — the caller gates on the counts).
-            const rt_args = self.alloc.dupe(Ref, &.{ base_val, idx }) catch return self.builder.constInt(0, .any);
-            const ftag = self.builder.callBuiltin(.rt_member_type, rt_args, .type_value);
-            const off = self.builder.callBuiltin(.rt_field_offset, rt_args, .i64);
-            const base = self.builder.anyData(base_val, .i64);
-            const addr = self.builder.add(base, off, .i64);
-            return self.builder.makeAny(ftag, addr);
-        }
-        // field_value_get takes the receiver's ADDRESS: each case yields an
-        // interior VIEW `{field tag, base + offset}` instead of boxing a
-        // copy. An addressable lvalue receiver borrows its storage (so a
-        // live view aliases later mutations); an rvalue spills to a temp.
-        const base_addr = blk: {
-            if (!struct_ty.isBuiltin()) {
-                if (self.isLvalueExpr(c.args[0]) and !self.isByValueBindingIdent(c.args[0])) {
-                    if (self.refStorageAddress(base_val)) |addr| break :blk addr;
-                }
-                const slot = self.builder.alloca(struct_ty);
-                self.builder.store(slot, base_val);
-                break :blk slot;
-            }
-            // Builtin receiver (`any`) — the fields-empty arm never
-            // dereferences the base; pass the value through.
-            break :blk base_val;
-        };
-        return self.builder.emit(.{ .field_value_get = .{
-            .base = base_addr,
-            .index = idx,
-            .struct_type = struct_ty,
-        } }, .any);
-    }
     if (std.mem.eql(u8, name, "anyElement")) {
         // anyElement(av, elem, idx) → element view into an array/vector held
         // by `av`: pure stride math, `{elem, av.data + idx * @sizeOf(elem)}`.
@@ -4500,81 +4418,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // it falls through to generic-function lowering → "cannot infer …".
         const ty = self.resolveTypeCallWithBindings(c);
         return self.builder.constType(ty);
-    }
-    if (std.mem.eql(u8, name, "variantIndex")) {
-        // field_index(T, val) → the SEQUENTIAL variant index for `val`
-        // (spec: the inverse of `field_value_int`). For a plain enum with
-        // no explicit values — and for a tagged union — the stored tag
-        // already IS the ordinal, so returning `enum_tag` is correct. For a
-        // payload-less enum with EXPLICIT values the runtime tag is the
-        // explicit value (e.g. 7), NOT the ordinal, so it must be
-        // reverse-mapped: returning the raw tag fed `field_name(T, tag)` an
-        // out-of-range index → out-of-bounds GEP → segfault.
-        if (c.args.len < 2) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type: the value travels as an `any` VIEW (a typed
-            // second operand can't exist — its type would have to be the
-            // runtime T). Rewrites to the pure-sx scan helper (fmt.sx):
-            // tag word read via __sx_variant_tag_width + the value table.
-            const val_ty = self.inferExprType(c.args[1]);
-            if (val_ty != .any) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, c.args[1].span, "variantIndex with a runtime Type takes the value as an `any` view (got '{s}') — box it, or spell the type statically", .{self.formatTypeName(val_ty)});
-                return self.builder.constInt(0, .i64);
-            }
-            const callee_node = self.alloc.create(Node) catch return self.builder.constInt(0, .i64);
-            callee_node.* = Node{ .data = .{ .identifier = .{ .name = "__sx_variant_index" } }, .span = c.callee.span, .source_file = c.callee.source_file };
-            const args = self.alloc.dupe(*Node, &.{ c.args[0], c.args[1] }) catch return self.builder.constInt(0, .i64);
-            const syn_call = ast.Call{ .callee = callee_node, .args = args };
-            return self.lowerCall(&syn_call);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        const val = self.lowerExpr(c.args[1]);
-        const tag = self.builder.emit(.{ .enum_tag = .{ .operand = val } }, .i64);
-        if (!ty.isBuiltin()) {
-            // Both a payload-less enum (`explicit_values`) and a tagged union
-            // (`explicit_tag_values`) can carry EXPLICIT tag values, in which
-            // case the runtime tag is the explicit value (e.g. 0x100), NOT the
-            // sequential ordinal. `field_name` indexes the name array by
-            // ordinal, so returning the raw tag mis-indexes it — a garbage /
-            // out-of-range variant name, for plain enums and tagged unions
-            // alike. Reverse-map the tag → ordinal for either kind.
-            const explicit_vals: ?[]const i64 = switch (self.module.types.get(ty)) {
-                .@"enum" => |e| e.explicit_values,
-                .tagged_union => |u| u.explicit_tag_values,
-                else => null,
-            };
-            if (explicit_vals) |vals| {
-                // Branchless reverse lookup (no `select` op): for each variant
-                // i,   acc = acc + (i - acc) * (tag == vals[i] ? 1 : 0)
-                // so the matching ordinal replaces acc. Values are unique, so
-                // at most one term fires.
-                //
-                // Seed `acc` with the raw `tag` (the IDENTITY), NOT -1: the
-                // spec-inverse of `field_value_int` maps an explicit value back
-                // to its ordinal, but if the runtime tag is ALREADY an ordinal
-                // (no explicit value equals it) the identity is the correct
-                // answer — and it can never index `field_name` out of range the
-                // way a `-1` sentinel would (an OOB GEP → crash). A tagged union
-                // whose payload variants are call-constructed currently stores
-                // the ordinal for those variants rather than the explicit tag
-                // (a distinct construction bug); the identity
-                // seed keeps their names resolvable here instead of crashing.
-                var acc = tag;
-                for (vals, 0..) |v, i| {
-                    const vc = self.builder.constInt(v, .i64);
-                    const is_match = self.builder.cmpEq(tag, vc); // .bool
-                    const m = self.builder.widen(is_match, .bool, .i64); // 0 | 1
-                    const idx_c = self.builder.constInt(@intCast(i), .i64);
-                    const delta = self.builder.sub(idx_c, acc, .i64);
-                    const contrib = self.builder.mul(delta, m, .i64);
-                    acc = self.builder.add(acc, contrib, .i64);
-                }
-                return acc;
-            }
-        }
-        // Plain enum / tagged union with AUTO tags: tag already == ordinal.
-        return tag;
     }
     if (std.mem.eql(u8, name, "__sx_variant_tag_width")) {
         // INTERNAL: the sign-encoded tag-word width (fmt's runtime variant

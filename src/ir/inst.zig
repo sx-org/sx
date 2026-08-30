@@ -298,7 +298,6 @@ pub const Op = union(enum) {
     make_any: MakeAny, // {tag, data} → any (assemble a view; tag is runtime)
 
     // ── Reflection ─────────────────────────────────────────────────
-    field_value_get: FieldReflect, // field_value(s, i) → Any (runtime struct + index)
     error_member_name_get: UnaryOp, // the member spelling a live error carries (member id → the always-linked member-name table)
     error_name_get: UnaryOp, // `Owner.Member` — the spelling a live error renders as (member id → the qualified-name table)
     error_owner_get: UnaryOp, // the error that declares the live member, as a Type (member id → the owner-type table)
@@ -655,12 +654,6 @@ pub const BoxAny = struct {
 pub const MakeAny = struct {
     tag: Ref, // runtime Type value (i64 tag word)
     data: Ref, // address of the viewed value
-};
-
-pub const FieldReflect = struct {
-    base: Ref, // address of the struct value
-    index: Ref, // runtime field index
-    struct_type: TypeId, // compile-time resolved struct type
 };
 
 pub const Branch = struct {

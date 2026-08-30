@@ -43,7 +43,6 @@ const BoxAny = ir_inst.BoxAny;
 const MakeAny = ir_inst.MakeAny;
 const ClosureCreate = ir_inst.ClosureCreate;
 const BlockParam = ir_inst.BlockParam;
-const FieldReflect = ir_inst.FieldReflect;
 const TypeId = ir_types.TypeId;
 const StringId = ir_types.StringId;
 const Ref = ir_inst.Ref;
@@ -2824,11 +2823,6 @@ pub const Ops = struct {
     }
 
     // ── Reflection ops ─────────────────────────────────────
-    pub fn emitFieldValueGet(self: Ops, fr: FieldReflect, func_idx: u32) void {
-        // Switch on index, each case: extractvalue field k → box as Any
-        self.e.emitFieldValueGet(fr, func_idx);
-    }
-
     /// The live member id an error operand carries, widened to the index a
     /// registry table is GEPed at. Out-of-range ids can't occur — ids come from
     /// the same registry the tables are built from — so no bounds branch.

@@ -1,14 +1,12 @@
-// Runtime variant reflection: a reflected `.value` off a runtime Type carries
-// explicit values, explicit tags and the ordinal default — enums AND tagged
-// unions, from the single `memberValue` source the static fold uses;
-// `variantIndex(t, av)` with a runtime Type takes the value as an `any` VIEW
-// and scans value → the sequential ordinal (the tag word reads
-// `__sx_variant_tag_width` wide — a signed backing sign-extends, a
-// layout-struct union loads its narrow tag slot, never the wider header);
-// `isFlags(t)` answers at runtime; `variantPayload(av, i)` composes with
-// runtime indices. Static answers == runtime answers by construction (parity
-// lines). A tagged union with EXPLICIT tags reflects the declared tag, not the
-// ordinal, matching the inverse `variantIndex` which reverse-maps them.
+// Runtime variant reflection: off a runtime `Type`, `@typeInfo(t).enum.fields`
+// carries explicit values, explicit tags and the ordinal default, and a tagged
+// union reflects its DECLARED tag where a plain enum reflects its value;
+// `isFlags(t)` answers at runtime; `@len` counts a boxed value's variants and
+// `@field` views its payload at a runtime index. Printing a boxed variant
+// resolves the LIVE one by scanning those reflected values against the value's
+// tag word, so the printed name pins the tag -> ordinal reverse map: explicit
+// tags, a signed backing, and a layout-struct union whose tag slot is narrower
+// than its header.
 @import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
@@ -35,38 +33,33 @@ main :: () {
     print("rt vv flags: {} {} {} {}\n", @typeInfo(ft).enum.fields[0].value, @typeInfo(ft).enum.fields[1].value, @typeInfo(ft).enum.fields[2].value, @typeInfo(ft).enum.fields[3].value);
     print("rt isFlags: {} {}\n", isFlags(ft), isFlags(ct));
 
-    // runtime variantIndex: the value travels as an any view
-    print("rt vi color: {}\n", variantIndex(ct, cv));
-    print("rt vi prio: {}\n", variantIndex(pt, pv));
+    // the boxed value's variant count
+    print("rt count: {}\n", @len(cv));
+
+    // the live variant, off the tag word
+    print("rt live color: {}\n", cv);
+    print("rt live prio: {}\n", pv);
     nv : any = Neg.minus;
     nt := @typeOf(nv);
-    print("rt vi neg: {} (vv {})\n", variantIndex(nt, nv), @typeInfo(nt).enum.fields[0].value);
+    print("rt live neg: {} (vv {})\n", nv, @typeInfo(nt).enum.fields[0].value);
 
     // tagged union with payload + explicit tags
     w : Wire = .data(42);
     wv : any = w;
-    wt := @typeOf(wv);
-    print("rt vi wire: {}\n", variantIndex(wt, wv));
-    print("rt vn wire: {}\n", @typeInfo(wt).enum.fields[variantIndex(wt, wv)].name);
+    print("rt live wire: {}\n", wv);
 
-    // variantPayload composes with a runtime index
+    // `@field` views the payload at a RUNTIME index
     s : Shape = .circle(2.5);
     sv : any = s;
     st := @typeOf(sv);
-    si := variantIndex(st, sv);
-    print("shape idx: {} name: {}\n", si, @typeInfo(st).enum.fields[si].name);
-    pl := variantPayload(sv, si);
-    print("payload: {}\n", pl);
+    si := 0;
+    print("shape name: {} payload: {}\n", @typeInfo(st).enum.fields[si].name, @field(sv, si));
 
     // layout-struct union: u32 tag narrower than the 8-byte header
     e : Ev = .key(7);
     ev : any = e;
-    et := @typeOf(ev);
-    ei := variantIndex(et, ev);
-    print("ev idx: {} name: {} payload: {}\n", ei, @typeInfo(et).enum.fields[ei].name, variantPayload(ev, ei));
+    print("ev live: {}\n", ev);
 
     // static/runtime parity
-    print("parity: {} {}\n",
-        @typeInfo(pt).enum.fields[2].value == @typeInfo(Prio).enum.fields[2].value,
-        variantIndex(ct, cv) == variantIndex(Color, Color.green));
+    print("parity: {}\n", @typeInfo(pt).enum.fields[2].value == @typeInfo(Prio).enum.fields[2].value);
 }
