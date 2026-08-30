@@ -1088,7 +1088,9 @@ pub const UnknownTypeChecker = struct {
         }
     }
 
-    /// Validate the `E` in an `!E` type. `E` must be a declared error set.
+    /// Validate the `E` in an `!E` type. A bare `E` is a declared error set; a
+    /// dotted `Set.Member` names one member of the set its head names, so the
+    /// head carries the whole classification.
     /// Distinguishes three failure shapes so the user gets an actionable
     /// message: an undeclared name (`unknown error set`), and a declared name
     /// that is NOT an error set — a value or a non-error-set type (`expected an
@@ -1096,30 +1098,31 @@ pub const UnknownTypeChecker = struct {
     /// `resolveTypeWithBindings`: never let a non-error-set name
     /// after `!` reach the lowering stub.
     fn reportIfNotErrorSet(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span) void {
-        // Inline-spelled / qualified spellings (`mod.E`) carry non-identifier
-        // characters — trust them, matching `reportIfUnknownType`.
-        if (!isIdentLike(name)) return;
+        // Last-dot split, as `qualifiedChannelMember`. Compound heads carry
+        // non-identifier characters — trust them, matching `reportIfUnknownType`.
+        const head = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| name[0..dot] else name;
+        if (!isIdentLike(head)) return;
         const sets = self.error_sets orelse return;
-        if (sets.contains(name)) return;
+        if (sets.contains(head)) return;
         // A composition (`Both :: FooError | BooError`) authors no set of its
         // own — it binds a name to the channel its operands merge into.
-        if (self.index.type_alias_map.get(name)) |aliased| {
+        if (self.index.type_alias_map.get(head)) |aliased| {
             if (!aliased.isBuiltin() and self.types.get(aliased) == .@"error") return;
         }
         // A name that names a real (non-error-set) TYPE — a struct/enum/union,
         // a builtin, or a fabricated stub — is a type-in-error-position misuse.
-        if (isBuiltinTypeName(name)) {
-            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+        if (isBuiltinTypeName(head)) {
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{head});
             return;
         }
-        const sid = self.types.internString(name);
+        const sid = self.types.internString(head);
         if (self.types.findByName(sid)) |_| {
-            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{head});
             return;
         }
         // Otherwise the name is undeclared (or names a value): no error-set
         // author anywhere. Either way it is not a usable error set.
-        self.diagnostics.addFmt(.err, span, "unknown error set '{s}'", .{name});
+        self.diagnostics.addFmt(.err, span, "unknown error set '{s}'", .{head});
     }
 
     fn reportIfUnknownType(
