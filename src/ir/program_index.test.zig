@@ -179,6 +179,9 @@ const DimCtx = struct {
     pub fn evalConstCallInt(_: DimCtx, _: *const ast.Node) ?i64 {
         return null;
     }
+    pub fn evalConstFieldAccessInt(_: DimCtx, _: *const ast.Node) ?i64 {
+        return null;
+    }
     pub fn lookupPackLen(_: DimCtx, name: []const u8) ?i64 {
         if (std.mem.eql(u8, name, "xs")) return 3;
         return null;
