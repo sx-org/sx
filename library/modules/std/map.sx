@@ -33,8 +33,7 @@
 @import "modules/std/hash.sx";
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx";
-// `structFieldType` (used by the structural key hash below) comes from `core.sx`,
-// alongside its sibling reflection builtins `structFieldCount` / `structFieldValue`.
+// `TypeInfo` is declared in core.sx; `@typeInfo`'s result type needs it in scope.
 
 // ── metadata byte (Zig-faithful) ─────────────────────────────────────
 // One byte per bucket: bit 7 = `used`, bits 0..6 = `fingerprint` (the top
@@ -85,8 +84,8 @@ mapHashKey :: (key: $K) -> u64 {
 // Fold value `v` into running FNV state `h`. The string arm reads fields off a
 // `*string` REINTERPRET of `@v`, never off a `T`-typed value, so it compiles
 // for every `T` regardless of dead-branch pruning. The `inline if T is struct`
-// branch is comptime-elided for non-struct `T` (so `structFieldType`/`structFieldCount`
-// never lower on an enum/scalar); struct/tuple `T` recurses per field. Enums,
+// branch is comptime-elided for non-struct `T` (so the `.struct` member walk
+// never resolves on an enum/scalar); struct/tuple `T` recurses per field. Enums,
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
 mapHashInto :: (v: $T, h: u64) -> u64 {
     inline if @typeEq(T, string) {
@@ -95,8 +94,8 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
     }
     inline if T is struct {
         hh := h;
-        inline for i in 0..structFieldCount(T) {
-            hh = mapHashInto(structFieldValue(v, i).(structFieldType(T, i)), hh);
+        inline for field in @typeInfo(T).struct.fields {
+            hh = mapHashInto(structFieldValue(v, field.index).(field.type), hh);
         }
         return hh;
     }

@@ -218,13 +218,11 @@ structToString :: (s: $T) -> string {
     // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a TYPE
     // value prints its name.
     result := "{";
-    i := 0;
-    while i < structFieldCount(T) {
-        if i > 0 { result = concat(result, ", "); }
-        result = concat(result, structFieldName(T, i));
+    inline for field in @typeInfo(T).struct.fields {
+        if field.index > 0 { result = concat(result, ", "); }
+        result = concat(result, field.name);
         result = concat(result, ": ");
-        result = concat(result, anyToString(structFieldValue(s, i)));
-        i += 1;
+        result = concat(result, anyToString(structFieldValue(s, field.index)));
     }
     concat(result, "}")
 }
@@ -275,14 +273,11 @@ pointerToString :: (p: $T) -> string {
 flagsToString :: (val: $T) -> string {
     v := val.(i64);
     result := "";
-    i := 0;
-    while i < variantCount(T) {
-        fv := variantValue(T, i);
-        if v & fv {
+    inline for variant in @typeInfo(T).enum.fields {
+        if v & variant.value {
             if result.len > 0 { result = concat(result, " | "); }
-            result = concat(result, concat(".", variantName(T, i)));
+            result = concat(result, concat(".", variant.name));
         }
-        i += 1;
     }
     if result.len == 0 { result = "0"; }
     result
@@ -291,7 +286,7 @@ flagsToString :: (val: $T) -> string {
 enumToString :: (u: $T) -> string {
     if isFlags(T) { return flagsToString(u); }
     idx := variantIndex(T, u);
-    result := concat(".", variantName(T, idx));
+    result := concat(".", @typeInfo(T).enum.fields[idx].name);
     payload := variantPayload(u, idx);
     pstr := anyToString(payload);
     if pstr.len > 0 {
@@ -612,14 +607,14 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
 }
 
 // `variantIndex(t, av)` with a RUNTIME t lowers to this scan: value → the
-// sequential ordinal, over the runtime variant-value table (explicit values
-// and explicit tags included). A tag the table does not list names no variant.
+// sequential ordinal, over the reflected variant values (explicit values and
+// explicit tags included). A tag no variant carries names none.
 __sx_variant_index :: (t: Type, av: any) -> i64 {
     v := __sx_any_tag_word(t, av);
-    n := variantCount(t);
+    n := @typeInfo(t).enum.fields.len;
     i := 0;
     while i < n {
-        if variantValue(t, i) == v { return i; }
+        if @typeInfo(t).enum.fields[i].value == v { return i; }
         i += 1;
     }
     @panic(format("{} has no variant for tag {}", @typeName(t), v), @SourceSite{})

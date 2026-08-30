@@ -10,32 +10,26 @@ error: @alignOf expects a type, got 'f64'
 14 |     print("{}\n", @alignOf(1.5));          // f64, not a type
    |                            ^^^
 
-error: structFieldCount expects a type, got 'bool'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:15:36
-   |
-15 |     print("{}\n", structFieldCount(true));  // bool, not a type
-   |                                    ^^^^
-
 error: @typeName expects a type, got 'f64'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:16:29
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:15:29
    |
-16 |     print("{}\n", @typeName(1.5));         // f64, not a type
+15 |     print("{}\n", @typeName(1.5));         // f64, not a type
    |                             ^^^
 
 error: @typeEq expects a type, got 'bool'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:17:27
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:16:27
    |
-17 |     print("{}\n", @typeEq(true, false));   // both bool — both rejected
+16 |     print("{}\n", @typeEq(true, false));   // both bool — both rejected
    |                           ^^^^
 
 error: @typeEq expects a type, got 'bool'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:17:33
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:16:33
    |
-17 |     print("{}\n", @typeEq(true, false));   // both bool — both rejected
+16 |     print("{}\n", @typeEq(true, false));   // both bool — both rejected
    |                                 ^^^^^
 
 error: isFlags expects a type, got 'f64'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:18:27
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:17:27
    |
-18 |     print("{}\n", isFlags(1.5));           // f64, not a type
+17 |     print("{}\n", isFlags(1.5));           // f64, not a type
    |                           ^^^

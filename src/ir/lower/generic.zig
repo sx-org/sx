@@ -322,9 +322,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             // Type-returning REFLECTION calls are static only when their own
             // type argument is: `@typeOf(x)` with an `any`-typed operand
             // answers the runtime TAG (freezing it statically said "any"
-            // where the two-step form read "Point"), and
-            // `structFieldType(tp, i)` / `variantType(tp, i)` /
-            // `pointeeType(tp)` with a runtime `tp` produce runtime Types.
+            // where the two-step form read "Point"), and `pointeeType(tp)`
+            // with a runtime `tp` produces a runtime Type.
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
@@ -335,10 +334,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                     // "any"/"Drawable" where the value knows "Point".
                     if (aty == .any or self.getProtocolInfo(aty) != null) return false;
                 }
-                if ((std.mem.eql(u8, cn, "structFieldType") or
-                    std.mem.eql(u8, cn, "variantType") or
-                    std.mem.eql(u8, cn, "pointeeType")) and cl.args.len >= 1)
-                {
+                if (std.mem.eql(u8, cn, "pointeeType") and cl.args.len >= 1) {
                     return self.isStaticTypeArg(cl.args[0]);
                 }
             }
@@ -554,9 +550,9 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeArg(aliased);
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized
-            // target (`x.(structFieldType(T, i))`) parses as a type_expr,
-            // and the stateless resolver below would fabricate a 0-field
-            // stub named "T" instead.
+            // target (`x.(pointeeType(T))`) parses as a type_expr, and the
+            // stateless resolver below would fabricate a 0-field stub named
+            // "T" instead.
             if (self.type_bindings) |tb| {
                 if (tb.get(te.name)) |ty| return ty;
             }
@@ -614,9 +610,9 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .optional_type_expr,
         .function_type_expr,
         // A parameterized head (`Box(i64)`, or a Type-returning reflection
-        // builtin the postfix-cast target parses as one —
-        // `x.(structFieldType(T, i))`) resolves through the gated path,
-        // which delegates builtins to `resolveTypeCallWithBindings`.
+        // builtin the postfix-cast target parses as one — `x.(pointeeType(T))`)
+        // resolves through the gated path, which delegates builtins to
+        // `resolveTypeCallWithBindings`.
         .parameterized_type_expr,
         => return self.resolveTypeWithBindings(node),
         // A module-alias-qualified type name in a type-arg slot
@@ -1958,30 +1954,6 @@ pub fn refuseTypeInfoProjection(self: *Lowering, node: *const Node) TypeId {
     return .unresolved;
 }
 
-/// Resolve a .call node that represents a type constructor (e.g., List(T), @Vector(N, T)).
-/// The `idx`-th member type of `t` for `field_type($T, i)` — the diagnosing
-/// wrapper over `TypeTable.memberType`, so the static fold and the runtime
-/// member-type tables answer one query. A null answer diagnoses and poisons
-/// to `.unresolved` (never a silent default): out of range where the type
-/// does carry member types, memberless otherwise.
-pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) TypeId {
-    const table = &self.module.types;
-    if (table.memberType(t, @intCast(idx))) |ty| return ty;
-    const fields: ?i64 = blk: {
-        if (table.memberType(t, 0) != null) break :blk table.memberCount(t) orelse 1;
-        if (table.memberCount(t)) |n| if (n == 0) break :blk 0;
-        break :blk null;
-    };
-    if (self.diagnostics) |d| {
-        if (fields) |n| {
-            d.addFmt(.err, span, "field_type index {d} out of range ({d} field{s})", .{ idx, n, if (n == 1) @as([]const u8, "") else "s" });
-        } else {
-            d.addFmt(.err, span, "field_type: '{s}' has no fields", .{self.formatTypeName(t)});
-        }
-    }
-    return .unresolved;
-}
-
 /// THE lowering of a compiler-formed type constructor. `head` is the `@` name
 /// and `args` its argument nodes, however they were spelled: a type position
 /// parses `@int(3, .signed)` as a parameterized type, an argument slot parses
@@ -2048,31 +2020,9 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         .field_access => |fa| fa.field,
         else => return .unresolved,
     };
-    // field_type($T, i) -> Type — comptime reflection (read a type's i-th
-    // field / variant-payload / element type). A genuine type-table op, kept as
-    // a compiler builtin (like type_name); folds at lower time so it composes
-    // inside @typeEq / @typeName / any type-arg slot.
-    if (std.mem.eql(u8, callee_name, "structFieldType") or std.mem.eql(u8, callee_name, "variantType")) {
-        if (cl.args.len != 2) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, cl.callee.span, "{s} takes a type and an index: {s}($T, i)", .{ callee_name, callee_name });
-            return .unresolved;
-        }
-        const t = self.resolveTypeArg(cl.args[0]);
-        if (t == .unresolved) return .unresolved;
-        const idx: usize = switch (program_index_mod.foldDimU32(cl.args[1], self, 0)) {
-            .ok => |n| n,
-            else => {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, cl.args[1].span, "{s} index must be a non-negative compile-time integer", .{callee_name});
-                return .unresolved;
-            },
-        };
-        return self.fieldTypeOf(t, idx, cl.callee.span);
-    }
     // pointee($P) -> Type — comptime reflection: the target type of a pointer
-    // (`pointee(*X)` -> `X`). Folds at lower time like `field_type` so it
-    // composes inside any type-arg slot. A non-pointer arg is a loud error.
+    // (`pointee(*X)` -> `X`). Folds at lower time so it composes inside any
+    // type-arg slot. A non-pointer arg is a loud error.
     if (std.mem.eql(u8, callee_name, "pointeeType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
@@ -2167,12 +2117,10 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     const is_qualified = std.mem.indexOfScalar(u8, pt.name, '.') != null;
 
     // A Type-returning reflection builtin spelled in a TYPE position
-    // (`x.(structFieldType(T, i))` — the postfix-cast target parses via
+    // (`x.(pointeeType(T))` — the postfix-cast target parses via
     // parseTypeExpr, so the call arrives as a parameterized type). The
     // `.call` resolver owns these folds — delegate with the same arg nodes.
-    if (!pt.is_raw and (std.mem.eql(u8, base_name, "structFieldType") or
-        std.mem.eql(u8, base_name, "variantType") or
-        std.mem.eql(u8, base_name, "@envType") or
+    if (!pt.is_raw and (std.mem.eql(u8, base_name, "@envType") or
         std.mem.eql(u8, base_name, "pointeeType")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);

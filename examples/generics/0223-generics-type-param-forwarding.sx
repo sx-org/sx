@@ -1,7 +1,7 @@
 // A bound `$T: Type` forwards into another generic's type-arg slot:
 // `outer($T) { inner(T); }` monomorphizes `inner` with the enclosing
 // binding — composing exactly like an already-working folded type expression
-// (`inner(structFieldType(T, i))`). Covers direct forwarding, forwarding
+// (`inner(pointeeType(T))`). Covers direct forwarding, forwarding
 // into a RECURSIVE comptime walk, and a generic-struct construction from
 // the forwarded param.
 @import "modules/std.sx";
@@ -16,8 +16,8 @@ countLeaves :: ($T: Type) -> i64 {
     n := 0;
     inline match T {
         case struct: {
-            inline for i in 0..structFieldCount(T) {
-                n += countLeaves(structFieldType(T, i));
+            inline for field in @typeInfo(T).struct.fields {
+                n += countLeaves(field.type);
             }
         }
         else: { n = 1; }

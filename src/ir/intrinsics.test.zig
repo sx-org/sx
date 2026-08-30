@@ -135,11 +135,11 @@ test "collectDecls keeps an `@` sigil, which is part of the registered name" {
     defer arena.deinit();
     var out = std.ArrayList([]const u8).empty;
     try collectDecls(arena.allocator(),
-        \\structFieldCount :: ($T: Type) -> i64 intrinsic;
+        \\isFlags :: ($T: Type) -> bool intrinsic;
         \\@volatileLoad :: ($T: Type, address: *T) -> T;
     , &out);
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("structFieldCount", out.items[0]);
+    try std.testing.expectEqualStrings("isFlags", out.items[0]);
     try std.testing.expectEqualStrings("@volatileLoad", out.items[1]);
 }
 

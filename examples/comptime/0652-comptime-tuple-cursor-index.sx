@@ -12,7 +12,7 @@ Box :: struct ($R: Type) { value: R; }
 
 // Read each handle with its concrete type via the `inline for` cursor.
 showAll :: (tup: $T) {
-    inline for i in 0..structFieldCount(T) {
+    inline for i in 0..@typeInfo(T).struct.fields.len {
         h := tup[i];                       // concrete `*Box(T_i)`, not `any`
         print("[{}] = {}\n", i, h.value);  // field access resolves
     }

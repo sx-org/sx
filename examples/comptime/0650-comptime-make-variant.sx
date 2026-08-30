@@ -28,7 +28,7 @@ R :: makeEnum("R", .[
 // each arm's payload type differs. The `return` inside the `inline if` inside the
 // `inline for` is the pattern makeVariant exists to enable.
 pick :: (idx: i64, vv: Vec3, sv: string, bv: Big, nv: i64) -> R {
-    inline for i in 0..structFieldCount(R) {
+    inline for i in 0..@typeInfo(R).enum.fields.len {
         if idx == i {
             // Comptime match on the loop cursor `i` selects the arm whose payload
             // type matches variant `i` — cleaner than nested `inline if`/`else`.

@@ -1,6 +1,5 @@
 // The runtime-reflection scalar tables in a real linked binary (not just JIT):
-// __sx_type_sizes/_aligns/_struct_field_counts/_variant_counts/_flag_bits + the
-// tag-compare @typeEq.
+// __sx_type_sizes/_aligns/_flag_bits + the tag-compare @typeEq.
 @import "modules/std.sx";
 
 Header :: struct { magic: u16; flags: u8; }
@@ -9,7 +8,6 @@ Kind   :: enum { alpha; beta; }
 main :: () {
     th : Type = Header;
     tk : Type = Kind;
-    print("{} {} {} {} {} {}\n",
-        @sizeOf(th), @alignOf(th), structFieldCount(th),
-        variantCount(tk), isFlags(tk), @typeEq(th, Header));
+    print("{} {} {} {}\n",
+        @sizeOf(th), @alignOf(th), isFlags(tk), @typeEq(th, Header));
 }

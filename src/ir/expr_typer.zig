@@ -587,11 +587,9 @@ pub const ExprTyper = struct {
                 // Preserve the literal's element names (the NAMED-tuple form
                 // `.(a = x, b = y)`) so the inferred type carries them — this is
                 // the type bound to a generic `$T` when a named-tuple literal is
-                // passed DIRECTLY as a call argument. Without it `field_name(T, i)`
-                // reflected the empty string and a `makeEnum` over those labels
-                // silently collided on "" (the `race` result synthesis). Mirrors
-                // `lowerTupleLiteral`'s name capture so the inferred type and the
-                // lowered value's type agree.
+                // passed DIRECTLY as a call argument, and the labels a reflected
+                // `.name` answers. Mirrors `lowerTupleLiteral`'s name capture so
+                // the inferred type and the lowered value's type agree.
                 var names = std.ArrayList(types.StringId).empty;
                 defer names.deinit(self.l.alloc);
                 var has_names = false;

@@ -1745,13 +1745,11 @@ pub const Lowering = struct {
     }
 
     /// Fold a pure int-returning type-query builtin CALL to its compile-time
-    /// constant: `field_count(T)` / `@sizeOf(T)` / `@alignOf(T)`. This is what
-    /// lets a reflection-derived count drive an `inline for` bound / array dim
-    /// exactly like a plain `K :: 3` const — e.g. a `($T) -> Type` builder that
-    /// loops `inline for 0..field_count(T)` to assemble a variant list (the
-    /// `race` result synthesis). (Reaches the self-ctx fold paths — array dim,
-    /// inline-for bound; a `@Vector` LANE in a plain type annotation resolves through
-    /// the stateless type-bridge ctx, which stubs this to null.) Resolves the type
+    /// constant: `@sizeOf(T)` / `@alignOf(T)`. This is what lets a layout
+    /// measurement drive an `inline for` bound / array dim exactly like a plain
+    /// `K :: 3` const. (Reaches the self-ctx fold paths — array dim, inline-for
+    /// bound; a `@Vector` LANE in a plain type annotation resolves through the
+    /// stateless type-bridge ctx, which stubs this to null.) Resolves the type
     /// arg through the same `resolveTypeArg` + accessors the value path uses, so
     /// the folded constant always matches the call's runtime value. Returns null
     /// for any non-type-query call, a wrong arg count, or an unresolved type arg
@@ -1766,19 +1764,15 @@ pub const Lowering = struct {
             else => return null,
         };
         if (c.args.len != 1) return null;
-        const is_fc = std.mem.eql(u8, name, "structFieldCount") or std.mem.eql(u8, name, "variantCount");
         const is_sz = std.mem.eql(u8, name, "@sizeOf");
         const is_al = std.mem.eql(u8, name, "@alignOf");
-        if (!is_fc and !is_sz and !is_al) return null;
+        if (!is_sz and !is_al) return null;
         // A runtime Type arg is not a compile-time integer — and resolveTypeArg
         // would emit a spurious "unresolved type" diagnostic from this
         // SPECULATIVE fold context. Bail to the normal (dynamic) lowering.
         if (!self.isStaticTypeArg(c.args[0])) return null;
         const ty = self.resolveTypeArg(c.args[0]);
         if (ty == .unresolved) return null;
-        // `field_count` of a resolved non-aggregate is 0 (matches the value path
-        // in lower/call.zig), NOT a fold failure.
-        if (is_fc) return self.module.types.memberCount(ty) orelse 0;
         // An open set's layout is not a number yet unless nothing can still grow
         // it: a folded position is fixed WHERE IT IS WRITTEN, so answering it here
         // would bake a size a member declared later contradicts.
@@ -3895,7 +3889,6 @@ pub const Lowering = struct {
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;
     pub const visibleTypeFnHead = lower_generic.visibleTypeFnHead;
     pub const resolveTypeCallWithBindings = lower_generic.resolveTypeCallWithBindings;
-    pub const fieldTypeOf = lower_generic.fieldTypeOf;
     pub const resolveParameterizedWithBindings = lower_generic.resolveParameterizedWithBindings;
     pub const resolveValueParamArg = lower_generic.resolveValueParamArg;
     pub const canonicalIntConstraintName = lower_generic.canonicalIntConstraintName;

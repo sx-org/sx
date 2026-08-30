@@ -1,14 +1,13 @@
-// Comptime type-call COMPOSITION: a `($T) -> Type` builder reflects a named
-// tuple, projects each element type through `pointeeType` + `structFieldType`, and mints a
-// tagged-union whose variant labels mirror the tuple's labels — the shape the
-// `race` result synthesis needs (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
+// Comptime type-call COMPOSITION: a `($T) -> Type` builder walks a named
+// tuple's reflected members, projects each element type through `pointeeType`
+// + a member projection, and mints a tagged-union whose variant labels mirror
+// the tuple's labels — the shape the `race` result synthesis needs
+// (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
 //
-// Exercises three things with the index as an `inline for`
-// loop var: a type-call RESULT used as (1) a `Type`-typed struct field value
-// (`payload = structFieldType(...)`), (2) a nested type-call arg
-// (`structFieldType(pointeeType(structFieldType(T, i)), 0)`), and a `structFieldName(T, i)` folded to
-// a comptime string for a minted variant NAME. All resolve through the same
-// type-call fold as a literal index would.
+// Exercises three things off the member cursor: its `.type` used as (1) a
+// `Type`-typed struct field value, (2) a nested type-call arg
+// (`@typeInfo(pointeeType(field.type)).struct.fields[0].type`), and its `.name`
+// as a comptime string for a minted variant NAME.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
@@ -18,14 +17,14 @@ Box :: struct ($R: Type) { value: R; }
 // Mint a tagged-union mirroring a named tuple of `*Box(..)` handles:
 // variant name = tuple label, payload = the box's value type (`*Box(A)` -> `A`).
 ResultOf :: ($T: Type) -> Type {
-    vs : [structFieldCount(T)]VariantInfo = ---;
-    inline for i in 0..structFieldCount(T) {
-        vs[i] = VariantInfo{
-            name    = structFieldName(T, i),                          // folded to a const string
-            payload = structFieldType(pointeeType(structFieldType(T, i)), 0),  // *Box(A) -> Box(A) -> A
+    vs : [@typeInfo(T).struct.fields.len]VariantInfo = ---;
+    inline for field in @typeInfo(T).struct.fields {
+        vs[field.index] = VariantInfo{
+            name    = field.name,                                               // folded to a const string
+            payload = @typeInfo(pointeeType(field.type)).struct.fields[0].type, // *Box(A) -> Box(A) -> A
         };
     }
-    return makeEnum("ResultOf", vs[0..structFieldCount(T)]);
+    return makeEnum("ResultOf", vs);
 }
 
 Handles :: struct { a: *Box(i64); b: *Box(bool); c: *Box(f64) };
@@ -44,6 +43,7 @@ main :: () -> i32 {
     use(.b(true));
     use(.c(2.5));
     print("R: variants={} names=({},{},{})\n",
-        variantCount(R), variantName(R, 0), variantName(R, 1), variantName(R, 2));
+        @typeInfo(R).enum.fields.len,
+        @typeInfo(R).enum.fields[0].name, @typeInfo(R).enum.fields[1].name, @typeInfo(R).enum.fields[2].name);
     return 0;
 }

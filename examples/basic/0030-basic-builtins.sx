@@ -86,19 +86,19 @@ main :: () {
     // @typeName
     print("typename: {}\n", @typeName(Point));
 
-    // structFieldCount on struct
-    print("fieldcount: {}\n", structFieldCount(Point));
+    // reflected member count on struct
+    print("fieldcount: {}\n", @typeInfo(Point).struct.fields.len);
 
-    // structFieldCount on enum
-    print("fieldcount-enum: {}\n", variantCount(Color));
+    // reflected member count on enum
+    print("fieldcount-enum: {}\n", @typeInfo(Color).enum.fields.len);
 
-    // structFieldName on struct
-    print("fieldname0: {}\n", structFieldName(Point, 0));
-    print("fieldname1: {}\n", structFieldName(Point, 1));
+    // reflected member name on struct
+    print("fieldname0: {}\n", @typeInfo(Point).struct.fields[0].name);
+    print("fieldname1: {}\n", @typeInfo(Point).struct.fields[1].name);
 
-    // structFieldName on enum
-    print("fieldname-enum0: {}\n", variantName(Color, 0));
-    print("fieldname-enum2: {}\n", variantName(Color, 2));
+    // reflected member name on enum
+    print("fieldname-enum0: {}\n", @typeInfo(Color).enum.fields[0].name);
+    print("fieldname-enum2: {}\n", @typeInfo(Color).enum.fields[2].name);
 
     // structFieldValue (use anyToString to avoid sext-on-any bug)
     fvPt := Point{ 11, 22 };

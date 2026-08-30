@@ -1,11 +1,6 @@
-// Comptime field reflection (`structFieldCount` / `structFieldName` /
-// `structFieldType`) over aggregate kinds — struct, enum, and a positional
-// anonymous product (`@typeOf(.{…})`).
-//
-// BOTH the name-array build and the GEP sizing are driven from one source of
-// truth (`memberCount`/`memberName`), so they cannot diverge and a
-// `structFieldName(T, i)` read is always in bounds. A positional product
-// member's name is its index string `"0"`, `"1"`, …
+// Comptime member reflection (`.len` / `.name` / `.type`) over aggregate kinds
+// — struct, enum, and a positional anonymous product (`@typeOf(.{…})`).
+// A positional product member's name is its index string `"0"`, `"1"`, …
 @import "modules/std.sx";
 
 S :: struct { a: i64; b: bool; }
@@ -15,25 +10,29 @@ NamT :: struct { a: i64; b: bool };
 main :: () -> i32 {
     // struct: named fields
     print("struct: fc={} fn=({},{}) ft0={}\n",
-        structFieldCount(S), structFieldName(S, 0), structFieldName(S, 1), @typeName(structFieldType(S, 0)));
+        @typeInfo(S).struct.fields.len,
+        @typeInfo(S).struct.fields[0].name, @typeInfo(S).struct.fields[1].name,
+        @typeName(@typeInfo(S).struct.fields[0].type));
 
-    // enum: variant names (the variant* family — structField* rejects enums)
+    // enum: variant names, off the `.enum` member list
     print("enum: fc={} fn=({},{},{})\n",
-        variantCount(E), variantName(E, 0), variantName(E, 1), variantName(E, 2));
+        @typeInfo(E).enum.fields.len,
+        @typeInfo(E).enum.fields[0].name, @typeInfo(E).enum.fields[1].name, @typeInfo(E).enum.fields[2].name);
 
     // positional product: element types, index names
     pos := .{0, false};
     print("posproduct: fc={} ft=({},{}) fn0=[{}]\n",
-        structFieldCount(@typeOf(pos)),
-        @typeName(structFieldType(@typeOf(pos), 0)), @typeName(structFieldType(@typeOf(pos), 1)),
-        structFieldName(@typeOf(pos), 0));
+        @typeInfo(@typeOf(pos)).struct.fields.len,
+        @typeName(@typeInfo(@typeOf(pos)).struct.fields[0].type),
+        @typeName(@typeInfo(@typeOf(pos)).struct.fields[1].type),
+        @typeInfo(@typeOf(pos)).struct.fields[0].name);
 
     // named product: element labels recovered
     print("namproduct: fc={} fn=({},{})\n",
-        structFieldCount(NamT),
-        structFieldName(NamT, 0), structFieldName(NamT, 1));
+        @typeInfo(NamT).struct.fields.len,
+        @typeInfo(NamT).struct.fields[0].name, @typeInfo(NamT).struct.fields[1].name);
 
-    // arrays/vectors left the structField* family: lengths/lanes read via
+    // arrays/vectors carry no reflected member list: lengths/lanes read via
     // `.len` on the VALUE, elements via native indexing (typed).
     arr : [4]i64 = .[10, 20, 30, 40];
     vec : @Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];

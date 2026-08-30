@@ -1,7 +1,7 @@
 // `@typeInfo` is kind-first and EXHAUSTIVE: every type-table
 // kind reflects into its TypeInfo variant, not just enum/
 // struct/tuple. Also pins FieldInfo.offset/index (from the same
-// layout walk the field accessors use) and the union arm.
+// layout walk `@sizeOf` uses) and the union arm.
 @import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }
@@ -39,7 +39,7 @@ D_I16     :: @run describe(i16);
 D_U32     :: @run describe(u32);
 D_F32     :: @run describe(f32);
 D_ARR     :: @run describe([4]i64);
-D_VEC     :: @run describe(structFieldType(WithVec, 0));
+D_VEC     :: @run describe(@typeInfo(WithVec).struct.fields[0].type);
 D_SLICE   :: @run describe([]u8);
 D_PTR     :: @run describe(*Padded);
 D_OPT     :: @run describe(?i32);
