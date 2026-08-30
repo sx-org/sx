@@ -18,21 +18,21 @@ Native :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 10 } }
 impl View for Native { area :: (self: *Native) -> i64 { self.n + 1 } }
 
-g_widget := Widget{ n = 4 };
-g_native := Native{ n = 100 };
+gWidget := Widget{ n = 4 };
+gNative := Native{ n = 100 };
 
 // The comptime mutation is execution-local: it lands on the VM's own copy of
 // the global, which is discarded with the evaluation.
-pick_widget :: () -> View {
-    g_widget.n = 99;
-    return g_widget;
+pickWidget :: () -> View {
+    gWidget.n = 99;
+    return gWidget;
 }
 
 // Two evaluations that diverged on the same global both relocate to the one
 // symbol, and neither state wins — the global's declared initializer does.
-pick_native :: () -> View {
-    g_native.n = -1;
-    return g_native;
+pickNative :: () -> View {
+    gNative.n = -1;
+    return gNative;
 }
 
 // An instantiation whose ONLY value use in runtime code is the escape itself:
@@ -41,21 +41,21 @@ pick_native :: () -> View {
 Slot :: interface { id :: (self: *Self) -> i64; }
 Anchor :: struct { k: i64; }
 impl Slot for Anchor { id :: (self: *Anchor) -> i64 { self.k } }
-g_anchor := Anchor{ k = 9 };
-pick_slot :: () -> Slot { return g_anchor; }
+gAnchor := Anchor{ k = 9 };
+pickSlot :: () -> Slot { return gAnchor; }
 
-W :: @run pick_widget();
-N :: @run pick_native();
-S :: @run pick_slot();
+W :: @run pickWidget();
+N :: @run pickNative();
+S :: @run pickSlot();
 
 main :: () {
-    print("{} {}\n", W.area(), g_widget.n);
-    print("{} {}\n", N.area(), g_native.n);
+    print("{} {}\n", W.area(), gWidget.n);
+    print("{} {}\n", N.area(), gNative.n);
 
     // The relocated referent is the global itself: a runtime write through the
     // name is a write through the escaped handle.
-    g_widget.n = 7;
-    g_native.n = 41;
+    gWidget.n = 7;
+    gNative.n = 41;
     print("{} {}\n", W.area(), N.area());
 
     print("{}\n", @typeName(@typeOf(S)));

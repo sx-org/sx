@@ -40,21 +40,21 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 // Connect a nonblocking loopback client.
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1, per-OS layout
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
 dial :: () -> i32 {
-    return dial_port(PORT);
+    return dialPort(PORT);
 }
 
 // True when `buf[0..len]` holds a complete response (headers + body).
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -92,10 +92,10 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
     tries := 0;
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (4096 - total));
+        n, re := socket.readNb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
         else if re == .Closed { return string{ ptr = scratch, len = total }; }
-        if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
+        if respComplete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }
     return "";
@@ -104,10 +104,10 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
 main :: () -> i32 {
     cfg : http.Config = .{
         port = PORT,
-        timeout_request_ms = 150,
-        timeout_keepalive_ms = 400,
-        request_count = 3,
-        max_conn = 8,
+        timeoutRequestMs = 150,
+        timeoutKeepaliveMs = 400,
+        requestCount = 3,
+        maxConn = 8,
     };
     srv, se := http.Server.init(cfg, handler, 77);
     if se { print("server init failed\n"); return 1; }
@@ -128,14 +128,14 @@ main :: () -> i32 {
     if !contains(r2, "hello GET") { print("case2: keep-alive reuse failed\n"); return 1; }
     print("keep-alive reuse ok\n");
 
-    // ── 3. third request hits request_count: Connection: close + EOF ─
+    // ── 3. third request hits requestCount: Connection: close + EOF ─
     r3 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "Connection: close") { print("case3: expected close at cap\n"); return 1; }
     drained := false;
     tries := 0;
     while !drained and tries < 200 {
         srv.tick(5) catch {};
-        zq, ze := socket.read_nb(c1, *buf[0], 64);
+        zq, ze := socket.readNb(c1, *buf[0], 64);
         if ze == .Closed { drained = true; }
         if !ze and zq == 0 { drained = true; }
         tries += 1;
@@ -158,30 +158,30 @@ main :: () -> i32 {
     print("404 routing ok\n");
 
     // ── 5b. a body past READ_BUF_INITIAL forces the buffer to grow ────
-    big_n := 50000;
-    payload : [*]u8 = (context.allocator.alloc_bytes(big_n)).([*]u8);
+    bigN := 50000;
+    payload : [*]u8 = (context.allocator.allocBytes(bigN)).([*]u8);
     f := 0;
-    while f < big_n { payload[f] = 97 + (f % 26).(u8); f += 1; }
-    breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(int_to_string(big_n), "\r\n\r\n"));
-    breq = concat(breq, string{ ptr = payload, len = big_n });
+    while f < bigN { payload[f] = 97 + (f % 26).(u8); f += 1; }
+    breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(intToString(bigN), "\r\n\r\n"));
+    breq = concat(breq, string{ ptr = payload, len = bigN });
     c2b := dial();
     if c2b < 0 { print("dial2b failed\n"); return 1; }
-    bigbuf : [*]u8 = (context.allocator.alloc_bytes((big_n + 4096))).([*]u8);
+    bigbuf : [*]u8 = (context.allocator.allocBytes((bigN + 4096))).([*]u8);
     socket.write(c2b, breq.ptr, breq.len);
     btotal : i64 = 0;
     btries := 0;
     while btries < 2000 {
         srv.tick(5) catch {};
-        bn, bre := socket.read_nb(c2b, *bigbuf[btotal], (big_n + 4096 - btotal));
+        bn, bre := socket.readNb(c2b, *bigbuf[btotal], (bigN + 4096 - btotal));
         if !bre { btotal += bn; }
         else if bre == .Closed { break; }
-        if resp_complete(bigbuf, btotal) { break; }
+        if respComplete(bigbuf, btotal) { break; }
         btries += 1;
     }
     bresp := string{ ptr = bigbuf, len = btotal };
     if !contains(bresp, "HTTP/1.1 200 OK") { print("case5b: big echo not 200\n"); return 1; }
-    if !contains(bresp, concat("Content-Length: ", int_to_string(big_n))) { print("case5b: wrong echo length\n"); return 1; }
-    if bigbuf[btotal - 1] != 97 + ((big_n - 1) % 26).(u8) { print("case5b: tail byte wrong\n"); return 1; }
+    if !contains(bresp, concat("Content-Length: ", intToString(bigN))) { print("case5b: wrong echo length\n"); return 1; }
+    if bigbuf[btotal - 1] != 97 + ((bigN - 1) % 26).(u8) { print("case5b: tail byte wrong\n"); return 1; }
     socket.close(c2b);
     print("big body grows the buffer and echoes intact\n");
 
@@ -191,7 +191,7 @@ main :: () -> i32 {
     if c3 < 0 { print("dial3 failed\n"); return 1; }
     half := "GET /hel";
     socket.write(c3, half.ptr, half.len);
-    gone := event.deadline_in(300);   // > timeout_request_ms
+    gone := event.deadlineIn(300);   // > timeoutRequestMs
     while !event.expired(gone) { srv.tick(5) catch {}; }
     c4 := dial();
     if c4 < 0 { print("dial4 failed\n"); return 1; }
@@ -201,7 +201,7 @@ main :: () -> i32 {
     tries = 0;
     while !evicted and tries < 200 {
         srv.tick(5) catch {};
-        zq2, ze2 := socket.read_nb(c3, *buf[0], 64);
+        zq2, ze2 := socket.readNb(c3, *buf[0], 64);
         if ze2 == .Closed { evicted = true; }
         if !ze2 and zq2 == 0 { evicted = true; }
         tries += 1;
@@ -214,22 +214,22 @@ main :: () -> i32 {
     srv.close();
 
     // ── pooled dispatch: same contract through worker threads ──
-    // thread_pool_count > 0 runs handlers on a pool; completions come
+    // threadPoolCount > 0 runs handlers on a pool; completions come
     // back through the loop's wake channel. Same assertions: routing,
     // body echo, keep-alive reuse — now crossing threads per request.
     pcfg : http.Config = .{
         port = PORT + 1,
-        timeout_request_ms = 1000,
-        timeout_keepalive_ms = 1000,
-        request_count = 50,
-        max_conn = 8,
-        thread_pool_count = 2,
-        thread_pool_backlog = 16,
+        timeoutRequestMs = 1000,
+        timeoutKeepaliveMs = 1000,
+        requestCount = 50,
+        maxConn = 8,
+        threadPoolCount = 2,
+        threadPoolBacklog = 16,
     };
     psrv, pse := http.Server.init(pcfg, handler, 77);
     if pse { print("pooled server init failed\n"); return 1; }
 
-    c5 := dial_port(PORT + 1);
+    c5 := dialPort(PORT + 1);
     if c5 < 0 { print("dial5 failed\n"); return 1; }
     r7 := roundtrip(*psrv, c5, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r7, "HTTP/1.1 200 OK") { print("pooled: bad status\n"); return 1; }

@@ -18,43 +18,43 @@ PORT :: 18980;
 
 // ── route handlers ───────────────────────────────────────────────────
 
-h_root :: (rc: *http.RouteCtx) {
+hRoot :: (rc: *http.RouteCtx) {
     rc.resp.body = "root";
 }
 
-h_hello :: (rc: *http.RouteCtx) {
+hHello :: (rc: *http.RouteCtx) {
     rc.resp.body = "hello";
 }
 
-h_user :: (rc: *http.RouteCtx) {
+hUser :: (rc: *http.RouteCtx) {
     rc.resp.body = concat("user:", rc.param("id"));
 }
 
-h_search :: (rc: *http.RouteCtx) {
-    q := rc.query_get("q");
-    n := rc.query_get("n");
+hSearch :: (rc: *http.RouteCtx) {
+    q := rc.queryGet("q");
+    n := rc.queryGet("n");
     rc.resp.body = concat("q=[", concat(q, concat("] n=[", concat(n, "]"))));
 }
 
-h_form :: (rc: *http.RouteCtx) {
-    a := rc.form_get("a");
-    b := rc.form_get("b");
+hForm :: (rc: *http.RouteCtx) {
+    a := rc.formGet("a");
+    b := rc.formGet("b");
     rc.resp.body = concat("a=[", concat(a, concat("] b=[", concat(b, "]"))));
 }
 
 // JSON response: {"name":"sx","n":7}
-h_json :: (rc: *http.RouteCtx) {
+hJson :: (rc: *http.RouteCtx) {
     obj : json.Object = .{};
     obj.put("name", .str("sx"), context.allocator);
     obj.put("n", .int(7), context.allocator);
     root : json.Value = .object(obj);
-    if !rc.json_send(200, root) { rc.resp.status = 500; rc.resp.body = "json fail"; }
+    if !rc.jsonSend(200, root) { rc.resp.status = 500; rc.resp.body = "json fail"; }
 }
 
 // JSON request: read top-level "name" string field from the posted body
 // and echo it back as text.
-h_echojson :: (rc: *http.RouteCtx) {
-    v, ok := rc.json_body();
+hEchojson :: (rc: *http.RouteCtx) {
+    v, ok := rc.jsonBody();
     if !ok { rc.resp.status = 400; rc.resp.body = "bad json"; return; }
     if v != .object { rc.resp.status = 400; rc.resp.body = "not object"; return; }
     o := v.object;
@@ -85,16 +85,16 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -129,10 +129,10 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
     tries := 0;
     while tries < 800 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], (cap - total));
+        n, re := socket.readNb(fd, *scratch[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return string{ ptr = scratch, len = total }; }
-        if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
+        if respComplete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }
     return "";
@@ -141,27 +141,27 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
 // Run the whole routed-server exercise on one connection (keep-alive). All
 // requests + assertions live here; returns true on success. Runs under
 // whatever allocator is current (the GPA-pushed scope in main).
-run_suite :: (scratch: [*]u8, cap: i64) -> bool {
+runSuite :: (scratch: [*]u8, cap: i64) -> bool {
     router := http.Router.init(0);
-    router.get("/", h_root);
-    router.get("/hello", h_hello);
-    router.get("/users/:id", h_user);
-    router.get("/search", h_search);
-    router.post("/form", h_form);
-    router.get("/j", h_json);
-    router.post("/echojson", h_echojson);
+    router.get("/", hRoot);
+    router.get("/hello", hHello);
+    router.get("/users/:id", hUser);
+    router.get("/search", hSearch);
+    router.post("/form", hForm);
+    router.get("/j", hJson);
+    router.post("/echojson", hEchojson);
 
     cfg : http.Config = .{
         port = PORT,
-        timeout_request_ms = 1000,
-        timeout_keepalive_ms = 1000,
-        request_count = 100,
-        max_conn = 8,
+        timeoutRequestMs = 1000,
+        timeoutKeepaliveMs = 1000,
+        requestCount = 100,
+        maxConn = 8,
     };
     srv, se := http.Server.init(cfg, http.dispatch, xx *router);
     if se { print("server init failed\n"); return false; }
 
-    c := dial_port(PORT);
+    c := dialPort(PORT);
     if c < 0 { print("dial failed\n"); srv.close(); return false; }
 
     // 1. GET / and GET /hello → distinct 200s
@@ -212,10 +212,10 @@ main :: () -> i32 {
     okall := false;
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
-        okall = run_suite(scratch, cap);
-        context.allocator.dealloc_bytes(scratch);
-        leaked = gpa.alloc_count;
+        scratch : [*]u8 = xx context.allocator.allocBytes(cap);
+        okall = runSuite(scratch, cap);
+        context.allocator.deallocBytes(scratch);
+        leaked = gpa.allocCount;
     }
     if !okall { return 1; }
     if leaked != 0 {

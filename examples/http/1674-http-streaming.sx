@@ -4,7 +4,7 @@
 // the server ever buffering the whole body. It opts in with
 // resp.stream(producer, ctx); the server pulls bounded pieces from the
 // producer and frames each as a chunk through the existing
-// out_buf/write_more backpressure path — so peak memory stays one
+// outBuf/writeMore backpressure path — so peak memory stays one
 // bounded scratch (STREAM_BUF_CAP), never the full body.
 //
 // This drives one server + its clients in ONE thread via Server.tick:
@@ -15,7 +15,7 @@
 //      the fast path is unchanged.
 //   3. keep-alive: a chunked response followed by another request on the
 //      SAME connection both succeed.
-// The whole run is under a GPA; net-zero alloc_count after close proves
+// The whole run is under a GPA; net-zero allocCount after close proves
 // no per-chunk / stream-buffer leak.
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
@@ -25,21 +25,21 @@ PORT :: 18974;
 BODY_LEN :: 200000;   // 200 KB — far larger than any single server buffer
 
 // The streamed body is the deterministic byte pattern b[i] = (i*31+7) & 0xFF.
-// The producer fills `dst` with up to `dst_cap` bytes starting at logical
+// The producer fills `dst` with up to `dstCap` bytes starting at logical
 // `offset`, returning the count (0 = end of body). Fully resumable: it
 // derives every byte from `offset`, holding no state of its own.
-body_byte :: (i: i64) -> u8 {
+bodyByte :: (i: i64) -> u8 {
     v := (i * 31 + 7) % 256;
     return v.(u8);
 }
 
-stream_producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+streamProducer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
     if offset >= BODY_LEN { return 0; }
-    n := dst_cap;
+    n := dstCap;
     if offset + n > BODY_LEN { n = BODY_LEN - offset; }
     i : i64 = 0;
     while i < n {
-        dst[i] = body_byte(offset + i);
+        dst[i] = bodyByte(offset + i);
         i += 1;
     }
     return n;
@@ -47,8 +47,8 @@ stream_producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/big" {
-        resp.set_content_type("application/octet-stream");
-        resp.stream(stream_producer, 0);
+        resp.setContentType("application/octet-stream");
+        resp.stream(streamProducer, 0);
         return;
     }
     if req.path == "/small" {
@@ -72,18 +72,18 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
 // Find the end of the header block ("\r\n\r\n") in buf[0..len]; -1 if not
 // yet present. Returns the index of the first \r of the terminator.
-header_end :: (buf: [*]u8, len: i64) -> i64 {
+headerEnd :: (buf: [*]u8, len: i64) -> i64 {
     i : i64 = 0;
     while i + 3 < len {
         if buf[i] == 13 and buf[i+1] == 10 and buf[i+2] == 13 and buf[i+3] == 10 { return i; }
@@ -96,8 +96,8 @@ header_end :: (buf: [*]u8, len: i64) -> i64 {
 // chunks up to and including the terminating "0\r\n\r\n". We don't parse
 // the chunk sizes for completeness here — we just look for the zero chunk
 // terminator after the header block.
-chunked_complete :: (buf: [*]u8, len: i64) -> bool {
-    he := header_end(buf, len);
+chunkedComplete :: (buf: [*]u8, len: i64) -> bool {
+    he := headerEnd(buf, len);
     if he < 0 { return false; }
     // search for "0\r\n\r\n" at a line boundary after the headers. A simple
     // scan for the 5-byte terminator suffices for this test's data (the
@@ -111,8 +111,8 @@ chunked_complete :: (buf: [*]u8, len: i64) -> bool {
 // De-chunk the body of a chunked response sitting in buf[0..len] into
 // `out` (cap OUT_CAP). Returns the decoded length, or -1 on malformed
 // framing. Reads chunk-size lines (hex) and copies each chunk's data.
-dechunk :: (buf: [*]u8, len: i64, out: [*]u8, out_cap: i64) -> i64 {
-    he := header_end(buf, len);
+dechunk :: (buf: [*]u8, len: i64, out: [*]u8, outCap: i64) -> i64 {
+    he := headerEnd(buf, len);
     if he < 0 { return -1; }
     p := he + 4;          // first byte after the header block
     outlen : i64 = 0;
@@ -139,7 +139,7 @@ dechunk :: (buf: [*]u8, len: i64, out: [*]u8, out_cap: i64) -> i64 {
             return outlen;
         }
         if p + sz > len { return -1; }            // truncated chunk data
-        if outlen + sz > out_cap { return -1; }   // overflow guard
+        if outlen + sz > outCap { return -1; }    // overflow guard
         m : i64 = 0;
         while m < sz { out[outlen + m] = buf[p + m]; m += 1; }
         outlen += sz;
@@ -158,21 +158,21 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 4000,
-            timeout_keepalive_ms = 4000,
-            request_count = 50,
-            max_conn = 8,
+            timeoutRequestMs = 4000,
+            timeoutKeepaliveMs = 4000,
+            requestCount = 50,
+            maxConn = 8,
         };
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed: {}\n", se); rc = 1; }
         else {
             // Response buffer big enough for the framed 200 KB response.
             cap : i64 = BODY_LEN + 65536;
-            rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
-            dbuf : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 16);
+            rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
+            dbuf : [*]u8 = xx context.allocator.allocBytes(BODY_LEN + 16);
 
             // ── 1. large chunked body, byte-exact reassembly ──────────
-            c1 := dial_port(PORT);
+            c1 := dialPort(PORT);
             if c1 < 0 { print("dial failed\n"); rc = 1; }
             if rc == 0 {
                 req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -182,10 +182,10 @@ main :: () -> i32 {
                 done := false;
                 while tries < 200000 and !done {
                     srv.tick(2) catch {};
-                    n, re := socket.read_nb(c1, *rbuf[total], (cap - total));
+                    n, re := socket.readNb(c1, *rbuf[total], (cap - total));
                     if !re { total += n; }
                     else if re == .Closed { break; }
-                    if chunked_complete(rbuf, total) { done = true; }
+                    if chunkedComplete(rbuf, total) { done = true; }
                     tries += 1;
                 }
                 resp := string{ ptr = rbuf, len = total };
@@ -200,7 +200,7 @@ main :: () -> i32 {
                         i : i64 = 0;
                         bad := false;
                         while i < BODY_LEN {
-                            if dbuf[i] != body_byte(i) { bad = true; break; }
+                            if dbuf[i] != bodyByte(i) { bad = true; break; }
                             i += 1;
                         }
                         if bad { print("dechunked body mismatch at byte {}\n", i); rc = 1; }
@@ -211,7 +211,7 @@ main :: () -> i32 {
 
             // ── 2. fixed-body fast path still works ───────────────────
             if rc == 0 {
-                c2 := dial_port(PORT);
+                c2 := dialPort(PORT);
                 if c2 < 0 { print("dial2 failed\n"); rc = 1; }
                 if rc == 0 {
                     req := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -221,7 +221,7 @@ main :: () -> i32 {
                     got := false;
                     while tries < 4000 and !got {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c2, *rbuf[total], (cap - total));
+                        n, re := socket.readNb(c2, *rbuf[total], (cap - total));
                         if !re { total += n; }
                         else if re == .Closed { break; }
                         s := string{ ptr = rbuf, len = total };
@@ -239,7 +239,7 @@ main :: () -> i32 {
 
             // ── 3. keep-alive: chunked then a second request, same conn ──
             if rc == 0 {
-                c3 := dial_port(PORT);
+                c3 := dialPort(PORT);
                 if c3 < 0 { print("dial3 failed\n"); rc = 1; }
                 if rc == 0 {
                     // first: chunked /big
@@ -250,10 +250,10 @@ main :: () -> i32 {
                     done := false;
                     while tries < 200000 and !done {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
+                        n, re := socket.readNb(c3, *rbuf[total], (cap - total));
                         if !re { total += n; }
                         else if re == .Closed { break; }
-                        if chunked_complete(rbuf, total) { done = true; }
+                        if chunkedComplete(rbuf, total) { done = true; }
                         tries += 1;
                     }
                     r1 := string{ ptr = rbuf, len = total };
@@ -271,7 +271,7 @@ main :: () -> i32 {
                         got := false;
                         while tries < 4000 and !got {
                             srv.tick(2) catch {};
-                            n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
+                            n, re := socket.readNb(c3, *rbuf[total], (cap - total));
                             if !re { total += n; }
                             else if re == .Closed { break; }
                             s := string{ ptr = rbuf, len = total };
@@ -284,12 +284,12 @@ main :: () -> i32 {
                 if c3 >= 0 { socket.close(c3); }
             }
 
-            context.allocator.dealloc_bytes(rbuf);
-            context.allocator.dealloc_bytes(dbuf);
+            context.allocator.deallocBytes(rbuf);
+            context.allocator.deallocBytes(dbuf);
             srv.close();
         }
 
-        leaked = gpa.alloc_count;
+        leaked = gpa.allocCount;
     }
 
     if rc != 0 { return rc; }

@@ -302,7 +302,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // the two {ptr, len} fat pointers — a slice (`sl : []T = .{ ptr = …,
     // len = … }`, used throughout the stdlib/corpus) and the builtin `string`
     // (`string{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
-    // (`c : Closure(i32) -> i32 = .{ fn_ptr = …, env = … }`, the {fn_ptr, env}
+    // (`c : Closure(i32) -> i32 = .{ fnPtr = …, env = … }`, the {fnPtr, env}
     // pair, exercised by examples/types/0129).
     // Any other resolved target — a scalar builtin (`x : i64 = .{ a = 1 }`),
     // an enum, a pointer, ... — would reach `structInit` against a
@@ -473,7 +473,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     // not silently dropped. (A punned bare-ident that misses a field
                     // was already reclassified as positional by `has_names` above, so
                     // anything unmatched here is a genuine, mistaken named field — a
-                    // typo or a field removed by an `inline if OS` branch.)
+                    // typo or a field removed by an `inline if @host.os` branch.)
                     .missing => if (self.diagnostics) |d|
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
@@ -767,7 +767,7 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
     return true;
 }
 
-/// Slot type of a `{ptr,len}` fat pointer or `{fn_ptr,env}` closure literal,
+/// Slot type of a `{ptr,len}` fat pointer or `{fnPtr,env}` closure literal,
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
     const is_string = ty == .string;
@@ -784,7 +784,7 @@ fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usi
         return null;
     }
     if (is_closure) {
-        const is_fn = if (name) |n| std.mem.eql(u8, n, "fn_ptr") else index == 0;
+        const is_fn = if (name) |n| std.mem.eql(u8, n, "fnPtr") else index == 0;
         const is_env = if (name) |n| std.mem.eql(u8, n, "env") else index == 1;
         if (is_fn or is_env) return self.module.types.ptrTo(.void);
         return null;
@@ -1003,6 +1003,27 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     return .unresolved;
 }
 
+/// A comptime constant as a runtime value. `.target_variant` and `.struct_val`
+/// have no scalar to emit, so they answer null.
+fn comptimeConstRef(self: *Lowering, cv: lower.Lowering.ComptimeValue) ?Ref {
+    return switch (cv) {
+        .int_val => |iv| self.builder.constInt(iv, .i64),
+        .bool_val => |bv| self.builder.constBool(bv),
+        .enum_tag => |et| self.builder.constInt(@intCast(et.tag), et.ty),
+        .target_variant, .struct_val => null,
+    };
+}
+
+/// A whole comptime struct (`x := @host`) as a runtime value: `struct_init`
+/// over the field constants in declaration order, typed by the contract the
+/// program declares under the same name.
+fn comptimeStructRef(self: *Lowering, name: []const u8, fields: []const lower.Lowering.ComptimeValue.Field) ?Ref {
+    const tid = self.module.types.findByName(self.module.types.internString(name)) orelse return null;
+    const refs = self.alloc.alloc(Ref, fields.len) catch return null;
+    for (fields, refs) |f, *r| r.* = comptimeConstRef(self, f.value) orelse return null;
+    return self.builder.emit(.{ .struct_init = .{ .fields = refs } }, tid);
+}
+
 pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) Ref {
     // `inline for x in xs` element capture as the receiver: re-enter with the
     // synthesized `xs[<i>]` as the object, so every pack-element rule below
@@ -1046,6 +1067,13 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // (`facade.engine_alias.CONST`) without ever stripping to a globally keyed
     // bare name before the complete prefix is proved.
     const full_node = Node{ .span = span, .data = .{ .field_access = fa.* } };
+
+    // A comptime constant's field (`@host.pointerSize`) is a value read, not a
+    // namespace member, so it answers ahead of the walk below.
+    if (self.evalComptimeValue(&full_node)) |cv| {
+        if (comptimeConstRef(self, cv)) |ref| return ref;
+    }
+
     if (self.qualifiedTypeName(&full_node)) |full_path| {
         defer self.alloc.free(full_path);
         const root_end = std.mem.indexOfScalar(u8, full_path, '.') orelse full_path.len;
@@ -1421,13 +1449,13 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
 }
 
 /// Numeric-limit accessor intercept (`<Type>.min`/`.max`/`.epsilon`/
-/// `.min_positive`/`.true_min`/`.inf`/`.nan`), a sibling of the `Set.X` /
+/// `.minPositive`/`.trueMin`/`.inf`/`.nan`), a sibling of the `Set.X` /
 /// `Struct.CONST` / pack-arity identifier-receiver intercepts in
 /// `lowerFieldAccess`. Folds the limit to a comptime const of the queried
 /// type via the shared `TypeResolver` logic (no second computor) + the
 /// existing `constInt` / `constFloat` const paths:
 ///   - integer `.min`/`.max` → `constInt` (via `TypeTable.integerLimit`);
-///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
+///   - float `.min`/`.max`/`.epsilon`/`.minPositive`/`.trueMin`/`.inf`/
 ///     `.nan` → `constFloat` (via `floatLimitOf`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
 /// a type spelling (a user struct → ordinary field lowering reports
@@ -1986,11 +2014,11 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
         }
     }
 
-    // Closure field access: .fn_ptr → field 0, .env → field 1
+    // Closure field access: .fnPtr → field 0, .env → field 1
     if (!obj_ty.isBuiltin()) {
         const cinfo = self.module.types.get(obj_ty);
         if (cinfo == .closure) {
-            if (std.mem.eql(u8, field, "fn_ptr")) {
+            if (std.mem.eql(u8, field, "fnPtr")) {
                 const fn_ptr_ty = self.module.types.ptrTo(.void);
                 return self.builder.structGet(obj, 0, fn_ptr_ty);
             } else if (std.mem.eql(u8, field, "env")) {
@@ -2699,7 +2727,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // element type to index by at runtime.
     // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
     // (exact parity with the tuple path above — the field itself, typed; a
-    // runtime index does NOT apply to structs, use `struct_field_value(s, j)`).
+    // runtime index does NOT apply to structs, use `structFieldValue(s, j)`).
     // This is what gives a positional anonymous struct (`t := .{1, 2}`) the
     // same `t[i]` walks a tuple literal has.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
@@ -3529,14 +3557,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk binding.ref;
                 }
             }
-            // Check compile-time constants (OS, ARCH, POINTER_SIZE) before globals
+            // A compile-time constant answers before globals.
             if (self.comptime_constants.get(id.name)) |cv| {
-                switch (cv) {
-                    .int_val => |iv| break :blk self.builder.constInt(iv, .i64),
-                    .enum_tag => |et| break :blk self.builder.constInt(@intCast(et.tag), et.ty),
-                    // No enum type to read it as — fall through to the ordinary
-                    // name resolution, which reports the missing declaration.
-                    .target_variant => {},
+                if (comptimeConstRef(self, cv)) |ref| break :blk ref;
+                if (cv == .struct_val) {
+                    if (comptimeStructRef(self, id.name, cv.struct_val)) |ref| break :blk ref;
                 }
             }
             // `context` resolves to a load through the lowering's
@@ -4173,7 +4198,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // unconsumed-failable rule, scoped to assertion forms).
             if (self.inferExprType(pc.operand) == .any) {
                 // `av.(@Any)` is the raw-view RETRIEVAL — the view's own
-                // {data, type_id} words, built field-wise; NOT an
+                // {data, typeId} words, built field-wise; NOT an
                 // assertion about the boxed payload. POSTFIX-only:
                 // `xx av` keeps the unbox meaning for every target
                 // (@Any included) — the assert helpers' generic
@@ -4215,9 +4240,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 break :blk self.lowerCall(&syn_call);
             }
             // A PROTOCOL receiver with a concrete (non-recovery) target is
-            // the checked DOWNCAST: with the type_id word
+            // the checked DOWNCAST: with the typeId word
             // it is exactly the any assertion over the value's
-            // {ctx, type_id} prefix view — the operand wraps in an
+            // {ctx, typeId} prefix view — the operand wraps in an
             // `xx …: any` (the modeled protocol_to_any conversion) and the
             // SAME helpers serve all three temperaments. Recovery /
             // conversion targets (p.(*T), p.(@Protocol), p.(any),
@@ -4490,7 +4515,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // `@error("msg");` that survived comptime pruning into live code —
         // fire at lower time (specs: the directive fires when REACHED; a
         // pruned `inline if` arm never lowers, so per-monomorphization
-        // rejection works exactly like the module-scope OS-match form).
+        // rejection works exactly like the module-scope `inline match` form).
         // Inside a monomorphized body the diagnostic anchors at the
         // OUTERMOST instantiation call site — the user call that forced the
         // instantiation — with the directive's own location as a note; a

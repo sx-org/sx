@@ -5,7 +5,7 @@
 // per-request-arena memory and req views, and the loop never runs producer
 // code. Pulling on the LOOP thread instead, after the worker's job and its
 // per-request arena are freed, makes any request-derived or arena-backed
-// producer_ctx a use-after-free, and a slow producer there stalls every
+// producerCtx a use-after-free, and a slow producer there stalls every
 // other connection.
 //
 // Cases (pool(1) server — a single worker makes pinning observable):
@@ -38,8 +38,8 @@ STREAM_TOTAL :: 1000000;
 BIG_TOTAL :: 4194304;
 
 Obs :: struct {
-    prod_tid: usize = 0;   // thread id observed inside the producer
-    main_tid: usize = 0;   // the loop (tick-harness main) thread id
+    prodTid: usize = 0;   // thread id observed inside the producer
+    mainTid: usize = 0;   // the loop (tick-harness main) thread id
 }
 
 // Producer state — allocated in the PER-REQUEST ARENA by the
@@ -51,12 +51,12 @@ StreamState :: struct {
     obs: *Obs = null;
 }
 
-producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dstCap: i64) -> i64 {
     st : *StreamState = xx ctx;
-    if st.obs.prod_tid == 0 { st.obs.prod_tid = pthread_self(); }
+    if st.obs.prodTid == 0 { st.obs.prodTid = pthread_self(); }
     left := st.total - offset;
     if left <= 0 { return 0; }
-    n := if dst_cap < left then dst_cap else left;
+    n := if dstCap < left then dstCap else left;
     i : i64 = 0;
     while i < n {
         dst[i] = xx ((st.seed + (offset + i) * 7) % 251);
@@ -93,12 +93,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "pong";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -115,7 +115,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-num_after :: (hay: string, key: string) -> i64 {
+numAfter :: (hay: string, key: string) -> i64 {
     i := 0;
     while i + key.len <= hay.len {
         j := 0;
@@ -138,22 +138,22 @@ num_after :: (hay: string, key: string) -> i64 {
     return -1;
 }
 
-send_all :: (srv: *http.Server, fd: i32, s: string) {
+sendAll :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
+        n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
 }
 
 // Read one complete Content-Length response (1698's helper).
-read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+readResponse :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     total : i64 = 0;
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         resp := string{ ptr = rbuf, len = total };
@@ -164,7 +164,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
             i += 1;
         }
         if he >= 0 {
-            cl := num_after(resp, "Content-Length: ");
+            cl := numAfter(resp, "Content-Length: ");
             if cl >= 0 and total >= he + cl { return total; }
         }
         t += 1;
@@ -175,12 +175,12 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
 // Read a full chunked response: until the buffer ends with the terminating
 // "0\r\n\r\n" (the data pattern's consecutive bytes always differ by 7 mod
 // 251, so the terminator sequence cannot occur inside chunk data).
-read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+readChunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     total : i64 = 0;
     t : i64 = 0;
     while t < 200000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+        n, re := socket.readNb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return total; }
         if total >= 5
@@ -196,7 +196,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
 // De-chunk `body` and verify every data byte against the producer's
 // pattern; true only when the framing parses and the reassembled length
 // and bytes match exactly.
-dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
+dechunkCheck :: (body: string, seed: i64, expectTotal: i64) -> bool {
     p : i64 = 0;
     total : i64 = 0;
     while true {
@@ -229,7 +229,7 @@ dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
         if body[p] != 13 or body[p + 1] != 10 { return false; }
         p += 2;
     }
-    return total == expect_total;
+    return total == expectTotal;
 }
 
 main :: () -> i32 {
@@ -237,31 +237,31 @@ main :: () -> i32 {
     failed : i64 = 0;
     leaked : i64 = 0;
     obs : Obs = .{};
-    obs.main_tid = pthread_self();
+    obs.mainTid = pthread_self();
 
     push .{ allocator = gpa } {
         cap : i64 = 1310720;   // 1.25 MB — the 1 MB stream + framing + head
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
-            thread_pool_count = 1,     // pool(1): a pinned worker is observable
-            thread_pool_backlog = 16,
-            handler_timeout_ms = 5000,
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
+            threadPoolCount = 1,     // pool(1): a pinned worker is observable
+            threadPoolBacklog = 16,
+            handlerTimeoutMs = 5000,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: 1 MB worker-fed chunked stream, arena-owned ctx ───
         seed := checksum("seed-abc");
-        c1 := dial_port(PORT);
+        c1 := dialPort(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
-        r1 := read_chunked(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
+        r1 := readChunked(*srv, c1, rbuf, cap);
         resp1 := string{ ptr = rbuf, len = r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
         if !contains(resp1, "Transfer-Encoding: chunked") { print("case1: not chunked\n"); failed = 1; }
@@ -272,43 +272,43 @@ main :: () -> i32 {
             i += 1;
         }
         if he < 0 { print("case1: no header end\n"); failed = 1; }
-        else if !dechunk_check(string{ ptr = *rbuf[he], len = (r1 - he) }, seed, STREAM_TOTAL) {
+        else if !dechunkCheck(string{ ptr = *rbuf[he], len = (r1 - he) }, seed, STREAM_TOTAL) {
             print("case1: stream bytes wrong\n");
             failed = 1;
         }
 
         // ── case 2: keep-alive after the worker-fed stream ────────────
-        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r2 := read_response(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r2 := readResponse(*srv, c1, rbuf, cap);
         resp2 := string{ ptr = rbuf, len = r2 };
         if !contains(resp2, "pong") { print("case2: no pong\n"); failed = 1; }
         socket.close(c1);
 
         // ── case 3: mid-stream disconnect aborts the feeder ───────────
-        c2 := dial_port(PORT);
+        c2 := dialPort(PORT);
         if c2 < 0 { print("dial c2 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
+        sendAll(*srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
         got : i64 = 0;
         t : i64 = 0;
         while t < 20000 and got < 65536 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c2, *rbuf[0], 16384);
+            n, re := socket.readNb(c2, *rbuf[0], 16384);
             if !re { got += n; }
             else if re == .Closed { break; }
             t += 1;
         }
         socket.close(c2);   // mid-stream disconnect
         t = 0;
-        while t < 20000 and srv.in_flight() > 0 {
+        while t < 20000 and srv.inFlight() > 0 {
             srv.tick(1) catch {};
             t += 1;
         }
 
         // ── case 4: the single worker survived the aborted stream ─────
-        c3 := dial_port(PORT);
+        c3 := dialPort(PORT);
         if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r4 := read_response(*srv, c3, rbuf, cap);
+        sendAll(*srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r4 := readResponse(*srv, c3, rbuf, cap);
         resp4 := string{ ptr = rbuf, len = r4 };
         if !contains(resp4, "pong") { print("case4: worker pinned — no pong\n"); failed = 1; }
         socket.close(c3);
@@ -320,9 +320,9 @@ main :: () -> i32 {
         // closing flag makes the late registration abort the pump; close()
         // must return, never join a feeder blocked forever on a full
         // channel.
-        c5 := dial_port(PORT);
+        c5 := dialPort(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
+        sendAll(*srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
         t = 0;
         while t < 50 {   // dispatch lands; the worker sleeps 300 ms
             srv.tick(1) catch {};
@@ -333,11 +333,11 @@ main :: () -> i32 {
         socket.close(c5);
 
         // ── the producer must have run OFF the loop thread ────────────
-        if obs.prod_tid == 0 { print("producer never ran\n"); failed = 1; }
-        if obs.prod_tid == obs.main_tid { print("producer ran ON the loop thread\n"); failed = 1; }
+        if obs.prodTid == 0 { print("producer never ran\n"); failed = 1; }
+        if obs.prodTid == obs.mainTid { print("producer ran ON the loop thread\n"); failed = 1; }
 
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

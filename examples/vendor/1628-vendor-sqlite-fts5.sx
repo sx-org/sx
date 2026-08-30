@@ -7,27 +7,27 @@ Hit :: struct {
 }
 
 // The default rank is bm25; more-negative scores rank first.
-match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
+matchHits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
     st := try db.prepare("SELECT rowid, bm25(docs) FROM docs WHERE docs MATCH ?1 ORDER BY rank");
     defer st.finalize();
-    try st.bind_text(1, query);
+    try st.bindText(1, query);
     n : i64 = 0;
     while n < out.len {
         rc := try st.step();
         if rc != sq.SQLITE_ROW { break; }
-        out[n] = Hit{ rowid = st.column_int64(0), score = st.column_double(1) };
+        out[n] = Hit{ rowid = st.columnInt64(0), score = st.columnDouble(1) };
         n += 1;
     }
     return n;
 }
 
-match_title :: (db: *sq.Sqlite, query: string) -> (string, !) {
+matchTitle :: (db: *sq.Sqlite, query: string) -> (string, !) {
     st := try db.prepare("SELECT title FROM docs WHERE docs MATCH ?1");
     defer st.finalize();
-    try st.bind_text(1, query);
+    try st.bindText(1, query);
     rc := try st.step();
     if rc != sq.SQLITE_ROW { return ""; }
-    return st.column_text(0);
+    return st.columnText(0);
 }
 
 main :: () -> i32 {
@@ -46,7 +46,7 @@ main :: () -> i32 {
         return 1;
     };
 
-    title := match_title(*db, "amalgamation") catch { print("title query failed: {}\n", db.errmsg()); return 1; };
+    title := matchTitle(*db, "amalgamation") catch { print("title query failed: {}\n", db.errmsg()); return 1; };
     if title != "vendored sqlite" {
         print("unexpected match for 'amalgamation': {}\n", title);
         return 1;
@@ -54,7 +54,7 @@ main :: () -> i32 {
     print("match 'amalgamation': {}\n", title);
 
     hits : [4]Hit = ---;
-    n := match_hits(*db, "text", hits[..]) catch { print("ranked query failed: {}\n", db.errmsg()); return 1; };
+    n := matchHits(*db, "text", hits[..]) catch { print("ranked query failed: {}\n", db.errmsg()); return 1; };
     if n != 2 {
         print("unexpected hit count for 'text': {}\n", n);
         return 1;
@@ -62,9 +62,9 @@ main :: () -> i32 {
     print("match 'text': {} rows, top rowid {}\n", n, hits[0].rowid);
     print("bm25 negative and best first: {}\n", hits[0].score < 0.0 and hits[0].score <= hits[1].score);
 
-    miss := match_hits(*db, "monomorphization", hits[..]) catch { print("miss query failed: {}\n", db.errmsg()); return 1; };
+    miss := matchHits(*db, "monomorphization", hits[..]) catch { print("miss query failed: {}\n", db.errmsg()); return 1; };
     print("rows for an absent term: {}\n", miss);
 
-    print("vendored sqlite {} fts5 ok\n", sq.sqlite_version());
+    print("vendored sqlite {} fts5 ok\n", sq.sqliteVersion());
     0
 }

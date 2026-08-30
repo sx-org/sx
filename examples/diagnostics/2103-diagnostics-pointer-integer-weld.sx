@@ -27,17 +27,17 @@ main :: () -> i32 {
     q : *Obj = m;
     c : cstring = 5;
 
-    wrong_target : i64 = p.(*void);
+    wrongTarget : i64 = p.(*void);
     number : i64 = 5;
-    wrong_pointer : *Obj = number.(u64);
+    wrongPointer : *Obj = number.(u64);
 
-    maybe_p : ?*Obj = p;
-    maybe_number : i64 = maybe_p;
-    maybe_arg := take(maybe_p);
+    maybeP : ?*Obj = p;
+    maybeNumber : i64 = maybeP;
+    maybeArg := take(maybeP);
 
-    explicit_xx : i64 = xx p;
-    explicit_postfix : i64 = p.(i64);
+    explicitXx : i64 = xx p;
+    explicitPostfix : i64 = p.(i64);
 
-    print("{} {} {} {} {} {} {} {} {} {}\n", n, r, q == null, c == null, wrong_target, wrong_pointer == null, maybe_number, maybe_arg, explicit_xx, explicit_postfix);
+    print("{} {} {} {} {} {} {} {} {} {}\n", n, r, q == null, c == null, wrongTarget, wrongPointer == null, maybeNumber, maybeArg, explicitXx, explicitPostfix);
     0
 }

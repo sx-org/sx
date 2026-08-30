@@ -54,8 +54,8 @@ pub const CoercionResolver = struct {
         array_to_slice, // [N]T → []T (materialize backing storage + header)
         slice_len_convert, // @Slice(T,A) → @Slice(T,B) (rebuild the header on B's length word)
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
-        string_to_cstring, // literal-only implicit; other strings need to_cstring
-        cstring_to_string_reject, // explicit from_cstring required (diagnostic)
+        string_to_cstring, // literal-only implicit; other strings need toCstring
+        cstring_to_string_reject, // explicit fromCstring required (diagnostic)
         error_set_retype, // error set → error set, tags legal in the destination
         none, // nothing applies — pass the value through
     };
@@ -250,14 +250,14 @@ pub const CoercionResolver = struct {
         reerase_protocol, // both are interfaces → one row of the target's conformance table
         reerase_protocol_wrap, // dst is ?Q, both interfaces → the same row, answered as an optional
         protocol_to_pointer, // src is a protocol, dst is a pointer → recover ctx
-        protocol_to_raw, // src is a protocol, dst is @Protocol → build {ctx, type_id} field-wise
-        protocol_to_any, // src is a protocol, dst is any → the {ctx, type_id} prefix view
+        protocol_to_raw, // src is a protocol, dst is @Protocol → build {ctx, typeId} field-wise
+        protocol_to_any, // src is a protocol, dst is any → the {ctx, typeId} prefix view
         coerce, // built-in ladder + user `Into` fallback
     };
 
     /// Is `dst_ty` the `@Protocol` view — the declared contract struct
     /// with a pointer field "ctx" and a `Type` field
-    /// "type_id"? Name AND shape gate the modeled protocol→raw conversion
+    /// "typeId"? Name AND shape gate the modeled protocol→raw conversion
     /// together, so an unrelated same-named user struct with a different
     /// shape can never hijack it (and an identical one converts soundly by
     /// construction).
@@ -271,12 +271,12 @@ pub const CoercionResolver = struct {
         if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[0].name), "ctx")) return false;
         const fty = st.fields[0].ty;
         if (fty.isBuiltin() or self.l.module.types.get(fty) != .pointer) return false;
-        if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[1].name), "type_id")) return false;
+        if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[1].name), "typeId")) return false;
         return st.fields[1].ty == .type_value;
     }
 
     /// Is `dst_ty` the `@Any` view — the declared contract struct with
-    /// a pointer field "data" and a `Type` field "type_id"? Same
+    /// a pointer field "data" and a `Type` field "typeId"? Same
     /// name-AND-shape gate as `isProtocolViewDst`. Consulted ONLY by the
     /// POSTFIX arm (`av.(@Any)` is the raw-view retrieval): `xx av`
     /// keeps its unbox meaning for EVERY target, @Any included — the
@@ -292,7 +292,7 @@ pub const CoercionResolver = struct {
         if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[0].name), "data")) return false;
         const fty = st.fields[0].ty;
         if (fty.isBuiltin() or self.l.module.types.get(fty) != .pointer) return false;
-        if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[1].name), "type_id")) return false;
+        if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[1].name), "typeId")) return false;
         return st.fields[1].ty == .type_value;
     }
 
@@ -326,7 +326,7 @@ pub const CoercionResolver = struct {
             self.l.module.types.get(dst_ty) == .pointer) return .protocol_to_pointer;
         if (self.l.getProtocolInfo(src_ty) != null and self.isProtocolViewDst(dst_ty)) return .protocol_to_raw;
         // Protocol → any (explicit): the CONCRETE view — {data = ctx,
-        // type_id} read straight off the value's prefix.
+        // typeId} read straight off the value's prefix.
         // The IMPLICIT boxing of a protocol value (`av : any = s`) is
         // untouched: it still boxes the protocol value itself.
         if (self.l.getProtocolInfo(src_ty) != null and dst_ty == .any) return .protocol_to_any;

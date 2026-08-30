@@ -1,5 +1,5 @@
 // `@ObjcCall` inside an
-// `inline if OS == .ios { ... }` arm cross-compiles cleanly to
+// `inline if @host.os == .ios { ... }` arm cross-compiles cleanly to
 // Android. The comptime gate strips the arm BEFORE the
 // `objc_msg_send` lowering runs, so no call to `@objc_msgSend` /
 // `@sel_registerName` — symbols absent from Bionic + libGLESv3 —
@@ -7,7 +7,7 @@
 //
 // On macOS the iOS arm is also stripped (the host is not iOS) so the
 // runtime test just prints "host stripped both", proving the
-// `inline match OS` form works around `@ObjcCall`
+// `inline match @host.os` form works around `@ObjcCall`
 // sites the same way it does elsewhere.
 
 @import "modules/std.sx";
@@ -15,11 +15,11 @@
 
 // Empty stub class — Android cross-compile requires a `main = true`
 // declaration to satisfy the entry-point check. This file is testing
-// `inline if OS` gating around `@ObjcCall`, not Activity wiring.
+// `inline if @host.os` gating around `@ObjcCall`, not Activity wiring.
 SxObjcOsGateStub :: @JniClass("co/swipelab/sxobjcosgate/SxObjcOsGateStub", main = true) {}
 
 main :: () -> i32 {
-    inline match OS {
+    inline match @host.os {
         case .ios: {
             // Stripped on macOS + Android. Compiled on iOS / ios-sim.
             @ObjcCall(void, null, "init");

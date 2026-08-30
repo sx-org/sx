@@ -5,7 +5,7 @@
 // into it provokes an RST, and that RST DISCARDS the FIN's queued EOF. So the
 // same fact — "the peer had already closed, the request never executed" —
 // reaches the client as either a clean 0 or an ECONNRESET depending purely on
-// which lands first. `recv_on` reports both as `SockErr.Closed`, which is the
+// which lands first. `recvOn` reports both as `SockErr.Closed`, which is the
 // class `ClientPool.hop` retries on, so the pool's transparent redial fires
 // either way.
 //
@@ -25,13 +25,13 @@ main :: () -> i32 {
     if lfd < 0 { print("listener socket failed\n"); return 1; }
     one : i32 = 1;
     socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
-    addr := socket.sockaddr_in(PORT, 0x0100007F);
+    addr := socket.sockaddrIn(PORT, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
 
     // Blocking loopback connect completes against the listen queue with no
     // accept yet, so this stays single-threaded.
-    opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 2000 };
+    opts : http.ClientOpts = .{ connectTimeoutMs = 2000, ioTimeoutMs = 2000 };
     c, oe := http.Client.open("127.0.0.1", PORT, opts);
     if oe { print("open failed\n"); return 2; }
 
@@ -39,19 +39,19 @@ main :: () -> i32 {
     if afd < 0 { print("accept failed\n"); return 3; }
 
     // The request lands in afd's receive queue and is never read.
-    se := http.Client.send_on(*c, "GET", "/hello", "127.0.0.1", "", "");
-    if se { print("send_on failed\n"); return 4; }
+    se := http.Client.sendOn(*c, "GET", "/hello", "127.0.0.1", "", "");
+    if se { print("sendOn failed\n"); return 4; }
 
     // Let it arrive, then close with it unread → RST rather than FIN.
-    sleep_ms(100);
+    sleepMs(100);
     socket.close(afd);
-    sleep_ms(100);
+    sleepMs(100);
 
     buf : [4096]u8 = ---;
-    r, re := http.Client.recv_on(*c, *buf[0], 4096);
+    r, re := http.Client.recvOn(*c, *buf[0], 4096);
     _ := r;
     if !re {
-        print("FAIL: recv_on returned a response from a reset conn\n");
+        print("FAIL: recvOn returned a response from a reset conn\n");
         return 5;
     }
     if re != .Closed {
@@ -61,7 +61,7 @@ main :: () -> i32 {
         return 6;
     }
 
-    http.Client.close_conn(*c);
+    http.Client.closeConn(*c);
     socket.close(lfd);
     print("reset before any byte classified as Closed (retryable)\n");
     return 0;
@@ -70,6 +70,6 @@ main :: () -> i32 {
 clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
-sleep_ms :: (ms: i64) {
+sleepMs :: (ms: i64) {
     usleep(ms * 1000);
 }

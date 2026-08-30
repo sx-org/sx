@@ -1,7 +1,7 @@
 // A bound `$T: Type` forwards into another generic's type-arg slot:
 // `outer($T) { inner(T); }` monomorphizes `inner` with the enclosing
 // binding — composing exactly like an already-working folded type expression
-// (`inner(struct_field_type(T, i))`). Covers direct forwarding, forwarding
+// (`inner(structFieldType(T, i))`). Covers direct forwarding, forwarding
 // into a RECURSIVE comptime walk, and a generic-struct construction from
 // the forwarded param.
 @import "modules/std.sx";
@@ -12,12 +12,12 @@ inner :: ($T: Type) -> i64 { @sizeOf(T) }
 outer :: ($T: Type, v: T) -> i64 { inner(T) }
 
 // Recursive comptime walk over a forwarded param (the TrivialState shape).
-count_leaves :: ($T: Type) -> i64 {
+countLeaves :: ($T: Type) -> i64 {
     n := 0;
     inline match T {
         case struct: {
-            inline for i in 0..struct_field_count(T) {
-                n += count_leaves(struct_field_type(T, i));
+            inline for i in 0..structFieldCount(T) {
+                n += countLeaves(structFieldType(T, i));
             }
         }
         else: { n = 1; }
@@ -25,7 +25,7 @@ count_leaves :: ($T: Type) -> i64 {
     n
 }
 
-walk :: ($T: Type, v: T) -> i64 { count_leaves(T) }
+walk :: ($T: Type, v: T) -> i64 { countLeaves(T) }
 
 Pair :: struct { a: i64; b: f32; }
 Nested :: struct { p: Pair; flag: bool; }

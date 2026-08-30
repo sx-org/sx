@@ -13,36 +13,36 @@ Tracker :: struct {
     deallocs: i64;
 }
 impl Allocator for Tracker {
-    alloc_bytes :: (self: *Tracker, size: i64) -> *void {
+    allocBytes :: (self: *Tracker, size: i64) -> *void {
         self.allocs += 1;
-        c.libc_malloc(size)
+        c.libcMalloc(size)
     }
-    dealloc_bytes :: (self: *Tracker, ptr: *void) {
+    deallocBytes :: (self: *Tracker, ptr: *void) {
         self.deallocs += 1;
-        c.libc_free(ptr);
+        c.libcFree(ptr);
     }
 }
 
 CountA :: struct { n: i64; }
 impl Allocator for CountA {
-    alloc_bytes :: (self: *CountA, size: i64) -> *void { self.n += 1; c.libc_malloc(size) }
-    dealloc_bytes :: (self: *CountA, ptr: *void) { c.libc_free(ptr); }
+    allocBytes :: (self: *CountA, size: i64) -> *void { self.n += 1; c.libcMalloc(size) }
+    deallocBytes :: (self: *CountA, ptr: *void) { c.libcFree(ptr); }
 }
 
 poke :: (a: Allocator) {
-    p := a.alloc_bytes(8);
-    a.dealloc_bytes(p);
+    p := a.allocBytes(8);
+    a.deallocBytes(p);
 }
 
-gen_poke :: (s: $P, a: Allocator) {
-    p := a.alloc_bytes(8);
-    a.dealloc_bytes(p);
+genPoke :: (s: $P, a: Allocator) {
+    p := a.allocBytes(8);
+    a.deallocBytes(p);
     _ = s;
 }
 
 // $T-DEPENDENT params keep their (target-less) behavior — only concrete
 // annotations supply targets.
-gen_id :: (x: $T) -> T { x }
+genId :: (x: $T) -> T { x }
 
 main :: () {
     amb := CountA{ n = 0 };
@@ -57,7 +57,7 @@ main :: () {
     // generic call: borrows identically — no ambient copy
     t2 := Tracker{ allocs = 0, deallocs = 0 };
     push .{ allocator = amb } {
-        gen_poke(1, xx t2);
+        genPoke(1, xx t2);
     }
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
@@ -72,7 +72,7 @@ main :: () {
     print("no fund: {}/{} size {}\n", t3.allocs, t3.deallocs, s.size());
 
     // generic $T param unaffected
-    print("id: {}\n", gen_id(42));
+    print("id: {}\n", genId(42));
 }
 
 Sizable :: interface { size :: (self: *Self) -> i64; }

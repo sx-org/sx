@@ -156,7 +156,7 @@ pub const Root = struct {
 ///   `compiler` library binds via `abi(.zig)`.
 /// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
 ///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
-///   Covers the compiler-API surface (`intern`/`find_type`/`build_options`/… —
+///   Covers the compiler-API surface (`rawIntern`/`rawFindType`/`buildOptions`/… —
 ///   bodiless decls whose Zig/VM handler is the impl) AND user compiler-domain
 ///   functions like post-link callbacks (bodied, but emit-skipped). The ABI alone
 ///   marks it — there is no `extern <lib>` and no fake `@library "compiler"`.
@@ -763,16 +763,16 @@ pub const ComptimeExpr = struct {
     expr: *Node,
 };
 
-/// `@error("message")` — a compile-time diagnostic. When it survives the
-/// comptime-conditional flatten pass into live decls (e.g. the taken arm of an
-/// `inline match OS { ... }` is an unsupported-target `else`), the flatten pass
+/// `@error("message")` — a compile-time diagnostic. When it survives
+/// module-scope expansion into live decls (e.g. the taken arm of an
+/// `inline match @host.os { ... }` is an unsupported-target `else`), expansion
 /// emits `message` as an error and drops the node. In a non-taken arm it is
 /// pruned before it can fire.
 pub const ErrorDirective = struct {
     message: []const u8,
 };
 
-/// `@context_extend name: Type = default;` — a top-level directive declaring a
+/// `@context.extend name: Type = default;` — a top-level directive declaring a
 /// field the program's assembled Context carries (design/context-extension.md).
 /// It declares no module-scope name (`declName` is null): the field lives in the
 /// program-global Context namespace, collected across all modules.

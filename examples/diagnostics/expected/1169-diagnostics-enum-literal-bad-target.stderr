@@ -1,4 +1,4 @@
-error: 'nonexistent' is not a variant of 'Platform' (variants are: ios, android_apk)
+error: 'nonexistent' is not a variant of 'Platform' (variants are: ios, androidApk)
   --> examples/diagnostics/1169-diagnostics-enum-literal-bad-target.sx:10:20
    |
 10 |     a : Platform = .nonexistent;   // unknown variant: lists the real ones

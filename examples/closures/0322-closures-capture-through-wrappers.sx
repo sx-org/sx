@@ -15,19 +15,19 @@ put   :: (s: Shape) { print("area {}\n", s.area()); }
 named :: (a: f32 = 0.0, b: f32 = 0.0) { print("named {} {}\n", a, b); }
 block :: (x: f32, body: $F/() -> void) { print("block {}\n", x); body(); }
 
-erase_in_closure :: (side: f32) {
+eraseInClosure :: (side: f32) {
     run(||_{ side = side } { box := Box{ w = side }; put(box.(Shape)); });
 }
 
-named_arg_in_closure :: (side: f32) {
+namedArgInClosure :: (side: f32) {
     run(||_{ side = side } { named(b = side); });
 }
 
-trailing_block_in_closure :: (side: f32) {
+trailingBlockInClosure :: (side: f32) {
     run(||_{ side = side } { block(1.0) { ||_{ side = side } print("inner {}\n", side); }; });
 }
 
-all_at_once :: (side: f32) {
+allAtOnce :: (side: f32) {
     run(||_{ side = side } {
         for i in 0..2 {
             n := i;
@@ -40,8 +40,8 @@ all_at_once :: (side: f32) {
 }
 
 main :: () {
-    erase_in_closure(7.0);
-    named_arg_in_closure(5.0);
-    trailing_block_in_closure(6.0);
-    all_at_once(10.0);
+    eraseInClosure(7.0);
+    namedArgInClosure(5.0);
+    trailingBlockInClosure(6.0);
+    allAtOnce(10.0);
 }

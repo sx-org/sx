@@ -58,89 +58,89 @@ forwards :: () -> !Failed {
 }
 
 // An arrow body is the same tail (the parser normalises `=> expr` to a block).
-forwards_arrow :: () -> !Failed => fails();
+forwardsArrow :: () -> !Failed => fails();
 
 // ── The discarded tails ────────────────────────────────────────────────
 
 // An erased protocol handle is a tail like any other: built, then dropped.
-erase_tail :: () -> !Failed {
+eraseTail :: () -> !Failed {
     lab := Label{ text = "hi" };
     lab.(Drawable);
 }
 
 // The tail's EFFECT still happens; only its value is dropped.
-effect_tail :: () -> !Failed {
+effectTail :: () -> !Failed {
     tick("with-semi");
 }
 
 // The same tail without the terminator.
-effect_tail_no_semi :: () -> !Failed {
+effectTailNoSemi :: () -> !Failed {
     tick("no-semi")
 }
 
 // An arrow body, same rule.
-effect_arrow :: () -> !Failed => tick("arrow");
+effectArrow :: () -> !Failed => tick("arrow");
 
 // 8-byte and aggregate tails — a tag is 4 bytes, and neither is one.
-wide_tail :: () -> !Failed {
+wideTail :: () -> !Failed {
     tick64("wide")
 }
 
-string_tail :: () -> !Failed {
+stringTail :: () -> !Failed {
     name("string")
 }
 
 // A typed ordinary enum tail is evaluated and discarded; it is not a
 // contextual error literal.
-enum_tail :: () -> !Failed {
+enumTail :: () -> !Failed {
     c := Colour.green;
     c
 }
 
 // A compound, value-less block.
-compound_tail :: () -> !Failed {
+compoundTail :: () -> !Failed {
     { x := tick("compound"); }
 }
 
 // A void call, and a no-`else` guard `if`.
-void_tail :: () -> !Failed {
+voidTail :: () -> !Failed {
     nothing("void-tail")
 }
 
-guard_tail :: (n: i32) -> !Failed {
+guardTail :: (n: i32) -> !Failed {
     if n > 0 {
         print("guard {}\n", n);
     }
 }
 
 // No tail at all.
-empty_tail :: () -> !Failed {
+emptyTail :: () -> !Failed {
     print("empty\n");
     x := 1;
 }
 
 // The typeless placeholders: neither is ever an error value.
-undef_tail :: () -> !Failed {
+undefTail :: () -> !Failed {
     ---
 }
 
-null_tail :: () -> !Failed {
+nullTail :: () -> !Failed {
     null
 }
 
 // A tail whose type is only known once the prefix has bound it: the tail is
 // classified after the prefix runs, so it reads the LOCAL, not an outer name.
-prefix_error :: () -> !Failed {
+prefixError :: () -> !Failed {
     e : Failed = .Nope;
     e
 }
 
-prefix_call :: () -> !Failed {
+prefixCall :: () -> !Failed {
     e := fails();
     e
 }
 
-prefix_value :: () -> !Failed {
+prefixValue :: () -> !Failed {
     v := tick("prefix");
     v
 }
@@ -148,22 +148,22 @@ prefix_value :: () -> !Failed {
 // Mixed live arms, BOTH orders — the error arm returns the tag, the ordinary
 // arm is discarded and the function succeeds. Neither arm decides the other's
 // fate, so neither order welds a value into the tag or swallows the error.
-if_err_first :: (b: bool) -> !Failed {
+ifErrFirst :: (b: bool) -> !Failed {
     if b { fails() } else { tick("if-err-first") }
 }
 
-if_val_first :: (b: bool) -> !Failed {
+ifValFirst :: (b: bool) -> !Failed {
     if b { tick("if-val-first") } else { fails() }
 }
 
-match_err_first :: (n: i32) -> !Failed {
+matchErrFirst :: (n: i32) -> !Failed {
     match n {
         case 0: fails();
         else:   tick("match-err-first");
     }
 }
 
-match_val_first :: (n: i32) -> !Failed {
+matchValFirst :: (n: i32) -> !Failed {
     match n {
         case 0: tick("match-val-first");
         else:   fails();
@@ -172,61 +172,61 @@ match_val_first :: (n: i32) -> !Failed {
 
 // Defers unwind before the exit on BOTH paths — an implicit error tail is a
 // `return <error>;` and runs them exactly like one.
-defer_success :: () -> !Failed {
+deferSuccess :: () -> !Failed {
     defer print("defer success\n");
     tick("defer-success")
 }
 
-defer_error :: () -> !Failed {
+deferError :: () -> !Failed {
     defer print("defer error\n");
     fails()
 }
 
-defer_mixed :: (b: bool) -> !Failed {
+deferMixed :: (b: bool) -> !Failed {
     defer print("defer mixed\n");
     if b { fails() } else { tick("defer-mixed") }
 }
 
 main :: () -> i32 {
     // Cold `catch`: every discarded tail took the success exit.
-    erase_tail() catch { print("NOT REACHED erase\n"); };
-    effect_tail() catch { print("NOT REACHED effect\n"); };
-    effect_tail_no_semi() catch { print("NOT REACHED no-semi\n"); };
-    effect_arrow() catch { print("NOT REACHED arrow\n"); };
-    wide_tail() catch { print("NOT REACHED wide\n"); };
-    string_tail() catch { print("NOT REACHED string\n"); };
-    enum_tail() catch { print("NOT REACHED enum\n"); };
-    compound_tail() catch { print("NOT REACHED compound\n"); };
-    void_tail() catch { print("NOT REACHED void\n"); };
-    guard_tail(1) catch { print("NOT REACHED guard\n"); };
-    empty_tail() catch { print("NOT REACHED empty\n"); };
-    undef_tail() catch { print("NOT REACHED undef\n"); };
-    null_tail() catch { print("NOT REACHED null\n"); };
-    prefix_value() catch { print("NOT REACHED prefix\n"); };
-    if_err_first(false) catch { print("NOT REACHED if-err-first\n"); };
-    if_val_first(true) catch { print("NOT REACHED if-val-first\n"); };
-    match_err_first(1) catch { print("NOT REACHED match-err-first\n"); };
-    match_val_first(0) catch { print("NOT REACHED match-val-first\n"); };
-    defer_success() catch { print("NOT REACHED defer-success\n"); };
-    defer_mixed(false) catch { print("NOT REACHED defer-mixed\n"); };
+    eraseTail() catch { print("NOT REACHED erase\n"); };
+    effectTail() catch { print("NOT REACHED effect\n"); };
+    effectTailNoSemi() catch { print("NOT REACHED no-semi\n"); };
+    effectArrow() catch { print("NOT REACHED arrow\n"); };
+    wideTail() catch { print("NOT REACHED wide\n"); };
+    stringTail() catch { print("NOT REACHED string\n"); };
+    enumTail() catch { print("NOT REACHED enum\n"); };
+    compoundTail() catch { print("NOT REACHED compound\n"); };
+    voidTail() catch { print("NOT REACHED void\n"); };
+    guardTail(1) catch { print("NOT REACHED guard\n"); };
+    emptyTail() catch { print("NOT REACHED empty\n"); };
+    undefTail() catch { print("NOT REACHED undef\n"); };
+    nullTail() catch { print("NOT REACHED null\n"); };
+    prefixValue() catch { print("NOT REACHED prefix\n"); };
+    ifErrFirst(false) catch { print("NOT REACHED if-err-first\n"); };
+    ifValFirst(true) catch { print("NOT REACHED if-val-first\n"); };
+    matchErrFirst(1) catch { print("NOT REACHED match-err-first\n"); };
+    matchValFirst(0) catch { print("NOT REACHED match-val-first\n"); };
+    deferSuccess() catch { print("NOT REACHED defer-success\n"); };
+    deferMixed(false) catch { print("NOT REACHED defer-mixed\n"); };
 
     // Hot `catch`: the error tails reached the caller through the channel.
     fails() catch { print("caught fails\n"); };
     forwards() catch { print("caught forwards\n"); };
-    forwards_arrow() catch { print("caught arrow\n"); };
-    prefix_error() catch { print("caught prefix\n"); };
-    prefix_call() catch { print("caught prefix-call\n"); };
-    if_err_first(true) catch { print("caught if-err-first\n"); };
-    if_val_first(false) catch { print("caught if-val-first\n"); };
-    match_err_first(0) catch { print("caught match-err-first\n"); };
-    match_val_first(1) catch { print("caught match-val-first\n"); };
-    defer_error() catch { print("caught defer-error\n"); };
-    defer_mixed(true) catch { print("caught defer-mixed\n"); };
+    forwardsArrow() catch { print("caught arrow\n"); };
+    prefixError() catch { print("caught prefix\n"); };
+    prefixCall() catch { print("caught prefix-call\n"); };
+    ifErrFirst(true) catch { print("caught if-err-first\n"); };
+    ifValFirst(false) catch { print("caught if-val-first\n"); };
+    matchErrFirst(0) catch { print("caught match-err-first\n"); };
+    matchValFirst(1) catch { print("caught match-val-first\n"); };
+    deferError() catch { print("caught defer-error\n"); };
+    deferMixed(true) catch { print("caught defer-mixed\n"); };
 
     // The same rows read as VALUES: only the error tails carry a tag.
-    a := erase_tail();
-    b := effect_tail();
-    c := effect_tail_no_semi();
+    a := eraseTail();
+    b := effectTail();
+    c := effectTailNoSemi();
     d := fails();
     r : i32 = 0;
     if a == .Nope { r = r + 1; }

@@ -1,0 +1,5 @@
+error: field 'type_id' not found on type '@Any'
+  --> examples/diagnostics/2261-diagnostics-contract-field-spelling.sx:8:19
+   |
+ 8 |     print("{}\n", av.(@Any).type_id == i64);
+   |                   ^^^^^^^^^^^^^^^^^

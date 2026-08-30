@@ -15,7 +15,7 @@ BoxI :: Box (i64);
 bump :: (p: * i64) { p.* = p.* + 1; }
 
 // a pack index is an index like any other, in an expression as in a type
-first_type :: (..$args) -> string => @typeName($args [0]);
+firstType :: (..$args) -> string => @typeName($args [0]);
 
 // `else :` heads the default arm; the gap before the `:` says nothing
 kind :: (v: i64) -> string {
@@ -32,7 +32,7 @@ main :: () -> i32 {
     xs : [3]i64 = .[10, 20, 30];
     print("call={} {}\n", double(21), double (21));
     print("index={} {}\n", xs[1], xs [1]);
-    print("packindex={}\n", first_type(1, true));
+    print("packindex={}\n", firstType(1, true));
 
     // a type application in an annotation and in a construction
     b : Box (i64) = Box (i64){ v = 7 };

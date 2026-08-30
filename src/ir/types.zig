@@ -275,7 +275,7 @@ pub const TypeInfo = union(enum) {
         /// Non-null makes this an `@Init(T)` type (spec §5): a deferred
         /// construction recipe whose operations are `write(dest: *T)` — re-run
         /// on each call — and `site()`. Its representation IS the
-        /// `{fn_ptr, env}` closure pair — `params = [*T]`, `ret = void` — so
+        /// `{fnPtr, env}` closure pair — `params = [*T]`, `ret = void` — so
         /// layout, codegen, and the indirect-call path are shared verbatim; the
         /// marker keeps the type DISTINCT from an ordinary `Closure(*T)` (so
         /// neither converts to the other) and is what the operations key on.
@@ -1084,7 +1084,7 @@ pub const TypeTable = struct {
     }
 
     /// Byte offset of member `idx` inside a value of type `id` — the single
-    /// source of truth behind `struct_field_offset` (static fold, the runtime
+    /// source of truth behind `structFieldOffset` (static fold, the runtime
     /// `__sx_field_offset_ptrs` tables, and the VM's `rt_field_offset`), so
     /// the three can never drift. Struct members use the same aligned
     /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
@@ -1154,7 +1154,7 @@ pub const TypeTable = struct {
     /// tagged union declares one (custom values, flags, explicit tags), else
     /// its ordinal. Null for a non-variant type, a negative / out-of-range
     /// `idx`, or an out-of-range id. The single value source behind
-    /// `variant_value` (static fold, the runtime `__sx_member_value_ptrs`
+    /// `variantValue` (static fold, the runtime `__sx_member_value_ptrs`
     /// tables, and the VM's `rt_variant_value`), so the three can never
     /// drift. Backs the `type_field_value` reader too.
     pub fn memberValue(self: *const TypeTable, id: TypeId, idx: i64) ?i64 {
@@ -1425,7 +1425,7 @@ pub const TypeTable = struct {
     }
 
     /// The `@Init(target)` implementor minted for formation site `site`
-    /// (nonzero). Shares the closure representation: `{fn_ptr, env}` calling
+    /// (nonzero). Shares the closure representation: `{fnPtr, env}` calling
     /// `(dest: *target)`, so the site costs no storage.
     pub fn initImplementorType(self: *TypeTable, target: TypeId, site: u32) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, &.{self.ptrTo(target)}) catch unreachable;
@@ -1700,7 +1700,7 @@ pub const TypeTable = struct {
             .string => 16, // {ptr, len}
             .cstring => 8, // one pointer
             .pointer, .many_pointer, .function => 8,
-            .closure => 16, // {fn_ptr, env}
+            .closure => 16, // {fnPtr, env}
             .optional => |opt| blk: {
                 if (self.optionalIsSentinel(opt.child)) break :blk self.sizeOf(opt.child);
                 // Discriminated form: payload + has_value flag (8-aligned).
@@ -1739,7 +1739,7 @@ pub const TypeTable = struct {
                 return 8;
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
-            .protocol => 24, // {ctx, type_id, vtable}
+            .protocol => 24, // {ctx, typeId, vtable}
             .@"error" => |es| @intCast((4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3)),
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
             // Comptime-only: a pack must be expanded to flat positional args
@@ -1800,7 +1800,7 @@ pub const TypeTable = struct {
                 const a = @max(ptr_size, la);
                 break :blk (end + a - 1) & ~(a - 1);
             },
-            .closure => 2 * ptr_size, // {fn_ptr, env_ptr}
+            .closure => 2 * ptr_size, // {fnPtr, env_ptr}
             .optional => |o| blk: {
                 if (self.optionalIsSentinel(o.child)) break :blk self.typeSizeBytes(o.child);
                 const cs = self.typeSizeBytes(o.child);
@@ -1872,7 +1872,7 @@ pub const TypeTable = struct {
                 break :blk if (offset == 0) 0 else (offset + max_a - 1) & ~(max_a - 1);
             },
             .any => 2 * ptr_size, // {type_tag, data_ptr}
-            .protocol => 3 * ptr_size, // {ctx, type_id, vtable}
+            .protocol => 3 * ptr_size, // {ctx, typeId, vtable}
             // The payload area aligns to 1, so the tag word alone pads the tail.
             .@"error" => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
             .@"enum" => |e| {

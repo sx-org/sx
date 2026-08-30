@@ -6,7 +6,7 @@
 //
 // An LLVM `valueToLLVMConst` that handles int/float/bool only and drops
 // everything else into `LLVMConstNull` emits `{0, 0}` for a global like
-// `POINT :: @run make_point();` regardless of what the interp computed,
+// `POINT :: @run makePoint();` regardless of what the interp computed,
 // so reading POINT.x gives 0 and hides the loss.
 //
 // Also exercises type inference at the `NAME :: @run expr;` binding site:
@@ -18,11 +18,11 @@ Point :: struct {
     y: i32;
 }
 
-make_point :: () -> Point {
+makePoint :: () -> Point {
     return Point{ x = 7, y = 13 };
 }
 
-POINT :: @run make_point();
+POINT :: @run makePoint();
 
 main :: () -> i32 {
     print("POINT.x = {}\n", POINT.x);

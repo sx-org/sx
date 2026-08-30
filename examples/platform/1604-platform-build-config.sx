@@ -2,32 +2,31 @@
 @import "modules/build.sx";
 
 // --- @run build configuration ---
-// build_options() returns a BuildOptions struct at compile time.
-// Methods on it (add_link_flag, set_output_path) are compiler builtins
+// buildOptions() returns a BuildOptions struct at compile time.
+// Methods on it (addLinkFlag, setOutputPath) are compiler builtins
 // that configure the build without runtime cost.
 
-configure_build :: () {
-    opts := build_options();
+configureBuild :: () {
+    opts := buildOptions();
     // These calls are intercepted by the compiler at compile time.
     // On a normal (non-wasm) target, inline if gates them off.
-    inline if OS == .wasm {
-        opts.set_output_path(".sx-tmp/1604-platform-build-config/test.html");
-        opts.add_link_flag("-sUSE_SDL=3");
+    inline if @host.os == .wasm {
+        opts.setOutputPath(".sx-tmp/1604-platform-build-config/test.html");
+        opts.addLinkFlag("-sUSE_SDL=3");
     }
 }
-@run configure_build();
+@run configureBuild();
 
 // --- inline if with compiler constants ---
 
 main :: () {
-    // Verify @run configure_build() executed without error
+    // Verify @run configureBuild() executed without error
     print("build config: ok\n");
 
     // Verify compiler constants are available
-    print("pointer size: {}\n", POINTER_SIZE);
+    print("pointer size: {}\n", @host.pointerSize);
 
-    // Verify inline if with OS/ARCH works
-    inline match OS {
+    inline match @host.os {
         case .macos: { print("os: macos\n"); }
         case .linux: { print("os: linux\n"); }
         case .windows: { print("os: windows\n"); }
@@ -35,11 +34,10 @@ main :: () {
         else: { print("os: unknown\n"); }
     }
 
-    // Verify POINTER_SIZE is usable in inline if
-    inline if POINTER_SIZE == 8 {
+    inline if @host.pointerSize == 8 {
         print("64-bit platform\n");
     }
-    inline if POINTER_SIZE == 4 {
+    inline if @host.pointerSize == 4 {
         print("32-bit platform\n");
     }
 }

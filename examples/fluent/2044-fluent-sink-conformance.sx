@@ -66,7 +66,7 @@ collect :: (content: $B/@BuildBlock(Drawable)) -> List(Drawable) {
 
 // One block, three sinks: `run` is monomorphized per sink, so the same body is
 // replayed into each.
-three_ways :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+threeWays :: (content: $B/@BuildBlock(Drawable)) -> i32 {
     member := Member{};
     content.run(*member);
     concrete := Concrete{};
@@ -75,7 +75,7 @@ three_ways :: (content: $B/@BuildBlock(Drawable)) -> i32 {
 }
 
 main :: () -> i32 {
-    print("counted {}\n", three_ways() {
+    print("counted {}\n", threeWays() {
         Label{ text = "a" };
         Dot{ n = 1 };
     });

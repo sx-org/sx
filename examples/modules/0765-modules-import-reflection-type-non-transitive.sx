@@ -7,7 +7,7 @@
 // is rejected with a "type ... is not visible; @import the module that declares
 // it" diagnostic, BEFORE the global type table can resolve it.
 //
-// `b.sx` ↔ `c.sx` together still compile: `b_sizes` / `b_arr` resolve `Nums` /
+// `b.sx` ↔ `c.sx` together still compile: `bSizes` / `bArr` resolve `Nums` /
 // `COnly` because b.sx directly imports c.sx (one flat hop there, two from a
 // file that imports b.sx).
 //

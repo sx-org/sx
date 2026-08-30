@@ -3,7 +3,7 @@
 // must each bind main's own `Box`; disjoint field sets make a wrong binding fail.
 Box :: struct { a: i32; }
 
-dep_box :: () -> i32 {
+depBox :: () -> i32 {
     b : Box = ---;
     b.a = 99;
     return b.a;

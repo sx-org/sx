@@ -1,7 +1,7 @@
 // GLES3 backend for the GPU protocol, on Android.
 //
 // We use opengl.sx's runtime-loaded function-pointer variables for every
-// GL call, populated via `load_gl(@eglGetProcAddress)` in `init()`.
+// GL call, populated via `loadGl(@eglGetProcAddress)` in `init()`.
 // `extern` decls for the same names would collide with opengl.sx's
 // global variables and silently win — that produces NULL function-
 // pointer calls (PC=0 crash) because the variables are uninitialized.
@@ -10,11 +10,11 @@
 //   - One shared VAO with the renderer's fixed 16-float layout
 //     (pos2 / uv2 / color4 / params4 / stroke4 = 64 bytes, attribute
 //     locations 0-4).
-//     `set_vertex_buffer` rebinds the VBO against this VAO each time.
-//   - `set_vertex_constants(slot=1, data, 64)` is treated as the 4x4
+//     `setVertexBuffer` rebinds the VBO against this VAO each time.
+//   - `setVertexConstants(slot=1, data, 64)` is treated as the 4x4
 //     projection matrix and uploaded via `glUniformMatrix4fv(uProj)`,
 //     matching the renderer.sx shader contract. Other slots are no-ops.
-//   - `set_texture(slot=0, tex)` binds texture unit 0 and sets
+//   - `setTexture(slot=0, tex)` binds texture unit 0 and sets
 //     `uniform sampler2D uTex` to 0. Other slots are no-ops.
 //   - The skinned shader takes the bone palette as
 //     `uniform vec4 uBones[240]`. Bone `i` is the three rows
@@ -22,7 +22,7 @@
 //     dotting each row against `vec4(position, 1.0)`. 240 rows is
 //     `GPU_MAX_BONES * 3`; with the projection matrix's 4 vectors it
 //     stays under the 256 vertex uniform vectors GLES3 guarantees.
-//   - The shader sources passed to `create_shader(vsrc, fsrc)` must be
+//   - The shader sources passed to `createShader(vsrc, fsrc)` must be
 //     a GLES vertex + fragment pair (NOT the Metal MSL combined source
 //     the Metal backend takes — caller branches on OS).
 
@@ -44,40 +44,40 @@ eglGetProcAddress :: (name: cstring) -> *void abi(.c) extern;
 
 Gles3TextureSlot :: struct {
     tex: u32 = 0;
-    bytes_per_pixel: u32 = 0;
+    bytesPerPixel: u32 = 0;
 }
 
 Gles3ShaderSlot :: struct {
     program: u32 = 0;
-    proj_loc: i32 = 0 - 1;
-    tex_loc:  i32 = 0 - 1;
-    tint_loc: i32 = 0 - 1;
-    bones_loc: i32 = 0 - 1;
+    projLoc: i32 = 0 - 1;
+    texLoc:  i32 = 0 - 1;
+    tintLoc: i32 = 0 - 1;
+    bonesLoc: i32 = 0 - 1;
 }
 
 Gles3Gpu :: struct {
-    pixel_w: i32 = 0;
-    pixel_h: i32 = 0;
+    pixelW: i32 = 0;
+    pixelH: i32 = 0;
 
     // The renderer's vertex layout is fixed (see file header). One VAO,
-    // reused across every set_vertex_buffer.
+    // reused across every setVertexBuffer.
     vao: u32 = 0;
-    // MeshVertex layout for draw_indexed, kept apart from `vao` so the
+    // MeshVertex layout for drawIndexed, kept apart from `vao` so the
     // two attribute configurations never overwrite each other.
-    mesh_vao: u32 = 0;
-    // SkinnedVertex layout for draw_skinned, apart from both so the
+    meshVao: u32 = 0;
+    // SkinnedVertex layout for drawSkinned, apart from both so the
     // three attribute configurations never overwrite each other.
-    skin_vao: u32 = 0;
+    skinVao: u32 = 0;
 
-    current_shader: u32 = 0;
-    current_vbo: u32 = 0;
-    current_ibo: u32 = 0;
-    depth_mode: DepthMode = .disabled;
-    gl_loaded: bool = false;
+    currentShader: u32 = 0;
+    currentVbo: u32 = 0;
+    currentIbo: u32 = 0;
+    depthMode: DepthMode = .disabled;
+    glLoaded: bool = false;
 
-    // Only the first `bone_count` matrices carry a live transform.
-    bone_palette: [GPU_MAX_BONES]BoneMatrix = ---;
-    bone_count: i32 = 0;
+    // Only the first `boneCount` matrices carry a live transform.
+    bonePalette: [GPU_MAX_BONES]BoneMatrix = ---;
+    boneCount: i32 = 0;
 
     shaders:  List(Gles3ShaderSlot)  = .{};
     buffers:  List(u32)              = .{};
@@ -88,35 +88,35 @@ Gles3Gpu :: struct {
     // lists through the long-lived allocator, even when a caller (e.g.
     // glyph_cache atlas-grow during render) is currently inside a transient
     // arena context.
-    parent_allocator: Allocator = ---;
+    parentAllocator: Allocator = ---;
 }
 
 // ── GPU impl ───────────────────────────────────────────────────────────
 
 impl GPU for Gles3Gpu {
     // EGL is owned by AndroidPlatform; init() here populates the GL
-    // function pointers (via opengl.sx's load_gl) and sets up the
+    // function pointers (via opengl.sx's loadGl) and sets up the
     // single shared VAO. Must be called once the EGL context is
-    // current (AndroidPlatform.run_frame_loop ensures this before
+    // current (AndroidPlatform.runFrameLoop ensures this before
     // invoking the user's per-frame closure). `target` is unused.
-    init :: (self: *Gles3Gpu, target: *void, pixel_w: i32, pixel_h: i32) -> bool {
-        inline if OS != .android { return false; }
-        self.pixel_w = pixel_w;
-        self.pixel_h = pixel_h;
-        self.parent_allocator = context.allocator;
+    init :: (self: *Gles3Gpu, target: *void, pixelW: i32, pixelH: i32) -> bool {
+        inline if @host.os != .android { return false; }
+        self.pixelW = pixelW;
+        self.pixelH = pixelH;
+        self.parentAllocator = context.allocator;
 
-        if !self.gl_loaded {
-            load_gl(eglGetProcAddress);
-            self.gl_loaded = true;
+        if !self.glLoaded {
+            loadGl(eglGetProcAddress);
+            self.glLoaded = true;
         }
 
-        // Create the VAO. Attribute layout is deferred to set_vertex_buffer
+        // Create the VAO. Attribute layout is deferred to setVertexBuffer
         // because `glVertexAttribPointer` captures the currently-bound
         // GL_ARRAY_BUFFER into the VAO state — we don't know which VBO
-        // the renderer wants until it tells us via set_vertex_buffer.
+        // the renderer wants until it tells us via setVertexBuffer.
         glGenVertexArrays(1, *self.vao);
-        glGenVertexArrays(1, *self.mesh_vao);
-        glGenVertexArrays(1, *self.skin_vao);
+        glGenVertexArrays(1, *self.meshVao);
+        glGenVertexArrays(1, *self.skinVao);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -129,119 +129,119 @@ impl GPU for Gles3Gpu {
         // happens when the NativeActivity tears down).
     }
 
-    resize :: (self: *Gles3Gpu, pixel_w: i32, pixel_h: i32) {
-        self.pixel_w = pixel_w;
-        self.pixel_h = pixel_h;
+    resize :: (self: *Gles3Gpu, pixelW: i32, pixelH: i32) {
+        self.pixelW = pixelW;
+        self.pixelH = pixelH;
     }
 
     // The render-target setup (eglMakeCurrent + glViewport) lives in
-    // AndroidPlatform.run_frame_loop; begin_frame here just clears the
+    // AndroidPlatform.runFrameLoop; beginFrame here just clears the
     // active framebuffer. Returns true so callers don't bail out.
-    begin_frame :: (self: *Gles3Gpu, clear: ClearColor) -> bool {
-        inline if OS != .android { return false; }
-        glViewport(0, 0, self.pixel_w, self.pixel_h);
+    beginFrame :: (self: *Gles3Gpu, clear: ClearColor) -> bool {
+        inline if @host.os != .android { return false; }
+        glViewport(0, 0, self.pixelW, self.pixelH);
         glClearColor(clear.r, clear.g, clear.b, clear.a);
         // glClear honours the depth write mask, so the mask must be open
         // for the clear even when the mode leaves it closed for draws.
         glDepthMask(GL_TRUE);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        gles3_apply_depth_mode(self);
+        gles3ApplyDepthMode(self);
         true
     }
 
-    // eglSwapBuffers happens in AndroidPlatform.end_frame; nothing for us.
-    end_frame :: (self: *Gles3Gpu, target_time: f64) { }
+    // eglSwapBuffers happens in AndroidPlatform.endFrame; nothing for us.
+    endFrame :: (self: *Gles3Gpu, targetTime: f64) { }
 
     // ── Resources ────────────────────────────────────────────────────────
 
-    create_shader :: (self: *Gles3Gpu, vsrc: string, fsrc: string) -> ShaderHandle {
-        inline if OS != .android { return 0; }
+    createShader :: (self: *Gles3Gpu, vsrc: string, fsrc: string) -> ShaderHandle {
+        inline if @host.os != .android { return 0; }
 
-        prog := create_program(vsrc, fsrc);
+        prog := createProgram(vsrc, fsrc);
         if prog == 0 { return 0; }
         slot : Gles3ShaderSlot = .{
             program = prog,
-            proj_loc = glGetUniformLocation(prog, "uProj".ptr),
-            tex_loc  = glGetUniformLocation(prog, "uTex".ptr),
-            tint_loc = glGetUniformLocation(prog, "uTint".ptr),
-            bones_loc = glGetUniformLocation(prog, "uBones".ptr),
+            projLoc = glGetUniformLocation(prog, "uProj".ptr),
+            texLoc  = glGetUniformLocation(prog, "uTex".ptr),
+            tintLoc = glGetUniformLocation(prog, "uTint".ptr),
+            bonesLoc = glGetUniformLocation(prog, "uBones".ptr),
         };
-        self.shaders.append(slot, self.parent_allocator);
+        self.shaders.append(slot, self.parentAllocator);
         self.shaders.len
     }
 
-    create_buffer :: (self: *Gles3Gpu, size_bytes: i64) -> BufferHandle {
-        inline if OS != .android { return 0; }
-        if size_bytes <= 0 { return 0; }
+    createBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> BufferHandle {
+        inline if @host.os != .android { return 0; }
+        if sizeBytes <= 0 { return 0; }
         b : u32 = 0;
         glGenBuffers(1, *b);
         glBindBuffer(GL_ARRAY_BUFFER, b);
-        glBufferData(GL_ARRAY_BUFFER, size_bytes, null, GL_DYNAMIC_DRAW);
-        self.buffers.append(b, self.parent_allocator);
+        glBufferData(GL_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
+        self.buffers.append(b, self.parentAllocator);
         self.buffers.len
     }
 
-    create_index_buffer :: (self: *Gles3Gpu, size_bytes: i64) -> IndexHandle {
-        inline if OS != .android { return 0; }
-        if size_bytes <= 0 { return 0; }
+    createIndexBuffer :: (self: *Gles3Gpu, sizeBytes: i64) -> IndexHandle {
+        inline if @host.os != .android { return 0; }
+        if sizeBytes <= 0 { return 0; }
         b : u32 = 0;
         glGenBuffers(1, *b);
         // The GL_ELEMENT_ARRAY_BUFFER binding is VAO state; scope every
-        // element-buffer touch to mesh_vao so `vao` keeps its own.
-        glBindVertexArray(self.mesh_vao);
+        // element-buffer touch to meshVao so `vao` keeps its own.
+        glBindVertexArray(self.meshVao);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, b);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, size_bytes, null, GL_DYNAMIC_DRAW);
-        self.indices.append(b, self.parent_allocator);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeBytes, null, GL_DYNAMIC_DRAW);
+        self.indices.append(b, self.parentAllocator);
         self.indices.len
     }
 
-    update_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_index(self, handle);
+    updateIndexBuffer :: (self: *Gles3Gpu, handle: IndexHandle, data: *void, sizeBytes: i64) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupIndex(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
-        if size_bytes <= 0 { return; }
-        glBindVertexArray(self.mesh_vao);
+        if sizeBytes <= 0 { return; }
+        glBindVertexArray(self.meshVao);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buf);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, size_bytes, data);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeBytes, data);
     }
 
-    update_buffer :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_buffer(self, handle);
+    updateBuffer :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, sizeBytes: i64) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupBuffer(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
-        if size_bytes <= 0 { return; }
+        if sizeBytes <= 0 { return; }
         glBindBuffer(GL_ARRAY_BUFFER, buf);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, size_bytes, data);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeBytes, data);
     }
 
-    update_buffer_at :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, size_bytes: i64, byte_offset: i64) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_buffer(self, handle);
+    updateBufferAt :: (self: *Gles3Gpu, handle: BufferHandle, data: *void, sizeBytes: i64, byteOffset: i64) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupBuffer(self, handle);
         if buf == 0 { return; }
         if data == null { return; }
-        if size_bytes <= 0 { return; }
-        if byte_offset < 0 { return; }
+        if sizeBytes <= 0 { return; }
+        if byteOffset < 0 { return; }
         glBindBuffer(GL_ARRAY_BUFFER, buf);
-        glBufferSubData(GL_ARRAY_BUFFER, byte_offset, size_bytes, data);
+        glBufferSubData(GL_ARRAY_BUFFER, byteOffset, sizeBytes, data);
     }
 
-    create_texture :: (self: *Gles3Gpu, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle {
-        inline if OS != .android { return 0; }
+    createTexture :: (self: *Gles3Gpu, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle {
+        inline if @host.os != .android { return 0; }
         if w <= 0 { return 0; }
         if h <= 0 { return 0; }
 
-        internal_fmt : i32 = 0;
-        ext_fmt : u32 = 0;
+        internalFmt : i32 = 0;
+        extFmt : u32 = 0;
         bpp : u32 = 0;
         if format == .rgba8 {
-            internal_fmt = GL_RGBA;
-            ext_fmt = GL_RGBA;
+            internalFmt = GL_RGBA;
+            extFmt = GL_RGBA;
             bpp = 4;
         } else {
-            internal_fmt = GL_R8;
-            ext_fmt = GL_RED;
+            internalFmt = GL_R8;
+            extFmt = GL_RED;
             bpp = 1;
         }
 
@@ -249,19 +249,19 @@ impl GPU for Gles3Gpu {
         glGenTextures(1, *t);
         glBindTexture(GL_TEXTURE_2D, t);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, internal_fmt, w, h, 0, ext_fmt, GL_UNSIGNED_BYTE, pixels);
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFmt, w, h, 0, extFmt, GL_UNSIGNED_BYTE, pixels);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        slot : Gles3TextureSlot = .{ tex = t, bytes_per_pixel = bpp };
-        self.textures.append(slot, self.parent_allocator);
+        slot : Gles3TextureSlot = .{ tex = t, bytesPerPixel = bpp };
+        self.textures.append(slot, self.parentAllocator);
         self.textures.len
     }
 
-    update_texture_region :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
-        inline if OS != .android { return; }
+    updateTextureRegion :: (self: *Gles3Gpu, handle: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
+        inline if @host.os != .android { return; }
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
         if h64 > self.textures.len { return; }
@@ -270,36 +270,36 @@ impl GPU for Gles3Gpu {
         if pixels == null { return; }
         if w <= 0 { return; }
         if h <= 0 { return; }
-        ext_fmt : u32 = if slot.bytes_per_pixel == 4 then GL_RGBA else GL_RED;
+        extFmt : u32 = if slot.bytesPerPixel == 4 then GL_RGBA else GL_RED;
         glBindTexture(GL_TEXTURE_2D, slot.tex);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, ext_fmt, GL_UNSIGNED_BYTE, pixels);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, extFmt, GL_UNSIGNED_BYTE, pixels);
     }
 
     // A no-op on Android: opengl.sx's loader carries no glDeleteProgram,
     // and programs free on EGL context teardown.
-    destroy_shader  :: (self: *Gles3Gpu, sh:  ShaderHandle) { }
+    destroyShader  :: (self: *Gles3Gpu, sh:  ShaderHandle) { }
 
-    destroy_buffer  :: (self: *Gles3Gpu, handle: BufferHandle) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_buffer(self, handle);
+    destroyBuffer  :: (self: *Gles3Gpu, handle: BufferHandle) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupBuffer(self, handle);
         if buf == 0 { return; }
-        if self.current_vbo == buf { self.current_vbo = 0; }
+        if self.currentVbo == buf { self.currentVbo = 0; }
         glDeleteBuffers(1, *buf);
         self.buffers.items[handle - 1] = 0;
     }
 
-    destroy_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_index(self, handle);
+    destroyIndexBuffer :: (self: *Gles3Gpu, handle: IndexHandle) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupIndex(self, handle);
         if buf == 0 { return; }
-        if self.current_ibo == buf { self.current_ibo = 0; }
+        if self.currentIbo == buf { self.currentIbo = 0; }
         glDeleteBuffers(1, *buf);
         self.indices.items[handle - 1] = 0;
     }
 
-    destroy_texture :: (self: *Gles3Gpu, tex: TextureHandle) {
-        inline if OS != .android { return; }
+    destroyTexture :: (self: *Gles3Gpu, tex: TextureHandle) {
+        inline if @host.os != .android { return; }
         if tex == 0 { return; }
         h64 : i64 = tex.(i64);
         if h64 > self.textures.len { return; }
@@ -311,22 +311,22 @@ impl GPU for Gles3Gpu {
 
     // ── Per-draw state ───────────────────────────────────────────────────
 
-    set_shader :: (self: *Gles3Gpu, handle: ShaderHandle) {
-        inline if OS != .android { return; }
+    setShader :: (self: *Gles3Gpu, handle: ShaderHandle) {
+        inline if @host.os != .android { return; }
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
         if h64 > self.shaders.len { return; }
         prog := self.shaders.items[handle - 1].program;
         if prog == 0 { return; }
         glUseProgram(prog);
-        self.current_shader = handle;
+        self.currentShader = handle;
     }
 
-    set_vertex_buffer :: (self: *Gles3Gpu, handle: BufferHandle) {
-        inline if OS != .android { return; }
-        buf := gles3_lookup_buffer(self, handle);
+    setVertexBuffer :: (self: *Gles3Gpu, handle: BufferHandle) {
+        inline if @host.os != .android { return; }
+        buf := gles3LookupBuffer(self, handle);
         if buf == 0 { return; }
-        self.current_vbo = buf;
+        self.currentVbo = buf;
         glBindVertexArray(self.vao);
         glBindBuffer(GL_ARRAY_BUFFER, buf);
         // glVertexAttribPointer captures the currently-bound
@@ -345,13 +345,13 @@ impl GPU for Gles3Gpu {
         glEnableVertexAttribArray(4);
     }
 
-    set_index_buffer :: (self: *Gles3Gpu, handle: IndexHandle) {
-        inline if OS != .android { return; }
-        self.current_ibo = gles3_lookup_index(self, handle);
+    setIndexBuffer :: (self: *Gles3Gpu, handle: IndexHandle) {
+        inline if @host.os != .android { return; }
+        self.currentIbo = gles3LookupIndex(self, handle);
     }
 
-    set_texture :: (self: *Gles3Gpu, slot: u32, handle: TextureHandle) {
-        inline if OS != .android { return; }
+    setTexture :: (self: *Gles3Gpu, slot: u32, handle: TextureHandle) {
+        inline if @host.os != .android { return; }
         if slot != 0 { return; } // renderer only uses unit 0
         if handle == 0 { return; }
         h64 : i64 = handle.(i64);
@@ -360,10 +360,10 @@ impl GPU for Gles3Gpu {
         if t == 0 { return; }
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, t);
-        if self.current_shader != 0 {
-            cs64 : i64 = self.current_shader.(i64);
+        if self.currentShader != 0 {
+            cs64 : i64 = self.currentShader.(i64);
             if cs64 <= self.shaders.len {
-                loc := self.shaders.items[self.current_shader - 1].tex_loc;
+                loc := self.shaders.items[self.currentShader - 1].texLoc;
                 if loc >= 0 { glUniform1i(loc, 0); }
             }
         }
@@ -372,65 +372,65 @@ impl GPU for Gles3Gpu {
     // Slot 1 + 64 bytes is the 4x4 projection matrix into `uniform mat4
     // uProj`; slot 2 + 16 bytes is the mesh tint into `uniform vec4 uTint`.
     // Look up via the current shader's cached uniform locations.
-    set_vertex_constants :: (self: *Gles3Gpu, slot: u32, data: *void, size_bytes: i64) {
-        inline if OS != .android { return; }
-        if self.current_shader == 0 { return; }
-        cs64 : i64 = self.current_shader.(i64);
+    setVertexConstants :: (self: *Gles3Gpu, slot: u32, data: *void, sizeBytes: i64) {
+        inline if @host.os != .android { return; }
+        if self.currentShader == 0 { return; }
+        cs64 : i64 = self.currentShader.(i64);
         if cs64 > self.shaders.len { return; }
-        shader := *self.shaders.items[self.current_shader - 1];
+        shader := *self.shaders.items[self.currentShader - 1];
 
-        if slot == 1 and size_bytes == 64 {
-            if shader.proj_loc < 0 { return; }
-            glUniformMatrix4fv(shader.proj_loc, 1, 0, data);
-        } else if slot == 2 and size_bytes == 16 {
-            if shader.tint_loc < 0 { return; }
-            glUniform4fv(shader.tint_loc, 1, data);
+        if slot == 1 and sizeBytes == 64 {
+            if shader.projLoc < 0 { return; }
+            glUniformMatrix4fv(shader.projLoc, 1, 0, data);
+        } else if slot == 2 and sizeBytes == 16 {
+            if shader.tintLoc < 0 { return; }
+            glUniform4fv(shader.tintLoc, 1, data);
         }
     }
 
-    set_scissor :: (self: *Gles3Gpu, x: i32, y: i32, w: i32, h: i32) {
-        inline if OS != .android { return; }
+    setScissor :: (self: *Gles3Gpu, x: i32, y: i32, w: i32, h: i32) {
+        inline if @host.os != .android { return; }
         glEnable(GL_SCISSOR_TEST);
-        glScissor(x, self.pixel_h - (y + h), w, h);
+        glScissor(x, self.pixelH - (y + h), w, h);
     }
 
-    disable_scissor :: (self: *Gles3Gpu) {
-        inline if OS != .android { return; }
+    disableScissor :: (self: *Gles3Gpu) {
+        inline if @host.os != .android { return; }
         glDisable(GL_SCISSOR_TEST);
     }
 
-    set_depth_mode :: (self: *Gles3Gpu, mode: DepthMode) {
-        inline if OS != .android { return; }
-        self.depth_mode = mode;
-        gles3_apply_depth_mode(self);
+    setDepthMode :: (self: *Gles3Gpu, mode: DepthMode) {
+        inline if @host.os != .android { return; }
+        self.depthMode = mode;
+        gles3ApplyDepthMode(self);
     }
 
-    set_bone_palette :: (self: *Gles3Gpu, data: *void, count: i32) {
-        inline if OS != .android { return; }
+    setBonePalette :: (self: *Gles3Gpu, data: *void, count: i32) {
+        inline if @host.os != .android { return; }
         if data == null { return; }
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
         n : i64 = count.(i64);
-        c.memcpy(*self.bone_palette[0], data, n * @sizeOf(BoneMatrix));
-        self.bone_count = count;
+        c.memcpy(*self.bonePalette[0], data, n * @sizeOf(BoneMatrix));
+        self.boneCount = count;
     }
 
-    draw_triangles :: (self: *Gles3Gpu, vertex_offset: i32, vertex_count: i32) {
-        inline if OS != .android { return; }
-        if vertex_count <= 0 { return; }
+    drawTriangles :: (self: *Gles3Gpu, vertexOffset: i32, vertexCount: i32) {
+        inline if @host.os != .android { return; }
+        if vertexCount <= 0 { return; }
         glBindVertexArray(self.vao);
-        glDrawArrays(GL_TRIANGLES, vertex_offset, vertex_count);
+        glDrawArrays(GL_TRIANGLES, vertexOffset, vertexCount);
     }
 
-    draw_indexed :: (self: *Gles3Gpu, index_offset: i32, index_count: i32) {
-        inline if OS != .android { return; }
-        if index_count <= 0 { return; }
-        if index_offset < 0 { return; }
-        if self.current_vbo == 0 { return; }
-        if self.current_ibo == 0 { return; }
+    drawIndexed :: (self: *Gles3Gpu, indexOffset: i32, indexCount: i32) {
+        inline if @host.os != .android { return; }
+        if indexCount <= 0 { return; }
+        if indexOffset < 0 { return; }
+        if self.currentVbo == 0 { return; }
+        if self.currentIbo == 0 { return; }
 
-        glBindVertexArray(self.mesh_vao);
-        glBindBuffer(GL_ARRAY_BUFFER, self.current_vbo);
+        glBindVertexArray(self.meshVao);
+        glBindBuffer(GL_ARRAY_BUFFER, self.currentVbo);
         // MeshVertex: position at 0, normal at 12, uv at 24, stride 32.
         glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, (0).(*void));
         glEnableVertexAttribArray(0);
@@ -438,22 +438,22 @@ impl GPU for Gles3Gpu {
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(2, 2, GL_FLOAT, 0, 32, (24).(*void));
         glEnableVertexAttribArray(2);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.current_ibo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
-        byte_offset : i64 = (index_offset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, byte_offset.(*void));
+        byteOffset : i64 = (indexOffset * 4).(i64);
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, byteOffset.(*void));
     }
 
-    draw_skinned :: (self: *Gles3Gpu, index_offset: i32, index_count: i32) {
-        inline if OS != .android { return; }
-        if index_count <= 0 { return; }
-        if index_offset < 0 { return; }
-        if self.bone_count <= 0 { return; }
-        if self.current_vbo == 0 { return; }
-        if self.current_ibo == 0 { return; }
+    drawSkinned :: (self: *Gles3Gpu, indexOffset: i32, indexCount: i32) {
+        inline if @host.os != .android { return; }
+        if indexCount <= 0 { return; }
+        if indexOffset < 0 { return; }
+        if self.boneCount <= 0 { return; }
+        if self.currentVbo == 0 { return; }
+        if self.currentIbo == 0 { return; }
 
-        glBindVertexArray(self.skin_vao);
-        glBindBuffer(GL_ARRAY_BUFFER, self.current_vbo);
+        glBindVertexArray(self.skinVao);
+        glBindBuffer(GL_ARRAY_BUFFER, self.currentVbo);
         // SkinnedVertex: position at 0, normal at 12, uv at 24, joints at
         // 32, weights at 48, stride 64.
         glVertexAttribPointer(0, 3, GL_FLOAT, 0, 64, (0).(*void));
@@ -466,52 +466,52 @@ impl GPU for Gles3Gpu {
         glEnableVertexAttribArray(3);
         glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, (48).(*void));
         glEnableVertexAttribArray(4);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.current_ibo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.currentIbo);
 
-        bones_loc := gles3_bones_loc(self);
-        if bones_loc >= 0 {
-            glUniform4fv(bones_loc, 3 * self.bone_count, *self.bone_palette[0]);
+        bonesLoc := gles3BonesLoc(self);
+        if bonesLoc >= 0 {
+            glUniform4fv(bonesLoc, 3 * self.boneCount, *self.bonePalette[0]);
         }
 
-        byte_offset : i64 = (index_offset * 4).(i64);
-        glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, byte_offset.(*void));
+        byteOffset : i64 = (indexOffset * 4).(i64);
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, byteOffset.(*void));
     }
 }
 
-gles3_apply_depth_mode :: (self: *Gles3Gpu) {
-    inline if OS != .android { return; }
-    if self.depth_mode == .disabled {
+gles3ApplyDepthMode :: (self: *Gles3Gpu) {
+    inline if @host.os != .android { return; }
+    if self.depthMode == .disabled {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         return;
     }
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
-    if self.depth_mode == .less {
+    if self.depthMode == .less {
         glDepthFunc(GL_LESS);
     } else {
         glDepthFunc(GL_LEQUAL);
     }
 }
 
-gles3_bones_loc :: (self: *Gles3Gpu) -> i32 {
-    inline if OS != .android { return 0 - 1; }
-    if self.current_shader == 0 { return 0 - 1; }
-    cs64 : i64 = self.current_shader.(i64);
+gles3BonesLoc :: (self: *Gles3Gpu) -> i32 {
+    inline if @host.os != .android { return 0 - 1; }
+    if self.currentShader == 0 { return 0 - 1; }
+    cs64 : i64 = self.currentShader.(i64);
     if cs64 > self.shaders.len { return 0 - 1; }
-    self.shaders.items[self.current_shader - 1].bones_loc
+    self.shaders.items[self.currentShader - 1].bonesLoc
 }
 
-gles3_lookup_buffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
-    inline if OS != .android { return 0; }
+gles3LookupBuffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
+    inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
     h64 : i64 = handle.(i64);
     if h64 > self.buffers.len { return 0; }
     self.buffers.items[handle - 1]
 }
 
-gles3_lookup_index :: (self: *Gles3Gpu, handle: u32) -> u32 {
-    inline if OS != .android { return 0; }
+gles3LookupIndex :: (self: *Gles3Gpu, handle: u32) -> u32 {
+    inline if @host.os != .android { return 0; }
     if handle == 0 { return 0; }
     h64 : i64 = handle.(i64);
     if h64 > self.indices.len { return 0; }

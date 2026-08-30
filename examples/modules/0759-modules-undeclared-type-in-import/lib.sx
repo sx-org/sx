@@ -7,7 +7,7 @@ Thing :: struct {
     y: Coordnate;
 }
 
-make_thing :: () -> i32 {
+makeThing :: () -> i32 {
     t : Thing = ---;
     t.x = 42;
     return t.x;

@@ -11,13 +11,13 @@ NSObject :: @ObjcClass("NSObject") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         a := NSObject.alloc().init();
         if a != null {
             print("extern-class dispatch ok\n");
         }
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("extern-class dispatch ok\n");
     }
     0

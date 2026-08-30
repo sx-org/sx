@@ -117,8 +117,8 @@ combine :: (a: i32, b: i32) -> (sum: i32 = 0, good: bool) {
 Positional first, then `name = value` in any order. A block after a call is the last parameter as a closure literal: `f(args) { body }` ≡ `f(args, content = || { body })`. The last parameter takes it when it is `$F/(…) -> R` or `@BuildBlock(P)`.
 
 ```sx
-scaffold(content = chat_list);
-scaffold(top_bar = toolbar) { chat_list(); };
+scaffold(content = chatList);
+scaffold(topBar = toolbar) { chatList(); };
 each(items) { |item| text(item.name); };
 each(items) { |item|_{ pad } text(item.name, pad); };
 vstack(8.0) { text("hello"); }.padded();
@@ -152,7 +152,7 @@ val := x ?? 0;
 forced := x?!;
 if v := x { print("{}\n", v); }
 name := node?.name ?? "unknown";
-if n != null { take_i32(n); }    // narrowed; a bare `take_i32(n)` is an error
+if n != null { takeI32(n); }    // narrowed; a bare `takeI32(n)` is an error
 ```
 
 `@using` composes structs. Methods live in the body.
@@ -161,7 +161,7 @@ if n != null { take_i32(n); }    // narrowed; a bare `take_i32(n)` is an error
 
 ```sx
 max :: (a: $T, b: T) -> T { if a > b then a else b; }
-are_equal :: ($T: Type/Eq, a: T, b: T) -> bool { a.eq(b); }
+areEqual :: ($T: Type/Eq, a: T, b: T) -> bool { a.eq(b); }
 
 List :: struct ($T: Type) {
     items: []T = .[];
@@ -173,13 +173,13 @@ List :: struct ($T: Type) {
 
 apply :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }
 
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
-add5 := make_adder(5);
+makeAdder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
+add5 := makeAdder(5);
 
 boxed :: (n: i64) -> Closure(i64) -> i64 { return closure(|x|_{ n } x + n); }
 ```
 
-A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fn_ptr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
+A `|…|` literal IS its env struct. The body sees its parameters, its locals, and module-level names; enclosing locals only through `_{ … }`, by value. Copies fork; `*$F/(…) -> R` shares. `Closure` is the erased `{ fnPtr, env }`: function pointers and empty-env literals promote to it with a null env, and a capturing one gets there through `closure(f, alloc = context.allocator)`, which `free(cl)` / `free(cl, alloc)` releases. A nominal is callable through `impl (i64) -> i64 for T { call :: … }`.
 
 ### Constraints and interfaces
 
@@ -190,12 +190,12 @@ Drawable :: interface {
 impl Drawable for Circle {
     draw :: (self: *Circle, x: i32, y: i32) { … }
 }
-shape : Drawable = my_circle;
+shape : Drawable = myCircle;
 shape.draw(10, 20);
 ```
 
 - `constraint`: bounds only, no runtime value.
-- `interface`: an erased `{ctx, type_id, vtable}` handle, dynamic dispatch. `type_of(shape)` is the concrete type.
+- `interface`: an erased `{ctx, typeId, vtable}` handle, dynamic dispatch. `@typeOf(shape)` is the concrete type.
 - A handle borrows its referent: copies alias it, nothing owns it, and `free` refuses one.
 - An interface-typed target coerces an lvalue in place, a `*T` to its pointee, or copies an existing handle; a concrete rvalue is a compile error. `a.make(v)` writes the value into allocated storage.
 - `Self` past the receiver belongs to a `constraint` — bind through `$T/Eq`.
@@ -227,7 +227,7 @@ match shape {
 match av {
     case i64: |v| print("int {}\n", v);
     case []u8: |b| print("{} bytes\n", b.len);
-    else: print("{}\n", @typeName(type_of(av)));
+    else: print("{}\n", @typeName(@typeOf(av)));
 }
 
 if 0 <= x <= 100 { … }
@@ -243,7 +243,7 @@ a, b = b, a;
 
 ```sx
 FIBONACCI_10 :: @run fib(10);
-@insert @run generate_lookup_table();
+@insert @run generateLookupTable();
 
 libc :: @library "c";
 printf :: (fmt: [:0]u8, args: ..any) -> i32 extern libc;
@@ -290,20 +290,20 @@ main :: () {
     list.append(42);
     list.deinit();
 }
-push .{ allocator = my_arena } { do_work(); }
+push .{ allocator = myArena } { doWork(); }
 
-@context_extend logger: ?*Logger = null;
-push .{ logger = *my_logger } { serve(); }
+@context.extend logger: ?*Logger = null;
+push .{ logger = *myLogger } { serve(); }
 ```
 
-`Context` is assembled from every `@context_extend`. Defaults are required and comptime.
+`Context` is assembled from every `@context.extend`. Defaults are required and comptime.
 
 ## Quick Sort Example
 
 ```sx
 @import "modules/std.sx";
 
-quick_sort :: (items: []$T) {
+quickSort :: (items: []$T) {
     partition :: (items: []T, lo: i64, hi: i64) -> i64 {
         pivot := items[hi];
         i := lo - 1;
@@ -331,14 +331,14 @@ quick_sort :: (items: []$T) {
 
 main :: () {
     arr : []i64 = .[333, 2, 3, 5, 2, 2, 3, 4, 5, 6, 6, 1];
-    quick_sort(arr);
+    quickSort(arr);
     print("{}\n", arr);
 }
 ```
 
 ## Runtime Reflection
 
-`Type` is a runtime tag (`type_of(x)`). `@sizeOf` / `@typeInfo` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `@typeEq` ask identity.
+`Type` is a runtime tag (`@typeOf(x)`). `@sizeOf` / `@typeInfo` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `@typeEq` ask identity.
 
 ```sx
 describe :: (tp: Type) {
@@ -348,21 +348,21 @@ describe :: (tp: Type) {
         else: {}
     }
 }
-describe(type_of(av));
-print_any(pkt);   // walk with struct_field_value / any_element — no copies
+describe(@typeOf(av));
+printAny(pkt);   // walk with structFieldValue / anyElement — no copies
 ```
 
-`xx av` is an unchecked load. `==` on `any` is an error — unbox or compare `type_of`.
+`xx av` is an unchecked load. `==` on `any` is an error — unbox or compare `@typeOf`.
 
 ## Standard Library
 
-`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `@sizeOf` / field reflection.
+`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `@typeOf` / `@sizeOf` / field reflection.
 
-**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
+**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
 
-**Volatile** — `@volatile_load(T, addr)` / `@volatile_store(T, addr, v)` from `core.sx`. Not atomic.
+**Volatile** — `@volatileLoad(T, addr)` / `@volatileStore(T, addr, v)` from `core.sx`. Not atomic.
 
-**C-variadic** — a trailing `..` on an `abi(.c)` / `extern` / `export` signature. Read with `@VaList` / `@va_start` / `@va_arg` / `@va_end` / `@va_copy`. Promotions apply (`f32` → `f64`). See specs.
+**C-variadic** — a trailing `..` on an `abi(.c)` / `extern` / `export` signature. Read with `@VaList` / `@vaStart` / `@vaArg` / `@vaEnd` / `@vaCopy`. Promotions apply (`f32` → `f64`). See specs.
 
 **Async** — `context.io.async` / `await` / `sleep`. Default `Io` is blocking. A `Scheduler` as `context.io` is fibers (aarch64, M:1):
 
@@ -384,7 +384,7 @@ main :: () {
 
 `await` parks the current fiber, so the coordinator is `s.spawn`ed.
 
-**CLI** — `modules/std/cli.sx`: `os_args`, `parse`, `EX_OK` / `EX_USAGE`.
+**CLI** — `modules/std/cli.sx`: `osArgs`, `parse`, `EX_OK` / `EX_USAGE`.
 
 ## Cross-Compilation
 

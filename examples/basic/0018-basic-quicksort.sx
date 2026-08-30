@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-quick_sort :: (items: []$T) {
+quickSort :: (items: []$T) {
     partition :: (items: []T, lo: i64, hi: i64) -> i64 {
         pivot := items[hi];
         i := lo - 1;
@@ -30,6 +30,6 @@ quick_sort :: (items: []$T) {
 
 main :: () {
     arr : []i64 = .[333, 2, 3, 5, 2, 2, 3, 4, 5, 6, 6, 1];
-    quick_sort(arr);
+    quickSort(arr);
     print("{}\n", arr);
 }

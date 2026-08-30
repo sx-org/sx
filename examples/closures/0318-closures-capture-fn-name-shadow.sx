@@ -20,20 +20,20 @@ mutate :: () -> i64 {
 }
 
 // 2. Param shadow, captured by value.
-add_one :: (out: i64) -> i64 {
+addOne :: (out: i64) -> i64 {
     c := ||_{ out = out } out + 1;
     c()
 }
 
 // 3. No shadow: the closure calls the REAL prelude fn `out` (unchanged).
-call_real :: () {
+callReal :: () {
     c := || { out("real-out\n"); };
     c();
 }
 
 main :: () -> i32 {
     print("{}\n", mutate());     // 42
-    print("{}\n", add_one(41));  // 42
-    call_real();                 // real-out
+    print("{}\n", addOne(41));   // 42
+    callReal();                  // real-out
     0
 }

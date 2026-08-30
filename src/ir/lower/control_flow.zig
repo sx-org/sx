@@ -310,7 +310,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         // Condition couldn't be evaluated — fall through to runtime
     }
 
-    // Check for constant-bool conditions (e.g., is_flags(T) → false) to avoid dead-code LLVM errors
+    // Check for constant-bool conditions (e.g., isFlags(T) → false) to avoid dead-code LLVM errors
     if (self.tryConstBoolCondition(ie.condition)) |is_true| {
         if (is_true) {
             // Condition always true: only lower then-branch
@@ -590,12 +590,12 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
-                // A RUNTIME Type argument (`t := @typeOf(av); if is_flags(t)`)
+                // A RUNTIME Type argument (`t := @typeOf(av); if isFlags(t)`)
                 // cannot const-fold — bail to the normal runtime lowering
                 // (the rt table read). Folding through resolveTypeArg here
                 // both emitted a spurious "unresolved type" diagnostic and
                 // silently decided the branch.
-                if (std.mem.eql(u8, cname, "is_flags")) {
+                if (std.mem.eql(u8, cname, "isFlags")) {
                     if (c.args.len > 0) {
                         if (!self.isStaticTypeArg(c.args[0])) return null;
                         const ty = self.resolveTypeArg(c.args[0]);
@@ -1234,7 +1234,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // else: {…} }`. Concrete arms (named, builtin, and composite types) may
     // bind the typed value; category arms are tag SETS and bind nothing; arms
     // overlap first-wins with a loud unreachable-arm diagnostic.
-    // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
+    // A PROTOCOL subject type-switches through its {ctx, typeId} prefix
     // view — the scrutinee/captures are exactly the any switch's, over the
     // concrete value the protocol erases.
     if (self.getProtocolInfo(subject_ty) != null) {
@@ -1342,7 +1342,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     }
 
     // Determine if the match produces a value (has non-void arms)
-    // For type-category matches (inside any_to_string), only produce value when force_block_value
+    // For type-category matches (inside anyToString), only produce value when force_block_value
     // For regular enum/optional matches, always produce value if arms are non-void
     // Under `error_only` no merge is typed, so the ordinary arm-type
     // unification never runs: an error arm and an ordinary arm are not
@@ -1744,8 +1744,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // tag, so dispatching on it selects the silently-wrong arm; `@typeOf(a)`
     // is the correct spelling and yields `.type_value` directly).
     const tag = if (is_any_switch)
-        // The type switch dispatches on the view's type_id word (field 1,
-        // the {data, type_id} layout) — exactly what `@typeOf(av)` reads —
+        // The type switch dispatches on the view's typeId word (field 1,
+        // the {data, typeId} layout) — exactly what `@typeOf(av)` reads —
         // never on the payload.
         self.builder.structGet(subject, 1, .type_value)
     else if (is_type_match) subject else if (is_optional_match) self.builder.emit(.{ .optional_has_value = .{ .operand = subject } }, .bool) else if (is_error_set_match) subject else blk: {
@@ -1987,7 +1987,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             self.builder.switchToBlock(default_bb.?);
             if (is_type_match) {
                 // For type-category matches, unrecognized tags should skip to merge
-                // (e.g., optional types not covered by any_to_string categories)
+                // (e.g., optional types not covered by anyToString categories)
                 if (has_value_merge) {
                     const default_val = self.builder.constUndef(result_type);
                     self.builder.br(merge_bb, &.{default_val});

@@ -7,7 +7,7 @@ Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> u32;
 }
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
 unused :: (env: *void, b: *Buf) {
     push .{ jni = env } {
@@ -16,7 +16,7 @@ unused :: (env: *void, b: *Buf) {
 }
 
 main :: () -> i32 {
-    if g_should_call {
+    if gShouldCall {
         unused(null, null);
     }
     0

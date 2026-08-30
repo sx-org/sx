@@ -21,12 +21,12 @@ NSObjectAlias :: @ObjcClass("NSObject") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // id - any Obj-C instance pointer.
         nsobj : id = NSObjectAlias.alloc().init();
 
         // Class - the runtime class object.
-        ns_cls : Class = objc_getClass("NSObject".ptr);
+        nsCls : Class = objc_getClass("NSObject".ptr);
 
         // SEL - registered selector.
         sel : SEL = sel_registerName("alloc".ptr);
@@ -35,10 +35,10 @@ main :: () -> i32 {
         // BOOL - Apple's signed-char boolean. Cast the *Self into
         // a *NSObjectAlias for the method call.
         obj : *NSObjectAlias = xx nsobj;
-        flag : BOOL = obj.isKindOfClass(ns_cls);
+        flag : BOOL = obj.isKindOfClass(nsCls);
         print("isKindOfClass: {}\n", flag);  // 1 (true)
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("isKindOfClass: 1\n");  // skip — runtime not present
     }
     0

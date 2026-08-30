@@ -1,0 +1,5 @@
+error: unresolved 'OS' (in examples/diagnostics/2260-diagnostics-target-fact-name-unresolved.sx fn main)
+  --> examples/diagnostics/2260-diagnostics-target-fact-name-unresolved.sx:6:19
+   |
+ 6 |     print("{}\n", OS);
+   |                   ^^

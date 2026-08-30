@@ -44,17 +44,17 @@ take :: ufcs (value: $I/@Init(Box)) {
     value.write(*slot);
 }
 
-@context_extend ui_out: *List(View) = null;
+@context.extend uiOut: *List(View) = null;
 
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;
     value.write(*item);
-    context.ui_out.append(item);
+    context.uiOut.append(item);
 }
 
 main :: () -> i32 {
     out : List(View) = .{};
-    push .{ ui_out = *out } {
+    push .{ uiOut = *out } {
         // A member: forms, as the dot-call and the ordinary call both do.
         Label{ text = "fine" }.emit();
 

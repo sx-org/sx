@@ -27,8 +27,8 @@ main :: () -> i32 {
     n0.next = *n1;
 
     // Self-ref enum: a branch whose payload pointer derefs to a leaf.
-    leaf_node : Tree = .leaf(42);
-    root : Tree = .branch(*leaf_node);
+    leafNode : Tree = .leaf(42);
+    root : Tree = .branch(*leafNode);
 
     // Mutual-ref pair: reach B's value through A's `*B`.
     bv : B = ---;

@@ -6,16 +6,16 @@
 // Runtime: unreachable. The JNI dispatch is all indirect through
 // `*env` — no external symbol declarations — so the IR loads cleanly
 // into the host JIT, and the dereferences never execute because the
-// guarding `g_should_call` global stays false. A plain `if false`
-// would get constant-folded, taking the `unused_jni` body out of the
+// guarding `gShouldCall` global stays false. A plain `if false`
+// would get constant-folded, taking the `unusedJni` body out of the
 // IR with it; the runtime-readable global keeps the call alive so
 // the JNI lowering is visible to the IR snapshot.
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-unused_jni :: (env: *void, target: *void) {
+unusedJni :: (env: *void, target: *void) {
     push .{ jni = env } {
         @JniCall(void, env, target, "noop", "()V");
         @JniCall(void, env, target, "noop", "()V");
@@ -23,8 +23,8 @@ unused_jni :: (env: *void, target: *void) {
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        unused_jni(null, null);
+    if gShouldCall {
+        unusedJni(null, null);
     }
     print("ok\n");
     0

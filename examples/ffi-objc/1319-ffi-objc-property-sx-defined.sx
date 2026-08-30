@@ -32,7 +32,7 @@ SxBox :: @ObjcClass("SxBox") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         b := SxBox.alloc().init();
 
         // width / height round-trip through synthesized IMPs.
@@ -55,8 +55,8 @@ main :: () -> i32 {
 
         // Confirm the setter selector is absent on the class.
         cls : Class = objc_getClass("SxBox".ptr);
-        sel_set_area : SEL = sel_registerName("setArea:".ptr);
-        m := class_getInstanceMethod(cls, sel_set_area);
+        selSetArea : SEL = sel_registerName("setArea:".ptr);
+        m := class_getInstanceMethod(cls, selSetArea);
         if m != null {
             print("FAIL: setArea: should not be registered (readonly)\n");
             return 1;
@@ -64,7 +64,7 @@ main :: () -> i32 {
 
         print("property: w={} h={} area={}\n", w, h, a);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("property: w=10 h=7 area=0\n");
     }
     0

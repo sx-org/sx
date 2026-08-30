@@ -551,7 +551,7 @@ pub const Server = struct {
         }
 
         // Bare `context` identifier — the whole assembled Context in one
-        // hover (builtin prefix + every `@context_extend` field, each with
+        // hover (builtin prefix + every `@context.extend` field, each with
         // its declaring module).
         if (extractIdentAtOffset(doc.source, offset)) |name| {
             if (std.mem.eql(u8, name, "context") and findSymbolByName(sema.symbols, "context") == null) {
@@ -726,23 +726,23 @@ pub const Server = struct {
             .{ .label = "@typeName", .detail = "(T | tp: Type) -> string" },
             .{ .label = "@typeInfo", .detail = "(T | tp: Type) -> TypeInfo — kind-first reflection" },
             .{ .label = "@typeEq", .detail = "(A: Type, B: Type) -> bool" },
-            .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
-            .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
-            .{ .label = "struct_field_count", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },
-            .{ .label = "struct_field_name", .detail = "(T | tp: Type, idx: i64) -> string" },
-            .{ .label = "struct_field_type", .detail = "(T | tp: Type, idx: i64) -> Type" },
-            .{ .label = "struct_field_offset", .detail = "(T | tp: Type, idx: i64) -> i64 — byte offset" },
-            .{ .label = "struct_field_value", .detail = "(s: $T, idx: i64) -> any" },
-            .{ .label = "variant_count", .detail = "(E | tp: Type) -> i64 — enum/tagged-union variants" },
-            .{ .label = "variant_name", .detail = "(E | tp: Type, idx: i64) -> string" },
-            .{ .label = "variant_type", .detail = "(E | tp: Type, idx: i64) -> Type — payload type" },
-            .{ .label = "variant_value", .detail = "(E | tp: Type, idx: i64) -> i64 — variant's integer value" },
-            .{ .label = "variant_index", .detail = "(E | tp: Type, val: E | av: any) -> i64 — value -> ordinal" },
-            .{ .label = "variant_payload", .detail = "(u: $E, idx: i64) -> any — live payload" },
-            .{ .label = "vector_lanes", .detail = "(T | tp: Type) -> i64 — vector lane count" },
-            .{ .label = "any_element", .detail = "(av: any, elem: Type, idx: i64) -> any — array/vector element view" },
-            .{ .label = "raw_any_data", .detail = "(av: any) -> *void — the view's data pointer" },
-            .{ .label = "raw_make_any", .detail = "(tp: Type, data: *void) -> any — assemble a view (unchecked)" },
+            .{ .label = "isFlags", .detail = "(T | tp: Type) -> bool" },
+            .{ .label = "pointeeType", .detail = "($P: Type) -> Type — *X -> X" },
+            .{ .label = "structFieldCount", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },
+            .{ .label = "structFieldName", .detail = "(T | tp: Type, idx: i64) -> string" },
+            .{ .label = "structFieldType", .detail = "(T | tp: Type, idx: i64) -> Type" },
+            .{ .label = "structFieldOffset", .detail = "(T | tp: Type, idx: i64) -> i64 — byte offset" },
+            .{ .label = "structFieldValue", .detail = "(s: $T, idx: i64) -> any" },
+            .{ .label = "variantCount", .detail = "(E | tp: Type) -> i64 — enum/tagged-union variants" },
+            .{ .label = "variantName", .detail = "(E | tp: Type, idx: i64) -> string" },
+            .{ .label = "variantType", .detail = "(E | tp: Type, idx: i64) -> Type — payload type" },
+            .{ .label = "variantValue", .detail = "(E | tp: Type, idx: i64) -> i64 — variant's integer value" },
+            .{ .label = "variantIndex", .detail = "(E | tp: Type, val: E | av: any) -> i64 — value -> ordinal" },
+            .{ .label = "variantPayload", .detail = "(u: $E, idx: i64) -> any — live payload" },
+            .{ .label = "vectorLanes", .detail = "(T | tp: Type) -> i64 — vector lane count" },
+            .{ .label = "anyElement", .detail = "(av: any, elem: Type, idx: i64) -> any — array/vector element view" },
+            .{ .label = "rawAnyData", .detail = "(av: any) -> *void — the view's data pointer" },
+            .{ .label = "rawMakeAny", .detail = "(tp: Type, data: *void) -> any — assemble a view (unchecked)" },
             .{ .label = "@errorName", .detail = "(e: $T) -> string" },
             .{ .label = "@errorPayload", .detail = "(e: $T) -> any" },
             .{ .label = "@len", .detail = "(v: any) -> i64 — the boxed value's part count" },
@@ -784,7 +784,7 @@ pub const Server = struct {
         if (extractDotPrefix(doc.source, cursor_offset)) |prefix| {
             if (doc.sema orelse doc.last_good_sema) |sema| {
                 // `context.` — the assembled Context's fields: the builtin
-                // prefix plus every `@context_extend` field in the workspace.
+                // prefix plus every `@context.extend` field in the workspace.
                 if (std.mem.eql(u8, prefix, "context") and findSymbolByName(sema.symbols, "context") == null) {
                     try self.appendContextFieldCompletions(&items, sema, doc);
                     if (items.items.len > 0) {
@@ -1225,23 +1225,23 @@ pub const Server = struct {
         const builtin_sigs = [_]struct { name: []const u8, label: []const u8, params: []const []const u8 }{
             .{ .name = "@typeOf", .label = "@typeOf(val: $T) -> Type", .params = &.{"val: $T"} },
             .{ .name = "@typeName", .label = "@typeName($T: Type) -> string", .params = &.{"$T: Type"} },
-            .{ .name = "struct_field_count", .label = "struct_field_count(T: Type) -> i64", .params = &.{"T: Type"} },
-            .{ .name = "struct_field_name", .label = "struct_field_name(T: Type, idx: i64) -> string", .params = &.{ "T: Type", "idx: i64" } },
-            .{ .name = "struct_field_type", .label = "struct_field_type(T: Type, idx: i64) -> Type", .params = &.{ "T: Type", "idx: i64" } },
-            .{ .name = "struct_field_offset", .label = "struct_field_offset(T: Type, idx: i64) -> i64", .params = &.{ "T: Type", "idx: i64" } },
-            .{ .name = "struct_field_value", .label = "struct_field_value(s: $T, idx: i64) -> any", .params = &.{ "s: $T", "idx: i64" } },
-            .{ .name = "variant_count", .label = "variant_count(E: Type) -> i64", .params = &.{"E: Type"} },
-            .{ .name = "variant_name", .label = "variant_name(E: Type, idx: i64) -> string", .params = &.{ "E: Type", "idx: i64" } },
-            .{ .name = "variant_type", .label = "variant_type(E: Type, idx: i64) -> Type", .params = &.{ "E: Type", "idx: i64" } },
-            .{ .name = "variant_value", .label = "variant_value(E: Type, idx: i64) -> i64", .params = &.{ "E: Type", "idx: i64" } },
-            .{ .name = "variant_index", .label = "variant_index(E: Type, val: E) -> i64", .params = &.{ "E: Type", "val: E" } },
-            .{ .name = "variant_payload", .label = "variant_payload(u: $E, idx: i64) -> any", .params = &.{ "u: $E", "idx: i64" } },
-            .{ .name = "vector_lanes", .label = "vector_lanes(T: Type) -> i64", .params = &.{"T: Type"} },
-            .{ .name = "any_element", .label = "any_element(av: any, elem: Type, idx: i64) -> any", .params = &.{ "av: any", "elem: Type", "idx: i64" } },
-            .{ .name = "raw_any_data", .label = "raw_any_data(av: any) -> *void", .params = &.{"av: any"} },
-            .{ .name = "raw_make_any", .label = "raw_make_any(tp: Type, data: *void) -> any", .params = &.{ "tp: Type", "data: *void" } },
+            .{ .name = "structFieldCount", .label = "structFieldCount(T: Type) -> i64", .params = &.{"T: Type"} },
+            .{ .name = "structFieldName", .label = "structFieldName(T: Type, idx: i64) -> string", .params = &.{ "T: Type", "idx: i64" } },
+            .{ .name = "structFieldType", .label = "structFieldType(T: Type, idx: i64) -> Type", .params = &.{ "T: Type", "idx: i64" } },
+            .{ .name = "structFieldOffset", .label = "structFieldOffset(T: Type, idx: i64) -> i64", .params = &.{ "T: Type", "idx: i64" } },
+            .{ .name = "structFieldValue", .label = "structFieldValue(s: $T, idx: i64) -> any", .params = &.{ "s: $T", "idx: i64" } },
+            .{ .name = "variantCount", .label = "variantCount(E: Type) -> i64", .params = &.{"E: Type"} },
+            .{ .name = "variantName", .label = "variantName(E: Type, idx: i64) -> string", .params = &.{ "E: Type", "idx: i64" } },
+            .{ .name = "variantType", .label = "variantType(E: Type, idx: i64) -> Type", .params = &.{ "E: Type", "idx: i64" } },
+            .{ .name = "variantValue", .label = "variantValue(E: Type, idx: i64) -> i64", .params = &.{ "E: Type", "idx: i64" } },
+            .{ .name = "variantIndex", .label = "variantIndex(E: Type, val: E) -> i64", .params = &.{ "E: Type", "val: E" } },
+            .{ .name = "variantPayload", .label = "variantPayload(u: $E, idx: i64) -> any", .params = &.{ "u: $E", "idx: i64" } },
+            .{ .name = "vectorLanes", .label = "vectorLanes(T: Type) -> i64", .params = &.{"T: Type"} },
+            .{ .name = "anyElement", .label = "anyElement(av: any, elem: Type, idx: i64) -> any", .params = &.{ "av: any", "elem: Type", "idx: i64" } },
+            .{ .name = "rawAnyData", .label = "rawAnyData(av: any) -> *void", .params = &.{"av: any"} },
+            .{ .name = "rawMakeAny", .label = "rawMakeAny(tp: Type, data: *void) -> any", .params = &.{ "tp: Type", "data: *void" } },
             .{ .name = "@typeInfo", .label = "@typeInfo(T: Type) -> TypeInfo", .params = &.{"T: Type"} },
-            .{ .name = "pointee_type", .label = "pointee_type(P: Type) -> Type", .params = &.{"P: Type"} },
+            .{ .name = "pointeeType", .label = "pointeeType(P: Type) -> Type", .params = &.{"P: Type"} },
             .{ .name = "@errorName", .label = "@errorName(e: $T) -> string", .params = &.{"e: $T"} },
             .{ .name = "@errorPayload", .label = "@errorPayload(e: $T) -> any", .params = &.{"e: $T"} },
             .{ .name = "@len", .label = "@len(v: any) -> i64", .params = &.{"v: any"} },
@@ -2180,14 +2180,14 @@ pub const Server = struct {
     // Context fields are PROGRAM-GLOBAL — no import gating — so every
     // lookup here spans the whole document store — the server's workspace is
     // the editor-side approximation of "the compilation". The heavy lifting
-    // rides sema's (owner, name) member-ref index: `@context_extend` records
+    // rides sema's (owner, name) member-ref index: `@context.extend` records
     // a member DEF owned by "Context", `context.field` reads and push-literal
     // field names record member USES, and references fall out of the existing
     // cross-document member machinery with no code here.
 
     const ContextExtendHit = struct { doc: *const Document, ce: sx.ast.ContextExtendDecl, span: sx.ast.Span };
 
-    /// Find the `@context_extend <name>` declaration across all loaded
+    /// Find the `@context.extend <name>` declaration across all loaded
     /// documents. Deterministic on multi-hit (a compile error anyway): the
     /// lexicographically-smallest declaring path wins.
     fn findContextExtendDecl(store: *DocumentStore, name: []const u8) ?ContextExtendHit {
@@ -2209,7 +2209,7 @@ pub const Server = struct {
         return best;
     }
 
-    /// Every `@context_extend` declaration in the store, in sort order
+    /// Every `@context.extend` declaration in the store, in sort order
     /// (declaring path, field name) — the completion / enumeration source.
     fn collectContextExtendDecls(store: *DocumentStore, allocator: std.mem.Allocator) []ContextExtendHit {
         var hits = std.ArrayList(ContextExtendHit).empty;
@@ -2236,7 +2236,7 @@ pub const Server = struct {
     }
 
     /// The member-ref DEF site for (owner, name) across all loaded documents
-    /// — `@context_extend` decls and struct-decl fields both record one.
+    /// — `@context.extend` decls and struct-decl fields both record one.
     fn findMemberDefAcrossDocs(store: *DocumentStore, owner: []const u8, name: []const u8) ?struct { doc: *const Document, span: sx.ast.Span } {
         var it = store.by_path.iterator();
         while (it.next()) |entry| {
@@ -2263,7 +2263,7 @@ pub const Server = struct {
     }
 
     /// Go-to-definition for a Context field named `member`: the
-    /// `@context_extend` declaration (extension fields) or the builtin field's
+    /// `@context.extend` declaration (extension fields) or the builtin field's
     /// member DEF in core.sx's Context struct.
     fn sendContextFieldDef(self: *Server, id_json: []const u8, origin_doc: *const Document, member: []const u8, origin: sx.ast.Span) !bool {
         self.documents.loadWorkspaceFiles();
@@ -2306,7 +2306,7 @@ pub const Server = struct {
 
     /// Hover for the bare `context` identifier: the WHOLE assembled Context in
     /// one place — the builtin prefix (from the Context struct decl) plus
-    /// every `@context_extend` field, each with its declaring module. The
+    /// every `@context.extend` field, each with its declaring module. The
     /// tooling recovery of the "one visible struct" property the assembled
     /// design trades away in source.
     fn formatContextHover(self: *Server, sema: SemaResult, doc: *const Document) !?[]const u8 {
@@ -2338,7 +2338,7 @@ pub const Server = struct {
     }
 
     /// Append completion items for every Context field: the builtin prefix
-    /// (from the Context struct decl) + all `@context_extend` fields (with
+    /// (from the Context struct decl) + all `@context.extend` fields (with
     /// declared type + declaring file as detail).
     fn appendContextFieldCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), sema: SemaResult, doc: *const Document) !void {
         self.documents.loadWorkspaceFiles();
@@ -3845,7 +3845,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
 // ---- Context extension LSP (design/context-extension.md, context-lsp unit) ----
 
 // Definition targets for Context fields resolve program-wide: the
-// `@context_extend` declaration is found across documents, and the reading
+// `@context.extend` declaration is found across documents, and the reading
 // document needs NO import of the declaring module — the LSP twin of the
 // program-global rule.
 test "lsp/context: cross-file field def resolves without an import" {
@@ -3855,7 +3855,7 @@ test "lsp/context: cross-file field def resolves without an import" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3880,7 +3880,7 @@ test "lsp/context: cross-file field def resolves without an import" {
     try std.testing.expectEqualStrings("Context", use.owner);
 }
 
-// Find-all-references from the `@context_extend` declaration lists every
+// Find-all-references from the `@context.extend` declaration lists every
 // `context.field` read and push-literal patch site program-wide.
 test "lsp/context: references span reads and push sites across documents" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3889,7 +3889,7 @@ test "lsp/context: references span reads and push sites across documents" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3920,18 +3920,18 @@ test "lsp/context: hover carries type, default, and declaring module" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "@context_extend ui_scale: f64 = 1.5;";
+    const decl_src: [:0]const u8 = "@context.extend ui_scale: f64 = 1.5;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
 
     const hover = (try server.formatContextFieldHover(decl_doc, "ui_scale")) orelse return error.TestUnexpectedResult;
-    try std.testing.expect(std.mem.indexOf(u8, hover, "@context_extend ui_scale: f64 = 1.5;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hover, "@context.extend ui_scale: f64 = 1.5;") != null);
     try std.testing.expect(std.mem.indexOf(u8, hover, "ui_mod.sx") != null);
 }
 
-// Completion after `context.` includes every `@context_extend` field with its
+// Completion after `context.` includes every `@context.extend` field with its
 // declared type and declaring file.
 test "lsp/context: completion lists extension fields" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3939,7 +3939,7 @@ test "lsp/context: completion lists extension fields" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "@context_extend ui_scale: f64 = 1.5;\n@context_extend frame_no: i64 = 0;";
+    const decl_src: [:0]const u8 = "@context.extend ui_scale: f64 = 1.5;\n@context.extend frame_no: i64 = 0;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3987,7 +3987,7 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\Context :: struct { allocator: i64; }
-        \\@context_extend ui_scale: f64 = 1.5;
+        \\@context.extend ui_scale: f64 = 1.5;
     ;
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -4435,13 +4435,13 @@ test "lsp/hover: a Context field carries its doc block" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "// How far to trace.\n@context_extend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "// How far to trace.\n@context.extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx.sx", src, 1);
     try store.analyzeDocument(doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
     try std.testing.expectEqualStrings(
-        "// How far to trace.\n\n```sx\n@context_extend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
+        "// How far to trace.\n\n```sx\n@context.extend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
         (try server.formatContextFieldHover(doc, "trace_depth")) orelse return error.TestUnexpectedResult,
     );
 }

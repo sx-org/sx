@@ -36,12 +36,12 @@ main :: () {
 
     // --- Comptime format ---
     {
-        ct_body :: "hello";
-        ct_msg :: format("say: {} (len={})", ct_body, ct_body.len);
-        print("{}\n", ct_msg);
+        ctBody :: "hello";
+        ctMsg :: format("say: {} (len={})", ctBody, ctBody.len);
+        print("{}\n", ctMsg);
 
-        ct_num :: 42;
-        ct_num_msg :: format("n={}", ct_num);
-        print("{}\n", ct_num_msg);
+        ctNum :: 42;
+        ctNumMsg :: format("n={}", ctNum);
+        print("{}\n", ctNumMsg);
     }
 }

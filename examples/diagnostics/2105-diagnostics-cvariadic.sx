@@ -9,8 +9,8 @@
 // across, as `f32` promotes to `f64`. What is refused is a width C has no
 // variadic slot for, and every aggregate.
 //
-// Reading a tail is the same rule from the other side. `@va_start` needs a tail
-// to open, `@va_arg` asks for the type the promotions LEAVE in the slot, and the
+// Reading a tail is the same rule from the other side. `@vaStart` needs a tail
+// to open, `@vaArg` asks for the type the promotions LEAVE in the slot, and the
 // `@VaList` cursor itself is opaque: it has no value form, no published layout,
 // and no way out of the frame whose tail it reads.
 //
@@ -56,19 +56,19 @@ Wraps :: struct {
 
 VaPair :: struct { a: @VaList; b: i64 };
 
-wrapped_global: [1]@VaList;
-wrapped_borrows: []*@VaList;
+wrappedGlobal: [1]@VaList;
+wrappedBorrows: []*@VaList;
 
-hands_back_wrapped :: (ap: *@VaList) -> [1]@VaList { return ---; }
+handsBackWrapped :: (ap: *@VaList) -> [1]@VaList { return ---; }
 
-takes_wrapped :: (rows: [1]@VaList) -> i64 abi(.c) { return 0; }
+takesWrapped :: (rows: [1]@VaList) -> i64 abi(.c) { return 0; }
 
-takes_wrapped_borrow :: (rows: []*@VaList) -> i64 { return 0; }
+takesWrappedBorrow :: (rows: []*@VaList) -> i64 { return 0; }
 
 // The two boundary spellings, each on the wrong side.
-by_value :: (ap: @VaList) -> i64 { return 0; }
+byValue :: (ap: @VaList) -> i64 { return 0; }
 
-c_borrow :: (ap: *@VaList) -> i64 abi(.c) { return 0; }
+cBorrow :: (ap: *@VaList) -> i64 abi(.c) { return 0; }
 
 // The same pair as function TYPES: `abi(.c)` is the only spelling that makes a
 // type's signature the C one, so the by-value list needs it and the borrow
@@ -82,60 +82,60 @@ Signatures :: struct {
 
 // A cursor in a global outlives every frame that could open one.
 stored: @VaList;
-stored_borrow: *@VaList;
+storedBorrow: *@VaList;
 
-hands_one_back :: (ap: *@VaList) -> @VaList { return *ap; }
+handsOneBack :: (ap: *@VaList) -> @VaList { return *ap; }
 
-no_tail :: () -> i64 {
+noTail :: () -> i64 {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     return 0;
 }
 
 escapes :: (n: i32, ..) -> *@VaList abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     return *ap;
 }
 
-ends_a_borrow :: (ap: *@VaList) -> i64 {
-    @va_end(ap);
+endsABorrow :: (ap: *@VaList) -> i64 {
+    @vaEnd(ap);
     return 0;
 }
 
 reads :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    narrow := @va_arg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
-    single := @va_arg(f32, *ap);  // an `f32` argument sits in it as `f64`
-    aggregate := @va_arg(Pair, *ap);
+    @vaStart(*ap);
+    narrow := @vaArg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
+    single := @vaArg(f32, *ap);  // an `f32` argument sits in it as `f64`
+    aggregate := @vaArg(Pair, *ap);
     printf("%d\n", *ap);          // the cursor cannot leave this frame
     copied := ap;                 // no value form to copy
     word := ap.w0;                // no published fields
-    later := ||_{ ap } -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    later := ||_{ ap } -> i64 { return @vaArg(i64, *ap); }; // a closure may outlive the frame
     rows: [1]@VaList = ---;
     kept := ||_{ rows = rows } -> i64 { return rows.len; }; // a wrapper carries the same tail
-    @va_end(*ap);
+    @vaEnd(*ap);
     return xx narrow;
 }
 
 // A `@VaList` parameter names a place, so its argument must name one too:
 // neither a borrow nor a plain value is one. A local annotated with either
 // mis-signed function type is refused where it is written.
-boundary_actuals :: (n: i32, ..) -> i64 abi(.c) {
+boundaryActuals :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     lent: *@VaList = *ap;
     unusable: NotC = ---;
-    also_unusable: CBorrow = ---;
+    alsoUnusable: CBorrow = ---;
     return c_reader(n, *ap) + c_reader(n, lent) + c_reader(n, 7);
 }
 
 // An incoming list is borrowed already open: its caller started it and ends it.
-walks_a_borrowed_list :: (n: i32, ap: @VaList) -> i64 export {
-    @va_start(*ap);
-    @va_end(*ap);
+walksABorrowedList :: (n: i32, ap: @VaList) -> i64 export {
+    @vaStart(*ap);
+    @vaEnd(*ap);
     return c_reader(n, ap);
 }
 
@@ -156,10 +156,10 @@ main :: () -> i32 {
     printf("%d\n", nums[0..1]);  // a slice is two words too
     sum_ints(1, pair);           // the same refusal on a named typed tail
 
-    printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), struct_field_count(@VaList));
-    printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), struct_field_count(VaPair));
+    printf("%d %d %d\n", @sizeOf(@VaList), @alignOf(@VaList), structFieldCount(@VaList));
+    printf("%d %d %d\n", @sizeOf([1]@VaList), @alignOf(?@VaList), structFieldCount(VaPair));
     made := @VaList{};
-    printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
-    printf("%d\n", boundary_actuals(1, 2) + walks_a_borrowed_list(1, made));
+    printf("%d\n", reads(1, 2) + noTail() + endsABorrow(*made));
+    printf("%d\n", boundaryActuals(1, 2) + walksABorrowedList(1, made));
     return 0;
 }

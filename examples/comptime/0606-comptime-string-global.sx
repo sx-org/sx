@@ -2,7 +2,7 @@
 // containing a heap-allocated buffer) must serialize correctly into
 // the static binary. The interp computes the string at build time,
 // allocating its backing through `context.allocator` (which bottoms
-// out at c.libc_malloc in the default context). The serializer reads
+// out at c.libcMalloc in the default context). The serializer reads
 // the resulting `{addr, len}` aggregate, captures the bytes from
 // host memory, emits them as a private global byte array, and
 // rebuilds the aggregate to point at that array.
@@ -11,11 +11,11 @@
 // host-address `.int` value has no `ptr` form `LLVMConstInt` can lower.
 @import "modules/std.sx";
 
-build_greeting :: () -> string {
+buildGreeting :: () -> string {
     return concat("hello", " world");
 }
 
-GREETING :: @run build_greeting();
+GREETING :: @run buildGreeting();
 
 main :: () -> i32 {
     print("greeting = '{}'\n", GREETING);

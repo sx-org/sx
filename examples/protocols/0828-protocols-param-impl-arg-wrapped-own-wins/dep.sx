@@ -4,7 +4,7 @@
 // last-wins author.
 Box :: struct { a: i32; }
 
-dep_box :: () -> i32 {
+depBox :: () -> i32 {
     b : Box = ---;
     b.a = 9;
     return b.a;

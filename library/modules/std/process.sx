@@ -1,5 +1,5 @@
 @import "modules/std/core.sx";   // @SourceSite
-@import "modules/std/fmt.sx";    // print, concat, substr, to_cstring, from_cstring
+@import "modules/std/fmt.sx";    // print, concat, substr, toCstring, fromCstring
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 posix :: @import "modules/std/posix.sx";
@@ -13,7 +13,7 @@ trace :: @import "modules/std/trace.sx";
 // `plutil`, `security`, `aapt2`, `javac`, `d8`, `keytool`, `apksigner`.
 // `spawn(argv, opts)` fork/execs directly and hands back a live `Child`
 // whose stdin/stdout/stderr are pipes the parent drives while the child
-// runs. Plus `env(name)` / `find_executable(name)`.
+// runs. Plus `env(name)` / `findExecutable(name)`.
 //
 // `run` goes through /bin/sh, so the caller owns quoting and uses `2>&1`
 // to fold stderr into the captured stream. `spawn` takes an argv vector
@@ -38,14 +38,14 @@ system :: (cmd: [:0]u8) -> i32 extern libc;
 ProcessResult :: struct {
     /// Exit code as reported by `WEXITSTATUS(status)`. 0 = success.
     /// Does not distinguish "killed by signal" from "exited non-zero".
-    exit_code: i32;
-    stdout:    string;
+    exitCode: i32;
+    stdout:   string;
 }
 
 // ── Public API ───────────────────────────────────────────────────────
 
 // Run a shell command, capture stdout, wait for exit. Returns null if
-// the shell itself couldn't be spawned. A non-zero exit_code with
+// the shell itself couldn't be spawned. A non-zero exitCode with
 // valid stdout means the command ran and exited non-zero — distinct
 // from spawn failure.
 //
@@ -57,7 +57,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
     if f.(i64) == 0 { return null; }
 
     out := "";
-    buf := alloc_string(4096);
+    buf := allocString(4096);
     loop := true;
     while loop {
         n := fread(buf.ptr, 1, 4096, f);
@@ -69,15 +69,15 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
             out = concat(out, chunk);
         }
     }
-    raw_status := pclose(f);
-    if raw_status < 0 { return null; }
-    ProcessResult{ exit_code = decode_status(raw_status), stdout = out }
+    rawStatus := pclose(f);
+    if rawStatus < 0 { return null; }
+    ProcessResult{ exitCode = decodeStatus(rawStatus), stdout = out }
 }
 
 // POSIX wait(2) status word -> exit code. Low 7 bits = the terminating
 // signal, next byte = the exit code; a signal death has no exit code of
 // its own and folds to `128 + sig`, the shell's `$?` convention.
-decode_status :: (raw: i32) -> i32 {
+decodeStatus :: (raw: i32) -> i32 {
     code := (raw >> 8) & 0xFF;
     sig := raw & 0x7F;
     if code == 0 and sig != 0 { return 128 + sig; }
@@ -87,9 +87,9 @@ decode_status :: (raw: i32) -> i32 {
 // Read an environment variable. Returns null if unset; an empty
 // string if set to "".
 env :: (name: [:0]u8) -> ?string {
-    p := getenv(to_cstring(name));
+    p := getenv(toCstring(name));
     if p == null { return null; }
-    v := from_cstring(p);
+    v := fromCstring(p);
     if v.len == 0 { return ""; }
     substr(v, 0, v.len)
 }
@@ -98,15 +98,15 @@ env :: (name: [:0]u8) -> ?string {
 // to the first hit, or null if not found anywhere. Uses `command -v`
 // under the shell; cheap and matches what the bundler ultimately
 // shells out to anyway.
-find_executable :: (name: [:0]u8) -> ?string {
+findExecutable :: (name: [:0]u8) -> ?string {
     // Compose `command -v <name>` — name is assumed shell-safe
     // (executable names like `codesign`, `javac`, `aapt2`).
     cmd := concat("command -v ", name);
     // Need null-terminated for popen.
-    cmd_z := alloc_string(cmd.len);
-    c.memcpy(cmd_z.ptr, cmd.ptr, cmd.len);
-    if r := run(cmd_z) {
-        if r.exit_code != 0 { return null; }
+    cmdZ := allocString(cmd.len);
+    c.memcpy(cmdZ.ptr, cmd.ptr, cmd.len);
+    if r := run(cmdZ) {
+        if r.exitCode != 0 { return null; }
         // Strip the trailing newline that `command -v` emits.
         out := r.stdout;
         if out.len > 0 {
@@ -149,7 +149,7 @@ SIG_IGN    :usize: 1;
 // The one fcntl command whose number is per-libc. NO silent fallback: an
 // unsupported target must add its own case rather than inherit a number
 // that means something else there.
-inline match OS {
+inline match @host.os {
     case .macos:   F_DUPFD_CLOEXEC :i32: 67;
     case .ios:     F_DUPFD_CLOEXEC :i32: 67;
     case .linux:   F_DUPFD_CLOEXEC :i32: 1030;
@@ -188,25 +188,25 @@ Child :: struct {
     // `read(2)` of up to `buf.len` bytes out of stdout/stderr. Each
     // returns exactly what libc returned: the byte count, 0 for EOF on a
     // read, or -1 with the reason in `posix.errno()`.
-    stdin_write :: (self: *Child, line: []u8) -> isize {
+    stdinWrite :: (self: *Child, line: []u8) -> isize {
         return c.write(self.stdin, line.ptr, line.len);
     }
-    stdout_read :: (self: *Child, buf: []u8) -> isize {
+    stdoutRead :: (self: *Child, buf: []u8) -> isize {
         return c.read(self.stdout, buf.ptr, buf.len);
     }
-    stderr_read :: (self: *Child, buf: []u8) -> isize {
+    stderrRead :: (self: *Child, buf: []u8) -> isize {
         return c.read(self.stderr, buf.ptr, buf.len);
     }
 
     // Close the parent's end of a slot. Closing stdin is how the child
     // sees EOF. A slot already at -1 is a no-op.
-    stdin_close :: (self: *Child) {
+    stdinClose :: (self: *Child) {
         if self.stdin >= 0 { c.close(self.stdin); self.stdin = -1; }
     }
-    stdout_close :: (self: *Child) {
+    stdoutClose :: (self: *Child) {
         if self.stdout >= 0 { c.close(self.stdout); self.stdout = -1; }
     }
-    stderr_close :: (self: *Child) {
+    stderrClose :: (self: *Child) {
         if self.stderr >= 0 { c.close(self.stderr); self.stderr = -1; }
     }
 
@@ -233,7 +233,7 @@ Child :: struct {
         while true {
             r := c.waitpid(self.pid, *raw, options);
             if r == self.pid {
-                self.status = decode_status(raw);
+                self.status = decodeStatus(raw);
                 self.pid = -1;
                 return self.status;
             }
@@ -256,7 +256,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
     vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
     i := 0;
     while i < argv.len {
-        vec[i] = to_cstring(argv[i]);
+        vec[i] = toCstring(argv[i]);
         i += 1;
     }
     vec[argv.len] = null;
@@ -267,15 +267,15 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
     // Child hands back.
     child  : [3]i32 = .[-1, -1, -1];
     parent : [3]i32 = .[-1, -1, -1];
-    handed_off := false;
+    handedOff := false;
     defer {
         s := 0;
         while s < 3 {
             if child[s] >= 0 { c.close(child[s]); }
-            if !handed_off and parent[s] >= 0 { c.close(parent[s]); }
+            if !handedOff and parent[s] >= 0 { c.close(parent[s]); }
             s += 1;
         }
-        free_argv(vec, argv.len);
+        freeArgv(vec, argv.len);
     }
 
     slot := 0;
@@ -290,7 +290,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
             // drops them, so no run's pipe ends leak into another's child.
             // The dup2'd copies in the child do NOT carry the flag, which
             // is what keeps slots 0/1/2 open across exec.
-            if !set_cloexec(fds[0]) or !set_cloexec(fds[1]) {
+            if !setCloexec(fds[0]) or !setCloexec(fds[1]) {
                 c.close(fds[0]);
                 c.close(fds[1]);
                 raise .Pipe;
@@ -306,7 +306,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
         if mode == .null {
             fd := c.open("/dev/null", O_RDWR);
             if fd < 0 { raise .Pipe; }
-            if !set_cloexec(fd) { c.close(fd); raise .Pipe; }
+            if !setCloexec(fd) { c.close(fd); raise .Pipe; }
             child[slot] = fd;
         }
         slot += 1;
@@ -348,7 +348,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
         // ── end fork window ───────────────────────────────────────────
     }
 
-    handed_off = true;
+    handedOff = true;
     return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
 }
 
@@ -356,22 +356,22 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
 // child's stdin; the write reports `posix.EPIPE` instead. Process-wide
 // because darwin's per-fd F_SETNOSIGPIPE has no linux counterpart for
 // write(2). Long-lived spawners call this once at startup.
-ignore_sigpipe :: () {
+ignoreSigpipe :: () {
     c.signal(SIGPIPE, SIG_IGN);
 }
 
 // FD_CLOEXEC is the only fd flag, so F_SETFD writes the word directly.
-set_cloexec :: (fd: i32) -> bool {
+setCloexec :: (fd: i32) -> bool {
     return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
 }
 
-free_argv :: (vec: [*]?cstring, n: i64) {
+freeArgv :: (vec: [*]?cstring, n: i64) {
     i := 0;
     while i < n {
-        if p := vec[i] { context.allocator.dealloc_bytes(p); }
+        if p := vec[i] { context.allocator.deallocBytes(p); }
         i += 1;
     }
-    context.allocator.dealloc_bytes(vec);
+    context.allocator.deallocBytes(vec);
 }
 
 // ── Process termination ───────────────────────────────
@@ -388,12 +388,12 @@ free_argv :: (vec: [*]?cstring, n: i64) {
 // no `defer` cleanup runs, no error-trace frames are pushed —
 // it's the POSIX `_exit(2)` syscall. At comptime (`@run`) it terminates the
 // COMPILER with the same code after printing a diagnostic naming the call site
-// (`site` defaults to `@caller`); in compiled code the `@is_comptime()`
+// (`site` defaults to `@caller`); in compiled code the `@isComptime()`
 // branch folds away to just the syscall.
 exit :: (code: u8, site: @SourceSite = @caller) -> noreturn {
-    if @is_comptime() {
+    if @isComptime() {
         print("\nprocess.exit({}) called from {} at {}:{}\n", code, site.declaration, site.file, site.line);
-        trace.print_interpreter_frames();
+        trace.printInterpreterFrames();
     }
     c.exit(code)
 }

@@ -26,22 +26,22 @@ SxFoo :: @ObjcClass("SxFoo") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // sx-defined class round-trip.
         f := SxFoo.alloc();
-        cls_f : Class = f.class;
-        expected_f : Class = objc_getClass("SxFoo".ptr);
-        if cls_f != expected_f { print("FAIL: SxFoo.class mismatch\n"); return 1; }
+        clsF : Class = f.class;
+        expectedF : Class = objc_getClass("SxFoo".ptr);
+        if clsF != expectedF { print("FAIL: SxFoo.class mismatch\n"); return 1; }
 
         // runtime class round-trip.
         nso := NSObjectFwd.alloc().init();
-        cls_n : Class = nso.class;
-        expected_n : Class = objc_getClass("NSObject".ptr);
-        if cls_n != expected_n { print("FAIL: NSObject.class mismatch\n"); return 1; }
+        clsN : Class = nso.class;
+        expectedN : Class = objc_getClass("NSObject".ptr);
+        if clsN != expectedN { print("FAIL: NSObject.class mismatch\n"); return 1; }
 
         print("class accessor: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("class accessor: ok\n");
     }
     0

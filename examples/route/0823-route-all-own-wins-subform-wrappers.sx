@@ -26,6 +26,6 @@ main :: () -> i32 {
     // []Named element own-wins
     sl : []Box = arr[0..2];
 
-    print("opt={} arr={} sl={} dep={}\n", o.m, arr[0].m, sl[1].m, dep_box());
+    print("opt={} arr={} sl={} dep={}\n", o.m, arr[0].m, sl[1].m, depBox());
     0
 }

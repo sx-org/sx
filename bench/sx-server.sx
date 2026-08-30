@@ -19,7 +19,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "not found";
 }
 
-env_int :: (name: [:0]u8, dflt: i64) -> i64 {
+envInt :: (name: [:0]u8, dflt: i64) -> i64 {
     if v := process.env(name) {
         if v.len == 0 { return dflt; }
         n : i64 = 0;
@@ -36,9 +36,9 @@ env_int :: (name: [:0]u8, dflt: i64) -> i64 {
 }
 
 main :: () -> i32 {
-    port := env_int("PORT", 8080);
-    pool := env_int("SX_HTTP_POOL", 0);
-    cfg := http.Config{ port = port, thread_pool_count = pool };
+    port := envInt("PORT", 8080);
+    pool := envInt("SX_HTTP_POOL", 0);
+    cfg := http.Config{ port = port, threadPoolCount = pool };
     s, e := http.Server.init(cfg, handler, 0);
     if e { print("server init failed (port {})\n", port); return 1; }
     print("sx-server listening on :{} (pool={})\n", port, pool);

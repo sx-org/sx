@@ -1,6 +1,6 @@
 // TRUE cancellation. A `cancel` delivered to
 // a worker that is PARKED at a suspend point makes the worker ABANDON its body:
-// the worker's next `suspend_raw` raises `IoErr.Canceled`, which unwinds out
+// the worker's next `suspendRaw` raises `IoErr.Canceled`, which unwinds out
 // through `try context.io.sleep(..)` and the failable worker, so every line AFTER
 // the suspend never runs. This is true cancellation — cancel rides
 // the `!` channel and stops in-flight work at the next suspend, not merely flags
@@ -8,7 +8,7 @@
 //
 // Flow (deterministic, virtual clock): the worker records 1 and parks in
 // `sleep`; the coordinator (a fiber, so it can `yield`) lets the worker reach its
-// park, then `cancel`s it. The worker's parked `suspend_raw` is woken and raises
+// park, then `cancel`s it. The worker's parked `suspendRaw` is woken and raises
 // `Canceled` → the post-sleep `rec(pl, 2)` and the `42` return NEVER execute. The
 // coordinator's `await` raises `Canceled` (sticky flag) → `or` default -99.
 // Sequence: `1 -99` — the absence of `2` is the proof that the post-suspend work
@@ -34,7 +34,7 @@ main :: () -> i64 {
                 rec(pl, 2);                  // POST-SUSPEND — must NEVER run
                 42
             });
-            ps.yield_now();                  // let the worker run & park in sleep
+            ps.yieldNow();                  // let the worker run & park in sleep
             w.cancel();                      // cancel while parked → wakes + raises
             r := w.await() ?? { -99 };       // await raises Canceled → -99
             rec(pl, r);

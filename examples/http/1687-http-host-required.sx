@@ -17,12 +17,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -42,7 +42,7 @@ contains :: (hay: string, needle: string) -> bool {
 // One connection, one request, read to EOF (all cases close: errors close,
 // the 200 cases send Connection: close / are 1.0).
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -52,7 +52,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -70,9 +70,9 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
@@ -97,8 +97,8 @@ main :: () -> i32 {
         }
 
         srv.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

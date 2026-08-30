@@ -6,27 +6,27 @@ Narrow :: error { B: i32 };
 Wide   :: error { C: i64 };
 Both   :: Narrow | Wide;
 
-from_narrow :: (n: i32) -> (i32, !Narrow) {
+fromNarrow :: (n: i32) -> (i32, !Narrow) {
     if n < 0 { raise Narrow.B{3}; }
     return n;
 }
 
-into_both :: (n: i32) -> (i32, !Both) {
-    return from_narrow(n);
+intoBoth :: (n: i32) -> (i32, !Both) {
+    return fromNarrow(n);
 }
 
-into_bare :: (n: i32) -> (i32, !) {
-    return from_narrow(n);
+intoBare :: (n: i32) -> (i32, !) {
+    return fromNarrow(n);
 }
 
 main :: () -> i32 {
-    a := into_both(-1) catch |e| { if e == Narrow.B { 1 } else { 2 } };
+    a := intoBoth(-1) catch |e| { if e == Narrow.B { 1 } else { 2 } };
     print("a={}\n", a);
 
-    b := into_bare(-1) catch { 7 };
+    b := intoBare(-1) catch { 7 };
     print("b={}\n", b);
 
-    _, e := from_narrow(-1);
+    _, e := fromNarrow(-1);
     c : Both = e;
     print("c={}\n", if c == Narrow.B { 3 } else { 4 });
     return 0;

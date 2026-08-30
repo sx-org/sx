@@ -1,29 +1,29 @@
 // A body-local `@run` of a scalar, a struct, an array, or an `?Array`
 // optional bakes the VM result as a constant. The constructors run only at
-// compile time (`@is_comptime()`). An unbridgeable result (e.g. `[2][]i64`)
+// compile time (`@isComptime()`). An unbridgeable result (e.g. `[2][]i64`)
 // still fails the build.
 @import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }
 
-mk_scalar :: () -> i64 {
-    if !@is_comptime() { @panic("mk_scalar ran at runtime"); }
+mkScalar :: () -> i64 {
+    if !@isComptime() { @panic("mkScalar ran at runtime"); }
     42
 }
-mk_struct :: () -> Pt {
-    if !@is_comptime() { @panic("mk_struct ran at runtime"); }
+mkStruct :: () -> Pt {
+    if !@isComptime() { @panic("mkStruct ran at runtime"); }
     .{ x = 3, y = 4 }
 }
-mk_arr :: () -> [3]i64 {
-    if !@is_comptime() { @panic("mk_arr ran at runtime"); }
+mkArr :: () -> [3]i64 {
+    if !@isComptime() { @panic("mkArr ran at runtime"); }
     r : [3]i64 = ---;
     r[0] = 10;
     r[1] = 20;
     r[2] = 30;
     r
 }
-mk_opt :: () -> ?[3]i64 {
-    if !@is_comptime() { @panic("mk_opt ran at runtime"); }
+mkOpt :: () -> ?[3]i64 {
+    if !@isComptime() { @panic("mkOpt ran at runtime"); }
     r : [3]i64 = ---;
     r[0] = 1;
     r[1] = 2;
@@ -32,10 +32,10 @@ mk_opt :: () -> ?[3]i64 {
 }
 
 main :: () {
-    N :: @run mk_scalar();
-    S :: @run mk_struct();
-    A :: @run mk_arr();
-    O :: @run mk_opt();
+    N :: @run mkScalar();
+    S :: @run mkStruct();
+    A :: @run mkArr();
+    O :: @run mkOpt();
 
     print("N={}\n", N);
     print("S={} {}\n", S.x, S.y);

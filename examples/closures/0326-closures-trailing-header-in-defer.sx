@@ -5,7 +5,7 @@
 
 each :: (xs: []i64, body: $F/(i64) -> void) { for v in xs { body(v); } }
 
-run_trailing :: () {
+runTrailing :: () {
     xs := .[1, 2];
     defer {
         each(xs) { |x|
@@ -17,7 +17,7 @@ run_trailing :: () {
     print("body-trail\n");
 }
 
-run_explicit :: () {
+runExplicit :: () {
     xs := .[1, 2];
     defer {
         each(xs, |x| {
@@ -30,7 +30,7 @@ run_explicit :: () {
 }
 
 main :: () -> i32 {
-    run_trailing();
-    run_explicit();
+    runTrailing();
+    runExplicit();
     return 0;
 }

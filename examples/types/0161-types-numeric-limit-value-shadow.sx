@@ -15,13 +15,13 @@
 // and the bare spelling of each STILL folds.
 @import "modules/std.sx";
 
-FBox :: struct { epsilon: i64; max: i64; min_positive: i64; }
+FBox :: struct { epsilon: i64; max: i64; minPositive: i64; }
 IBox :: struct { max: i64; min: i64; }
 UBox :: struct { max: i64; }
 
 // GLOBAL raw value binding whose spelling shadows the builtin `f32`. Reachable
 // via `program_index.global_names`, not lexical scope.
-`f32 := FBox{ epsilon = 44, max = 55, min_positive = 66 };
+`f32 := FBox{ epsilon = 44, max = 55, minPositive = 66 };
 
 // MODULE-CONST raw value binding whose spelling shadows the builtin `i16`.
 // Reachable via `program_index.module_const_map` (const variant).
@@ -29,19 +29,19 @@ UBox :: struct { max: i64; }
 
 main :: () -> i32 {
     // LOCAL raw value bindings whose spelling shadows a builtin numeric type name.
-    `f64 := FBox{ epsilon = 11, max = 22, min_positive = 33 };
+    `f64 := FBox{ epsilon = 11, max = 22, minPositive = 33 };
     `i32 := IBox{ max = 78, min = -78 };
     `u8  := UBox{ max = 7 };
 
     // Raw receiver → ordinary field READ (the value), never the numeric limit.
-    print("local f64: epsilon={} max={} min_positive={}\n",
-          `f64.epsilon, `f64.max, `f64.min_positive);    // 11 22 33
+    print("local f64: epsilon={} max={} minPositive={}\n",
+          `f64.epsilon, `f64.max, `f64.minPositive);     // 11 22 33
     print("local i32: max={} min={}\n", `i32.max, `i32.min); // 78 -78
     print("local u8: max={}\n", `u8.max);                    // 7
 
     // GLOBAL raw receiver → ordinary field READ.
-    print("global f32: epsilon={} max={} min_positive={}\n",
-          `f32.epsilon, `f32.max, `f32.min_positive);    // 44 55 66
+    print("global f32: epsilon={} max={} minPositive={}\n",
+          `f32.epsilon, `f32.max, `f32.minPositive);     // 44 55 66
     // MODULE-CONST raw receiver → ordinary field READ.
     print("const i16: max={} min={}\n", `i16.max, `i16.min); // 99 -99
 

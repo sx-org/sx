@@ -9,12 +9,12 @@
 @import "0789-modules-same-name-const-leaf-author-pin/a.sx";
 @import "0789-modules-same-name-const-leaf-author-pin/b.sx";
 
-read_dim :: () -> i64 {
+readDim :: () -> i64 {
     arr : [K]u8 = ---;
     return arr.len;
 }
 
 main :: () -> i32 {
-    print("val={} len={}\n", K, read_dim());
+    print("val={} len={}\n", K, readDim());
     0
 }

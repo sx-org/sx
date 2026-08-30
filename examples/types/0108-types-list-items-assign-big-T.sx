@@ -18,20 +18,20 @@ Container :: struct {
     tree: Tree;
     sentinel: i64;
 
-    do_work :: (self: *Container) {
+    doWork :: (self: *Container) {
         self.tree.nodes.items = .[];   // empty slice; must not corrupt self.sentinel
     }
 }
 
 main :: () -> void {
-    obj : *Container = xx context.allocator.alloc_bytes(@sizeOf(Container));
+    obj : *Container = xx context.allocator.allocBytes(@sizeOf(Container));
     c.memset(obj, 0, @sizeOf(Container));
     obj.sentinel = 0xDEADBEEF;
 
     print("@sizeOf BigNode = {}\n", @sizeOf(BigNode));
     print("before: sentinel = {}\n", obj.sentinel);
 
-    obj.do_work();
+    obj.doWork();
 
     print("after:  sentinel = {}\n", obj.sentinel);
     if obj.sentinel != 0xDEADBEEF {

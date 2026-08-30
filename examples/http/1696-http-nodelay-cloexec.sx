@@ -1,6 +1,6 @@
 // std.http — accepted sockets get TCP_NODELAY + CLOEXEC.
 //
-// TCP_NODELAY: a response written in one write_more pass otherwise sits in
+// TCP_NODELAY: a response written in one writeMore pass otherwise sits in
 // the kernel's Nagle buffer waiting for the peer's ACK — 40 ms latency
 // cliffs under keep-alive request/response traffic. The server sets it on
 // every accepted connection.
@@ -11,7 +11,7 @@
 // port bound after Server.close. On linux accept4(SOCK_NONBLOCK |
 // SOCK_CLOEXEC) applies both atomically (and saves two fcntls per accept);
 // darwin has no accept4, so accept + two fcntls is the per-OS branch
-// (socket.accept_stream_nb). The listener gets FD_CLOEXEC at init.
+// (socket.acceptStreamNb). The listener gets FD_CLOEXEC at init.
 //
 // Asserts, in-process on the server's own fds (the flags are invisible to
 // the peer): a keep-alive request round-trips 200; the accepted conn fd
@@ -35,12 +35,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -64,15 +64,15 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // Keep-alive request: the conn stays open (CONN_KEEPALIVE) after the
         // response, so its server-side fd can be inspected below.
-        fd := dial_port(PORT);
+        fd := dialPort(PORT);
         if fd < 0 { print("dial failed\n"); return 1; }
         req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
         socket.write(fd, req.ptr, req.len);
@@ -82,7 +82,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
+                n, re := socket.readNb(fd, *rbuf[total], (cap - total));
                 if !re { total += n; got += n; continue; }
                 break;
             }
@@ -99,7 +99,7 @@ main :: () -> i32 {
         // Find the occupied slot (state != CONN_FREE) and inspect its fd.
         cfd : i32 = -1;
         i : i64 = 0;
-        while i < cfg.max_conn {
+        while i < cfg.maxConn {
             if srv.conns[i].state != 0 { cfd = srv.conns[i].fd; break; }
             i += 1;
         }
@@ -143,8 +143,8 @@ main :: () -> i32 {
             reap += 1;
         }
         srv.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

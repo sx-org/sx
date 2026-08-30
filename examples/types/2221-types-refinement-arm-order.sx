@@ -3,7 +3,7 @@
 // subject and a `Type` subject follow the one rule.
 @import "modules/std.sx";
 
-by_tag :: (av: any) -> string {
+byTag :: (av: any) -> string {
     match av {
         case unsigned: return "unsigned";
         case int:      return "int";
@@ -12,7 +12,7 @@ by_tag :: (av: any) -> string {
     "unreached"
 }
 
-by_type :: (t: Type) -> string {
+byType :: (t: Type) -> string {
     match t {
         case unsigned: return "unsigned";
         case int:      return "int";
@@ -25,6 +25,6 @@ main :: () {
     u : u32 = 7;
     i : i32 = -7;
     f : f64 = 1.5;
-    print("tag:  {} {} {}\n", by_tag(u), by_tag(i), by_tag(f));
-    print("type: {} {} {}\n", by_type(u32), by_type(i32), by_type(f64));
+    print("tag:  {} {} {}\n", byTag(u), byTag(i), byTag(f));
+    print("type: {} {} {}\n", byType(u32), byType(i32), byType(f64));
 }

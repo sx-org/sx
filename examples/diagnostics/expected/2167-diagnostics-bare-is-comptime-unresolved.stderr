@@ -1,5 +1,5 @@
-error: unresolved 'is_comptime' (in examples/diagnostics/2167-diagnostics-bare-is-comptime-unresolved.sx fn main)
+error: unresolved 'isComptime' (in examples/diagnostics/2167-diagnostics-bare-is-comptime-unresolved.sx fn main)
   --> examples/diagnostics/2167-diagnostics-bare-is-comptime-unresolved.sx:6:8
    |
- 6 |     if is_comptime() { return 1; }
-   |        ^^^^^^^^^^^
+ 6 |     if isComptime() { return 1; }
+   |        ^^^^^^^^^^

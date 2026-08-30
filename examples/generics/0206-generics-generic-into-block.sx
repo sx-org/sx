@@ -1,7 +1,7 @@
 // The generic `Into(Block) for Closure(..$args) -> $R` impl in stdlib covers every
 // closure shape: the compiler monomorphises the impl body per call shape and emits
 // a dedicated `__invoke` `abi(.c)` trampoline plus Block literal (via
-// `@insert build_block_convert($args, $R);`). The shape here
+// `@insert buildBlockConvert($args, $R);`). The shape here
 // (`Closure(i64, i64) -> void`) resolves through it like any other.
 //
 // The block is invoked directly through `b.invoke` (a typed `abi(.c)` fn-pointer) —
@@ -11,18 +11,18 @@
 @import "modules/std.sx";
 @import "modules/ffi/objc_block.sx";
 
-g_a: i64 = 0;
-g_b: i64 = 0;
+gA: i64 = 0;
+gB: i64 = 0;
 
 main :: () -> i32 {
-    cl := |a: i64, b: i64| { g_a = a; g_b = b; };
+    cl := |a: i64, b: i64| { gA = a; gB = b; };
     blk : Block = xx cl;
 
-    invoke_fn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;
-    invoke_fn(*blk, 10, 20);
+    invokeFn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;
+    invokeFn(*blk, 10, 20);
 
-    if g_a != 10 { print("FAIL: g_a={}\n", g_a); return 1; }
-    if g_b != 20 { print("FAIL: g_b={}\n", g_b); return 1; }
-    print("generic-into-block ok: a={} b={}\n", g_a, g_b);
+    if gA != 10 { print("FAIL: gA={}\n", gA); return 1; }
+    if gB != 20 { print("FAIL: gB={}\n", gB); return 1; }
+    print("generic-into-block ok: a={} b={}\n", gA, gB);
     0
 }

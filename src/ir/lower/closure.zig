@@ -187,7 +187,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 }
 
 /// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
-/// `LambdaKind` it is, and which type the resulting `{fn_ptr, env}` value
+/// `LambdaKind` it is, and which type the resulting `{fnPtr, env}` value
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
@@ -711,7 +711,7 @@ fn endTrampoline(self: *Lowering, result: Ref, ret: TypeId) void {
     self.builder.finalize();
 }
 
-/// `@call_ptr` for a bare function type: the env holds the pointer, and the
+/// `@callPtr` for a bare function type: the env holds the pointer, and the
 /// trampoline loads it and calls through.
 fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInfo) FuncId {
     const saved = BuilderState.save(self);
@@ -728,7 +728,7 @@ fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInf
     return t.id;
 }
 
-/// `@call_ptr` for an `impl (sig) for T`: the env IS the receiver, so the
+/// `@callPtr` for an `impl (sig) for T`: the env IS the receiver, so the
 /// trampoline hands it to `call` as `self`.
 fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
     const target = self.fn_decl_fids.get(cn.fd) orelse return null;

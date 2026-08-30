@@ -422,7 +422,7 @@ const ApkCheck = struct {
 };
 
 /// Does `nm` output name `sym` as a whole symbol? Substring matching would let
-/// `build` hit `build_options`, and `main` hit `domain_main` — a false pass is
+/// `build` hit `buildOptions`, and `main` hit `domain_main` — a false pass is
 /// worse than no test here.
 fn nmHasSymbol(nm_out: []const u8, sym: []const u8) bool {
     var lines = std.mem.splitScalar(u8, nm_out, '\n');
@@ -974,7 +974,7 @@ fn runOne(
             }
 
             // Bundle smoke test: the `sx build` above ran the sx bundler
-            // (default_pipeline → bundle_main) and produced an `.app`. Assert
+            // (defaultPipeline → bundleMain) and produced an `.app`. Assert
             // its structure, then `rm -rf` it so it doesn't linger.
             if (cfg.bundle) |bc| {
                 const app_path = outputs.bundle_app.?;

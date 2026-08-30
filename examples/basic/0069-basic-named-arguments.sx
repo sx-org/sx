@@ -16,7 +16,7 @@ P :: struct {
 pad :: ufcs (s: string, width: i64, fill: string = " ") -> i64 { s.len + width + fill.len }
 wide :: ufcs pad;
 
-opt_slot :: (f2: ?Closure() = null, tag: string = "-") { if g := f2 { g(); } print("{}\n", tag); }
+optSlot :: (f2: ?Closure() = null, tag: string = "-") { if g := f2 { g(); } print("{}\n", tag); }
 hello :: () { print("hi\n"); }
 
 ev :: (tag: string, v: i64) -> i64 { print("eval {}\n", tag); v }
@@ -29,8 +29,8 @@ main :: () {
     print("{}\n", p.scale(add = 1));      // method: skip 'by' default
     print("{}\n", "ab".pad(4, fill = "--")); // ufcs
     print("{}\n", "ab".wide(width = 4));  // ufcs alias resolves TARGET names
-    opt_slot(f2 = hello, tag = "T");      // named + fn→?Closure promotion
-    opt_slot(tag = "z", f2 = hello);      // any order among named
+    optSlot(f2 = hello, tag = "T");      // named + fn→?Closure promotion
+    optSlot(tag = "z", f2 = hello);      // any order among named
     // written order c, a, b evaluates c-first — mapping happens after.
     print("{}\n", sum3(c = ev("c", 1), a = ev("a", 2), b = ev("b", 3)));
 }

@@ -105,6 +105,10 @@ other type:
 site := @SourceSite{ file = "fake.sx", declaration = "tests.fake", line = 1 };
 ```
 
+Not every contract is a type you construct or a function you call: `@host`
+(§8) is a declared struct whose single value the compiler forms per
+compilation, read by field access (`@host.os`).
+
 Which `@` names exist, and which module owns each canonical declaration, is a
 compiler registry. An `@` declaration in any other file is rejected. The owning
 module is the one resolved from a **library root**, matched by identity on disk
@@ -119,11 +123,11 @@ the import can stand in for the canonical declaration:
 
 A contract need not be a type: an `@` name also declares a function, under the
 same (module, name) identity rule. Most are a signature with no body, which the
-compiler implements — `@volatile_load` and `@volatile_store` (§Intrinsics,
-Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@is_comptime`
-(§Compile-time Evaluation, `@is_comptime()`).
+compiler implements — `@volatileLoad` and `@volatileStore` (§Intrinsics,
+Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
+(§Compile-time Evaluation, `@isComptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over `@printf` and
-`@is_comptime`. So are the postfix assertion's three temperaments —
+`@isComptime`. So are the postfix assertion's three temperaments —
 `@cast` / `@tryCast` / `@castOrNull` (§Postfix Cast), owned by
 `modules/std/fmt.sx`.
 
@@ -261,7 +265,7 @@ not a number (it lexes as an identifier). There is no scientific-exponent
 
 String literals support escape sequences (`\n`, `\t`, `\r`, `\\`, `\"`, `\0`) and may span multiple lines directly:
 ```sx
-shader_src := "#version 330 core
+shaderSrc := "#version 330 core
 void main() {
     gl_Position = vec4(0.0);
 }
@@ -270,7 +274,7 @@ void main() {
 
 **Heredoc strings** use `@string DELIMITER` syntax (inspired by Jai). Content is completely raw — no escape processing. The delimiter is any identifier. Content starts after the newline following the delimiter and ends when the delimiter appears at column 0 of a line.
 ```sx
-vert_src := @string GLSL
+vertSrc := @string GLSL
 #version 330 core
 void main() {
     gl_Position = vec4(aPos, 1.0);
@@ -547,12 +551,12 @@ is simply still open — an unclosed `(`, an argument list, a `{` with no `}` ye
 ```sx
 LIMIT : i64
     : 9;                      // a typed constant
-errno_loc : *i32
+errnoLoc : *i32
     extern libc "__error";    // an extern data global
 mystery :: i64
     intrinsic;                // a typed intrinsic
 
-sx_double :: (n: i32) -> i32 export
+sxDouble :: (n: i32) -> i32 export
     "double_c"
     { n * 2 }                 // the linkage tail reads on to the body
 ```
@@ -614,7 +618,7 @@ c := vstack(1.0) {
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
 - `string` — string of characters
-- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
+- `any` — type-erased BORROW, represented as `{ data: pointer, typeId: i64 }` — the data word (word 0) is the ADDRESS of the value, the typeId word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, typeId}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `@sizeOf(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `@typeOf(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
 ### Char Literals
@@ -693,8 +697,8 @@ float type (the same `lowerNumericLimit` intercept, via `builder.constFloat`):
 hi  := f64.max;           // largest finite double
 lo  := f64.min;           // most-NEGATIVE finite = -max  (NOT C's DBL_MIN)
 eps := f64.epsilon;       // ULP of 1.0  (f64 = 2^-52, f32 = 2^-23)
-mp  := f64.min_positive;  // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
-tm  := f64.true_min;      // smallest positive SUBNORMAL (next value above 0.0)
+mp  := f64.minPositive;   // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
+tm  := f64.trueMin;       // smallest positive SUBNORMAL (next value above 0.0)
 pin := f64.inf;           // +infinity
 qn  := f64.nan;           // a quiet NaN
 ```
@@ -703,43 +707,43 @@ qn  := f64.nan;           // a quiet NaN
 - **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
   types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
   the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
-  smallest positive normal; that is `.min_positive` here.
+  smallest positive normal; that is `.minPositive` here.
 - **Float-only accessors.**
   - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
     representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
     **machine epsilon** used for relative-tolerance comparisons, **NOT** C#'s
-    `Double.Epsilon` (which is the smallest denormal — that is `.true_min` here).
+    `Double.Epsilon` (which is the smallest denormal — that is `.trueMin` here).
     Defining property: `1.0 + epsilon != 1.0` while `1.0 + epsilon/2.0 == 1.0`.
-  - `.min_positive` — the smallest positive **NORMAL** value (`f64 = 2^-1022`,
+  - `.minPositive` — the smallest positive **NORMAL** value (`f64 = 2^-1022`,
     `f32 = 2^-126`). Equals C's `DBL_MIN` / Rust's `MIN_POSITIVE`.
-  - `.true_min` — the smallest positive **SUBNORMAL**: the next value above `0.0`
+  - `.trueMin` — the smallest positive **SUBNORMAL**: the next value above `0.0`
     (`f64` bits `0x0000000000000001 = 2^-1074`, `f32` bits `0x00000001 = 2^-149`).
-    Named `true_min` (after Zig's `floatTrueMin`) to avoid the Java/Go/JS
+    Named `trueMin` (after Zig's `floatTrueMin`) to avoid the Java/Go/JS
     `MIN_VALUE` footgun, where a bare `MIN_VALUE` names the smallest *subnormal*
     yet reads like the most-negative value.
     - **FTZ/DAZ caveat.** Subnormals are exactly the values that vanish under
       flush-to-zero (FTZ) / denormals-are-zero (DAZ) CPU modes. If such a mode is
-      active, a loaded `.true_min` can flush to `0.0` on the **first arithmetic
+      active, a loaded `.trueMin` can flush to `0.0` on the **first arithmetic
       operation** that touches it. The folded constant always carries the exact
       subnormal bit pattern; read or store it through a bit reinterpret *before*
       any arithmetic if you need the true value to survive. Numerical-library
-      authors who toggle FTZ/DAZ should not be surprised when `true_min * 1.0`
+      authors who toggle FTZ/DAZ should not be surprised when `trueMin * 1.0`
       reads back as `0.0`.
   - `.inf` — positive infinity (`inf > max`).
   - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
     guaranteed property is that it is unequal to everything, itself included
     (`nan != nan` is `true` — native float `!=` lowers unordered).
-- **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
-  `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose
+- **Float-only on an integer is an error.** `.epsilon` / `.minPositive` /
+  `.trueMin` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
+  `u8.inf`, `i64.trueMin`) is a clean compile error — integer types expose
   only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
   union (`union { f: f64; bits: u64; }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
-  `epsilon = 0x3CB0000000000000`, `min_positive = 0x0010000000000000`,
-  `true_min = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
+  `epsilon = 0x3CB0000000000000`, `minPositive = 0x0010000000000000`,
+  `trueMin = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
   `0x7F7FFFFF` / `0xFF7FFFFF` / `0x34000000` / `0x00800000` / `0x00000001` /
   `0x7F800000`.
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
@@ -877,7 +881,7 @@ would otherwise silently let a later store clobber an earlier one. An empty
 
 #### Restrictions
 - Pattern matching (`match x { case ... }`) is not supported on unions.
-- Unions cannot be printed directly via `print("{}", union_val)` — access individual fields instead.
+- Unions cannot be printed directly via `print("{}", unionVal)` — access individual fields instead.
 
 ### Struct Types
 User-defined product types with named fields.
@@ -925,8 +929,8 @@ v5 := Vec4{x = 1.0,
 A named field must name a **declared field** of the struct. An explicit
 `name = expr` that names no field is a compile error (`field 'X' not found on
 type 'T'`) — it is never silently dropped, so a typo or a field removed by an
-`inline if OS` branch is caught. (Bare-identifier shorthand that happens to match
-no field is instead read as a *positional* element, not an error.)
+`inline if @host.os` branch is caught. (Bare-identifier shorthand that happens
+to match no field is instead read as a *positional* element, not an error.)
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 `List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
@@ -1001,7 +1005,7 @@ every field is equal (the same element-wise policy as tuples, which share the
 struct layout). Each field is compared against its own type — an `f64` field uses
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
 containing a NaN field is NOT equal to itself), a `string` field uses
-content equality (`str_eq`), a nested struct/tuple field recurses, a tagged-union
+content equality (`strEq`), a nested struct/tuple field recurses, a tagged-union
 field compares by tag only (matching a bare tagged-union `==`), a slice /
 pointer / cstring field compares by identity, and an `?T` field compares by the
 optional value-equality rule (§Optional Types — both-null equal, one-null
@@ -1091,11 +1095,11 @@ Hasher    :: interface {
     sum :: (self: *Self) -> u64;
 }
 Allocator :: interface {
-    alloc_bytes   :: (self: *Self, size: i64) -> *void;
-    dealloc_bytes :: (self: *Self, ptr: *void);
+    allocBytes   :: (self: *Self, size: i64) -> *void;
+    deallocBytes :: (self: *Self, ptr: *void);
 }
 View      :: interface {
-    size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
+    sizeThatFits :: (self: *Self, proposal: ProposedSize) -> Size;
     layout         :: (self: *Self, bounds: Frame);
     render         :: (self: *Self, ctx: *RenderContext, frame: Frame);
 }
@@ -1244,7 +1248,7 @@ conformance on comptime facts — the dead branch's impl never exists,
 joins no set, and emits nothing:
 
 ```sx
-inline if OS == .ios {
+inline if @host.os == .ios {
     impl View for CameraButton { … }
 }
 ```
@@ -1263,7 +1267,7 @@ Color  :: struct { r, g, b, a: f32; }
 Widget :: struct { value: i64; }
 
 Buf :: struct { … }
-write_field :: (out: *Buf, name: string, v: any) { … }
+writeField :: (out: *Buf, name: string, v: any) { … }
 
 Serialize :: interface {
     write :: (self: *Self, out: *Buf);
@@ -1274,9 +1278,9 @@ SERIALIZABLE :: .[Point, Rect, Color, Widget];
 inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
-            inline for i in 0..struct_field_count(T) {
-                write_field(out, struct_field_name(T, i),
-                            struct_field_value(self.*, i));
+            inline for i in 0..structFieldCount(T) {
+                writeField(out, structFieldName(T, i),
+                            structFieldValue(self.*, i));
             }
         }
     }
@@ -1359,17 +1363,17 @@ instantiation compiles them against the concrete `Self`.
 ##### 5.1 Handle layout
 
 ```
-interface:  { ctx: *void, __type_id: Type, __vtable: *Vtable }    3 words
+interface:  { ctx: *void, typeId: Type, vtable: *Vtable }    3 words
 
             ┌──────────┬────────────┬───────────┐
 Show handle │ ctx *────┼─►referent  │ vtable *──┼─► global constant,
-            │          │  __type_id │           │    one per pair
+            │          │  typeId    │           │    one per pair
             └──────────┴────────────┴───────────┘
 ```
 
 Slot 0 is the referent's address; slot 1 is the referent's concrete type
 id, stamped where the handle is built. The first two words are
-byte-identical to an `any` `{data, type_id}` — an interface handle *is*
+byte-identical to an `any` `{data, typeId}` — an interface handle *is*
 an `any` of its referent, extended with dispatch information. `@typeOf`,
 the downcast, the type switch, and `@Interface` all read this prefix.
 
@@ -1464,7 +1468,7 @@ coercion. On a concrete rvalue it is the same error.
 names `?I` / `?i64`). `*T = null` is the null pointer.
 
 **`---` is uninit.** A non-optional I slot may be `---` (LLVM undef, no
-handle). `parent_allocator: Allocator = ---` is the GPU dummy: `init`
+handle). `parentAllocator: Allocator = ---` is the GPU dummy: `init`
 writes the field. A statically-constructed struct cannot take `---` at
 an I field — the operand of a static position names a module-scope
 global (§6.6).
@@ -1500,13 +1504,13 @@ program's job.
 
 Every handle answers `@typeOf` with its referent's concrete type id,
 read from slot 1. The downcast `p.(T)` and the type switch on a handle
-subject follow the same source: a runtime type_id compare. There is no
+subject follow the same source: a runtime typeId compare. There is no
 implicit opening of a handle; the type switch is the opening construct.
 
 ##### 6.2 `@Interface`
 
 ```sx
-@Interface :: struct { ctx: *void; type_id: Type; }
+@Interface :: struct { ctx: *void; typeId: Type; }
 ```
 
 `p.(@Interface)` (and `xx p` at an `@Interface` target) builds the pair
@@ -1516,7 +1520,7 @@ prefix copy of the handle.
 ##### 6.3 The `any` bridge
 
 Boxing a handle into `any` yields a view of the **referent**: `{data =
-ctx, type_id = concrete}` — the handle's byte prefix. The reverse
+ctx, typeId = concrete}` — the handle's byte prefix. The reverse
 direction is refused: a postfix assertion with an *interface* target on
 an `any` receiver is a compile error (an `any`'s tag is always a
 concrete type, so the assertion could only ever fail) — assert the
@@ -1530,9 +1534,9 @@ concrete type behind `p` is not statically known, so only the compiler
 can perform it.
 
 The conformance check and the result's vtable word are one runtime read
-of a link-time `(type_id, Q) → vtable-or-null` table over the pairs with
+of a link-time `(typeId, Q) → vtable-or-null` table over the pairs with
 a **program-unique** impl. The result handle reuses `p`'s ctx and
-type_id and takes the table's vtable-or-null (same referent, new
+typeId and takes the table's vtable-or-null (same referent, new
 dispatch word). A pair with visibility-disjoint duplicate impls (§3) is
 absent from the table and reads null: the site-local visibility that
 arbitrates an ordinary coercion does not exist at a dynamic conversion.
@@ -1561,15 +1565,15 @@ another (`Series(View)`). Constraints are refused in every storable
 position (§4).
 
 **Static positions.** Four positions build their handle before `main`
-runs: a module-scope global's initializer, an `@context_extend` default,
+runs: a module-scope global's initializer, an `@context.extend` default,
 an interface-typed struct-field default, and a field or element of a
 statically-constructed value. In each of them the one operand that
 coerces names a **module-scope global**:
 
 ```sx
-c_allocator : CAllocator = .{};
-@context_extend allocator: Allocator = c_allocator;    // bare global
-fallback : Allocator = mem.c_allocator;                // module-qualified
+cAllocator : CAllocator = .{};
+@context.extend allocator: Allocator = cAllocator;    // bare global
+fallback : Allocator = mem.cAllocator;                // module-qualified
 ```
 
 The initializer is a bare or module-qualified path whose **root** is a
@@ -1650,7 +1654,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   Contribution is judged syntactically and conservatively: an unexpanded
   body mentioning `impl P for …` contributes to `P`, and one holding an
   `@import` contributes the whole surface of the module it names — the
-  impls, declaration names and `@context_extend`s that module authors,
+  impls, declaration names and `@context.extend`s that module authors,
   transitively through its own imports and branches — because selecting
   the branch is what brings them in.
 - **Re-erasure facts depend on impl multiplicity** (the program-unique
@@ -1663,7 +1667,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
   reads it waits for that layout to settle: while any unexpanded branch
-  could still declare a `@context_extend`, the field set is not final,
+  could still declare a `@context.extend`, the field set is not final,
   and the evaluation suspends against Context-ready exactly as it
   suspends against an open conformer set. Contribution is judged
   syntactically, like an `impl`'s. Once nothing can contribute, the
@@ -1772,11 +1776,11 @@ structural on the argument tuple after alias resolution — no
 display-name truncation participates in any symbol or cache key.
 
 **Emission points.** Vtables emit on first use of a pair. Marker/empty
-vtables are emitted like any other. The `(type_id, Q) → vtable-or-null`
+vtables are emitted like any other. The `(typeId, Q) → vtable-or-null`
 re-erasure table of §6.4 emits per target interface when a re-erasure
 to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe on
 an erased receiver exists. The result handle reuses `p`'s ctx and
-type_id and takes the table's vtable-or-null (same referent, new
+typeId and takes the table's vtable-or-null (same referent, new
 dispatch word).
 
 Coherence (§3) is diagnosed before codegen, so every conformance
@@ -1818,7 +1822,7 @@ owns the declaration and no compiler change follows an edit to it.
 | static interface position whose initializer is `g.field` | compile error — the path root must be a module namespace |
 | `free` on: an interface handle / constraint-typed anything | compile error in each case (a handle owns nothing; a constraint has no values at all) |
 | `p.(@Interface)` | field-wise build per layout |
-| `p.(Q)`, different interface | runtime read of the `(type_id, Q)` table (§6.4); all three temperaments read the same null |
+| `p.(Q)`, different interface | runtime read of the `(typeId, Q)` table (§6.4); all three temperaments read the same null |
 | `s.(I)`, operand already `I` | the handle, copied |
 | `any` holding an interface handle | never arises from boxing a handle (that boxes the referent) |
 | `av.(I)` — interface target on an `any` receiver | compile error; a constraint target refuses as a constraint |
@@ -2119,10 +2123,10 @@ copy := ptr.*;          // Vec2
 
 **Auto-deref**: `p.field` is sugar for `p.*.field`.
 ```sx
-set_x :: (p: *Vec2, val: f32) {
+setX :: (p: *Vec2, val: f32) {
     p.x = val;          // auto-deref: p.*.x = val
 }
-set_x(*v, 99.0);
+setX(*v, 99.0);
 ```
 
 **Null**: Pointer types are nullable by default — permanently; this is part
@@ -2194,7 +2198,7 @@ the chain leaves the checked zone.
 
 `cstring` is the C-boundary string: ONE pointer to a null-terminated u8
 buffer — exactly C's `char *`. It is thin (8 bytes, no length field;
-`cstring_len` walks to the terminator, O(n)) and crosses `extern`
+`cstringLen` walks to the terminator, O(n)) and crosses `extern`
 boundaries verbatim in BOTH directions. `?cstring` is the nullable case
 and lowers to the same bare pointer (null = absent) — the natural type
 for `getenv`-style returns and optional `char *` parameters.
@@ -2205,10 +2209,10 @@ Conversion discipline (Odin's model):
   are terminated constants in the binary, so the conversion is free.
 - Any **other** `string` does NOT coerce: it may be an unterminated view
   (`string{ptr, len}` windows, writer output). Materialize an owned,
-  terminated copy with `to_cstring(s)`.
+  terminated copy with `toCstring(s)`.
 - `cstring` does not coerce to `string` implicitly — the length is an
-  O(n) strlen the code must ask for. `from_cstring(c)` is the zero-copy
-  view (shares C's buffer); `substr(from_cstring(c), 0, n)` the owned
+  O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
+  view (shares C's buffer); `substr(fromCstring(c), 0, n)` the owned
   copy.
 - `xx` bit-casts `cstring` ↔ `*u8` / `[*]u8` / integer-pointer values
   for low-level interop.
@@ -2226,7 +2230,7 @@ y: ?i32 = null;      // optional i32, no value
 Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 
 #### LLVM Representation
-- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + has_value flag
+- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + presence flag
 - Pointer optionals (`?*T`): bare pointer — null represents absence
 
 #### Implicit Wrapping
@@ -2260,7 +2264,7 @@ and arithmetic / ordering on un-narrowed optionals stay rejected.
   tagged-union payload compares by tag only). A null payload is never read.
 - `?T == T` (either order): false when the optional is null, otherwise the
   payload compare. A literal on the concrete side types at the payload
-  (`opt_width == 40.0` against a `?f32`).
+  (`optWidth == 40.0` against a `?f32`).
 - `?T == null` keeps its meaning as the presence test (subsumed by the
   general rule).
 - Two distinct optional types (`?f32` vs `?f64`) do not compare, and a payload
@@ -2305,7 +2309,7 @@ if val := x {
 
 #### While-Optional Binding
 ```sx
-while val := get_next() {
+while val := getNext() {
     // val is the unwrapped value
 }
 ```
@@ -2384,9 +2388,9 @@ sdl  :: @library "SDL3";
 socket    :: (domain: i32, type: i32, protocol: i32) -> i32 extern libc;
 SDL_Init  :: (flags: u32) -> bool extern sdl;
 abs       :: (x: i32) -> i32 extern;            // no LIB: resolves from a framework / auto-linked lib
-write_fd  :: (fd: i32, buf: [*]u8, n: u64) -> i64 extern libc "write";  // [LIB] ["csym"] rename
+writeFd   :: (fd: i32, buf: [*]u8, n: u64) -> i64 extern libc "write";  // [LIB] ["csym"] rename
 sx_square :: (x: i32) -> i32 export { x * x }   // define; C can call `sx_square`
-triple_c  :: (x: i32) -> i32 export "triple_c" { x * 3 }  // export under a C name
+tripleC   :: (x: i32) -> i32 export "triple_c" { x * 3 }  // export under a C name
 
 // Data globals — `extern` imports an external global
 __stdinp  : *void extern;
@@ -2414,7 +2418,7 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 |--------|---------|-------|
 | `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
 | `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
-| `const char*` (return) | `cstring` | the pointer, verbatim; `from_cstring` to view |
+| `const char*` (return) | `cstring` | the pointer, verbatim; `fromCstring` to view |
 | nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
 | `const char**` | `*[:0]u8` | address of `[:0]u8` — `.ptr` at offset 0 |
@@ -2520,9 +2524,9 @@ comptime-pack (`..$args`, e.g. `print` / `format`):
 
 ```sx
 s :: @import "modules/std.sx";
-my_print :: s.print;          // comptime-pack fn through a namespace
+myPrint  :: s.print;          // comptime-pack fn through a namespace
 helper2  :: r.helper;         // renamed plain fn
-my_print("x = {}\n", helper2());
+myPrint("x = {}\n", helper2());
 ```
 
 (For making an alias *dot-callable*, see `name :: ufcs target;` in the
@@ -2543,7 +2547,7 @@ sum :: (a: $T, b: T) -> T {
   sum(1.5, 2.5)    // T = f64
   ```
 - A function-type bound written as the function's **return** type introduces the binder there:
-  `make_adder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
+  `makeAdder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
   type, which must satisfy the head. The call supplies no type argument for F.
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`
@@ -2561,7 +2565,7 @@ FnType       := '(' [ TypeExpr { ',' TypeExpr } ] ')' '->' TypeExpr
 
 ```sx
 largest   :: (xs: []$T/Ord) -> T { … }                  // one bound
-are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
+areEqual  :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 apply     :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }   // function-type head
 ```
@@ -2693,7 +2697,7 @@ which erases one conformance per instantiated carrier.
 Functions can accept a variable number of arguments using `..name: []Type` syntax:
 ```sx
 print :: (fmt: string, ..args: []any) { ... }
-path_join :: (..parts: []string) -> string { ... }
+pathJoin :: (..parts: []string) -> string { ... }
 ```
 - The leading `..` marks the parameter as variadic; the declared type is the
   slice the body sees (so `..parts: []string` makes `parts` a `[]string` inside).
@@ -2708,7 +2712,7 @@ path_join :: (..parts: []string) -> string { ... }
   and Interfaces §5.2; a concrete rvalue is refused — the `[N]I` array does
   not invent referents — and a constraint element type is refused as a
   storable position) and is packed into a runtime `[N]I`.
-  `xs[runtime_i].method()` then dispatches through the handle — this is the
+  `xs[runtimeI].method()` then dispatches through the handle — this is the
   **runtime** counterpart to the comptime heterogeneous pack `..xs: I`. A
   `..` spread of an existing slice into `[]I` coerces per element the same
   way.
@@ -2792,32 +2796,32 @@ operations that walk it are compiler-maintained contracts declared by
 ```sx
 @VaList :: struct { }
 
-@va_start :: (list: *@VaList);
-@va_arg   :: ($T: Type, list: *@VaList) -> T;
-@va_copy  :: (dst: *@VaList, src: *@VaList);
-@va_end   :: (list: *@VaList);
+@vaStart :: (list: *@VaList);
+@vaArg   :: ($T: Type, list: *@VaList) -> T;
+@vaCopy  :: (dst: *@VaList, src: *@VaList);
+@vaEnd   :: (list: *@VaList);
 ```
 
 ```sx
 sum :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
-    for i in 0..n { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @vaArg(i32, *ap); }
     return total;
 }
 ```
 
-`@va_start` opens a cursor over the arguments past the fixed count; it is legal
-only inside a definition whose parameter list ends in `..`. `@va_arg` reads the
-next argument and advances, `@va_copy` forks a second cursor at the first's
-position, and `@va_end` closes one. Every cursor a `@va_start` or a `@va_copy`
+`@vaStart` opens a cursor over the arguments past the fixed count; it is legal
+only inside a definition whose parameter list ends in `..`. `@vaArg` reads the
+next argument and advances, `@vaCopy` forks a second cursor at the first's
+position, and `@vaEnd` closes one. Every cursor a `@vaStart` or a `@vaCopy`
 opens is closed exactly once.
 
-`@va_arg` asks for the type the promotions LEAVE in the slot, so `f32` and any
+`@vaArg` asks for the type the promotions LEAVE in the slot, so `f32` and any
 integer narrower than 32 bits are refused where they are written:
-`@va_arg(f64, …)` is how an `f32` argument reads back, and `@va_arg(i32, …)` how
+`@vaArg(f64, …)` is how an `f32` argument reads back, and `@vaArg(i32, …)` how
 a `u8` does. The tail admissibility rule above applies unchanged.
 
 `@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
@@ -2826,9 +2830,9 @@ value form, so it cannot be constructed, inspected, measured (`@sizeOf` /
 declaration and an incoming C parameter are the only things that give a cursor
 storage, and `*name` is the only way to reach one.
 
-The cursor is **owned by the function that declares it**: `@va_start`,
-`@va_end`, and `@va_copy`'s destination each take the address of a local. A
-`*@VaList` handed to another function is a **borrow** — it reads with `@va_arg`
+The cursor is **owned by the function that declares it**: `@vaStart`,
+`@vaEnd`, and `@vaCopy`'s destination each take the address of a local. A
+`*@VaList` handed to another function is a **borrow** — it reads with `@vaArg`
 and leaves the closing to the owner. A cursor cannot escape the frame whose tail
 it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field or
 a global, captured by a closure, or passed through a C-variadic tail.
@@ -2852,7 +2856,7 @@ vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for i in 0..n { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @vaArg(i32, *ap); }
     return total;
 }
 ```
@@ -2873,8 +2877,8 @@ value copy:
 ```sx
 relay :: (fmt: cstring, ..) -> i32 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     return c_vformat(fmt, ap);
 }
 
@@ -2884,8 +2888,8 @@ forward :: (fmt: cstring, ap: *@VaList) -> i32 {
 ```
 
 An incoming list is **borrowed and already open**. The callee never calls
-`@va_start` or `@va_end` on it — both belong to the frame that owns the list —
-but reads it with `@va_arg` and forks it with `@va_copy`. A traversal may move
+`@vaStart` or `@vaEnd` on it — both belong to the frame that owns the list —
+but reads it with `@vaArg` and forks it with `@vaCopy`. A traversal may move
 the caller-visible position, as C specifies, so a caller that needs a second
 traversal copies first.
 
@@ -2904,7 +2908,7 @@ The full family of variadic/pack forms and how they differ:
 | `..xs: []I` *(I an interface)* | mixed, **erased** to the `I` handle | **runtime** (slice) | runtime or comptime | `I` (call interface methods) | runtime |
 | `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` — a constraint or an interface | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
-| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@va_arg(T, *ap)` reads the next | no length |
+| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@vaArg(T, *ap)` reads the next | no length |
 
 Key axis — **concrete vs erased, comptime vs runtime**:
 - `..xs: P` (pack) keeps each element's *concrete* type but is **comptime-only**:
@@ -2912,7 +2916,7 @@ Key axis — **concrete vs erased, comptime vs runtime**:
   runtime index is an error (a pack has no runtime representation). Use it when
   you need per-position types (monomorphization, `xs.T` / `xs.value` projection).
 - `..xs: []I` (slice of interface) **erases** each element to a handle but is
-  **runtime**: `xs[runtime_i].method()` works in an ordinary loop. Use it when
+  **runtime**: `xs[runtimeI].method()` works in an ordinary loop. Use it when
   you need to iterate the args at runtime and only the interface matters. It is
   the runtime counterpart to the pack.
 
@@ -2997,7 +3001,7 @@ suggestion:
   variadic `..xs: []I` (a runtime slice) instead of a pack `..xs: P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the
   return a multi-return of those slots, or a `struct { ..P(Ts) }` field);
-- iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
+- iterating it (`for x in xs`, `xs[runtimeI]`) → `inline for x in xs` (or
   `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
   `..xs: []I` for a runtime loop.
 
@@ -3021,19 +3025,19 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
   sources:       struct { ..ValueListenable(Ts) };   // one field; pack-spread product
   mapper:        Closure(..Ts) -> $R;       // pack-spread in callable sig
   value:         $R;
-  own_allocator: Allocator;
+  ownAllocator: Allocator;
 
   recompute :: (self: *Combined) {
-    new_val := self.mapper(..self.sources.value);  // product projection + spread
-    if new_val == self.value  return;
-    self.value = new_val;
+    newVal := self.mapper(..self.sources.value);  // product projection + spread
+    if newVal == self.value  return;
+    self.value = newVal;
   }
 }
 
 map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
        -> ValueListenable($R) {
   c := context.allocator.alloc(Combined($R, ..sources.T));
-  c.own_allocator = context.allocator;
+  c.ownAllocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
   inline for i in 0..sources.len {          // comptime unroll over the pack
@@ -3086,7 +3090,7 @@ array dimension / lane count uses (see "Array dimensions are integral", §2):
 - A **non-integral** compile-time float — literal OR const expression — is a
   **compile error** with one uniform wording at every site:
   `y : i64 = 1.5`, `y : i64 = M + 0.5`, `y : i64 = F + 0.25` (= 2.75),
-  `y : i64 = f64.true_min + 0.5` (= 0.5), `y : i64 = 5.5 % 2.0` (= 1.5), and
+  `y : i64 = f64.trueMin + 0.5` (= 0.5), `y : i64 = 5.5 % 2.0` (= 1.5), and
   `y : i64 = 5.0 / 2.0` (= 2.5) all →
   "cannot implicitly narrow non-integral float '…' to 'i64'; use an explicit
   cast (`xx`/`.(T)`)".
@@ -3183,18 +3187,18 @@ would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
 **Raw-view retrieval.** The fat-value raw views (`@Closure`
-`{fn_ptr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
-`@Interface` `{ctx, type_id}`, and `@Any` `{data, type_id}`) are
+`{fnPtr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
+`@Interface` `{ctx, typeId}`, and `@Any` `{data, typeId}`) are
 retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
 `p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
 see below). The interface case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a handle
-`{ctx, __type_id, vtable}`, so the result is a real value usable in
+a bit reinterpret: `{ctx, typeId}` is the leading prefix of a handle
+`{ctx, typeId, vtable}`, so the result is a real value usable in
 any position (argument, return, store). `@Interface` mirrors exactly that
-prefix — byte-identical to an `any` `{data, type_id}`; the handle
+prefix — byte-identical to an `any` `{data, typeId}`; the handle
 is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
-temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
+temperaments — the receiver reads as its `{ctx, typeId}` prefix view);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-interface target is refused,
 since ctx addresses the referent),
@@ -3235,12 +3239,12 @@ reports its own call site.
 
 **`av.(@Any)` is the raw-view retrieval, not an assertion** — the one
 target exempt from the three temperaments: it answers the view's own
-`{data, type_id}` pair, built field-wise (name-AND-shape gated, so only
+`{data, typeId}` pair, built field-wise (name-AND-shape gated, so only
 the std `@Any` shape triggers). The exemption is the bare postfix
 target only: the soft form `.(?@Any)` still asserts the boxed payload,
 and `xx av` keeps its unchecked-unbox meaning for EVERY target, `@Any`
 included (the assert helpers' generic `xx av` depends on it).
-`raw_make_any(r.type_id, r.data)` reassembles a working view from the
+`rawMakeAny(r.typeId, r.data)` reassembles a working view from the
 pair.
 
 **Optional chaining**: `o?.(T)` maps the cast over an optional receiver —
@@ -3256,8 +3260,8 @@ An optional TARGET flattens — `ap?.(?i64)` is `?i64`, one null level, never
 pointing at `?.(T)` / unwrap-first, and `x?.(T)` on a non-optional receiver
 is likewise refused. Unchecked unboxing stays `xx`.
 An **interface-handle** receiver's checked downcast (`p.(Square)`) is live:
-a handle carries its referent's `type_id` word and reads as its
-`{ctx, type_id}` prefix view, and the check is a compare against that
+a handle carries its referent's `typeId` word and reads as its
+`{ctx, typeId}` prefix view, and the check is a compare against that
 word — a target the receiver's interface has no conformer for simply
 never matches. The same three temperaments apply (`try p.(Square)` /
 unconsumed panic / `p.(?Square)` soft). See the handle-receiver
@@ -3507,7 +3511,7 @@ double :: (n: i32) -> i32 {
   n * 2;   // the return value; the `;` changes nothing
 }
 
-log_size :: () {
+logSize :: () {
   measure();   // nothing demands the value — discarded
 }
 ```
@@ -3535,7 +3539,7 @@ local function and an inlined comptime callee:
 
 ```sx
 report := || -> !ParseErr measure();   // discarded, then the success exit
-raise_it := || -> !ParseErr ParseErr.BadDigit;
+raiseIt := || -> !ParseErr ParseErr.BadDigit;
 ```
 
 It is also decided per live path: where the tail is an `if` or a `match`, each
@@ -3604,14 +3608,14 @@ definition site. This is the mechanism that lets stdlib containers like
 List :: struct ($T: Type) {
     append :: (list: *List(T), item: T, alloc: Allocator = context.allocator,
                site: @SourceSite = @caller) {
-        list.grow_to(list.items.len + 1, alloc, site);
+        list.growTo(list.items.len + 1, alloc, site);
         // ... stores `item` ...
     }
 }
 
 // Call sites:
 list.append(42);                         // alloc = current context.allocator
-list.append(42, self.parent_allocator);  // alloc = the named long-lived owner
+list.append(42, self.parentAllocator);  // alloc = the named long-lived owner
 ```
 
 The trailing `site: @SourceSite = @caller` rides the same mechanism: a growth
@@ -3657,7 +3661,7 @@ The fields the compiler fills:
 however many times it runs, and they are unchanged by instantiation order,
 optimization level, or edits to unrelated declarations. A library that needs
 per-iteration identity combines the site with an occurrence count or an
-explicit key. `id` is exactly `source_site_key_id(source_site_key(site))` —
+explicit key. `id` is exactly `sourceSiteKeyId(sourceSiteKey(site))` —
 `modules/std/source_site.sx` states that computation in ordinary sx, and the
 compiler must agree with it.
 
@@ -3977,7 +3981,7 @@ above 8 is only safe if every storage path for those values honours it.
 ```text
 payload    = max(@sizeOf(member))              // ≤ max; a ceiling, not a reservation
 alignment  = max(declared align, @alignOf(tag))  // not a max over members
-@sizeOf(P) = align_up(align_up(@sizeOf(tag), alignment) + payload, alignment)
+@sizeOf(P) = alignUp(alignUp(@sizeOf(tag), alignment) + payload, alignment)
 ```
 
 The tag's own alignment is a **floor**: it lives in the same value, so a set
@@ -4285,7 +4289,7 @@ An **open** type argument takes the expression's own type instead, and the set i
 reached afterwards by ordinary expected-type formation:
 
 ```sx
-store_as_view :: (value: $I/@Init($V/View)) -> View {
+storeAsView :: (value: $I/@Init($V/View)) -> View {
     item: V = ---;
     value.write(*item);   // writes exactly *V
     item                  // returned at expected View: lift + slot copy
@@ -4329,15 +4333,15 @@ For C interop with tagged unions (e.g. SDL_Event), a struct can be used as the b
 // Inline layout
 SDL_Event :: enum struct { tag: u32; _: u32; payload: [30]u32; } {
     quit :: 0x100;
-    key_down :: 0x300: SDL_KeyData;
-    key_up :: 0x301: SDL_KeyData;
+    keyDown :: 0x300: SDL_KeyData;
+    keyUp :: 0x301: SDL_KeyData;
 }
 
 // Named layout
 EventLayout :: struct { tag: u32; _: u32; payload: [30]u32; }
 SDL_Event :: enum EventLayout {
     quit :: 0x100;
-    key_down :: 0x300: SDL_KeyData;
+    keyDown :: 0x300: SDL_KeyData;
 }
 ```
 
@@ -4586,7 +4590,7 @@ no tags (the armless-arm error).
 `interface` and `struct` are **disjoint**: `T is struct` is false for every
 interface and every constraint, at both phases. A constraint matches no
 category, and there is no `constraint` category word. Flags-ness is
-`is_flags(T)`, not a category; set membership is asked with the set's own type
+`isFlags(T)`, not a category; set membership is asked with the set's own type
 as the right operand.
 
 ### Logical Operators
@@ -4654,10 +4658,10 @@ When switching on a `Type` value (from `@typeOf`), category keywords match all r
 ```sx
 type := @typeOf(val);
 match type {
-    case unsigned: result = uint_to_string(xx val);
-    case int:      result = int_to_string(xx val);
-    case struct:   result = struct_to_string_over_views(type, val);
-    case enum:     result = enum_walk_over_tables(type, val);
+    case unsigned: result = uintToString(xx val);
+    case int:      result = intToString(xx val);
+    case struct:   result = structToStringOverViews(type, val);
+    case enum:     result = enumWalkOverTables(type, val);
 }
 ```
 Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
@@ -4674,7 +4678,7 @@ Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `v
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `structFieldValue` / `variantPayload` / `anyElement`, `rawMakeAny`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -4689,7 +4693,7 @@ match av {
     case []u8: |b|   { print("{} bytes\n", b.len); }   // composite types are real tags
     case ?i64: |o|   { print("{}\n", o ?? 0); }        // tags are EXACT — no flattening
     case signed: |n| { print("{}\n", n + 1); }         // categories widen: n is i64
-    case struct: |s| { walk_fields(s); }               // other kinds bind the `any` view
+    case struct: |s| { walkFields(s); }                // other kinds bind the `any` view
     else:            { print("{}\n", @typeName(@typeOf(av))); }  // av stays `any`
 }
 ```
@@ -4713,7 +4717,7 @@ match av {
   dead arm. Value patterns (`case 5:`) are a compile error: the payload is
   never the scrutinee.
 - **Subjects**: `any`, INTERFACE handles, and OPEN SET values. A handle
-  subject switches through its `{ctx, type_id}` prefix view; a
+  subject switches through its `{ctx, typeId}` prefix view; a
   set subject switches on the member its
   tag names, and its arms name members with an `else:` arm REQUIRED
   (see Open Sets) — same arms, same captures, over the concrete value
@@ -4739,8 +4743,8 @@ kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case closure:  { env := x.(@Closure).env; if env != null { a.dealloc_bytes(env); } }
-        case slice:    a.dealloc_bytes(xx x.ptr);
+        case closure:  { env := x.(@Closure).env; if env != null { a.deallocBytes(env); } }
+        case slice:    a.deallocBytes(xx x.ptr);
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -4750,10 +4754,10 @@ Arms select in order (a specific type name may precede its category);
 `else:` matches when nothing else does; with no match and no `else:` the
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `@error(…)` arm fires only when SELECTED — the un-selected case is
-the OS-match discipline. The static classifier mirrors the runtime tag
+the target-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, and `case interface:` claims the interface types.
 A constraint matches no arm of either classifier. Inline branches lower in
-statement position (like `inline if OS`), so value-producing arms use
+statement position (like `inline if @host.os`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
 semantics.
 
@@ -4908,9 +4912,9 @@ likewise snapshotted into a fresh temp rather than written back.)
 - Range positions have no storage — `*` on a range capture is a compile error.
 
 ```sx
-events := plat.poll_events();        // []Event
+events := plat.pollEvents();        // []Event
 for *ev in events {                  // ev : *Event — no copy
-    pipeline.dispatch_event(ev);     // passes the pointer
+    pipeline.dispatchEvent(ev);      // passes the pointer
 }
 ```
 
@@ -5007,7 +5011,7 @@ else. That type is **unique** to the literal, is written only through a binder �
 is a zero-sized value, and a two-field env is those two fields.
 
 `Closure(…) -> R` is the **erased** form of a callable — a fat pointer
-`{ fn_ptr, env }` (16 bytes), against a bare function pointer's 8. A unique
+`{ fnPtr, env }` (16 bytes), against a bare function pointer's 8. A unique
 lambda becomes one through [`closure`](#persisting--closure), which is where the
 env's storage is decided.
 
@@ -5038,7 +5042,7 @@ run(f, 10);
 A unique lambda is storage like any other value, so a **copy forks**: the copy
 carries its own env fields and the two run independently. Sharing one env is a
 pointer — `*$F/(i32) -> i32`. An erased `Closure` is the other way round: its
-`{ fn_ptr, env }` copies **alias** the one env the pointer names.
+`{ fnPtr, env }` copies **alias** the one env the pointer names.
 
 **Captures are by value.** A field holds the value the capture expression had
 where the literal is written; assigning the outer name afterwards changes
@@ -5057,7 +5061,7 @@ result := f(10);
 ```
 A unique lambda is monomorphized with its env as the receiver, a function pointer
 calls directly, a `Closure` prepends the env pointer and calls indirectly through
-`fn_ptr`, and a callable nominal calls its `impl`'s `call`.
+`fnPtr`, and a callable nominal calls its `impl`'s `call`.
 
 #### Auto-Promotion
 A **function pointer** and an **empty-env** lambda promote to `Closure` where one
@@ -5089,24 +5093,24 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
     inline match F {
         case closure: return f;
         else: {
-            p := alloc.make(@env_of(f));
-            return .{ fn_ptr = @call_ptr(F), env = p };
+            p := alloc.make(@envOf(f));
+            return .{ fnPtr = @callPtr(F), env = p };
         }
     }
 }
 ```
 
-- `@env_type(F)` is the env type, `@env_of(f)` the `@Init` `make` writes, and
-  `@call_ptr(F)` the trampoline `(env: *void, params…) -> R`. A callable value
+- `@envType(F)` is the env type, `@envOf(f)` the `@Init` `make` writes, and
+  `@callPtr(F)` the trampoline `(env: *void, params…) -> R`. A callable value
   IS its env — a unique lambda is its env struct, an `impl (sig) for T` nominal
-  its own state, a bare function its pointer word — so `@env_type(F)` is `F` and
+  its own state, a bare function its pointer word — so `@envType(F)` is `F` and
   a nominal and a bare function get a trampoline synthesized around it. All
   three refuse a `Closure`, which carries an env rather than being one.
 - A `Closure` argument is returned unchanged, so `closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
-  `make` does not write a null dest; `alloc_bytes(0)` returns null and
-  allocates nothing; `dealloc_bytes(null)` is a no-op.
-  `p := alloc.make(@env_of(f))` is null for a 0-sized env, so an erased empty
+  `make` does not write a null dest; `allocBytes(0)` returns null and
+  allocates nothing; `deallocBytes(null)` is a no-op.
+  `p := alloc.make(@envOf(f))` is null for a 0-sized env, so an erased empty
   lambda carries a null env word and funds nothing.
 - `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
 
@@ -5114,19 +5118,19 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 A factory either returns the unique lambda or erases it, and the return type says
 which:
 ```sx
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
-add5 := make_adder(5);                 // the env itself — no heap
+makeAdder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
+add5 := makeAdder(5);                  // the env itself — no heap
 print("{}\n", add5(100));              // 105
 
-make_handler :: (n: i64) -> Closure(i64) -> i64 {
+makeHandler :: (n: i64) -> Closure(i64) -> i64 {
     return closure(|x|_{ n } x + n);   // env on context.allocator
 }
 ```
 
-`$F` on `make_adder` is the return binder in Generic Functions: the body fixes F
+`$F` on `makeAdder` is the return binder in Generic Functions: the body fixes F
 (here the literal's unique type). A body returns one type — one literal on two
 paths is one type; two literals are two types and cannot both be the return. The
-caller binds the value (`add5 := make_adder(5)`) and does not spell F; a later
+caller binds the value (`add5 := makeAdder(5)`) and does not spell F; a later
 signature names the unique by introducing its own binder (`apply(add5, 1)`,
 `closure(add5)`).
 
@@ -5135,16 +5139,16 @@ parameter — is a `Closure`, so anything capturing that reaches it goes through
 `closure` first.
 
 #### Optional Closures
-`?Closure` is supported for nullable callbacks. Uses `fn_ptr == null` as the none sentinel (zero overhead — same layout as `Closure`).
+`?Closure` is supported for nullable callbacks. Uses `fnPtr == null` as the none sentinel (zero overhead — same layout as `Closure`).
 ```sx
 Button :: struct {
     label: string;
-    on_click: ?Closure(i64) -> void;
+    onClick: ?Closure(i64) -> void;
 }
-btn := Button{label = "OK", on_click = null };
-btn_id := 7;
-btn.on_click = closure(|x|_{ id = btn_id } print("{} {}\n", id, x));
-if handler := btn.on_click {
+btn := Button{label = "OK", onClick = null };
+btnId := 7;
+btn.onClick = closure(|x|_{ id = btnId } print("{} {}\n", id, x));
+if handler := btn.onClick {
     handler(1);
 }
 ```
@@ -5183,11 +5187,11 @@ struct literals exactly (`name = value` — the argument slot is free because
 assignment is statement-only).
 
 ```sx
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) { ... }
+scaffold :: (topBar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) { ... }
 
-scaffold(content = chat_list);                       // reach past defaults by name
-scaffold(top_bar = toolbar, content = chat_list);    // any order among named
-scaffold(chat_list_closure, fab = fab_button);       // positional, then named
+scaffold(content = chatList);                         // reach past defaults by name
+scaffold(topBar = toolbar, content = chatList);       // any order among named
+scaffold(chatListClosure, fab = fabButton);           // positional, then named
 ```
 
 - **Order**: positional arguments first, then named ones. A positional
@@ -5213,7 +5217,7 @@ scaffold(chat_list_closure, fab = fab_button);       // positional, then named
   did-you-mean suggestion; missing required parameters are reported by name.
 
 UFCS calls compose: the receiver binds the FIRST parameter positionally, and
-named arguments may bind the rest (`buf.write_all(data, flush = true)`). A
+named arguments may bind the rest (`buf.writeAll(data, flush = true)`). A
 ufcs **alias** resolves names against the *target* function's declared
 parameter names. Extern functions accept named arguments when their
 declaration declares parameter names.
@@ -5242,8 +5246,8 @@ each(items) { |x| print("{}\n", x); };
 // ≡
 each(items, |x| { print("{}\n", x); });
 
-scaffold(top_bar = toolbar) { chat_list(); };  // named slots + trailing block
-scaffold() { chat_list(); };                   // defaults skipped, block binds `content`
+scaffold(topBar = toolbar) { chatList(); };    // named slots + trailing block
+scaffold() { chatList(); };                    // defaults skipped, block binds `content`
 ```
 
 - **Binding**: the block binds the last declared parameter, which must be
@@ -5296,7 +5300,7 @@ scaffold() { chat_list(); };                   // defaults skipped, block binds 
   `catch |e|`, `@run`, or a bare closure body:
   `if (mk() catch |e| Pt { x = 0 }).x == 1 { … }`. Push is different — named
   aggregates are legal in the context expr and the following brace is the push
-  body: `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
+  body: `push Context{ io = myIo } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain continuation**: after the block's closing `}`, **dot-led** postfix
@@ -5353,24 +5357,24 @@ functions — the receiver participates in `$T` binding and the call
 monomorphizes exactly like the direct spelling:
 
 ```sx
-first_of :: ufcs (xs: []$T) -> T { xs[0] }
+firstOf :: ufcs (xs: []$T) -> T { xs[0] }
 
-xs.first_of();       // dot — binds $T from the receiver
-first_of(xs);        // direct
+xs.firstOf();       // dot — binds $T from the receiver
+firstOf(xs);        // direct
 ```
 
 #### UFCS Aliases
 The alias form decouples the method name from the function name —
 useful when the bare name reads poorly in dot position:
 ```sx
-arena_alloc :: (arena: *Arena, size: i64) -> *void { ... }
-alloc :: ufcs arena_alloc;
+arenaAlloc :: (arena: *Arena, size: i64) -> *void { ... }
+alloc :: ufcs arenaAlloc;
 
-myArena.alloc(42);        // calls arena_alloc(myArena, 42)
+myArena.alloc(42);        // calls arenaAlloc(myArena, 42)
 alloc(myArena, 42);       // also works as a direct call
 ```
 
-This avoids the naming redundancy of `myArena.arena_alloc(42)`.
+This avoids the naming redundancy of `myArena.arenaAlloc(42)`.
 
 ### Field Access
 ```sx
@@ -5380,7 +5384,7 @@ Used for module access (`std.print`) and struct member access.
 
 ### Enum Literal
 ```sx
-.variant_name
+.variantName
 ```
 The enum type is inferred from context (expected type from declaration or parameter).
 
@@ -5408,42 +5412,42 @@ its terminator.
 The `push` statement installs a new implicit context for the duration of a block. The context is CALL-CARRIED (a hidden `*Context` parameter threaded through every sx call, never a global): `push` allocates the new Context on the pushing frame's stack, and the body — including every function it calls — reads through it. On exit the previous context is back in force.
 
 ```sx
-push .{ allocator = arena.allocator(), logger = *my_logger } {
+push .{ allocator = arena.allocator(), logger = *myLogger } {
     handle(client);   // inside here, `context` has the new value
 }
 // context is restored to its previous value here
 ```
 
-A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push some_ctx { … }`) stores it as-is — seed it from `context` first to inherit.
+A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push someCtx { … }`) stores it as-is — seed it from `context` first to inherit.
 
-**`Context` struct** — assembled PER PROGRAM, 100% from `@context_extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
+**`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
-c_allocator : CAllocator = .{};
-@context_extend allocator: Allocator = c_allocator;
+cAllocator : CAllocator = .{};
+@context.extend allocator: Allocator = cAllocator;
 
 // std/io.sx
-c_blocking_io : CBlockingIo = .{};
-@context_extend io: Io = c_blocking_io;
+cBlockingIo : CBlockingIo = .{};
+@context.extend io: Io = cBlockingIo;
 ```
-Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
+Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = myImplGlobal;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
-`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context_extend` fields with their declaring modules, so the demand is traceable.
+`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context.extend` fields with their declaring modules, so the demand is traceable.
 
-### `@context_extend` — extending the Context
+### `@context.extend` — extending the Context
 
 Any module — stdlib or user — can declare a field the program's Context carries:
 
 ```sx
-@context_extend ui: *Ui = null;      // bare nullable pointer — the default idiom
-@context_extend frame_stats: FrameStats = .{};
+@context.extend ui: *Ui = null;      // bare nullable pointer — the default idiom
+@context.extend frameStats: FrameStats = .{};
 ```
 
 `?*Ui` works too and opts the field into checked nullability (consumers must
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `@context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
+- **Grammar**: `@context.extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
@@ -5452,7 +5456,7 @@ sentinel, per the pointer contract.
 - **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Constraints and Interfaces, compile-time execution): an added field's default is readable at comptime; interface-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context_extend logger: *Logger = null;`).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context.extend logger: *Logger = null;`).
 
 ---
 
@@ -5516,8 +5520,8 @@ otherwise go; an `@` name is written as its signature alone, because the sigil
 is already the marker:
 
 ```sx
-struct_field_count :: ($T: Type) -> i64 intrinsic;
-@volatile_load :: ($T: Type, address: *T) -> T;
+structFieldCount :: ($T: Type) -> i64 intrinsic;
+@volatileLoad :: ($T: Type, address: *T) -> T;
 ```
 
 The `@` form takes no body — no brace block, no `=> expr`, no `intrinsic`
@@ -5552,16 +5556,16 @@ parameter count is a compile-time error at the declaration itself — never a
 fallback to a runtime symbol lookup.
 
 Each intrinsic is dispatched one of three ways. Most are handled at **lowering** —
-folded to a constant (`@sizeOf`, `struct_field_count`), or lowered to dedicated IR ops
+folded to a constant (`@sizeOf`, `structFieldCount`), or lowered to dedicated IR ops
 (the atomics). Two — `@typeName` and `@typeInfo` — are
 **dual**: folded at lowering when the type argument is statically resolvable, and
 serviced by the comptime evaluator when it is only known at evaluation time. The
-compiler-API surface (`raw_intern`, `raw_find_type`, the `BuildOptions` methods, …) is
+compiler-API surface (`rawIntern`, `rawFindType`, the `BuildOptions` methods, …) is
 **evaluate**: the comptime evaluator services it and there is no runtime form at
 all. Calling one from the runtime call graph is a compile-time error that prints
 the path from the root that reached it.
 
-Dispatch is not the same as stage-availability. `@sqrt` and `atomic_load` are both
+Dispatch is not the same as stage-availability. `@sqrt` and `atomicLoad` are both
 lowered. The evaluator interprets the atomic ops, and evaluates the `call_builtin`
 that `@sqrt` lowers to, so `@run @sqrt(x)` is a compile-time constant.
 
@@ -5575,7 +5579,7 @@ whether it runs at compile time or at runtime; what decides is **reachability**.
 
 - **Compile-time roots**: `@run`, type construction, `@insert`, module-scope
   `inline if` / `inline match` / `inline for`, and a build callback registered
-  with `on_build`. A `::` whose initializer is a call is not a compile-time
+  with `onBuild`. A `::` whose initializer is a call is not a compile-time
   root.
 - **Runtime roots**: `main`, exported definitions, and anything named by global
   data (an interface vtable, an open set's tag table, the default `Context`).
@@ -5628,31 +5632,31 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
 - `@sizeOf($T: Type) -> i64` — size of type `T` in bytes
 - `@alignOf($T: Type) -> i64` — alignment of type `T` in bytes
-- `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
+- `@volatileLoad($T: Type, address: *T) -> T` / `@volatileStore($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
-- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
+- `@vaStart(list: *@VaList)` / `@vaArg($T: Type, list: *@VaList) -> T` / `@vaCopy(dst: *@VaList, src: *@VaList)` / `@vaEnd(list: *@VaList)` — the C-variadic cursor: `@vaStart` opens one over the tail arguments of the definition being lowered, `@vaArg` reads the next and advances, `@vaCopy` forks a second cursor at the first's position, and `@vaEnd` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
 
 ### Type Introspection
 - `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
-- `struct_field_count($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variant_count`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
-- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `@typeInfo(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout) — kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
-- `struct_field_name($T: Type, idx: i64) -> string` — the name of the `idx`-th field of a struct/tuple (positional tuple elements have no name → `""`). Kind-gated like `struct_field_count`.
-- `struct_field_type($T: Type, idx: i64) -> Type` — the `idx`-th field's type. Kind-gated; also resolves in type position.
-- `struct_field_value(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variant_payload`.
-- `variant_count($E: Type) -> i64` / `variant_name($E: Type, idx: i64) -> string` / `variant_type($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `struct_field_*` builtin.
-- `variant_payload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `struct_field_value`).
-- `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
-- `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
+- `structFieldCount($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variantCount`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
+- The whole field family — `structFieldName` / `structFieldType` / `structFieldOffset` / `variantName` / `variantType` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `structFieldValue(av, i)` / `variantPayload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{structFieldType(tag, i), av.data + structFieldOffset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(structFieldType(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `@typeInfo(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout) — kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
+- `structFieldName($T: Type, idx: i64) -> string` — the name of the `idx`-th field of a struct/tuple (positional tuple elements have no name → `""`). Kind-gated like `structFieldCount`.
+- `structFieldType($T: Type, idx: i64) -> Type` — the `idx`-th field's type. Kind-gated; also resolves in type position.
+- `structFieldValue(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variantPayload`.
+- `variantCount($E: Type) -> i64` / `variantName($E: Type, idx: i64) -> string` / `variantType($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `structField*` builtin.
+- `variantPayload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `structFieldValue`).
+- `anyElement(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
+- `rawAnyData(av: any) -> *void` / `rawMakeAny(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `rawMakeAny` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `variantValue($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
-- `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variant_payload` dual for error channels, same borrow rules). A payload-free member views as `void`.
-- `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
-- `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
-- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `@sizeOf / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
+- `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (the `variantPayload` dual for error channels, same borrow rules). A payload-free member views as `void`.
+- `variantIndex($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variantValue`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variantIndex(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
+- `isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
+- `vectorLanes($T: Type) -> i64` — a vector's lane count (`vectorLanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `@sizeOf / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `structFieldCount` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `@typeInfo`'s job, like the count tables).
 - `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox(v: any, $T: Type) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
-- The boxed-view family — `@len` / `@field` / `@elementAt` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW borrowing the receiver's storage (same borrow rules as `struct_field_value`), and an index past the count is undefined behavior.
+- The boxed-view family — `@len` / `@field` / `@elementAt` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW borrowing the receiver's storage (same borrow rules as `structFieldValue`), and an index past the count is undefined behavior.
 - `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum and tagged-union variants, array elements, vector lanes, and the count a slice's or string's header carries.
 - `@field(v: any, idx: i64) -> any` — the `idx`-th member at its offset; a tagged union's members share the payload offset.
 - `@elementAt(v: any, idx: i64) -> any` — the `idx`-th element of an array, vector, slice, or string, striding from the buffer a fat pointer names.
@@ -5663,7 +5667,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `@sizeOf`, `@alignOf`, `struct_field_count`, `variant_count`, `@typeName`, `@typeEq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`@sizeOf(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `structFieldCount`, `variantCount`, `@typeName`, `@typeEq`, `isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, `structFieldCount`, `variantCount`, `isFlags`, and `vectorLanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `@typeInfo`'s job. Passing a non-Type VALUE (`@sizeOf(6)`, `isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
@@ -5722,16 +5726,15 @@ compile-time rejection spelling — a compiler-maintained contract, sibling of
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:
 
-- The comptime conditional flatten pass drops non-taken module-scope
-  `inline if` arms before the directive can fire — the idiomatic way to
-  reject an unsupported target in an exhaustive `inline if OS`/`inline if
-  ARCH` without a silent fallback:
+- Module-scope expansion drops non-taken `inline if` arms before the
+  directive can fire — the idiomatic way to reject an unsupported target in
+  an exhaustive `inline match @host.os` without a silent fallback:
 
 ```sx
-inline match OS {
-    case .macos: errno_location :: () -> *i32 extern libc "__error";
-    case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
-    else:        @error("errno_location: unsupported target — add its libc symbol.");
+inline match @host.os {
+    case .macos: errnoLocation :: () -> *i32 extern libc "__error";
+    case .linux: errnoLocation :: () -> *i32 extern libc "__errno_location";
+    else:        @error("errnoLocation: unsupported target — add its libc symbol.");
 }
 ```
 
@@ -5743,7 +5746,7 @@ inline match OS {
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
         case closure:  { ... }
-        case slice:    a.dealloc_bytes(xx x.ptr);
+        case slice:    a.deallocBytes(xx x.ptr);
         else:          @error("free expects a closure or a slice");
     }
 }
@@ -5789,12 +5792,12 @@ response :: @run format(...);  // compile time
 response := format(...);       // mutable, runtime
 ```
 
-### `@is_comptime()`
+### `@isComptime()`
 
-`@is_comptime() -> bool` answers which machine is running the code: `true` under
+`@isComptime() -> bool` answers which machine is running the code: `true` under
 the comptime evaluator, `false` in compiled code. One lowered body serves both
 stages, so the answer is the backend's rather than a fold — in the binary the
-call folds to `false` and a `if @is_comptime() { … }` branch is dead. It carries
+call folds to `false` and a `if @isComptime() { … }` branch is dead. It carries
 the `@` sigil: a compiler-maintained contract (§Lexical Structure, The `@`
 namespace) declared by `modules/std/core.sx`, which uses it in `@panic` to exit
 the compiler where a compiled panic aborts.
@@ -5806,47 +5809,53 @@ The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build 
 ```sx
 @import "modules/build.sx";
 
-configure_build :: () {
-    opts := build_options();
-    opts.add_link_flag("-lm");
-    opts.set_output_path("out/my_program");
+configureBuild :: () {
+    opts := buildOptions();
+    opts.addLinkFlag("-lm");
+    opts.setOutputPath("out/my_program");
 
-    inline if OS == .wasm {
-        opts.set_output_path("sx-out/wasm/app.html");
-        opts.add_link_flag("-sUSE_SDL=3");
-        opts.add_link_flag("-sALLOW_MEMORY_GROWTH=1");
+    inline if @host.os == .wasm {
+        opts.setOutputPath("sx-out/wasm/app.html");
+        opts.addLinkFlag("-sUSE_SDL=3");
+        opts.addLinkFlag("-sALLOW_MEMORY_GROWTH=1");
     }
 }
-@run configure_build();
+@run configureBuild();
 ```
 
 **API:**
 
 | Method | Description |
 |--------|-------------|
-| `build_options()` | Returns a `BuildOptions` value for the current compilation |
-| `opts.add_link_flag(flag)` | Appends a linker flag (merged with CLI flags) |
-| `opts.set_output_path(path)` | Sets the output binary path (overridden by CLI `-o`) |
+| `buildOptions()` | Returns a `BuildOptions` value for the current compilation |
+| `opts.addLinkFlag(flag)` | Appends a linker flag (merged with CLI flags) |
+| `opts.setOutputPath(path)` | Sets the output binary path (overridden by CLI `-o`) |
 
-Build flags from `add_link_flag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
+Build flags from `addLinkFlag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
 
-### Compiler Constants
+### The Target Facts — `@host`
 
-The `modules/build.sx` module provides compile-time constants set by the compiler based on the target:
+`@host` is the target fact. `modules/std/target.sx` declares it, and the
+compiler forms its single value per compilation from the build target. Read it
+by field access; the read resolves by name, so no import is needed — in an
+`inline if` or in a value position. Import `modules/std/target.sx` to name the
+`OperatingSystem` / `Architecture` type, or to read `@host` whole. Using
+`@host` as a type is an ordinary type reference to that declaration.
 
-| Constant | Type | Description |
-|----------|------|-------------|
-| `OS` | `OperatingSystem` | Target OS: `.macos`, `.linux`, `.windows`, `.wasm`, `.unknown` |
-| `ARCH` | `Architecture` | Target arch: `.aarch64`, `.x86_64`, `.wasm32`, `.unknown` |
-| `POINTER_SIZE` | `i64` | Pointer width in bytes (8 for 64-bit, 4 for wasm32) |
+| Field | Type | Value |
+|-------|------|-------|
+| `@host.os` | `OperatingSystem` | `.macos`, `.linux`, `.windows`, `.wasm`, `.ios`, `.android`, `.unknown` |
+| `@host.arch` | `Architecture` | `.aarch64`, `.x86_64`, `.wasm32`, `.wasm64`, `.unknown` |
+| `@host.pointerSize` | `i64` | Pointer width in bytes (8 for 64-bit, 4 for wasm32) |
+| `@host.isSimulator` | `bool` | `true` on an iOS Simulator target |
 
 These are used with `inline if` for compile-time conditional compilation:
 
 ```sx
-inline if OS == .wasm {
+inline if @host.os == .wasm {
     // Only compiled when targeting wasm
 }
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     // Only compiled on 64-bit platforms
 }
 ```
@@ -5854,11 +5863,12 @@ inline if POINTER_SIZE == 8 {
 A statically-dead `inline if` branch is dropped **whole**: its statements are
 not lowered and its type annotations are not resolved, so a type that exists
 only on another target (or behind a disabled feature const) never errors from
-a pruned branch (`inline if OS == .ios { u : *UIKitPlatform = …; }` compiles
-for every target). The condition folds for `OS`/`ARCH`/`POINTER_SIZE`
-comparisons, `and`/`or` combinations, bool literals, and module consts with a
-bool-literal value (`ENABLED :: false`); an unfoldable condition falls back to
-a runtime `if`, where both branches are checked as usual.
+a pruned branch (`inline if @host.os == .ios { u : *UIKitPlatform = …; }`
+compiles for every target). The condition folds for comparisons, `and` / `or`,
+`not`, bool literals, module consts with a bool-literal value
+(`ENABLED :: false`), and a field read of a comptime struct; an unfoldable
+condition falls back to a runtime `if`, where both branches are checked as
+usual.
 
 ---
 
@@ -5964,8 +5974,8 @@ Semantics:
 - **Flat imports do not carry private names.** A flat importer referring to a
   private name gets a "private to its declaring module" (functions) or
   undeclared/unknown diagnostic — never the declaration.
-- **Namespaces do not expose private members.** `ns.priv_member` reports
-  "namespace 'ns' has no member 'priv_member'". Deep traversal keeps the
+- **Namespaces do not expose private members.** `ns.privMember` reports
+  "namespace 'ns' has no member 'privMember'". Deep traversal keeps the
   ORIGINAL requester's authority: an intermediate private alias is not
   traversable from another file either.
 - **A private named-import alias is not carried.** It binds only in its author
@@ -5986,7 +5996,7 @@ Semantics:
   can still produce a value without naming the field: a positional init
   (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
   A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
-  `struct_field_value`) read the layout rather than the name, so none is a
+  `structFieldValue`) read the layout rather than the name, so none is a
   mention. Same-file methods, free functions, and literals may name the field.
   A method whose name matches a private field still dispatches: `x.fd(…)` is a
   mention only when `fd` resolves to a field.
@@ -6005,7 +6015,7 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@context_extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@context.extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6065,7 +6075,7 @@ main :: () -> i32 {
 
 ```
 modules/std.sx        the prelude — print/format, string ops (concat, substr,
-                      path_join, ...), List(T), Context + push, the Allocator
+                      pathJoin, ...), List(T), Context + push, the Allocator
                       interface; plus the namespace tail: mem / xml / log /
                       fs / process / socket / json / cli / hash / test ::
                       @import "modules/std/<m>.sx"
@@ -6083,7 +6093,7 @@ modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 ```
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
-`json.parse`, `fs.exists`, `hash.sha256_hex`, `log.warn`, ... through the
+`json.parse`, `fs.exists`, `hash.sha256Hex`, `log.warn`, ... through the
 carried namespace tail (see Namespace Alias Carry). Direct file imports
 (`@import "modules/std/json.sx"`) remain available for bare access.
 
@@ -6109,7 +6119,7 @@ a warnings-only build still exits 0.
 | `--target <target>` | Target triple or shorthand (default: host) |
 | `--cpu <name>` | CPU name (default: generic) |
 | `--opt <level>` | Optimization: `none`/`0`, `less`/`1`, `default`/`2`, `aggressive`/`3` |
-| `-o <path>` | Output path (overrides `set_output_path`) |
+| `-o <path>` | Output path (overrides `setOutputPath`) |
 
 ### Target Shorthands
 
@@ -6146,10 +6156,10 @@ Users opt in **explicitly** from their own `@run` block:
 @import "modules/platform/bundle.sx";
 
 @run {
-    opts := build_options();
-    opts.set_bundle_path("MyApp.app");
-    opts.set_bundle_id("com.example.app");
-    opts.set_post_link_callback(bundle_main);
+    opts := buildOptions();
+    opts.setBundlePath("MyApp.app");
+    opts.setBundleId("com.example.app");
+    onBuild(bundleMain);
 }
 ```
 
@@ -6161,13 +6171,13 @@ Two registration forms:
 
 | Setter | Behavior |
 |--------|----------|
-| `BuildOptions.set_post_link_callback(cb: () -> bool)` | First-class function value. Preferred. |
-| `BuildOptions.set_post_link_module(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundle_main` post-link. |
+| `onBuild(cb: (opt: BuildOptions) -> bool)` | First-class function value. Preferred. |
+| `BuildOptions.setPostLinkModule(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundleMain` post-link. |
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
-`bundle_path` is set and no callback was registered, the compiler
-auto-falls-back to `post_link_module = "platform.bundle"`. The sx
-bundler reads `bundle_path()` regardless of which flag the user used.
+`bundlePath` is set and no callback was registered, the compiler
+auto-falls-back to `setPostLinkModule("platform.bundle")`. The sx
+bundler reads `bundlePath()` regardless of which flag the user used.
 The callback returns `false` to fail the build.
 
 ### BuildOptions surface
@@ -6180,37 +6190,36 @@ evaluator services them, and they have no runtime form. Setters accumulate
 config; accessors read it back inside the build callback.
 
 The callback itself is an ordinary sx function — default ABI, implicit Context —
-registered with `on_build`. Nothing marks it compile-time: it stays out of the
+registered with `onBuild`. Nothing marks it compile-time: it stays out of the
 binary because no runtime root reaches it.
 
 | Method | Read / write | Purpose |
 |--------|--------------|---------|
-| `add_link_flag(flag)` | write | extra linker flag |
-| `add_framework(name)` | write | `-framework <name>` (Apple) |
-| `set_output_path(path)` | write | linked binary path |
-| `set_wasm_shell(path)` | write | custom WASM shell template |
-| `add_asset_dir(src, dest)` | write | bundle a directory of runtime assets |
-| `set_post_link_callback(cb)` | write | first-class callback (preferred) |
-| `set_post_link_module(name)` | write | name-based callback fallback |
-| `set_bundle_path(path)` | write | `.app` / `.apk` output |
-| `set_bundle_id(id)` | write | iOS `CFBundleIdentifier` / Android package |
-| `set_codesign_identity(name)` | write | Apple signing identity (`-` = ad-hoc) |
-| `set_provisioning_profile(path)` | write | iOS device `.mobileprovision` |
-| `set_manifest_path(path)` | write | Android AndroidManifest.xml override |
-| `set_keystore_path(path)` | write | Android keystore override |
-| `binary_path()` | read | path of the freshly-linked binary |
-| `bundle_path() / bundle_id()` | read | mirror of the setters |
-| `codesign_identity() / provisioning_profile()` | read | Apple codesign params |
-| `manifest_path() / keystore_path()` | read | Android overrides |
-| `target_triple()` | read | canonicalized target triple |
-| `is_macos() / is_ios() / is_ios_device() / is_ios_simulator() / is_android()` | read | per-target predicates |
-| `framework_count() / framework_at(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
-| `framework_path_count() / framework_path_at(i)` | read | linker `-F` search paths |
-| `jni_main_count() / jni_main_runtime_path_at(i) / jni_main_java_source_at(i)` | read | `main = true` emissions for the APK bundler |
-| `asset_dir_count() / asset_dir_src_at(i) / asset_dir_dest_at(i)` | read | iterate registered asset trees |
+| `addLinkFlag(flag)` | write | extra linker flag |
+| `addFramework(name)` | write | `-framework <name>` (Apple) |
+| `setOutputPath(path)` | write | linked binary path |
+| `setWasmShell(path)` | write | custom WASM shell template |
+| `addAssetDir(src, dest)` | write | bundle a directory of runtime assets |
+| `setPostLinkModule(name)` | write | name-based callback fallback |
+| `setBundlePath(path)` | write | `.app` / `.apk` output |
+| `setBundleId(id)` | write | iOS `CFBundleIdentifier` / Android package |
+| `setCodesignIdentity(name)` | write | Apple signing identity (`-` = ad-hoc) |
+| `setProvisioningProfile(path)` | write | iOS device `.mobileprovision` |
+| `setManifestPath(path)` | write | Android AndroidManifest.xml override |
+| `setKeystorePath(path)` | write | Android keystore override |
+| `binaryPath()` | read | path of the freshly-linked binary |
+| `bundlePath() / bundleId()` | read | mirror of the setters |
+| `codesignIdentity() / provisioningProfile()` | read | Apple codesign params |
+| `manifestPath() / keystorePath()` | read | Android overrides |
+| `targetTriple()` | read | canonicalized target triple |
+| `isMacos() / isIos() / isIosDevice() / isIosSimulator() / isAndroid()` | read | per-target predicates |
+| `frameworkCount() / frameworkAt(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
+| `frameworkPathCount() / frameworkPathAt(i)` | read | linker `-F` search paths |
+| `jniMainCount() / jniMainRuntimePathAt(i) / jniMainJavaSourceAt(i)` | read | `main = true` emissions for the APK bundler |
+| `assetDirCount() / assetDirSrcAt(i) / assetDirDestAt(i)` | read | iterate registered asset trees |
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
-that read after-the-fact (`binary_path`, `bundle_path`, etc.) return
+that read after-the-fact (`binaryPath`, `bundlePath`, etc.) return
 the value that was either set in `@run` or forwarded from a CLI flag.
 
 ### `fs.sx` and `process.sx` stdlib modules
@@ -6225,22 +6234,22 @@ arity-switched cdecl trampoline).
 
 | Function | Purpose |
 |----------|---------|
-| `open_file(path, mode) -> ?File` | open a handle |
-| `read_file(path) -> ?string` | one-shot slurp |
-| `write_file(path, data) -> bool` | create / truncate / write |
-| `append_file(path, data) -> bool` | append |
-| `copy_file(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
-| `delete_file(path) -> bool` | `unlink` |
-| `delete_dir(path) -> bool` | `rmdir` (empty only) |
-| `create_dir(path) -> bool` / `create_dir_all(path) -> bool` | `mkdir` / `mkdir -p` |
+| `openFile(path, mode) -> ?File` | open a handle |
+| `readFile(path) -> ?string` | one-shot slurp |
+| `writeFile(path, data) -> bool` | create / truncate / write |
+| `appendFile(path, data) -> bool` | append |
+| `copyFile(src, dst) -> bool` | byte copy (streamed through 64 KB buffer) |
+| `deleteFile(path) -> bool` | `unlink` |
+| `deleteDir(path) -> bool` | `rmdir` (empty only) |
+| `createDir(path) -> bool` / `createDirAll(path) -> bool` | `mkdir` / `mkdir -p` |
 | `move(old, new) -> bool` | `rename` |
-| `set_mode(path, mode) -> bool` | `chmod` |
+| `setMode(path, mode) -> bool` | `chmod` |
 | `exists(path) -> bool` | `access(F_OK)` |
 | `basename(p) -> string` / `dirname(p) -> string` | text-only path split |
 
 `File` is a small value-typed handle wrapping a POSIX fd, with
-methods `is_valid / close / read / write / seek`. Higher-level helpers
-(`read_file`, `write_file`, `copy_file`) bypass `*File` methods and
+methods `isValid / close / read / write / seek`. Higher-level helpers
+(`readFile`, `writeFile`, `copyFile`) bypass `*File` methods and
 call libc directly so they remain callable from the post-link IR
 interpreter (which doesn't yet handle `*Self` method dispatch on
 locally-unwrapped optionals).
@@ -6251,37 +6260,37 @@ locally-unwrapped optionals).
 |----------|---------|
 | `run(cmd: [:0]u8) -> ?ProcessResult` | `popen` shell command, capture stdout + exit |
 | `env(name: [:0]u8) -> ?string` | `getenv` (null if unset) |
-| `find_executable(name) -> ?string` | `command -v <name>` via shell |
+| `findExecutable(name) -> ?string` | `command -v <name>` via shell |
 
-`ProcessResult` is `{ exit_code: i32, stdout: string }`. The post-link
+`ProcessResult` is `{ exitCode: i32, stdout: string }`. The post-link
 bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 `d8`, `keytool`, `apksigner`, etc. through `run`.
 
-### Apple `.app` flow (`bundle.sx::bundle_main`)
+### Apple `.app` flow (`bundle.sx::bundleMain`)
 
-`bundle_main` branches on `is_android()` first; the remaining body is
+`bundleMain` branches on `isAndroid()` first; the remaining body is
 the Apple path. Per target:
 
 | Step | macOS | iOS sim | iOS device |
 |------|-------|---------|------------|
 | Stage `<bundle>` (rm-rf + mkdir + copy binary + set exe bit) | ✓ | ✓ | ✓ |
 | Write `Info.plist` | minimal `CFBundle*` | + `UIDeviceFamily` + `LSRequiresIPhoneOS` + `UIApplicationSceneManifest` + `DTPlatformName=iPhoneSimulator` | + same with `DTPlatformName=iPhoneOS` |
-| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `provisioning_profile()` set |
+| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `provisioningProfile()` set |
 | Embed `Frameworks/<Name>.framework/` (recursive `cp -R` per `-F` search path) | — | when present | when present |
-| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundle_id>`) | — | — | when `provisioning_profile()` set |
+| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `provisioningProfile()` set |
 | Codesign | ad-hoc (`-`) | ad-hoc | `--sign <identity> --entitlements <ent>` |
 
-### Android `.apk` flow (`bundle.sx::android_bundle_main`)
+### Android `.apk` flow (`bundle.sx::androidBundleMain`)
 
 The Android branch:
 
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
-3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copy_file` from the linked output.
-4. **Manifest** — user-supplied via `set_manifest_path()`, or synthesized:
+3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copyFile` from the linked output.
+4. **Manifest** — user-supplied via `setManifestPath()`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
-5. **Compile `main = true` Java sources** — write each entry's `java_source` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
+5. **Compile `main = true` Java sources** — write each entry's `javaSource` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
 6. **`aapt2 link -I <android.jar> --manifest <m> -o <unaligned>`**.
 7. **Append archives** — `zip -q -r <unaligned> lib/`, then `zip -q <unaligned> classes.dex` (if dex was produced), then `zip` each registered asset dir at its `dest` path.
 8. **`zipalign -f 4 <unaligned> <aligned>`**.
@@ -6483,9 +6492,9 @@ control to the nearest enclosing fallback target:
 - otherwise → the enclosing failable boundary (propagation).
 
 ```sx
-v       := try parse_digit(s);          // propagate on failure
+v       := try parseDigit(s);           // propagate on failure
 v2, n   := try parse(s);                // multi-value
-try must_init();                        // statement form, discard values
+try mustInit();                         // statement form, discard values
 v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
@@ -6503,7 +6512,7 @@ inferred channel. The block's last expression is its success value.
 v := try {
   h := try open(path);
   defer close(h);
-  try read_all(h)
+  try readAll(h)
 } catch |e| {
   log.warn("load failed: {}", e);
   default
@@ -6530,12 +6539,12 @@ expression. `foo() catch {}` absorbs.
 A bare binding (`catch e { }`) is a parse error with a hint to write the pipes.
 
 ```sx
-v := parse_digit(s) catch |e| {
+v := parseDigit(s) catch |e| {
   log.warn("bad input: {}", e);
   return default;                       // noreturn body
 };
 
-v := parse_digit(s) catch |e| compute_fallback(e);   // value-producing body
+v := parseDigit(s) catch |e| computeFallback(e);   // value-producing body
 
 v, n := parse(s) catch |e| {
   log.warn("parse failed: {}", e);
@@ -6564,8 +6573,8 @@ initialize `:=`, a typed mutable declaration (`name: T =`), or a body-local
 constant declaration (`name ::` or `name: T :`).
 
 ```sx
-must_init() catch |e| { log.warn("{}", e); };  // OK — statement
-x := must_init() catch |e| { 0 };              // ERROR: nothing to bind
+mustInit() catch |e| { log.warn("{}", e); };  // OK — statement
+x := mustInit() catch |e| { 0 };              // ERROR: nothing to bind
 ```
 
 Give the callee a value channel (`-> (T, !E)`) where the handled expression
@@ -6587,14 +6596,14 @@ also defaults a failable. On a failable LHS the RHS shape decides the result:
 short-circuit.
 
 ```sx
-v := parse_digit(s) ?? 0;                        // value terminator → non-failable
+v := parseDigit(s) ?? 0;                         // value terminator → non-failable
 v := try foo() ?? try boo();                     // chain, propagate if both fail
 v := foo() ?? boo() ?? 0;                        // bare operands, 0 absorbs all
-v, n := parse_pair(s) ?? .{0, 0};                // tuple terminator (multi-value)
+v, n := parsePair(s) ?? .{0, 0};                 // tuple terminator (multi-value)
 ```
 
 A **void** failable (`-> !`) rejects a plain-value RHS (no success type to
-fall back to); `must_init() ?? must_other()` (chain) and `must_init() catch {}`
+fall back to); `mustInit() ?? mustOther()` (chain) and `mustInit() catch {}`
 (absorb) are the legal forms.
 
 `or` / `and` are logical operators over booleans; a failable operand is a type
@@ -6641,17 +6650,17 @@ identity, named functions included:
 
 ```sx
 slot    : Closure(() -> (i32, !Both));
-io_slot : Closure(() -> (i32, !IoErr));
+ioSlot  : Closure(() -> (i32, !IoErr));
 
 slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
 slot    = inner;   // OK — inner's inferred channel IS Both
 slot    = ok;      // ERROR — a non-failable function is not a failable slot
-io_slot = inner;   // ERROR — Both is not IoErr
+ioSlot  = inner;   // ERROR — Both is not IoErr
 ```
 
 No dest-typed thunk, environment stash, or hidden allocation stands behind a slot
 assignment: the channel matches or the assignment is rejected. An interface or
-protocol method keeps the channel it is written with — `Io.suspend_raw` is
+protocol method keeps the channel it is written with — `Io.suspendRaw` is
 `!IoErr.Canceled`, not `!IoErr`.
 
 A generic callability bound `$F/() -> ($R, !)` accepts any failable channel,
@@ -6755,10 +6764,10 @@ error is its `.error` arm.
 conditional cleanup is a `defer` in front of an `if`, not a form of its own:
 
 ```sx
-make_handle :: () -> (Handle, !) {
-  h := try sys_open();
+makeHandle :: () -> (Handle, !) {
+  h := try sysOpen();
   keep := false;
-  defer if !keep sys_close(h);   // close unless the handle is handed out
+  defer if !keep sysClose(h);   // close unless the handle is handed out
 
   try configure(h);
   try register(h);
@@ -6801,14 +6810,14 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   (`catch`, a succeeding chain attempt, a value terminator, a destructure)
   clears the buffer.
 - **Resolution is in-process — no DWARF, no OS symbolizer.** A runtime frame is
-  a pointer to a compile-time-interned `Frame { file, line, col, func, line_text }`
+  a pointer to a compile-time-interned `Frame { file, line, col, func, lineText }`
   stamped at the push site; the formatter reads it directly (deterministic,
   identical across OS/target, works under the JIT and a signed iOS `.app`). A
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
 - **Mode.** On by default in debug; release no-ops the push points.
   **Comptime (`@run`) is always traced.**
-- **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
+- **Formatting** lives in `library/modules/trace.sx` (`trace.printCurrent()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
   caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
   can step sx source — that is a debugger artifact, separate from trace
@@ -6820,7 +6829,7 @@ trace** — the chain of `raise` / `try` sites the error passed through.
 IoErr :: error { Failed; Canceled }
 ```
 
-`Io.suspend_raw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
+`Io.suspendRaw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
 worker is a lambda, so it writes its channel out
 (`context.io.async(|| -> (i64, !IoErr) try compute(a, b))`).
 
@@ -6845,7 +6854,7 @@ end             = ';' | EOF   // §1 Spacing and terminators: a line break is
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
-context_extend  = '@context_extend' IDENT ':' type '=' expr end
+context_extend  = '@context.extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
 error_decl      = IDENT '::' set_operand ('|' set_operand)* end
 set_ref         = IDENT ('.' IDENT)*          // a named set or a qualified member; each

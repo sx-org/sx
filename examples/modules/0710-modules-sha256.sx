@@ -20,14 +20,14 @@ check :: (label: string, got: [64]u8, want: string) {
 }
 
 main :: () {
-    check("empty", sha256_hex(""),
+    check("empty", sha256Hex(""),
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    check("abc", sha256_hex("abc"),
+    check("abc", sha256Hex("abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 
     // 112-byte input — spans more than one 64-byte block.
     multi := "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
-    check("multi", sha256_hex(multi),
+    check("multi", sha256Hex(multi),
         "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
 
     // Streaming must equal one-shot regardless of chunk boundaries.

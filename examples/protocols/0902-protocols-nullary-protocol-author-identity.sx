@@ -11,7 +11,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("a vtable dispatch", a.own_tag() == 101);
-    report("b vtable dispatch", b.own_first() == 7 and b.own_tag() == 201);
+    report("a vtable dispatch", a.ownTag() == 101);
+    report("b vtable dispatch", b.ownFirst() == 7 and b.ownTag() == 201);
     0
 }

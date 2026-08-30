@@ -19,36 +19,36 @@ Pipe :: struct {
     }
 }
 
-g_pipe : *Pipe = ---;
-g_width  : i32 = 800;
-g_height : i32 = 600;
+gPipe : *Pipe = ---;
+gWidth  : i32 = 800;
+gHeight : i32 = 600;
 
-do_render :: () {
-    g_pipe.resize(g_width, g_height);
-    g_pipe.tick();
-    print("wrapper: pw={}, ph={}, frame={}\n", g_pipe.pw, g_pipe.ph, g_pipe.frame);
+doRender :: () {
+    gPipe.resize(gWidth, gHeight);
+    gPipe.tick();
+    print("wrapper: pw={}, ph={}, frame={}\n", gPipe.pw, gPipe.ph, gPipe.frame);
 }
 
-callback_inline :: (userdata: *void, code: i64) -> bool abi(.c) {
-    g_width = xx code;
-    g_height = xx (code + 1);
-    g_pipe.resize(g_width, g_height);
-    g_pipe.tick();
-    print("inline:  pw={}, ph={}, frame={}\n", g_pipe.pw, g_pipe.ph, g_pipe.frame);
+callbackInline :: (userdata: *void, code: i64) -> bool abi(.c) {
+    gWidth = xx code;
+    gHeight = xx (code + 1);
+    gPipe.resize(gWidth, gHeight);
+    gPipe.tick();
+    print("inline:  pw={}, ph={}, frame={}\n", gPipe.pw, gPipe.ph, gPipe.frame);
     true
 }
 
-callback_wrapper :: (userdata: *void, code: i64) -> bool abi(.c) {
-    g_width = xx code;
-    g_height = xx (code + 1);
-    do_render();
+callbackWrapper :: (userdata: *void, code: i64) -> bool abi(.c) {
+    gWidth = xx code;
+    gHeight = xx (code + 1);
+    doRender();
     true
 }
 
 main :: () {
     pipe := Pipe{ pw = 0, ph = 0, frame = 0 };
-    g_pipe = *pipe;
+    gPipe = *pipe;
 
-    callback_inline(xx 0, 320);
-    callback_wrapper(xx 0, 640);
+    callbackInline(xx 0, 320);
+    callbackWrapper(xx 0, 640);
 }

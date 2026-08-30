@@ -10,8 +10,8 @@
 S :: struct { n: i64; }
 Stats :: struct { count: i64; buf: [4]i64; }
 
-@context_extend s: *S = null;
-@context_extend stats: Stats = .{};
+@context.extend s: *S = null;
+@context.extend stats: Stats = .{};
 
 main :: () {
     v := S{ n = 3 };

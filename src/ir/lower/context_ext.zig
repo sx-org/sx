@@ -1,7 +1,7 @@
-//! Context extension — `@context_extend` collection pass
+//! Context extension — `@context.extend` collection pass
 //! (design/context-extension.md).
 //!
-//! Gathers every `@context_extend` declaration across the compilation into
+//! Gathers every `@context.extend` declaration across the compilation into
 //! `ProgramIndex.context_extensions`, sorted by (declaring module path, field
 //! name), and validates:
 //!   - one flat program-global namespace — a field name declared twice
@@ -35,7 +35,7 @@ const inst_mod = @import("../inst.zig");
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
-/// Program-index collection pass for `@context_extend` (pass 0a family; runs
+/// Program-index collection pass for `@context.extend` (pass 0a family; runs
 /// from `lowerRoot` right after `detectContextDecl`, before `scanDecls`).
 pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) void {
     var entries = std.ArrayList(ContextFieldDecl).empty;
@@ -61,7 +61,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
         if (e.default_expr != null) continue;
         e.valid = false;
         self.context_structural_error = true;
-        diags.addFmtInFile(.err, e.module_path, e.span, "@context_extend '{s}' has no default value — the default context must be constructible before `main` runs", .{e.name});
+        diags.addFmtInFile(.err, e.module_path, e.span, "@context.extend '{s}' has no default value — the default context must be constructible before `main` runs", .{e.name});
     }
 
     // One flat namespace. The first declaration of a name in sorted order
@@ -109,7 +109,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
 
 /// Assemble the program Context: append every valid collected field to the
 /// registered `Context` struct type (declared EMPTY in core.sx — 100% of the
-/// fields come from `@context_extend` declarations, in sort order). The
+/// fields come from `@context.extend` declarations, in sort order). The
 /// authoritative call is pass 1a' in `lowerRoot` (after `scanDecls` — every
 /// named type registered, diagnostics live). Each field's type resolves in
 /// its DECLARING module's visibility context, exactly like a namespaced
@@ -248,7 +248,7 @@ fn typeNameKnown(self: *Lowering, name: []const u8) bool {
 
 pub const ContextFieldRef = struct { index: u32, ty: types_mod.TypeId };
 
-/// Attach the registered `@context_extend` field list (name, declared type
+/// Attach the registered `@context.extend` field list (name, declared type
 /// spelling, declaring module) as a note under the primary diagnostic `id`.
 /// The registered-field enumeration — shared by the no-context error ("what would the
 /// context have been?") and the Context unknown-field error ("what fields
@@ -303,7 +303,7 @@ pub fn contextFieldByName(self: *Lowering, fname: []const u8) ?ContextFieldRef {
     return null;
 }
 
-/// Serialize the `@context_extend` declaration named `fname`'s default into a
+/// Serialize the `@context.extend` declaration named `fname`'s default into a
 /// static ConstantValue against the assembled field type — the extension
 /// half of the `__sx_default_context` initializer. Reuses the global-
 /// initializer serializer — defaults are exactly the compile-time-constant
@@ -333,7 +333,7 @@ pub fn contextExtensionDefault(self: *Lowering, fname: []const u8, fty: types_mo
     return null;
 }
 
-/// Is `fname` a collected `@context_extend` declaration (valid or not)?
+/// Is `fname` a collected `@context.extend` declaration (valid or not)?
 pub fn hasContextExtension(self: *Lowering, fname: []const u8) bool {
     for (self.program_index.context_extensions) |e| {
         if (std.mem.eql(u8, e.name, fname)) return true;

@@ -29,8 +29,8 @@ Panel :: @OpenVariant(View) {
 }
 
 // A helper whose return type is the set, and one whose return type is a member.
-make_header :: (text: string) -> View { return Panel{ title = text, rows = 2 }; }
-make_label :: (text: string) -> Label => Label{ text = text };
+makeHeader :: (text: string) -> View { return Panel{ title = text, rows = 2 }; }
+makeLabel :: (text: string) -> Label => Label{ text = text };
 
 collect :: (content: $B/@BuildBlock(View)) -> Sink(View) {
     sink := Sink(View){};
@@ -44,8 +44,8 @@ main :: () -> i32 {
     sink := collect() {
         Label{ text = "a member leaf" };
         already;
-        make_header("a helper's View");
-        make_label("a helper's member");
+        makeHeader("a helper's View");
+        makeLabel("a helper's member");
 
         // Not a member: an ordinary statement, and the sink never sees it.
         41;

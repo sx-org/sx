@@ -17,7 +17,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 
 // C→sx thread boundary: fabricate a Context, then run the server's loop until
 // stop() wakes it (the 1636 re-entry contract).
-srv_entry :: (arg: *void) -> *void abi(.c) {
+srvEntry :: (arg: *void) -> *void abi(.c) {
     srv : *http.Server = xx arg;
     gpa := GPA.init();
     push .{ allocator = gpa } {
@@ -26,7 +26,7 @@ srv_entry :: (arg: *void) -> *void abi(.c) {
     return null;
 }
 
-LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddr_in order
+LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddrIn order
 
 main :: () -> i32 {
     gpa := GPA.init();
@@ -36,7 +36,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("init failed\n"); rc = 1; }
         else {
-            t, te := thread.Thread.spawn(srv_entry, *srv);
+            t, te := thread.Thread.spawn(srvEntry, *srv);
             if te { print("spawn failed\n"); rc = 1; }
             else {
                 b1 : [4096]u8 = ---;

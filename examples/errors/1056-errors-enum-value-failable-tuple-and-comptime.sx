@@ -25,7 +25,7 @@ classify :: (s: string) -> (Color, !E) {
 }
 
 // F2: comptime parameter forces inline lowering of the body.
-ct_pick :: ($n: i32, s: string) -> (Color, !E) {
+ctPick :: ($n: i32, s: string) -> (Color, !E) {
     if s == "red"  { return .red; }       // bare value, inline path → {0, 0}
     if s == "blue" { return .blue; }      // bare value, inline path → {2, 0}
     raise .Nope;                     // inline error path → {undef, 1}
@@ -45,17 +45,17 @@ main :: () -> i32 {
     print("F1 bad: tag name = {}\n", @errorName(e2));               // E.Nope
 
     // ── F2 success (comptime-param, inline path): error slot 0 at runtime ──
-    c3, e3 := ct_pick(7, "red");
+    c3, e3 := ctPick(7, "red");
     print("F2 red: err int = {}\n", e3.(i64));                      // 0
     if e3 { print("F2 red bare-if: ERROR (WRONG)\n"); } else { print("F2 red bare-if: ok\n"); }
     if e3 == .Nope { print("F2 red == Nope (WRONG)\n"); } else { print("F2 red != Nope (ok)\n"); }
     if !e3 { print("F2 red guard: c = {}\n", c3.(i64)); }           // 0
 
-    c4, e4 := ct_pick(7, "blue");
+    c4, e4 := ctPick(7, "blue");
     if !e4 { print("F2 blue: err int = {}, c = {}\n", e4.(i64), c4.(i64)); }   // 0, 2
 
     // ── F2 error (comptime-param, inline error path): right tag ──
-    c5, e5 := ct_pick(7, "x");
+    c5, e5 := ctPick(7, "x");
     print("F2 err: err nonzero = {}\n", e5.(i64) != 0);             // true (ordinal is program-global, not pinned)
     if e5 == .Nope { print("F2 err: is Nope (ok)\n"); } else { print("F2 err: not Nope (WRONG)\n"); }
 

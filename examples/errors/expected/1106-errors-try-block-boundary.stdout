@@ -1,23 +1,23 @@
-caught_raise=-1
-caught_try=-1
-caught_ok=5
+caughtRaise=-1
+caughtTry=-1
+caughtOk=5
 narrowed=70
-escapes_ok=8
-escapes_err=40
-forwarded_ok=3
-forwarded_absorbed=0
-forwarded_err=-9
-boundary_arg_ok=3
-boundary_arg_err=-1
-defer_err=-1 seen=1
-defer_ok=6 seen=2
+escapesOk=8
+escapesErr=40
+forwardedOk=3
+forwardedAbsorbed=0
+forwardedErr=-9
+boundaryArgOk=3
+boundaryArgErr=-1
+deferErr=-1 seen=1
+deferOk=6 seen=2
 pure=1
-nested_err=-1
-nested_ok=12
-raise_tail=-1
-slots_ok=16
-slots_err=0
-or_inside=-1
-or_operand=9
+nestedErr=-1
+nestedOk=12
+raiseTail=-1
+slotsOk=16
+slotsErr=0
+orInside=-1
+orOperand=9
 marked=-1
 bare=-1

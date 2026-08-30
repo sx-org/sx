@@ -21,8 +21,8 @@ SERIALIZABLE :: .[Point, Rect, Color];
 inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T) {
-            inline for i in 0..struct_field_count(T) {
-                print("{}={} ", struct_field_name(T, i), struct_field_value(self.*, i));
+            inline for i in 0..structFieldCount(T) {
+                print("{}={} ", structFieldName(T, i), structFieldValue(self.*, i));
             }
             print("\n");
         }

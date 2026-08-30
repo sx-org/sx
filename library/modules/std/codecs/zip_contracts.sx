@@ -10,7 +10,7 @@ Method :: enum { store; deflate; unsupported; }
 
 Source :: interface {
     size :: (self: *Self) -> i64;
-    read_at :: (self: *Self, offset: i64, output: string) -> (string, !Error);
+    readAt :: (self: *Self, offset: i64, output: string) -> (string, !Error);
 }
 
 Sink :: interface {
@@ -29,22 +29,22 @@ FileWriterOptions :: struct {
 }
 
 FromReaderOptions :: struct {
-    force_zip64: bool = false;
+    forceZip64: bool = false;
 }
 
 AppendOptions :: struct {
-    force_zip64: bool = false;
-    max_metadata: i64 = 67108864;
+    forceZip64: bool = false;
+    maxMetadata: i64 = 67108864;
 }
 
 OpenOptions :: struct {
-    max_metadata: i64 = 67108864;
+    maxMetadata: i64 = 67108864;
 }
 
 OpenFileOptions :: struct {
     start: i64 = 0;
     size: ?i64 = null;
-    max_metadata: i64 = 67108864;
+    maxMetadata: i64 = 67108864;
 }
 
 EntryOptions :: struct {
@@ -52,13 +52,13 @@ EntryOptions :: struct {
     level: i64 = 6;
     comment: string = "";
     extra: string = "";
-    central_extra: ?string = null;
-    store_small: bool = true;
-    data_descriptor: bool = true;
+    centralExtra: ?string = null;
+    storeSmall: bool = true;
+    dataDescriptor: bool = true;
     utf8: bool = true;
-    external_attributes: u32 = 0;
-    modified_seconds: ?i64 = null;
-    use_file_modified_time: bool = false;
+    externalAttributes: u32 = 0;
+    modifiedSeconds: ?i64 = null;
+    useFileModifiedTime: bool = false;
 }
 
 Entry :: struct {
@@ -67,12 +67,12 @@ Entry :: struct {
     extra: string;
     method: Method;
     size: i64;
-    compressed_size: i64;
+    compressedSize: i64;
     checksum: u32;
-    modified_seconds: ?i64;
-    external_attributes: u32;
+    modifiedSeconds: ?i64;
+    externalAttributes: u32;
     encrypted: bool;
     directory: bool;
     supported: bool;
-    safe_path: bool;
+    safePath:  bool;
 }

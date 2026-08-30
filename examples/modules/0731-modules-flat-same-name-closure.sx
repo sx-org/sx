@@ -14,9 +14,9 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("from_a closure binds a.pick (1)", from_a_closure() == 1);
-    report("from_b closure binds b.pick (2)", from_b_closure() == 2);
-    report("from_a fn-value binds a.pick (1)", from_a_value() == 1);
-    report("from_b fn-value binds b.pick (2)", from_b_value() == 2);
+    report("fromA closure binds a.pick (1)", fromAClosure() == 1);
+    report("fromB closure binds b.pick (2)", fromBClosure() == 2);
+    report("fromA fn-value binds a.pick (1)", fromAValue() == 1);
+    report("fromB fn-value binds b.pick (2)", fromBValue() == 2);
     0
 }

@@ -30,120 +30,120 @@ fill :: (buf: [*]u8) {
     while i < BUF_SIZE { buf[i] = SENTINEL; i += 1; }
 }
 
-sum_bytes :: (buf: [*]u8) -> i64 {
+sumBytes :: (buf: [*]u8) -> i64 {
     s : i64 = 0;
     i : i64 = 0;
     while i < BUF_SIZE { s += buf[i]; i += 1; }
     s
 }
 
-run_u8 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runU8 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u8 = *buf[TARGET];
     p.* = 0x42;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_u16 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runU16 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u16 = xx *buf[TARGET];
     p.* = 0x0102;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_u32 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runU32 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u32 = xx *buf[TARGET];
     p.* = 0x01020304;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_u64 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runU64 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *u64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_i8 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runI8 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i8 = xx *buf[TARGET];
     p.* = 0x42;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_i16 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runI16 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i16 = xx *buf[TARGET];
     p.* = 0x0102;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_i32 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runI32 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i32 = xx *buf[TARGET];
     p.* = 0x01020304;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_i64 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runI64 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *i64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_bool :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runBool :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *bool = xx *buf[TARGET];
     p.* = true;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_f32 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runF32 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *f32 = xx *buf[TARGET];
     p.* = 1.0;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
-run_f64 :: () -> i64 {
-    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+runF64 :: () -> i64 {
+    buf : [*]u8 = xx c.libcMalloc(BUF_SIZE);
     fill(buf);
     p : *f64 = xx *buf[TARGET];
     p.* = 1.0;
-    s := sum_bytes(buf);
-    c.libc_free(buf);
+    s := sumBytes(buf);
+    c.libcFree(buf);
     s
 }
 
@@ -151,17 +151,17 @@ run_f64 :: () -> i64 {
 // `@run` evaluates each helper via the interp, so its
 // `storeAtRawPtr(addr, val, val_ty)` honors the declared width.
 
-EXP_U8   :: @run run_u8();
-EXP_U16  :: @run run_u16();
-EXP_U32  :: @run run_u32();
-EXP_U64  :: @run run_u64();
-EXP_S8   :: @run run_i8();
-EXP_S16  :: @run run_i16();
-EXP_S32  :: @run run_i32();
-EXP_S64  :: @run run_i64();
-EXP_BOOL :: @run run_bool();
-EXP_F32  :: @run run_f32();
-EXP_F64  :: @run run_f64();
+EXP_U8   :: @run runU8();
+EXP_U16  :: @run runU16();
+EXP_U32  :: @run runU32();
+EXP_U64  :: @run runU64();
+EXP_S8   :: @run runI8();
+EXP_S16  :: @run runI16();
+EXP_S32  :: @run runI32();
+EXP_S64  :: @run runI64();
+EXP_BOOL :: @run runBool();
+EXP_F32  :: @run runF32();
+EXP_F64  :: @run runF64();
 
 // ── runtime comparison ──────────────────────────────────────────────
 
@@ -173,17 +173,17 @@ check :: (label: string, got: i64, want: i64) -> bool {
 
 main :: () -> i32 {
     ok := true;
-    if !check("u8",   run_u8(),   EXP_U8)   { ok = false; }
-    if !check("u16",  run_u16(),  EXP_U16)  { ok = false; }
-    if !check("u32",  run_u32(),  EXP_U32)  { ok = false; }
-    if !check("u64",  run_u64(),  EXP_U64)  { ok = false; }
-    if !check("i8",   run_i8(),   EXP_S8)   { ok = false; }
-    if !check("i16",  run_i16(),  EXP_S16)  { ok = false; }
-    if !check("i32",  run_i32(),  EXP_S32)  { ok = false; }
-    if !check("i64",  run_i64(),  EXP_S64)  { ok = false; }
-    if !check("bool", run_bool(), EXP_BOOL) { ok = false; }
-    if !check("f32",  run_f32(),  EXP_F32)  { ok = false; }
-    if !check("f64",  run_f64(),  EXP_F64)  { ok = false; }
+    if !check("u8",   runU8(),   EXP_U8)   { ok = false; }
+    if !check("u16",  runU16(),  EXP_U16)  { ok = false; }
+    if !check("u32",  runU32(),  EXP_U32)  { ok = false; }
+    if !check("u64",  runU64(),  EXP_U64)  { ok = false; }
+    if !check("i8",   runI8(),   EXP_S8)   { ok = false; }
+    if !check("i16",  runI16(),  EXP_S16)  { ok = false; }
+    if !check("i32",  runI32(),  EXP_S32)  { ok = false; }
+    if !check("i64",  runI64(),  EXP_S64)  { ok = false; }
+    if !check("bool", runBool(), EXP_BOOL) { ok = false; }
+    if !check("f32",  runF32(),  EXP_F32)  { ok = false; }
+    if !check("f64",  runF64(),  EXP_F64)  { ok = false; }
     if ok { print("ok\n"); return 0; }
     return 1;
 }

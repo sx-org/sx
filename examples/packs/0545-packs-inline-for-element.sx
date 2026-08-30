@@ -14,7 +14,7 @@
 Show :: constraint { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
 StrBox :: struct { s: string; }
-impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }
+impl Show for IntBox { show :: (self: *IntBox) -> string { intToString(self.v) } }
 impl Show for StrBox { show :: (self: *StrBox) -> string { self.s } }
 
 bare :: (..xs: Show) {
@@ -22,17 +22,17 @@ bare :: (..xs: Show) {
         print("bare: {}\n", x.show());
     }
 }
-elem_and_index :: (..xs: Show) {
+elemAndIndex :: (..xs: Show) {
     inline for x, i in xs, 0.. {
         print("{}: {}\n", i, x.show());
     }
 }
-range_driver :: (..xs: Show) {
+rangeDriver :: (..xs: Show) {
     inline for i, x in 0..xs.len, xs {
         print("r{}: {}\n", i, x.show());
     }
 }
-offset_index :: (..xs: Show) {
+offsetIndex :: (..xs: Show) {
     inline for x, i in xs, 10.. {
         print("{} -> {}\n", i, x.show());
     }
@@ -42,7 +42,7 @@ captureless :: (..xs: Show) {
     inline for xs { n += 1; }
     print("ran {}\n", n);
 }
-value_pos :: (..xs: Show) {
+valuePos :: (..xs: Show) {
     inline for x in xs {
         print("val: {}\n", x);
     }
@@ -54,10 +54,10 @@ empty :: (..xs: Show) {
 
 main :: () {
     bare(IntBox{ v = 7 }, StrBox{ s = "hi" });
-    elem_and_index(IntBox{ v = 7 }, StrBox{ s = "hi" });
-    range_driver(IntBox{ v = 1 }, StrBox{ s = "two" });
-    offset_index(StrBox{ s = "x" }, StrBox{ s = "y" });
+    elemAndIndex(IntBox{ v = 7 }, StrBox{ s = "hi" });
+    rangeDriver(IntBox{ v = 1 }, StrBox{ s = "two" });
+    offsetIndex(StrBox{ s = "x" }, StrBox{ s = "y" });
     captureless(IntBox{ v = 0 }, IntBox{ v = 0 }, IntBox{ v = 0 });
-    value_pos(IntBox{ v = 42 });
+    valuePos(IntBox{ v = 42 });
     empty();
 }

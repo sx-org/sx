@@ -35,7 +35,7 @@ main :: () -> i64 {
     print("{}\n", p);                          // __anon{ x: 10, y: 2.500000}
 
     // Reflection composes: anon structs are ordinary structs.
-    print("{} {}\n", struct_field_count(@typeOf(u)), struct_field_name(@typeOf(p), 0));  // 3 x
+    print("{} {}\n", structFieldCount(@typeOf(u)), structFieldName(@typeOf(p), 0));  // 3 x
 
     // Self-typing reaches every untyped position: an inferred return, an
     // array-literal element, and a global `::` const (immutable — a write

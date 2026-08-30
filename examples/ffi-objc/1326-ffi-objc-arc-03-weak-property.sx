@@ -28,7 +28,7 @@ SxWeakHolder :: @ObjcClass("SxWeakHolder", extends = NSObject) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         gpa := GPA.init();
         tracker := TrackingAllocator.init(gpa);
 
@@ -41,8 +41,8 @@ main :: () -> i32 {
             // After release: target's refcount → 0 → target deallocates.
             // With weak: holder.target should read as null (auto-niled).
             // Without weak: holder.target reads as the stale pointer.
-            read_back := holder.target;
-            if read_back != null {
+            readBack := holder.target;
+            if readBack != null {
                 print("FAIL: weak property didn't auto-nil after target dealloc\n");
                 return 1;
             }
@@ -52,7 +52,7 @@ main :: () -> i32 {
 
         print("weak property: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

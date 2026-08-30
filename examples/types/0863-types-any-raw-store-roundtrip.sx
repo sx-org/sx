@@ -1,5 +1,5 @@
-// The raw layer over the `any` view: raw_any_data(av) reads the data
-// pointer; raw_make_any(tp, data) assembles a view (UNCHECKED — the
+// The raw layer over the `any` view: rawAnyData(av) reads the data
+// pointer; rawMakeAny(tp, data) assembles a view (UNCHECKED — the
 // caller asserts `data` points at a live, aligned value of `tp`).
 // Contract edges pinned here: byte copies through the data pointer are
 // SHALLOW and cover exactly @sizeOf(tag) bytes; a reassembled view is a
@@ -22,7 +22,7 @@ Store :: struct {
 
     put :: (self: *Store, v: any) {
         n := @sizeOf(@typeOf(v));
-        c.memcpy(*self.buf[self.used], raw_any_data(v), n);
+        c.memcpy(*self.buf[self.used], rawAnyData(v), n);
         self.tags[self.count] = @typeOf(v);
         self.offs[self.count] = self.used;
         self.lens[self.count] = n;
@@ -31,7 +31,7 @@ Store :: struct {
     }
 
     get :: (self: *Store, i: i64) -> any {
-        raw_make_any(self.tags[i], *self.buf[self.offs[i]])
+        rawMakeAny(self.tags[i], *self.buf[self.offs[i]])
     }
 }
 
@@ -56,11 +56,11 @@ main :: () -> i64 {
     // buffer and re-view them under the same tag.
     wire : [16]u8 = .[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     pv := s.get(2);
-    c.memcpy(*wire[0], raw_any_data(pv), @sizeOf(@typeOf(pv)));
-    restored := raw_make_any(@typeOf(pv), *wire[0]);
+    c.memcpy(*wire[0], rawAnyData(pv), @sizeOf(@typeOf(pv)));
+    restored := rawMakeAny(@typeOf(pv), *wire[0]);
     print("{}\n", restored.(Point).y);           // 9
 
     // Field views compose over the reassembled view too.
-    print("{}\n", struct_field_value(restored, 0));   // 7
+    print("{}\n", structFieldValue(restored, 0));   // 7
     return 0;
 }

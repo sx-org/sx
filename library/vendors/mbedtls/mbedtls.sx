@@ -165,13 +165,13 @@ mbedtls_ssl_read         :: (ssl: *SslContext, buf: [*]u8, len: usize) -> i32 ex
 mbedtls_ssl_write        :: (ssl: *SslContext, buf: [*]u8, len: usize) -> i32 extern mbedtls;
 mbedtls_ssl_close_notify :: (ssl: *SslContext) -> i32 extern mbedtls;
 
-// f_send / f_recv are C-ABI callbacks: int (*)(void *ctx, const uchar *buf, size_t len).
+// fSend / fRecv are C-ABI callbacks: int (*)(void *ctx, const uchar *buf, size_t len).
 mbedtls_ssl_set_bio :: (
     ssl: *SslContext,
-    p_bio: *void,
-    f_send: (*void, [*]u8, usize) -> i32 abi(.c),
-    f_recv: (*void, [*]u8, usize) -> i32 abi(.c),
-    f_recv_timeout: *void,
+    pBio: *void,
+    fSend: (*void, [*]u8, usize) -> i32 abi(.c),
+    fRecv: (*void, [*]u8, usize) -> i32 abi(.c),
+    fRecvTimeout: *void,
 ) extern mbedtls;
 
 // ── SSL config lifecycle ────────────────────────────────────────────
@@ -179,22 +179,22 @@ mbedtls_ssl_config_init     :: (conf: *SslConfig) extern mbedtls;
 mbedtls_ssl_config_free     :: (conf: *SslConfig) extern mbedtls;
 mbedtls_ssl_config_defaults :: (conf: *SslConfig, endpoint: i32, transport: i32, preset: i32) -> i32 extern mbedtls;
 
-// f_rng is a C-ABI callback: int (*)(void *p_rng, uchar *out, size_t len).
+// fRng is a C-ABI callback: int (*)(void *p_rng, uchar *out, size_t len).
 mbedtls_ssl_conf_rng :: (
     conf: *SslConfig,
-    f_rng: (*void, [*]u8, usize) -> i32 abi(.c),
-    p_rng: *void,
+    fRng: (*void, [*]u8, usize) -> i32 abi(.c),
+    pRng: *void,
 ) extern mbedtls;
 
-mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
+mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, ownCert: *X509Crt, pkKey: *PkContext) -> i32 extern mbedtls;
 // mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
 // assign an opaque config field), so they expose NO linkable symbol and cannot
 // be bound here as extern. Pinning a min version needs a small C wrapper.
 
 // The trusted CA chain for verifying the PEER's certificate (server-side:
-// client-cert auth; client-side: the server's trust anchor). ca_crl may be
+// client-cert auth; client-side: the server's trust anchor). caCrl may be
 // null (bound as *void — we never build CRLs).
-mbedtls_ssl_conf_ca_chain :: (conf: *SslConfig, ca_chain: *X509Crt, ca_crl: *void) extern mbedtls;
+mbedtls_ssl_conf_ca_chain :: (conf: *SslConfig, caChain: *X509Crt, caCrl: *void) extern mbedtls;
 
 // ── ALPN ────────────────────────────────────────────────────────────
 // protos: NULL-terminated array of NUL-terminated protocol names, in
@@ -205,17 +205,17 @@ mbedtls_ssl_conf_alpn_protocols :: (conf: *SslConfig, protos: [*][*]u8) -> i32 e
 mbedtls_ssl_get_alpn_protocol :: (ssl: *SslContext) -> [*]u8 extern mbedtls;
 
 // ── SNI ─────────────────────────────────────────────────────────────
-// f_sni fires during the server handshake with the client's server_name
+// fSni fires during the server handshake with the client's server_name
 // (NOT NUL-terminated — name_len bytes). Return 0 to continue (after an
 // optional mbedtls_ssl_set_hs_own_cert to switch certs); nonzero aborts
 // the handshake with an unrecognized_name alert.
 mbedtls_ssl_conf_sni :: (
     conf: *SslConfig,
-    f_sni: (*void, *SslContext, [*]u8, usize) -> i32 abi(.c),
-    p_sni: *void,
+    fSni: (*void, *SslContext, [*]u8, usize) -> i32 abi(.c),
+    pSni: *void,
 ) extern mbedtls;
 // Switch the handshake's own cert/key from inside the SNI callback.
-mbedtls_ssl_set_hs_own_cert :: (ssl: *SslContext, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
+mbedtls_ssl_set_hs_own_cert :: (ssl: *SslContext, ownCert: *X509Crt, pkKey: *PkContext) -> i32 extern mbedtls;
 
 // Client-side: the expected server name — drives BOTH the SNI extension and
 // certificate hostname verification (mbedTLS 3.6 REQUIRES it when the peer
@@ -230,33 +230,33 @@ mbedtls_x509_crt_parse :: (chain: *X509Crt, buf: [*]u8, buflen: usize) -> i32 ex
 // ── Private key ─────────────────────────────────────────────────────
 mbedtls_pk_init :: (ctx: *PkContext) extern mbedtls;
 mbedtls_pk_free :: (ctx: *PkContext) extern mbedtls;
-// f_rng / p_rng are the DRBG callback + state (PEM decryption RNG).
+// fRng / pRng are the DRBG callback + state (PEM decryption RNG).
 mbedtls_pk_parse_key :: (
     ctx: *PkContext,
     key: [*]u8, keylen: usize,
     pwd: *void, pwdlen: usize,
-    f_rng: (*void, [*]u8, usize) -> i32 abi(.c),
-    p_rng: *void,
+    fRng: (*void, [*]u8, usize) -> i32 abi(.c),
+    pRng: *void,
 ) -> i32 extern mbedtls;
 
 // ── RNG: CTR_DRBG + entropy ─────────────────────────────────────────
 mbedtls_ctr_drbg_init :: (ctx: *CtrDrbg) extern mbedtls;
 mbedtls_ctr_drbg_free :: (ctx: *CtrDrbg) extern mbedtls;
-// f_entropy is mbedtls_entropy_func; p_entropy is the *Entropy ctx.
+// fEntropy is mbedtls_entropy_func; pEntropy is the *Entropy ctx.
 mbedtls_ctr_drbg_seed :: (
     ctx: *CtrDrbg,
-    f_entropy: (*void, [*]u8, usize) -> i32 abi(.c),
-    p_entropy: *void,
+    fEntropy: (*void, [*]u8, usize) -> i32 abi(.c),
+    pEntropy: *void,
     custom: *void, len: usize,
 ) -> i32 extern mbedtls;
 
 mbedtls_entropy_init :: (ctx: *Entropy) extern mbedtls;
 mbedtls_entropy_free :: (ctx: *Entropy) extern mbedtls;
-// The default entropy collector — pass its address as ctr_drbg's f_entropy.
+// The default entropy collector — pass its address as ctr_drbg's fEntropy.
 mbedtls_entropy_func :: (data: *void, output: [*]u8, len: usize) -> i32 abi(.c) extern mbedtls;
 // The DRBG output function — pass its address (with the *CtrDrbg ctx) to
 // mbedtls_ssl_conf_rng as the session RNG. abi(.c): int (*)(void *, uchar *, size_t).
-mbedtls_ctr_drbg_random :: (p_rng: *void, output: [*]u8, len: usize) -> i32 abi(.c) extern mbedtls;
+mbedtls_ctr_drbg_random :: (pRng: *void, output: [*]u8, len: usize) -> i32 abi(.c) extern mbedtls;
 
 // ── TLS verification mode (client/peer-auth) ────────────────────────
 // authmode controls whether the peer certificate is verified. The server

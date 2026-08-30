@@ -29,13 +29,13 @@ SxStrongParent :: @ObjcClass("SxStrongParent", extends = NSObject) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         gpa := GPA.init();
         tracker := TrackingAllocator.init(gpa);
 
         push .{ allocator = tracker } {
-            d0 := tracker.dealloc_count;
-            a0 := tracker.alloc_count;
+            d0 := tracker.deallocCount;
+            a0 := tracker.allocCount;
 
             parent := SxStrongParent.alloc();
             child  := SxStrongChild.alloc();
@@ -43,12 +43,12 @@ main :: () -> i32 {
             child.release();
 
             // Midpoint: with strong setter, child is retained by parent;
-            // tracker.dealloc_count should NOT have advanced beyond d0.
+            // tracker.deallocCount should NOT have advanced beyond d0.
             // Without strong setter, child auto-dealloc'd on release.
-            d_mid := tracker.dealloc_count;
-            if d_mid != d0 {
+            dMid := tracker.deallocCount;
+            if dMid != d0 {
                 print("FAIL: child dealloc'd at midpoint (strong setter not retaining); delta={}\n",
-                      d_mid - d0);
+                      dMid - d0);
                 return 1;
             }
 
@@ -56,19 +56,19 @@ main :: () -> i32 {
 
             // After parent.release: parent.dealloc fires, releases the
             // strong child ivar, child deallocs, state freed.
-            d_end := tracker.dealloc_count;
+            dEnd := tracker.deallocCount;
             // Net: 2 allocs (parent + child state), 2 deallocs (both freed).
             // Balance check: dealloc delta == alloc delta.
-            if d_end - d0 != tracker.alloc_count - a0 {
+            if dEnd - d0 != tracker.allocCount - a0 {
                 print("FAIL: unbalanced; alloc={} dealloc={}\n",
-                      tracker.alloc_count - a0, d_end - d0);
+                      tracker.allocCount - a0, dEnd - d0);
                 return 1;
             }
         }
 
         print("strong property: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

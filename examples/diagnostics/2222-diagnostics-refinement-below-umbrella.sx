@@ -3,7 +3,7 @@
 // the armless-arm error. Both subject shapes answer alike.
 @import "modules/std.sx";
 
-by_tag :: (av: any) -> string {
+byTag :: (av: any) -> string {
     match av {
         case int:      return "int";
         case unsigned: return "unsigned";
@@ -12,7 +12,7 @@ by_tag :: (av: any) -> string {
     "unreached"
 }
 
-by_type :: (t: Type) -> string {
+byType :: (t: Type) -> string {
     match t {
         case int:      return "int";
         case unsigned: return "unsigned";
@@ -23,5 +23,5 @@ by_type :: (t: Type) -> string {
 
 main :: () {
     u : u32 = 7;
-    print("{} {}\n", by_tag(u), by_type(u32));
+    print("{} {}\n", byTag(u), byType(u32));
 }

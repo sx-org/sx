@@ -12,7 +12,7 @@ S :: struct { t: *Future(i64); }
 main :: () -> i64 {
     st : S = ---; st.t = null;
     s := sched.Scheduler.init(); ps := *s; pst := *st;
-    mkprod :: (ps: *sched.Scheduler, pst: *S) { pst.t = context.io.async(||_{ ps } -> (i64, !IoErr) { ps.yield_now(); 42 }); }
+    mkprod :: (ps: *sched.Scheduler, pst: *S) { pst.t = context.io.async(||_{ ps } -> (i64, !IoErr) { ps.yieldNow(); 42 }); }
     mkw :: (ps: *sched.Scheduler, pst: *S) { ps.spawn(||_{ pst } { x := pst.t.await() ?? { -1 }; print("got {}\n", x); }); }
     push .{ io = s } {
         mkprod(ps, pst); mkw(ps, pst); mkw(ps, pst);   // second waiter → loud abort

@@ -45,21 +45,21 @@ Frame :: struct {
         Frame{ origin = Point{ x = x, y = y }, size = Size{ width = w, height = h } }
     }
 
-    max_x :: (self: Frame) -> f32 { self.origin.x + self.size.width }
-    max_y :: (self: Frame) -> f32 { self.origin.y + self.size.height }
-    mid_x :: (self: Frame) -> f32 { self.origin.x + self.size.width * 0.5 }
-    mid_y :: (self: Frame) -> f32 { self.origin.y + self.size.height * 0.5 }
+    maxX :: (self: Frame) -> f32 { self.origin.x + self.size.width }
+    maxY :: (self: Frame) -> f32 { self.origin.y + self.size.height }
+    midX :: (self: Frame) -> f32 { self.origin.x + self.size.width * 0.5 }
+    midY :: (self: Frame) -> f32 { self.origin.y + self.size.height * 0.5 }
 
     contains :: (self: Frame, point: Point) -> bool {
-        point.x >= self.origin.x and point.x <= self.max_x()
-        and point.y >= self.origin.y and point.y <= self.max_y()
+        point.x >= self.origin.x and point.x <= self.maxX()
+        and point.y >= self.origin.y and point.y <= self.maxY()
     }
 
     intersection :: (self: Frame, other: Frame) -> Frame {
         x1 := max(self.origin.x, other.origin.x);
         y1 := max(self.origin.y, other.origin.y);
-        x2 := min(self.max_x(), other.max_x());
-        y2 := min(self.max_y(), other.max_y());
+        x2 := min(self.maxX(), other.maxX());
+        y2 := min(self.maxY(), other.maxY());
         if x2 <= x1 or y2 <= y1 
             then .zero()
             else .make(x1, y1, x2 - x1, y2 - y1)
@@ -122,7 +122,7 @@ Color :: struct {
     bf :: (self: Color) -> f32 { self.b.(f32) / 255.0 }
     af :: (self: Color) -> f32 { self.a.(f32) / 255.0 }
 
-    with_alpha :: (self: Color, a: u8) -> Color {
+    withAlpha :: (self: Color, a: u8) -> Color {
         Color{ r = self.r, g = self.g, b = self.b, a = a }
     }
 
@@ -190,21 +190,21 @@ ALIGN_BOTTOM          :: Alignment{ h = .center,   v = .bottom };
 ALIGN_BOTTOM_LEADING  :: Alignment{ h = .leading,  v = .bottom };
 ALIGN_BOTTOM_TRAILING :: Alignment{ h = .trailing, v = .bottom };
 
-// Compute x offset for a child of child_width inside container_width
-align_h :: (alignment: HAlignment, child_width: f32, container_width: f32) -> f32 {
+// Compute x offset for a child of childWidth inside containerWidth
+alignH :: (alignment: HAlignment, childWidth: f32, containerWidth: f32) -> f32 {
     match alignment {
         case .leading: 0.0;
-        case .center: { (container_width - child_width) * 0.5 }
-        case .trailing: container_width - child_width;
+        case .center: { (containerWidth - childWidth) * 0.5 }
+        case .trailing: containerWidth - childWidth;
     }
 }
 
-// Compute y offset for a child of child_height inside container_height
-align_v :: (alignment: VAlignment, child_height: f32, container_height: f32) -> f32 {
+// Compute y offset for a child of childHeight inside containerHeight
+alignV :: (alignment: VAlignment, childHeight: f32, containerHeight: f32) -> f32 {
     match alignment {
         case .top: 0.0;
-        case .center: { (container_height - child_height) * 0.5 }
-        case .bottom: container_height - child_height;
+        case .center: { (containerHeight - childHeight) * 0.5 }
+        case .bottom: containerHeight - childHeight;
     }
 }
 

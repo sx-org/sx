@@ -15,13 +15,13 @@ Button :: struct {
     alpha: f64 = 1.0;
 }
 
-make_label :: () -> string {
-    print("  make_label()\n");
+makeLabel :: () -> string {
+    print("  makeLabel()\n");
     "Play"
 }
 
-compute_alpha :: () -> f64 {
-    print("  compute_alpha()\n");
+computeAlpha :: () -> f64 {
+    print("  computeAlpha()\n");
     0.8
 }
 
@@ -41,7 +41,7 @@ store :: (n: i32, value: $I/@Init($T)) -> *T {
 
 main :: () -> i32 {
     print("before call\n");
-    b := store(tag(1), Button{ label = make_label(), alpha = compute_alpha() });
+    b := store(tag(1), Button{ label = makeLabel(), alpha = computeAlpha() });
     print("after call: {} {}\n", b.label, b.alpha);
     context.allocator.destroy(b);
     0
@@ -52,8 +52,8 @@ main :: () -> i32 {
 //   ordinary arg 1
 // entered store(1)
 // reserved destination
-//   make_label()
-//   compute_alpha()
+//   makeLabel()
+//   computeAlpha()
 // wrote destination
 // after call: Play 0.800000
 //

@@ -10,11 +10,11 @@ error: type 'u8' has no '.inf' — '.inf' applies only to float types (f32/f64);
 22 |     b := u8.inf;
    |          ^^^^^^
 
-error: type 'i64' has no '.true_min' — '.true_min' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
+error: type 'i64' has no '.trueMin' — '.trueMin' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
   --> examples/types/0160-types-float-numeric-limits-errors.sx:23:10
    |
-23 |     c := i64.true_min;
-   |          ^^^^^^^^^^^^
+23 |     c := i64.trueMin;
+   |          ^^^^^^^^^^^
 
 error: type 'bool' has no '.nan' — numeric limits apply only to integer and float types
   --> examples/types/0160-types-float-numeric-limits-errors.sx:24:10

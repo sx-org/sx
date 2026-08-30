@@ -3,7 +3,7 @@
 @import "modules/std/json.sx";
 
 // Multiplication preserves zero's sign.
-neg_zero :: () -> f64 { 0.0 * (0.0 - 1.0) }
+negZero :: () -> f64 { 0.0 * (0.0 - 1.0) }
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
@@ -11,7 +11,7 @@ report :: (label: string, ok: bool) {
 
 emits :: (f: f64, want: string) -> bool {
     buf : [64]u8 = ---;
-    n, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    n, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     if e { return false; }
     string{ ptr = *buf[0], len = n } == want
 }
@@ -29,15 +29,15 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
     e == want
 }
 
-write_raises :: (f: f64, want: JsonError) -> bool {
+writeRaises :: (f: f64, want: JsonError) -> bool {
     buf : [64]u8 = ---;
-    _, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    _, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     e == want
 }
 
-round_trips :: (f: f64, alloc: Allocator) -> bool {
+roundTrips :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
-    n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    n, we := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
     if we { return false; }
     v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
     if pe { return false; }
@@ -49,10 +49,10 @@ FAR_ZEROS :: 12000;
 
 // Fractional leading zeros count toward the scale without entering the
 // significand.
-far_overflow_raises :: (alloc: Allocator) -> bool {
+farOverflowRaises :: (alloc: Allocator) -> bool {
     tail := "1e999999999";
     len := 2 + FAR_ZEROS + tail.len;
-    src : [*]u8 = xx alloc.alloc_bytes(len);
+    src : [*]u8 = xx alloc.allocBytes(len);
     src[0] = '0';
     src[1] = '.';
     i := 0;
@@ -81,13 +81,13 @@ main :: () -> ! {
     report("tiny-writes-exponent",  emits(0.0000001, "1e-7"));
     report("pi-digits-preserved",   emits(3.141592653589793, "3.141592653589793"));
     report("zero-keeps-point",      emits(0.0, "0.0"));
-    report("negative-zero-keeps-sign", emits(neg_zero(), "-0.0"));
+    report("negative-zero-keeps-sign", emits(negZero(), "-0.0"));
 
     report("fraction-is-float",     reads("1.5", 1.5, arena));
     report("exponent-is-float",     reads("1e9", 1000000000.0, arena));
     report("capital-exponent-accepted", reads("2.5E-3", 0.0025, arena));
     report("positive-exponent-accepted", reads("1.5e+2", 150.0, arena));
-    report("negative-zero-reads-signed", reads("-0.0", neg_zero(), arena));
+    report("negative-zero-reads-signed", reads("-0.0", negZero(), arena));
     // A magnitude below half the smallest subnormal rounds to zero.
     report("underflow-rounds-to-zero", reads("1e-400", 0.0, arena));
     // 53 bits hold no odd number above 2^53, so 9007199254740993 reads as
@@ -100,12 +100,12 @@ main :: () -> ! {
     report("midpoint-rounds-even",
         reads("1.00000000000000011102230246251565404236316680908203125", 1.0, arena));
 
-    report("max-round-trips",        round_trips(f64.max, arena));
-    report("min-round-trips",        round_trips(f64.min, arena));
-    report("min-normal-round-trips", round_trips(f64.min_positive, arena));
-    report("true-min-round-trips",   round_trips(f64.true_min, arena));
-    report("epsilon-round-trips",    round_trips(f64.epsilon, arena));
-    report("negative-zero-round-trips", round_trips(neg_zero(), arena));
+    report("max-round-trips",        roundTrips(f64.max, arena));
+    report("min-round-trips",        roundTrips(f64.min, arena));
+    report("min-normal-round-trips", roundTrips(f64.minPositive, arena));
+    report("true-min-round-trips",   roundTrips(f64.trueMin, arena));
+    report("epsilon-round-trips",    roundTrips(f64.epsilon, arena));
+    report("negative-zero-round-trips", roundTrips(negZero(), arena));
 
     report("overflow-is-bad-number", raises("1e400", .BadNumber, arena));
     report("missing-fraction-digit-is-bad-number", raises("1.", .BadNumber, arena));
@@ -114,13 +114,13 @@ main :: () -> ! {
     // No JSON value starts with a point, so `.5` never reaches the number
     // grammar.
     report("bare-point-is-unexpected", raises(".5", .UnexpectedToken, arena));
-    report("far-exponent-overflows", far_overflow_raises(arena));
-    report("infinity-is-non-finite", write_raises(f64.inf, .NonFinite));
-    report("nan-is-non-finite", write_raises(f64.nan, .NonFinite));
+    report("far-exponent-overflows", farOverflowRaises(arena));
+    report("infinity-is-non-finite", writeRaises(f64.inf, .NonFinite));
+    report("nan-is-non-finite", writeRaises(f64.nan, .NonFinite));
 
     tree := try parse(MIXED, arena);
     buf : [256]u8 = ---;
-    n := try write_to_buffer(tree, string{ ptr = *buf[0], len = 256 });
+    n := try writeToBuffer(tree, string{ ptr = *buf[0], len = 256 });
     report("mixed-document-round-trips", string{ ptr = *buf[0], len = n } == MIXED);
     o := tree.object;
     report("bare-integer-stays-int", o.items[0].val.int == 0 - 7);

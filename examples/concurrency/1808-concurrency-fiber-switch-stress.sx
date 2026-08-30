@@ -2,7 +2,7 @@
 // checked for survival. A run or snapshot test cannot catch this: a switch that
 // drops a register still "happens to print right".
 //
-// `swap_context` here saves the COMPLETE AAPCS64 callee-saved set: the integer
+// `swapContext` here saves the COMPLETE AAPCS64 callee-saved set: the integer
 // regs x19-x28 + x29(fp) + x30(lr) + sp, AND the FP regs d8-d15. Per AAPCS64
 // §6.1.2 only the LOW 64 bits of v8-v15 are callee-saved, so `d8-d15` is exactly
 // sufficient (q8-q15 is not required). x18 is the Apple platform register —
@@ -12,7 +12,7 @@
 // The gate is a 2-fiber MUTUAL scribble: A loads sentinels base_A+1.. into every
 // callee-saved reg and yields; while A is suspended, B loads its OWN distinct
 // sentinels into the same physical registers; when A resumes it checks every reg
-// still holds base_A — which is only possible if `swap_context` saved+restored
+// still holds base_A — which is only possible if `swapContext` saved+restored
 // it. (A single fiber yielding to an idle peer would NOT exercise preservation —
 // the peer must clobber the registers. Dropping the d8-d15 save/restore
 // makes this report 8 mismatches; dropping x27/x28 reports 2.)
@@ -34,7 +34,7 @@ FiberCtx :: struct { regs: [21]u64; }
 
 Fiber :: struct {
     ctx: FiberCtx;
-    peer: *FiberCtx;   // scribble_verify yields here — the clobberer
+    peer: *FiberCtx;   // scribbleVerify yields here — the clobberer
     next: *FiberCtx;   // where to switch after verifying
     base: u64;
     mismatches: i64;
@@ -42,9 +42,9 @@ Fiber :: struct {
 
 // The complete switch: save callee-saved (x19-x28, fp, lr, sp, d8-d15) into
 // *from, load from *to, ret onto to's stack. x0=from, x1=to (read straight from
-// the ABI registers — a naked fn has no frame). `export`ed so scribble_verify
+// the ABI registers — a naked fn has no frame). `export`ed so scribbleVerify
 // can reach it by symbol with `bl`.
-swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_context" {
+swapContext :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_context" {
     asm volatile {
         @string ASM
         stp x19, x20, [x0, #0]
@@ -84,7 +84,7 @@ ASM
 // regs, and returns the mismatch count in x0. The original return address is
 // saved (frame+88) before the `bl` and reloaded after — the swap round-trips
 // sp+lr, so execution resumes right after the `bl` on the same frame.
-scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> i64 abi(.naked) export "scribble_verify" {
+scribbleVerify :: (selfCtx: *FiberCtx, peer: *FiberCtx, base: u64) -> i64 abi(.naked) export "scribble_verify" {
     asm volatile {
         @string SV
         sub sp, sp, #176
@@ -219,15 +219,15 @@ T,
 
 fib_tramp :: () extern;
 
-fib_body :: (self: *Fiber) export "fib_body" {
-    self.mismatches = scribble_verify(*self.ctx, self.peer, self.base);
-    swap_context(*self.ctx, self.next);
+fibBody :: (self: *Fiber) export "fib_body" {
+    self.mismatches = scribbleVerify(*self.ctx, self.peer, self.base);
+    swapContext(*self.ctx, self.next);
 }
 
 STACK :: 131072;
 
 boot :: (f: *Fiber) {
-    base : *void = context.allocator.alloc_bytes(STACK);
+    base : *void = context.allocator.allocBytes(STACK);
     top : u64 = (xx base) + STACK;
     top = top - (top % 16);
     f.ctx.regs[0]  = xx f;            // x19 = self
@@ -242,13 +242,13 @@ boot :: (f: *Fiber) {
 }
 
 main :: () -> i64 {
-    main_ctx : FiberCtx = ---;
+    mainCtx : FiberCtx = ---;
     a : Fiber = ---;  a.base = 0x5000;
     b : Fiber = ---;  b.base = 0x6000;
     a.peer = *b.ctx;  a.next = *b.ctx;     // A yields to B, then hands B the baton
-    b.peer = *a.ctx;  b.next = *main_ctx;  // B yields to A, then returns to main
+    b.peer = *a.ctx;  b.next = *mainCtx;   // B yields to A, then returns to main
     boot(*a);  boot(*b);
-    swap_context(*main_ctx, *a.ctx);
+    swapContext(*mainCtx, *a.ctx);
     print("A mismatches: {}\n", a.mismatches);   // 0 — every callee-saved survived
     print("B mismatches: {}\n", b.mismatches);   // 0
     return 0;

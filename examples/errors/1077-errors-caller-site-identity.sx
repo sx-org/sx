@@ -3,7 +3,7 @@
 //   - the default substitutes the REAL call site, not the signature's;
 //   - a caller may override it with an explicit `@SourceSite{ … }`;
 //   - a hand-built site is legal, and `id = 0` is enough for a fake;
-//   - `site.id` equals `source_site_key_id(source_site_key(site))` computed in
+//   - `site.id` equals `sourceSiteKeyId(sourceSiteKey(site))` computed in
 //     ordinary sx — the compiler's compile-time fold and the stdlib algorithm
 //     are the same function;
 //   - two lexically distinct call sites carry distinct ordinals and ids, while
@@ -14,7 +14,7 @@
 
 // `id` is a compile-time fingerprint of (file, declaration, ordinal), so the
 // stdlib recomputation must agree exactly.
-parity :: (site: @SourceSite) -> bool => site.id == source_site_key_id(source_site_key(site));
+parity :: (site: @SourceSite) -> bool => site.id == sourceSiteKeyId(sourceSiteKey(site));
 
 seen :: (tag: string, site: @SourceSite = @caller) -> u64 {
     print("{} {}:{} in {} parity={}\n", tag, site.file, site.line, site.declaration, parity(site));
@@ -29,15 +29,15 @@ main :: () -> i32 {
 
     // A loop body is ONE lexical site: every iteration reports the same
     // ordinal, which is what makes the site a stable key.
-    loop_ordinals := 0;
+    loopOrdinals := 0;
     same := true;
     prev : u64 = 0;
     for i in 0..3 {
         ord := seen("loop");
         if i == 0 { prev = ord; } else if ord != prev { same = false; }
-        loop_ordinals += 1;
+        loopOrdinals += 1;
     }
-    print("loop ran {} times, one site {}\n", loop_ordinals, same);
+    print("loop ran {} times, one site {}\n", loopOrdinals, same);
 
     // An explicit argument overrides the default.
     fixed := @SourceSite{
@@ -57,7 +57,7 @@ main :: () -> i32 {
         line = fixed.line,
         column = fixed.column,
         ordinal = fixed.ordinal,
-        id = source_site_key_id(source_site_key(fixed)),
+        id = sourceSiteKeyId(sourceSiteKey(fixed)),
     };
     print("fake parity {} {}\n", parity(fixed), parity(stamped));
     0

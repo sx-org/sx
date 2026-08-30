@@ -19,7 +19,7 @@ NSDictionary :: @ObjcClass("NSDictionary") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         d := NSObject.gimme(7);
         print("static override non-null: {}\n", d != null);
         // `objc_msgSend` on nil is defined to return nil — the point is the
@@ -28,7 +28,7 @@ main :: () -> i32 {
         r := inst.lookup(null);
         print("instance override on nil: {}\n", r == null);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

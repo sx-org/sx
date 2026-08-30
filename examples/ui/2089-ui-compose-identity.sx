@@ -4,26 +4,26 @@
 // Two properties carry the whole design: rebuilding an unchanged tree hands out
 // the SAME ids, and two call sites never share one. The occurrence is what
 // separates the siblings a single site emits, and it restarts at every
-// `begin_build`.
+// `beginBuild`.
 @import "modules/std.sx";
 @import "examples/ui/compose.sx";
 
 // One site, reached as many times as its callers ask.
-cell :: () -> ElementId => element_id();
+cell :: () -> ElementId => elementId();
 
-// `element_id` records where it is WRITTEN, so this reaches `cell`'s one site
+// `elementId` records where it is WRITTEN, so this reaches `cell`'s one site
 // rather than opening its own.
 row :: () -> ElementId => cell();
 
 // Two sites inside one declaration.
 pair :: () -> (a: ElementId, b: ElementId) {
-    x := element_id();
-    y := element_id();
+    x := elementId();
+    y := elementId();
     return a = x, b = y;
 }
 
 build :: (out: *List(u64)) {
-    context.compose_ui.begin_build();
+    context.composeUi.beginBuild();
     for i in 0..3 { out.append(cell().value) }
     a, b := pair();
     out.append(a.value);
@@ -49,7 +49,7 @@ distinct :: (ids: *List(u64)) -> bool {
 
 main :: () -> i32 {
     ui := Identity.init(context.allocator);
-    push .{ compose_ui = *ui } {
+    push .{ composeUi = *ui } {
         first := List(u64){};
         second := List(u64){};
         build(*first);
@@ -61,7 +61,7 @@ main :: () -> i32 {
 
         // A fourth reach of `cell`'s site — through another declaration —
         // continues that site's run instead of starting one of its own.
-        ui.begin_build();
+        ui.beginBuild();
         run := List(u64){};
         for i in 0..3 { run.append(cell().value) }
         fourth := row();

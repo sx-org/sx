@@ -18,17 +18,17 @@ bug :: (cmd: [:0]u8) -> ?R {
     R{ x = 1 }
 }
 
-post_link :: (opt: BuildOptions) -> bool {
+postLink :: (opt: BuildOptions) -> bool {
     if r := bug("echo hi") { puts("ok"); } else { puts("null"); }
     true
 }
 
 // The registrar runs only at compile time (nothing runtime-reachable calls it):
-// comptime evaluator (never the binary), so its `build_options()` /
-// `set_post_link_callback()` compiler-API calls are permitted.
+// comptime evaluator (never the binary), so its `buildOptions()` /
+// `onBuild()` compiler-API calls are permitted.
 configure :: () {
-    opts := build_options();
-    on_build(post_link);
+    opts := buildOptions();
+    onBuild(postLink);
 }
 @run configure();
 

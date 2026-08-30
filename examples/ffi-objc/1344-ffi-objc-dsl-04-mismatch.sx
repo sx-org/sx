@@ -13,12 +13,12 @@ SxProbeMismatch :: @ObjcClass("SxProbeMismatch") extern {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         inst : *SxProbeMismatch = null;
         n := inst.something_extra(7);
         print("n = {}\n", n);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

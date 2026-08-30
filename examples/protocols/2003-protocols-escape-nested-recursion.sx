@@ -21,10 +21,10 @@ Show :: interface { label :: (self: *Self) -> i64; }
 Marker :: struct { k: i64; }
 impl Show for Marker { label :: (self: *Marker) -> i64 { self.k * 3 } }
 
-g_marker := Marker{ k = 5 };
+gMarker := Marker{ k = 5 };
 
 add :: (a: i64, b: i64) -> i64 { a + b }
-pick_fn :: () -> (i64, i64) -> i64 { return add; }
+pickFn :: () -> (i64, i64) -> i64 { return add; }
 
 Tree :: struct { top: View; cell: *i64; seen: *Show; }
 
@@ -36,12 +36,12 @@ build :: () -> Tree {
     node.by = 7;
     cell := context.allocator.create(i64);
     cell.* = 100;
-    view : *Show = *g_marker;
+    view : *Show = *gMarker;
     return Tree{ top = node, cell = cell, seen = view };
 }
 
 T  :: @run build();
-FN :: @run pick_fn();
+FN :: @run pickFn();
 
 main :: () {
     print("{} {} {}\n", T.top.area(), T.cell.*, T.seen.label());

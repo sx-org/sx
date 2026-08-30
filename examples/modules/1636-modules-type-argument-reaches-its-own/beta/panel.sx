@@ -9,20 +9,20 @@ Panel :: @OpenVariant(v.View) {
 
 Note :: struct { text: string; }
 
-beta_soft :: () -> string {
+betaSoft :: () -> string {
     p : Panel = .{ tag = "beta soft" };
     x : v.View = p;
     if q := x.(?Panel) { return q.tag; }
     return "reached someone else's";
 }
 
-beta_hard :: () -> string {
+betaHard :: () -> string {
     p : Panel = .{ tag = "beta hard" };
     x : v.View = p;
     return x.(Panel).render();
 }
 
-beta_note :: () -> string {
+betaNote :: () -> string {
     n : Note = .{ text = "beta note" };
     av : any = n;
     return av.(Note).text;

@@ -10,22 +10,22 @@ Tiny :: struct { a: u8; b: u8; }
 Wide :: struct { x: i64; y: i64; }
 Hfa :: struct { x: f32; y: f32; }
 
-add_pt :: (p: Point) -> i32 { return p.x + p.y; }
-add_tiny :: (t: Tiny) -> i32 { return t.a + t.b; }
-add_wide :: (w: Wide) -> i64 { return w.x + w.y; }
-add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
+addPt :: (p: Point) -> i32 { return p.x + p.y; }
+addTiny :: (t: Tiny) -> i32 { return t.a + t.b; }
+addWide :: (w: Wide) -> i64 { return w.x + w.y; }
+addHfa :: (h: Hfa) -> f32 { return h.x + h.y; }
 
 main :: () {
     // Closure with a captured struct + packed struct param.
-    off_c5 := Point{ x = 10, y = 20 };
-    f_c5 := |p: Point|_{ off_c5 = off_c5 } -> Point Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
-    res_c5 := f_c5(Point{ x = 1, y = 2 });
-    print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
+    offC5 := Point{ x = 10, y = 20 };
+    fC5 := |p: Point|_{ offC5 = offC5 } -> Point Point{ x = p.x + offC5.x, y = p.y + offC5.y };
+    resC5 := fC5(Point{ x = 1, y = 2 });
+    print("closure-rstruct: {} {}\n", resC5.x, resC5.y);
 
     // Pre-bound local arg takes the same call path as a literal.
     q := Point{ x = 3, y = 4 };
-    res_q := f_c5(q);
-    print("closure-local: {} {}\n", res_q.x, res_q.y);
+    resQ := fC5(q);
+    print("closure-local: {} {}\n", resQ.x, resQ.y);
 
     // Width matrix through closures: packed (2 B), wide (16 B), HFA.
     ft := |t: Tiny| -> i32 t.a + t.b;
@@ -36,12 +36,12 @@ main :: () {
     print("closure-hfa: {}\n", fh(Hfa{ x = 0.5, y = 0.25 }));
 
     // Same matrix through default-conv fn pointers.
-    fp : (Point) -> i32 = add_pt;
+    fp : (Point) -> i32 = addPt;
     print("fnptr-point: {}\n", fp(Point{ x = 1, y = 2 }));
-    fpt : (Tiny) -> i32 = add_tiny;
+    fpt : (Tiny) -> i32 = addTiny;
     print("fnptr-tiny: {}\n", fpt(Tiny{ a = 5, b = 6 }));
-    fpw : (Wide) -> i64 = add_wide;
+    fpw : (Wide) -> i64 = addWide;
     print("fnptr-wide: {}\n", fpw(Wide{ x = 100, y = 200 }));
-    fph : (Hfa) -> f32 = add_hfa;
+    fph : (Hfa) -> f32 = addHfa;
     print("fnptr-hfa: {}\n", fph(Hfa{ x = 1.5, y = 2.5 }));
 }

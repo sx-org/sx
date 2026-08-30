@@ -10,7 +10,7 @@
 @import "modules/ffi/objc.sx";
 @import "modules/build.sx";
 
-g_observer : *void = null;
+gObserver : *void = null;
 
 // Stand-in for NSNotificationCenter — we just need a runtime-class
 // method with several *void args so the call site's arg-target-type
@@ -57,17 +57,17 @@ SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
     // so we can read it back without going through NSNotificationCenter
     // (which would crash with a real observer != NSObject subclass).
     captureSelf_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
-        capture_observer(this);
+        captureObserver(this);
         return 1;
     }
 }
 
-capture_observer :: (p: *void) {
-    g_observer = p;
+captureObserver :: (p: *void) {
+    gObserver = p;
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         f := SxIssue44Foo.alloc();
         if f == null { print("FAIL: alloc returned null\n"); return 1; }
 
@@ -77,19 +77,19 @@ main :: () -> i32 {
         print("counter: {}\n", f.get());
 
         // Direct `xx this` round-trip — the control.
-        f_void : *void = f;
-        if f.me() == f_void {
+        fVoid : *void = f;
+        if f.me() == fVoid {
             print("me: ok\n");
         } else {
             print("me: WRONG\n");
         }
 
         // The actual repro: BOOL return + runtime-class method call.
-        // Truncating `xx this` to i8 makes capture_observer receive
-        // (low_byte_of_f) cast back to *void, which won't equal f_void.
-        g_observer = null;
+        // Truncating `xx this` to i8 makes captureObserver receive
+        // (lowByteOfF) cast back to *void, which won't equal fVoid.
+        gObserver = null;
         _ = f.captureSelf_options(xx 0, xx 0);
-        if g_observer == f_void {
+        if gObserver == fVoid {
             print("captureSelf-from-BOOL: ok\n");
         } else {
             print("captureSelf-from-BOOL: WRONG\n");
@@ -100,6 +100,6 @@ main :: () -> i32 {
         // dispatch this for real (would crash inside NSNotificationCenter),
         // but the build pulling cleanly through is half the point.
     }
-    inline if OS != .macos { print("skipped (not macos)\n"); }
+    inline if @host.os != .macos { print("skipped (not macos)\n"); }
     0
 }

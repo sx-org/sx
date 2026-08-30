@@ -5,10 +5,10 @@
 //
 // Scenario (one run that touches every freed resource):
 //   - a SLEEPER fiber `sleep(5)`s              → exercises the `timers` List
-//   - a READER fiber `block_on_fd`s a pipe     → exercises the kqueue fd + the
-//                                                `io_waiters` List
+//   - a READER fiber `blockOnFd`s a pipe     → exercises the kqueue fd + the
+//                                                `ioWaiters` List
 //   - a WRITER fiber writes 3 bytes            → makes the pipe readable
-// After `run()` drains all of it, `deinit()` frees: the `timers` / `io_waiters`
+// After `run()` drains all of it, `deinit()` frees: the `timers` / `ioWaiters`
 // List backings, and CLOSES the kqueue fd (resetting `kq` to -1). The Fibers
 // were already reaped during `run()`. (The unified `context.io.async` layer's
 // Futures are NOT scheduler-tracked — they leak with the closure-env residual
@@ -17,7 +17,7 @@
 // WHAT IT PROVES (the contract; numbers below are the snapshot):
 //   - `freed by deinit: N` — live allocations reclaimed by `deinit` (> 0).
 //   - `live after deinit: 0` — NO residual. Each spawned fiber's body-closure heap
-//     env is reclaimed at reap (`reap_fiber` frees `body.env` via the spawn-time
+//     env is reclaimed at reap (`reapFiber` frees `body.env` via the spawn-time
 //     allocator snapshotted in `dctx`), and `deinit` frees the List backings + kq
 //     fd — so the live count returns to zero.
 //   - `kq open after run: 1` then `kq after deinit: -1` — the lazily-opened
@@ -42,27 +42,27 @@ write  :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc "write";
 close  :: (fd: i32) -> i32 extern libc "close";
 
 S :: struct {
-    read_n: i64;
+    readN: i64;
     bytes: [8]u8;
-    read_done: bool;
+    readDone: bool;
 }
 
 main :: () -> i64 {
-    st : S = .{ read_n = 0, read_done = false };   // bytes[] zero-filled; read() fills it
+    st : S = .{ readN = 0, readDone = false };   // bytes[] zero-filled; read() fills it
 
     fds : [2]i32 = ---;
     if c.pipe(*fds) != 0 {
         print("1820: pipe() failed\n");
         return 1;
     }
-    read_fd := fds[0];
-    write_fd := fds[1];
+    readFd := fds[0];
+    writeFd := fds[1];
 
     // Captured under the GPA scope; printed after it closes.
-    after_run     : i64 = 0;
-    after_deinit  : i64 = 0;
-    kq_open_run   : bool = false;
-    kq_after      : i32 = 0;
+    afterRun     : i64 = 0;
+    afterDeinit  : i64 = 0;
+    kqOpenRun   : bool = false;
+    kqAfter      : i32 = 0;
 
     gpa := mem.GPA.init();
     push .{ allocator = gpa } {
@@ -73,48 +73,48 @@ main :: () -> i64 {
         ps.spawn(||_{ ps } { ps.sleep(5); });
 
         // READER — blocks on the empty pipe until kqueue reports it readable.
-        mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
+        mkReader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
             ps.spawn(||_{ ps, pst, rfd } {
-                ps.block_on_fd(rfd, true);
+                ps.blockOnFd(rfd, true);
                 n := read(rfd, *pst.bytes[0], 3);
-                pst.read_n = xx n;
-                pst.read_done = true;
+                pst.readN = xx n;
+                pst.readDone = true;
             });
         }
         // WRITER — writes 'a' 'b' 'c', making the pipe readable.
-        mk_writer :: (ps: *sched.Scheduler, wfd: i32) {
+        mkWriter :: (ps: *sched.Scheduler, wfd: i32) {
             ps.spawn(||_{ wfd } {
                 buf : [3]u8 = ---;
                 buf[0] = 97; buf[1] = 98; buf[2] = 99;
                 write(wfd, *buf[0], 3);
             });
         }
-        mk_reader(ps, pst, read_fd);
-        mk_writer(ps, write_fd);
+        mkReader(ps, pst, readFd);
+        mkWriter(ps, writeFd);
 
         ps.run();
 
-        after_run   = gpa.alloc_count;
-        kq_open_run = s.kq >= 0;
+        afterRun   = gpa.allocCount;
+        kqOpenRun = s.kq >= 0;
         ps.deinit();
-        after_deinit = gpa.alloc_count;
-        kq_after     = s.kq;
+        afterDeinit = gpa.allocCount;
+        kqAfter     = s.kq;
     }
 
-    print("read: {} [", st.read_n);
+    print("read: {} [", st.readN);
     i := 0;
-    while i < st.read_n {
+    while i < st.readN {
         if i > 0 { print(" "); }
         print("{}", st.bytes[i]);
         i = i + 1;
     }
     print("]\n");
-    print("freed by deinit: {}\n", after_run - after_deinit);
-    print("live after deinit: {}\n", after_deinit);
-    print("kq open after run: {}\n", kq_open_run);
-    print("kq after deinit: {}\n", kq_after);
+    print("freed by deinit: {}\n", afterRun - afterDeinit);
+    print("live after deinit: {}\n", afterDeinit);
+    print("kq open after run: {}\n", kqOpenRun);
+    print("kq after deinit: {}\n", kqAfter);
 
-    close(read_fd);
-    close(write_fd);
+    close(readFd);
+    close(writeFd);
     return 0;
 }

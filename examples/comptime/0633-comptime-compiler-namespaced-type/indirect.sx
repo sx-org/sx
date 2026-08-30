@@ -2,7 +2,7 @@
 @import "modules/std.sx";
 s :: @import "shapes.sx";
 
-name_of :: (x: s.Suit) -> string {
+nameOf :: (x: s.Suit) -> string {
     match x { case .hearts: { return "hearts"; } case .spades: { return "spades"; } }
     return "?";
 }

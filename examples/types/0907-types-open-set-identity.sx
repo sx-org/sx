@@ -39,12 +39,12 @@ boxed :: (a: any) -> Type => @typeOf(a);
 // working when it is instantiated at a set.
 probe :: ($T: Type, a: any) -> ?T => a.(?T);
 
-CT_MEMBER :: @run early_member();
+CT_MEMBER :: @run earlyMember();
 
 // Asked while the program is still being lowered: the tag space is assigned at
 // the freeze, so this waits for it rather than answering from a numbering that
 // does not exist yet.
-early_member :: () -> Type {
+earlyMember :: () -> Type {
     v: View = Panel{ title = "comptime" };
     @typeOf(v)
 }

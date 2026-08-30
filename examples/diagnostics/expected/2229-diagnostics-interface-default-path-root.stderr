@@ -1,22 +1,22 @@
 error: a static 'P' position takes a module-scope global, and this operand is not one
   --> examples/diagnostics/2229-diagnostics-interface-default-path-root.sx:15:25
    |
-15 | holder : S = .{ inner = the_box.w };
-   |                         ^^^^^^^^^
+15 | holder : S = .{ inner = theBox.w };
+   |                         ^^^^^^^^
 
 help: the handle borrows the global's own symbol, which is what the image can hold; a path rooted at a global VALUE ('g.field') is refused for the same reason
    |
-15 | holder : S = .{ inner = the_box.w };
-   |                         ^^^^^^^^^
+15 | holder : S = .{ inner = theBox.w };
+   |                         ^^^^^^^^
 
 error: global 'holder' must be initialized by a compile-time constant
   --> examples/diagnostics/2229-diagnostics-interface-default-path-root.sx:15:14
    |
-15 | holder : S = .{ inner = the_box.w };
-   |              ^^^^^^^^^^^^^^^^^^^^^^
+15 | holder : S = .{ inner = theBox.w };
+   |              ^^^^^^^^^^^^^^^^^^^^^
 
 error: 'probe' is a 'P' value, which borrows a global's own symbol — this path is rooted at a global VALUE ('g.field'), which has no symbol of its own
   --> examples/diagnostics/2229-diagnostics-interface-default-path-root.sx:17:28
    |
-17 | @context_extend probe: P = the_box.w;
-   |                            ^^^^^^^^^
+17 | @context.extend probe: P = theBox.w;
+   |                            ^^^^^^^^

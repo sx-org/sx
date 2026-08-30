@@ -6,7 +6,7 @@
 //
 // Cases:
 //   A. successful HTTPS request → 200 with the expected body.
-//   B. bad cert path → setup_files returns false (server accepts no TLS; loud).
+//   B. bad cert path → setupFiles returns false (server accepts no TLS; loud).
 //   C. handshake failure (a plaintext client sends garbage to the TLS port) →
 //      the server drops that slot, then still serves a fresh good client.
 //   + net-zero GPA leak gate across the whole run.
@@ -32,21 +32,21 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 // ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
-cli_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+cliSend :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
     n := socket.write(fd.*, buf, len);
     if n >= 0 { return xx n; }
     e := socket.errno();
-    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
+    if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
     return -1;
 }
-cli_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+cliRecv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
     fd : *i32 = xx ctx;
     n := socket.read(fd.*, buf, len);
     if n > 0 { return xx n; }
     if n == 0 { return 0; }
     e := socket.errno();
-    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
+    if e == posix.EINTR or socket.isWouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
     return -1;
 }
 
@@ -72,7 +72,7 @@ TlsClient :: struct {
     fd:   i32 = -1;
 }
 
-client_init :: (c: *TlsClient, fd: i32) -> bool {
+clientInit :: (c: *TlsClient, fd: i32) -> bool {
     c.fd = fd;
     mbedtls.mbedtls_ssl_config_init(*c.cfg);
     mbedtls.mbedtls_ssl_init(*c.ssl);
@@ -83,11 +83,11 @@ client_init :: (c: *TlsClient, fd: i32) -> bool {
     mbedtls.mbedtls_ssl_conf_authmode(*c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
     mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, *c.drbg);
     if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cli_send, cli_recv, null);
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cliSend, cliRecv, null);
     return true;
 }
 
-client_free :: (c: *TlsClient) {
+clientFree :: (c: *TlsClient) {
     mbedtls.mbedtls_ssl_free(*c.ssl);
     mbedtls.mbedtls_ssl_config_free(*c.cfg);
     mbedtls.mbedtls_ctr_drbg_free(*c.drbg);
@@ -98,9 +98,9 @@ client_free :: (c: *TlsClient) {
 dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(PORT, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -113,7 +113,7 @@ main :: () -> i32 {
     gpa := GPA.init();
     rc : i32 = 1;
     push .{ allocator = gpa } { rc = run(); }
-    leaked := gpa.alloc_count;
+    leaked := gpa.allocCount;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
     if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
     print("HTTPS ok: bad-cert rejected, handshake-failure dropped, 200 served; net-zero GPA\n");
@@ -121,18 +121,18 @@ main :: () -> i32 {
 }
 
 run :: () -> i32 {
-    // ── B. bad cert path → setup_files must fail loudly ──
+    // ── B. bad cert path → setupFiles must fail loudly ──
     bad : tlsp.TlsServer = .{};
-    if bad.setup_files("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
-        return 1;   // setup_files unexpectedly succeeded on a missing cert
+    if bad.setupFiles("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+        return 1;   // setupFiles unexpectedly succeeded on a missing cert
     }
 
     // ── shared acceptor from the fixture cert/key ──
     ts : tlsp.TlsServer = .{};
-    if !ts.setup_files("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+    if !ts.setupFiles("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
         return 2;
     }
-    cfg : http.Config = .{ port = PORT, timeout_request_ms = 3000, max_conn = 8 };
+    cfg : http.Config = .{ port = PORT, timeoutRequestMs = 3000, maxConn = 8 };
     cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 3; }
@@ -140,12 +140,12 @@ run :: () -> i32 {
     // ── C. handshake failure: a PLAINTEXT client speaks garbage to the TLS
     //      port. The server's handshake parses it as a bad ClientHello → drops
     //      the slot. We drive a few ticks so the server processes + closes it. ──
-    bad_fd := dial();
-    if bad_fd < 0 { return 4; }
-    socket.write(bad_fd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
+    badFd := dial();
+    if badFd < 0 { return 4; }
+    socket.write(badFd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
     t : i64 = 0;
     while t < 50 { srv.tick(5) catch {}; t += 1; }
-    socket.close(bad_fd);
+    socket.close(badFd);
     t = 0;
     while t < 20 { srv.tick(5) catch {}; t += 1; }
 
@@ -153,12 +153,12 @@ run :: () -> i32 {
     fd := dial();
     if fd < 0 { return 5; }
     cl : TlsClient = .{};
-    if !client_init(*cl, fd) { return 6; }
+    if !clientInit(*cl, fd) { return 6; }
 
-    rc := https_roundtrip(*srv, *cl);
+    rc := httpsRoundtrip(*srv, *cl);
 
     mbedtls.mbedtls_ssl_close_notify(*cl.ssl);
-    client_free(*cl);
+    clientFree(*cl);
     socket.close(fd);
     srv.close();
     ts.deinit();
@@ -167,7 +167,7 @@ run :: () -> i32 {
 
 // Drive the handshake + one HTTPS GET to completion, asserting 200 + body.
 // Returns 0 on success, else a code in 10..19. No prints (measured region).
-https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
+httpsRoundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     done := false;
     i : i64 = 0;
     while i < 1000 and !done {

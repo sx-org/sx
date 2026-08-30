@@ -3,53 +3,53 @@
 
 @import "modules/std.sx";
 
-g_add : i64 = 10;
-g_sub : i64 = 10;
-g_mul : i64 = 10;
-g_div : i64 = 100;
-g_mod : i64 = 10;
-g_and : i64 = 0xff;
-g_or  : i64 = 0x0f;
-g_xor : i64 = 0xff;
-g_shl : i64 = 1;
-g_shr : i64 = 256;
+gAdd : i64 = 10;
+gSub : i64 = 10;
+gMul : i64 = 10;
+gDiv : i64 = 100;
+gMod : i64 = 10;
+gAnd : i64 = 0xff;
+gOr  : i64 = 0x0f;
+gXor : i64 = 0xff;
+gShl : i64 = 1;
+gShr : i64 = 256;
 
 main :: () -> void {
     // += repeated: should accumulate, not reset
-    g_add += 1;
-    g_add += 1;
-    g_add += 1;
-    print("add: {}\n", g_add);  // 13
+    gAdd += 1;
+    gAdd += 1;
+    gAdd += 1;
+    print("add: {}\n", gAdd);  // 13
 
-    g_sub -= 3;
-    g_sub -= 2;
-    print("sub: {}\n", g_sub);  // 5
+    gSub -= 3;
+    gSub -= 2;
+    print("sub: {}\n", gSub);  // 5
 
-    g_mul *= 2;
-    g_mul *= 3;
-    print("mul: {}\n", g_mul);  // 60
+    gMul *= 2;
+    gMul *= 3;
+    print("mul: {}\n", gMul);  // 60
 
-    g_div /= 5;
-    g_div /= 4;
-    print("div: {}\n", g_div);  // 5
+    gDiv /= 5;
+    gDiv /= 4;
+    print("div: {}\n", gDiv);  // 5
 
-    g_mod %= 3;
-    print("mod: {}\n", g_mod);  // 1
+    gMod %= 3;
+    print("mod: {}\n", gMod);  // 1
 
-    g_and &= 0x0f;
-    print("and: {}\n", g_and);  // 15
+    gAnd &= 0x0f;
+    print("and: {}\n", gAnd);  // 15
 
-    g_or |= 0xf0;
-    print("or: {}\n", g_or);   // 255
+    gOr |= 0xf0;
+    print("or: {}\n", gOr);   // 255
 
-    g_xor ^= 0x0f;
-    print("xor: {}\n", g_xor); // 240
+    gXor ^= 0x0f;
+    print("xor: {}\n", gXor); // 240
 
-    g_shl <<= 4;
-    g_shl <<= 2;
-    print("shl: {}\n", g_shl); // 64
+    gShl <<= 4;
+    gShl <<= 2;
+    print("shl: {}\n", gShl); // 64
 
-    g_shr >>= 3;
-    g_shr >>= 2;
-    print("shr: {}\n", g_shr); // 8
+    gShr >>= 3;
+    gShr >>= 2;
+    print("shr: {}\n", gShr); // 8
 }

@@ -2,7 +2,7 @@
 // fold is a diagnostic, never a silent drop — a live function, import, or asm
 // block would otherwise vanish and resurface as a distant unresolved name.
 //
-// Lowering owns the fold, so target facts (OS / ARCH / POINTER_SIZE) AND module
+// Lowering owns the fold, so target facts (`@host` fields) AND module
 // constants both select a group (example 0668). `flag1236` is a mutable global
 // — a runtime value — so there is nothing to fold and the group is refused.
 @import "modules/std.sx";

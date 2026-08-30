@@ -3,27 +3,27 @@
 P0850 :: interface { get :: (self: *Self) -> i64; }
 S0850 :: struct { v: i64 = 0; }
 impl P0850 for S0850 { get :: (self: *S0850) -> i64 { return self.v; } }
-g_mk_0850 : i64 = 0;
-g_ix_0850 : i64 = 0;
-make_arr_0850 :: () -> [2]S0850 { g_mk_0850 += 1; a : [2]S0850 = ---; a[0] = .{ v = 10 }; a[1] = .{ v = 20 }; return a; }
-next_0850 :: () -> i64 { g_ix_0850 += 1; return 0; }
+gMk0850 : i64 = 0;
+gIx0850 : i64 = 0;
+makeArr0850 :: () -> [2]S0850 { gMk0850 += 1; a : [2]S0850 = ---; a[0] = .{ v = 10 }; a[1] = .{ v = 20 }; return a; }
+next0850 :: () -> i64 { gIx0850 += 1; return 0; }
 
-freefn_0850 :: (a: i64, b: i64) -> i64 => a + b;
+freefn0850 :: (a: i64, b: i64) -> i64 => a + b;
 Base0850 :: struct { bx: i64 = 1; }
 Box0850 :: struct($T: Type) { item: T; @using Base0850; }
-pair_0850 :: (a: $T, b: T) -> T => a + b;
-f_diverge_0850 :: (c: bool) -> i64 { x := if c { 1 } else { return 7; }; return x; }
+pair0850 :: (a: $T, b: T) -> T => a + b;
+fDiverge0850 :: (c: bool) -> i64 { x := if c { 1 } else { return 7; }; return x; }
 Color0850 :: enum { red; green; }
-ident_0850 :: (x: $T) -> T { return x; }
-out_0850 :: () -> void {}
-gptr_0850 : *i64 = *target_0850;
-goptptr_0850 : ?*i64 = *target_0850;
-target_0850 : i64 = 42;
+ident0850 :: (x: $T) -> T { return x; }
+out0850 :: () -> void {}
+gptr0850 : *i64 = *target0850;
+goptptr0850 : ?*i64 = *target0850;
+target0850 : i64 = 42;
 
 main :: () -> i32 {
-    arr_0850 := make_arr_0850();
-    p := arr_0850[next_0850()].(P0850);
-    f := freefn_0850;
+    arr0850 := makeArr0850();
+    p := arr0850[next0850()].(P0850);
+    f := freefn0850;
     list : List(struct { a: i64; b: bool }) = .{};
     list.append(.{a = 1, b = true});
     a : [3]i64 = .[ 10, 20, 30 ];
@@ -38,13 +38,13 @@ main :: () -> i32 {
     small : i32 = 5;
     wide := if false { small } else { 9000000000 };
     color : Color0850 = .red;
-    matched := ident_0850(match color { case .red: { 1.5 } case .green: { 2 } });
-    out_0850 := || 7;
-    opt_read := 0;
-    if op := goptptr_0850 { opt_read = op.*; }
+    matched := ident0850(match color { case .red: { 1.5 } case .green: { 2 } });
+    out0850 := || 7;
+    optRead := 0;
+    if op := goptptr0850 { optRead = op.*; }
     print("{} {} {} {} {} {} {} {} {} {} {} {} {}\n",
-        p.get(), g_mk_0850, g_ix_0850, f(1, 2), list.items[0].a,
-        psl.len, a[1], box.bx, ne, pair_0850(..spread), wide,
-        f_diverge_0850(false), matched + out_0850().(f64) + (gptr_0850.*).(f64) + opt_read.(f64));
+        p.get(), gMk0850, gIx0850, f(1, 2), list.items[0].a,
+        psl.len, a[1], box.bx, ne, pair0850(..spread), wide,
+        fDiverge0850(false), matched + out0850().(f64) + (gptr0850.*).(f64) + optRead.(f64));
     0
 }

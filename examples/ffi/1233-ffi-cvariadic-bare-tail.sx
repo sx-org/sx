@@ -16,10 +16,10 @@
 // A C `%d` slot reads an `int`, so the width is stated where C expects one, and
 // a C `%s` slot reads one pointer, so text crosses as `cstring`.
 //
-// A definition READS its tail through a `@VaList` cursor: `@va_start` opens one
-// over the arguments past the fixed count, `@va_arg` reads the next under the
-// same promotions the caller applied, `@va_copy` forks a second cursor, and
-// `@va_end` closes each. Every function below has a `<stdarg.h>` twin in the
+// A definition READS its tail through a `@VaList` cursor: `@vaStart` opens one
+// over the arguments past the fixed count, `@vaArg` reads the next under the
+// same promotions the caller applied, `@vaCopy` forks a second cursor, and
+// `@vaEnd` closes each. Every function below has a `<stdarg.h>` twin in the
 // companion C file, called with the same arguments — the two answers are the
 // differential.
 
@@ -47,101 +47,101 @@ constant :: (..) -> i64 abi(.c) {
 }
 
 // The cursor argument is the local's address in every statement position — a
-// direct `@va_end` here, a deferred one in `sum_doubles`.
-sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+// direct `@vaEnd` here, a deferred one in `sumDoubles`.
+sumInts :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += @va_arg(i32, *ap);
+        total += @vaArg(i32, *ap);
     }
-    @va_end(*ap);
+    @vaEnd(*ap);
     return total;
 }
 
-sum_doubles :: (n: i32, ..) -> f64 abi(.c) {
+sumDoubles :: (n: i32, ..) -> f64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: f64 = 0;
     for i in 0..n {
-        total += @va_arg(f64, *ap);
+        total += @vaArg(f64, *ap);
     }
     return total;
 }
 
 // A borrowed `*@VaList` reads on behalf of the owner and leaves the ending to
 // it.
-take_text :: (ap: *@VaList) -> i64 {
-    return cstring_len(@va_arg(cstring, ap));
+takeText :: (ap: *@VaList) -> i64 {
+    return cstringLen(@vaArg(cstring, ap));
 }
 
-total_text :: (n: i32, ..) -> i64 abi(.c) {
+totalText :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
-    defer @va_end(*ap);
+    @vaStart(*ap);
+    defer @vaEnd(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += take_text(*ap);
+        total += takeText(*ap);
     }
     return total;
 }
 
-// `@va_copy` forks an independent cursor at the original's position, so the two
+// `@vaCopy` forks an independent cursor at the original's position, so the two
 // traversals read the same arguments. Both are ended.
 twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
-    @va_start(*ap);
+    @vaStart(*ap);
     dup: @VaList = ---;
-    @va_copy(*dup, *ap);
+    @vaCopy(*dup, *ap);
 
     first: i64 = 0;
     for i in 0..n {
-        first += @va_arg(i32, *ap);
+        first += @vaArg(i32, *ap);
     }
-    @va_end(*ap);
+    @vaEnd(*ap);
 
     second: i64 = 0;
     for i in 0..n {
-        second += @va_arg(i32, *dup);
+        second += @vaArg(i32, *dup);
     }
-    @va_end(*dup);
+    @vaEnd(*dup);
     return first * 100 + second;
 }
 
 main :: () -> i32 {
     single: f32 = 1.5;
     narrow: u8 = 7;
-    signed_narrow: i16 = -3;
+    signedNarrow: i16 = -3;
     whole: i32 = 42;
     text: cstring = "text";
 
     printf("heterogeneous: %d %s %f\n", whole, text, 3.25);
-    printf("promoted: %f %d %d\n", single, narrow, signed_narrow);
+    printf("promoted: %f %d %d\n", single, narrow, signedNarrow);
 
-    odd_signed: @int(24, .signed) = -1000;
-    odd_unsigned: @int(7, .unsigned) = 100;
-    printf("odd widths: %d %d\n", odd_signed, odd_unsigned);
+    oddSigned: @int(24, .signed) = -1000;
+    oddUnsigned: @int(7, .unsigned) = 100;
+    printf("odd widths: %d %d\n", oddSigned, oddUnsigned);
 
     print("tally={}\n", tally(3, 1, 2, 3));
-    print("constant_empty={}\n", constant());
-    print("constant_tail={}\n", constant(1, 2));
+    print("constantEmpty={}\n", constant());
+    print("constantTail={}\n", constant(1, 2));
 
     a: i32 = 4;
     b: i32 = 5;
     c: i32 = 6;
-    print("ints sx={} c={}\n", sum_ints(3, a, b, c), c_sum_ints(3, a, b, c));
+    print("ints sx={} c={}\n", sumInts(3, a, b, c), c_sum_ints(3, a, b, c));
 
     // The narrow widths the caller promotes are read at the width C promoted
     // them to.
-    print("promoted sx={} c={}\n", sum_ints(2, narrow, signed_narrow), c_sum_ints(2, narrow, signed_narrow));
+    print("promoted sx={} c={}\n", sumInts(2, narrow, signedNarrow), c_sum_ints(2, narrow, signedNarrow));
 
     x: f64 = 1.25;
-    print("doubles sx={} c={}\n", sum_doubles(3, x, 2.5, single), c_sum_doubles(3, x, 2.5, single));
+    print("doubles sx={} c={}\n", sumDoubles(3, x, 2.5, single), c_sum_doubles(3, x, 2.5, single));
 
     one: cstring = "abc";
     two: cstring = "defgh";
-    print("text sx={} c={}\n", total_text(2, one, two), c_total_text(2, one, two));
+    print("text sx={} c={}\n", totalText(2, one, two), c_total_text(2, one, two));
 
     print("copy sx={} c={}\n", twice(3, a, b, c), c_twice(3, a, b, c));
     return 0;

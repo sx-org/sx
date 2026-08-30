@@ -50,11 +50,11 @@ Wrapper :: struct {
 
 // Lowered before `Padded(Big)` exists as a member…
 early :: () -> i64 => @sizeOf(View);
-early_wrapper :: () -> i64 => @sizeOf(Wrapper);
+earlyWrapper :: () -> i64 => @sizeOf(Wrapper);
 
 // …and after it.
 late :: () -> i64 => @sizeOf(View);
-late_wrapper :: () -> i64 => @sizeOf(Wrapper);
+lateWrapper :: () -> i64 => @sizeOf(Wrapper);
 
 // A second set no generic member can reach: nothing can grow it once the
 // declarations are admitted, so its size is settled well before the freeze — which
@@ -70,7 +70,7 @@ Number :: @OpenVariant(Cell) {
 
 // This runs while `main` is being lowered, and it reads `Cell`'s size to decide
 // what code to write.
-cell_line :: () -> string {
+cellLine :: () -> string {
     if @sizeOf(Cell) == 16 {
         return "print(\"cell 16\n\");";
     }
@@ -79,17 +79,17 @@ cell_line :: () -> string {
 
 main :: () -> i32 {
     e := early();
-    ew := early_wrapper();
+    ew := earlyWrapper();
     p := Padded(Big){ inner = .{} };
     print("early {} late {}\n", e, late());
-    print("wrapper {} {}\n", ew, late_wrapper());
+    print("wrapper {} {}\n", ew, lateWrapper());
     print("run {} {}\n", VIEW_BEFORE, VIEW_AFTER);
     print("align {} {}\n", @alignOf(View), @alignOf(Wrapper));
     // A settled set — nothing can still grow `Cell` — so a dimension over it is
     // answerable where it is written.
     buf: [@sizeOf(Cell)]u8 = ---;
     print("cell {} buf {}\n", @sizeOf(Cell), buf.len);
-    @insert cell_line();
+    @insert cellLine();
     print("render {} {}\n", Label{ text = "l" }.render(), p.render());
     0
 }

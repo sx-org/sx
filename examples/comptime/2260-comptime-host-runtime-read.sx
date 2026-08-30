@@ -1,0 +1,21 @@
+// `@host.pointerSize` is one fact in two positions: a compile-time leaf and
+// a runtime constant.
+@import "modules/std.sx";
+
+WORD_BYTES :: @host.pointerSize;
+
+main :: () {
+    lanes : [@host.pointerSize]i64 = .{};
+    aliased : [WORD_BYTES]u8 = .{};
+    inline for i in 0..@host.pointerSize {
+        lanes[i] = i * i;
+    }
+    print("{} {} {}\n", lanes.len, aliased.len, lanes[WORD_BYTES - 1]);
+
+    if @host.pointerSize == 8 {
+        print("64-bit\n");
+    } else {
+        print("32-bit\n");
+    }
+    print("ptr={} sim={}\n", @host.pointerSize, @host.isSimulator);
+}

@@ -1,7 +1,7 @@
-// std.http — header-value OWS handling in find_header (RFC 9112 §5.1).
+// std.http — header-value OWS handling in findHeader (RFC 9112 §5.1).
 //
 // A field value is `OWS field-value OWS` — optional whitespace is
-// SP *or* HTAB on both sides, and it is not part of the value. find_header
+// SP *or* HTAB on both sides, and it is not part of the value. findHeader
 // trims BOTH sides, so a value reaches every comparison site clean:
 // • `Content-Length:\t5`      → the digit parser sees "5", not a tab;
 // • `Transfer-Encoding: chunked ` (trailing SP) → matches "chunked";
@@ -21,7 +21,7 @@ http :: @import "modules/std/http.sx";
 PORT :: 19007;
 
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
-    ev := http.find_header(req, "x-echo");
+    ev := http.findHeader(req, "x-echo");
     if ev.len > 0 {
         resp.body = concat("[", concat(ev, "]"));
         return;
@@ -29,12 +29,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("got:", req.body);
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -51,7 +51,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-count_occurrences :: (hay: string, needle: string) -> i64 {
+countOccurrences :: (hay: string, needle: string) -> i64 {
     n : i64 = 0;
     i := 0;
     while i + needle.len <= hay.len {
@@ -66,7 +66,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
     srv.tick(1) catch {};
     while true {
-        n, re := socket.read_nb(fd, *buf[total.*], (cap - total.*));
+        n, re := socket.readNb(fd, *buf[total.*], (cap - total.*));
         if !re { total.* += n; continue; }
         if re == .Closed { return true; }
         return false;
@@ -74,18 +74,18 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
     return false;   // unreachable — the loop above always returns
 }
 
-// Send `first`; if wait_for is set, tick until it shows; send `second`;
+// Send `first`; if waitFor is set, tick until it shows; send `second`;
 // read to EOF.
-staged :: (srv: *http.Server, first: string, second: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+staged :: (srv: *http.Server, first: string, second: string, waitFor: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, first.ptr, first.len);
     total : i64 = 0;
-    if wait_for.len > 0 {
+    if waitFor.len > 0 {
         spins : i64 = 0;
         while spins < 400 {
             if drain(srv, fd, buf, cap, *total) { break; }
-            if contains(string{ ptr = buf, len = total }, wait_for) { break; }
+            if contains(string{ ptr = buf, len = total }, waitFor) { break; }
             spins += 1;
         }
     }
@@ -115,9 +115,9 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
@@ -142,7 +142,7 @@ main :: () -> i32 {
             "body", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 100 Continue", "Expect-ows interim", *failed);
         check(r, "got:body", "Expect-ows echo", *failed);
-        if count_occurrences(r, "100 Continue") != 1 {
+        if countOccurrences(r, "100 Continue") != 1 {
             print("Expect-ows: expected exactly one 100\n");
             failed = 1;
         }
@@ -161,8 +161,8 @@ main :: () -> i32 {
         check(r, "[a b\t c]", "echo trim", *failed);
 
         srv.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

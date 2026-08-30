@@ -29,7 +29,7 @@ impl Combineable for Sq {
     combine :: (self: *Sq, other: Sq) -> i64 { return self.side + other.side; }
 }
 
-combine_bound :: (a: $T/Combineable, b: T) -> i64 {
+combineBound :: (a: $T/Combineable, b: T) -> i64 {
     return a.combine(b);
 }
 
@@ -46,5 +46,5 @@ main :: () {
     print("view:   {} {}\n", pv.area(), pv.name());
 
     print("direct: {}\n", sq.combine(Sq{ side = 1 }));
-    print("bound:  {}\n", combine_bound(sq, Sq{ side = 6 }));
+    print("bound:  {}\n", combineBound(sq, Sq{ side = 6 }));
 }

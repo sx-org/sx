@@ -8,7 +8,7 @@ Probe :: @ObjcClass("NSString") extern {
     UTF8String :: (self: *Self) -> [*]u8;
 }
 
-probe_first_byte :: (p: *void) -> i64 {
+probeFirstByte :: (p: *void) -> i64 {
     s : *Probe = xx p;
     s.UTF8String()[0].(i64)
 }

@@ -222,15 +222,15 @@ place's address afterward.
 ```sx
 compute :: () -> i64 {
     other : i64 = 0;
-    main_val := asm volatile {
+    mainVal := asm volatile {
         @string ASM
         mov %[m], #5
         mov %[o], #37
 ASM,
-        [m] "=r" -> i64,        // value output → returned into main_val
+        [m] "=r" -> i64,        // value output → returned into mainVal
         [o] "=r" -> @other,     // place output → stored through @other
     };
-    return main_val + other;    // 5 + 37 = 42
+    return mainVal + other;     // 5 + 37 = 42
 }
 ```
 
@@ -365,7 +365,7 @@ assembled and linked, so call it at runtime, not in a `@run`.
 **Read a register** (no inputs):
 
 ```sx
-stack_ptr :: () -> u64 {
+stackPtr :: () -> u64 {
     return asm { "mov %[out], sp", [out] "=r" -> u64 };   // aarch64
 }
 ```
@@ -373,7 +373,7 @@ stack_ptr :: () -> u64 {
 **x86_64 syscall** — `write(2)`, with pinned registers and clobbers:
 
 ```sx
-sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
+sysWrite :: (fd: i64, buf: *u8, count: i64) -> i64 {
     return asm volatile {
         "syscall",
         [ret] "={rax}" -> i64,      // bytes written, in rax

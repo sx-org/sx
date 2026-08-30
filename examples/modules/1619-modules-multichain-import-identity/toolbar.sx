@@ -3,12 +3,12 @@
 
 Toolbar :: struct {
     doc: *Document;
-    hover_tool: i64;
+    hoverTool: i64;
 }
 
 // Uses `Document`'s field type (`List(Layer)`) only INDIRECTLY through
-// `layer_at` — resolving it must land on the same `Layer` identity the other
+// `layerAt` — resolving it must land on the same `Layer` identity the other
 // chains see.
-tb_active_id :: (t: *Toolbar) -> i64 {
-    layer_at(t.doc, t.doc.active).id
+tbActiveId :: (t: *Toolbar) -> i64 {
+    layerAt(t.doc, t.doc.active).id
 }

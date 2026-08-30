@@ -4,10 +4,10 @@
 
 @import "modules/std.sx";
 
-make_adder :: (bias: i32) -> $F/(i32) -> i32 { return |x: i32|_{ bias } -> i32 x + bias; }
+makeAdder :: (bias: i32) -> $F/(i32) -> i32 { return |x: i32|_{ bias } -> i32 x + bias; }
 
 main :: () {
-    add := make_adder(10);
+    add := makeAdder(10);
     print("adder {}\n", add(5));                                // 15
     print("field {} {}\n", @sizeOf(@typeOf(add)), @sizeOf(i32)); // 4 4
 

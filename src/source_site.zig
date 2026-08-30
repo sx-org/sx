@@ -94,7 +94,7 @@ pub fn declarationPrefix(file: []const u8, declaration: []const u8) u64 {
     return h.state;
 }
 
-/// `source_site_key_id(source_site_key(site))`, resumed from a cached prefix.
+/// `sourceSiteKeyId(sourceSiteKey(site))`, resumed from a cached prefix.
 pub fn idFromPrefix(prefix: u64, ordinal: u64) u64 {
     var h = Hasher{ .state = prefix };
     h.writeU64Le(ordinal);

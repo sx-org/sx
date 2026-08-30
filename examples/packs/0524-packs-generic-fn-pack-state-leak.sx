@@ -11,19 +11,19 @@
 @import "modules/std.sx";
 
 build :: (args: []Type, $ret: Type) -> string {
-    return concat("len=", int_to_string(args.len));
+    return concat("len=", intToString(args.len));
 }
 
 probe :: (..$args) -> string {
     return build($args, void);
 }
 
-run_all :: () {
+runAll :: () {
     print("0: {}\n", probe());
     print("1: {}\n", probe(true));
     print("2: {}\n", probe(42, "hi"));
     print("4: {}\n", probe(1, 2.0, "x", true));
 }
-@run run_all();
+@run runAll();
 
 main :: () { print("rt\n"); }

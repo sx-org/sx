@@ -285,7 +285,7 @@ fn volatileProbeIr(alloc: std.mem.Allocator, name: [:0]const u8, volatile_access
     return alloc.dupe(u8, emitter.dumpToString());
 }
 
-test "`@volatile_load` / `@volatile_store` carry the volatile bit and no ordering" {
+test "`@volatileLoad` / `@volatileStore` carry the volatile bit and no ordering" {
     const alloc = std.testing.allocator;
     const ir_str = try volatileProbeIr(alloc, "test_volatile", true, .none);
     defer alloc.free(ir_str);
@@ -360,8 +360,8 @@ test "emit: atomic load/store (seq_cst, aligned)" {
 
     const x_ptr = b.alloca(.i64);
     const ten = b.constInt(10, .i64);
-    b.emitVoid(.{ .atomic_store = .{ .ptr = x_ptr, .val = ten, .val_ty = .i64, .ordering = .seq_cst } }, .void);
-    const loaded = b.emit(.{ .atomic_load = .{ .ptr = x_ptr, .ordering = .seq_cst } }, .i64);
+    b.emitVoid(.{ .atomic_store = .{ .ptr = x_ptr, .val = ten, .val_ty = .i64, .ordering = .seqCst } }, .void);
+    const loaded = b.emit(.{ .atomic_load = .{ .ptr = x_ptr, .ordering = .seqCst } }, .i64);
     b.ret(loaded, .i64);
     b.finalize();
 
@@ -393,9 +393,9 @@ test "emit: atomic rmw (add + signed/unsigned min)" {
     const si = b.alloca(.i64);
     const ui = b.alloca(.u64);
     const five = b.constInt(5, .i64);
-    _ = b.emit(.{ .atomic_rmw = .{ .ptr = si, .operand = five, .val_ty = .i64, .ordering = .seq_cst, .kind = .add } }, .i64);
-    _ = b.emit(.{ .atomic_rmw = .{ .ptr = si, .operand = five, .val_ty = .i64, .ordering = .seq_cst, .kind = .min } }, .i64);
-    _ = b.emit(.{ .atomic_rmw = .{ .ptr = ui, .operand = five, .val_ty = .u64, .ordering = .seq_cst, .kind = .min } }, .u64);
+    _ = b.emit(.{ .atomic_rmw = .{ .ptr = si, .operand = five, .val_ty = .i64, .ordering = .seqCst, .kind = .add } }, .i64);
+    _ = b.emit(.{ .atomic_rmw = .{ .ptr = si, .operand = five, .val_ty = .i64, .ordering = .seqCst, .kind = .min } }, .i64);
+    _ = b.emit(.{ .atomic_rmw = .{ .ptr = ui, .operand = five, .val_ty = .u64, .ordering = .seqCst, .kind = .min } }, .u64);
     b.ret(five, .i64);
     b.finalize();
 
@@ -424,8 +424,8 @@ test "emit: atomic swap (xchg) + fence" {
 
     const p = b.alloca(.i64);
     const five = b.constInt(5, .i64);
-    const old = b.emit(.{ .atomic_rmw = .{ .ptr = p, .operand = five, .val_ty = .i64, .ordering = .acq_rel, .kind = .xchg } }, .i64);
-    b.emitVoid(.{ .atomic_fence = .{ .ordering = .seq_cst } }, .void);
+    const old = b.emit(.{ .atomic_rmw = .{ .ptr = p, .operand = five, .val_ty = .i64, .ordering = .acqRel, .kind = .xchg } }, .i64);
+    b.emitVoid(.{ .atomic_fence = .{ .ordering = .seqCst } }, .void);
     b.ret(old, .i64);
     b.finalize();
 
@@ -457,9 +457,9 @@ test "emit: atomic cmpxchg (strong + weak)" {
     const exp = b.constInt(1, .i64);
     const des = b.constInt(2, .i64);
     // strong CAS
-    _ = b.emit(.{ .atomic_cmpxchg = .{ .ptr = p, .cmp = exp, .new = des, .val_ty = .i64, .success_ordering = .acq_rel, .failure_ordering = .acquire, .weak = false } }, opt_i64);
+    _ = b.emit(.{ .atomic_cmpxchg = .{ .ptr = p, .cmp = exp, .new = des, .val_ty = .i64, .success_ordering = .acqRel, .failure_ordering = .acquire, .weak = false } }, opt_i64);
     // weak CAS
-    _ = b.emit(.{ .atomic_cmpxchg = .{ .ptr = p, .cmp = exp, .new = des, .val_ty = .i64, .success_ordering = .seq_cst, .failure_ordering = .seq_cst, .weak = true } }, opt_i64);
+    _ = b.emit(.{ .atomic_cmpxchg = .{ .ptr = p, .cmp = exp, .new = des, .val_ty = .i64, .success_ordering = .seqCst, .failure_ordering = .seqCst, .weak = true } }, opt_i64);
     b.ret(exp, .i64);
     b.finalize();
 
@@ -1360,8 +1360,8 @@ test "emit: closure_create" {
     b.finalize();
 
     // func f(e: *void) -> closure { return closure_create(tramp, e); }
-    // A non-constant env keeps the {fn_ptr, env} aggregate non-constant so
-    // the insertvalue isn't folded (a null env + constant fn_ptr would fold).
+    // A non-constant env keeps the {fnPtr, env} aggregate non-constant so
+    // the insertvalue isn't folded (a null env + constant fnPtr would fold).
     const env_ty = module.types.ptrTo(.void);
     _ = b.beginFunction(str(&module, "mkclose"), &[_]inst_mod.Function.Param{
         .{ .name = str(&module, "e"), .ty = env_ty },

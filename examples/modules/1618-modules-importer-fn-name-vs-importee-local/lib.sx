@@ -3,7 +3,7 @@
 @import "modules/std.sx";
 
 Cfg :: struct {
-    on_event: (x: i64) -> void = null;
+    onEvent: (x: i64) -> void = null;
 }
 
 hook :: (x: i64) -> void {
@@ -14,6 +14,6 @@ emit :: (cfg: Cfg, x: i64) {
     // The importer's module-scope `h` must NOT contaminate this local:
     // `h` here is a fresh fn-pointer local, and `h(...)` dispatches
     // indirectly through it.
-    h := cfg.on_event;
+    h := cfg.onEvent;
     if h != null { h(x); }
 }

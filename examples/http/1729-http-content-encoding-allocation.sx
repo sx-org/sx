@@ -9,81 +9,81 @@
 @import "modules/std.sx";
 http :: @import "modules/std/http.sx";
 content :: @import "modules/std/http/content_encoding.sx";
-server_impl :: @import "modules/std/http/server.sx";
+serverImpl :: @import "modules/std/http/server.sx";
 types :: @import "modules/std/http/types.sx";
 event :: @import "modules/std/event.sx";
 
 FailingAllocator :: struct {
     parent: Allocator;
-    fail_at: i64;
+    failAt: i64;
     sequence: i64 = 0;
     failures: i64 = 0;
     live: i64 = 0;
 }
 
 impl Allocator for FailingAllocator {
-    alloc_bytes :: (self: *FailingAllocator, size: i64) -> *void {
+    allocBytes :: (self: *FailingAllocator, size: i64) -> *void {
         self.sequence += 1;
-        if self.fail_at > 0 and self.sequence == self.fail_at {
+        if self.failAt > 0 and self.sequence == self.failAt {
             self.failures += 1;
             return null;
         }
-        raw := self.parent.alloc_bytes(size);
+        raw := self.parent.allocBytes(size);
         if raw != null { self.live += 1; }
         raw
     }
 
-    dealloc_bytes :: (self: *FailingAllocator, ptr: *void) {
+    deallocBytes :: (self: *FailingAllocator, ptr: *void) {
         if ptr == null { return; }
         self.live -= 1;
-        self.parent.dealloc_bytes(ptr);
+        self.parent.deallocBytes(ptr);
     }
 }
 
-empty_source :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { 0 }
+emptySource :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { 0 }
 
-encoded_case :: (encoding: content.Encoding, fail_at: i64) -> (bool, i64) {
+encodedCase :: (encoding: content.Encoding, failAt: i64) -> (bool, i64) {
     gpa := GPA.init();
-    failing : FailingAllocator = .{ parent = gpa, fail_at = fail_at };
-    state := content.create_encoded_producer(encoding, 6, empty_source, 0, failing);
+    failing : FailingAllocator = .{ parent = gpa, failAt = failAt };
+    state := content.createEncodedProducer(encoding, 6, emptySource, 0, failing);
     success := state != null;
-    if state != null { content.destroy_encoded_producer(state, failing); }
-    expected := if fail_at == 0 then success and failing.failures == 0
+    if state != null { content.destroyEncodedProducer(state, failing); }
+    expected := if failAt == 0 then success and failing.failures == 0
                 else !success and failing.failures == 1;
-    return expected and failing.live == 0 and gpa.alloc_count == 0, failing.sequence;
+    return expected and failing.live == 0 and gpa.allocCount == 0, failing.sequence;
 }
 
-encoded_sweep :: (encoding: content.Encoding) -> bool {
-    baseline, count := encoded_case(encoding, 0);
+encodedSweep :: (encoding: content.Encoding) -> bool {
+    baseline, count := encodedCase(encoding, 0);
     if !baseline or count <= 1 { return false; }
     at : i64 = 1;
     while at <= count {
-        ok, _ := encoded_case(encoding, at);
+        ok, _ := encodedCase(encoding, at);
         if !ok { return false; }
         at += 1;
     }
     true
 }
 
-out_chan_case :: (lp: event.Loop, fail_at: i64) -> (bool, i64) {
+outChanCase :: (lp: event.Loop, failAt: i64) -> (bool, i64) {
     gpa := GPA.init();
-    failing : FailingAllocator = .{ parent = gpa, fail_at = fail_at };
-    channel := server_impl.create_out_chan(failing, lp);
+    failing : FailingAllocator = .{ parent = gpa, failAt = failAt };
+    channel := serverImpl.createOutChan(failing, lp);
     success := channel != null;
     if channel != null { channel.release(); }
-    expected := if fail_at == 0 then success and failing.failures == 0
+    expected := if failAt == 0 then success and failing.failures == 0
                 else !success and failing.failures == 1;
-    return expected and failing.live == 0 and gpa.alloc_count == 0, failing.sequence;
+    return expected and failing.live == 0 and gpa.allocCount == 0, failing.sequence;
 }
 
-out_chan_sweep :: () -> bool {
+outChanSweep :: () -> bool {
     lp, le := event.Loop.init();
     if le { return false; }
-    baseline, count := out_chan_case(lp, 0);
+    baseline, count := outChanCase(lp, 0);
     ok := baseline and count >= 2;
     at : i64 = 1;
     while ok and at <= count {
-        passed, _ := out_chan_case(lp, at);
+        passed, _ := outChanCase(lp, at);
         ok = passed;
         at += 1;
     }
@@ -91,21 +91,21 @@ out_chan_sweep :: () -> bool {
     ok
 }
 
-serialization_case :: (chunked: bool, fail: bool) -> bool {
+serializationCase :: (chunked: bool, fail: bool) -> bool {
     gpa := GPA.init();
-    failing : FailingAllocator = .{ parent = gpa, fail_at = if fail then 1 else 0 };
+    failing : FailingAllocator = .{ parent = gpa, failAt = if fail then 1 else 0 };
     resp : types.Response = .{ body = "body" };
     date := "Thu, 01 Jan 1970 00:00:00 GMT";
     output := if chunked
-        then server_impl.serialize_chunked_head(*resp, true, failing, date, "")
-        else server_impl.serialize_bytes(*resp, true, failing, false, date, "");
+        then serverImpl.serializeChunkedHead(*resp, true, failing, date, "")
+        else serverImpl.serializeBytes(*resp, true, failing, false, date, "");
     success := output.buf != null;
-    if output.buf != null { failing.dealloc_bytes(xx output.buf); }
+    if output.buf != null { failing.deallocBytes(xx output.buf); }
     expected := if fail then !success and failing.failures == 1 else success;
-    expected and failing.live == 0 and gpa.alloc_count == 0
+    expected and failing.live == 0 and gpa.allocCount == 0
 }
 
-write_all :: (fd: i32, data: string) -> bool {
+writeAll :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
         n := socket.write(fd, *data.ptr[at], (data.len - at));
@@ -115,13 +115,13 @@ write_all :: (fd: i32, data: string) -> bool {
     true
 }
 
-client_decoder_allocation :: (packed: string) -> bool {
+clientDecoderAllocation :: (packed: string) -> bool {
     gpa := GPA.init();
-    failing : FailingAllocator = .{ parent = gpa, fail_at = 1 };
+    failing : FailingAllocator = .{ parent = gpa, failAt = 1 };
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n";
-    sent := write_all(pair[1], head) and write_all(pair[1], packed);
+    sent := writeAll(pair[1], head) and writeAll(pair[1], packed);
     socket.close(pair[1]);
     storage : [4096]u8 = ---;
     failure := false;
@@ -131,22 +131,22 @@ client_decoder_allocation :: (packed: string) -> bool {
     }
     socket.close(pair[0]);
     sent and failure and failing.failures == 1 and failing.live == 0
-        and gpa.alloc_count == 0
+        and gpa.allocCount == 0
 }
 
 main :: () -> i32 {
     gpa := GPA.init();
     packed := gzip.encode("allocation-probe", .{}, .{}, gpa) catch { return 2; };
-    ok := encoded_sweep(.gzip) and encoded_sweep(.deflate)
-        and out_chan_sweep()
-        and serialization_case(false, false)
-        and serialization_case(false, true)
-        and serialization_case(true, false)
-        and serialization_case(true, true)
-        and client_decoder_allocation(packed);
-    gpa.dealloc_bytes(packed.ptr);
-    if !ok or gpa.alloc_count != 0 {
-        print("http content-encoding allocation sweep failed; leaks={}\n", gpa.alloc_count);
+    ok := encodedSweep(.gzip) and encodedSweep(.deflate)
+        and outChanSweep()
+        and serializationCase(false, false)
+        and serializationCase(false, true)
+        and serializationCase(true, false)
+        and serializationCase(true, true)
+        and clientDecoderAllocation(packed);
+    gpa.deallocBytes(packed.ptr);
+    if !ok or gpa.allocCount != 0 {
+        print("http content-encoding allocation sweep failed; leaks={}\n", gpa.allocCount);
         return 1;
     }
     print("http content-encoding allocation failures cleanly unwind\n");

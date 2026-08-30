@@ -1,20 +1,17 @@
-// Top-level `inline if OS == .X { ... }` body decls get hoisted to the
-// actual top level: `imports.flattenComptimeConditionals` runs at the head
-// of `resolveImports` and replaces matching arms with their body stmts
-// (recursively, so a nested `inline if` inside a hoisted arm also hoists).
-// The hoist is what puts them in front of `scanDecls`, which has no
-// `.if_expr` arm.
+// Top-level `inline if @host.os == .X { ... }` body decls are spliced into
+// module scope by expansion: import resolution leaves the driver opaque, and
+// only the selected group becomes declarations, in the driver's own place.
 //
 // Three patterns covered: a global `var_decl`, an `@import`, and a
 // nested `inline if` whose else arm fires on host macOS.
 
 @import "modules/std.sx";
 
-inline if OS == .android {
+inline if @host.os == .android {
     @import "modules/std.sx";
-    g_value : i64 = 99;
+    gValue : i64 = 99;
 } else {
-    g_value : i64 = 42;
+    gValue : i64 = 42;
 }
 
-main :: () { print("{}\n", g_value); }
+main :: () { print("{}\n", gValue); }

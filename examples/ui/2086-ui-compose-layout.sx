@@ -34,11 +34,11 @@ main :: () -> i32 {
     // axis by default.
     row : View = hstack(4.0) {
         Label{ text = "a" };
-        Label{ text = "bb", font_size = 8.0 };
+        Label{ text = "bb", fontSize = 8.0 };
         Label{ text = "ccc" };
     };
-    row_size := row.size_that_fits(ProposedSize.flexible());
-    print("row {}x{}\n", row_size.width.(i64), row_size.height.(i64));
+    rowSize := row.sizeThatFits(ProposedSize.flexible());
+    print("row {}x{}\n", rowSize.width.(i64), rowSize.height.(i64));
     draw(*row, Frame.make(0.0, 0.0, 200.0, 16.0));
 
     // A spacer between two labels takes what the row has left, so the ends sit
@@ -54,25 +54,25 @@ main :: () -> i32 {
     // A spacer's minimum is a MAIN-axis length. It lengthens the stack it sits
     // in and measures to nothing across, so a row keeps its tallest child's
     // height and a column keeps its widest child's width.
-    min_row : View = hstack(0.0) {
-        Label{ text = "a", font_size = 8.0 };
-        Spacer{ min_length = 20.0 };
-        Label{ text = "b", font_size = 8.0 };
+    minRow : View = hstack(0.0) {
+        Label{ text = "a", fontSize = 8.0 };
+        Spacer{ minLength = 20.0 };
+        Label{ text = "b", fontSize = 8.0 };
     };
-    min_row_size := min_row.size_that_fits(ProposedSize.flexible());
-    print("min row {}x{}\n", min_row_size.width.(i64), min_row_size.height.(i64));
-    draw(*min_row, Frame.make(0.0, 0.0, 28.0, 8.0));
+    minRowSize := minRow.sizeThatFits(ProposedSize.flexible());
+    print("min row {}x{}\n", minRowSize.width.(i64), minRowSize.height.(i64));
+    draw(*minRow, Frame.make(0.0, 0.0, 28.0, 8.0));
 
-    min_col : View = vstack(0.0) {
-        Label{ text = "a", font_size = 8.0 };
-        Spacer{ min_length = 20.0 };
-        Label{ text = "b", font_size = 8.0 };
+    minCol : View = vstack(0.0) {
+        Label{ text = "a", fontSize = 8.0 };
+        Spacer{ minLength = 20.0 };
+        Label{ text = "b", fontSize = 8.0 };
     };
-    min_col_size := min_col.size_that_fits(ProposedSize.flexible());
-    print("min col {}x{}\n", min_col_size.width.(i64), min_col_size.height.(i64));
+    minColSize := minCol.sizeThatFits(ProposedSize.flexible());
+    print("min col {}x{}\n", minColSize.width.(i64), minColSize.height.(i64));
     // Slack lands ON TOP of the minimum: the spacer grows to 32 and the second
     // label follows it down.
-    draw(*min_col, Frame.make(0.0, 0.0, 4.0, 48.0));
+    draw(*minCol, Frame.make(0.0, 0.0, 4.0, 48.0));
 
     // A column aligns on the horizontal axis.
     column : View = vstack(2.0, alignment = .trailing) {
@@ -95,9 +95,9 @@ main :: () -> i32 {
         Label{ text = "x" };
         Label{ text = "yy" };
     };
-    folded := fold_hstack(kids.items, 6.0);
-    folded_size := folded.size_that_fits(ProposedSize.flexible());
-    print("folded {} wide {}\n", folded.children.len, folded_size.width.(i64));
+    folded := foldHstack(kids.items, 6.0);
+    foldedSize := folded.sizeThatFits(ProposedSize.flexible());
+    print("folded {} wide {}\n", folded.children.len, foldedSize.width.(i64));
     root : View = folded;
     draw(*root, Frame.make(0.0, 0.0, 60.0, 16.0));
     0

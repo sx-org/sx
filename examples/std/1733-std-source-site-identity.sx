@@ -1,7 +1,7 @@
 // `@SourceSite` — the compiler-maintained source descriptor stdlib declares —
 // and the reviewable identity algorithm behind its `id` field. User code
 // constructs sites (a diagnostic-only fake leaves `id = 0`) and computes the
-// canonical id with `source_site_key_id`, whose encoding is normative: the
+// canonical id with `sourceSiteKeyId`, whose encoding is normative: the
 // vectors below are the specification, not an observation.
 @import "modules/std.sx";
 @import "modules/std/core.sx";
@@ -19,7 +19,7 @@ relabel :: (site: @SourceSite, declaration: string) -> @SourceSite {
     }
 }
 
-canonical :: (site: @SourceSite) -> u64 => source_site_key_id(source_site_key(site));
+canonical :: (site: @SourceSite) -> u64 => sourceSiteKeyId(sourceSiteKey(site));
 
 main :: () -> i32 {
     site := @SourceSite{
@@ -54,8 +54,8 @@ main :: () -> i32 {
         ordinal = seeded.ordinal,
         id = canonical(seeded),
     };
-    h := source_site_hasher(stamped, "ui.compose.child.v1");
-    h.write_u64_le(7);
+    h := sourceSiteHasher(stamped, "ui.compose.child.v1");
+    h.writeU64Le(7);
     print("extended {}\n", h.state);
     0
 }

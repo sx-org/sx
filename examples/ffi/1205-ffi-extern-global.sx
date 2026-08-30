@@ -15,11 +15,11 @@
 __stdinp : *void extern;
 
 main :: () -> i32 {
-  addr_bits : u64 = xx *__stdinp;
-  print("stdin extern global non-null: {}\n", addr_bits != 0);
+  addrBits : u64 = xx *__stdinp;
+  print("stdin extern global non-null: {}\n", addrBits != 0);
   // Calling the helper keeps its duplicate `extern` decl in the link; the
   // dead-code stripper would otherwise drop the imported file.
-  _ := stdinp_addr_present();
+  _ := stdinpAddrPresent();
   print("helper file linked: true\n");
   0
 }

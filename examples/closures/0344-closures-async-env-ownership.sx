@@ -13,15 +13,15 @@ main :: () {
     a := TrackingAllocator.init(base);
 
     answer := 0;
-    ctx_held := 0;
+    ctxHeld := 0;
     push .{ allocator = ctx } {
         n := 41;
         f := context.io.async(||_{ n } -> (i64, !IoErr) n, a);
         answer = await(f) catch { 0 };
-        ctx_held = ctx.leak_count();
+        ctxHeld = ctx.leakCount();
     }
     print("read {} level {} ctx holds {}\n",
-          answer, a.alloc_count == a.dealloc_count, ctx_held);
+          answer, a.allocCount == a.deallocCount, ctxHeld);
 
     // A worker that WRITES its env writes the persisted copy — the binding the
     // literal read keeps the value it had.
@@ -32,16 +32,16 @@ main :: () {
         wrote = await(g) catch { 0 };
     }
     print("wrote {} outer {} level {} ctx holds {}\n",
-          wrote, hits, a.alloc_count == a.dealloc_count, ctx.leak_count());
+          wrote, hits, a.allocCount == a.deallocCount, ctx.leakCount());
 
     // An arena is a valid task allocator: the task's allocations land in the
     // chunk it already holds, so the GPA behind it sees no growth.
     arena := Arena.init(base, 4096);
-    before := gpa.alloc_count;
+    before := gpa.allocCount;
     k := 6;
     h := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena);
     product := await(h) catch { 0 };
-    print("arena {} gpa growth {}\n", product, gpa.alloc_count - before);
+    print("arena {} gpa growth {}\n", product, gpa.allocCount - before);
     arena.deinit();
-    print("gpa outstanding {}\n", gpa.alloc_count);
+    print("gpa outstanding {}\n", gpa.allocCount);
 }

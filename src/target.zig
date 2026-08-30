@@ -453,8 +453,8 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 // `--apk <path>` on the CLI is a transitional alias that feeds
-// `bundle_path` so the auto-fallback to `platform.bundle.bundle_main`
-// fires; programs that opt in via `set_post_link_callback` reach the
+// `bundle_path` so the auto-fallback to `platform.bundle.bundleMain`
+// fires; programs that opt in via `onBuild` reach the
 // sx bundler directly.
 
 
@@ -761,7 +761,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         // The `libraries` parameter (collected from `@library` directives)
         // and `frameworks` parameter (Apple-only by definition) are
         // intentionally ignored here. On Android, users opt into specific
-        // libs via `opts.add_link_flag("-l<name>")` in their build.sx —
+        // libs via `opts.addLinkFlag("-l<name>")` in their build.sx —
         // the platform-specific link surface should be expressed in build
         // options rather than auto-inherited from every imported module
         // (most of which assume Apple targets).
@@ -810,7 +810,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         // Default libs available on every Android runtime; linker drops
         // unreferenced ones automatically. `@library` directives are
         // intentionally NOT auto-emitted here (most assume Apple targets);
-        // users opt in per-target via `opts.add_link_flag("-l...")` in
+        // users opt in per-target via `opts.addLinkFlag("-l...")` in
         // their build.sx.
         try argv.appendSlice(allocator, &.{ "-llog", "-landroid", "-lEGL", "-lGLESv3", "-lm", "-ldl" });
         for (target_config.extra_link_flags) |flag| {

@@ -9,17 +9,17 @@
 Platform :: interface {
     init :: (self: *Self, title: [:0]u8, w: i32, h: i32) -> bool;
 
-    run_frame_loop :: (self: *Self, frame_fn: Closure());
+    runFrameLoop :: (self: *Self, frameFn: Closure());
 
-    poll_events :: (self: *Self) -> []PlatformEvent;
+    pollEvents :: (self: *Self) -> []PlatformEvent;
 
-    begin_frame :: (self: *Self) -> FrameContext;
-    end_frame :: (self: *Self);
+    beginFrame :: (self: *Self) -> FrameContext;
+    endFrame :: (self: *Self);
 
-    safe_insets :: (self: *Self) -> EdgeInsets;
+    safeInsets :: (self: *Self) -> EdgeInsets;
     keyboard :: (self: *Self) -> KeyboardState;
-    show_keyboard :: (self: *Self);
-    hide_keyboard :: (self: *Self);
+    showKeyboard :: (self: *Self);
+    hideKeyboard :: (self: *Self);
 
     // Request the run loop to stop. On iOS/Android this is a no-op
     // (mobile apps don't quit on user request); on SDL it tears down the

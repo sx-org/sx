@@ -17,42 +17,42 @@ Pt   :: struct { x: i64; y: i64; }
 Box  :: struct { items: [2]Pt; }
 Mat  :: struct { g: [2][2]i64; }
 
-mk_struct :: () -> Arr3 {
+mkStruct :: () -> Arr3 {
     r : Arr3 = ---;
     r.xs[0] = 1; r.xs[1] = 2; r.xs[2] = 3;
     return r;
 }
 
-mk_aos :: () -> Box {
+mkAos :: () -> Box {
     r : Box = ---;
     r.items[0].x = 1; r.items[0].y = 2;
     r.items[1].x = 3; r.items[1].y = 4;
     return r;
 }
 
-mk_nested :: () -> Mat {
+mkNested :: () -> Mat {
     r : Mat = ---;
     r.g[0][0] = 1; r.g[0][1] = 2;
     r.g[1][0] = 3; r.g[1][1] = 4;
     return r;
 }
 
-mk_direct :: () -> [3]i64 {
+mkDirect :: () -> [3]i64 {
     r : [3]i64 = ---;
     r[0] = 7; r[1] = 8; r[2] = 9;
     return r;
 }
 
-mk_opt :: () -> ?Arr3 {
+mkOpt :: () -> ?Arr3 {
     r : Arr3 = .{ xs = .[10, 20, 30] };
     return r;
 }
 
-G   :: @run mk_struct();   // struct { [3]i64 }
-B   :: @run mk_aos();      // struct { [2]Pt }
-M   :: @run mk_nested();   // struct { [2][2]i64 }
-D   :: @run mk_direct();   // [3]i64
-A   :: @run mk_opt();      // ?Arr3
+G   :: @run mkStruct();   // struct { [3]i64 }
+B   :: @run mkAos();      // struct { [2]Pt }
+M   :: @run mkNested();   // struct { [2][2]i64 }
+D   :: @run mkDirect();   // [3]i64
+A   :: @run mkOpt();      // ?Arr3
 
 main :: () {
     print("{} {} {}\n", G.xs[0], G.xs[1], G.xs[2]);                 // 1 2 3

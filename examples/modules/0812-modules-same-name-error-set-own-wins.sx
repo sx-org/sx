@@ -3,13 +3,13 @@
 // `IoErr { Disk }`. A bare `IoErr` reference in `main` resolves to `main`'s OWN
 // author, not the flat-imported one (the querying source's author wins outright —
 // no ambiguity), so `e : IoErr = .Disk` binds `main`'s set (whose `Disk` tag
-// dep's `IoErr` lacks) while `dep_err()` returns dep's DISTINCT `IoErr`.
+// dep's `IoErr` lacks) while `depErr()` returns dep's DISTINCT `IoErr`.
 //
 // A stateless `type_bridge.resolveInlineErrorSet`
 // `findByName` short-circuit interns ONE global last-wins `IoErr`, collapsing
 // `main`'s `IoErr` and dep's `IoErr` to a single nominal. Whichever author wins
 // the global slot, the OTHER module's tag is not in it — so exactly one of
-// `.Disk` (main) / `.Net` (dep, in `dep_err`'s body) fails its
+// `.Disk` (main) / `.Net` (dep, in `depErr`'s body) fails its
 // membership check and the program exits 1.
 //
 // Distinct nominal TypeIds — `.Disk` validates against main's
@@ -22,7 +22,7 @@ IoErr :: error { Disk }
 
 main :: () -> i32 {
     e : IoErr = .Disk;
-    d := dep_err();
+    d := depErr();
     print("own={} dep={}\n", e, d);
     0
 }

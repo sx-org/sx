@@ -1,6 +1,6 @@
-struct_field_count(S) loop sum = 3
-array[struct_field_count(S)] len = 3  xs[2] = 20
-variant_count(E) = 4
+structFieldCount(S) loop sum = 3
+array[structFieldCount(S)] len = 3  xs[2] = 20
+variantCount(E) = 4
 @sizeOf(i64) array len = 8
 @alignOf(f64) = 8
-[struct_field_count(S) + 1] len = 4
+[structFieldCount(S) + 1] len = 4

@@ -6,11 +6,11 @@
 
 Node :: struct { n: i64 = 5; }
 
-as_addr :: (v: *void) -> bool { return v != null; }
+asAddr :: (v: *void) -> bool { return v != null; }
 
 reach :: (p: ?*Node) -> bool {
     if p == null { return false; }
-    return as_addr(p);
+    return asAddr(p);
 }
 
 main :: () {

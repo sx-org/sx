@@ -34,7 +34,7 @@ build :: (alloc: Allocator) -> Value {
     // `\u00XX` path that has no named shorthand. String values are VIEWS,
     // so the bytes must outlive the writes: back them with `alloc` (the
     // arena), not a local that dies when `build` returns.
-    cbytes : [*]u8 = xx alloc.alloc_bytes(1);
+    cbytes : [*]u8 = xx alloc.allocBytes(1);
     cbytes[0] = 1;
     ctrl := string{ ptr = cbytes, len = 1 };
 
@@ -75,7 +75,7 @@ main :: () -> ! {
 
     // 1. Write into a caller buffer; assert exact bytes + byte count.
     buf : [512]u8 = ---;
-    n := try write_to_buffer(root, string{ ptr = *buf[0], len = 512 });
+    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 512 });
     view := string{ ptr = *buf[0], len = n };
     print("doc: {}\n", view);
     report("buffer-exact", view == EXPECT);
@@ -83,24 +83,24 @@ main :: () -> ! {
 
     // 2. A buffer that is one byte too small must raise Overflow.
     tight : []u8 = string{ ptr = *buf[256], len = EXPECT.len - 1 };
-    _, oerr := write_to_buffer(root, tight);
+    _, oerr := writeToBuffer(root, tight);
     report("overflow-raised", oerr == .Overflow);
 
     // 3. Stream to a file through a tiny staging buffer (forces flushes);
     //    read it back and assert it equals the same document. Write into the
     //    repo-local, gitignored scratch dir and unlink afterwards so nothing
     //    leaks and concurrent runs don't fight over a shared /tmp name.
-    if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path := ".sx-tmp/sx_0713_json.json";
-    fh := open_file(path, .write);
+    fh := openFile(path, .write);
     if fh == null { print("open: FAIL\n"); return; }
     f := fh?!;
     stage : [8]u8 = ---;
-    try write_to_file(root, *f, string{ ptr = *stage[0], len = 8 });
+    try writeToFile(root, *f, string{ ptr = *stage[0], len = 8 });
     f.close();
 
-    back := read_file(path);
-    delete_file(path);
+    back := readFile(path);
+    deleteFile(path);
     if back == null { print("file-read: FAIL\n"); return; }
     report("file-exact", back?! == EXPECT);
     return;

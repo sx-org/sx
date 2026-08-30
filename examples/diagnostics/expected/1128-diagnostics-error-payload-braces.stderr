@@ -1,29 +1,29 @@
 error: 'Wide' carries a payload of type 'i64', and this names it bare
   --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:12:57
    |
-12 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+12 | bareMember   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
    |                                                         ^^^^^^^^^^^^^^^^^^
 
 help: construct it — '.Wide{ … }'
    |
-12 | bare_member  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
+12 | bareMember   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise PayErr.Wide; }    return n; }
    |                                                         ^^^^^^^^^^^^^^^^^^
 
 error: 'Bare' carries no payload, and a brace group holds one
   --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:13:63
    |
-13 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+13 | voidBraces   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
    |                                                               ^^^^^^^^
 
 help: write '.Bare'
    |
-13 | void_braces  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
+13 | voidBraces   :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Bare{1}; }       return n; }
    |                                                               ^^^^^^^^
 
 error: 'Wide' carries a payload of type 'i64' — write the one value in the braces ('.Wide{ … }')
   --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:14:63
    |
-14 | empty_scalar :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
+14 | emptyScalar  :: (n: i64) -> (i64, !PayErr) { if n < 0 { raise .Wide{}; }        return n; }
    |                                                               ^^^^^^^
 
 error: error set 'PayErr' has no member 'Gone'
@@ -35,5 +35,5 @@ error: error set 'PayErr' has no member 'Gone'
 error: error set 'PayErr' has no member 'Gone'
   --> examples/diagnostics/1128-diagnostics-error-payload-braces.sx:17:76
    |
-17 | absent_arm   :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
+17 | absentArm    :: (n: i64) -> i64 { return sound(n) catch |e| match e { case .Gone: |g| g; else: 0; }; }
    |                                                                            ^^^^^

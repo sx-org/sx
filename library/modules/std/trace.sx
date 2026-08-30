@@ -30,7 +30,7 @@ TraceFrame :: struct {
     line: i32;
     col: i32;
     func: string;
-    line_text: string;    // the source line, for the snippet + caret
+    lineText: string;    // the source line, for the snippet + caret
 }
 
 // `n` spaces — used to position the `^` caret under a column.
@@ -46,16 +46,17 @@ spaces :: (n: i32) -> string {
 
 // The error-trace buffer C API (library/vendors/sx_trace_runtime/sx_trace.c),
 // linked in for the JIT and auto-injected for AOT when traces are used.
-// `frame_at` returns the raw stored `u64`; `__trace_resolve_frame` turns it
-// into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in compiled code, or
-// by resolving the packed `(func_id, span.start)` in the comptime interpreter.
+// `sx_trace_frame_at` returns the raw stored `u64`; `__trace_resolve_frame`
+// turns it into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in
+// compiled code, or by resolving the packed `(func_id, span.start)` in the
+// comptime interpreter.
 sx_trace_len       :: () -> u32 extern;
 sx_trace_truncated :: () -> u32 extern;
 sx_trace_frame_at  :: (i: u32) -> u64 extern;
 
 // Render the current trace buffer to a string (allocated from
 // context.allocator). Empty buffer → "" so callers can cheaply skip output.
-to_string :: () -> string {
+toString :: () -> string {
     n := sx_trace_len();
     if n == 0 { return ""; }
 
@@ -68,8 +69,8 @@ to_string :: () -> string {
     while i < n {
         f := __trace_resolve_frame(sx_trace_frame_at(i));
         result = concat(result, format("  {} at {}:{}:{}\n", f.func, f.file, f.line, f.col));
-        if f.line_text.len > 0 {
-            result = concat(result, format("    {}\n", f.line_text));
+        if f.lineText.len > 0 {
+            result = concat(result, format("    {}\n", f.lineText));
             result = concat(result, concat("    ", concat(spaces(f.col - 1), "^\n")));
         }
         i = i + 1;
@@ -78,8 +79,8 @@ to_string :: () -> string {
 }
 
 // Write the current trace to stderr (fd 2). No-op when the buffer is empty.
-print_current :: () {
-    s := to_string();
+printCurrent :: () {
+    s := toString();
     if s.len > 0 {
         c.write(2, s.ptr, s.len);
     }
@@ -88,8 +89,8 @@ print_current :: () {
 // Dump the comptime (`@run`) interpreter call-frame chain. At
 // comptime the interpreter walks its active sx frames and appends them to the
 // build output; in compiled code this folds to nothing (there is no
-// interpreter stack — the only caller is a dead `@is_comptime()` branch).
+// interpreter stack — the only caller is a dead `@isComptime()` branch).
 // Frame source locations await IR-offset resolution, so only names print.
-print_interpreter_frames :: () {
+printInterpreterFrames :: () {
     __interp_print_frames();
 }

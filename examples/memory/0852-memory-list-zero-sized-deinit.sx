@@ -11,14 +11,14 @@ main :: () {
     xs : List(Nothing) = .{};
 
     xs.append(.{}, gpa);
-    print("appended: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+    print("appended: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.allocCount);
 
     xs.deinit(gpa);
-    print("after deinit: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+    print("after deinit: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.allocCount);
 
     xs.deinit(gpa);
-    print("again: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+    print("again: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.allocCount);
 
     xs.append(.{}, gpa);
-    print("regrown: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+    print("regrown: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.allocCount);
 }

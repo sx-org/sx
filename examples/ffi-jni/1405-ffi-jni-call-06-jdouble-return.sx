@@ -4,15 +4,15 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-read_double :: (env: *void, target: *void) -> f64 {
+readDouble :: (env: *void, target: *void) -> f64 {
     @JniCall(f64, env, target, "getValue", "()D")
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := read_double(null, null);
+    if gShouldCall {
+        _ := readDouble(null, null);
     }
     print("ok\n");
     0

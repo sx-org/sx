@@ -31,7 +31,7 @@ SxFoo :: @ObjcClass("SxFoo") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         cls : Class = objc_getClass("SxFoo".ptr);
         if cls == null {
             print("FAIL: SxFoo not registered\n");
@@ -44,7 +44,7 @@ main :: () -> i32 {
         }
         print("ivar: __sx_state\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("ivar: __sx_state\n");
     }
     0

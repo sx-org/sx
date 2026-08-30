@@ -760,7 +760,7 @@ pub const LLVMEmitter = struct {
     /// binary with CWD=/.
     ///
     /// Only a build that asks for a bundle gets it: `--bundle` lands on
-    /// `target_config`, `@run set_bundle_path` on `build_config`, and either
+    /// `target_config`, `@run setBundlePath` on `build_config`, and either
     /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;
@@ -2770,7 +2770,7 @@ pub const LLVMEmitter = struct {
         if ((val_kind == c.LLVMFloatTypeKind or val_kind == c.LLVMDoubleTypeKind) and param_kind == c.LLVMIntegerTypeKind) {
             return c.LLVMBuildFPToSI(self.builder, val, param_ty, "ca.fptosi");
         }
-        // Ptr → Struct (closure auto-promotion: fn_ptr → {fn_ptr, null_env})
+        // Ptr → Struct (closure auto-promotion: fnPtr → {fnPtr, null_env})
         if (val_kind == c.LLVMPointerTypeKind and param_kind == c.LLVMStructTypeKind) {
             const num_fields = c.LLVMCountStructElementTypes(param_ty);
             if (num_fields == 2) {
@@ -2980,7 +2980,7 @@ pub const LLVMEmitter = struct {
             self.cached_i32, // line
             self.cached_i32, // col
             str_ty, // func
-            str_ty, // line_text (the source line, for the snippet)
+            str_ty, // lineText (the source line, for the snippet)
         };
         self.frame_struct_type = c.LLVMStructTypeInContext(self.context, &field_types, 5, 0);
         return self.frame_struct_type.?;
@@ -2999,7 +2999,7 @@ pub const LLVMEmitter = struct {
     pub fn getClosureStructType(self: *LLVMEmitter) c.LLVMTypeRef {
         if (self.closure_struct_type) |t| return t;
         var field_types = [_]c.LLVMTypeRef{
-            self.cached_ptr, // fn_ptr
+            self.cached_ptr, // fnPtr
             self.cached_ptr, // env
         };
         self.closure_struct_type = c.LLVMStructTypeInContext(self.context, &field_types, 2, 0);

@@ -1,8 +1,8 @@
-// The stage probe is `@is_comptime()`. The unprefixed spelling names no
+// The stage probe is `@isComptime()`. The unprefixed spelling names no
 // declaration, so it fails as an ordinary unresolved identifier.
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    if is_comptime() { return 1; }
+    if isComptime() { return 1; }
     return 0;
 }

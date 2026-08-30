@@ -4,23 +4,23 @@
 @import "modules/std.sx";
 
 MyProtocol :: interface {
-    get_value :: (self: *Self) -> i64;
+    getValue :: (self: *Self) -> i64;
 }
 
 MyImpl :: struct { value: i64; }
 impl MyProtocol for MyImpl {
-    get_value :: (self: *MyImpl) -> i64 { self.value }
+    getValue :: (self: *MyImpl) -> i64 { self.value }
 }
 
-make_thing :: () -> MyProtocol {
+makeThing :: () -> MyProtocol {
     context.allocator.make(MyImpl{ value = 42 }).(MyProtocol)
 }
 
 main :: () -> void {
-    v := make_thing();
+    v := makeThing();
     out("direct call works\n");
 
-    c := make_thing;
+    c := makeThing;
     result := c();
     out("closure call works\n");
 }

@@ -9,7 +9,7 @@ parse :: (n: i32) -> (i32, !E) {
     return n * 10;
 }
 
-discard_then_guard :: (n: i32) -> i32 {
+discardThenGuard :: (n: i32) -> i32 {
     value, err := parse(n);
     _ := value;
     if err { return -1; }
@@ -17,7 +17,7 @@ discard_then_guard :: (n: i32) -> i32 {
 }
 
 main :: () -> i32 {
-    if discard_then_guard(5) != 50 { return 1; }
-    if discard_then_guard(-1) != -1 { return 2; }
+    if discardThenGuard(5) != 50 { return 1; }
+    if discardThenGuard(-1) != -1 { return 2; }
     return 0;
 }

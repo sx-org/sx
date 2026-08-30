@@ -80,7 +80,7 @@ gives :: () -> View { return Plain{ text = "a return" }; }
 hand :: (x: $S) -> View { return x; }
 
 // No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
-into_label :: (value: $I/@Init(Label)) -> string {
+intoLabel :: (value: $I/@Init(Label)) -> string {
     slot: View = ---;
     value.write(*slot);
     slot.render()
@@ -117,9 +117,9 @@ main :: () -> i32 {
     print("{}\n", converted.render());
 
     // And so does `xx`, for a non-member and for a member of another set.
-    cast_plain: View = xx Plain{ text = "still not a member" };
-    cast_alien: View = xx Alien{ text = "still another set" };
-    print("{} {}\n", cast_plain.render(), cast_alien.render());
+    castPlain: View = xx Plain{ text = "still not a member" };
+    castAlien: View = xx Alien{ text = "still another set" };
+    print("{} {}\n", castPlain.render(), castAlien.render());
 
     // Written once, refused for this instantiation — and named at the call.
     lifted := lift(View, Plain{ text = "through a generic" });
@@ -135,6 +135,6 @@ main :: () -> i32 {
     allocated := Label{ text = "x" }.(View, context.allocator);
     print("{}\n", allocated.render());
 
-    print("{}\n", into_label(Label{ text = "widen" }));
+    print("{}\n", intoLabel(Label{ text = "widen" }));
     0
 }

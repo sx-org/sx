@@ -34,6 +34,6 @@ main :: () -> i32 {
     x : union { b: Box; n: i32; } = ---;
     x.b.m = 13;
 
-    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.a.m, ev, x.b.m, dep_box());
+    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.a.m, ev, x.b.m, depBox());
     0
 }

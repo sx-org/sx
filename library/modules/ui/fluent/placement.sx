@@ -53,17 +53,17 @@ ModBox :: @OpenVariant(View) ($V: Type) {
     child: V;
     m: Mod = .{};
 
-    size_that_fits :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
         if self.m.hidden { return Size.zero(); }
-        box_w : ?f32 = self.m.width;
-        box_h : ?f32 = self.m.height;
-        if box_w == null { if w := proposal.width { box_w = w - self.m.margin.horizontal(); } }
-        if box_h == null { if h := proposal.height { box_h = h - self.m.margin.vertical(); } }
-        content_w : ?f32 = null;
-        content_h : ?f32 = null;
-        if w := box_w { content_w = w - self.m.padding.horizontal(); }
-        if h := box_h { content_h = h - self.m.padding.vertical(); }
-        child := self.child.size_that_fits(ProposedSize{ width = content_w, height = content_h });
+        boxW : ?f32 = self.m.width;
+        boxH : ?f32 = self.m.height;
+        if boxW == null { if w := proposal.width { boxW = w - self.m.margin.horizontal(); } }
+        if boxH == null { if h := proposal.height { boxH = h - self.m.margin.vertical(); } }
+        contentW : ?f32 = null;
+        contentH : ?f32 = null;
+        if w := boxW { contentW = w - self.m.padding.horizontal(); }
+        if h := boxH { contentH = h - self.m.padding.vertical(); }
+        child := self.child.sizeThatFits(ProposedSize{ width = contentW, height = contentH });
         Size{
             width = (self.m.width ?? (child.width + self.m.padding.horizontal()))
                 + self.m.margin.horizontal(),
@@ -81,14 +81,14 @@ ModBox :: @OpenVariant(View) ($V: Type) {
         if self.m.hidden { return; }
         f := self.m.frames(frame);
         prev := rc.opacity;
-        if self.m.opacity < 1.0 { rc.push_opacity(self.m.opacity); }
+        if self.m.opacity < 1.0 { rc.pushOpacity(self.m.opacity); }
         if self.m.paints() {
-            paint_box(rc, f.box, self.m.bg ?? COLOR_TRANSPARENT, self.m.corner, self.m.border);
+            paintBox(rc, f.box, self.m.bg ?? COLOR_TRANSPARENT, self.m.corner, self.m.border);
         }
-        if self.m.clip { rc.push_clip(f.box); }
+        if self.m.clip { rc.pushClip(f.box); }
         self.child.render(rc, f.content);
-        if self.m.clip { rc.pop_clip(); }
-        if self.m.opacity < 1.0 { rc.pop_opacity(prev); }
+        if self.m.clip { rc.popClip(); }
+        if self.m.opacity < 1.0 { rc.popOpacity(prev); }
     }
 }
 

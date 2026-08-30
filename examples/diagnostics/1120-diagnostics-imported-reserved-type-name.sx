@@ -6,5 +6,5 @@
 mod :: @import "1120-diagnostics-imported-reserved-type-name/mod.sx";
 
 main :: () -> i32 {
-    return mod.run_imported_reserved_name();
+    return mod.runImportedReservedName();
 }

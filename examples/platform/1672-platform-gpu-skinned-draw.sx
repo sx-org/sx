@@ -1,5 +1,5 @@
 // Skinned indexed draw through the GPU protocol's bone path:
-// set_bone_palette / draw_skinned over SkinnedVertex-stride vertices,
+// setBonePalette / drawSkinned over SkinnedVertex-stride vertices,
 // rendered windowless and read back.
 //
 // Bone 0 is identity and bone 1 translates +0.6 in x. The green triangle
@@ -60,16 +60,16 @@ fragment float4 fmain(VOut v [[stage_in]]) { return v.color; }
 MSL;
 
 main :: () -> i32 {
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skin center rgba: 0 255 0 255\n");
         print("skin bone0 rgba: 255 0 0 255\n");
         return 0;
     }
 
     gpu : MetalGPU = .{};
-    if !gpu.init_offscreen(W, H) { print("offscreen init failed\n"); return 1; }
+    if !gpu.initOffscreen(W, H) { print("offscreen init failed\n"); return 1; }
 
-    sh := gpu.create_shader(MSL_SKIN, "");
+    sh := gpu.createShader(MSL_SKIN, "");
     if sh == 0 { print("shader failed\n"); return 1; }
 
     // Green triangle around x = -0.6, weighted to bone 1; red triangle
@@ -98,31 +98,31 @@ main :: () -> i32 {
 
     vbytes : i64 = @sizeOf(SkinnedVertex) * 6;
     ibytes : i64 = 4 * 6;
-    vb := gpu.create_buffer(vbytes);
-    ib := gpu.create_index_buffer(ibytes);
+    vb := gpu.createBuffer(vbytes);
+    ib := gpu.createIndexBuffer(ibytes);
     if vb == 0 { print("vertex buffer failed\n"); return 1; }
     if ib == 0 { print("index buffer failed\n"); return 1; }
-    gpu.update_buffer(vb, *verts[0], vbytes);
-    gpu.update_index_buffer(ib, *idx[0], ibytes);
+    gpu.updateBuffer(vb, *verts[0], vbytes);
+    gpu.updateIndexBuffer(ib, *idx[0], ibytes);
 
     green : [4]f32 = .[0.0, 1.0, 0.0, 1.0];
     red   : [4]f32 = .[1.0, 0.0, 0.0, 1.0];
 
-    gpu.set_bone_palette(*bones[0], 2);
-    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
-    gpu.set_shader(sh);
-    gpu.set_vertex_buffer(vb);
-    gpu.set_index_buffer(ib);
+    gpu.setBonePalette(*bones[0], 2);
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
+    gpu.setShader(sh);
+    gpu.setVertexBuffer(vb);
+    gpu.setIndexBuffer(ib);
 
-    gpu.set_vertex_constants(1, *green[0], 16);
-    gpu.draw_skinned(0, 3);
-    gpu.set_vertex_constants(1, *red[0], 16);
-    gpu.draw_skinned(3, 3);
-    gpu.end_frame(0.0);
+    gpu.setVertexConstants(1, *green[0], 16);
+    gpu.drawSkinned(0, 3);
+    gpu.setVertexConstants(1, *red[0], 16);
+    gpu.drawSkinned(3, 3);
+    gpu.endFrame(0.0);
 
     n : i64 = (W * H * 4);
-    px : [*]u8 = xx context.allocator.alloc_bytes(n);
-    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
+    px : [*]u8 = xx context.allocator.allocBytes(n);
+    if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
 
     center : i64 = (((H / 2) * W + (W / 2)) * 4);
     // Column 51 of row 32 sits inside the red triangle as authored.
@@ -130,9 +130,9 @@ main :: () -> i32 {
     print("skin center rgba: {} {} {} {}\n", px[center], px[center + 1], px[center + 2], px[center + 3]);
     print("skin bone0 rgba: {} {} {} {}\n", px[bone0], px[bone0 + 1], px[bone0 + 2], px[bone0 + 3]);
 
-    gpu.destroy_index_buffer(ib);
-    gpu.destroy_buffer(vb);
-    gpu.destroy_shader(sh);
+    gpu.destroyIndexBuffer(ib);
+    gpu.destroyBuffer(vb);
+    gpu.destroyShader(sh);
 
     if px[center] != 0 { return 1; }
     if px[center + 1] != 255 { return 1; }

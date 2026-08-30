@@ -14,7 +14,7 @@ main :: () -> i32 {
     // Each module's downcast reaches the `Panel` that module declares — both
     // temperaments, since both ask the one question.
     print("{} {}\n", a.own(), b.own());
-    print("{} {}\n", a.own_hard(), b.own_hard());
+    print("{} {}\n", a.ownHard(), b.ownHard());
 
     // And a bound head spelled bare inside the module that declares the set.
     print("{}\n", b.hold(b.Panel{ tag = "through a bound" }));

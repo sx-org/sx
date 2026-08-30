@@ -18,12 +18,12 @@ main :: () -> i32 {
     print("hard {}\n", v.(s.Pnl).render());
 
     // The same for a plain aggregate asserted out of an `any`.
-    an : any = s.mk_note();
+    an : any = s.mkNote();
     if q := an.(?s.Note) { print("any soft {}\n", q.text); } else { print("any soft reached nothing\n"); }
     print("any hard {}\n", an.(s.Note).text);
 
     // A parameterized spelling names a head, and the head is qualified too.
-    ab : any = s.mk_box();
+    ab : any = s.mkBox();
     print("instance {}\n", ab.(s.Box(i64)).v);
 
     // Two authors: the qualifier answers which `Panel` is asked about.

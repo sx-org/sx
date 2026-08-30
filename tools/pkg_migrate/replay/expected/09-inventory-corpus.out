@@ -1,95 +1,94 @@
 == D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
 (comments, string/char literals, and @string heredocs excluded by the scanner)
 
-issues/foreign-private-field-naming/facade.sx:4:5: private [use] | private state: Secret;
-library/modules/build.sx:32:37: intrinsic [use] | build_options :: () -> BuildOptions intrinsic;
-library/modules/build.sx:36:58: intrinsic [use] | add_link_flag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
-library/modules/build.sx:37:58: intrinsic [use] | add_framework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
-library/modules/build.sx:38:60: intrinsic [use] | set_output_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:39:59: intrinsic [use] | set_wasm_shell :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:47:71: intrinsic [use] | add_asset_dir :: ufcs (self: BuildOptions, src: [:0]u8, dest: [:0]u8) intrinsic;
-library/modules/build.sx:48:53: intrinsic [use] | asset_dir_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:49:65: intrinsic [use] | asset_dir_src_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:50:66: intrinsic [use] | asset_dir_dest_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:54:72: intrinsic [use] | set_post_link_module :: ufcs (self: BuildOptions, module_name: [:0]u8) intrinsic;
-library/modules/build.sx:58:52: intrinsic [use] | binary_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:64:60: intrinsic [use] | set_bundle_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:65:56: intrinsic [use] | set_bundle_id :: ufcs (self: BuildOptions, id: [:0]u8) intrinsic;
-library/modules/build.sx:66:70: intrinsic [use] | set_codesign_identity :: ufcs (self: BuildOptions, identity: [:0]u8) intrinsic;
-library/modules/build.sx:67:69: intrinsic [use] | set_provisioning_profile :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:69:52: intrinsic [use] | bundle_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:70:50: intrinsic [use] | bundle_id :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:71:58: intrinsic [use] | codesign_identity :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:72:61: intrinsic [use] | provisioning_profile :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:78:54: intrinsic [use] | target_triple :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:79:47: intrinsic [use] | is_macos :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:80:45: intrinsic [use] | is_ios :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:81:52: intrinsic [use] | is_ios_device :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:82:55: intrinsic [use] | is_ios_simulator :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:83:49: intrinsic [use] | is_android :: ufcs (self: BuildOptions) -> bool intrinsic;
-library/modules/build.sx:90:53: intrinsic [use] | framework_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:91:61: intrinsic [use] | framework_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:92:58: intrinsic [use] | framework_path_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:93:66: intrinsic [use] | framework_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:99:62: intrinsic [use] | set_manifest_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:100:62: intrinsic [use] | set_keystore_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
-library/modules/build.sx:101:54: intrinsic [use] | manifest_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:102:54: intrinsic [use] | keystore_path :: ufcs (self: BuildOptions) -> string intrinsic;
-library/modules/build.sx:109:52: intrinsic [use] | jni_main_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
-library/modules/build.sx:110:73: intrinsic [use] | jni_main_runtime_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:111:72: intrinsic [use] | jni_main_java_source_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
-library/modules/build.sx:119:47: intrinsic [use] | on_build :: (cb: (opt: BuildOptions) -> bool) intrinsic;
-library/modules/compiler.sx:21:38: intrinsic [use] | c_object_paths :: () -> List(string) intrinsic;
-library/modules/compiler.sx:22:38: intrinsic [use] | link_libraries :: () -> List(string) intrinsic;
-library/modules/compiler.sx:26:29: intrinsic [use] | emit_object :: () -> string intrinsic;
-library/modules/compiler.sx:30:34: intrinsic [use] | build_output     :: () -> string intrinsic;        // the output binary path
-library/modules/compiler.sx:31:34: intrinsic [use] | build_target     :: () -> string intrinsic;        // the target triple ("" = host)
-library/modules/compiler.sx:32:40: intrinsic [use] | build_frameworks :: () -> List(string) intrinsic;  // `-framework` names
-library/modules/compiler.sx:33:40: intrinsic [use] | build_flags      :: () -> List(string) intrinsic;  // extra link flags
+library/modules/build.sx:31:36: intrinsic [use] | buildOptions :: () -> BuildOptions intrinsic;
+library/modules/build.sx:35:56: intrinsic [use] | addLinkFlag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
+library/modules/build.sx:36:57: intrinsic [use] | addFramework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
+library/modules/build.sx:37:58: intrinsic [use] | setOutputPath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:38:57: intrinsic [use] | setWasmShell :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:46:69: intrinsic [use] | addAssetDir :: ufcs (self: BuildOptions, src: [:0]u8, dest: [:0]u8) intrinsic;
+library/modules/build.sx:47:51: intrinsic [use] | assetDirCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:48:62: intrinsic [use] | assetDirSrcAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:49:63: intrinsic [use] | assetDirDestAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:53:68: intrinsic [use] | setPostLinkModule :: ufcs (self: BuildOptions, moduleName: [:0]u8) intrinsic;
+library/modules/build.sx:57:51: intrinsic [use] | binaryPath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:63:58: intrinsic [use] | setBundlePath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:64:54: intrinsic [use] | setBundleId :: ufcs (self: BuildOptions, id: [:0]u8) intrinsic;
+library/modules/build.sx:65:68: intrinsic [use] | setCodesignIdentity :: ufcs (self: BuildOptions, identity: [:0]u8) intrinsic;
+library/modules/build.sx:66:67: intrinsic [use] | setProvisioningProfile :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:68:51: intrinsic [use] | bundlePath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:69:49: intrinsic [use] | bundleId :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:70:57: intrinsic [use] | codesignIdentity :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:71:60: intrinsic [use] | provisioningProfile :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:77:53: intrinsic [use] | targetTriple :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:78:46: intrinsic [use] | isMacos :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:79:44: intrinsic [use] | isIos :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:80:50: intrinsic [use] | isIosDevice :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:81:53: intrinsic [use] | isIosSimulator :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:82:48: intrinsic [use] | isAndroid :: ufcs (self: BuildOptions) -> bool intrinsic;
+library/modules/build.sx:89:52: intrinsic [use] | frameworkCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:90:60: intrinsic [use] | frameworkAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:91:56: intrinsic [use] | frameworkPathCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:92:64: intrinsic [use] | frameworkPathAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:98:60: intrinsic [use] | setManifestPath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:99:60: intrinsic [use] | setKeystorePath :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+library/modules/build.sx:100:53: intrinsic [use] | manifestPath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:101:53: intrinsic [use] | keystorePath :: ufcs (self: BuildOptions) -> string intrinsic;
+library/modules/build.sx:108:50: intrinsic [use] | jniMainCount :: ufcs (self: BuildOptions) -> i64 intrinsic;
+library/modules/build.sx:109:69: intrinsic [use] | jniMainRuntimePathAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:110:68: intrinsic [use] | jniMainJavaSourceAt :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+library/modules/build.sx:118:46: intrinsic [use] | onBuild :: (cb: (opt: BuildOptions) -> bool) intrinsic;
+library/modules/compiler.sx:21:36: intrinsic [use] | cObjectPaths :: () -> List(string) intrinsic;
+library/modules/compiler.sx:22:37: intrinsic [use] | linkLibraries :: () -> List(string) intrinsic;
+library/modules/compiler.sx:26:28: intrinsic [use] | emitObject :: () -> string intrinsic;
+library/modules/compiler.sx:30:33: intrinsic [use] | buildOutput     :: () -> string intrinsic;        // the output binary path
+library/modules/compiler.sx:31:33: intrinsic [use] | buildTarget     :: () -> string intrinsic;        // the target triple ("" = host)
+library/modules/compiler.sx:32:39: intrinsic [use] | buildFrameworks :: () -> List(string) intrinsic;  // `-framework` names
+library/modules/compiler.sx:33:39: intrinsic [use] | buildFlags      :: () -> List(string) intrinsic;  // extra link flags
 library/modules/compiler.sx:40:73: intrinsic [use] | frameworks: List(string), flags: List(string), target: string) intrinsic;
-library/modules/platform/bundle.sx:947:48: package [typed-decl(param/field/local)] | build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string) -> string {
-library/modules/platform/bundle.sx:948:27: package [use] | pkg_esc := xml.escape(package);
-library/modules/std/atomic.sx:23:55: intrinsic [use] | atomic_load  :: ($T: Type, ptr: *T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:24:56: intrinsic [use] | atomic_store :: ($T: Type, ptr: *T, v: T, o: Ordering) intrinsic;
-library/modules/std/atomic.sx:28:71: intrinsic [use] | atomic_fetch_add :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:29:71: intrinsic [use] | atomic_fetch_sub :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:30:71: intrinsic [use] | atomic_fetch_and :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:31:71: intrinsic [use] | atomic_fetch_or  :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:32:71: intrinsic [use] | atomic_fetch_xor :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:33:71: intrinsic [use] | atomic_fetch_min :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:34:71: intrinsic [use] | atomic_fetch_max :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:37:66: intrinsic [use] | atomic_swap :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
-library/modules/std/atomic.sx:41:31: intrinsic [use] | atomic_fence :: (o: Ordering) intrinsic;
-library/modules/std/atomic.sx:51:113: intrinsic [use] | atomic_cmpxchg      :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
-library/modules/std/atomic.sx:52:113: intrinsic [use] | atomic_cmpxchg_weak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
-library/modules/std/core.sx:26:41: intrinsic [use] | struct_field_count :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:27:53: intrinsic [use] | struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:31:51: intrinsic [use] | struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:33:52: intrinsic [use] | struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:37:36: intrinsic [use] | pointee_type :: ($P: Type) -> Type intrinsic;
-library/modules/std/core.sx:38:48: intrinsic [use] | struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:41:36: intrinsic [use] | variant_count :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:42:48: intrinsic [use] | variant_name :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:43:46: intrinsic [use] | variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:44:45: intrinsic [use] | variant_payload :: (u: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:45:32: intrinsic [use] | is_flags :: ($T: Type) -> bool intrinsic;
-library/modules/std/core.sx:46:46: intrinsic [use] | variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:47:44: intrinsic [use] | variant_index :: ($T: Type, val: T) -> i64 intrinsic;
-library/modules/std/core.sx:59:35: intrinsic [use] | vector_lanes :: ($T: Type) -> i64 intrinsic;
+library/modules/platform/bundle.sx:947:46: package [typed-decl(param/field/local)] | buildAndroidManifest :: (opts: BuildOptions, package: string, libName: string) -> string {
+library/modules/platform/bundle.sx:948:26: package [use] | pkgEsc := xml.escape(package);
+library/modules/std/atomic.sx:23:54: intrinsic [use] | atomicLoad  :: ($T: Type, ptr: *T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:24:55: intrinsic [use] | atomicStore :: ($T: Type, ptr: *T, v: T, o: Ordering) intrinsic;
+library/modules/std/atomic.sx:28:69: intrinsic [use] | atomicFetchAdd :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:29:69: intrinsic [use] | atomicFetchSub :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:30:69: intrinsic [use] | atomicFetchAnd :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:31:69: intrinsic [use] | atomicFetchOr  :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:32:69: intrinsic [use] | atomicFetchXor :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:33:69: intrinsic [use] | atomicFetchMin :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:34:69: intrinsic [use] | atomicFetchMax :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:37:65: intrinsic [use] | atomicSwap :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+library/modules/std/atomic.sx:41:30: intrinsic [use] | atomicFence :: (o: Ordering) intrinsic;
+library/modules/std/atomic.sx:51:111: intrinsic [use] | atomicCmpxchg     :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
+library/modules/std/atomic.sx:52:111: intrinsic [use] | atomicCmpxchgWeak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
+library/modules/std/core.sx:26:39: intrinsic [use] | structFieldCount :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:27:51: intrinsic [use] | structFieldName :: ($T: Type, idx: i64) -> string intrinsic;
+library/modules/std/core.sx:31:49: intrinsic [use] | structFieldType :: ($T: Type, idx: i64) -> Type intrinsic;
+library/modules/std/core.sx:33:50: intrinsic [use] | structFieldOffset :: ($T: Type, idx: i64) -> i64 intrinsic;
+library/modules/std/core.sx:37:35: intrinsic [use] | pointeeType :: ($P: Type) -> Type intrinsic;
+library/modules/std/core.sx:38:46: intrinsic [use] | structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:41:35: intrinsic [use] | variantCount :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:42:47: intrinsic [use] | variantName :: ($T: Type, idx: i64) -> string intrinsic;
+library/modules/std/core.sx:43:45: intrinsic [use] | variantType :: ($T: Type, idx: i64) -> Type intrinsic;
+library/modules/std/core.sx:44:44: intrinsic [use] | variantPayload :: (u: $T, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:45:31: intrinsic [use] | isFlags :: ($T: Type) -> bool intrinsic;
+library/modules/std/core.sx:46:45: intrinsic [use] | variantValue :: ($T: Type, idx: i64) -> i64 intrinsic;
+library/modules/std/core.sx:47:43: intrinsic [use] | variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
+library/modules/std/core.sx:59:34: intrinsic [use] | vectorLanes :: ($T: Type) -> i64 intrinsic;
 library/modules/std/core.sx:66:45: intrinsic [use] | __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:70:55: intrinsic [use] | any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:103:36: intrinsic [use] | raw_any_data :: (av: any) -> *void intrinsic;
-library/modules/std/core.sx:104:48: intrinsic [use] | raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
-library/modules/std/core.sx:334:45: intrinsic [use] | raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
-library/modules/std/core.sx:335:46: intrinsic [use] | raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
-library/modules/std/core.sx:336:45: intrinsic [use] | raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-library/modules/std/core.sx:337:42: intrinsic [use] | raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-library/modules/std/core.sx:339:34: intrinsic [use] | raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-library/modules/std/core.sx:340:37: intrinsic [use] | raw_field_count  :: (t: u32) -> i64 intrinsic;
-library/modules/std/core.sx:341:47: intrinsic [use] | raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-library/modules/std/core.sx:342:47: intrinsic [use] | raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-library/modules/std/core.sx:343:49: intrinsic [use] | raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-library/modules/std/core.sx:344:44: intrinsic [use] | raw_pointer_to        :: (t: Type) -> Type intrinsic;
+library/modules/std/core.sx:70:54: intrinsic [use] | anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:103:34: intrinsic [use] | rawAnyData :: (av: any) -> *void intrinsic;
+library/modules/std/core.sx:104:46: intrinsic [use] | rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
+library/modules/std/core.sx:334:39: intrinsic [use] | rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
+library/modules/std/core.sx:335:40: intrinsic [use] | rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
+library/modules/std/core.sx:336:39: intrinsic [use] | rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+library/modules/std/core.sx:337:36: intrinsic [use] | rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged-union
+library/modules/std/core.sx:339:36: intrinsic [use] | rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+library/modules/std/core.sx:340:36: intrinsic [use] | rawFieldCount   :: (t: u32) -> i64 intrinsic;
+library/modules/std/core.sx:341:46: intrinsic [use] | rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+library/modules/std/core.sx:342:46: intrinsic [use] | rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+library/modules/std/core.sx:343:46: intrinsic [use] | rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+library/modules/std/core.sx:344:38: intrinsic [use] | rawPointerTo    :: (t: Type) -> Type intrinsic;
 library/modules/std/internal/compress.sx:13:1: private [use] | private DeflatePath :: enum { fastest; portable; }
 library/modules/std/internal/compress.sx:15:1: private [use] | private TDEFL_PROBES : [11]i64 = .[0, 1, 6, 32, 16, 32, 128, 256, 512, 768, 1500];
 library/modules/std/internal/compress.sx:17:1: private [use] | private TDEFL_LESS_MEMORY_RAW_BLOCK_LIMIT : i64 = 21839;
@@ -99,56 +98,56 @@ library/modules/std/internal/compress.sx:21:1: private [use] | private TINFL_FLA
 library/modules/std/internal/compress.sx:22:1: private [use] | private TINFL_FLAG_COMPUTE_ADLER32 : i64 = 8;
 library/modules/std/internal/compress.sx:80:1: private [use] | private CRC32_TABLE : [256]i64 = .[
 library/modules/std/internal/compress.sx:245:1: private [use] | private BitWriter :: struct {
-library/modules/std/internal/compress.sx:314:1: private [use] | private reverse_bits :: (value: i64, nbits: i64) -> i64 {
+library/modules/std/internal/compress.sx:314:1: private [use] | private reverseBits :: (value: i64, nbits: i64) -> i64 {
 library/modules/std/internal/compress.sx:326:1: private [use] | private LENGTH_BASE : [29]i64 = .[
 library/modules/std/internal/compress.sx:335:1: private [use] | private LENGTH_EXTRA : [29]i64 = .[
 library/modules/std/internal/compress.sx:344:1: private [use] | private DIST_BASE : [30]i64 = .[
 library/modules/std/internal/compress.sx:351:1: private [use] | private DIST_EXTRA : [30]i64 = .[
-library/modules/std/internal/compress.sx:358:1: private [use] | private canonical_codes :: (lengths: string, max_bits: i64) -> [288]u16 {
+library/modules/std/internal/compress.sx:358:1: private [use] | private canonicalCodes :: (lengths: string, maxBits: i64) -> [288]u16 {
 library/modules/std/internal/compress.sx:389:1: private [use] | private TdeflTokenBuffer :: struct {
 library/modules/std/internal/compress.sx:490:1: private [use] | private TDEFL_LENGTH_INDEX : [256]u8 = .[
 library/modules/std/internal/compress.sx:500:1: private [use] | private TDEFL_SMALL_DIST_INDEX : [512]u8 = .[
 library/modules/std/internal/compress.sx:518:1: private [use] | private TDEFL_LARGE_DIST_INDEX : [128]u8 = .[
-library/modules/std/internal/compress.sx:525:1: private [use] | private tdefl_length_index :: (length: i64) -> i64 {
-library/modules/std/internal/compress.sx:529:1: private [use] | private tdefl_distance_index :: (distance: i64) -> i64 {
-library/modules/std/internal/compress.sx:537:1: private [use] | private CodeLengthToken :: struct { symbol: i32; extra: i32; extra_bits: i32; }
+library/modules/std/internal/compress.sx:525:1: private [use] | private tdeflLengthIndex :: (length: i64) -> i64 {
+library/modules/std/internal/compress.sx:529:1: private [use] | private tdeflDistanceIndex :: (distance: i64) -> i64 {
+library/modules/std/internal/compress.sx:537:1: private [use] | private CodeLengthToken :: struct { symbol: i32; extra: i32; extraBits: i32; }
 library/modules/std/internal/compress.sx:542:1: private [use] | private TdeflHuffSym :: struct { key: u16; symbol: u16; }
-library/modules/std/internal/compress.sx:548:1: private [use] | private tdefl_lengths :: (frequencies: []u16, max_bits: i64) -> [288]u8 {
+library/modules/std/internal/compress.sx:548:1: private [use] | private tdeflLengths :: (frequencies: []u16, maxBits: i64) -> [288]u8 {
 library/modules/std/internal/compress.sx:693:1: private [use] | private PackedCodeLengths :: struct {
-library/modules/std/internal/compress.sx:698:1: private [use] | private append_code_length :: (tokens: *PackedCodeLengths, frequencies: *[19]u16, symbol: i64, extra: i64, extra_bits: i64) {
-library/modules/std/internal/compress.sx:707:1: private [use] | private flush_previous_code_length :: (packed: *PackedCodeLengths, frequencies: *[19]u16, previous: i64, repeat_count: *i64) {
-library/modules/std/internal/compress.sx:720:1: private [use] | private flush_zero_code_length :: (packed: *PackedCodeLengths, frequencies: *[19]u16, zero_count: *i64) {
-library/modules/std/internal/compress.sx:736:1: private [use] | private pack_code_lengths :: (lengths: string) -> (PackedCodeLengths, [19]u16) {
+library/modules/std/internal/compress.sx:698:1: private [use] | private appendCodeLength :: (tokens: *PackedCodeLengths, frequencies: *[19]u16, symbol: i64, extra: i64, extraBits: i64) {
+library/modules/std/internal/compress.sx:707:1: private [use] | private flushPreviousCodeLength :: (packed: *PackedCodeLengths, frequencies: *[19]u16, previous: i64, repeatCount: *i64) {
+library/modules/std/internal/compress.sx:720:1: private [use] | private flushZeroCodeLength :: (packed: *PackedCodeLengths, frequencies: *[19]u16, zeroCount: *i64) {
+library/modules/std/internal/compress.sx:736:1: private [use] | private packCodeLengths :: (lengths: string) -> (PackedCodeLengths, [19]u16) {
 library/modules/std/internal/compress.sx:772:1: private [use] | private TDEFL_OUTPUT_BUFFER_CAPACITY : i64 = 131072;
-library/modules/std/internal/compress.sx:774:1: private [use] | private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
-library/modules/std/internal/compress.sx:902:1: private [use] | private emit_tdefl_fixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
-library/modules/std/internal/compress.sx:1009:1: private [use] | private deflate_with_mode :: (data: string, level: i64, block_mode: i64, alloc: Allocator) -> string {
-library/modules/std/internal/compress.sx:1013:1: private [use] | private deflate_with_options :: (data: string, level: i64, strategy: Strategy, block_mode: i64, alloc: Allocator) -> string {
-library/modules/std/internal/compress.sx:1017:1: private [use] | private deflate_with_path_options :: (data: string, level: i64, strategy: Strategy, path: DeflatePath, block_mode: i64, alloc: Allocator) -> string {
-library/modules/std/internal/compress.sx:1065:1: private [use] | private build_huffman_into :: (h: *Huffman, lengths: string, allow_single: bool = true, allow_empty: bool = false) -> !Error {
-library/modules/std/internal/compress.sx:1187:1: private [use] | private huffman_resolve :: (h: *Huffman, bits: i64) -> i64 {
-library/modules/std/internal/compress.sx:1198:1: private [use] | private fixed_trees_into :: (lit: *Huffman, dist: *Huffman) -> !Error {
+library/modules/std/internal/compress.sx:774:1: private [use] | private emitTdeflDynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
+library/modules/std/internal/compress.sx:902:1: private [use] | private emitTdeflFixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
+library/modules/std/internal/compress.sx:1009:1: private [use] | private deflateWithMode :: (data: string, level: i64, blockMode: i64, alloc: Allocator) -> string {
+library/modules/std/internal/compress.sx:1013:1: private [use] | private deflateWithOptions :: (data: string, level: i64, strategy: Strategy, blockMode: i64, alloc: Allocator) -> string {
+library/modules/std/internal/compress.sx:1017:1: private [use] | private deflateWithPathOptions :: (data: string, level: i64, strategy: Strategy, path: DeflatePath, blockMode: i64, alloc: Allocator) -> string {
+library/modules/std/internal/compress.sx:1065:1: private [use] | private buildHuffmanInto :: (h: *Huffman, lengths: string, allowSingle: bool = true, allowEmpty: bool = false) -> !Error {
+library/modules/std/internal/compress.sx:1187:1: private [use] | private huffmanResolve :: (h: *Huffman, bits: i64) -> i64 {
+library/modules/std/internal/compress.sx:1198:1: private [use] | private fixedTreesInto :: (lit: *Huffman, dist: *Huffman) -> !Error {
 library/modules/std/internal/compress.sx:1212:1: private [use] | private CODELEN_ORDER : [19]i64 = .[16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 library/modules/std/internal/compress.sx:1217:1: private [use] | private StoredDeflatePhase :: enum { fill; header; payload; done; }
 library/modules/std/internal/compress.sx:1223:1: private [use] | private StoredDeflater :: struct {
-library/modules/std/internal/compress.sx:1356:1: private [use] | private DeflatePhase :: enum { fill; pending_bits; flush_final; done; }
+library/modules/std/internal/compress.sx:1356:1: private [use] | private DeflatePhase :: enum { fill; pendingBits; flushFinal; done; }
 library/modules/std/internal/compress.sx:1358:1: private [use] | private DeflateMatch :: struct { length: i64; distance: i64; }
-library/modules/std/internal/compress.sx:1360:1: private [use] | private emit_stored_bytes_with_offset :: (data: string, final: bool, bit_offset: i64, alloc: Allocator) -> (string, i64) {
-library/modules/std/internal/compress.sx:1374:1: private [use] | private emit_stored_ring_with_offset :: (dict: string, start: i64, count: i64, final: bool, bit_offset: i64, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
+library/modules/std/internal/compress.sx:1360:1: private [use] | private emitStoredBytesWithOffset :: (data: string, final: bool, bitOffset: i64, alloc: Allocator) -> (string, i64) {
+library/modules/std/internal/compress.sx:1374:1: private [use] | private emitStoredRingWithOffset :: (dict: string, start: i64, count: i64, final: bool, bitOffset: i64, alloc: Allocator, storage: string = .{ ptr = null, len = 0 }) -> (string, i64) {
 library/modules/std/internal/compress.sx:2290:1: private [use] | private ZlibDeflatePhase :: enum { header; body; trailer; done; }
-library/modules/std/internal/compress.sx:2439:1: private [use] | private contains_zero :: (data: string) -> bool {
-library/modules/std/internal/compress.sx:2448:1: private [use] | private validate_gzip_options :: (options: GzipOptions) -> !Error {
+library/modules/std/internal/compress.sx:2439:1: private [use] | private containsZero :: (data: string) -> bool {
+library/modules/std/internal/compress.sx:2448:1: private [use] | private validateGzipOptions :: (options: GzipOptions) -> !Error {
 library/modules/std/internal/compress.sx:2476:1: private [use] | private GzipDeflatePhase :: enum { header; body; trailer; done; }
 library/modules/std/internal/compress.sx:2660:1: private [use] | private InflatePhase :: enum {
 library/modules/std/internal/compress.sx:3464:1: private [use] | private ZlibInflatePhase :: enum { header; body; checksum; done; }
-library/modules/std/internal/compress.sx:3603:1: private [use] | private TinflStatus :: enum { cannot_make_progress; bad_param; adler_mismatch; failed; done; needs_more_input; has_more_output; }
+library/modules/std/internal/compress.sx:3603:1: private [use] | private TinflStatus :: enum { cannotMakeProgress; badParam; adlerMismatch; failed; done; needsMoreInput; hasMoreOutput; }
 library/modules/std/internal/compress.sx:3605:1: private [use] | private TinflProgress :: struct {
 library/modules/std/internal/compress.sx:3614:1: private [use] | private TinflDecompressor :: struct {
-library/modules/std/internal/compress.sx:3700:1: private [use] | private tinfl_error :: (status: TinflStatus) -> Error {
+library/modules/std/internal/compress.sx:3700:1: private [use] | private tinflError :: (status: TinflStatus) -> Error {
 library/modules/std/internal/compress.sx:3749:1: private [use] | private GzipInflatePhase :: enum {
 library/modules/std/internal/compress.sx:3983:1: private [use] | private DIRECT_INFLATE_LIMIT : i64 : 67108864;
-library/modules/std/internal/compress.sx:4037:1: private [use] | private compress_checked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
-library/modules/std/internal/compress.sx:4043:1: private [use] | private compress_strategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
+library/modules/std/internal/compress.sx:4037:1: private [use] | private compressChecked :: (data: string, level: i64 = -1, alloc: Allocator = context.allocator) -> (string, !Error) {
+library/modules/std/internal/compress.sx:4043:1: private [use] | private compressStrategy :: (data: string, level: i64, strategy: Strategy, alloc: Allocator = context.allocator) -> string {
 library/modules/std/internal/decimal.sx:55:1: private [use] | private LIMB_BITS :: 28;
 library/modules/std/internal/decimal.sx:56:1: private [use] | private LIMB_MASK :: 0xFFFFFFF;
 library/modules/std/internal/decimal.sx:57:1: private [use] | private LIMB_BASE :: 0x10000000;
@@ -159,85 +158,85 @@ library/modules/std/internal/decimal.sx:267:1: private [use] | private DEXP_INF 
 library/modules/std/internal/decimal.sx:268:1: private [use] | private DEXP_ZERO :: 0 - 325;
 library/modules/std/internal/decimal.sx:333:1: private [use] | private LOG10_2_NUM :: 30103;
 library/modules/std/internal/decimal.sx:334:1: private [use] | private LOG10_2_DEN :: 100000;
-library/modules/std/internal/decimal.sx:336:1: private [use] | private floor_div :: (a: i64, b: i64) -> i64 {
-library/modules/std/internal/decimal.sx:345:1: private [use] | private reaches_upper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
-library/modules/std/internal/decimal.sx:438:1: private [use] | private reaches_upper_scaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
-library/modules/std/internal/decimal.sx:447:1: private [use] | private int_bit_len :: (v: i64) -> i64 {
+library/modules/std/internal/decimal.sx:336:1: private [use] | private floorDiv :: (a: i64, b: i64) -> i64 {
+library/modules/std/internal/decimal.sx:345:1: private [use] | private reachesUpper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+library/modules/std/internal/decimal.sx:438:1: private [use] | private reachesUpperScaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+library/modules/std/internal/decimal.sx:447:1: private [use] | private intBitLen :: (v: i64) -> i64 {
 library/modules/std/internal/png.sx:20:1: private [use] | private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
-library/modules/std/internal/png.sx:22:1: private [use] | private png_write_chunk :: (out: *ByteWriter, kind: string, payload: string) {
-library/modules/std/internal/png.sx:141:1: private [use] | private png_u32be :: (d: string, off: i64) -> i64 {
+library/modules/std/internal/png.sx:22:1: private [use] | private pngWriteChunk :: (out: *ByteWriter, kind: string, payload: string) {
+library/modules/std/internal/png.sx:141:1: private [use] | private pngU32be :: (d: string, off: i64) -> i64 {
 library/modules/std/internal/png.sx:145:1: private [use] | private paeth :: (a: i64, b: i64, c: i64) -> i64 {
 library/modules/std/internal/zip.sx:11:1: private [use] | private le16 :: (data: string, at: i64) -> (i64, !Error) {
 library/modules/std/internal/zip.sx:16:1: private [use] | private le32 :: (data: string, at: i64) -> (i64, !Error) {
 library/modules/std/internal/zip.sx:21:1: private [use] | private le64 :: (data: string, at: i64) -> (i64, !Error) {
-library/modules/std/internal/zip.sx:29:1: private [use] | private zip_string_equal :: (a: string, b: string) -> bool {
+library/modules/std/internal/zip.sx:29:1: private [use] | private zipStringEqual :: (a: string, b: string) -> bool {
 library/modules/std/internal/zip.sx:46:1: private [use] | private ZipEntry :: struct {
-library/modules/std/internal/zip.sx:109:1: private [use] | private zip_extra_has_field :: (extra: string, wanted_id: i64) -> bool {
-library/modules/std/internal/zip.sx:126:1: private [use] | private zip_validate_user_extra :: (extra: string) -> !Error {
-library/modules/std/internal/zip.sx:141:1: private [use] | private zip_extra_without_zip64_size :: (extra: string) -> (i64, !Error) {
-library/modules/std/internal/zip.sx:156:1: private [use] | private zip_copy_extra_without_zip64 :: (output: *ByteWriter, extra: string) -> !Error {
-library/modules/std/internal/zip.sx:169:1: private [use] | private zip64_values :: (extra: string, compressed_size: i64, size: i64, local_offset: i64, disk_start: i64) -> (i64, i64, i64, i64, !Error) {
-library/modules/std/internal/zip.sx:216:1: private [use] | private zip_source_read_exact :: (source: ZipReadSource, offset: i64, output: string) -> !Error {
+library/modules/std/internal/zip.sx:109:1: private [use] | private zipExtraHasField :: (extra: string, wantedId: i64) -> bool {
+library/modules/std/internal/zip.sx:126:1: private [use] | private zipValidateUserExtra :: (extra: string) -> !Error {
+library/modules/std/internal/zip.sx:141:1: private [use] | private zipExtraWithoutZip64Size :: (extra: string) -> (i64, !Error) {
+library/modules/std/internal/zip.sx:156:1: private [use] | private zipCopyExtraWithoutZip64 :: (output: *ByteWriter, extra: string) -> !Error {
+library/modules/std/internal/zip.sx:169:1: private [use] | private zip64Values :: (extra: string, compressedSize: i64, size: i64, localOffset: i64, diskStart: i64) -> (i64, i64, i64, i64, !Error) {
+library/modules/std/internal/zip.sx:216:1: private [use] | private zipSourceReadExact :: (source: ZipReadSource, offset: i64, output: string) -> !Error {
 library/modules/std/internal/zip.sx:853:1: private [use] | private ZipFileReadState :: struct {
-library/modules/std/internal/zip.sx:862:1: private [use] | private zip_file_source_read :: (ctx: *void, offset: i64, output: string) -> i64 {
-library/modules/std/internal/zip.sx:870:1: private [use] | private zip_file_update_truncate :: (ctx: *void, len: i64) -> bool {
-library/modules/std/internal/zip.sx:882:1: private [use] | private zip_file_update_write :: (ctx: *void, data: string) -> bool {
-library/modules/std/internal/zip.sx:897:1: private [use] | private zip_file_update_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
-library/modules/std/internal/zip.sx:911:1: private [use] | private zip_file_update_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
-library/modules/std/internal/zip.sx:1147:1: private [use] | private open_zip_file_mode :: (path: [:0]u8, start: i64, size: i64, writable: bool, alloc: Allocator, max_metadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+library/modules/std/internal/zip.sx:862:1: private [use] | private zipFileSourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
+library/modules/std/internal/zip.sx:870:1: private [use] | private zipFileUpdateTruncate :: (ctx: *void, len: i64) -> bool {
+library/modules/std/internal/zip.sx:882:1: private [use] | private zipFileUpdateWrite :: (ctx: *void, data: string) -> bool {
+library/modules/std/internal/zip.sx:897:1: private [use] | private zipFileUpdateWriteAt :: (ctx: *void, offset: i64, data: string) -> bool {
+library/modules/std/internal/zip.sx:911:1: private [use] | private zipFileUpdateReadAt :: (ctx: *void, offset: i64, output: string) -> i64 {
+library/modules/std/internal/zip.sx:1147:1: private [use] | private openZipFileMode :: (path: [:0]u8, start: i64, size: i64, writable: bool, alloc: Allocator, maxMetadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
 library/modules/std/internal/zip.sx:1175:1: private [use] | private ZipExtractSink :: struct {
-library/modules/std/internal/zip.sx:1180:1: private [use] | private zip_discard_output :: (ctx: *void, data: string) -> bool { true }
+library/modules/std/internal/zip.sx:1180:1: private [use] | private zipDiscardOutput :: (ctx: *void, data: string) -> bool { true }
 library/modules/std/internal/zip.sx:1269:1: private [use] | private ZipFileSinkState :: struct {
-library/modules/std/internal/zip.sx:1273:1: private [use] | private zip_file_sink_write :: (ctx: *void, data: string) -> bool {
-library/modules/std/internal/zip.sx:1284:1: private [use] | private zip_extract_to_handle :: (reader: *ZipReader, index: i64, file: *File, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+library/modules/std/internal/zip.sx:1273:1: private [use] | private zipFileSinkWrite :: (ctx: *void, data: string) -> bool {
+library/modules/std/internal/zip.sx:1284:1: private [use] | private zipExtractToHandle :: (reader: *ZipReader, index: i64, file: *File, options: ZipExtractOptions = .{}, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
 library/modules/std/internal/zip.sx:1315:1: private [use] | private ZipExtractIterator :: struct {
 library/modules/std/internal/zip.sx:1538:1: private [use] | private ZipWriterEntry :: struct {
-library/modules/std/internal/zip.sx:1563:1: private [use] | private zip_entries_reserve :: (entries: *List(ZipWriterEntry), needed: i64, alloc: Allocator) -> bool {
-library/modules/std/internal/zip.sx:1584:1: private [use] | private zip_entries_append_reserved :: (entries: *List(ZipWriterEntry), entry: ZipWriterEntry) {
+library/modules/std/internal/zip.sx:1563:1: private [use] | private zipEntriesReserve :: (entries: *List(ZipWriterEntry), needed: i64, alloc: Allocator) -> bool {
+library/modules/std/internal/zip.sx:1584:1: private [use] | private zipEntriesAppendReserved :: (entries: *List(ZipWriterEntry), entry: ZipWriterEntry) {
 library/modules/std/internal/zip.sx:1589:1: private [use] | private ZipTimeMode :: enum { none; specified; file; }
-library/modules/std/internal/zip.sx:1591:1: private [use] | private zip_file_modified_seconds :: (file: *File) -> (i64, bool) {
-library/modules/std/internal/zip.sx:1626:1: private [use] | private zip_resolve_dos_time :: (options: ZipEntryOptions) -> (i64, i64, !Error) {
-library/modules/std/internal/zip.sx:1658:1: private [use] | private zip_alignment_padding :: (offset: i64, alignment: i64) -> i64 {
+library/modules/std/internal/zip.sx:1591:1: private [use] | private zipFileModifiedSeconds :: (file: *File) -> (i64, bool) {
+library/modules/std/internal/zip.sx:1626:1: private [use] | private zipResolveDosTime :: (options: ZipEntryOptions) -> (i64, i64, !Error) {
+library/modules/std/internal/zip.sx:1658:1: private [use] | private zipAlignmentPadding :: (offset: i64, alignment: i64) -> i64 {
 library/modules/std/internal/zip.sx:1684:1: private [use] | private ZipFileInputState :: struct {
-library/modules/std/internal/zip.sx:1689:1: private [use] | private zip_file_input_read :: (ctx: *void, offset: i64, output: string) -> i64 {
+library/modules/std/internal/zip.sx:1689:1: private [use] | private zipFileInputRead :: (ctx: *void, offset: i64, output: string) -> i64 {
 library/modules/std/internal/zip.sx:1696:1: private [use] | private ZipFileWriteState :: struct {
-library/modules/std/internal/zip.sx:1706:1: private [use] | private zip_file_write_handle :: (state: *ZipFileWriteState) -> *File {
-library/modules/std/internal/zip.sx:1710:1: private [use] | private zip_writer_file_flush_buffer :: (state: *ZipFileWriteState) -> bool {
-library/modules/std/internal/zip.sx:1732:1: private [use] | private zip_writer_file_sink_truncate :: (ctx: *void, len: i64) -> bool {
-library/modules/std/internal/zip.sx:1749:1: private [use] | private zip_writer_file_sink_write :: (ctx: *void, data: string) -> bool {
-library/modules/std/internal/zip_facade.sx:24:1: private [use] | private std_zip_entry_options :: (options: StdZipEntryOptions, from_file: bool = false) -> (ZipEntryOptions, !Error) {
+library/modules/std/internal/zip.sx:1706:1: private [use] | private zipFileWriteHandle :: (state: *ZipFileWriteState) -> *File {
+library/modules/std/internal/zip.sx:1710:1: private [use] | private zipWriterFileFlushBuffer :: (state: *ZipFileWriteState) -> bool {
+library/modules/std/internal/zip.sx:1732:1: private [use] | private zipWriterFileSinkTruncate :: (ctx: *void, len: i64) -> bool {
+library/modules/std/internal/zip.sx:1749:1: private [use] | private zipWriterFileSinkWrite :: (ctx: *void, data: string) -> bool {
+library/modules/std/internal/zip_facade.sx:24:1: private [use] | private stdZipEntryOptions :: (options: StdZipEntryOptions, fromFile: bool = false) -> (ZipEntryOptions, !Error) {
 library/modules/std/internal/zip_facade.sx:52:1: private [use] | private StdZipSourceBridge :: struct {
-library/modules/std/internal/zip_facade.sx:57:1: private [use] | private std_zip_source_read :: (ctx: *void, offset: i64, output: string) -> i64 {
+library/modules/std/internal/zip_facade.sx:57:1: private [use] | private stdZipSourceRead :: (ctx: *void, offset: i64, output: string) -> i64 {
 library/modules/std/internal/zip_facade.sx:78:1: private [use] | private StdZipSinkBridge :: struct {
-library/modules/std/internal/zip_facade.sx:84:1: private [use] | private std_zip_sink_write :: (ctx: *void, data: string) -> bool {
+library/modules/std/internal/zip_facade.sx:84:1: private [use] | private stdZipSinkWrite :: (ctx: *void, data: string) -> bool {
 library/modules/std/internal/zip_facade.sx:95:1: private [use] | private StdZipMemoryOutput :: struct {
-library/modules/std/internal/zip_facade.sx:100:1: private [use] | private std_zip_memory_truncate :: (ctx: *void, len: i64) -> bool {
-library/modules/std/internal/zip_facade.sx:107:1: private [use] | private std_zip_memory_write :: (ctx: *void, data: string) -> bool {
-library/modules/std/internal/zip_facade.sx:114:1: private [use] | private std_zip_memory_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
-library/modules/std/internal/zip_facade.sx:125:1: private [use] | private std_zip_memory_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
-library/modules/std/internal/zip_facade.sx:189:1: private [use] | private std_zip_reader_ready :: (state: *StdZipReaderState) -> !Error {
-library/modules/std/internal/zip_facade.sx:194:1: private [use] | private std_zip_reader_failure :: (state: *StdZipReaderState, fallback: Error) -> Error {
+library/modules/std/internal/zip_facade.sx:100:1: private [use] | private stdZipMemoryTruncate :: (ctx: *void, len: i64) -> bool {
+library/modules/std/internal/zip_facade.sx:107:1: private [use] | private stdZipMemoryWrite :: (ctx: *void, data: string) -> bool {
+library/modules/std/internal/zip_facade.sx:114:1: private [use] | private stdZipMemoryWriteAt :: (ctx: *void, offset: i64, data: string) -> bool {
+library/modules/std/internal/zip_facade.sx:125:1: private [use] | private stdZipMemoryReadAt :: (ctx: *void, offset: i64, output: string) -> i64 {
+library/modules/std/internal/zip_facade.sx:189:1: private [use] | private stdZipReaderReady :: (state: *StdZipReaderState) -> !Error {
+library/modules/std/internal/zip_facade.sx:194:1: private [use] | private stdZipReaderFailure :: (state: *StdZipReaderState, fallback: Error) -> Error {
 library/modules/std/internal/zip_facade.sx:367:1: private [use] | private StdZipMemoryWriter :: struct {
 library/modules/std/internal/zip_facade.sx:375:1: private [use] | private StdZipBorrowedSinkWriter :: struct {
 library/modules/std/internal/zip_facade.sx:381:1: private [use] | private StdZipFileWriter :: struct {
 library/modules/std/internal/zip_facade.sx:385:1: private [use] | private StdZipAppendFileWriter :: struct {
-library/modules/std/internal/zip_facade.sx:487:1: private [use] | private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
-library/modules/std/internal/zip_facade.sx:498:1: private [use] | private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -> Error {
-library/modules/std/internal/zip_facade.sx:508:1: private [use] | private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
-library/modules/std/internal/zip_facade.sx:522:1: private [use] | private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
-library/modules/std/internal/zip_facade.sx:542:1: private [use] | private std_zip_writer_default_comment :: (state: *StdZipWriterState) -> string {
-library/modules/std/internal/zip_facade.sx:685:1: private [use] | private std_zip_extract_to_sink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
-library/modules/std/internal/zip_facade.sx:695:1: private [use] | private std_zip_add_source :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !Error {
-library/modules/std/meta.sx:31:45: intrinsic [use] | raw_declare_type  :: (name: string) -> Type intrinsic;
-library/modules/std/meta.sx:32:75: intrinsic [use] | raw_register_type :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
+library/modules/std/internal/zip_facade.sx:487:1: private [use] | private stdZipWriterStream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
+library/modules/std/internal/zip_facade.sx:498:1: private [use] | private stdZipWriterFailure :: (state: *StdZipWriterState, fallback: Error) -> Error {
+library/modules/std/internal/zip_facade.sx:508:1: private [use] | private stdZipWriterTransferFailure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
+library/modules/std/internal/zip_facade.sx:522:1: private [use] | private stdZipWriterReady :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
+library/modules/std/internal/zip_facade.sx:542:1: private [use] | private stdZipWriterDefaultComment :: (state: *StdZipWriterState) -> string {
+library/modules/std/internal/zip_facade.sx:685:1: private [use] | private stdZipExtractToSink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+library/modules/std/internal/zip_facade.sx:695:1: private [use] | private stdZipAddSource :: (writer: *ZipStreamWriter, name: string, source: StdZipSource, options: ZipEntryOptions) -> !Error {
+library/modules/std/meta.sx:31:43: intrinsic [use] | rawDeclareType  :: (name: string) -> Type intrinsic;
+library/modules/std/meta.sx:32:73: intrinsic [use] | rawRegisterType :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
 
 == summary ==
 package: 2
   typed-decl(param/field/local): 1
   use: 1
 import: 0
-private: 139
-  use: 139
+private: 138
+  use: 138
 intrinsic: 88
   use: 88
-total identifier hits: 229 in 12 file(s) (scanned 152 .sx file(s))
+total identifier hits: 228 in 11 file(s) (scanned 137 .sx file(s))

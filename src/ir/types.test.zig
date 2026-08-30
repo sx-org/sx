@@ -715,12 +715,12 @@ test "parameterized protocol value struct interns stably" {
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
-    // `instantiateParamProtocol` registers a `{ctx, __vtable}` value struct
-    // under a mangled name (e.g. `VL__i64`). Same instantiation → same id.
+    // `instantiateParamProtocol` registers a protocol value struct under a
+    // mangled name (e.g. `VL__i64`). Same instantiation → same id.
     const void_ptr = table.ptrTo(.void);
     const fields = [_]TypeInfo.StructInfo.Field{
         .{ .name = table.internString("ctx"), .ty = void_ptr },
-        .{ .name = table.internString("__vtable"), .ty = void_ptr },
+        .{ .name = table.internString("vtable"), .ty = void_ptr },
     };
     const info: TypeInfo = .{ .@"struct" = .{ .name = table.internString("VL__i64"), .fields = &fields, .is_protocol = true } };
     const a = table.intern(info);

@@ -13,14 +13,14 @@ error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of '
 error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:24:5
    |
-24 |     take_narrow(be);             // error: same, in argument position
-   |     ^^^^^^^^^^^^^^^
+24 |     takeNarrow(be);             // error: same, in argument position
+   |     ^^^^^^^^^^^^^^
 
 error: cannot coerce error set 'Broad' to 'Narrow': 'Extra' is not a member of 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:24:5
    |
-24 |     take_narrow(be);             // error: same, in argument position
-   |     ^^^^^^^^^^^^^^^
+24 |     takeNarrow(be);             // error: same, in argument position
+   |     ^^^^^^^^^^^^^^
 
 error: cannot coerce error set 'Broad' to 'Narrow': 'Wide' is not a member of 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:25:10
@@ -41,10 +41,10 @@ error: error member '.Extra' is not in error set 'Narrow'
    |                      ^^^^^^
 
 error: error member '.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:28:17
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:28:16
    |
-28 |     take_narrow(.Extra);         // error: same, in argument position
-   |                 ^^^^^^
+28 |     takeNarrow(.Extra);         // error: same, in argument position
+   |                ^^^^^^
 
 error: error member '.Extra' is not in error set 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:29:23

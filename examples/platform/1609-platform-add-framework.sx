@@ -1,16 +1,16 @@
-// BuildOptions.add_framework registers an Apple framework at comptime,
+// BuildOptions.addFramework registers an Apple framework at comptime,
 // equivalent to a top-level `@framework "Name"` directive. The advantage:
-// you can gate it with `inline if OS == .ios { ... }` or similar logic,
+// you can gate it with `inline if @host.os == .ios { ... }` or similar logic,
 // keeping the framework off non-Apple builds.
 
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-configure_build :: () {
-    opts := build_options();
-    opts.add_framework("CoreFoundation");
+configureBuild :: () {
+    opts := buildOptions();
+    opts.addFramework("CoreFoundation");
 }
-@run configure_build();
+@run configureBuild();
 
 CFAbsoluteTimeGetCurrent :: () -> f64 extern;
 

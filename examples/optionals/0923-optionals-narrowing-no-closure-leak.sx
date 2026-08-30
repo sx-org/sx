@@ -10,14 +10,14 @@
 // the captured value is null, so the reject is mandatory — write `n?!` to assert.
 @import "modules/std.sx";
 
-takes_i64 :: (x: i64) { print("{}\n", x); }
+takesI64 :: (x: i64) { print("{}\n", x); }
 
 main :: () {
     n : ?i64 = 7;
     if n != null {
         // `n` is narrowed HERE, but the closure body is a separate function:
         // `n` is `?i64` inside it, so this implicit unwrap must be rejected.
-        g := ||_{ n = n } { takes_i64(n); };
+        g := ||_{ n = n } { takesI64(n); };
         g();
     }
 }

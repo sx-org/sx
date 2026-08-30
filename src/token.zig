@@ -137,7 +137,7 @@ pub const Tag = enum(u8) {
     at_flags, // @flags (inside @import c { ... })
     at_get, // `name :: (self) -> R @get => expr;` — a no-paren property accessor method (read via field syntax)
     at_set, // `name :: (self, value) @set { ... }` — the write counterpart of @get (`obj.name = rhs` dispatches here)
-    at_context_extend, // `@context_extend name: Type = default;` — top-level Context field declaration
+    at_context_extend, // `@context.extend name: Type = default;` — top-level Context field declaration
     triple_minus, // ---
     minus_minus,
 
@@ -553,7 +553,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     // (recognized contextually only inside an `asm { … }` body).
     .{ "asm", .kw_asm },
     // `intrinsic` marks a declaration whose implementation is a compiler
-    // intrinsic (`struct_field_count :: ($T: Type) -> i64 intrinsic;`). A
+    // intrinsic (`structFieldCount :: ($T: Type) -> i64 intrinsic;`). A
     // reserved word: the registry in `ir/intrinsics.zig` binds it by module +
     // declared name.
     .{ "intrinsic", .kw_intrinsic },

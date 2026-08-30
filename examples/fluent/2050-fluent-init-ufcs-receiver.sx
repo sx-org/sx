@@ -29,17 +29,17 @@ Stack :: @OpenVariant(View) {
     render :: (self: *Stack) -> string => self.label;
 }
 
-@context_extend ui_out: *List(View) = null;
+@context.extend uiOut: *List(View) = null;
 
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;
     value.write(*item);
-    context.ui_out.append(item);
+    context.uiOut.append(item);
 }
 
 // --- A fixed target that is a plain data type ---
 Total :: struct { sum: i64 = 0; n: i32 = 0; }
-@context_extend acc: *Total = null;
+@context.extend acc: *Total = null;
 
 add :: ufcs (value: $I/@Init(i64)) {
     slot: i64 = ---;
@@ -54,7 +54,7 @@ Dot :: struct { c: string = "."; }
 impl Drawable for Dot { draw :: (self: *Dot) -> string => self.c; }
 
 Seen :: struct { last: string = ""; }
-@context_extend seen: *Seen = null;
+@context.extend seen: *Seen = null;
 
 show :: ufcs (value: $I/@Init($V/Drawable)) {
     d := context.allocator.create(V);
@@ -69,7 +69,7 @@ Round :: struct { s: string = "round"; }
 impl Shape for Round { name :: (self: *Round) -> string => self.s; }
 
 Kept :: struct { last: string = ""; }
-@context_extend kept: *Kept = null;
+@context.extend kept: *Kept = null;
 
 keep :: ufcs (value: $I/@Init($V/Shape)) {
     payload := context.allocator.create(V);
@@ -97,7 +97,7 @@ main :: () -> i32 {
     s := Seen{};
     k := Kept{};
 
-    push .{ ui_out = *out, acc = *total, seen = *s, kept = *k } {
+    push .{ uiOut = *out, acc = *total, seen = *s, kept = *k } {
         // The receiver at each shape of the bound.
         Label{ text = "a member" }.emit();
         (40 + 2).add();

@@ -16,18 +16,18 @@ main :: () {
     task := TrackingAllocator.init(base);
 
     answer := 0;
-    ctx_allocs := 0;
+    ctxAllocs := 0;
     push .{ allocator = ctx } {
         n := 41;
         f := context.io.async(||_{ n } -> (i64, !IoErr) n + 1, task);
         answer = await(f) catch { 0 };
-        ctx_allocs = ctx.alloc_count;
+        ctxAllocs = ctx.allocCount;
     }
 
     print("answer {}\n", answer);
     print("task allocs {} deallocs {} outstanding {}\n",
-          task.alloc_count, task.dealloc_count, task.leak_count());
-    print("context allocs {}\n", ctx_allocs);
+          task.allocCount, task.deallocCount, task.leakCount());
+    print("context allocs {}\n", ctxAllocs);
 
     // A worker that is ALREADY a `Closure` is taken unchanged — `closure` is
     // identity on one — so the task funds the other three and the env it was
@@ -35,20 +35,20 @@ main :: () {
     pre := TrackingAllocator.init(base);
     m := 20;
     w := closure(||_{ m } -> (i64, !IoErr) m + 1, pre);
-    persisted := pre.alloc_count;
+    persisted := pre.allocCount;
     h := context.io.async(w, pre);
     print("pre-persisted {} task total {} value {}\n",
-          persisted, pre.alloc_count, await(h) catch { 0 });
-    print("pre outstanding {}\n", pre.leak_count());
+          persisted, pre.allocCount, await(h) catch { 0 });
+    print("pre outstanding {}\n", pre.leakCount());
 
     // An arena is a valid `alloc`: the task's allocations land in the chunk it
     // already holds, so the GPA behind it sees no growth.
     arena := Arena.init(base, 4096);
-    before := gpa.alloc_count;
+    before := gpa.allocCount;
     k := 6;
     g := context.io.async(||_{ k } -> (i64, !IoErr) k * 7, arena);
     product := await(g) catch { 0 };
-    print("arena {} gpa growth {}\n", product, gpa.alloc_count - before);
+    print("arena {} gpa growth {}\n", product, gpa.allocCount - before);
     arena.deinit();
-    print("gpa outstanding {}\n", gpa.alloc_count);
+    print("gpa outstanding {}\n", gpa.allocCount);
 }

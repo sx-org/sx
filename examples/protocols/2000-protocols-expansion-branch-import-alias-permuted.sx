@@ -9,7 +9,7 @@
 
 inline if Slot is Mark { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     alias :: @import "./1999-protocols-expansion-branch-import-alias-mod.sx";
 } else {
     NARROW :: 1;

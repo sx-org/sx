@@ -26,7 +26,7 @@ impl Drawable for Button {
 }
 
 // FIXED type argument: this parameter accepts initializers for `Button` only.
-fill_button :: (value: $I/@Init(Button)) -> string {
+fillButton :: (value: $I/@Init(Button)) -> string {
     slot: Button = ---;
     value.write(*slot);
     slot.label
@@ -34,7 +34,7 @@ fill_button :: (value: $I/@Init(Button)) -> string {
 
 // OPEN type argument with its own bound: `V` is the argument's concrete type,
 // and it has to be `Drawable` because the body draws it.
-fill_drawable :: (value: $I/@Init($V/Drawable)) -> string {
+fillDrawable :: (value: $I/@Init($V/Drawable)) -> string {
     slot: V = ---;
     value.write(*slot);
     slot.draw()
@@ -49,26 +49,26 @@ fill :: (value: $I/@Init($T), into: *T) {
 // happens exactly once and the reported site is still the original expression's.
 forward :: (value: $I/@Init($T), into: *T) -> i32 {
     fill(value, into);
-    line_of(value)
+    lineOf(value)
 }
 
-line_of :: (value: $I/@Init($T)) -> i32 {
+lineOf :: (value: $I/@Init($T)) -> i32 {
     s := value.site();
     if s != null { s?!.line } else { 0 }
 }
 
 main :: () -> i32 {
-    print("{}\n", fill_button(Button{ label = "fixed" }));
-    print("{}\n", fill_drawable(Button{ label = "open" }));
+    print("{}\n", fillButton(Button{ label = "fixed" }));
+    print("{}\n", fillDrawable(Button{ label = "open" }));
 
     slot: Button = ---;
     // The expression this initializer is formed from is written on THIS line;
     // `forward` reports the site through one hand-over.
-    forwarded_line := forward(Button{ label = "forwarded" }, *slot);
-    print("{} formed at line {}\n", slot.label, forwarded_line);
+    forwardedLine := forward(Button{ label = "forwarded" }, *slot);
+    print("{} formed at line {}\n", slot.label, forwardedLine);
 
     // Nothing evaluates until a write: this counter stays at zero.
-    print("evaluations {}\n", never_written(bump()));
+    print("evaluations {}\n", neverWritten(bump()));
     print("bumps {}\n", bumps);
     0
 }
@@ -80,7 +80,7 @@ bump :: () -> Button {
     Button{ label = "built" }
 }
 
-never_written :: (value: $I/@Init($T)) -> i32 { 0 }
+neverWritten :: (value: $I/@Init($T)) -> i32 { 0 }
 
 // ** stdout **
 // fixed

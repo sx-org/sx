@@ -10,7 +10,7 @@
 
 inline if Item is Show { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
-inline if POINTER_SIZE == 0 {
+inline if @host.pointerSize == 0 {
     @import "./1990-protocols-expansion-branch-import-impl.sx";
 } else {
     NARROW :: 1;

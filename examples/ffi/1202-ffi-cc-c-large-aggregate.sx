@@ -19,12 +19,12 @@ Wide :: struct {
     d: i64;
 }
 
-accept_c :: (w: Wide) -> i64 abi(.c) {
+acceptC :: (w: Wide) -> i64 abi(.c) {
     w.a + w.b + w.c + w.d
 }
 
 main :: () -> i32 {
     w := Wide{ a = 1, b = 10, c = 100, d = 1000 };
-    if accept_c(w) != 1111 { return 1; }
+    if acceptC(w) != 1111 { return 1; }
     0
 }

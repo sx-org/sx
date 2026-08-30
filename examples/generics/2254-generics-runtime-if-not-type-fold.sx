@@ -22,22 +22,22 @@ Slide :: @OpenVariant(View) {
 
 IDLE :: 0;
 ACTIVE :: 1;
-g_dir : i64 = IDLE;
+gDir : i64 = IDLE;
 
-build_it :: () -> Slide {
+buildIt :: () -> Slide {
     t : f32 = 1.0;
-    if g_dir != IDLE {
+    if gDir != IDLE {
         t = 0.5;
     }
     pages := List(View){};
-    Slide{ pages = pages, dir = g_dir }
+    Slide{ pages = pages, dir = gDir }
 }
 
 main :: () {
-    s := build_it();
+    s := buildIt();
     print("{}\n", s.render());
 
-    g_dir = ACTIVE;
-    s2 := build_it();
+    gDir = ACTIVE;
+    s2 := buildIt();
     print("{}\n", s2.dir);
 }

@@ -10,11 +10,11 @@ mul :: (a: i32, b: i32) -> i32 { a * b }
 
 identity :: (x: $T) -> T { x }
 
-pair_add :: (a: $T, b: $U) -> i64 {
+pairAdd :: (a: $T, b: $U) -> i64 {
     a.(i64) + b.(i64)
 }
 
-typed_sum :: (..args: []i32) -> i32 {
+typedSum :: (..args: []i32) -> i32 {
     result := 0;
     for it in args { result = result + it; }
     result
@@ -24,15 +24,15 @@ apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
     f(x, y)
 }
 
-void_return :: () {
+voidReturn :: () {
     return;
 }
 
-implicit_return :: (x: i32) -> i32 {
+implicitReturn :: (x: i32) -> i32 {
     x * 2
 }
 
-early_return :: (x: i32) -> i32 {
+earlyReturn :: (x: i32) -> i32 {
     if x > 10 { return 99; }
     x
 }
@@ -57,14 +57,14 @@ main :: () {
     print("default-init: {}\n", di);
 
     // Implicit return
-    print("implicit-ret: {}\n", implicit_return(21));
+    print("implicit-ret: {}\n", implicitReturn(21));
 
     // Explicit return
-    print("early-ret: {}\n", early_return(5));
-    print("early-ret2: {}\n", early_return(20));
+    print("early-ret: {}\n", earlyReturn(5));
+    print("early-ret2: {}\n", earlyReturn(20));
 
     // Void return
-    void_return();
+    voidReturn();
     print("void-return: ok\n");
 
     // Generic — single param
@@ -73,7 +73,7 @@ main :: () {
     print("generic-bool: {}\n", identity(true));
 
     // Generic — multiple params
-    print("generic-multi: {}\n", pair_add(10, 20));
+    print("generic-multi: {}\n", pairAdd(10, 20));
 
     // Lambda
     double :: (x: i32) => x * 2;
@@ -84,18 +84,18 @@ main :: () {
     print("lambda-ret: {}\n", halve(10.0));
 
     // Local function (non-lambda)
-    local_add :: (a: i32, b: i32) -> i32 { a + b }
-    print("local-fn: {}\n", local_add(3, 4));
+    localAdd :: (a: i32, b: i32) -> i32 { a + b }
+    print("local-fn: {}\n", localAdd(3, 4));
 
     // Nested function calls
     print("fn-nested: {}\n", add(mul(2, 3), mul(4, 5)));
 
     // Variadic (typed)
-    print("varargs: {}\n", typed_sum(1, 2, 3, 4, 5));
+    print("varargs: {}\n", typedSum(1, 2, 3, 4, 5));
 
     // Spread
-    spread_arr : [3]i32 = .[10, 20, 30];
-    print("spread: {}\n", typed_sum(..spread_arr));
+    spreadArr : [3]i32 = .[10, 20, 30];
+    print("spread: {}\n", typedSum(..spreadArr));
 
     // Function pointers
     fp : (i32, i32) -> i32 = add;

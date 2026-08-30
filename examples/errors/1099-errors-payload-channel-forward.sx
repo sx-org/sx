@@ -7,21 +7,21 @@ Bare :: error { A };
 Wide :: error { B: i64 };
 Both :: Bare | Wide;
 
-from_bare :: (n: i32) -> (i32, !Bare) {
+fromBare :: (n: i32) -> (i32, !Bare) {
     if n < 0 { raise Bare.A; }
     return n;
 }
 
-into_both :: (n: i32) -> (i32, !Both) {
-    return from_bare(n);
+intoBoth :: (n: i32) -> (i32, !Both) {
+    return fromBare(n);
 }
 
 main :: () -> i32 {
-    a := into_both(-1) catch |e| {
+    a := intoBoth(-1) catch |e| {
         if e == Bare.A { 1 } else { 2 }
     };
     print("fwd={}\n", a);
-    ok := into_both(5) catch { -1 };
+    ok := intoBoth(5) catch { -1 };
     print("ok={}\n", ok);
     return 0;
 }

@@ -35,12 +35,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "fast-ok";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -64,22 +64,22 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 5000,
-            timeout_keepalive_ms = 5000,
-            request_count = 50,
-            max_conn = 4,
-            thread_pool_count = 2,
-            thread_pool_backlog = 16,
-            handler_timeout_ms = 0,   // no sweep — isolate the busy-poll path
+            timeoutRequestMs = 5000,
+            timeoutKeepaliveMs = 5000,
+            requestCount = 50,
+            maxConn = 4,
+            threadPoolCount = 2,
+            threadPoolBacklog = 16,
+            handlerTimeoutMs = 0,   // no sweep — isolate the busy-poll path
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dial_port(PORT);
+        ca := dialPort(PORT);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         // Request 1: /slow — accepted, parsed, dispatched to a worker.
@@ -104,7 +104,7 @@ main :: () -> i32 {
         while ticks < 20000 and !done {
             srv.tick(30) catch {};
             ticks += 1;
-            n, re := socket.read_nb(ca, *rbuf[total], (cap - total));
+            n, re := socket.readNb(ca, *rbuf[total], (cap - total));
             if !re { total += n; }
             else if re == .Closed { done = true; }
             resp := string{ ptr = rbuf, len = total };
@@ -125,8 +125,8 @@ main :: () -> i32 {
 
         socket.close(ca);
         srv.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

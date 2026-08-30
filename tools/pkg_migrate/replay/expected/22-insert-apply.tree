@@ -1,9 +1,9 @@
 ===== testdata/imports/app.sx
 // import-rewrite fixture. The occurrences below in comments and strings
 // must never be rewritten: #import "modules/old/thing.sx"
-#import "modules/old/thing.sx";
-#import "modules/keep/asis.sx";
-name_bound :: #import "modules/old/other.sx";
+@import "modules/old/thing.sx";
+@import "modules/keep/asis.sx";
+nameBound :: @import "modules/old/other.sx";
 
 main :: () {
     // a string mentioning an import path must survive untouched:
@@ -71,20 +71,20 @@ build :: (package: string, lib: string) -> string {
     // member access: 1 hit for `private` (member-access)
     v := obj.private;
     // heredoc: no hits
-    h := #string XML
+    h := @string XML
 <manifest package="demo" import="x" private intrinsic />
 XML;
     return s;
 }
 ===== testdata/lexical/drift/directive-drift.sx
-#identity #expand #context_extend #builtin
+@identity #expand @context.extend #builtin
 ===== testdata/lexical/drift/map.txt
 identity=ns
 expand=ns
-context_extend=ns
+extend=ns
 builtin=ns
 ===== testdata/lexical/warnings/string-no-delimiter.sx
-package :: #string 123
+package :: @string 123
 import();
 ===== testdata/lexical/warnings/unterminated-char.sx
 package :: () {
@@ -92,10 +92,10 @@ package :: () {
     import();
 }
 ===== testdata/lexical/warnings/unterminated-heredoc-body.sx
-package :: #string END
+package :: @string END
 import inside the body stays opaque
 ===== testdata/lexical/warnings/unterminated-heredoc-header.sx
-package :: #string END===== testdata/lexical/warnings/unterminated-string.sx
+package :: @string END===== testdata/lexical/warnings/unterminated-string.sx
 package :: () {
     s := "unterminated;
     import();
@@ -123,7 +123,7 @@ CONSTANT=util
 ===== testdata/qualify/shadow.sx
 // shadow fixture: this file declares `helper` locally, so NO occurrence of
 // `helper` may be rewritten — every one must be reported as a skip.
-#import "modules/util.sx";
+@import "modules/util.sx";
 
 helper :: (n: int) -> int {
     return n + 1;
@@ -136,7 +136,7 @@ main :: () {
 ===== testdata/qualify/uses.sx
 // qualify fixture: flat uses of `helper` and `CONSTANT` should become
 // qualified; mentions in this comment (helper) and in strings must not.
-#import "modules/util.sx";
+@import "modules/util.sx";
 
 main :: () {
     x := helper(3);            // call position -> util.helper(3)

@@ -221,8 +221,27 @@ fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) 
     return null;
 }
 
+/// Project a node to a comptime constant: a name in `comptime_constants`, or
+/// a named field of one that is a `.struct_val`. An unknown field is null —
+/// a comptime struct is not a namespace.
+pub fn evalComptimeValue(self: *Lowering, node: *const Node) ?Lowering.ComptimeValue {
+    switch (node.data) {
+        .identifier => |id| return self.comptime_constants.get(id.name),
+        .field_access => |fa| {
+            const obj = evalComptimeValue(self, fa.object) orelse return null;
+            if (obj != .struct_val) return null;
+            for (obj.struct_val) |f| {
+                if (std.mem.eql(u8, f.name, fa.field)) return f.value;
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
 /// Evaluate a compile-time condition for `inline if`.
-/// Handles target/value comparisons and short-circuit `and` / `or` chains.
+/// Handles target/value comparisons, `not`, and short-circuit `and` / `or`
+/// chains.
 pub fn evalComptimeCondition(self: *Lowering, node: *const Node) ?bool {
     return evalComptimeConditionDepth(self, node, 0);
 }
@@ -231,10 +250,18 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
     // Const chains recurse through module_const_map; a (rejected-elsewhere
     // but representable) self-referential const must not loop here.
     if (depth > 16) return null;
+    if (evalComptimeValue(self, node)) |cv| {
+        if (cv == .bool_val) return cv.bool_val;
+    }
     switch (node.data) {
         .bool_literal => |bl| return bl.value,
+        .unary_op => |uo| {
+            if (uo.op != .not) return null;
+            const inner = evalComptimeConditionDepth(self, uo.operand, depth + 1) orelse return null;
+            return !inner;
+        },
         // A bare identifier naming a module const folds through the const's
-        // value expression (`ENABLED :: false`, chains, `F :: OS == .ios`).
+        // value expression (`ENABLED :: false`, chains, `F :: @host.os == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
         .identifier => |id| {
             const info = self.program_index.module_const_map.get(id.name) orelse return null;
@@ -256,12 +283,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
     }
     if (bo.op != .eq and bo.op != .neq) return null;
 
-    // LHS must be an identifier that's in comptime_constants
-    const name = switch (bo.lhs.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    const cv = self.comptime_constants.get(name) orelse return null;
+    const cv = evalComptimeValue(self, bo.lhs) orelse return null;
 
     switch (cv) {
         .enum_tag => |et| {
@@ -295,6 +317,15 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
             const result = iv == rhs_val;
             return if (bo.op == .eq) result else !result;
         },
+        .bool_val => |bv| {
+            const rhs_val = switch (bo.rhs.data) {
+                .bool_literal => |bl| bl.value,
+                else => return null,
+            };
+            const result = bv == rhs_val;
+            return if (bo.op == .eq) result else !result;
+        },
+        .struct_val => return null,
     }
 }
 
@@ -401,12 +432,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
 }
 
 pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node {
-    // Subject must be a comptime constant identifier
-    const name = switch (me.subject.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    const cv = self.comptime_constants.get(name) orelse return null;
+    const cv = evalComptimeValue(self, me.subject) orelse return null;
 
     switch (cv) {
         .enum_tag => |et| {
@@ -456,6 +482,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
             }
             return null;
         },
+        .bool_val, .struct_val => return null,
     }
 }
 
@@ -1459,8 +1486,8 @@ fn lowerComptimeCallArgsMode(
     }
 
     // Pin the lowering to the metaprogram's OWN module for the body (and
-    // its return type + anything it `@insert`s, e.g. `build_format` /
-    // `any_to_string` inside `std.print` / `log.*`), so those bare names
+    // its return type + anything it `@insert`s, e.g. `buildFormat` /
+    // `anyToString` inside `std.print` / `log.*`), so those bare names
     // resolve in the defining module's visibility context rather than the
     // call site's. The call-site ARGS above are deliberately lowered
     // BEFORE this, in the caller's context. Mirrors `lowerFunctionBodyInto`,
@@ -1910,9 +1937,9 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
 // ── Source-const folding ────────────────────────────────────────
 
 /// Resolve a name to a compile-time integer across the three const tables.
-/// A comptime binding (generic value param / inline-for cursor) or a
-/// `@run`/`OS`/`ARCH` comptime constant wins first; otherwise the name is a
-/// SOURCE-AWARE module const, folded with nested leaves resolved own-wins.
+/// A comptime binding (generic value param / inline-for cursor) wins first;
+/// otherwise the name is a SOURCE-AWARE module const, folded with nested
+/// leaves resolved own-wins.
 pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
     if (self.comptime_constants.get(name)) |cv| switch (cv) {
         .int_val => |iv| return iv,
@@ -2204,6 +2231,19 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
     return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
+}
+
+/// `<comptime struct>.field` as a compile-time integer — a name in
+/// `comptime_constants` bound to a struct value, projected by field name.
+/// Keyed by name + field, never by node.
+pub fn foldComptimeStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
+    const cv = self.comptime_constants.get(name) orelse return null;
+    if (cv != .struct_val) return null;
+    for (cv.struct_val) |f| {
+        if (!std.mem.eql(u8, f.name, field)) continue;
+        return if (f.value == .int_val) f.value.int_val else null;
+    }
+    return null;
 }
 
 /// `<struct const>.field` as a compile-time integer — the SELECTED author's

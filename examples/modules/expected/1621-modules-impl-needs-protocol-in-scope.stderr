@@ -9,7 +9,7 @@ error: unknown constraint or interface 'Into' in impl — not declared or import
    |
  7 | impl Into(*DeadBox) for string {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 8 |     convert :: (self: string) -> *DeadBox { return *g_dead; }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 |     convert :: (self: string) -> *DeadBox { return *gDead; }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  9 | }
    | ^

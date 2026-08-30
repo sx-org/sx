@@ -2,8 +2,8 @@
 // register. The importer's build fails loudly at the declaration.
 DeadBox :: struct { v: i64; }
 
-g_dead : DeadBox = .{ v = 99 };
+gDead : DeadBox = .{ v = 99 };
 
 impl Into(*DeadBox) for string {
-    convert :: (self: string) -> *DeadBox { return *g_dead; }
+    convert :: (self: string) -> *DeadBox { return *gDead; }
 }

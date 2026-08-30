@@ -9,19 +9,19 @@ Tracer :: struct {
     count: i64;
 
     init :: () -> *Tracer {
-        t : *Tracer = xx c.libc_malloc(@sizeOf(Tracer));
+        t : *Tracer = xx c.libcMalloc(@sizeOf(Tracer));
         t.count = 0;
         t
     }
 }
 
 impl Allocator for Tracer {
-    alloc_bytes :: (self: *Tracer, size: i64) -> *void {
+    allocBytes :: (self: *Tracer, size: i64) -> *void {
         self.count += 1;
-        return c.libc_malloc(size);
+        return c.libcMalloc(size);
     }
-    dealloc_bytes :: (self: *Tracer, ptr: *void) {
-        c.libc_free(ptr);
+    deallocBytes :: (self: *Tracer, ptr: *void) {
+        c.libcFree(ptr);
     }
 }
 
@@ -31,8 +31,8 @@ main :: () -> i32 {
         // The literal IS its env; `closure` copies that env into storage the
         // installed tracer's `alloc` hands out.
         captured : i64 = 100;
-        add_capture : Closure(i64) -> i64 = closure(|y: i64|_{ captured } -> i64 y + captured);
-        _ = add_capture(1);
+        addCapture : Closure(i64) -> i64 = closure(|y: i64|_{ captured } -> i64 y + captured);
+        _ = addCapture(1);
     }
     print("Tracer.count = {}\n", tracer.count);
     0

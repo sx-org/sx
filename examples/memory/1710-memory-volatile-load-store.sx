@@ -15,10 +15,10 @@ main :: () {
     slot: i32 = 41;
     address := *slot;
 
-    first := @volatile_load(i32, address);
-    second := @volatile_load(i32, address);
-    @volatile_store(i32, address, second + 1);
-    third := @volatile_load(i32, address);
+    first := @volatileLoad(i32, address);
+    second := @volatileLoad(i32, address);
+    @volatileStore(i32, address, second + 1);
+    third := @volatileLoad(i32, address);
 
     if first == 41 and second == 41 and third == 42 {
         out("scalar: 41 41 42\n");
@@ -30,9 +30,9 @@ main :: () {
     // sign rather than by its 32-bit pattern.
     wide: i64 = 0;
     narrow: i32 = -1;
-    @volatile_store(i64, *wide, narrow);
+    @volatileStore(i64, *wide, narrow);
 
-    if @volatile_load(i64, *wide) == -1 {
+    if @volatileLoad(i64, *wide) == -1 {
         out("widened: -1\n");
     } else {
         out("widened: WRONG\n");
@@ -42,9 +42,9 @@ main :: () {
     // same slot, and the store through it still writes all eight bytes.
     viewed: i64 = 0;
     view: *i32 = *viewed;
-    @volatile_store(i64, view, -1);
+    @volatileStore(i64, view, -1);
 
-    if @volatile_load(i64, view) == -1 {
+    if @volatileLoad(i64, view) == -1 {
         out("viewed: -1\n");
     } else {
         out("viewed: WRONG\n");
@@ -52,8 +52,8 @@ main :: () {
 
     // Aggregates travel as one typed access, not field by field.
     point := Point{ x = 3, y = 4 };
-    snapshot := @volatile_load(Point, *point);
-    @volatile_store(Point, *point, Point{ x = snapshot.y, y = snapshot.x });
+    snapshot := @volatileLoad(Point, *point);
+    @volatileStore(Point, *point, Point{ x = snapshot.y, y = snapshot.x });
 
     if point.x == 4 and point.y == 3 {
         out("aggregate: 4 3\n");

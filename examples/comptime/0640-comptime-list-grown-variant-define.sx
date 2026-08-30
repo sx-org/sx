@@ -11,19 +11,19 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make_enum :: (name: string, variants: []VariantInfo) -> Type {
+makeEnum :: (name: string, variants: []VariantInfo) -> Type {
     return define(declare(name), .enum(.{ variants = variants }));
 }
 
-build_color :: () -> Type {
+buildColor :: () -> Type {
     vs : List(VariantInfo) = .{};
     vs.append(VariantInfo{ name = "red",   payload = void });
     vs.append(VariantInfo{ name = "green", payload = i64 });
     vs.append(VariantInfo{ name = "blue",  payload = void });
-    return make_enum("Color", vs.items[0..vs.len]);
+    return makeEnum("Color", vs.items[0..vs.len]);
 }
 
-Color :: build_color();
+Color :: buildColor();
 
 main :: () -> i32 {
     c : Color = .green(7);

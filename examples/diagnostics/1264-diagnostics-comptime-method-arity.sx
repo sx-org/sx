@@ -10,7 +10,7 @@ Thing :: struct {
         0
     }
 
-    needs_value :: ($mode: Mode, value: i64) -> i64 {
+    needsValue :: ($mode: Mode, value: i64) -> i64 {
         if mode == .run { return value; }
         0
     }
@@ -18,5 +18,5 @@ Thing :: struct {
 
 main :: () {
     Thing.ping(.run, 9);
-    Thing.needs_value(.run);
+    Thing.needsValue(.run);
 }

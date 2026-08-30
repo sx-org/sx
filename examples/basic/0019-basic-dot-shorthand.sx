@@ -19,7 +19,7 @@ Vec2 :: struct {
 
     create :: (x: f32, y: f32) -> Vec2 { Vec2{ x = x, y = y } }
     zero :: () -> Vec2 { Vec2{ x = 0.0, y = 0.0 } }
-    unit_x :: () -> Vec2 { Vec2{ x = 1.0, y = 0.0 } }
+    unitX :: () -> Vec2 { Vec2{ x = 1.0, y = 0.0 } }
     add :: (a: Vec2, b: Vec2) -> Vec2 { Vec2{ x = a.x + b.x, y = a.y + b.y } }
     scale :: (v: Vec2, s: f32) -> Vec2 { Vec2{ x = v.x * s, y = v.y * s } }
     len :: (v: Vec2) -> i32 { xx (v.x + v.y) }
@@ -94,8 +94,8 @@ main :: () {
 
     // T6: Return .variant(payload) from function
     {
-        make_shape :: (r: f32) -> Shape { .circle(r) }
-        sh := make_shape(4.2);
+        makeShape :: (r: f32) -> Shape { .circle(r) }
+        sh := makeShape(4.2);
         print("T6: {}\n", sh.circle);
     }
 
@@ -156,8 +156,8 @@ main :: () {
 
     // S1: .method(args) as function argument (the motivating use case)
     {
-        print_vec :: (v: Vec2) { print("S1: {} {}\n", v.x, v.y); }
-        print_vec(.create(3.0, 4.0));
+        printVec :: (v: Vec2) { print("S1: {} {}\n", v.x, v.y); }
+        printVec(.create(3.0, 4.0));
     }
 
     // S2: .method(args) in typed variable declaration
@@ -168,30 +168,30 @@ main :: () {
 
     // S3: Return .method(args) from function with return type
     {
-        make_vec :: () -> Vec2 { .create(7.0, 8.0) }
-        v := make_vec();
+        makeVec :: () -> Vec2 { .create(7.0, 8.0) }
+        v := makeVec();
         print("S3: {} {}\n", v.x, v.y);
     }
 
     // S4: Zero-arg static method (factory)
     {
-        print_vec :: (v: Vec2) { print("S4: {} {}\n", v.x, v.y); }
-        print_vec(.zero());
-        print_vec(.unit_x());
+        printVec :: (v: Vec2) { print("S4: {} {}\n", v.x, v.y); }
+        printVec(.zero());
+        printVec(.unitX());
     }
 
     // S5: Three-arg static method (proves multi-arg works)
     {
-        print_trio :: (t: Trio) { print("S5: {}\n", t.a + t.b + t.c); }
-        print_trio(.make(10, 20, 30));
+        printTrio :: (t: Trio) { print("S5: {}\n", t.a + t.b + t.c); }
+        printTrio(.make(10, 20, 30));
     }
 
     // S6: Two-arg shorthand matching the EdgeInsets use case
     {
-        apply_insets :: (ei: EdgeInsets) { print("S6: {} {} {} {}\n", ei.top, ei.right, ei.bottom, ei.left); }
-        apply_insets(.all(8.0));
-        apply_insets(.symmetric(16.0, 8.0));
-        apply_insets(.horizontal(12.0));
+        applyInsets :: (ei: EdgeInsets) { print("S6: {} {} {} {}\n", ei.top, ei.right, ei.bottom, ei.left); }
+        applyInsets(.all(8.0));
+        applyInsets(.symmetric(16.0, 8.0));
+        applyInsets(.horizontal(12.0));
     }
 
     // S7: Result of .method() used in further computation
@@ -203,8 +203,8 @@ main :: () {
     // S8: Chained qualified + shorthand — ensure both work together
     {
         v1 := Vec2.create(1.0, 2.0);
-        print_vec :: (v: Vec2) { print("S8: {} {}\n", v.x, v.y); }
-        print_vec(.create(3.0, 4.0));
+        printVec :: (v: Vec2) { print("S8: {} {}\n", v.x, v.y); }
+        printVec(.create(3.0, 4.0));
         print("S8q: {} {}\n", v1.x, v1.y);
     }
 
@@ -229,19 +229,19 @@ main :: () {
     }
 
     {
-        use_both :: (sh: Shape, v: Vec2) {
+        useBoth :: (sh: Shape, v: Vec2) {
             ms : i32 = 0;
             match sh { case .circle: |r| { ms = xx r; } else: {} }
             print("E2: {} {} {}\n", ms, v.x, v.y);
         }
-        use_both(.circle(9.0), .create(1.0, 2.0));
+        useBoth(.circle(9.0), .create(1.0, 2.0));
     }
 
     {
-        check_none :: (sh: Shape) -> i32 {
+        checkNone :: (sh: Shape) -> i32 {
             match sh { case .none: 1; else: 0; }
         }
-        print("E3: {}\n", check_none(.none));
+        print("E3: {}\n", checkNone(.none));
     }
 
     // the inner .create resolves via the method's parameter type, not the outer type

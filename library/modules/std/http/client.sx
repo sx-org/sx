@@ -2,7 +2,7 @@
 //
 // One round trip is connect → send a request → read the response. It SHARES
 // the parsing types with the server (types.sx): a response's `Content-Length`
-// is found via the very same `find_header`. The facade re-exports it as
+// is found via the very same `findHeader`. The facade re-exports it as
 // http.Client / http.ClientResponse / http.dial.
 //
 // Sockets are BLOCKING — open a connection and call `request`. NOTE: a blocking
@@ -11,16 +11,16 @@
 // drive the client from the main thread (see the corpus example).
 //
 // The blocking surface:
-//   • `recv`/`recv_on` read Content-Length, close-delimited, or chunked
+//   • `recv`/`recvOn` read Content-Length, close-delimited, or chunked
 //     responses. Chunk framing is removed, and gzip/deflate is decoded
-//     incrementally unless ClientOpts.accept_compression is false. Output is
+//     incrementally unless ClientOpts.acceptCompression is false. Output is
 //     always bounded by the caller's buffer.
 //   • `send` builds the request through `context.allocator` and does not free
 //     it; drive a long-lived client under an arena (or reset per request).
-//   • `method`/`path`/`host`/`extra_headers` are sent verbatim (no CRLF
+//   • `method`/`path`/`host`/`extraHeaders` are sent verbatim (no CRLF
 //     sanitisation) — pass trusted values.
 @import "modules/std/core.sx";         // Allocator
-@import "modules/std/fmt.sx";          // concat, int_to_string
+@import "modules/std/fmt.sx";          // concat, intToString
 @import "modules/std/list.sx";         // List
 @import "modules/std/mem.sx";
 clib :: @import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
@@ -42,8 +42,8 @@ ClientErr :: error {
     TooLarge;   // the response did not fit the caller's buffer
     BadStatus;  // the status line was malformed / no header terminator
     Url;        // fetch: the URL did not parse (scheme/host/port)
-    Redirect;   // fetch: the redirect chain exceeded max_redirects
-    Closed;     // recv_on: the peer closed before sending ANY response byte —
+    Redirect;   // fetch: the redirect chain exceeded maxRedirects
+    Closed;     // recvOn: the peer closed before sending ANY response byte —
                 // a clean EOF or an RST; which are the same fact reported
                 // differently depending on a race — the stale-keep-alive
                 // signature (the pool's ONLY safe retry window besides a send
@@ -53,32 +53,32 @@ ClientErr :: error {
 
 // ── sessions ──────────────────────────────────────────────────
 
-// Options for `open`/`open_addr`. Zero values mean "unbounded/plaintext" —
+// Options for `open`/`openAddr`. Zero values mean "unbounded/plaintext" —
 // the behavior.
 ClientOpts :: struct {
     // Bound the CONNECT (nonblocking connect + poll + SO_ERROR, then the fd
     // returns to blocking). 0 = a plain blocking connect.
-    connect_timeout_ms: i64 = 0;
+    connectTimeoutMs: i64 = 0;
     // Bound every subsequent read/write (SO_RCVTIMEO/SNDTIMEO — per
     // OPERATION, not per response; an expiry surfaces as Send/Recv). 0 =
     // unbounded.
-    io_timeout_ms: i64 = 0;
+    ioTimeoutMs: i64 = 0;
     // Client TLS provider (e.g. tls_mbedtls.TlsClientConfig). null =
     // plaintext. The provider must outlive every connection it minted.
     tls: ?TlsDialer = null;
     // SNI/verification hostname for the TLS dial. "" = the host `open` was
-    // given (open_addr has no host, so TLS there REQUIRES this). fetch
+    // given (openAddr has no host, so TLS there REQUIRES this). fetch
     // applies an explicit value to the FIRST hop only — a cross-host
     // redirect verifies against ITS OWN host.
-    tls_host: string = "";
+    tlsHost: string = "";
     // how many redirects fetch follows (301/302/303 switch to GET
     // and drop the body; 307/308 preserve method + body). 0 = return the
     // 3xx un-followed; exceeding the cap is `ClientErr.Redirect`.
-    max_redirects: i64 = 5;
+    maxRedirects: i64 = 5;
     // Advertise and transparently decode gzip/deflate. A caller-supplied
     // Accept-Encoding suppresses only the automatic field; decoding remains
     // enabled. False does neither and preserves every raw coding field/body.
-    accept_compression: bool = true;
+    acceptCompression: bool = true;
 }
 
 // An open client connection: the fd plus the optional TLS session all
@@ -86,34 +86,34 @@ ClientOpts :: struct {
 ClientConn :: struct {
     fd: i32 = -1;
     tls: ?TlsConn = null;
-    accept_compression: bool = true;
-    // Set only after send_on has written a complete request. recv_on uses it
+    acceptCompression: bool = true;
+    // Set only after sendOn has written a complete request. recvOn uses it
     // to apply HEAD's bodyless response framing before looking at CL/TE.
-    request_was_head: bool = false;
+    requestWasHead: bool = false;
 }
 
 // Open a connection to a prebuilt address (any family — unix included).
 // See ClientOpts for the timeout/TLS behavior.
-open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
     c : ClientConn = .{};
-    fd := socket.socket(socket.addr_family(a), socket.SOCK_STREAM, 0);
+    fd := socket.socket(socket.addrFamily(a), socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
-    if opts.connect_timeout_ms > 0 {
-        if !socket.connect_timed(fd, a, opts.connect_timeout_ms) {
+    if opts.connectTimeoutMs > 0 {
+        if !socket.connectTimed(fd, a, opts.connectTimeoutMs) {
             socket.close(fd);
             raise .Connect;
         }
     } else {
-        if socket.connect_to(fd, a) != 0 { socket.close(fd); raise .Connect; }
+        if socket.connectTo(fd, a) != 0 { socket.close(fd); raise .Connect; }
     }
-    if opts.io_timeout_ms > 0 {
-        if !socket.set_io_timeout(fd, opts.io_timeout_ms) { socket.close(fd); raise .Connect; }
+    if opts.ioTimeoutMs > 0 {
+        if !socket.setIoTimeout(fd, opts.ioTimeoutMs) { socket.close(fd); raise .Connect; }
     }
     c.fd = fd;
-    c.accept_compression = opts.accept_compression;
+    c.acceptCompression = opts.acceptCompression;
     if opts.tls != null {
-        if opts.tls_host.len == 0 { socket.close(fd); raise .Tls; }
-        tc := opts.tls.connect(fd, opts.tls_host);
+        if opts.tlsHost.len == 0 { socket.close(fd); raise .Tls; }
+        tc := opts.tls.connect(fd, opts.tlsHost);
         if tc == null { socket.close(fd); raise .Tls; }
         c.tls = tc;
     }
@@ -121,17 +121,17 @@ open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
 }
 
 // Resolve `host` (DNS or numeric) and open a connection. The TLS
-// verification name defaults to `host` when opts.tls_host is "".
+// verification name defaults to `host` when opts.tlsHost is "".
 open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
     a, ok := socket.resolve(host, port);
     if !ok { raise .Connect; }
     o := opts;
-    if o.tls != null and o.tls_host.len == 0 { o.tls_host = host; }
-    return open_addr(*a, o);
+    if o.tls != null and o.tlsHost.len == 0 { o.tlsHost = host; }
+    return openAddr(*a, o);
 }
 
 // Close the connection (TLS close_notify + session teardown first).
-close_conn :: (c: *ClientConn) {
+closeConn :: (c: *ClientConn) {
     if c.tls != null {
         c.tls.close();
         c.tls = null;
@@ -145,7 +145,7 @@ close_conn :: (c: *ClientConn) {
 // One write step through the session. Over a BLOCKING fd a Want step can
 // only mean an io-timeout expiry (EAGAIN through the TLS bio) — retrying
 // would wait the whole timeout again, forever; it is a Send failure.
-conn_write_step :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
+connWriteStep :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
     if c.tls != null {
         n, step := c.tls.write(buf, len);
         if step == TlsStep.Done { return n; }
@@ -156,14 +156,14 @@ conn_write_step :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
     return n;
 }
 
-// `conn_read_step` sentinel: the read failed because the peer RST the conn.
+// `connReadStep` sentinel: the read failed because the peer RST the conn.
 // Distinct from -1 (any other read fault) so the caller can tell a stale
 // keep-alive apart from a genuine receipt failure.
 READ_RESET :i64: -2;
 
 // One read step: > 0 bytes, 0 = orderly end of stream, READ_RESET = the peer
 // reset the conn, -1 = any other fault/timeout.
-conn_read_step :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
+connReadStep :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
     if c.tls != null {
         n, step := c.tls.read(buf, cap);
         if step == TlsStep.Done { return n; }
@@ -176,49 +176,49 @@ conn_read_step :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
         // has closed answers the request we just wrote with an RST, and the
         // RST discards the queued EOF — so this read reports ECONNRESET where
         // a hair earlier it would have reported a clean 0. Same "never
-        // executed" fact; `recv_on` must not let the timing decide.
-        if socket.is_conn_reset(socket.errno()) { return READ_RESET; }
+        // executed" fact; `recvOn` must not let the timing decide.
+        if socket.isConnReset(socket.errno()) { return READ_RESET; }
         return -1;
     }
     return n;
 }
 
-// A parsed HTTP response. `headers_raw` is the raw block between the status
+// A parsed HTTP response. `headersRaw` is the raw block between the status
 // line and the body; `body` is the entity body. All views point INTO the
 // caller's read buffer (valid until that buffer is reused).
 ClientResponse :: struct {
     status: i64 = 0;
     reason: string = "";
-    headers_raw: string = "";
+    headersRaw: string = "";
     body: string = "";
     // Transparent content decoding removes Content-Encoding and the encoded
-    // Content-Length from headers_raw. null means no transform; a value names
-    // the one coding removed. With accept_compression=false this stays null.
-    decoded_from: ?types.ContentCoding = null;
+    // Content-Length from headersRaw. null means no transform; a value names
+    // the one coding removed. With acceptCompression=false this stays null.
+    decodedFrom: ?types.ContentCoding = null;
 
     // Case-insensitive header lookup (`name` lowercase); "" when absent.
-    // Reuses the server-side parser by viewing headers_raw as a request
+    // Reuses the server-side parser by viewing headersRaw as a request
     // header block — the shared-types payoff.
     header :: (self: *ClientResponse, name: string) -> string {
-        req : types.Request = .{ headers_raw = self.headers_raw };
-        return types.find_header(*req, name);
+        req : types.Request = .{ headersRaw = self.headersRaw };
+        return types.findHeader(*req, name);
     }
 }
 
 // Open a blocking TCP connection to ip:port. `ip` is a packed IPv4 address in
-// the order socket.sockaddr_in wants (e.g. 0x0100007F for 127.0.0.1).
+// the order socket.sockaddrIn wants (e.g. 0x0100007F for 127.0.0.1).
 dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { raise .Connect; }
-    addr := socket.sockaddr_in(port, ip);
+    addr := socket.sockaddrIn(port, ip);
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); raise .Connect; }
     return fd;
 }
 
-// Send one HTTP/1.1 request on `fd`. `extra_headers` is preformatted
+// Send one HTTP/1.1 request on `fd`. `extraHeaders` is preformatted
 // "Name: value\r\n" lines (may be ""); a Content-Length is added automatically
 // for a non-empty `body`. Concats through the current context allocator.
-send :: (fd: i32, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
     req := concat(method, " ");
     req = concat(req, path);
     req = concat(req, " HTTP/1.1\r\nHost: ");
@@ -226,11 +226,11 @@ send :: (fd: i32, method: string, path: string, host: string, extra_headers: str
     req = concat(req, "\r\n");
     if body.len > 0 {
         req = concat(req, "Content-Length: ");
-        req = concat(req, int_to_string(body.len));
+        req = concat(req, intToString(body.len));
         req = concat(req, "\r\n");
     }
-    req = concat(req, extra_headers);
-    if !has_header(extra_headers, "accept-encoding") and !has_header(extra_headers, "range") {
+    req = concat(req, extraHeaders);
+    if !hasHeader(extraHeaders, "accept-encoding") and !hasHeader(extraHeaders, "range") {
         req = concat(req, HDR_ACCEPT_ENCODING);
     }
     req = concat(req, "\r\n");
@@ -247,7 +247,7 @@ send :: (fd: i32, method: string, path: string, host: string, extra_headers: str
 
 // Parse the status code out of a status line "HTTP/1.1 200 OK". Returns
 // (status, reason); status 0 signals a malformed line.
-parse_status_line :: (line: string) -> (i64, string) {
+parseStatusLine :: (line: string) -> (i64, string) {
     // skip the version token to the first space
     p : i64 = 0;
     while p < line.len and line.ptr[p] != ' ' { p += 1; }
@@ -267,20 +267,20 @@ parse_status_line :: (line: string) -> (i64, string) {
 }
 
 // Read a full response on `fd` into `buf` (caller-owned, `cap` bytes), using
-// the same transfer/content decoding as recv_on. Returns views INTO `buf`.
-recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (ClientResponse, !ClientErr) {
-    conn : ClientConn = .{ fd = fd, request_was_head = ce_ascii_ieq(request_method, "head") };
-    recv_on(*conn, buf, cap)
+// the same transfer/content decoding as recvOn. Returns views INTO `buf`.
+recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
+    conn : ClientConn = .{ fd = fd, requestWasHead = ceAsciiIeq(requestMethod, "head") };
+    recvOn(*conn, buf, cap)
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
 // The request is built into ONE allocation and freed before returning — no
 // arena required, nothing retained (a concat chain would leak every
 // intermediate into the caller's context).
-send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
-    advertise := c.accept_compression
-        and !has_header(extra_headers, "accept-encoding")
-        and !has_header(extra_headers, "range");
+sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+    advertise := c.acceptCompression
+        and !hasHeader(extraHeaders, "accept-encoding")
+        and !hasHeader(extraHeaders, "range");
     // Content-Length digits on the stack.
     clbuf : [20]u8 = ---;
     cln : i64 = 0;
@@ -295,7 +295,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
            + 6 + host.len + 2;                         // "Host: <h>\r\n"
     if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
     if advertise { total += HDR_ACCEPT_ENCODING.len; }
-    total += extra_headers.len + 2 + body.len;         // "<extra>\r\n<body>"
+    total += extraHeaders.len + 2 + body.len;         // "<extra>\r\n<body>"
     p : [*]u8 = context.allocator.alloc(u8, total).ptr;
     w : i64 = 0;
     w = put(p, w, method);
@@ -311,7 +311,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
         while cli < cln { p[w] = clbuf[cli]; w += 1; cli += 1; }
         w = put(p, w, "\r\n");
     }
-    w = put(p, w, extra_headers);
+    w = put(p, w, extraHeaders);
     if advertise { w = put(p, w, HDR_ACCEPT_ENCODING); }
     w = put(p, w, "\r\n");
     w = put(p, w, body);
@@ -319,13 +319,13 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
     sent : i64 = 0;
     failed := false;
     while sent < w {
-        n := conn_write_step(c, *p[sent], w - sent);
+        n := connWriteStep(c, *p[sent], w - sent);
         if n <= 0 { failed = true; break; }
         sent += n;
     }
-    context.allocator.dealloc_bytes(p);
+    context.allocator.deallocBytes(p);
     if failed { raise .Send; }
-    c.request_was_head = ce_ascii_ieq(method, "head");
+    c.requestWasHead = ceAsciiIeq(method, "head");
     return;
 }
 
@@ -345,7 +345,7 @@ Url :: struct {
     path: string = "/";
 }
 
-starts_with :: (s: string, prefix: string) -> bool {
+startsWith :: (s: string, prefix: string) -> bool {
     if s.len < prefix.len { return false; }
     i : i64 = 0;
     while i < prefix.len {
@@ -358,14 +358,14 @@ starts_with :: (s: string, prefix: string) -> bool {
 // Minimal absolute URL: scheme://host[:port][/path...]. Bracketed v6
 // literals supported ([::1]:8080); userinfo/query-split/fragments are the
 // caller's problem (the path view carries everything after the authority).
-parse_url :: (url: string) -> (Url, bool) {
+parseUrl :: (url: string) -> (Url, bool) {
     u : Url = .{};
     rest : string = "";
-    if starts_with(url, "http://") {
+    if startsWith(url, "http://") {
         u.https = false;
         u.port = 80;
         rest = string{ ptr = *url.ptr[7], len = url.len - 7 };
-    } else if starts_with(url, "https://") {
+    } else if startsWith(url, "https://") {
         u.https = true;
         u.port = 443;
         rest = string{ ptr = *url.ptr[8], len = url.len - 8 };
@@ -422,29 +422,29 @@ parse_url :: (url: string) -> (Url, bool) {
 
 // One request against a parsed URL over a FRESH connection; the conn is
 // returned (still open) alongside the response for the caller to reuse or
-// close. `verify_host` is the TLS name ("" = the URL host).
-fetch_hop :: (u: Url, method: string, body: string, opts: ClientOpts, verify_host: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
+// close. `verifyHost` is the TLS name ("" = the URL host).
+fetchHop :: (u: Url, method: string, body: string, opts: ClientOpts, verifyHost: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
     o := opts;
     if u.https {
         if o.tls == null { raise .Tls; }   // never plaintext to an https target
-        if verify_host.len > 0 { o.tls_host = verify_host; }
-        else { o.tls_host = u.host; }
+        if verifyHost.len > 0 { o.tlsHost = verifyHost; }
+        else { o.tlsHost = u.host; }
     } else {
         o.tls = null;                            // an http hop is plaintext even with a dialer configured
     }
     c, oe := open(u.host, u.port, o);
     if oe { raise oe; }
-    se := send_on(*c, method, u.path, u.host, "", body);
-    if se { close_conn(*c); raise se; }
-    r, re := recv_on(*c, buf, cap);
-    if re { close_conn(*c); raise re; }
+    se := sendOn(*c, method, u.path, u.host, "", body);
+    if se { closeConn(*c); raise se; }
+    r, re := recvOn(*c, buf, cap);
+    if re { closeConn(*c); raise re; }
     return c, r;
 }
 
 // Does a Connection header value contain the "close" token (ASCII-case-
 // insensitive, as one element of the comma-separated list, OWS-trimmed)?
 // Truncate at '#' — fragments never go on the wire (RFC 9112). "" → "/".
-strip_fragment :: (s: string) -> string {
+stripFragment :: (s: string) -> string {
     i : i64 = 0;
     while i < s.len {
         if s[i] == '#' { break; }
@@ -454,7 +454,7 @@ strip_fragment :: (s: string) -> string {
     return string{ ptr = s.ptr, len = i };
 }
 
-connection_says_close :: (v: string) -> bool {
+connectionSaysClose :: (v: string) -> bool {
     i : i64 = 0;
     while i < v.len {
         // token start: skip OWS and commas
@@ -481,7 +481,7 @@ connection_says_close :: (v: string) -> bool {
 
 // "chunked" exactly, ASCII-case-insensitively (RFC 9112: the only coding we
 // implement; it must also be the FINAL one, which an exact match enforces).
-te_is_chunked :: (te: string) -> bool {
+teIsChunked :: (te: string) -> bool {
     if te.len != 7 { return false; }
     want := "chunked";
     i : i64 = 0;
@@ -494,21 +494,21 @@ te_is_chunked :: (te: string) -> bool {
     return true;
 }
 
-is_redirect :: (status: i64) -> bool {
+isRedirect :: (status: i64) -> bool {
     return status == 301 or status == 302 or status == 303 or status == 307 or status == 308;
 }
 
-// Fetch `url`, following redirects per opts.max_redirects. 301/302/303
+// Fetch `url`, following redirects per opts.maxRedirects. 301/302/303
 // re-issue as a bodyless GET; 307/308 preserve method + body. A relative
 // Location keeps the scheme/host/port; an absolute one re-resolves (and
-// re-verifies TLS against ITS host — an explicit opts.tls_host pins the
+// re-verifies TLS against ITS host — an explicit opts.tlsHost pins the
 // FIRST hop only). A 3xx without a Location is returned as-is.
 //
 // Cross-scheme hops: an https→http Location is followed as PLAINTEXT
 // (curl-parity would warn — treat redirect targets you don't control as
 // untrusted); http→https needs opts.tls (`ClientErr.Tls` mid-chain otherwise).
 // Timeouts are per OPERATION per HOP — a full chain can take up to
-// (max_redirects + 1) × (connect + io) timeouts.
+// (maxRedirects + 1) × (connect + io) timeouts.
 fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     // Owned copies of the current target — Location views the response
     // buffer, which the next hop overwrites.
@@ -516,7 +516,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
     pathp : [*]u8 = null;      // owned location copy (heap; freed each hop)
     freeing := false;          // pathp needs a free
 
-    u, ok := parse_url(url);
+    u, ok := parseUrl(url);
     if !ok { raise .Url; }
     m := method;
     b := body;
@@ -526,7 +526,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // Materialize the host into the stack buffer and REPOINT u.host at
         // it — a later relative hop must not leave u.host viewing a freed
         // previous location copy (absolute-then-relative chains).
-        if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise .Url; }
+        if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.deallocBytes(pathp); } raise .Url; }
         hbp : [*]u8 = (*hostb[0]).([*]u8);
         if u.host.ptr != hbp {
             clib.memcpy(hbp, u.host.ptr, u.host.len);
@@ -534,25 +534,25 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         }
         hu := u;
 
-        vh := if first then opts.tls_host else "";
-        c, r, he := fetch_hop(hu, m, b, opts, vh, buf, cap);
-        if he { if freeing { context.allocator.dealloc_bytes(pathp); } raise he; }
+        vh := if first then opts.tlsHost else "";
+        c, r, he := fetchHop(hu, m, b, opts, vh, buf, cap);
+        if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
 
-        if !is_redirect(r.status) or opts.max_redirects <= 0 {
-            close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(pathp); }
+        if !isRedirect(r.status) or opts.maxRedirects <= 0 {
+            closeConn(*c);
+            if freeing { context.allocator.deallocBytes(pathp); }
             return r;
         }
         loc := r.header("location");
         if loc.len == 0 {
-            close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(pathp); }
+            closeConn(*c);
+            if freeing { context.allocator.deallocBytes(pathp); }
             return r;
         }
         hops += 1;
-        if hops > opts.max_redirects {
-            close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(pathp); }
+        if hops > opts.maxRedirects {
+            closeConn(*c);
+            if freeing { context.allocator.deallocBytes(pathp); }
             raise .Redirect;
         }
         // Build the next target BEFORE the buffer is reused: copy the
@@ -560,19 +560,19 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
         clib.memcpy(np, loc.ptr, loc.len);
         locv := string{ ptr = np, len = loc.len };
-        close_conn(*c);
-        if freeing { context.allocator.dealloc_bytes(pathp); }
+        closeConn(*c);
+        if freeing { context.allocator.deallocBytes(pathp); }
         pathp = np;
         freeing = true;
 
-        if starts_with(locv, "http://") or starts_with(locv, "https://") {
-            nu, nok := parse_url(locv);
-            if !nok { context.allocator.dealloc_bytes(pathp); raise .Url; }
+        if startsWith(locv, "http://") or startsWith(locv, "https://") {
+            nu, nok := parseUrl(locv);
+            if !nok { context.allocator.deallocBytes(pathp); raise .Url; }
             u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
         } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
-            u.path = strip_fragment(locv);   // parse_url strips the absolute arm
+            u.path = stripFragment(locv);   // parseUrl strips the absolute arm
         } else {
-            context.allocator.dealloc_bytes(pathp);
+            context.allocator.deallocBytes(pathp);
             raise .Url;   // relative-without-slash — unsupported
         }
         if r.status == 301 or r.status == 302 or r.status == 303 {
@@ -590,19 +590,19 @@ CLIENT_LINE_LIMIT :: 8192;
 EncodedChunkPhase :: enum {
     size;
     extension;
-    size_lf;
+    sizeLf;
     data;
-    data_cr;
-    data_lf;
+    dataCr;
+    dataLf;
     trailer;
-    trailer_lf;
+    trailerLf;
     done;
 }
 
 // Feed one content-coded payload span into the decoder. The returned counts
 // are relative to this span/output window; `done` means the content coding
 // reached its terminal checksum/trailer.
-feed_content_decoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
+feedContentDecoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
     progress := decoder.read(input, output) catch |e| {
         if e == .OutputLimit { raise .TooLarge; }
         raise .Recv;
@@ -610,7 +610,7 @@ feed_content_decoder :: (decoder: *Decoder, input: string, output: string) -> (i
     return progress.consumed, progress.produced, progress.status == .done;
 }
 
-finish_content_decoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
+finishContentDecoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
     progress := decoder.finish(output) catch |e| {
         if e == .OutputLimit { raise .TooLarge; }
         raise .Recv;
@@ -620,32 +620,32 @@ finish_content_decoder :: (decoder: *Decoder, output: string) -> (i64, bool, !Cl
 
 // Compact a parsed response header block in place, removing representation
 // metadata that no longer describes the transparently-decoded body. The body
-// remains at its original head_end; only the public headers_raw view shrinks.
-normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
-    read_at : i64 = 0;
-    write_at : i64 = 0;
-    while read_at < len {
-        line_end := read_at;
-        while line_end < len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
-        after := line_end;
+// remains at its original headEnd; only the public headersRaw view shrinks.
+normalizeDecodedHeaders :: (raw: [*]u8, len: i64) -> i64 {
+    readAt : i64 = 0;
+    writeAt : i64 = 0;
+    while readAt < len {
+        lineEnd := readAt;
+        while lineEnd < len and raw[lineEnd] != '\r' and raw[lineEnd] != '\n' { lineEnd += 1; }
+        after := lineEnd;
         if after < len and raw[after] == '\r' { after += 1; }
         if after < len and raw[after] == '\n' { after += 1; }
-        colon := read_at;
-        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        colon := readAt;
+        while colon < lineEnd and raw[colon] != ':' { colon += 1; }
         remove := false;
-        if colon < line_end {
-            field := string{ ptr = *raw[read_at], len = colon - read_at };
-            remove = ce_ascii_ieq(field, "content-encoding")
-                or ce_ascii_ieq(field, "content-length");
+        if colon < lineEnd {
+            field := string{ ptr = *raw[readAt], len = colon - readAt };
+            remove = ceAsciiIeq(field, "content-encoding")
+                or ceAsciiIeq(field, "content-length");
         }
         if !remove {
-            count := after - read_at;
-            if write_at != read_at { clib.memmove(*raw[write_at], *raw[read_at], count); }
-            write_at += count;
+            count := after - readAt;
+            if writeAt != readAt { clib.memmove(*raw[writeAt], *raw[readAt], count); }
+            writeAt += count;
         }
-        read_at = after;
+        readAt = after;
     }
-    write_at
+    writeAt
 }
 
 // Decode a gzip/deflate response while its transfer framing is read. The
@@ -653,11 +653,11 @@ normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
 // in one 16 KiB stack window, so chunked and close-delimited responses do not
 // require buffering their encoded form. `initial` is the body prefix that
 // arrived with the header read and is copied before output can overwrite it.
-recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
-                      initial: string, content_len: i64, chunked: bool,
+recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
+                      initial: string, contentLen: i64, chunked: bool,
                       encoding: Encoding) -> (i64, !ClientErr) {
-    output_cap := cap - head_end;
-    decoder := Decoder.init(encoding, output_cap, context.allocator) catch |e| {
+    outputCap := cap - headEnd;
+    decoder := Decoder.init(encoding, outputCap, context.allocator) catch |e| {
         if e == .AllocationFailed { raise .Allocation; }
         raise .Recv;
     };
@@ -666,61 +666,61 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
     wire : [CLIENT_WIRE_PIECE]u8 = ---;
     if initial.len > CLIENT_WIRE_PIECE { raise .TooLarge; }
     if initial.len > 0 { clib.memcpy(*wire[0], initial.ptr, initial.len); }
-    wire_at : i64 = 0;
-    wire_len : i64 = initial.len;
-    output_at : i64 = 0;
-    transfer_done := false;
-    decoder_done := false;
-    fixed_left := content_len;
+    wireAt : i64 = 0;
+    wireLen : i64 = initial.len;
+    outputAt : i64 = 0;
+    transferDone := false;
+    decoderDone := false;
+    fixedLeft := contentLen;
 
     phase := EncodedChunkPhase.size;
-    chunk_size : i64 = 0;
-    chunk_left : i64 = 0;
-    size_digits : i64 = 0;
-    line_len : i64 = 0;
+    chunkSize: i64 = 0;
+    chunkLeft: i64 = 0;
+    sizeDigits : i64 = 0;
+    lineLen : i64 = 0;
 
-    while !transfer_done {
+    while !transferDone {
         // Content-Length is a wire-length delimiter. A zero-length encoded
         // body is still passed to finish below, which correctly rejects a
         // missing gzip/zlib stream.
-        if !chunked and content_len >= 0 and fixed_left == 0 {
-            if wire_at != wire_len { raise .Recv; }
-            transfer_done = true;
+        if !chunked and contentLen >= 0 and fixedLeft == 0 {
+            if wireAt != wireLen { raise .Recv; }
+            transferDone = true;
             break;
         }
 
-        if wire_at >= wire_len {
-            n := conn_read_step(c, *wire[0], CLIENT_WIRE_PIECE);
+        if wireAt >= wireLen {
+            n := connReadStep(c, *wire[0], CLIENT_WIRE_PIECE);
             if n < 0 { raise .Recv; }
             if n == 0 {
-                if chunked or content_len >= 0 { raise .Recv; }
-                transfer_done = true; // close-delimited body
+                if chunked or contentLen >= 0 { raise .Recv; }
+                transferDone = true; // close-delimited body
                 break;
             }
-            wire_at = 0;
-            wire_len = n;
+            wireAt = 0;
+            wireLen = n;
         }
 
         if !chunked {
-            take := wire_len - wire_at;
-            if content_len >= 0 and take > fixed_left { take = fixed_left; }
-            if decoder_done and take > 0 { raise .Recv; }
+            take := wireLen - wireAt;
+            if contentLen >= 0 and take > fixedLeft { take = fixedLeft; }
+            if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
                 output : string = "";
-                if output_at < output_cap {
-                    output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+                if outputAt < outputCap {
+                    output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
                 }
-                consumed, produced, done := try feed_content_decoder(*decoder,
-                    string{ ptr = *wire[wire_at], len = take }, output);
-                wire_at += consumed;
+                consumed, produced, done := try feedContentDecoder(*decoder,
+                    string{ ptr = *wire[wireAt], len = take }, output);
+                wireAt += consumed;
                 take -= consumed;
-                if content_len >= 0 { fixed_left -= consumed; }
-                output_at += produced;
+                if contentLen >= 0 { fixedLeft -= consumed; }
+                outputAt += produced;
                 if done {
-                    decoder_done = true;
+                    decoderDone = true;
                     if take > 0 { raise .Recv; }
                 }
-                if output_at >= output_cap and !decoder_done and take > 0 { raise .TooLarge; }
+                if outputAt >= outputCap and !decoderDone and take > 0 { raise .TooLarge; }
                 if consumed == 0 and produced == 0 { raise .Recv; }
             }
             continue;
@@ -730,104 +730,104 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
         // the content decoder; size lines, extensions, CRLF and trailers are
         // validated and discarded in bounded state.
         if phase == .data {
-            available := wire_len - wire_at;
-            take := if available < chunk_left then available else chunk_left;
-            if decoder_done and take > 0 { raise .Recv; }
+            available := wireLen - wireAt;
+            take := if available < chunkLeft then available else chunkLeft;
+            if decoderDone and take > 0 { raise .Recv; }
             while take > 0 {
                 output : string = "";
-                if output_at < output_cap {
-                    output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+                if outputAt < outputCap {
+                    output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
                 }
-                consumed, produced, done := try feed_content_decoder(*decoder,
-                    string{ ptr = *wire[wire_at], len = take }, output);
-                wire_at += consumed;
+                consumed, produced, done := try feedContentDecoder(*decoder,
+                    string{ ptr = *wire[wireAt], len = take }, output);
+                wireAt += consumed;
                 take -= consumed;
-                chunk_left -= consumed;
-                output_at += produced;
+                chunkLeft -= consumed;
+                outputAt += produced;
                 if done {
-                    decoder_done = true;
-                    if take > 0 or chunk_left > 0 { raise .Recv; }
+                    decoderDone = true;
+                    if take > 0 or chunkLeft > 0 { raise .Recv; }
                 }
-                if output_at >= output_cap and !decoder_done and take > 0 { raise .TooLarge; }
+                if outputAt >= outputCap and !decoderDone and take > 0 { raise .TooLarge; }
                 if consumed == 0 and produced == 0 { raise .Recv; }
             }
-            if chunk_left == 0 { phase = .data_cr; }
+            if chunkLeft == 0 { phase = .dataCr; }
             continue;
         }
 
-        b := wire[wire_at];
-        wire_at += 1;
+        b := wire[wireAt];
+        wireAt += 1;
         if phase == .size {
             digit : i64 = -1;
             if '0' <= b <= '9' { digit = (b - '0').(i64); }
             else if 'a' <= b <= 'f' { digit = (b - 'a' + 10).(i64); }
             else if 'A' <= b <= 'F' { digit = (b - 'A' + 10).(i64); }
             if digit >= 0 {
-                if chunk_size > 0x07FFFFFFFFFFFFFF { raise .Recv; }
-                chunk_size = chunk_size * 16 + digit;
-                size_digits += 1;
-                line_len += 1;
-                if line_len > CLIENT_LINE_LIMIT { raise .Recv; }
-            } else if b == ';' and size_digits > 0 {
+                if chunkSize > 0x07FFFFFFFFFFFFFF { raise .Recv; }
+                chunkSize = chunkSize * 16 + digit;
+                sizeDigits += 1;
+                lineLen += 1;
+                if lineLen > CLIENT_LINE_LIMIT { raise .Recv; }
+            } else if b == ';' and sizeDigits > 0 {
                 phase = .extension;
-                line_len += 1;
-            } else if b == '\r' and size_digits > 0 {
-                phase = .size_lf;
+                lineLen += 1;
+            } else if b == '\r' and sizeDigits > 0 {
+                phase = .sizeLf;
             } else {
                 raise .Recv;
             }
             continue;
         }
         if phase == .extension {
-            if b == '\r' { phase = .size_lf; }
+            if b == '\r' { phase = .sizeLf; }
             else {
                 if b == '\n' { raise .Recv; }
-                line_len += 1;
-                if line_len > CLIENT_LINE_LIMIT { raise .Recv; }
+                lineLen += 1;
+                if lineLen > CLIENT_LINE_LIMIT { raise .Recv; }
             }
             continue;
         }
-        if phase == .size_lf {
+        if phase == .sizeLf {
             if b != '\n' { raise .Recv; }
-            if chunk_size == 0 {
+            if chunkSize == 0 {
                 phase = .trailer;
-                line_len = 0;
+                lineLen = 0;
             } else {
-                chunk_left = chunk_size;
+                chunkLeft = chunkSize;
                 phase = .data;
             }
             continue;
         }
-        if phase == .data_cr {
+        if phase == .dataCr {
             if b != '\r' { raise .Recv; }
-            phase = .data_lf;
+            phase = .dataLf;
             continue;
         }
-        if phase == .data_lf {
+        if phase == .dataLf {
             if b != '\n' { raise .Recv; }
             phase = .size;
-            chunk_size = 0;
-            size_digits = 0;
-            line_len = 0;
+            chunkSize = 0;
+            sizeDigits = 0;
+            lineLen = 0;
             continue;
         }
         if phase == .trailer {
-            if b == '\r' { phase = .trailer_lf; }
+            if b == '\r' { phase = .trailerLf; }
             else {
                 if b == '\n' { raise .Recv; }
-                line_len += 1;
-                if line_len > CLIENT_LINE_LIMIT { raise .Recv; }
+                lineLen += 1;
+                if lineLen > CLIENT_LINE_LIMIT { raise .Recv; }
             }
             continue;
         }
-        if phase == .trailer_lf {
+        if phase == .trailerLf {
             if b != '\n' { raise .Recv; }
-            if line_len == 0 {
+            if lineLen == 0 {
                 phase = .done;
-                if wire_at != wire_len { raise .Recv; }
-                transfer_done = true;
+                if wireAt != wireLen { raise .Recv; }
+                transferDone = true;
             } else {
-                line_len = 0;
+                lineLen = 0;
                 phase = .trailer;
             }
             continue;
@@ -835,21 +835,21 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
         raise .Recv;
     }
 
-    while !decoder_done {
+    while !decoderDone {
         output : string = "";
-        if output_at < output_cap {
-            output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+        if outputAt < outputCap {
+            output = string{ ptr = *buf[headEnd + outputAt], len = outputCap - outputAt };
         }
-        produced, done := try finish_content_decoder(*decoder, output);
-        output_at += produced;
-        decoder_done = done;
-        if !done and output_at >= output_cap { raise .TooLarge; }
+        produced, done := try finishContentDecoder(*decoder, output);
+        outputAt += produced;
+        decoderDone = done;
+        if !done and outputAt >= outputCap { raise .TooLarge; }
         if !done and produced == 0 { raise .Recv; }
     }
-    output_at
+    outputAt
 }
 
-valid_content_length :: (value: string) -> (i64, bool) {
+validContentLength :: (value: string) -> (i64, bool) {
     if value.len == 0 { return 0, false; }
     result : i64 = 0;
     i : i64 = 0;
@@ -867,7 +867,7 @@ valid_content_length :: (value: string) -> (i64, bool) {
 // Read a full response on an open ClientConn. The status and request method are
 // known before body framing is chosen: HEAD and 1xx/204/304 never consume a
 // body, and informational heads are consumed until the final response.
-response_head_end :: (buf: [*]u8, len: i64) -> i64 {
+responseHeadEnd :: (buf: [*]u8, len: i64) -> i64 {
     i : i64 = 0;
     while i + 3 < len {
         if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' { return i + 4; }
@@ -876,146 +876,146 @@ response_head_end :: (buf: [*]u8, len: i64) -> i64 {
     -1
 }
 
-recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     total : i64 = 0;
-    head_end : i64 = -1;
-    header_start : i64 = 0;
-    content_len : i64 = -1;
+    headEnd : i64 = -1;
+    headerStart : i64 = 0;
+    contentLen : i64 = -1;
     chunked := false;
     scan : types.ChunkScan = .{};
     decoded : i64 = -1;
     encoding := Encoding.identity;
-    decoded_from : ?types.ContentCoding = null;
-    normalized_headers_len : i64 = -1;
-    final_status : i64 = 0;
-    final_reason : string = "";
-    request_was_head := c.request_was_head;
-    c.request_was_head = false;
-    saw_informational := false;
+    decodedFrom : ?types.ContentCoding = null;
+    normalizedHeadersLen : i64 = -1;
+    finalStatus: i64 = 0;
+    finalReason: string = "";
+    requestWasHead := c.requestWasHead;
+    c.requestWasHead = false;
+    sawInformational := false;
 
     while true {
         // Parse any complete head already buffered. This runs before another
         // read so a coalesced 1xx + final response cannot block waiting for
         // bytes that are already in the caller's buffer.
-        if head_end < 0 { head_end = response_head_end(buf, total); }
-        if head_end >= 0 and final_status == 0 {
+        if headEnd < 0 { headEnd = responseHeadEnd(buf, total); }
+        if headEnd >= 0 and finalStatus == 0 {
             sl : i64 = 0;
-            while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
-            if sl + 1 >= head_end { raise .BadStatus; }
-            code, reason := parse_status_line(string{ ptr = buf, len = sl });
+            while sl + 1 < headEnd and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+            if sl + 1 >= headEnd { raise .BadStatus; }
+            code, reason := parseStatusLine(string{ ptr = buf, len = sl });
             if code == 0 { raise .BadStatus; }
 
             if code >= 100 and code < 200 {
-                remaining := total - head_end;
-                if remaining > 0 { clib.memmove(buf, *buf[head_end], remaining); }
+                remaining := total - headEnd;
+                if remaining > 0 { clib.memmove(buf, *buf[headEnd], remaining); }
                 total = remaining;
-                head_end = -1;
-                saw_informational = true;
+                headEnd = -1;
+                sawInformational = true;
                 continue;
             }
 
-            final_status = code;
-            final_reason = reason;
-            header_start = sl + 2;
-            hdrs := string{ ptr = *buf[header_start], len = head_end - 2 - header_start };
+            finalStatus = code;
+            finalReason = reason;
+            headerStart = sl + 2;
+            hdrs := string{ ptr = *buf[headerStart], len = headEnd - 2 - headerStart };
 
-            if !(request_was_head or code == 204 or code == 304) {
-                tmp : types.Request = .{ headers_raw = hdrs };
-                te_count := types.count_header(*tmp, "transfer-encoding");
-                cl_count := types.count_header(*tmp, "content-length");
-                if te_count > 1 or cl_count > 1 { raise .Recv; }
-                if te_count > 0 and cl_count > 0 { raise .Recv; }
-                te := types.find_header(*tmp, "transfer-encoding");
+            if !(requestWasHead or code == 204 or code == 304) {
+                tmp : types.Request = .{ headersRaw = hdrs };
+                teCount := types.countHeader(*tmp, "transfer-encoding");
+                clCount := types.countHeader(*tmp, "content-length");
+                if teCount > 1 or clCount > 1 { raise .Recv; }
+                if teCount > 0 and clCount > 0 { raise .Recv; }
+                te := types.findHeader(*tmp, "transfer-encoding");
                 if te.len > 0 {
-                    if !te_is_chunked(te) { raise .Recv; }
+                    if !teIsChunked(te) { raise .Recv; }
                     chunked = true;
                 } else {
-                    cl := types.find_header(*tmp, "content-length");
-                    if cl_count > 0 {
-                        v, valid := valid_content_length(cl);
+                    cl := types.findHeader(*tmp, "content-length");
+                    if clCount > 0 {
+                        v, valid := validContentLength(cl);
                         if !valid { raise .Recv; }
-                        content_len = v;
+                        contentLen = v;
                     }
                 }
 
-                range_response := code == 206 or code == 416 or has_header(hdrs, "content-range");
-                if c.accept_compression and !range_response {
-                    ce_count := types.count_header(*tmp, "content-encoding");
-                    if ce_count > 0 {
-                        if ce_count != 1 { raise .Recv; }
-                        encoding = parse_content_encoding(types.find_header(*tmp, "content-encoding"));
+                rangeResponse := code == 206 or code == 416 or hasHeader(hdrs, "content-range");
+                if c.acceptCompression and !rangeResponse {
+                    ceCount := types.countHeader(*tmp, "content-encoding");
+                    if ceCount > 0 {
+                        if ceCount != 1 { raise .Recv; }
+                        encoding = parseContentEncoding(types.findHeader(*tmp, "content-encoding"));
                         if encoding == .unacceptable { raise .Recv; }
                     }
                     if encoding != .identity {
-                        initial := string{ ptr = *buf[head_end], len = total - head_end };
-                        decoded = try recv_encoded_body(c, buf, cap, head_end,
-                            initial, content_len, chunked, encoding);
-                        decoded_from = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
-                        normalized_headers_len = normalize_decoded_headers(*buf[header_start], head_end - 2 - header_start);
-                        total = head_end + decoded;
+                        initial := string{ ptr = *buf[headEnd], len = total - headEnd };
+                        decoded = try recvEncodedBody(c, buf, cap, headEnd,
+                            initial, contentLen, chunked, encoding);
+                        decodedFrom = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
+                        normalizedHeadersLen = normalizeDecodedHeaders(*buf[headerStart], headEnd - 2 - headerStart);
+                        total = headEnd + decoded;
                         break;
                     }
                 }
             }
         }
 
-        if head_end >= 0 and final_status > 0 {
-            bodyless := request_was_head or final_status == 204 or final_status == 304;
+        if headEnd >= 0 and finalStatus > 0 {
+            bodyless := requestWasHead or finalStatus == 204 or finalStatus == 304;
             if bodyless {
-                total = head_end;
+                total = headEnd;
                 decoded = 0;
                 break;
             }
             if chunked {
-                r := types.decode_chunked(*buf[head_end], total - head_end, cap - head_end, scan);
-                if r.status == types.ChunkStatus.OK { decoded = r.decoded_len; break; }
+                r := types.decodeChunked(*buf[headEnd], total - headEnd, cap - headEnd, scan);
+                if r.status == types.ChunkStatus.OK { decoded = r.decodedLen; break; }
                 if r.status == types.ChunkStatus.TOO_BIG { raise .TooLarge; }
                 if r.status != types.ChunkStatus.NEED_MORE { raise .Recv; }
-                scan.rp = r.resume_rp;
-                scan.decoded = r.resume_decoded;
-            } else if content_len >= 0 and total - head_end >= content_len {
+                scan.rp = r.resumeRp;
+                scan.decoded = r.resumeDecoded;
+            } else if contentLen >= 0 and total - headEnd >= contentLen {
                 break;
             }
         }
 
         if total >= cap { raise .TooLarge; }
         room := cap - total;
-        if head_end < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
-        n := conn_read_step(c, *buf[total], room);
-        if n == READ_RESET and total == 0 and !saw_informational { raise .Closed; }
+        if headEnd < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
+        n := connReadStep(c, *buf[total], room);
+        if n == READ_RESET and total == 0 and !sawInformational { raise .Closed; }
         if n < 0 { raise .Recv; }
         if n == 0 {
             if total == 0 {
-                if saw_informational { raise .Recv; }
+                if sawInformational { raise .Recv; }
                 raise .Closed;
             }
-            if head_end < 0 { raise .BadStatus; }
+            if headEnd < 0 { raise .BadStatus; }
             if chunked { raise .Recv; }
-            if content_len >= 0 and total - head_end < content_len { raise .Recv; }
+            if contentLen >= 0 and total - headEnd < contentLen { raise .Recv; }
             break;
         }
         total += n;
     }
-    if head_end < 0 or final_status == 0 { raise .BadStatus; }
+    if headEnd < 0 or finalStatus == 0 { raise .BadStatus; }
 
-    body_len := if decoded >= 0 then decoded
-                else if content_len >= 0 then content_len
-                else total - head_end;
+    bodyLen := if decoded >= 0 then decoded
+                else if contentLen >= 0 then contentLen
+                else total - headEnd;
     return ClientResponse{
-        status = final_status,
-        reason = final_reason,
-        headers_raw = string{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
-        body = string{ ptr = *buf[head_end], len = body_len },
-        decoded_from = decoded_from,
+        status = finalStatus,
+        reason = finalReason,
+        headersRaw = string{ ptr = *buf[headerStart], len = if normalizedHeadersLen >= 0 then normalizedHeadersLen else headEnd - 2 - headerStart },
+        body = string{ ptr = *buf[headEnd], len = bodyLen },
+        decodedFrom = decodedFrom,
     };
 }
 
 // Convenience: dial ip:port, send the request, read the response into `buf`,
 // close the connection. One blocking round-trip.
-request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     fd := try dial(ip, port);
     defer socket.close(fd);
-    try send(fd, method, path, host, extra_headers, body);
+    try send(fd, method, path, host, extraHeaders, body);
     return recv(fd, buf, cap, method);
 }
 
@@ -1025,7 +1025,7 @@ request :: (ip: u32, port: i64, method: string, path: string, host: string, extr
 // pool-owned copy.
 PoolEntry :: struct {
     host: [*]u8 = null;
-    host_len: i64 = 0;
+    hostLen: i64 = 0;
     port: i64 = 0;
     https: bool = false;
     conn: ClientConn;
@@ -1051,7 +1051,7 @@ ClientPool :: struct {
     // Fetch through the pool. Redirect hops are followed with the SAME
     // pooling (each hop reuses/creates its host's entry).
     fetch :: (self: *ClientPool, method: string, url: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        u, ok := parse_url(url);
+        u, ok := parseUrl(url);
         if !ok { raise .Url; }
         m := method;
         b := body;
@@ -1061,42 +1061,42 @@ ClientPool :: struct {
         hops : i64 = 0;
         first := true;
         while true {
-            if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise .Url; }
+            if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.deallocBytes(pathp); } raise .Url; }
             hbp : [*]u8 = (*hostb[0]).([*]u8);
             if u.host.ptr != hbp {
                 clib.memcpy(hbp, u.host.ptr, u.host.len);
                 u.host = string{ ptr = hbp, len = u.host.len };
             }
             r, he := self.hop(u, m, b, first, buf, cap);
-            if he { if freeing { context.allocator.dealloc_bytes(pathp); } raise he; }
-            if !is_redirect(r.status) or self.opts.max_redirects <= 0 {
-                if freeing { context.allocator.dealloc_bytes(pathp); }
+            if he { if freeing { context.allocator.deallocBytes(pathp); } raise he; }
+            if !isRedirect(r.status) or self.opts.maxRedirects <= 0 {
+                if freeing { context.allocator.deallocBytes(pathp); }
                 return r;
             }
             loc := r.header("location");
             if loc.len == 0 {
-                if freeing { context.allocator.dealloc_bytes(pathp); }
+                if freeing { context.allocator.deallocBytes(pathp); }
                 return r;
             }
             hops += 1;
-            if hops > self.opts.max_redirects {
-                if freeing { context.allocator.dealloc_bytes(pathp); }
+            if hops > self.opts.maxRedirects {
+                if freeing { context.allocator.deallocBytes(pathp); }
                 raise .Redirect;
             }
             np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
             clib.memcpy(np, loc.ptr, loc.len);
             locv := string{ ptr = np, len = loc.len };
-            if freeing { context.allocator.dealloc_bytes(pathp); }
+            if freeing { context.allocator.deallocBytes(pathp); }
             pathp = np;
             freeing = true;
-            if starts_with(locv, "http://") or starts_with(locv, "https://") {
-                nu, nok := parse_url(locv);
-                if !nok { context.allocator.dealloc_bytes(pathp); raise .Url; }
+            if startsWith(locv, "http://") or startsWith(locv, "https://") {
+                nu, nok := parseUrl(locv);
+                if !nok { context.allocator.deallocBytes(pathp); raise .Url; }
                 u = nu;
             } else if locv.len > 0 and locv[0] == '/' {
                 u.path = locv;
             } else {
-                context.allocator.dealloc_bytes(pathp);
+                context.allocator.deallocBytes(pathp);
                 raise .Url;
             }
             if r.status == 301 or r.status == 302 or r.status == 303 {
@@ -1121,20 +1121,20 @@ ClientPool :: struct {
         attempt : i64 = 0;
         while true {
             if idx < 0 or !self.entries.items[idx].live {
-                c, oe := self.dial_entry(u, first);
+                c, oe := self.dialEntry(u, first);
                 if oe { raise oe; }
                 idx = self.store(u, c);
                 reused = false;
             }
             e := *self.entries.items[idx];
-            se := send_on(*e.conn, method, u.path, u.host, "", body);
+            se := sendOn(*e.conn, method, u.path, u.host, "", body);
             if se {
                 self.drop(idx);
                 idx = -1;
                 if reused and attempt == 0 { attempt += 1; reused = false; continue; }
                 raise se;
             }
-            r, re := recv_on(*e.conn, buf, cap);
+            r, re := recvOn(*e.conn, buf, cap);
             if re {
                 self.drop(idx);
                 idx = -1;
@@ -1145,22 +1145,22 @@ ClientPool :: struct {
                 }
                 raise re;
             }
-            // The server may close after this response (its request_count
+            // The server may close after this response (its requestCount
             // cap / an error close): drop the conn when it SAID so —
             // "close" as a token of the comma-separated list, per RFC. A
             // length-only match would accept any 5-char value and miss
             // "close, ..." lists.
-            if connection_says_close(r.header("connection")) { self.drop(idx); }
+            if connectionSaysClose(r.header("connection")) { self.drop(idx); }
             return r;
         }
         raise .Send;   // unreachable — the loop returns or raises
     }
 
-    dial_entry :: (self: *ClientPool, u: Url, first: bool) -> (ClientConn, !ClientErr) {
+    dialEntry :: (self: *ClientPool, u: Url, first: bool) -> (ClientConn, !ClientErr) {
         o := self.opts;
         if u.https {
             if o.tls == null { raise .Tls; }
-            if !(first and o.tls_host.len > 0) { o.tls_host = u.host; }
+            if !(first and o.tlsHost.len > 0) { o.tlsHost = u.host; }
         } else {
             o.tls = null;
         }
@@ -1171,10 +1171,10 @@ ClientPool :: struct {
         i : i64 = 0;
         while i < self.entries.len {
             e := *self.entries.items[i];
-            if e.live and e.https == u.https and e.port == u.port and e.host_len == u.host.len {
+            if e.live and e.https == u.https and e.port == u.port and e.hostLen == u.host.len {
                 same := true;
                 j : i64 = 0;
-                while j < e.host_len {
+                while j < e.hostLen {
                     if e.host[j] != u.host[j] { same = false; break; }
                     j += 1;
                 }
@@ -1195,11 +1195,11 @@ ClientPool :: struct {
         hp : [*]u8 = self.a.alloc(u8, u.host.len).ptr;
         j : i64 = 0;
         while j < u.host.len { hp[j] = u.host[j]; j += 1; }
-        ne : PoolEntry = .{ host = hp, host_len = u.host.len, port = u.port,
+        ne : PoolEntry = .{ host = hp, hostLen = u.host.len, port = u.port,
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
             old := *self.entries.items[i];
-            if old.host != null { self.a.dealloc_bytes(old.host); }
+            if old.host != null { self.a.deallocBytes(old.host); }
             self.entries.items[i] = ne;
         } else {
             self.entries.append(ne, self.a);
@@ -1210,7 +1210,7 @@ ClientPool :: struct {
     drop :: (self: *ClientPool, idx: i64) {
         e := *self.entries.items[idx];
         if !e.live { return; }
-        close_conn(*e.conn);
+        closeConn(*e.conn);
         e.live = false;
     }
 
@@ -1219,8 +1219,8 @@ ClientPool :: struct {
         i : i64 = 0;
         while i < self.entries.len {
             e := *self.entries.items[i];
-            if e.live { close_conn(*e.conn); e.live = false; }
-            if e.host != null { self.a.dealloc_bytes(e.host); e.host = null; }
+            if e.live { closeConn(*e.conn); e.live = false; }
+            if e.host != null { self.a.deallocBytes(e.host); e.host = null; }
             i += 1;
         }
         self.entries.deinit(self.a);
@@ -1237,31 +1237,31 @@ Client :: struct {
     // Open a blocking TCP connection to ip:port (see free `dial`).
     dial :: (ip: u32, port: i64) -> (i32, !ClientErr) { return dial(ip, port); }
     // Send one request on an open fd (see free `send`).
-    send :: (fd: i32, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
-        return send(fd, method, path, host, extra_headers, body);
+    send :: (fd: i32, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+        return send(fd, method, path, host, extraHeaders, body);
     }
     // Read a full response on an open fd (see free `recv`).
-    recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (ClientResponse, !ClientErr) {
-        return recv(fd, buf, cap, request_method);
+    recv :: (fd: i32, buf: [*]u8, cap: i64, requestMethod: string = "GET") -> (ClientResponse, !ClientErr) {
+        return recv(fd, buf, cap, requestMethod);
     }
     // One blocking round-trip: dial → send → recv → close (see free `request`).
-    request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return request(ip, port, method, path, host, extra_headers, body, buf, cap);
+    request :: (ip: u32, port: i64, method: string, path: string, host: string, extraHeaders: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return request(ip, port, method, path, host, extraHeaders, body, buf, cap);
     }
     // ── sessions (see the free functions above) ────────────────
     open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
         return open(host, port, opts);
     }
-    open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
-        return open_addr(a, opts);
+    openAddr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+        return openAddr(a, opts);
     }
-    send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
-        return send_on(c, method, path, host, extra_headers, body);
+    sendOn :: (c: *ClientConn, method: string, path: string, host: string, extraHeaders: string, body: string) -> !ClientErr {
+        return sendOn(c, method, path, host, extraHeaders, body);
     }
-    recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-        return recv_on(c, buf, cap);
+    recvOn :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return recvOn(c, buf, cap);
     }
-    close_conn :: (c: *ClientConn) { close_conn(c); }
+    closeConn :: (c: *ClientConn) { closeConn(c); }
     // ── (see the free `fetch`) ─────────────────────────────────
     fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         return fetch(method, url, body, opts, buf, cap);

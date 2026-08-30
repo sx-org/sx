@@ -1,0 +1,25 @@
+@import "modules/std.sx";
+@import "modules/build.sx";
+
+// `addAssetDir(src, dest)` records a pair; `assetDirSrcAt(i)` reads the disk
+// path and `assetDirDestAt(i)` the in-bundle destination. The build fails if
+// either half answers the other one's string.
+
+configure :: () {
+    opts := buildOptions();
+    opts.addAssetDir("art", "Resources/art");
+    opts.addAssetDir("levels", "Resources/levels");
+}
+@run configure();
+
+build :: (opt: BuildOptions) -> bool {
+    if opt.assetDirCount() != 2 { return false; }
+    if opt.assetDirSrcAt(0) != "art" { return false; }
+    if opt.assetDirDestAt(0) != "Resources/art" { return false; }
+    if opt.assetDirSrcAt(1) != "levels" { return false; }
+    if opt.assetDirDestAt(1) != "Resources/levels" { return false; }
+    return defaultPipeline(opt);
+}
+@run onBuild(build);
+
+main :: () { print("asset dirs verified\n"); }

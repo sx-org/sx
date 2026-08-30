@@ -17,7 +17,7 @@ WindowFlags :: enum flags u32 {
 // Backing type on plain enums too
 Color :: enum u8 { red; green; blue; }
 
-check_perms :: (p: Perms) {
+checkPerms :: (p: Perms) {
     print("  checking: {}\n", p);
     if p & .read    { print("  - can read\n"); }
     if p & .write   { print("  - can write\n"); }
@@ -30,17 +30,17 @@ main :: () {
     print("perms: {}\n", p);
 
     // Test individual flags with &
-    check_perms(p);
+    checkPerms(p);
 
     // All flags
     all :Perms = .read | .write | .execute;
     print("\nall: {}\n", all);
-    check_perms(all);
+    checkPerms(all);
 
     // Single flag
     r :Perms = .read;
     print("\nread only: {}\n", r);
-    check_perms(r);
+    checkPerms(r);
 
     // Pass flags to functions, match on them
     print("\nmatch on flags:\n");

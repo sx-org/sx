@@ -11,5 +11,5 @@
 @import "0834-modules-namespace-alias-own-target-pin/b.sx";
 
 main :: () {
-    print("{} {}\n", use_a(), use_b());
+    print("{} {}\n", useA(), useB());
 }

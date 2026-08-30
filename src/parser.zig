@@ -129,7 +129,7 @@ pub const Parser = struct {
                 .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
                 .at_identifier => if (std.mem.eql(u8, self.tokens.slice(self.tok), "@error"))
                     return self.fail("'private' is not allowed on '@error'"),
-                .at_context_extend => return self.fail("'private' is not allowed on '@context_extend'"),
+                .at_context_extend => return self.fail("'private' is not allowed on '@context.extend'"),
                 .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
                 .kw_private => return self.fail("duplicate 'private'"),
                 else => {},
@@ -231,7 +231,7 @@ pub const Parser = struct {
             return self.parseErrorDirective();
         }
 
-        // Top-level `@context_extend name: Type = default;` — declares a field
+        // Top-level `@context.extend name: Type = default;` — declares a field
         // of the program's assembled Context.
         if (self.tokens.tag(self.tok) == .at_context_extend) return self.parseContextExtend(start);
 
@@ -3054,7 +3054,7 @@ pub const Parser = struct {
         if (self.isErrorContractCall()) {
             return self.parseErrorDirective();
         }
-        // `@context_extend` is a top-level-only directive: the Context is
+        // `@context.extend` is a top-level-only directive: the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
         // letting it fall through to a generic expression-parse failure. A
@@ -3063,7 +3063,7 @@ pub const Parser = struct {
         // Context field is exactly what the expansion scheduler weighs.
         if (self.tokens.tag(self.tok) == .at_context_extend) {
             if (!self.in_module_expansion) {
-                return self.fail("'@context_extend' is only allowed at top level (module scope)");
+                return self.fail("'@context.extend' is only allowed at top level (module scope)");
             }
             return self.parseContextExtend(self.tokens.start(self.tok));
         }
@@ -3260,10 +3260,10 @@ pub const Parser = struct {
         }
 
         // `@import "path";` / `@framework "Name";` inside a block body.
-        // Only meaningful inside an `inline if OS == ... { ... }` arm —
-        // the imports.zig flatten pass surfaces those
-        // declarations to the top level before resolution. Anywhere else
-        // these nodes survive into lowering and produce a clear error.
+        // Only meaningful inside an `inline if @host.os == ... { ... }` arm —
+        // module-scope expansion surfaces those declarations to the top level
+        // before resolution. Anywhere else these nodes survive into lowering
+        // and produce a clear error.
         if (self.tokens.tag(self.tok) == .at_import) {
             const start = self.tokens.start(self.tok);
             self.advance();
@@ -3900,7 +3900,7 @@ pub const Parser = struct {
         // no `@Init(T){ … }` literal and no `@Init` expression. Every other `@`
         // name is an ordinary type reference here — a declared contract takes
         // an aggregate literal (`@SourceSite{ … }`), and `@Vector(N, T)` is the
-        // type an expression such as `vector_lanes(@Vector(3, f32))` names.
+        // type an expression such as `vectorLanes(@Vector(3, f32))` names.
         if (self.tokens.tag(self.tok) == .at_identifier) {
             const at_name = self.tokens.slice(self.tok);
             if (contracts.isBoundOnly(at_name)) {
@@ -4613,12 +4613,12 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }
 
-    /// Parse `@context_extend name: Type = default;` — a field of the
+    /// Parse `@context.extend name: Type = default;` — a field of the
     /// program's assembled Context. `current` is the directive token.
     fn parseContextExtend(self: *Parser, start: u32) anyerror!*Node {
         self.advance();
         if (!self.isIdentLike()) {
-            return self.fail("expected field name after '@context_extend'");
+            return self.fail("expected field name after '@context.extend'");
         }
         const field_name = self.tokens.slice(self.tok);
         const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
@@ -7870,11 +7870,15 @@ test "parse empty braces after a call subject as the arm list" {
 test "parse inline match as a comptime match" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "inline match OS {\n  case .macos: X :: 1;\n  else: X :: 2;\n}");
+    var parser = try Parser.init(arena.allocator(), "inline match @host.os {\n  case .macos: X :: 1;\n  else: X :: 2;\n}");
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .match_expr);
     try std.testing.expect(decl.data.match_expr.is_comptime);
+    const subject = decl.data.match_expr.subject;
+    try std.testing.expect(subject.data == .field_access);
+    try std.testing.expectEqualStrings("os", subject.data.field_access.field);
+    try std.testing.expectEqualStrings("@host", subject.data.field_access.object.data.identifier.name);
 }
 
 /// Parse `src`, expect `error.ParseError`, and pin both the diagnostic text

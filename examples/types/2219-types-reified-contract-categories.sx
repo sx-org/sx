@@ -10,7 +10,7 @@ Ord :: constraint { less :: (self: *Self, other: Self) -> bool; }
 S :: struct { v: i64; }
 impl P for S { a :: (self: *S) -> i64 { self.v } }
 
-interface_first :: (t: Type) -> string {
+interfaceFirst :: (t: Type) -> string {
     match t {
         case interface: return "interface";
         case struct:    return "struct";
@@ -19,7 +19,7 @@ interface_first :: (t: Type) -> string {
     "unreached"
 }
 
-struct_first :: (t: Type) -> string {
+structFirst :: (t: Type) -> string {
     match t {
         case struct:    return "struct";
         case interface: return "interface";
@@ -37,8 +37,8 @@ main :: () {
     print("Ord: interface={} struct={}\n", cv is interface, cv is struct);
     print("S:   interface={} struct={}\n", sv is interface, sv is struct);
 
-    print("iface-first:  {} {} {}\n", interface_first(tv), interface_first(cv), interface_first(sv));
-    print("struct-first: {} {} {}\n", struct_first(tv), struct_first(cv), struct_first(sv));
+    print("iface-first:  {} {} {}\n", interfaceFirst(tv), interfaceFirst(cv), interfaceFirst(sv));
+    print("struct-first: {} {} {}\n", structFirst(tv), structFirst(cv), structFirst(sv));
 
     // The static spellings agree with the reified ones.
     print("static: {} {} {}\n", P is interface, Ord is interface, S is struct);

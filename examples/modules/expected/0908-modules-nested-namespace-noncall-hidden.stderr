@@ -1,41 +1,41 @@
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:9:17
    |
- 9 |     annotated : facade.engine_alias.Record = ---;
-   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |     annotated : facade.engineAlias.Record = ---;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:10:16
    |
-10 |     literal := facade.engine_alias.Record{ value = 1 };
-   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 |     literal := facade.engineAlias.Record{ value = 1 };
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:11:17
    |
-11 |     constant := facade.engine_alias.COUNT;
-   |                 ^^^^^^^^^^^^^^^^^^^
+11 |     constant := facade.engineAlias.COUNT;
+   |                 ^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:12:16
    |
-12 |     variant := facade.engine_alias.Kind.selected;
-   |                ^^^^^^^^^^^^^^^^^^^
+12 |     variant := facade.engineAlias.Kind.selected;
+   |                ^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:13:15
    |
-13 |     generic : facade.engine_alias.Box(i64) = ---;
-   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     generic : facade.engineAlias.Box(i64) = ---;
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:14:12
    |
-14 |     made : facade.engine_alias.Make(i64) = ---;
-   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     made : facade.engineAlias.Make(i64) = ---;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: namespace 'facade' has no member 'engine_alias'
+error: namespace 'facade' has no member 'engineAlias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:15:5
    |
-15 |     facade.engine_alias.STATE = 1;
-   |     ^^^^^^^^^^^^^^^^^^^
+15 |     facade.engineAlias.STATE = 1;
+   |     ^^^^^^^^^^^^^^^^^^

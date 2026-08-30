@@ -27,12 +27,12 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "served";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -50,7 +50,7 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 // Tick until EOF (or stall); returns everything read.
-drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
+drainToEof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
     total : i64 = 0;
     stall : i64 = 0;
     done := false;
@@ -58,7 +58,7 @@ drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -75,24 +75,24 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = TIMEOUT_MS,
-            timeout_keepalive_ms = TIMEOUT_MS,
-            request_count = 50,
-            max_conn = 4,
+            timeoutRequestMs = TIMEOUT_MS,
+            timeoutKeepaliveMs = TIMEOUT_MS,
+            requestCount = 50,
+            maxConn = 4,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // ── (a) partial request past the delivery deadline → 408 ──────
-        ca := dial_port(PORT);
+        ca := dialPort(PORT);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         partial := "GET /slowclient HTTP/1.1\r\nHo";   // header block never finishes
         socket.write(ca, partial.ptr, partial.len);
-        ra := drain_to_eof(*srv, ca, rbuf, cap);       // rides past the deadline
+        ra := drainToEof(*srv, ca, rbuf, cap);       // rides past the deadline
         if !contains(ra, "HTTP/1.1 408") or !contains(ra, "Connection: close") {
             print("expected 408 for a timed-out partial request, got {} bytes\n", ra.len);
             failed = 1;
@@ -100,11 +100,11 @@ main :: () -> i32 {
         socket.close(ca);
 
         // ── (b) idle keepalive eviction stays wire-silent ─────────────
-        cb := dial_port(PORT);
+        cb := dialPort(PORT);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         good := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
         socket.write(cb, good.ptr, good.len);
-        rb := drain_to_eof(*srv, cb, rbuf, cap);       // response, idle, evicted
+        rb := drainToEof(*srv, cb, rbuf, cap);       // response, idle, evicted
         if !contains(rb, "HTTP/1.1 200 OK") or !contains(rb, "served") {
             print("keepalive request failed\n");
             failed = 1;
@@ -117,11 +117,11 @@ main :: () -> i32 {
         socket.close(cb);
 
         // ── (c) well-formed unsupported version → 505 ─────────────────
-        cc := dial_port(PORT);
+        cc := dialPort(PORT);
         if cc < 0 { print("dial C failed\n"); srv.close(); return 1; }
         v2 := "GET / HTTP/2.0\r\nHost: t\r\n\r\n";
         socket.write(cc, v2.ptr, v2.len);
-        rc := drain_to_eof(*srv, cc, rbuf, cap);
+        rc := drainToEof(*srv, cc, rbuf, cap);
         if !contains(rc, "HTTP/1.1 505") {
             print("expected 505 for HTTP/2.0, got: {}\n", rc);
             failed = 1;
@@ -129,11 +129,11 @@ main :: () -> i32 {
         socket.close(cc);
 
         // ── (d) garbage version stays 400 ─────────────────────────────
-        cd := dial_port(PORT);
+        cd := dialPort(PORT);
         if cd < 0 { print("dial D failed\n"); srv.close(); return 1; }
         vg := "GET / FOO/1.1\r\nHost: t\r\n\r\n";
         socket.write(cd, vg.ptr, vg.len);
-        rd := drain_to_eof(*srv, cd, rbuf, cap);
+        rd := drainToEof(*srv, cd, rbuf, cap);
         if !contains(rd, "HTTP/1.1 400") {
             print("expected 400 for a garbage version, got: {}\n", rd);
             failed = 1;
@@ -148,8 +148,8 @@ main :: () -> i32 {
         }
 
         srv.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

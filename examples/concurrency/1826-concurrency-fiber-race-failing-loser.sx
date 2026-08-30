@@ -30,6 +30,6 @@ main :: () -> i64 {
         });
         ps.run();
     }
-    print("final clock: {}ms\n", s.now_ms());
+    print("final clock: {}ms\n", s.nowMs());
     return 0;
 }

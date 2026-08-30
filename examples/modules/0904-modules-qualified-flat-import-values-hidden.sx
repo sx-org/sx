@@ -6,9 +6,9 @@ facade :: @import "0904-modules-qualified-flat-import-values-hidden/facade.sx";
 
 main :: () -> i32 {
     constant := facade.HIDDEN_CONST;
-    global := facade.hidden_global;
+    global := facade.hiddenGlobal;
     kind := facade.HiddenKind.one;
-    function := facade.hidden_fn;
-    facade.hidden_global = 34;
+    function := facade.hiddenFn;
+    facade.hiddenGlobal = 34;
     0
 }

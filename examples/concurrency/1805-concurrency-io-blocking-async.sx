@@ -2,7 +2,7 @@
 // and returns a `*Future($R)` handle; under the blocking `CBlockingIo` the worker
 // runs to completion inline, so the Future is born `.ready`. `f.await()` yields
 // the result (a value-failable `($R, !IoErr)`, handled with `or`).
-// `context.io.now_ms()` reads the clock through the same capability.
+// `context.io.nowMs()` reads the clock through the same capability.
 //
 // Worker form: a nullary failable lambda capturing any inputs at the CALL SITE
 // (`|| -> (i64, !) compute(a, b)`) — the colorblind shape that also works when
@@ -26,5 +26,5 @@ main :: () {
     print("nullary: {}\n", n.await() ?? { -1 });
 
     // The Io capability also carries a clock.
-    if context.io.now_ms() >= 0 { print("clock ok\n"); }
+    if context.io.nowMs() >= 0 { print("clock ok\n"); }
 }

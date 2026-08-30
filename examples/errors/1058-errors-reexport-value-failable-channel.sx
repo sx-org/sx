@@ -1,7 +1,7 @@
 // A generic value-failable fn `($R, !E)` reached through a RE-EXPORT alias
 // keeps its `!` error channel at the call site — the result types as a
 // value-failable, so `or` / `try` accept it. Mirrors std.sx's
-// `await :: io_mod.await` (+ `IoErr :: io_mod.IoErr`) re-export.
+// `await :: ioMod.await` (+ `IoErr :: ioMod.IoErr`) re-export.
 // Return-type resolution is pinned to the fn's defining module, matching
 // `monomorphizeFunction`: in the CALL-SITE module `LE` is a re-export alias
 // whose TypeId is not an error, so `errorChannelOf` would see a plain

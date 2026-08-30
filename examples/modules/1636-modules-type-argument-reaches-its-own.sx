@@ -18,9 +18,9 @@ g :: @import "1636-modules-type-argument-reaches-its-own/gamma/panel.sx";
 d :: @import "1636-modules-type-argument-reaches-its-own/delta/panel.sx";
 
 main :: () -> i32 {
-    print("{} {}\n", alpha_soft(), beta_soft());
-    print("{} {}\n", alpha_hard(), beta_hard());
-    print("{} {}\n", alpha_note(), beta_note());
+    print("{} {}\n", alphaSoft(), betaSoft());
+    print("{} {}\n", alphaHard(), betaHard());
+    print("{} {}\n", alphaNote(), betaNote());
     print("{} {}\n", g.soft(), d.soft());
     print("{} {}\n", g.hard(), d.hard());
     print("{} {}\n", g.note(), d.note());

@@ -15,9 +15,9 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("from_a combine fixed", from_a_combine() == 30);
-    report("from_b combine variadic", from_b_combine() == 10);
-    report("from_a pick variadic", from_a_pick() == 6);
-    report("from_b pick fixed", from_b_pick() == 5);
+    report("fromA combine fixed", fromACombine() == 30);
+    report("fromB combine variadic", fromBCombine() == 10);
+    report("fromA pick variadic", fromAPick() == 6);
+    report("fromB pick fixed", fromBPick() == 5);
     0
 }

@@ -1,8 +1,8 @@
 // `closure(f, alloc)` gives a callable's environment a home that outlives the
-// forming frame, and erases the value to the `{fn_ptr, env}` pair a `Closure`
+// forming frame, and erases the value to the `{fnPtr, env}` pair a `Closure`
 // slot takes. Every callable shape persists: a unique lambda, a bare function,
 // an `impl (sig) for T` nominal. A `Closure` is returned unchanged — same
-// `fn_ptr`, same `env` — so `closure` composes. A capture-free environment is
+// `fnPtr`, same `env` — so `closure` composes. A capture-free environment is
 // zero-sized, so it funds nothing and carries a null env.
 
 @import "modules/std.sx";
@@ -15,12 +15,12 @@ impl (i64) -> i64 for Accum {
     call :: (self: *Accum, x: i64) -> i64 { return self.total + x; }
 }
 
-Widget :: struct { on_tap: ?Closure(i64) -> void; }
+Widget :: struct { onTap: ?Closure(i64) -> void; }
 
 main :: () {
     n := 5;
     unique := |x: i64|_{ n } -> i64 x + n;
-    print("env-type {} {}\n", @sizeOf(@env_type(@typeOf(unique))), @sizeOf(i64));
+    print("env-type {} {}\n", @sizeOf(@envType(@typeOf(unique))), @sizeOf(i64));
 
     lam := closure(unique);
     print("lambda {}\n", lam(1));                              // 6
@@ -43,15 +43,15 @@ main :: () {
     // The allocator is chosen, or taken from the context.
     arena := Arena.init(context.allocator, 4096);
     m := 7;
-    on_arena := closure(|x: i64|_{ m } -> i64 x * m, arena);
-    print("arena {}\n", on_arena(6));                          // 42
+    onArena := closure(|x: i64|_{ m } -> i64 x * m, arena);
+    print("arena {}\n", onArena(6));                          // 42
     arena.deinit();
 
     // A capturing lambda reaches a `Closure` field through `closure`.
     id := 3;
     tap := closure(|x: i64|_{ id } print("tap {} {}\n", id, x));
-    w := Widget{ on_tap = tap };
-    if h := w.on_tap { h(9); }
+    w := Widget{ onTap = tap };
+    if h := w.onTap { h(9); }
 
     free(tap);
     free(lam);

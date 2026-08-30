@@ -7,10 +7,10 @@
 toolbar :: () { print("t\n"); }
 add1 :: (x: i64) -> i64 { x + 1 }
 
-takes_s :: (s: string) { print("{}\n", s); }
-give_s :: () -> string { return add1; }
+takesS :: (s: string) { print("{}\n", s); }
+giveS :: () -> string { return add1; }
 
 main :: () {
-    takes_s(toolbar);
-    _ = give_s();
+    takesS(toolbar);
+    _ = giveS();
 }

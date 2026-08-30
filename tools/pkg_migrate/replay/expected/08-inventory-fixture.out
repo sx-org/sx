@@ -1,5 +1,5 @@
 == D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
-(comments, string/char literals, and #string heredocs excluded by the scanner)
+(comments, string/char literals, and @string heredocs excluded by the scanner)
 
 testdata/inventory/words.sx:5:11: package [typed-decl(param/field/local)] | build :: (package: string, lib: string) -> string {
 testdata/inventory/words.sx:7:5: import [decl-local] | import := package;

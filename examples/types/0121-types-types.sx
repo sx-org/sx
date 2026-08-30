@@ -43,9 +43,9 @@ vec3 :: (x: f32, y: f32, z: f32) -> @Vector(3, f32) {
 }
 
 // Global variable for address-of test
-g_smoke_val : i32 = 42;
+gSmokeVal : i32 = 42;
 
-write_to_ptr :: (p: *i32) {
+writeToPtr :: (p: *i32) {
     p.* = 99;
 }
 
@@ -57,18 +57,18 @@ main :: () {
     print("=== 3. Types ===\n");
 
     // Primitive types
-    v_i8 : i8 = 127;
-    v_i16 : i16 = 32000;
-    v_i32 : i32 = 100000;
-    v_u8 : u8 = 255;
-    v_u16 : u16 = 65000;
-    v_u32 : u32 = 4000000;
-    print("i8: {}\n", v_i8);
-    print("i16: {}\n", v_i16);
-    print("i32: {}\n", v_i32);
-    print("u8: {}\n", v_u8);
-    print("u16: {}\n", v_u16);
-    print("u32: {}\n", v_u32);
+    vI8 : i8 = 127;
+    vI16 : i16 = 32000;
+    vI32 : i32 = 100000;
+    vU8 : u8 = 255;
+    vU16 : u16 = 65000;
+    vU32 : u32 = 4000000;
+    print("i8: {}\n", vI8);
+    print("i16: {}\n", vI16);
+    print("i32: {}\n", vI32);
+    print("u8: {}\n", vU8);
+    print("u16: {}\n", vU16);
+    print("u32: {}\n", vU32);
 
     // Type alias
     mf : MyFloat = 1.5;
@@ -158,13 +158,13 @@ main :: () {
     print("match-expr: {}\n", ms);
 
     // Match expression with else
-    me_val := 42;
-    me_res := match me_val {
+    meVal := 42;
+    meRes := match meVal {
         case 1: 10;
         case 2: 20;
         else: 99;
     }
-    print("match-expr-else: {}\n", me_res);
+    print("match-expr-else: {}\n", meRes);
 
     // Payload capture (block form)
     sh4 : Shape = .circle(9.5);
@@ -175,8 +175,8 @@ main :: () {
     }
 
     // Payload capture (arrow form)
-    sh_ca : Shape = .circle(7.5);
-    match sh_ca {
+    shCa : Shape = .circle(7.5);
+    match shCa {
         case .circle: |r| print("capture-arrow: {}\n", r);
         case .rect: |sz| print("capture-arrow: rect\n");
         case .none: print("capture-arrow: none\n");
@@ -199,8 +199,8 @@ main :: () {
     }
 
     // Integer match with else
-    im_code := 99;
-    match im_code {
+    imCode := 99;
+    match imCode {
         case 1: print("int-match-else: one\n");
         case 2: print("int-match-else: two\n");
         else: print("int-match-else: unknown\n");
@@ -278,8 +278,8 @@ main :: () {
 
     // --- Pointers ---
     // Address-of global variable
-    write_to_ptr(*g_smoke_val);
-    print("global-addr-of: {}\n", g_smoke_val);
+    writeToPtr(*gSmokeVal);
+    print("global-addr-of: {}\n", gSmokeVal);
 
     pv := Point{ 10, 20 };
     ptr := *pv;
@@ -295,8 +295,8 @@ main :: () {
 
     // Many-pointer write
     mpw : [5]i32 = .[10, 20, 30, 40, 50];
-    mpw_ptr : [*]i32 = *mpw[0];
-    mpw_ptr[2] = 99;
+    mpwPtr : [*]i32 = *mpw[0];
+    mpwPtr[2] = 99;
     print("mp-write: {}\n", mpw[2]);
 
     // Pointer-null comparison

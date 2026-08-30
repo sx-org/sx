@@ -16,14 +16,14 @@ SurfaceView :: @JniClass("android/view/SurfaceView") extern {
     new :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method
 }
 
-g_held_view : *void = null;
+gHeldView : *void = null;
 
 SxApp :: @JniClass("co/swipelab/sxjnictor/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {
         super.onCreate(b);
         ctx : *JContext = self.(*JContext); // Activity IS a Context.
         view := SurfaceView.new(ctx);
-        g_held_view = view; // keep alive so LLVM doesn't DCE the construction.
+        gHeldView = view; // keep alive so LLVM doesn't DCE the construction.
     }
 }
 

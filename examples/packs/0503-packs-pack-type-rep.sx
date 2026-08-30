@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-takes_cb :: (cb: Closure(..$args) -> $R) -> void {}
+takesCb :: (cb: Closure(..$args) -> $R) -> void {}
 
 main :: () -> i32 {
     print("pack type rep ok\n");

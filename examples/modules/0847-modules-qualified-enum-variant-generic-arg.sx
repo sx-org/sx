@@ -14,7 +14,7 @@ id :: (v: $T) -> T { v }
 eq :: (a: $T, b: T) -> bool { a == b }
 
 // Return position: the generic result flows to a declared enum return type.
-first_off :: () -> lib.Mode { id(lib.Mode.off) }
+firstOff :: () -> lib.Mode { id(lib.Mode.off) }
 
 main :: () {
     m := id(lib.Mode.on);          // module-qualified enum, decl position
@@ -22,5 +22,5 @@ main :: () {
     print("m on?  {}\n", m == lib.Mode.on);
     print("e none? {}\n", e == lib.Event.none);
     print("eq {}\n", eq(lib.Mode.on, lib.Mode.on));   // comparison position
-    print("ret off? {}\n", first_off() == lib.Mode.off);
+    print("ret off? {}\n", firstOff() == lib.Mode.off);
 }

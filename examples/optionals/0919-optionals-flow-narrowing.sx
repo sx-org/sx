@@ -8,7 +8,7 @@
 // compile error (see 0920).
 @import "modules/std.sx";
 
-takes_i32 :: (x: i32) { print("i32 {}\n", x); }
+takesI32 :: (x: i32) { print("i32 {}\n", x); }
 add :: (a: i64, b: i64) -> i64 { return a + b; }
 
 // Divergent `== null` guard narrows the rest of the body.
@@ -26,11 +26,11 @@ guard2 :: (a: ?i64, b: ?i64) -> i64 {
 main :: () {
     // if-then narrowing
     n : ?i64 = 41;
-    if n != null { takes_i32(n); }            // i32 41
+    if n != null { takesI32(n); }            // i32 41
 
     // else-branch narrowing (false ⇒ present)
     m : ?i64 = 7;
-    if m == null { print("none\n"); } else { takes_i32(m); }  // i32 7
+    if m == null { print("none\n"); } else { takesI32(m); }  // i32 7
 
     // compound `and` narrows both inside the then-branch
     a : ?i64 = 3;
@@ -45,8 +45,8 @@ main :: () {
     // reassignment kills narrowing; re-narrow before reuse
     k : ?i64 = 100;
     if k != null {
-        takes_i32(k);          // i32 100
+        takesI32(k);          // i32 100
         k = 200;               // narrowing killed here
-        if k != null { takes_i32(k); }  // i32 200 (re-narrowed)
+        if k != null { takesI32(k); }  // i32 200 (re-narrowed)
     }
 }

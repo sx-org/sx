@@ -23,7 +23,7 @@ TextureFormat :: enum {
     r8;
 }
 
-// Vertex layout of the 3D draw path (`draw_indexed`), 32 bytes. Byte
+// Vertex layout of the 3D draw path (`drawIndexed`), 32 bytes. Byte
 // offsets 0 / 12 / 24 are the attribute slots backends bind.
 MeshVertex :: struct {
     position: [3]f32;
@@ -52,7 +52,7 @@ BoneMatrix :: struct {
 // 3840 bytes.
 GPU_MAX_BONES :: 80;
 
-// Depth test applied by `draw_indexed` and `draw_skinned`. `disabled`
+// Depth test applied by `drawIndexed` and `drawSkinned`. `disabled`
 // also stops depth writes, so a 2D pass leaves the depth buffer
 // untouched.
 DepthMode :: enum {

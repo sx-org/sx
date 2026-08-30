@@ -1,7 +1,6 @@
 // Auto-ref of a COMPOUND lvalue (field access / index / deref) passed to a `*T`
-// parameter references the real lvalue, not a copy: `make_move(self.board, m)`
-// mutates the field itself. Plain locals (`bump(x)`) and compound lvalues
-// auto-ref alike.
+// parameter references the real lvalue, not a copy: `bump(w.s)` mutates the
+// field itself, exactly as a plain local does.
 
 @import "modules/std.sx";
 

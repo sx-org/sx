@@ -1,5 +1,5 @@
-// Skinned mesh through the UI renderer: UIRenderer.set_skinned_mesh /
-// set_bone_palette feeding `.skinned_mesh` render nodes, drawn windowless
+// Skinned mesh through the UI renderer: UIRenderer.setSkinnedMesh /
+// setBonePalette feeding `.skinnedMesh` render nodes, drawn windowless
 // over an offscreen MetalGPU and read back.
 //
 // The green range is authored left of center and weighted entirely to
@@ -30,7 +30,7 @@ sample :: (px: [*]u8, o: i64) -> string {
 }
 
 main :: () -> i32 {
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("ui skin identity center: black\n");
         print("ui skin moved center: green\n");
         print("ui skin bone0: red\n");
@@ -38,7 +38,7 @@ main :: () -> i32 {
     }
 
     gpu : MetalGPU = .{};
-    if !gpu.init_offscreen(W, H) { print("offscreen init failed\n"); return 1; }
+    if !gpu.initOffscreen(W, H) { print("offscreen init failed\n"); return 1; }
 
     renderer : UIRenderer = .{};
     renderer.gpu = gpu.(GPU);
@@ -60,13 +60,13 @@ main :: () -> i32 {
            uv = .[0.5, 1.0], joints = .[0.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
     ];
     idx : [6]u32 = .[0, 1, 2, 3, 4, 5];
-    if !renderer.set_skinned_mesh(verts[..], idx[..]) { print("set_skinned_mesh failed\n"); return 1; }
+    if !renderer.setSkinnedMesh(verts[..], idx[..]) { print("setSkinnedMesh failed\n"); return 1; }
 
     // Positions are authored in clip space, so the node transform is identity.
     tree := RenderTree.init();
     ctx := RenderContext.init(*tree);
-    ctx.add_skinned_mesh(0, 3, Mat4.identity(), Color.rgb(0, 255, 0));
-    ctx.add_skinned_mesh(3, 3, Mat4.identity(), Color.rgb(255, 0, 0));
+    ctx.addSkinnedMesh(0, 3, Mat4.identity(), Color.rgb(0, 255, 0));
+    ctx.addSkinnedMesh(3, 3, Mat4.identity(), Color.rgb(255, 0, 0));
 
     rest : [2]BoneMatrix = .[
         .{ rows = .[ .[1.0, 0.0, 0.0, 0.0], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
@@ -78,39 +78,39 @@ main :: () -> i32 {
     ];
 
     n : i64 = (W * H * 4);
-    px : [*]u8 = xx context.allocator.alloc_bytes(n);
+    px : [*]u8 = xx context.allocator.allocBytes(n);
     center : i64 = (((H / 2) * W + (W / 2)) * 4);
     // Column 51 of row 32 sits inside the bone-0 range as authored.
     bone0 : i64 = (((H / 2) * W + 51) * 4);
 
-    renderer.set_bone_palette(rest[..]);
-    // The offscreen pass starts in `.less` so begin_frame installs that
+    renderer.setBonePalette(rest[..]);
+    // The offscreen pass starts in `.less` so beginFrame installs that
     // state with the far-plane clear (same shape as 1670).
-    gpu.set_depth_mode(.less);
-    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    gpu.setDepthMode(.less);
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
     renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
-    gpu.end_frame(0.0);
-    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
-    rest_center := sample(px, center);
+    gpu.endFrame(0.0);
+    if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
+    restCenter := sample(px, center);
 
-    renderer.set_bone_palette(moved[..]);
-    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    renderer.setBonePalette(moved[..]);
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
     renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
-    gpu.end_frame(0.0);
-    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
-    moved_center := sample(px, center);
-    moved_bone0 := sample(px, bone0);
+    gpu.endFrame(0.0);
+    if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
+    movedCenter := sample(px, center);
+    movedBone0 := sample(px, bone0);
 
-    print("ui skin identity center: {}\n", rest_center);
-    print("ui skin moved center: {}\n", moved_center);
-    print("ui skin bone0: {}\n", moved_bone0);
+    print("ui skin identity center: {}\n", restCenter);
+    print("ui skin moved center: {}\n", movedCenter);
+    print("ui skin bone0: {}\n", movedBone0);
 
-    if rest_center != "black" { return 1; }
-    if moved_center != "green" { return 1; }
-    if moved_bone0 != "red" { return 1; }
+    if restCenter != "black" { return 1; }
+    if movedCenter != "green" { return 1; }
+    if movedBone0 != "red" { return 1; }
     0
 }

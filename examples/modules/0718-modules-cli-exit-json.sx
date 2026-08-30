@@ -4,7 +4,7 @@
 //
 //   1. NAMED EXIT CODES — `EX_OK` (0) and `EX_USAGE` (64, the sysexits.h
 //      usage-error code) are public constants in `std.cli`.
-//   2. TERMINATORS — `exit_ok()` / `exit_usage()` end the process with the
+//   2. TERMINATORS — `exitOk()` / `exitUsage()` end the process with the
 //      matching code, routing through the canonical `process.exit(code: u8)`.
 //   3. `--json` MODE — the reserved global `--json` flag surfaces as
 //      `parsed.json`: TRUE when `--json` is in the argv, FALSE when it is not.
@@ -13,7 +13,7 @@
 //
 // The run ends on the usage path: after the assertions it triggers an
 // `UnknownCommand`, writes the human diagnostic to STDERR, and terminates via
-// `exit_usage()`, so the process exits 64 (EX_USAGE). sx `print`/`out` are
+// `exitUsage()`, so the process exits 64 (EX_USAGE). sx `print`/`out` are
 // unbuffered, so the stdout assertion lines still appear despite the `_exit`.
 
 @import "modules/std.sx";
@@ -25,11 +25,11 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> ! {
-    publish_flags : []FlagSpec = .[
-        FlagSpec{ name = "out", takes_value = true, required = true },
+    publishFlags : []FlagSpec = .[
+        FlagSpec{ name = "out", takesValue = true, required = true },
     ];
     cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "publish", flags = publishFlags },
     ];
 
     // ── 1. Named exit-code constants (the dist contract) ──────────────
@@ -38,10 +38,10 @@ main :: () -> ! {
 
     // ── 2. `--json` detection — true with the flag, false without ─────
     d : Diag = .{};
-    with_json    : []string = .["ci", "publish", "--out", "dist", "--json"];
-    without_json : []string = .["ci", "publish", "--out", "dist"];
-    pj := try parse(with_json,    cmds, *d);
-    pn := try parse(without_json, cmds, *d);
+    withJson    : []string = .["ci", "publish", "--out", "dist", "--json"];
+    withoutJson : []string = .["ci", "publish", "--out", "dist"];
+    pj := try parse(withJson,    cmds, *d);
+    pn := try parse(withoutJson, cmds, *d);
     report("json-set-true",  pj.json);
     report("json-set-false", !pn.json);
 
@@ -51,11 +51,11 @@ main :: () -> ! {
     // the JSON braces are literal.
     if pj.json {
         out("{\"out\":\"");
-        out(pj.value_of("out"));
+        out(pj.valueOf("out"));
         out("\"}\n");
     }
 
-    // ── 4. Usage error → human text to stderr → exit_usage() (= 64) ───
+    // ── 4. Usage error → human text to stderr → exitUsage() (= 64) ───
     // A bad command raises a `CliError`. The front-end maps every usage
     // error to `EX_USAGE`: it writes the human diagnostic to STDERR (stdout
     // stays machine-clean) and terminates with the usage code via the
@@ -64,5 +64,5 @@ main :: () -> ! {
     _, e := parse(bad, cmds, *d);
     report("usage-error-raised", e == .UnknownCommand);
     log.err("unknown command '{}' (argv index {})", d.token, d.index);
-    exit_usage();                                       // -> _exit(EX_USAGE = 64)
+    exitUsage();                                       // -> _exit(EX_USAGE = 64)
 }

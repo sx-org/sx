@@ -27,7 +27,7 @@ members :: ($E: Type) -> string {
     out
 }
 
-both_tag_of_d :: () -> i64 {
+bothTagOfD :: () -> i64 {
     tag := 0;
     match @typeInfo(Both) {
         case .error: |ei| {
@@ -40,7 +40,7 @@ both_tag_of_d :: () -> i64 {
     tag
 }
 
-foo_tag_of_d :: () -> i64 {
+fooTagOfD :: () -> i64 {
     tag := 0;
     match @typeInfo(FooError) {
         case .error: |ei| { tag = ei.members[1].tag; }
@@ -50,7 +50,7 @@ foo_tag_of_d :: () -> i64 {
 }
 
 FOO      :: @run members(FooError);
-IDENTITY :: @run both_tag_of_d() == foo_tag_of_d();
+IDENTITY :: @run bothTagOfD() == fooTagOfD();
 
 main :: () -> i32 {
     print("foo={}\n", FOO);

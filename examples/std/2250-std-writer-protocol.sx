@@ -1,13 +1,13 @@
 // A `Writer` handle carries text to either conformer: `StringBuilder`, whose
 // `finish` hands the accumulated bytes over, and `FdWriter`, which sends them
-// to a descriptor. `write_each` separates `n` items a callable writes, and
+// to a descriptor. `writeEach` separates `n` items a callable writes, and
 // `flush` keeps the interface's empty default on both.
 @import "modules/std.sx";
 
 report :: (w: Writer, label: string, parts: []string) {
     w.write(label);
     w.write(": ");
-    w.write_each(parts.len, ", ", |i|_{ w, parts } { w.write(parts[i]); });
+    w.writeEach(parts.len, ", ", |i|_{ w, parts } { w.write(parts[i]); });
     w.write("\n");
     w.flush();
 }
@@ -25,7 +25,7 @@ main :: () -> i32 {
 
     // A descriptor whose reader is gone answers EPIPE; the writer drops the
     // bytes and the program runs on. SIGPIPE would otherwise kill it first.
-    process.ignore_sigpipe();
+    process.ignoreSigpipe();
     fds : [2]i32 = ---;
     c.pipe(*fds);
     c.close(fds[0]);

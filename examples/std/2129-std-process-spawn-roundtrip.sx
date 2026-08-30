@@ -8,19 +8,19 @@ main :: () -> i32 {
     if e { print("spawn failed\n"); return 1; }
 
     msg := "ping\n";
-    wrote := child.stdin_write(xx msg);
+    wrote := child.stdinWrite(xx msg);
     if wrote != xx msg.len { print("write: {}\n", wrote); return 1; }
 
-    buf := alloc_string(64);
-    got := child.stdout_read(xx buf);
+    buf := allocString(64);
+    got := child.stdoutRead(xx buf);
     if got <= 0 { print("read: {}\n", got); return 1; }
     print("echoed: {}", substr(buf, 0, xx got));
 
     if child.wait(false) != null { print("cat exited before EOF\n"); return 1; }
 
-    child.stdin_close();
+    child.stdinClose();
     code := child.wait(true);
-    child.stdout_close();
+    child.stdoutClose();
     if code == null { print("wait produced no status\n"); return 1; }
     print("exit: {}\n", code?!);
     return 0;

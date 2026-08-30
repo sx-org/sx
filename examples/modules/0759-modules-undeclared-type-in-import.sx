@@ -12,6 +12,6 @@
 @import "0759-modules-undeclared-type-in-import/lib.sx";
 
 main :: () -> i32 {
-    print("thing.x = {}\n", make_thing());
+    print("thing.x = {}\n", makeThing());
     return 0;
 }

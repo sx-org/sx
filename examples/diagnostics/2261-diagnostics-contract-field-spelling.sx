@@ -1,0 +1,9 @@
+// The contract views spell their fields in camelCase. A snake_case spelling
+// names no field, so it fails through the ordinary unknown-field path.
+@import "modules/std.sx";
+
+main :: () {
+    x : i64 = 7;
+    av : any = x;
+    print("{}\n", av.(@Any).type_id == i64);
+}

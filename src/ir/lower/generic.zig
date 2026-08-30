@@ -132,7 +132,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.currentFunc().is_get = fd.is_get;
     self.builder.currentFunc().is_set = fd.is_set;
     // A monomorph keeps the declaration's C shape: the convention, the bare
-    // `..` tail, and the declaration itself, which `@va_start` reads its tail
+    // `..` tail, and the declaration itself, which `@vaStart` reads its tail
     // requirement from.
     self.builder.currentFunc().call_conv = if (ast.isEffectiveCSignature(fd)) .c else .default;
     self.builder.currentFunc().is_c_variadic = fd.is_c_variadic;
@@ -320,21 +320,21 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             // type argument is: `@typeOf(x)` with an `any`-typed operand
             // answers the runtime TAG (freezing it statically said "any"
             // where the two-step form read "Point"), and
-            // `struct_field_type(tp, i)` / `variant_type(tp, i)` /
-            // `pointee_type(tp)` with a runtime `tp` produce runtime Types.
+            // `structFieldType(tp, i)` / `variantType(tp, i)` /
+            // `pointeeType(tp)` with a runtime `tp` produce runtime Types.
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
                 if (std.mem.eql(u8, cn, "@typeOf") and cl.args.len == 1) {
                     const aty = self.inferExprType(cl.args[0]);
                     // An `any` or PROTOCOL operand answers the runtime
-                    // type_id word — freezing it statically would say
+                    // typeId word — freezing it statically would say
                     // "any"/"Drawable" where the value knows "Point".
                     if (aty == .any or self.getProtocolInfo(aty) != null) return false;
                 }
-                if ((std.mem.eql(u8, cn, "struct_field_type") or
-                    std.mem.eql(u8, cn, "variant_type") or
-                    std.mem.eql(u8, cn, "pointee_type")) and cl.args.len >= 1)
+                if ((std.mem.eql(u8, cn, "structFieldType") or
+                    std.mem.eql(u8, cn, "variantType") or
+                    std.mem.eql(u8, cn, "pointeeType")) and cl.args.len >= 1)
                 {
                     return self.isStaticTypeArg(cl.args[0]);
                 }
@@ -383,7 +383,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
         .call => |cl| {
             // `@typeOf(x)` resolves statically when `x`'s type is
             // known — except an `any`/PROTOCOL operand, whose `@typeOf` is
-            // the runtime type_id word.
+            // the runtime typeId word.
             if (cl.callee.data == .identifier and
                 std.mem.eql(u8, cl.callee.data.identifier.name, "@typeOf") and
                 cl.args.len == 1)
@@ -428,7 +428,7 @@ pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
 /// type-fn call in a `$E: Type` argument slot would otherwise never be seen as a
 /// type and the param would fail to bind ("cannot infer generic type parameter").
 /// This lets a synthesized result type flow as a type argument, e.g.
-/// `make_variant(RaceResult(T), i, winner.value)` in the `race` runtime.
+/// `makeVariant(RaceResult(T), i, winner.value)` in the `race` runtime.
 pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
     if (node.data != .call) return false;
     const cl = node.data.call;
@@ -550,7 +550,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .type_expr => |te| {
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized
-            // target (`x.(struct_field_type(T, i))`) parses as a type_expr,
+            // target (`x.(structFieldType(T, i))`) parses as a type_expr,
             // and the stateless resolver below would fabricate a 0-field
             // stub named "T" instead.
             if (self.type_bindings) |tb| {
@@ -586,7 +586,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 cl.args.len == 1)
             {
                 const aty = self.inferExprType(cl.args[0]);
-                // `any`/protocol operands answer the runtime type_id —
+                // `any`/protocol operands answer the runtime typeId —
                 // never fold to the static erased type here (the callers'
                 // isStaticTypeArg gates route them dynamic; this is the
                 // backstop for paths that reach the fold directly).
@@ -611,7 +611,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .function_type_expr,
         // A parameterized head (`Box(i64)`, or a Type-returning reflection
         // builtin the postfix-cast target parses as one —
-        // `x.(struct_field_type(T, i))`) resolves through the gated path,
+        // `x.(structFieldType(T, i))`) resolves through the gated path,
         // which delegates builtins to `resolveTypeCallWithBindings`.
         .parameterized_type_expr,
         => return self.resolveTypeWithBindings(node),
@@ -1055,7 +1055,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         tags.append(self.alloc, TypeId.isize.index()) catch {};
         // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
         // normalizes them into a builtin tag (`boxAnyOf`), but an interior
-        // VIEW (`struct_field_value` on an `any` receiver) carries the
+        // VIEW (`structFieldValue` on an `any` receiver) carries the
         // field's TRUE tag — normalization can't reach a view, so the
         // category list must cover these tags or a view of an arb-width
         // field falls through every arm.
@@ -1975,7 +1975,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // field / variant-payload / element type). A genuine type-table op, kept as
     // a compiler builtin (like type_name); folds at lower time so it composes
     // inside @typeEq / @typeName / any type-arg slot.
-    if (std.mem.eql(u8, callee_name, "struct_field_type") or std.mem.eql(u8, callee_name, "variant_type")) {
+    if (std.mem.eql(u8, callee_name, "structFieldType") or std.mem.eql(u8, callee_name, "variantType")) {
         if (cl.args.len != 2) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, cl.callee.span, "{s} takes a type and an index: {s}($T, i)", .{ callee_name, callee_name });
@@ -1996,7 +1996,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // pointee($P) -> Type — comptime reflection: the target type of a pointer
     // (`pointee(*X)` -> `X`). Folds at lower time like `field_type` so it
     // composes inside any type-arg slot. A non-pointer arg is a loud error.
-    if (std.mem.eql(u8, callee_name, "pointee_type")) {
+    if (std.mem.eql(u8, callee_name, "pointeeType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, cl.callee.span, "pointee takes one type: pointee($P)", .{});
@@ -2014,17 +2014,17 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             },
         };
     }
-    // @env_type($F) -> Type — the environment a callable value IS. Folds here
-    // like `pointee_type` so it answers in a type-argument slot.
-    if (std.mem.eql(u8, callee_name, "@env_type")) {
+    // @envType($F) -> Type — the environment a callable value IS. Folds here
+    // like `pointeeType` so it answers in a type-argument slot.
+    if (std.mem.eql(u8, callee_name, "@envType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, cl.callee.span, "@env_type takes one type: @env_type($F)", .{});
+                d.addFmt(.err, cl.callee.span, "@envType takes one type: @envType($F)", .{});
             return .unresolved;
         }
         const t = self.resolveTypeArg(cl.args[0]);
         if (t == .unresolved) return .unresolved;
-        return self.persistEnvType("@env_type", t, cl.callee.span) orelse .unresolved;
+        return self.persistEnvType("@envType", t, cl.callee.span) orelse .unresolved;
     }
     if (resolveFormedType(self, callee_name, cl.args, cl.callee.span)) |ty| return ty;
     // Generic-struct head: route through the single layout choke-point (CP-1).
@@ -2090,13 +2090,13 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     const is_qualified = std.mem.indexOfScalar(u8, pt.name, '.') != null;
 
     // A Type-returning reflection builtin spelled in a TYPE position
-    // (`x.(struct_field_type(T, i))` — the postfix-cast target parses via
+    // (`x.(structFieldType(T, i))` — the postfix-cast target parses via
     // parseTypeExpr, so the call arrives as a parameterized type). The
     // `.call` resolver owns these folds — delegate with the same arg nodes.
-    if (!pt.is_raw and (std.mem.eql(u8, base_name, "struct_field_type") or
-        std.mem.eql(u8, base_name, "variant_type") or
-        std.mem.eql(u8, base_name, "@env_type") or
-        std.mem.eql(u8, base_name, "pointee_type")))
+    if (!pt.is_raw and (std.mem.eql(u8, base_name, "structFieldType") or
+        std.mem.eql(u8, base_name, "variantType") or
+        std.mem.eql(u8, base_name, "@envType") or
+        std.mem.eql(u8, base_name, "pointeeType")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };
@@ -2738,7 +2738,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     if (findReturnTypeExpr(fd.body)) |ret_node| {
         if (self.returnExprMintsType(ret_node)) {
             // A body with LOCALS before its `return` (e.g. `vs := …; return
-            // make_enum(…, vs)`) needs its full body comptime-evaluated so those
+            // makeEnum(…, vs)`) needs its full body comptime-evaluated so those
             // locals resolve; the bare return-expr path leaves them unresolved.
             // A no-prelude body stays on the simpler `evalComptimeType` path.
             const has_prelude = fd.body.data == .block and blk: {

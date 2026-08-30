@@ -3,6 +3,6 @@ Layer :: struct {
     id: i64;
 }
 
-make_layer :: (id: i64) -> Layer {
+makeLayer :: (id: i64) -> Layer {
     Layer{ id = id }
 }

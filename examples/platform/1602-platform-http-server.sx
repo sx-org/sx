@@ -13,7 +13,7 @@ Logger :: struct {
     count: i64;
 }
 
-@context_extend logger: ?*Logger = null;
+@context.extend logger: ?*Logger = null;
 
 log :: (logger: *Logger, msg: string) {
     logger.count += 1;
@@ -34,7 +34,7 @@ main :: () -> i32 {
     opt : i32 = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, *opt, 4);
 
-    addr := sockaddr_in(PORT, 0);   // INADDR_ANY, per-OS layout
+    addr := sockaddrIn(PORT, 0);   // INADDR_ANY, per-OS layout
 
     if bind(fd, *addr, 16) < 0 {
         print("error: bind()\n");
@@ -80,7 +80,7 @@ Connection: close\r
 Content-Length: {}\r
 \r\n{}", body.len, body);
 
-    write(client, to_cstring(response), response.len);
+    write(client, toCstring(response), response.len);
     logger := context.logger?!;
     log(logger, format("served request #{}", logger.count + 1));
 }

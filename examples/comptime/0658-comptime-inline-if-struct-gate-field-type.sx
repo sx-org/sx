@@ -1,25 +1,25 @@
 // A comptime-dead `inline if T is struct` branch that
-// reflects with `struct_field_type(T, i)` must be ELIDED from type resolution when T is
-// a non-indexable type (an enum), so `struct_field_type(enum)` never lowers `.unresolved`
+// reflects with `structFieldType(T, i)` must be ELIDED from type resolution when T is
+// a non-indexable type (an enum), so `structFieldType(enum)` never lowers `.unresolved`
 // to the backend. The `$T is struct` comptime predicate gates the branch, and a
 // direct `Enum.variant` value (`E.A`) is a first-class generic-call argument
 // (its type infers to the enum). Compiles + runs for BOTH a struct and an enum
 // instantiation of the same generic.
 @import "modules/std.sx";
 
-// (`struct_field_type` needs no declaration or import here — it is an intrinsic, and
+// (`structFieldType` needs no declaration or import here — it is an intrinsic, and
 // the compiler dispatches it from its registry. Its source identity lives in
 // std/core.sx.)
 
 // Field-wise fold: recurse struct fields, leaf-count everything else. The
-// `inline if T is struct` branch (containing `struct_field_type(T,i)`) must not resolve
-// when T is an enum — `struct_field_count(enum)` is the variant count, so a naive path
-// would enter the field loop and trip `struct_field_type(enum)` → `.unresolved` panic.
-leaf_count :: (v: $T) -> i64 {
+// `inline if T is struct` branch (containing `structFieldType(T,i)`) must not resolve
+// when T is an enum — `structFieldCount(enum)` is the variant count, so a naive path
+// would enter the field loop and trip `structFieldType(enum)` → `.unresolved` panic.
+leafCount :: (v: $T) -> i64 {
     inline if T is struct {
         n := 0;
-        inline for i in 0..struct_field_count(T) {
-            n = n + leaf_count(struct_field_value(v, i).(struct_field_type(T, i)));
+        inline for i in 0..structFieldCount(T) {
+            n = n + leafCount(structFieldValue(v, i).(structFieldType(T, i)));
         }
         return n;
     }
@@ -31,9 +31,9 @@ Pair :: struct { a: i64; e: E; }
 
 main :: () {
     // enum instantiation — dead `inline if` branch elided, no panic.
-    print("{}\n", leaf_count(E.A));                 // 1
+    print("{}\n", leafCount(E.A));                 // 1
     // scalar leaf.
-    print("{}\n", leaf_count(7.(i64)));         // 1
+    print("{}\n", leafCount(7.(i64)));         // 1
     // struct instantiation — branch taken, recurses two leaves (i64 + enum).
-    print("{}\n", leaf_count(Pair{ a=1, e=E.B}));   // 2
+    print("{}\n", leafCount(Pair{ a=1, e=E.B}));   // 2
 }

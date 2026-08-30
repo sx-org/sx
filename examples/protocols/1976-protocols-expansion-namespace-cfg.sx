@@ -1,3 +1,3 @@
 // The named module's own surface is written by its own driver, so nothing it
 // declares is readable until that driver folds.
-inline if POINTER_SIZE == 8 { WIDE :: true; } else { WIDE :: false; }
+inline if @host.pointerSize == 8 { WIDE :: true; } else { WIDE :: false; }

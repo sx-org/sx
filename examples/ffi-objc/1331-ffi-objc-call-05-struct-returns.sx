@@ -28,7 +28,7 @@ NSRect :: struct {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // 16 B HFA — both fields zero.
         p := @ObjcCall(NSPoint, null, "pointValue");
         print("point = ({}, {})\n", p.x, p.y);
@@ -43,7 +43,7 @@ main :: () -> i32 {
 
         // >16 B non-HFA struct returns (sret path) live in 1332.
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

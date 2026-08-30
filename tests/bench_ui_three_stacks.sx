@@ -12,7 +12,7 @@
 // Two phases, measured separately:
 //   BUILD — construct the tree BUILDS times (one construction is too short
 //           for a stable clock sample)
-//   WALK  — render_root repeatedly; the command list is truncated each
+//   WALK  — renderRoot repeatedly; the command list is truncated each
 //           walk so the pass is one frame, not an unbounded append
 //
 // NOT a corpus example: it runs for seconds.
@@ -40,21 +40,21 @@ median :: (xs: []i64) -> i64 {
     xs[xs.len / 2]
 }
 
-report :: (label: string, build_ns: i64, walk_ns: i64) {
+report :: (label: string, buildNs: i64, walkNs: i64) {
     print("{}  build {} ns  walk {} ns  build {} ns/child  walk {} ns/child-frame\n",
-          label, build_ns, walk_ns, build_ns / (N * BUILDS), walk_ns / (N * WALKS));
+          label, buildNs, walkNs, buildNs / (N * BUILDS), walkNs / (N * WALKS));
 }
 
-ratio :: (label: string, build_ns: i64, walk_ns: i64, base_build: i64, base_walk: i64) {
+ratio :: (label: string, buildNs: i64, walkNs: i64, baseBuild: i64, baseWalk: i64) {
     print("{}  build x{}.{}  walk x{}.{}\n", label,
-          build_ns / base_build, (build_ns * 10 / base_build) % 10,
-          walk_ns / base_walk, (walk_ns * 10 / base_walk) % 10);
+          buildNs / baseBuild, (buildNs * 10 / baseBuild) % 10,
+          walkNs / baseWalk, (walkNs * 10 / baseWalk) % 10);
 }
 
 main :: () {
     print("N {}  BUILDS {}  WALKS {}  SAMPLES {}\n", N, BUILDS, WALKS, SAMPLES);
     print("slots compose {} emit {} fluent {}\n",
-          compose.slot_bytes(), emit.slot_bytes(), fluent.slot_bytes());
+          compose.slotBytes(), emit.slotBytes(), fluent.slotBytes());
 
     cb := context.allocator.alloc(i64, SAMPLES);
     cw := context.allocator.alloc(i64, SAMPLES);

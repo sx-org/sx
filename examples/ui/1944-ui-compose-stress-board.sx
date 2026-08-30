@@ -24,27 +24,27 @@
 // 648 bytes of ids. Held by pointer so the member stays small and the set's
 // slot is sized by its widest MEMBER, not by the application's state.
 BoardViewState :: struct {
-    cell_eids: [81]u64 = ---;
+    cellEids: [81]u64 = ---;
 }
 
 BoardView :: @OpenVariant(View) {
     state: *BoardViewState = null;
     side: f32 = 0.0;
 
-    size_that_fits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+    sizeThatFits :: (self: *BoardView, proposal: ProposedSize) -> Size {
         Size{ width = self.side, height = self.side }
     }
 
     layout :: (self: *BoardView, bounds: Frame) {}
 
     render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, Color.rgb(26, 26, 26));
+        rc.addRect(frame, Color.rgb(26, 26, 26));
     }
 }
 
 main :: () -> i32 {
     st := BoardViewState{};
-    for i in 0..81 { st.cell_eids[i] = xx (i + 1); }
+    for i in 0..81 { st.cellEids[i] = xx (i + 1); }
 
     screen := vstack(12.0) {
         Label{ text = "sudoku" };
@@ -76,8 +76,8 @@ main :: () -> i32 {
 
     root : View = screen;
     tree := RenderTree{};
-    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
-    print("commands {}\n", command_count(*tree));
+    renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", commandCount(*tree));
     0
 }
 

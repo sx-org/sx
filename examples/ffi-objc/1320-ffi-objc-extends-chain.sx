@@ -39,20 +39,20 @@ SxLeaf :: @ObjcClass("SxLeaf", extends = SxMiddle) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // 1-level chain: SxThing → NSObjectBase.
         t := SxThing.alloc().init();
-        h_t : u64 = t.hash();
-        if h_t == 0 { print("FAIL: SxThing.hash returned 0\n"); return 1; }
+        hT : u64 = t.hash();
+        if hT == 0 { print("FAIL: SxThing.hash returned 0\n"); return 1; }
 
         // 2-level chain: SxLeaf → SxMiddle → NSObjectBase.
         l := SxLeaf.alloc().init();
-        h_l : u64 = l.hash();
-        if h_l == 0 { print("FAIL: SxLeaf.hash returned 0\n"); return 1; }
+        hL : u64 = l.hash();
+        if hL == 0 { print("FAIL: SxLeaf.hash returned 0\n"); return 1; }
 
         print("extends chain: SxThing.hash=ok, SxLeaf.hash=ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("extends chain: SxThing.hash=ok, SxLeaf.hash=ok\n");
     }
     0

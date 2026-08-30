@@ -3,7 +3,7 @@
 // south }`. A bare `Dir` reference in `main` resolves to `main`'s OWN author, not
 // the flat-imported one (the querying source's author wins outright — no
 // ambiguity), so `d : Dir = .north` binds `main`'s enum (whose `.north` variant
-// dep's `Dir` lacks) while `dep_dir()` returns dep's DISTINCT `Dir`.
+// dep's `Dir` lacks) while `depDir()` returns dep's DISTINCT `Dir`.
 //
 // A stateless `type_bridge.resolveInlineEnum` `findByName`
 // short-circuit interns ONE global last-wins `Dir`, collapsing `main`'s `Dir`
@@ -17,6 +17,6 @@ Dir :: enum { north; south; }
 
 main :: () -> i32 {
     d : Dir = .north;
-    print("own={} dep={}\n", d, dep_dir());
+    print("own={} dep={}\n", d, depDir());
     0
 }

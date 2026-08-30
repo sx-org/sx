@@ -7,5 +7,5 @@ S1238 :: struct {
 }
 impl P1238 for S1238 { f :: (self: *S1238) -> i64 { x := BadImpl1238{}; _ := x; return self.a; } }
 g1238 := BadGlobal1238{};
-with_default1238 :: (x: S1238 = BadParamDefault1238{}) -> i64 { return x.a; }
+withDefault1238 :: (x: S1238 = BadParamDefault1238{}) -> i64 { return x.a; }
 main :: () {}

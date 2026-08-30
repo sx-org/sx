@@ -11,7 +11,7 @@
 
 inline if Cell is Tag { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     @import "./1996-protocols-expansion-branch-import-mid.sx";
 } else {
     NARROW :: 1;

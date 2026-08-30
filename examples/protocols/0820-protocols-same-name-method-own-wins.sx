@@ -28,6 +28,6 @@ main :: () -> i32 {
     h : Holder = .{};
     p := h.(Provider);
     b := p.get();
-    print("m={} dep={}\n", b.m, dep_box());
+    print("m={} dep={}\n", b.m, depBox());
     0
 }

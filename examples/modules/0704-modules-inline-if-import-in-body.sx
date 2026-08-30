@@ -1,7 +1,7 @@
-// `@import` inside the body of a top-level `inline if OS == .X { ... }` block.
-// The imports.zig flatten pass lifts these to the top level before resolution,
-// and `parseStmt` accepts them on every target — including where the branch is
-// dead, as in `inline if OS == .android { @import "modules/platform/android.sx"; }`.
+// `@import` inside the body of a top-level `inline if @host.os == .X { ... }` block.
+// Module-scope expansion surfaces those declarations to the top level before
+// resolution, and `parseStmt` accepts them on every target — including where
+// the branch is dead, as in `inline if @host.os == .android { @import "modules/platform/android.sx"; }`.
 //
 // The body also carries a global decl alongside the import, so the arm is
 // exercised for the import itself and not just for a body that happens to
@@ -9,9 +9,9 @@
 
 @import "modules/std.sx";
 
-inline if OS == .android {
+inline if @host.os == .android {
     @import "modules/std.sx";
-    g_android_only : i32 = 0;
+    gAndroidOnly : i32 = 0;
 }
 
 main :: () { print("ok\n"); }

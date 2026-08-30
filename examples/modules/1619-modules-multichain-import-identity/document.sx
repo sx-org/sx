@@ -6,6 +6,6 @@ Document :: struct {
     active: i64;
 }
 
-layer_at :: (d: *Document, i: i64) -> *Layer {
+layerAt :: (d: *Document, i: i64) -> *Layer {
     *d.layers.items[i]
 }

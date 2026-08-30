@@ -12,11 +12,11 @@
 //   3. Render thread: brings up EGL on the ANativeWindow, then calls
 //      `sx_app_main()` — the user's entry-point, which sets up the
 //      AndroidPlatform / GPU / pipeline globals and ends in
-//      `run_frame_loop(frame)`.
-//   4. `run_frame_loop` drives the loop: drain touch events queue,
-//      invoke `frame_fn`, `eglSwapBuffers`, sleep ~1ms.
+//      `runFrameLoop(frame)`.
+//   4. `runFrameLoop` drives the loop: drain touch events queue,
+//      invoke `frameFn`, `eglSwapBuffers`, sleep ~1ms.
 //   5. Java `onTouchEvent` → native `sx_onTouchEvent`: push the
-//      (action,x,y) tuple onto a mutex-guarded queue. `poll_events`
+//      (action,x,y) tuple onto a mutex-guarded queue. `pollEvents`
 //      drains the queue into the platform's standard event shape.
 //
 // State model: every piece of mutable Android-backend state lives on
@@ -139,14 +139,13 @@ TouchEvent :: struct {
 //
 // Every per-instance piece of state — EGL handles, ANativeWindow, render
 // thread, touch ring + mutex, frame closure, user main fn — lives here.
-// No module-level globals: a previous shape had `g_viewport_w : i32` at
-// module scope, which silently shadowed chess's own
-// `g_viewport_w : f32` on `@import` and caused the renderer to receive
-// a logical width cast to i32 instead of the physical pixel width.
+// No module-level globals: one here silently shadows a consumer global of
+// the same name on `@import`, and the consumer's reads bind to this
+// module's type.
 //
-// `logical_w` is the consumer's design width in points (e.g. chess sets
-// 414 to match an iPhone 12 layout). `begin_frame` derives `dpi_scale`
-// from `pixel_w / logical_w` so the renderer sees the design canvas
+// `logicalW` is the consumer's design width in points (e.g. chess sets
+// 414 to match an iPhone 12 layout). `beginFrame` derives `dpiScale`
+// from `pixelW / logicalW` so the renderer sees the design canvas
 // regardless of physical density. Touch coords are divided by the same
 // scale before delivery so layout-side hit-testing matches.
 
@@ -157,49 +156,49 @@ AndroidPlatform :: struct {
 
     // Set by consumer code BEFORE `init` if a fixed design width is wanted.
     // When 0, the platform reports viewport = pixel (1:1 logical/physical),
-    // i.e. `dpi_scale = 1.0`.
-    logical_w: f32 = 0.0;
+    // i.e. `dpiScale = 1.0`.
+    logicalW: f32 = 0.0;
 
-    // Panel refresh rate in Hz, used to pace run_frame_loop. Consumers
+    // Panel refresh rate in Hz, used to pace runFrameLoop. Consumers
     // should set it from Display.getRefreshRate() in their Activity's
     // onCreate (the Window→WindowManager→Display chain in
     // android_jni.sx); 60 is the fallback when unset/unavailable.
-    frame_hz: f32 = 60.0;
+    frameHz: f32 = 60.0;
 
-    // ANativeWindow + EGL state (set up by sx_android_attach_window +
-    // egl_init on the render thread).
-    app_window:  *void = null;
-    egl_display: *void = null;
-    egl_context: *void = null;
-    egl_surface: *void = null;
-    egl_config:  *void = null;
+    // ANativeWindow + EGL state (set up by sxAndroidAttachWindow +
+    // eglInit on the render thread).
+    appWindow:  *void = null;
+    eglDisplay: *void = null;
+    eglContext: *void = null;
+    eglSurface: *void = null;
+    eglConfig:  *void = null;
 
-    // Pixel-size from ANativeWindow_get{Width,Height}; derived dpi_scale
-    // (pixel_w / logical_w when logical_w > 0, else 1.0).
-    pixel_w:   i32 = 0;
-    pixel_h:   i32 = 0;
-    dpi_scale: f32 = 1.0;
+    // Pixel-size from ANativeWindow_get{Width,Height}; derived dpiScale
+    // (pixelW / logicalW when logicalW > 0, else 1.0).
+    pixelW:   i32 = 0;
+    pixelH:   i32 = 0;
+    dpiScale: f32 = 1.0;
 
-    // Render thread lifecycle. `user_main_fn` is the consumer's `main`
-    // entry, invoked once EGL is current. `should_stop` is checked in
+    // Render thread lifecycle. `userMainFn` is the consumer's `main`
+    // entry, invoked once EGL is current. `shouldStop` is checked in
     // the frame loop; `stop()` flips it.
-    render_thread:         usize = 0;
-    render_thread_started: bool = false;
-    user_main_fn:          () -> void = ---;
-    should_stop:           bool = false;
-    frame_closure:         ?Closure() = null;
+    renderThread:         usize = 0;
+    renderThreadStarted: bool = false;
+    userMainFn:          () -> void = ---;
+    shouldStop:           bool = false;
+    frameClosure:         ?Closure() = null;
 
     events: List(PlatformEvent) = .{};
 
-    // Touch ring: single-producer (Java UI thread via sx_android_push_touch)
-    // / single-consumer (render thread via sx_android_drain_touches).
+    // Touch ring: single-producer (Java UI thread via sxAndroidPushTouch)
+    // / single-consumer (render thread via sxAndroidDrainTouches).
     // The canonical libc mutex storage is oversized for bionic's
-    // pthread_mutex_t. `touch_mutex_inited` tracks lazy init on first use.
-    touch_queue:           [64]TouchEvent = ---;
-    touch_head:            u32 = 0;
-    touch_tail:            u32 = 0;
-    touch_mutex:           c.MutexBuf = .{};
-    touch_mutex_inited:    bool = false;
+    // pthread_mutex_t. `touchMutexInited` tracks lazy init on first use.
+    touchQueue:           [64]TouchEvent = ---;
+    touchHead:            u32 = 0;
+    touchTail:            u32 = 0;
+    touchMutex:           c.MutexBuf = .{};
+    touchMutexInited:    bool = false;
 }
 
 // ── User-facing helpers for the consumer's `main = true` Activity ────────
@@ -209,18 +208,18 @@ AndroidPlatform :: struct {
 // standard lifecycle methods. This file provides the primitives
 // those methods call:
 //
-//   - `sx_android_forward_assets(env, activity)` from onCreate.
-//   - `sx_android_attach_window(plat, env, holder)` from surfaceCreated.
-//   - `sx_android_detach_window(plat)` from surfaceDestroyed.
-//   - `sx_android_set_viewport(plat, w, h)` from surfaceChanged.
-//   - `sx_android_start_render_thread(plat, main_fn)` once the surface
+//   - `sxAndroidForwardAssets(env, activity)` from onCreate.
+//   - `sxAndroidAttachWindow(plat, env, holder)` from surfaceCreated.
+//   - `sxAndroidDetachWindow(plat)` from surfaceDestroyed.
+//   - `sxAndroidSetViewport(plat, w, h)` from surfaceChanged.
+//   - `sxAndroidStartRenderThread(plat, mainFn)` once the surface
 //     is up.
-//   - `sx_android_push_touch(plat, action, x, y)` from onTouchEvent.
+//   - `sxAndroidPushTouch(plat, action, x, y)` from onTouchEvent.
 
 // Extract the AAssetManager from the Activity and install it into the
 // C file_utils so `read_file_bytes` can route through `AAssetManager_open`.
 // Call this from your Activity's `onCreate` (BEFORE any asset read).
-sx_android_forward_assets :: (env: *void, activity: *JContext) {
+sxAndroidForwardAssets :: (env: *void, activity: *JContext) {
     push .{ jni = env } {
         assets := activity.getAssets();
         aam := AAssetManager_fromJava(env, assets);
@@ -230,40 +229,40 @@ sx_android_forward_assets :: (env: *void, activity: *JContext) {
 
 // Extract the ANativeWindow from a SurfaceHolder and stash it on `plat`.
 // Call this from your Activity's `surfaceCreated`. The window stays
-// valid until `sx_android_detach_window` runs (typically in
+// valid until `sxAndroidDetachWindow` runs (typically in
 // `surfaceDestroyed`).
-sx_android_attach_window :: (plat: *AndroidPlatform, env: *void, holder: *SurfaceHolder) {
+sxAndroidAttachWindow :: (plat: *AndroidPlatform, env: *void, holder: *SurfaceHolder) {
     push .{ jni = env } {
         surface := holder.getSurface();
-        plat.app_window = ANativeWindow_fromSurface(env, surface);
+        plat.appWindow = ANativeWindow_fromSurface(env, surface);
     }
 }
 
-sx_android_detach_window :: (plat: *AndroidPlatform) {
-    if plat.app_window != null {
-        ANativeWindow_release(plat.app_window);
-        plat.app_window = null;
+sxAndroidDetachWindow :: (plat: *AndroidPlatform) {
+    if plat.appWindow != null {
+        ANativeWindow_release(plat.appWindow);
+        plat.appWindow = null;
     }
 }
 
 // Monotonic clock for frame pacing (CLOCK_MONOTONIC = 1).
-android_now_ns :: () -> i64 {
+androidNowNs :: () -> i64 {
     ts : c.Timespec = ---;
     c.clock_gettime(1, *ts);
     ts.sec * 1000000000 + ts.nsec
 }
 
-sx_android_set_viewport :: (plat: *AndroidPlatform, w: i32, h: i32) {
-    plat.pixel_w = w;
-    plat.pixel_h = h;
-    sx_android_recompute_scale(plat);
+sxAndroidSetViewport :: (plat: *AndroidPlatform, w: i32, h: i32) {
+    plat.pixelW = w;
+    plat.pixelH = h;
+    sxAndroidRecomputeScale(plat);
 }
 
 // Query the panel's refresh rate (Activity.getWindow → getWindowManager
-// → getDefaultDisplay → getRefreshRate) so run_frame_loop can pace to
+// → getDefaultDisplay → getRefreshRate) so runFrameLoop can pace to
 // real vsync (60/90/120) instead of a hardcoded 60. Call from the
 // Activity's onCreate (env available); 60.0 on any failure.
-sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
+sxAndroidRefreshRate :: (env: *void, activity: *JContext) -> f32 {
     rate : f32 = 60.0;
     push .{ jni = env } {
         a : *ActivityClass = activity.(*ActivityClass);
@@ -273,47 +272,47 @@ sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
     rate
 }
 
-// Start the render thread that brings up EGL on `plat.app_window` and
-// calls `entry_fn` (typically the consumer's `main`). Safe to call once
-// after `sx_android_attach_window` has set the window.
-sx_android_start_render_thread :: (plat: *AndroidPlatform, entry_fn: () -> void) {
-    if plat.render_thread_started { return; }
-    plat.user_main_fn = entry_fn;
-    c.pthread_create(*plat.render_thread, null, sx_android_render_thread_entry, plat);
-    plat.render_thread_started = true;
+// Start the render thread that brings up EGL on `plat.appWindow` and
+// calls `entryFn` (typically the consumer's `main`). Safe to call once
+// after `sxAndroidAttachWindow` has set the window.
+sxAndroidStartRenderThread :: (plat: *AndroidPlatform, entryFn: () -> void) {
+    if plat.renderThreadStarted { return; }
+    plat.userMainFn = entryFn;
+    c.pthread_create(*plat.renderThread, null, sxAndroidRenderThreadEntry, plat);
+    plat.renderThreadStarted = true;
 }
 
-sx_android_render_thread_entry :: (arg: *void) -> *void abi(.c) {
+sxAndroidRenderThreadEntry :: (arg: *void) -> *void abi(.c) {
     plat : *AndroidPlatform = arg.(*AndroidPlatform);
-    while plat.app_window == null and !plat.should_stop {
+    while plat.appWindow == null and !plat.shouldStop {
         usleep(1000);
     }
-    if plat.should_stop { return null; }
+    if plat.shouldStop { return null; }
 
-    if !sx_android_egl_init(plat) {
+    if !sxAndroidEglInit(plat) {
         __android_log_print(6, "sxapp".ptr, "EGL bootstrap failed\n".ptr);
         return null;
     }
 
-    if plat.user_main_fn != null {
-        fn := plat.user_main_fn;
+    if plat.userMainFn != null {
+        fn := plat.userMainFn;
         fn();
     }
     null
 }
 
-// Bring up EGL on `plat.app_window`. Sets the egl_* fields and makes
+// Bring up EGL on `plat.appWindow`. Sets the egl_* fields and makes
 // the context current. Returns false on any failure — caller bails on
 // the render thread.
-sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
-    plat.egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if plat.egl_display == EGL_NO_DISPLAY { return false; }
+sxAndroidEglInit :: (plat: *AndroidPlatform) -> bool {
+    plat.eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if plat.eglDisplay == EGL_NO_DISPLAY { return false; }
 
     major : i32 = 0;
     minor : i32 = 0;
-    if eglInitialize(plat.egl_display, *major, *minor) == EGL_FALSE { return false; }
+    if eglInitialize(plat.eglDisplay, *major, *minor) == EGL_FALSE { return false; }
 
-    cfg_attrs : [13]i32 = .{
+    cfgAttrs : [13]i32 = .{
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
         EGL_RED_SIZE,        8,
@@ -322,90 +321,90 @@ sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
         EGL_DEPTH_SIZE,      24,
         EGL_NONE,
     };
-    num_cfg : i32 = 0;
-    if eglChooseConfig(plat.egl_display, *cfg_attrs[0], *plat.egl_config, 1, *num_cfg) == EGL_FALSE { return false; }
-    if num_cfg < 1 { return false; }
+    numCfg : i32 = 0;
+    if eglChooseConfig(plat.eglDisplay, *cfgAttrs[0], *plat.eglConfig, 1, *numCfg) == EGL_FALSE { return false; }
+    if numCfg < 1 { return false; }
 
-    visual_id : i32 = 0;
-    eglGetConfigAttrib(plat.egl_display, plat.egl_config, EGL_NATIVE_VISUAL_ID, *visual_id);
-    ANativeWindow_setBuffersGeometry(plat.app_window, 0, 0, visual_id);
+    visualId : i32 = 0;
+    eglGetConfigAttrib(plat.eglDisplay, plat.eglConfig, EGL_NATIVE_VISUAL_ID, *visualId);
+    ANativeWindow_setBuffersGeometry(plat.appWindow, 0, 0, visualId);
 
-    ctx_attrs : [3]i32 = .{ EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
-    plat.egl_context = eglCreateContext(plat.egl_display, plat.egl_config, EGL_NO_CONTEXT, *ctx_attrs[0]);
-    if plat.egl_context == EGL_NO_CONTEXT { return false; }
+    ctxAttrs : [3]i32 = .{ EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    plat.eglContext = eglCreateContext(plat.eglDisplay, plat.eglConfig, EGL_NO_CONTEXT, *ctxAttrs[0]);
+    if plat.eglContext == EGL_NO_CONTEXT { return false; }
 
-    plat.egl_surface = eglCreateWindowSurface(plat.egl_display, plat.egl_config, plat.app_window, null);
-    if plat.egl_surface == EGL_NO_SURFACE { return false; }
+    plat.eglSurface = eglCreateWindowSurface(plat.eglDisplay, plat.eglConfig, plat.appWindow, null);
+    if plat.eglSurface == EGL_NO_SURFACE { return false; }
 
-    if eglMakeCurrent(plat.egl_display, plat.egl_surface, plat.egl_surface, plat.egl_context) == EGL_FALSE { return false; }
+    if eglMakeCurrent(plat.eglDisplay, plat.eglSurface, plat.eglSurface, plat.eglContext) == EGL_FALSE { return false; }
 
     // Vsync: pace eglSwapBuffers to the display refresh (the EGL default
     // is 1, but say it out loud — 0 would free-run the frame loop).
-    eglSwapInterval(plat.egl_display, 1);
+    eglSwapInterval(plat.eglDisplay, 1);
 
-    plat.pixel_w = ANativeWindow_getWidth(plat.app_window);
-    plat.pixel_h = ANativeWindow_getHeight(plat.app_window);
-    sx_android_recompute_scale(plat);
+    plat.pixelW = ANativeWindow_getWidth(plat.appWindow);
+    plat.pixelH = ANativeWindow_getHeight(plat.appWindow);
+    sxAndroidRecomputeScale(plat);
     true
 }
 
-// Recompute `dpi_scale` from `pixel_w / logical_w`. Called on viewport
-// changes and after EGL bringup populates pixel_w/h. Falls back to 1.0
-// when consumer didn't set logical_w (1:1 logical/physical mode).
-sx_android_recompute_scale :: (plat: *AndroidPlatform) {
-    if plat.logical_w > 0.0 and plat.pixel_w > 0 {
-        plat.dpi_scale = plat.pixel_w / plat.logical_w;
+// Recompute `dpiScale` from `pixelW / logicalW`. Called on viewport
+// changes and after EGL bringup populates pixelW/h. Falls back to 1.0
+// when consumer didn't set logicalW (1:1 logical/physical mode).
+sxAndroidRecomputeScale :: (plat: *AndroidPlatform) {
+    if plat.logicalW > 0.0 and plat.pixelW > 0 {
+        plat.dpiScale = plat.pixelW / plat.logicalW;
     } else {
-        plat.dpi_scale = 1.0;
+        plat.dpiScale = 1.0;
     }
 }
 
 // ── Touch event queue ───────────────────────────────────────────────────
 
-sx_android_push_touch :: (plat: *AndroidPlatform, action: i32, x: f32, y: f32) {
-    sx_android_ensure_touch_mutex(plat);
-    c.pthread_mutex_lock(*plat.touch_mutex);
-    next := (plat.touch_tail + 1) % 64;
-    if next != plat.touch_head { // drop on full
-        plat.touch_queue[plat.touch_tail] = TouchEvent{ action = action, x = x, y = y };
-        plat.touch_tail = next;
+sxAndroidPushTouch :: (plat: *AndroidPlatform, action: i32, x: f32, y: f32) {
+    sxAndroidEnsureTouchMutex(plat);
+    c.pthread_mutex_lock(*plat.touchMutex);
+    next := (plat.touchTail + 1) % 64;
+    if next != plat.touchHead { // drop on full
+        plat.touchQueue[plat.touchTail] = TouchEvent{ action = action, x = x, y = y };
+        plat.touchTail = next;
     }
-    c.pthread_mutex_unlock(*plat.touch_mutex);
+    c.pthread_mutex_unlock(*plat.touchMutex);
 }
 
-sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(PlatformEvent)) {
-    sx_android_ensure_touch_mutex(plat);
-    c.pthread_mutex_lock(*plat.touch_mutex);
-    inv : f32 = if plat.dpi_scale > 0.0 then 1.0 / plat.dpi_scale else 1.0;
-    now : u64 = android_now_ns().(u64);
-    while plat.touch_head != plat.touch_tail {
-        t := plat.touch_queue[plat.touch_head];
-        plat.touch_head = (plat.touch_head + 1) % 64;
+sxAndroidDrainTouches :: (plat: *AndroidPlatform, out: *List(PlatformEvent)) {
+    sxAndroidEnsureTouchMutex(plat);
+    c.pthread_mutex_lock(*plat.touchMutex);
+    inv : f32 = if plat.dpiScale > 0.0 then 1.0 / plat.dpiScale else 1.0;
+    now : u64 = androidNowNs().(u64);
+    while plat.touchHead != plat.touchTail {
+        t := plat.touchQueue[plat.touchHead];
+        plat.touchHead = (plat.touchHead + 1) % 64;
         // MotionEvent actions: 0=DOWN, 1=UP, 2=MOVE, 3=CANCEL. Coords
-        // come in as physical pixels; divide by dpi_scale so hit
+        // come in as physical pixels; divide by dpiScale so hit
         // testing matches the logical-coord frames.
         pe := PointerEvent{
-            header = .{ time_ns = now },
+            header = .{ timeNs = now },
             kind = .touch,
             position = .{ x = t.x * inv, y = t.y * inv },
         };
         if t.action == 0 {
-            out.append(.input(.pointer_down(pe)));
+            out.append(.input(.pointerDown(pe)));
         } else if t.action == 1 {
-            out.append(.input(.pointer_up(pe)));
+            out.append(.input(.pointerUp(pe)));
         } else if t.action == 2 {
-            out.append(.input(.pointer_move(pe)));
+            out.append(.input(.pointerMove(pe)));
         } else if t.action == 3 {
-            out.append(.input(.pointer_cancel(pe)));
+            out.append(.input(.pointerCancel(pe)));
         }
     }
-    c.pthread_mutex_unlock(*plat.touch_mutex);
+    c.pthread_mutex_unlock(*plat.touchMutex);
 }
 
-sx_android_ensure_touch_mutex :: (plat: *AndroidPlatform) {
-    if plat.touch_mutex_inited { return; }
-    c.pthread_mutex_init(*plat.touch_mutex, null);
-    plat.touch_mutex_inited = true;
+sxAndroidEnsureTouchMutex :: (plat: *AndroidPlatform) {
+    if plat.touchMutexInited { return; }
+    c.pthread_mutex_init(*plat.touchMutex, null);
+    plat.touchMutexInited = true;
 }
 
 // ── Platform impl ───────────────────────────────────────────────────────
@@ -415,7 +414,7 @@ impl Platform for AndroidPlatform {
         self.title = title;
         self.width = w;
         self.height = h;
-        sx_android_recompute_scale(self);
+        sxAndroidRecomputeScale(self);
         true
     }
 
@@ -424,81 +423,81 @@ impl Platform for AndroidPlatform {
     // order, so a mismatched order silently routes calls to the wrong
     // method.
 
-    run_frame_loop :: (self: *AndroidPlatform, frame_fn: Closure()) {
-        self.frame_closure = frame_fn;
-        // `frame_fn` is expected to call `g_plat.end_frame()` which does
+    runFrameLoop :: (self: *AndroidPlatform, frameFn: Closure()) {
+        self.frameClosure = frameFn;
+        // `frameFn` is expected to call `gPlat.endFrame()` which does
         // the `eglSwapBuffers` — don't swap again here or the back buffer
         // is presented twice per render, alternating with the previous
         // frame's contents → visible flicker.
         //
-        // Frame pacing: eglSwapInterval(1) (egl_init) blocks the swap on
+        // Frame pacing: eglSwapInterval(1) (eglInit) blocks the swap on
         // vsync where the driver honours it, but some surfaces (notably
         // the emulator's host-GPU pipe) swap immediately and let the loop
         // free-run at full CPU/GPU. So each frame is also budgeted to the
-        // panel's refresh (`frame_hz`): when the frame (swap included)
+        // panel's refresh (`frameHz`): when the frame (swap included)
         // already ate the budget there is nothing to sleep, otherwise we
         // yield the remainder instead of spinning.
-        budget_ns : i64 = (1000000000.0 / self.frame_hz).(i64);
-        while !self.should_stop {
-            t0 := android_now_ns();
-            frame_fn();
-            remaining := budget_ns - (android_now_ns() - t0);
+        budgetNs : i64 = (1000000000.0 / self.frameHz).(i64);
+        while !self.shouldStop {
+            t0 := androidNowNs();
+            frameFn();
+            remaining := budgetNs - (androidNowNs() - t0);
             if remaining > 0 { usleep((remaining / 1000).(u32)); }
         }
     }
 
-    poll_events :: (self: *AndroidPlatform) -> []PlatformEvent {
+    pollEvents :: (self: *AndroidPlatform) -> []PlatformEvent {
         self.events.len = 0;
-        sx_android_drain_touches(self, *self.events);
+        sxAndroidDrainTouches(self, *self.events);
         result : []PlatformEvent = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;
         result
     }
 
-    begin_frame :: (self: *AndroidPlatform) -> FrameContext {
+    beginFrame :: (self: *AndroidPlatform) -> FrameContext {
         // viewport_* is the logical canvas the renderer + layout see —
-        // pixel_w/h divided by dpi_scale. With logical_w unset (1.0
+        // pixelW/h divided by dpiScale. With logicalW unset (1.0
         // scale) viewport == pixel.
-        inv : f32 = if self.dpi_scale > 0.0 then 1.0 / self.dpi_scale else 1.0;
+        inv : f32 = if self.dpiScale > 0.0 then 1.0 / self.dpiScale else 1.0;
         FrameContext{
-            viewport_w = self.pixel_w * inv,
-            viewport_h = self.pixel_h * inv,
-            pixel_w = self.pixel_w,
-            pixel_h = self.pixel_h,
-            dpi_scale = self.dpi_scale,
-            delta_time = 0.016,
-            target_present_time = 0.0,
+            viewportW = self.pixelW * inv,
+            viewportH = self.pixelH * inv,
+            pixelW = self.pixelW,
+            pixelH = self.pixelH,
+            dpiScale = self.dpiScale,
+            deltaTime = 0.016,
+            targetPresentTime = 0.0,
         }
     }
 
-    end_frame :: (self: *AndroidPlatform) {
-        if self.egl_display != null and self.egl_surface != null {
-            eglSwapBuffers(self.egl_display, self.egl_surface);
+    endFrame :: (self: *AndroidPlatform) {
+        if self.eglDisplay != null and self.eglSurface != null {
+            eglSwapBuffers(self.eglDisplay, self.eglSurface);
         }
     }
 
-    safe_insets :: (self: *AndroidPlatform) -> EdgeInsets {
+    safeInsets :: (self: *AndroidPlatform) -> EdgeInsets {
         EdgeInsets{}
     }
 
     keyboard :: (self: *AndroidPlatform) -> KeyboardState {
         KeyboardState.zero()
     }
-    show_keyboard :: (self: *AndroidPlatform) { }
-    hide_keyboard :: (self: *AndroidPlatform) { }
+    showKeyboard :: (self: *AndroidPlatform) { }
+    hideKeyboard :: (self: *AndroidPlatform) { }
 
     stop :: (self: *AndroidPlatform) {
-        self.should_stop = true;
+        self.shouldStop = true;
     }
 
     shutdown :: (self: *AndroidPlatform) {
-        if self.egl_display != null {
-            eglMakeCurrent(self.egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            if self.egl_surface != null { eglDestroySurface(self.egl_display, self.egl_surface); self.egl_surface = null; }
-            if self.egl_context != null { eglDestroyContext(self.egl_display, self.egl_context); self.egl_context = null; }
-            eglTerminate(self.egl_display);
-            self.egl_display = null;
+        if self.eglDisplay != null {
+            eglMakeCurrent(self.eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            if self.eglSurface != null { eglDestroySurface(self.eglDisplay, self.eglSurface); self.eglSurface = null; }
+            if self.eglContext != null { eglDestroyContext(self.eglDisplay, self.eglContext); self.eglContext = null; }
+            eglTerminate(self.eglDisplay);
+            self.eglDisplay = null;
         }
     }
 }

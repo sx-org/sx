@@ -105,7 +105,7 @@ fn collectDecls(
         // The LAST `::`, not the first: splitting on `;` means this chunk may
         // carry whole preceding declarations that never ended in one (e.g.
         // build.sx's `BuildOptions :: struct { }` sits directly above
-        // `build_options :: () -> BuildOptions intrinsic;`). Taking the first
+        // `buildOptions :: () -> BuildOptions intrinsic;`). Taking the first
         // `::` would name the wrong declaration.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
         // The declared name is the last identifier before that `::`, with its
@@ -135,12 +135,12 @@ test "collectDecls keeps an `@` sigil, which is part of the registered name" {
     defer arena.deinit();
     var out = std.ArrayList([]const u8).empty;
     try collectDecls(arena.allocator(),
-        \\struct_field_count :: ($T: Type) -> i64 intrinsic;
-        \\@volatile_load :: ($T: Type, address: *T) -> T;
+        \\structFieldCount :: ($T: Type) -> i64 intrinsic;
+        \\@volatileLoad :: ($T: Type, address: *T) -> T;
     , &out);
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("struct_field_count", out.items[0]);
-    try std.testing.expectEqualStrings("@volatile_load", out.items[1]);
+    try std.testing.expectEqualStrings("structFieldCount", out.items[0]);
+    try std.testing.expectEqualStrings("@volatileLoad", out.items[1]);
 }
 
 test "collectDecls takes an `@` function by its signature and leaves `@` type contracts" {
@@ -150,14 +150,14 @@ test "collectDecls takes an `@` function by its signature and leaves `@` type co
     try collectDecls(arena.allocator(),
         \\@VaList :: struct {
         \\}
-        \\@va_start :: (list: *@VaList);
+        \\@vaStart :: (list: *@VaList);
         \\@BuildSink :: constraint(P: Type) {
         \\}
-        \\@va_arg :: ($T: Type, list: *@VaList) -> T;
+        \\@vaArg :: ($T: Type, list: *@VaList) -> T;
     , &out);
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("@va_start", out.items[0]);
-    try std.testing.expectEqualStrings("@va_arg", out.items[1]);
+    try std.testing.expectEqualStrings("@vaStart", out.items[0]);
+    try std.testing.expectEqualStrings("@vaArg", out.items[1]);
 }
 
 test "collectDecls leaves an `@` function whose body is sx" {
@@ -169,10 +169,10 @@ test "collectDecls leaves an `@` function whose body is sx" {
         \\    out(msg);
         \\    c.abort()
         \\}
-        \\@va_end :: (list: *@VaList);
+        \\@vaEnd :: (list: *@VaList);
     , &out);
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
-    try std.testing.expectEqualStrings("@va_end", out.items[0]);
+    try std.testing.expectEqualStrings("@vaEnd", out.items[0]);
 }
 
 var g_threaded: ?std.Io.Threaded = null;

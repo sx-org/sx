@@ -904,7 +904,7 @@ pub fn emitObjcDefinedAllocAndInit(
     };
     const ctx_val = self.builder.load(ctx_addr, ctx_ty);
     const allocator = self.builder.structGet(ctx_val, af.index, af.ty);
-    const state = dispatchAllocator(self, allocator, af.ty, "alloc_bytes", &.{self.builder.constInt(@intCast(state_size), .i64)}, ctx_addr) orelse return null;
+    const state = dispatchAllocator(self, allocator, af.ty, "allocBytes", &.{self.builder.constInt(@intCast(state_size), .i64)}, ctx_addr) orelse return null;
 
     // (3) memset(state, 0, STATE_SIZE) — zero everything including the
     // allocator slot; the next store re-writes the allocator slot.
@@ -1195,7 +1195,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
         return;
     };
     const default_ctx_addr = self.builder.emit(.{ .global_addr = default_ctx_gi.id }, ptr_void);
-    _ = dispatchAllocator(self, allocator, allocator_ty, "dealloc_bytes", &.{state}, default_ctx_addr) orelse return;
+    _ = dispatchAllocator(self, allocator, allocator_ty, "deallocBytes", &.{state}, default_ctx_addr) orelse return;
 
     // (3) object_setIvar(self, ivar, null)
     const set_ivar_fid = self.ensureCRuntimeDecl("object_setIvar", &.{ ptr_void, ptr_void, ptr_void }, .void);

@@ -1,12 +1,12 @@
-// The capacity surface of `List`: `with_capacity` pre-grows through
-// `grow_to`'s doubling, so `cap` can land above the request. `insert` and
+// The capacity surface of `List`: `withCapacity` pre-grows through
+// `growTo`'s doubling, so `cap` can land above the request. `insert` and
 // `remove` keep order, `pop` yields `null` once the list is empty, and
 // `clear` drops the elements while the buffer and `cap` survive.
 @import "modules/std.sx";
 
 main :: () {
     gpa := GPA.init();
-    xs := List(i64).with_capacity(3, gpa);
+    xs := List(i64).withCapacity(3, gpa);
     print("fresh: len={} cap={}\n", xs.len, xs.cap);
 
     i : i64 = 0;
@@ -29,5 +29,5 @@ main :: () {
     print("reused: {} cap={}\n", xs.items, xs.cap);
 
     xs.deinit(gpa);
-    print("deinit: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+    print("deinit: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.allocCount);
 }

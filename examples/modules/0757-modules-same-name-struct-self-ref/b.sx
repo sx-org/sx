@@ -4,7 +4,7 @@
 // type 'Box'". The shadow's slot is reserved BEFORE its fields resolve, so
 // `*Box` binds to B's OWN nominal TypeId and the deref sees B's `y`.
 Box :: struct { y: i64; next: *Box; }
-b_chain :: () -> i64 {
+bChain :: () -> i64 {
     tail := Box{ y = 42, next = null };
     head := Box{ y = 1, next = *tail };
     // Walk the self-referential link; reads B's own `y`, not A's `x`.

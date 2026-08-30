@@ -3,9 +3,9 @@
 
 @import "modules/std.sx";
 
-sx_handler :: (arg: *void) -> *void { return arg; }
+sxHandler :: (arg: *void) -> *void { return arg; }
 
 main :: () -> i32 {
-    fp : (*void) -> *void abi(.c) = sx_handler;
+    fp : (*void) -> *void abi(.c) = sxHandler;
     return 0;
 }

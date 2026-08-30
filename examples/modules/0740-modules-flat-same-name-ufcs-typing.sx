@@ -9,7 +9,7 @@
 @import "0740-modules-flat-same-name-ufcs-typing/b.sx";
 
 main :: () -> i32 {
-    show_a();   // a-side: own == winner → string, byte-for-byte unchanged
-    show_b();   // b-side: shadow author → i64, typed + dispatched as b.tag
+    showA();   // a-side: own == winner → string, byte-for-byte unchanged
+    showB();   // b-side: shadow author → i64, typed + dispatched as b.tag
     0
 }

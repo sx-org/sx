@@ -23,12 +23,12 @@ report :: (tag: string, value: $I/@Init($T)) -> i32 {
         return 0;
     }
     print("{}: {}:{} in {} ordinal {} parity={}\n", tag, s?!.file, s?!.line, s?!.declaration,
-        s?!.ordinal, s?!.id == source_site_key_id(source_site_key(s?!)));
+        s?!.ordinal, s?!.id == sourceSiteKeyId(sourceSiteKey(s?!)));
     s?!.line
 }
 
 // Two formation sites in one declaration: distinct lines, distinct ordinals.
-two_sites :: () {
+twoSites :: () {
     _first := report("first", Button{ label = "a" });
     _second := report("second", Button{ label = "b" });
 }
@@ -47,7 +47,7 @@ looped :: () {
 }
 
 main :: () -> i32 {
-    two_sites();
+    twoSites();
     _b := relay("generic Button", Button{ label = "g" });
     _i := relay("generic i64", 7);
     looped();
@@ -55,8 +55,8 @@ main :: () -> i32 {
 }
 
 // ** stdout **
-// first: 2041-fluent-init-site.sx:32 in 2041-fluent-init-site.two_sites ordinal 5 parity=true
-// second: 2041-fluent-init-site.sx:33 in 2041-fluent-init-site.two_sites ordinal 15 parity=true
+// first: 2041-fluent-init-site.sx:32 in 2041-fluent-init-site.twoSites ordinal 5 parity=true
+// second: 2041-fluent-init-site.sx:33 in 2041-fluent-init-site.twoSites ordinal 15 parity=true
 // generic Button: 2041-fluent-init-site.sx:39 in 2041-fluent-init-site.relay ordinal 7 parity=true
 // generic i64: 2041-fluent-init-site.sx:39 in 2041-fluent-init-site.relay ordinal 7 parity=true
 // loop: 2041-fluent-init-site.sx:45 in 2041-fluent-init-site.looped ordinal 9 parity=true

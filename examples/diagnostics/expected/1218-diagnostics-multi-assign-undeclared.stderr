@@ -1,8 +1,8 @@
-error: unresolved 'undeclared_b' in assignment — no variable or global with this name; use 'undeclared_b := ...' to declare a new variable
+error: unresolved 'undeclaredB' in assignment — no variable or global with this name; use 'undeclaredB := ...' to declare a new variable
   --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:23:8
    |
-23 |     a, undeclared_b = b, a;     // typo'd target — plain multi-assign to an undeclared name
-   |        ^^^^^^^^^^^^
+23 |     a, undeclaredB = b, a;     // typo'd target — plain multi-assign to an undeclared name
+   |        ^^^^^^^^^^^
 
 error: cannot assign to by-ref capture 'x' directly — write through it with 'x.* = ...'
   --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:26:9

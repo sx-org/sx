@@ -7,7 +7,7 @@
 // 2. Protocol impl method body           impl Hashable for Probe
 // 3. Closure value body                  closure that calls hash
 //
-// `inline match OS` gating across targets is covered by
+// `inline match @host.os` gating across targets is covered by
 // `tests/cross_compile.sh`.
 
 @import "modules/std.sx";
@@ -24,32 +24,32 @@ Probe :: struct {
 
 // ── 2. Protocol impl method ────────────────────────────────────────
 Hashable :: constraint {
-    sx_hash :: (self: *Self) -> i64;
+    sxHash :: (self: *Self) -> i64;
 }
 
 impl Hashable for Probe {
-    sx_hash :: (self: *Probe) -> i64 {
+    sxHash :: (self: *Probe) -> i64 {
         @ObjcCall(i64, self.receiver, "hash") * 2
     }
 }
 
 // ── 3. Closure body invoking @ObjcCall ─────────────────────────────
 // An env field reaches the `@ObjcCall` arg list.
-make_hasher :: (recv: *void) -> $F/(i32) -> i64 {
+makeHasher :: (recv: *void) -> $F/(i32) -> i64 {
     return |dummy: i32|_{ recv = recv } -> i64 @ObjcCall(i64, recv, "hash");
 }
 
 // ── 4. Generic function body — instantiated per call site ───────────
-hash_through :: (recv: $T) -> i64 {
+hashThrough :: (recv: $T) -> i64 {
     p : *void = recv;
     @ObjcCall(i64, p, "hash")
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
-        ns_object := objc_getClass("NSObject".ptr);
+    inline if @host.os == .macos {
+        nsObject := objc_getClass("NSObject".ptr);
 
-        p : Probe = .{ receiver = ns_object };
+        p : Probe = .{ receiver = nsObject };
 
         // 1. struct method
         h1 := p.fetch();
@@ -57,20 +57,20 @@ main :: () -> i32 {
 
         // 2. protocol method (doubles the raw hash; mostly checking
         //    dispatch / arg threading, not the math)
-        h2 := p.sx_hash();
+        h2 := p.sxHash();
         print("protocol h2 = {}\n", h2 == h1 * 2);
 
-        // 3. closure (`recv` is `make_hasher`'s parameter, in the env and
+        // 3. closure (`recv` is `makeHasher`'s parameter, in the env and
         //    used inside the `@ObjcCall` arg list).
-        hasher := make_hasher(ns_object);
+        hasher := makeHasher(nsObject);
         h3 := hasher(0);
         print("closure h3  = {}\n", h3 == h1);
 
         // 4. generic function — instantiates with T = *void here
-        h4 := hash_through(ns_object);
+        h4 := hashThrough(nsObject);
         print("generic h4  = {}\n", h4 == h1);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

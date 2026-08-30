@@ -15,7 +15,7 @@ g :: (n: i32) -> (i32, !FooError) {
     return n;
 }
 
-no_fail :: (n: i32) -> (i32, !IoErr) {
+noFail :: (n: i32) -> (i32, !IoErr) {
     if n == 0 { raise IoErr.Failed; }
     v := try { n + 1 };
     return v;
@@ -37,7 +37,7 @@ nowhere :: (n: i32) -> i32 {
 }
 
 main :: () -> i32 {
-    print("{}\n", no_fail(1) catch { -1 });
+    print("{}\n", noFail(1) catch { -1 });
     print("{}\n", escapes(1) catch { -2 });
     print("{}\n", shorthand(1) catch { -3 });
     print("{}\n", nowhere(1));

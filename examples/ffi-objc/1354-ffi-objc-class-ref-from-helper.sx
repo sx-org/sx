@@ -5,7 +5,7 @@
 @import "modules/build.sx";
 @import "modules/ffi/objc.sx";
 
-alloc_in_helper :: () -> bool {
+allocInHelper :: () -> bool {
     obj := NSString.alloc();
     if obj == null {
         return false;
@@ -15,10 +15,10 @@ alloc_in_helper :: () -> bool {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
-        print("class live in helper: {}\n", alloc_in_helper());
+    inline if @host.os == .macos {
+        print("class live in helper: {}\n", allocInHelper());
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

@@ -18,7 +18,7 @@ Sized :: interface {
 // Module scope: the cursor spells the impl head, the receiver, and the
 // reflection argument. A nested `inline if` selects per-target bodies.
 inline for T in ALSO {
-    inline if POINTER_SIZE == 8 {
+    inline if @host.pointerSize == 8 {
         impl Sized for T {
             footprint :: (self: *T) -> i64 { @sizeOf(T) }
         }
@@ -34,7 +34,7 @@ main :: () {
     // rides the trailing open range.
     inline for T, i in SHAPES, 0.. {
         v : T = ---;
-        print("{} {} {} {}\n", i, @sizeOf(T), @alignOf(T), struct_field_count(T));
+        print("{} {} {} {}\n", i, @sizeOf(T), @alignOf(T), structFieldCount(T));
     }
 
     // A literal list needs no name; an alias iterates the same set.
@@ -42,7 +42,7 @@ main :: () {
         print("{} ", @sizeOf(T));
     }
     inline for T in ALSO {
-        print("{} ", struct_field_count(T));
+        print("{} ", structFieldCount(T));
     }
     print("\n");
 

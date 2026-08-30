@@ -32,25 +32,25 @@ SxThing :: @ObjcClass("SxThing") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         cls : Class = objc_getClass("SxThing".ptr);
         if cls == null { print("FAIL: SxThing not registered\n"); return 1; }
 
         // [SxThing answer] → 42
-        sel_answer : SEL = sel_registerName("answer".ptr);
-        msg_int : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
-        r := msg_int(cls, sel_answer);
+        selAnswer : SEL = sel_registerName("answer".ptr);
+        msgInt : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
+        r := msgInt(cls, selAnswer);
         if r != 42 { print("FAIL: answer expected 42, got {}\n", r); return 1; }
 
         // [SxThing seedClass] returns a non-null NSObject.
-        sel_seed : SEL = sel_registerName("seedClass".ptr);
-        msg_ptr : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
-        seed := msg_ptr(cls, sel_seed);
+        selSeed : SEL = sel_registerName("seedClass".ptr);
+        msgPtr : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        seed := msgPtr(cls, selSeed);
         if seed == null { print("FAIL: seedClass returned null\n"); return 1; }
 
         print("class constants: answer={}, seedClass=ok\n", r);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("class constants: answer=42, seedClass=ok\n");
     }
     0

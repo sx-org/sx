@@ -7,5 +7,5 @@ error: cannot initialize 'pv' of type '*Sizable' from a 'Widget' rvalue — an r
 error: cannot pass a 'Widget' value where '*Sizable' is expected — a value has no durable storage to borrow; pass an addressable lvalue (or a pointer to one)
   --> examples/diagnostics/1251-diagnostics-protocol-view-refusals.sx:14:19
    |
-14 |     print("{}\n", take_view(make()));       // rvalue call result → refusal
-   |                   ^^^^^^^^^^^^^^^^^
+14 |     print("{}\n", takeView(make()));       // rvalue call result → refusal
+   |                   ^^^^^^^^^^^^^^^^

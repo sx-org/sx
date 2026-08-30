@@ -1611,7 +1611,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         self.builder.condBr(is_err, handle_bb, &.{}, merge_bb, &.{});
         self.builder.switchToBlock(handle_bb);
         _ = self.runCatchBody(ce, err_val, err_set, null);
-        // The handler can inspect the trace (`trace.print_current()`); the
+        // The handler can inspect the trace (`trace.printCurrent()`); the
         // absorption clear fires once it completes WITHOUT re-raising (a
         // fall-through). A diverging body (`raise` / `return`) keeps /
         // discards the buffer on its own path (reconciles
@@ -1815,8 +1815,8 @@ pub fn operandIsFailableLike(self: *Lowering, node: *const Node) bool {
 
 /// True iff `node` is `expr.(T)` in the checked-assertion shape: an `any`
 /// receiver, or a protocol receiver whose target is a concrete downcast
-/// (the type_id word makes it the any assertion over the
-/// value's {ctx, type_id} prefix view).
+/// (the typeId word makes it the any assertion over the
+/// value's {ctx, typeId} prefix view).
 pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
     if (node.data != .postfix_cast) return false;
     const pc = &node.data.postfix_cast;
@@ -1907,7 +1907,7 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
     const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "@tryCast";
     const callee = self.alloc.create(Node) catch unreachable;
     callee.* = .{ .data = .{ .identifier = .{ .name = helper } }, .span = node.span, .source_file = node.source_file };
-    // A protocol receiver reaches the helper as its {ctx, type_id} prefix
+    // A protocol receiver reaches the helper as its {ctx, typeId} prefix
     // VIEW — wrap in `xx …` so the arg lowers through the modeled
     // protocol_to_any conversion under the helper's `av: any` param.
     const operand_node: *Node = blk_w: {

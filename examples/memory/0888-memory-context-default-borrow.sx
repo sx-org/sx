@@ -1,4 +1,4 @@
-// `allocator` and `io` are ordinary `@context_extend`
+// `allocator` and `io` are ordinary `@context.extend`
 // declarations (std/mem.sx, std/io.sx) whose defaults are the erasure of the
 // stdlib's own instance globals — a BORROW, so the default context's
 // receivers are real addresses, never null:
@@ -11,18 +11,18 @@
 @import "modules/std/mem.sx";
 @import "modules/std/io.sx";
 
-fallback : Allocator = c_allocator;
+fallback : Allocator = cAllocator;
 
 main :: () {
-    maybe_io : ?Io = context.io;
-    print("default io present = {}\n", maybe_io != null);
-    maybe_alloc : ?Allocator = context.allocator;
-    print("default allocator present = {}\n", maybe_alloc != null);
+    maybeIo : ?Io = context.io;
+    print("default io present = {}\n", maybeIo != null);
+    maybeAlloc : ?Allocator = context.allocator;
+    print("default allocator present = {}\n", maybeAlloc != null);
 
     recv : *CBlockingIo = xx context.io;
-    print("io borrows c_blocking_io = {}\n", recv == *c_blocking_io);
+    print("io borrows cBlockingIo = {}\n", recv == *cBlockingIo);
 
-    p := fallback.alloc_bytes(32);
+    p := fallback.allocBytes(32);
     print("global-erasure allocator works = {}\n", p != null);
-    fallback.dealloc_bytes(p);
+    fallback.deallocBytes(p);
 }

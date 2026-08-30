@@ -14,7 +14,7 @@
 main :: () -> i32 {
     // A leaf is an ordinary value, and a modifier call is an ordinary value
     // operation — nothing is intercepted out here.
-    padded := Modifier{}.with_padding(EdgeInsets.all(4.0));
+    padded := Modifier{}.withPadding(EdgeInsets.all(4.0));
 
     stack := VStack{
         spacing = 2.0,
@@ -39,8 +39,8 @@ main :: () -> i32 {
 
     // Measure, lay out and render through the library's own runtime.
     tree := RenderTree{};
-    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
-    print("commands {}\n", command_count(*tree));
+    renderRoot(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", commandCount(*tree));
     0
 }
 

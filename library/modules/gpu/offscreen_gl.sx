@@ -20,12 +20,12 @@ GlOffscreen :: struct {
     w: i32 = 0;
     h: i32 = 0;
 
-    // Open BEFORE building frames: measure_text must use the same font
+    // Open BEFORE building frames: measureText must use the same font
     // metrics the render uses. The font is machine-pinned by design: the
     // reference shows what THIS machine renders.
     open :: (self: *GlOffscreen, w: i32, h: i32,
-             font_path: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
-             font_size: f32 = 14.0) -> bool {
+             fontPath: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
+             fontSize: f32 = 14.0) -> bool {
         self.w = w;
         self.h = h;
         if !SDL_Init(SDL_INIT_VIDEO) { return false; }
@@ -38,9 +38,9 @@ GlOffscreen :: struct {
         if ctx == null { return false; }
         SDL_GL_MakeCurrent(self.window, ctx);
         SDL_GL_SetSwapInterval(0);
-        load_gl(SDL_GL_GetProcAddress);
+        loadGl(SDL_GL_GetProcAddress);
         self.renderer.init();
-        self.font.init(font_path, font_size);
+        self.font.init(fontPath, fontSize);
         true
     }
 }
@@ -54,30 +54,30 @@ impl PixelSurface for GlOffscreen {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDisable(GL_DEPTH_TEST);
 
-        self.renderer.begin(self.w, self.h, self.font.texture_id);
+        self.renderer.begin(self.w, self.h, self.font.textureId);
         self.renderer.process(tree);
-        self.font.upload_atlas_to_gpu();
+        self.font.uploadAtlasToGpu();
         self.renderer.flush();
     }
 
-    read_rgba :: (self: *GlOffscreen, alloc: Allocator) -> string {
+    readRgba :: (self: *GlOffscreen, alloc: Allocator) -> string {
         wl := self.w.(i64);
         hl := self.h.(i64);
         n := wl * hl * 4;
-        raw : [*]u8 = (alloc.alloc_bytes(n)).([*]u8);
+        raw : [*]u8 = (alloc.allocBytes(n)).([*]u8);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadPixels(0, 0, self.w, self.h, GL_RGBA, GL_UNSIGNED_BYTE, raw);
 
         // GL reads bottom-up — flip rows to top-down in place.
-        row_bytes := wl * 4;
+        rowBytes := wl * 4;
         top := 0;
         bot := hl - 1;
         while top < bot {
             i := 0;
-            while i < row_bytes {
-                t := raw[top * row_bytes + i];
-                raw[top * row_bytes + i] = raw[bot * row_bytes + i];
-                raw[bot * row_bytes + i] = t;
+            while i < rowBytes {
+                t := raw[top * rowBytes + i];
+                raw[top * rowBytes + i] = raw[bot * rowBytes + i];
+                raw[bot * rowBytes + i] = t;
                 i += 1;
             }
             top += 1;

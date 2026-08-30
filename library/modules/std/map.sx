@@ -19,7 +19,7 @@
 // field (recursing into nested aggregates) so interior/trailing PADDING is
 // skipped — two field-equal keys hash equally even if their padding holds
 // different stack garbage; scalar/enum/pointer keys take a raw-byte leaf hash.
-// See `map_hash_key` / `map_hash_into`. Consumers never import this file
+// See `mapHashKey` / `mapHashInto`. Consumers never import this file
 // directly — std.sx re-exports `HashMap` / `IndexMap`.
 //
 // Allocator discipline mirrors `List`: every mutator takes a trailing
@@ -33,8 +33,8 @@
 @import "modules/std/hash.sx";
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx";
-// `struct_field_type` (used by the structural key hash below) comes from `core.sx`,
-// alongside its sibling reflection builtins `struct_field_count` / `struct_field_value`.
+// `structFieldType` (used by the structural key hash below) comes from `core.sx`,
+// alongside its sibling reflection builtins `structFieldCount` / `structFieldValue`.
 
 // ── metadata byte (Zig-faithful) ─────────────────────────────────────
 // One byte per bucket: bit 7 = `used`, bits 0..6 = `fingerprint` (the top
@@ -53,12 +53,12 @@ MIN_CAP        :: 8;
 
 // Fingerprint = top 7 bits of the 64-bit hash (the low log2(cap) bits go
 // to the bucket index, so the high bits carry independent entropy).
-map_fingerprint :: (h: u64) -> u8 {
+mapFingerprint :: (h: u64) -> u8 {
     ((h >> 57) & (0x7F.(u64))).(u8)
 }
 
 // Smallest power-of-two capacity whose 80% load still holds `n` entries.
-map_capacity_for :: (n: i64) -> i64 {
+mapCapacityFor :: (n: i64) -> i64 {
     need := n * 100 / MAX_LOAD_PCT + 1;
     cap := MIN_CAP;
     while cap < need { cap = cap * 2; }
@@ -78,29 +78,29 @@ map_capacity_for :: (n: i64) -> i64 {
 //               lookup on a present, logically-equal key misses.
 //   • scalar / enum / bool / pointer leaf → raw `@sizeOf` bytes (these have a
 //               unique byte representation — no padding to skip).
-map_hash_key :: (key: $K) -> u64 {
-    return map_hash_into(key, FNV_OFFSET_BASIS);
+mapHashKey :: (key: $K) -> u64 {
+    return mapHashInto(key, FNV_OFFSET_BASIS);
 }
 
 // Fold value `v` into running FNV state `h`. The string arm reads fields off a
 // `*string` REINTERPRET of `@v`, never off a `T`-typed value, so it compiles
 // for every `T` regardless of dead-branch pruning. The `inline if T is struct`
-// branch is comptime-elided for non-struct `T` (so `struct_field_type`/`struct_field_count`
+// branch is comptime-elided for non-struct `T` (so `structFieldType`/`structFieldCount`
 // never lower on an enum/scalar); struct/tuple `T` recurses per field. Enums,
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
-map_hash_into :: (v: $T, h: u64) -> u64 {
+mapHashInto :: (v: $T, h: u64) -> u64 {
     inline if @typeEq(T, string) {
         sv : *string = (*v).(*string);
-        return fnv1a_fold(h, sv.ptr, sv.len);
+        return fnv1aFold(h, sv.ptr, sv.len);
     }
     inline if T is struct {
         hh := h;
-        inline for i in 0..struct_field_count(T) {
-            hh = map_hash_into(struct_field_value(v, i).(struct_field_type(T, i)), hh);
+        inline for i in 0..structFieldCount(T) {
+            hh = mapHashInto(structFieldValue(v, i).(structFieldType(T, i)), hh);
         }
         return hh;
     }
-    return fnv1a_fold(h, *v, @sizeOf(T));   // scalar/enum/bool/pointer leaf
+    return fnv1aFold(h, *v, @sizeOf(T));   // scalar/enum/bool/pointer leaf
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —
@@ -113,9 +113,9 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
 // found/inserted signal. Pointers are valid only until the next mutation that
 // may grow/rehash the table (Zig's exact invalidation contract).
 HashEntryPtr :: struct ($K: Type, $V: Type) {
-    key_ptr:        *K;
-    value_ptr:      *V;
-    found_existing: bool;
+    keyPtr:        *K;
+    valuePtr:      *V;
+    foundExisting: bool;
 }
 
 // =====================================================================
@@ -142,45 +142,45 @@ HashMap :: struct ($K: Type, $V: Type) {
     // `m.len` → live entry count.
     len :: (self: *HashMap(K, V)) -> i64 @get => self.count;
 
-    // Grow (or first-allocate) to `new_cap` buckets and re-insert every
-    // live entry. Drops tombstones. `new_cap` must be a power of two.
-    grow :: (self: *HashMap(K, V), new_cap: i64, alloc: Allocator = context.allocator) {
-        old_meta := self.metadata;
-        old_keys := self.keys;
-        old_vals := self.values;
-        old_cap  := self.cap;
+    // Grow (or first-allocate) to `newCap` buckets and re-insert every
+    // live entry. Drops tombstones. `newCap` must be a power of two.
+    grow :: (self: *HashMap(K, V), newCap: i64, alloc: Allocator = context.allocator) {
+        oldMeta := self.metadata;
+        oldKeys := self.keys;
+        oldVals := self.values;
+        oldCap  := self.cap;
 
-        nm : [*]u8 = alloc.alloc(u8, new_cap).ptr;
-        nk : [*]K  = alloc.alloc(K, new_cap).ptr;
-        nv : [*]V  = alloc.alloc(V, new_cap).ptr;
-        c.memset(nm, 0, new_cap);              // every bucket -> META_FREE
+        nm : [*]u8 = alloc.alloc(u8, newCap).ptr;
+        nk : [*]K  = alloc.alloc(K, newCap).ptr;
+        nv : [*]V  = alloc.alloc(V, newCap).ptr;
+        c.memset(nm, 0, newCap);              // every bucket -> META_FREE
 
         self.metadata   = nm;
         self.keys       = nk;
         self.values     = nv;
-        self.cap        = new_cap;
+        self.cap        = newCap;
         self.count      = 0;
         self.tombstones = 0;               // rehash drops tombstones
 
-        if old_cap > 0 {
+        if oldCap > 0 {
             j := 0;
-            while j < old_cap {
-                if (old_meta[j] & META_USED_BIT) != 0 {
-                    self.insert_assume_capacity(old_keys[j], old_vals[j]);
+            while j < oldCap {
+                if (oldMeta[j] & META_USED_BIT) != 0 {
+                    self.insertAssumeCapacity(oldKeys[j], oldVals[j]);
                 }
                 j += 1;
             }
-            alloc.dealloc_bytes(old_meta);
-            alloc.dealloc_bytes(old_keys);
-            alloc.dealloc_bytes(old_vals);
+            alloc.deallocBytes(oldMeta);
+            alloc.deallocBytes(oldKeys);
+            alloc.deallocBytes(oldVals);
         }
     }
 
     // Insert into a table KNOWN to have room, with no tombstones and no
     // existing key (the rehash path). Probes to the first free bucket.
-    insert_assume_capacity :: (self: *HashMap(K, V), key: K, val: V) {
-        h    := map_hash_key(key);
-        fp   := map_fingerprint(h);
+    insertAssumeCapacity :: (self: *HashMap(K, V), key: K, val: V) {
+        h    := mapHashKey(key);
+        fp   := mapFingerprint(h);
         mask := self.cap - 1;
         idx  := (h & (mask.(u64))).(i64);
         while self.metadata[idx] != META_FREE { idx = (idx + 1) & mask; }
@@ -198,8 +198,8 @@ HashMap :: struct ($K: Type, $V: Type) {
 
     // Grow so the table can hold `n` LIVE entries without a resize. No-op if
     // the current capacity already suffices. Rehashes existing entries.
-    ensure_total_capacity :: (self: *HashMap(K, V), n: i64, alloc: Allocator = context.allocator) {
-        needed := map_capacity_for(n);
+    ensureTotalCapacity :: (self: *HashMap(K, V), n: i64, alloc: Allocator = context.allocator) {
+        needed := mapCapacityFor(n);
         if self.cap >= needed { return; }
         self.grow(needed, alloc);
     }
@@ -207,65 +207,65 @@ HashMap :: struct ($K: Type, $V: Type) {
     // Ensure room for `n` MORE entries beyond the current live count. Accounts
     // for tombstones: if adding `n` would push physical occupancy past the max
     // load, rehash in place (same size, drops tombstones) when the live count
-    // still fits, else grow. Guarantees `n` subsequent `put_assume_capacity`
+    // still fits, else grow. Guarantees `n` subsequent `putAssumeCapacity`
     // calls each find a free bucket.
-    ensure_unused_capacity :: (self: *HashMap(K, V), n: i64, alloc: Allocator = context.allocator) {
-        if self.cap == 0 { self.grow(map_capacity_for(n), alloc); return; }
+    ensureUnusedCapacity :: (self: *HashMap(K, V), n: i64, alloc: Allocator = context.allocator) {
+        if self.cap == 0 { self.grow(mapCapacityFor(n), alloc); return; }
         if (self.count + self.tombstones + n) * 100 > self.cap * MAX_LOAD_PCT {
-            needed := map_capacity_for(self.count + n);
+            needed := mapCapacityFor(self.count + n);
             if needed <= self.cap { self.rehash(alloc); } else { self.grow(needed, alloc); }
         }
     }
 
     // Find-or-insert in one probe. Grows first if needed (so the returned
     // pointers stay valid until the NEXT mutation). On a miss the key slot is
-    // written and `count` bumped; the caller MUST initialise `value_ptr.*`.
-    get_or_put :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> HashEntryPtr(K, V) {
+    // written and `count` bumped; the caller MUST initialise `valuePtr.*`.
+    getOrPut :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> HashEntryPtr(K, V) {
         if self.cap == 0 {
             self.grow(MIN_CAP, alloc);
         } else if (self.count + self.tombstones + 1) * 100 > self.cap * MAX_LOAD_PCT {
-            self.grow(map_capacity_for(self.count + 1), alloc);
+            self.grow(mapCapacityFor(self.count + 1), alloc);
         }
-        return self.get_or_put_assume_capacity(key);
+        return self.getOrPutAssumeCapacity(key);
     }
 
     // getOrPut against a table KNOWN to have a free bucket (caller ensured
     // capacity). No grow — pointers stay valid past the call.
-    get_or_put_assume_capacity :: (self: *HashMap(K, V), key: K) -> HashEntryPtr(K, V) {
-        h          := map_hash_key(key);
-        fp         := map_fingerprint(h);
-        used_byte  := META_USED_BIT | fp;
+    getOrPutAssumeCapacity :: (self: *HashMap(K, V), key: K) -> HashEntryPtr(K, V) {
+        h          := mapHashKey(key);
+        fp         := mapFingerprint(h);
+        usedByte  := META_USED_BIT | fp;
         mask       := self.cap - 1;
         idx        := (h & (mask.(u64))).(i64);
-        first_tomb : i64 = -1;
+        firstTomb : i64 = -1;
         limit      := self.cap;
         while limit > 0 {
             m := self.metadata[idx];
             if m == META_FREE {
-                dst := if first_tomb >= 0 then first_tomb else idx;
-                if first_tomb >= 0 { self.tombstones -= 1; }   // recycled a tombstone
-                self.metadata[dst] = used_byte;
+                dst := if firstTomb >= 0 then firstTomb else idx;
+                if firstTomb >= 0 { self.tombstones -= 1; }   // recycled a tombstone
+                self.metadata[dst] = usedByte;
                 self.keys[dst]     = key;
                 self.count += 1;
-                return .{ key_ptr = *self.keys[dst], value_ptr = *self.values[dst], found_existing = false };
+                return .{ keyPtr = *self.keys[dst], valuePtr = *self.values[dst], foundExisting = false };
             }
             if m == META_TOMBSTONE {
-                if first_tomb < 0 { first_tomb = idx; }
-            } else if m == used_byte {
+                if firstTomb < 0 { firstTomb = idx; }
+            } else if m == usedByte {
                 if self.keys[idx] == key {
-                    return .{ key_ptr = *self.keys[idx], value_ptr = *self.values[idx], found_existing = true };
+                    return .{ keyPtr = *self.keys[idx], valuePtr = *self.values[idx], foundExisting = true };
                 }
             }
             limit -= 1;
             idx = (idx + 1) & mask;
         }
         // Full walk, key absent: a tombstone seen on the way is still reusable.
-        if first_tomb >= 0 {
-            self.metadata[first_tomb] = used_byte;
-            self.keys[first_tomb]     = key;
+        if firstTomb >= 0 {
+            self.metadata[firstTomb] = usedByte;
+            self.keys[firstTomb]     = key;
             self.count += 1;
             self.tombstones -= 1;
-            return .{ key_ptr = *self.keys[first_tomb], value_ptr = *self.values[first_tomb], found_existing = false };
+            return .{ keyPtr = *self.keys[firstTomb], valuePtr = *self.values[firstTomb], foundExisting = false };
         }
         // No free bucket and no tombstone across the whole table — impossible
         // at ≤ 80% load. Broken capacity accounting; fail loud, never corrupt.
@@ -274,61 +274,61 @@ HashMap :: struct ($K: Type, $V: Type) {
 
     // Insert `key`→`val`, overwriting the value if `key` is already present.
     put :: (self: *HashMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) {
-        r := self.get_or_put(key, alloc);
-        r.value_ptr.* = val;
+        r := self.getOrPut(key, alloc);
+        r.valuePtr.* = val;
     }
 
     // Insert without growing (caller ensured capacity). Overwrites on hit.
-    put_assume_capacity :: (self: *HashMap(K, V), key: K, val: V) {
-        r := self.get_or_put_assume_capacity(key);
-        r.value_ptr.* = val;
+    putAssumeCapacity :: (self: *HashMap(K, V), key: K, val: V) {
+        r := self.getOrPutAssumeCapacity(key);
+        r.valuePtr.* = val;
     }
 
     // getOrPut, defaulting the value to `val` only on a fresh insert.
-    get_or_put_value :: (self: *HashMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> HashEntryPtr(K, V) {
-        r := self.get_or_put(key, alloc);
-        if !r.found_existing { r.value_ptr.* = val; }
+    getOrPutValue :: (self: *HashMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> HashEntryPtr(K, V) {
+        r := self.getOrPut(key, alloc);
+        if !r.foundExisting { r.valuePtr.* = val; }
         return r;
     }
 
     // Insert `key`→`val`; return the PREVIOUS value if the key existed, else null.
-    fetch_put :: (self: *HashMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> ?V {
-        r := self.get_or_put(key, alloc);
-        if r.found_existing {
-            old := r.value_ptr.*;
-            r.value_ptr.* = val;
+    fetchPut :: (self: *HashMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> ?V {
+        r := self.getOrPut(key, alloc);
+        if r.foundExisting {
+            old := r.valuePtr.*;
+            r.valuePtr.* = val;
             return old;
         }
-        r.value_ptr.* = val;
+        r.valuePtr.* = val;
         return null;
     }
 
-    // fetch_put against a table with ensured capacity (no grow).
-    fetch_put_assume_capacity :: (self: *HashMap(K, V), key: K, val: V) -> ?V {
-        r := self.get_or_put_assume_capacity(key);
-        if r.found_existing {
-            old := r.value_ptr.*;
-            r.value_ptr.* = val;
+    // fetchPut against a table with ensured capacity (no grow).
+    fetchPutAssumeCapacity :: (self: *HashMap(K, V), key: K, val: V) -> ?V {
+        r := self.getOrPutAssumeCapacity(key);
+        if r.foundExisting {
+            old := r.valuePtr.*;
+            r.valuePtr.* = val;
             return old;
         }
-        r.value_ptr.* = val;
+        r.valuePtr.* = val;
         return null;
     }
 
     // Bucket index of `key`, or -1 if absent. Stops at a free bucket
     // (proof the key was never inserted on this chain); skips tombstones.
-    find_index :: (self: *HashMap(K, V), key: K) -> i64 {
+    findIndex :: (self: *HashMap(K, V), key: K) -> i64 {
         if self.count == 0 { return -1; }
-        h         := map_hash_key(key);
-        fp        := map_fingerprint(h);
-        used_byte := META_USED_BIT | fp;
+        h         := mapHashKey(key);
+        fp        := mapFingerprint(h);
+        usedByte := META_USED_BIT | fp;
         mask      := self.cap - 1;
         idx       := (h & (mask.(u64))).(i64);
         limit     := self.cap;
         while limit > 0 {
             m := self.metadata[idx];
             if m == META_FREE { return -1; }
-            if m == used_byte {
+            if m == usedByte {
                 if self.keys[idx] == key { return idx; }
             }
             limit -= 1;
@@ -338,26 +338,26 @@ HashMap :: struct ($K: Type, $V: Type) {
     }
 
     get :: (self: *HashMap(K, V), key: K) -> ?V {
-        i := self.find_index(key);
+        i := self.findIndex(key);
         if i < 0 { return null; }
         self.values[i]
     }
 
-    get_ptr :: (self: *HashMap(K, V), key: K) -> ?*V {
-        i := self.find_index(key);
+    getPtr :: (self: *HashMap(K, V), key: K) -> ?*V {
+        i := self.findIndex(key);
         if i < 0 { return null; }
         *self.values[i]
     }
 
     contains :: (self: *HashMap(K, V), key: K) -> bool {
-        self.find_index(key) >= 0
+        self.findIndex(key) >= 0
     }
 
     // Delete `key`. Returns true if it was present. Leaves a tombstone so
     // chains that cross this bucket still resolve; the slot is reclaimed on
     // the next colliding insert (or dropped entirely by a grow/rehash).
     remove :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        i := self.find_index(key);
+        i := self.findIndex(key);
         if i < 0 { return false; }
         self.metadata[i] = META_TOMBSTONE;
         self.count -= 1;
@@ -366,8 +366,8 @@ HashMap :: struct ($K: Type, $V: Type) {
     }
 
     // Remove `key`, returning its value if it was present (else null).
-    fetch_remove :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        i := self.find_index(key);
+    fetchRemove :: (self: *HashMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
+        i := self.findIndex(key);
         if i < 0 { return null; }
         v := self.values[i];
         self.metadata[i] = META_TOMBSTONE;
@@ -412,9 +412,9 @@ HashMap :: struct ($K: Type, $V: Type) {
     // Idempotent free. `cap > 0` is the ownership signal (mirrors List).
     deinit :: (self: *HashMap(K, V), alloc: Allocator = context.allocator) {
         if self.cap > 0 {
-            alloc.dealloc_bytes(self.metadata);
-            alloc.dealloc_bytes(self.keys);
-            alloc.dealloc_bytes(self.values);
+            alloc.deallocBytes(self.metadata);
+            alloc.deallocBytes(self.keys);
+            alloc.deallocBytes(self.values);
         }
         self.metadata   = null;
         self.keys       = null;
@@ -425,8 +425,8 @@ HashMap :: struct ($K: Type, $V: Type) {
     }
 
     // Next used bucket index at or after `from`; returns `cap` when done.
-    // Iterate with: `i := m.next_used(0); while i < m.cap { ...; i = m.next_used(i + 1); }`
-    next_used :: (self: *HashMap(K, V), from: i64) -> i64 {
+    // Iterate with: `i := m.nextUsed(0); while i < m.cap { ...; i = m.nextUsed(i + 1); }`
+    nextUsed :: (self: *HashMap(K, V), from: i64) -> i64 {
         i := from;
         while i < self.cap and (self.metadata[i] & META_USED_BIT) == 0 { i += 1; }
         i
@@ -434,9 +434,9 @@ HashMap :: struct ($K: Type, $V: Type) {
 
     // Stateful iterator over live entries in unspecified (bucket) order. Use:
     //   it := m.iterator();
-    //   while kv := it.next() { use(kv.key_ptr.*, kv.value_ptr.*); }
+    //   while kv := it.next() { use(kv.keyPtr.*, kv.valuePtr.*); }
     // WARNING: a mutation that GROWS/rehashes the table mid-iteration (any
-    // `put`/`get_or_put`/`ensure_*` that reallocs) INVALIDATES the iterator —
+    // `put`/`getOrPut`/`ensure*` that reallocs) INVALIDATES the iterator —
     // its `pos` and every yielded key/value pointer dangle (UAF, UB). A
     // `remove` mid-iteration is safe (tombstone only, no realloc).
     iterator :: (self: *HashMap(K, V)) -> HashIter(K, V) {
@@ -446,8 +446,8 @@ HashMap :: struct ($K: Type, $V: Type) {
 
 // One yielded entry: live key/value pointers into the table.
 HashKV :: struct ($K: Type, $V: Type) {
-    key_ptr:   *K;
-    value_ptr: *V;
+    keyPtr:   *K;
+    valuePtr: *V;
 }
 
 HashIter :: struct ($K: Type, $V: Type) {
@@ -455,10 +455,10 @@ HashIter :: struct ($K: Type, $V: Type) {
     pos: i64 = 0;
 
     next :: (self: *HashIter(K, V)) -> ?HashKV(K, V) {
-        i := self.map.next_used(self.pos);
+        i := self.map.nextUsed(self.pos);
         if i >= self.map.cap { return null; }
         self.pos = i + 1;
-        return HashKV(K, V){ key_ptr = *self.map.keys[i], value_ptr = *self.map.values[i] };
+        return HashKV(K, V){ keyPtr = *self.map.keys[i], valuePtr = *self.map.values[i] };
     }
 
     // Restart from the first live bucket.
@@ -467,7 +467,7 @@ HashIter :: struct ($K: Type, $V: Type) {
 
 // By-value construction (allocator-construction rule): the caller binds the
 // returned value to a local that IS the map's storage.
-hashmap_init :: ($K: Type, $V: Type) -> HashMap(K, V) {
+hashmapInit :: ($K: Type, $V: Type) -> HashMap(K, V) {
     HashMap(K, V){}
 }
 
@@ -484,7 +484,7 @@ hashmap_init :: ($K: Type, $V: Type) -> HashMap(K, V) {
 // Removal has two forms, mirroring Zig:
 //   remove       — ORDER-PRESERVING (O(n)): shift later entries down, then
 //                  reindex (every later entry's index shifted).
-//   swap_remove  — O(1) amortized but BREAKS order: move the last entry into
+//   swapRemove  — O(1) amortized but BREAKS order: move the last entry into
 //                  the hole; the index is patched IN PLACE (backward-shift
 //                  delete of the removed slot + a retarget of the moved tail),
 //                  never rebuilt. `pop` (drop the tail) is likewise O(1)
@@ -503,9 +503,9 @@ IMEntry :: struct ($K: Type, $V: Type) {
 // and the entry's ORDERED position (Zig's `index`). Pointers/index are valid
 // until the next structural mutation.
 IndexEntryPtr :: struct ($K: Type, $V: Type) {
-    key_ptr:        *K;
-    value_ptr:      *V;
-    found_existing: bool;
+    keyPtr:        *K;
+    valuePtr:      *V;
+    foundExisting: bool;
     index:          i64;
 }
 
@@ -520,19 +520,19 @@ IndexMap :: struct ($K: Type, $V: Type) {
     len :: (self: *IndexMap(K, V)) -> i64 @get => self.ecount;
 
     // Ordered accessors (entries are the insertion-ordered source of truth).
-    key_at :: (self: *IndexMap(K, V), i: i64) -> K   => self.entries[i].key;
-    val_at :: (self: *IndexMap(K, V), i: i64) -> V   => self.entries[i].value;
+    keyAt :: (self: *IndexMap(K, V), i: i64) -> K   => self.entries[i].key;
+    valAt :: (self: *IndexMap(K, V), i: i64) -> V   => self.entries[i].value;
 
     // Grow the ENTRIES array to at least `n` (doubling), preserving order.
-    ensure_entry_cap :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
+    ensureEntryCap :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
         if self.ecap >= n { return; }
-        new_cap := if self.ecap == 0 then 8 else self.ecap;
-        while new_cap < n { new_cap = new_cap * 2; }
-        np : [*]IMEntry(K, V) = alloc.alloc(IMEntry(K, V), new_cap).ptr;
+        newCap := if self.ecap == 0 then 8 else self.ecap;
+        while newCap < n { newCap = newCap * 2; }
+        np : [*]IMEntry(K, V) = alloc.alloc(IMEntry(K, V), newCap).ptr;
         if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * @sizeOf(IMEntry(K, V))); }
-        if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
+        if self.ecap > 0 { alloc.deallocBytes(self.entries); }
         self.entries = np;
-        self.ecap = new_cap;
+        self.ecap = newCap;
     }
 
     // Rebuild `index` from scratch, sized so `ecount` stays ≤ 60% of slots.
@@ -540,17 +540,17 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // after a grow or a remove (entry indices shifted).
     reindex :: (self: *IndexMap(K, V), alloc: Allocator = context.allocator) {
         need := (self.ecount * 100 / INDEX_LOAD_PCT) + 1;
-        new_icap := 8;
-        while new_icap < need { new_icap = new_icap * 2; }
-        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
-        ni : [*]i64 = alloc.alloc(i64, new_icap).ptr;
+        newIcap := 8;
+        while newIcap < need { newIcap = newIcap * 2; }
+        if self.icap > 0 { alloc.deallocBytes(self.index); }
+        ni : [*]i64 = alloc.alloc(i64, newIcap).ptr;
         s := 0;
-        while s < new_icap { ni[s] = -1; s += 1; }
+        while s < newIcap { ni[s] = -1; s += 1; }
         self.index = ni;
-        self.icap = new_icap;
+        self.icap = newIcap;
         e := 0;
         while e < self.ecount {
-            self.index_insert(self.entries[e].hash, e);
+            self.indexInsert(self.entries[e].hash, e);
             e += 1;
         }
     }
@@ -562,7 +562,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // limit; if it ever walks the whole table without finding one the
     // assume-capacity contract was violated — abort loudly rather than spin
     // forever / write OOB (mirrors HashMap's fail-loud philosophy).
-    index_insert :: (self: *IndexMap(K, V), h: u64, e: i64) {
+    indexInsert :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
         slot := (h & (mask.(u64))).(i64);
         limit := self.icap;
@@ -581,7 +581,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // at the first empty slot. O(1) amortized — no full reindex. `h` is the
     // removed entry's stored hash; `e` MUST currently be in the index (caller
     // contract) — failing to find it across a full walk is a loud abort.
-    index_remove :: (self: *IndexMap(K, V), h: u64, e: i64) {
+    indexRemove :: (self: *IndexMap(K, V), h: u64, e: i64) {
         mask := self.icap - 1;
         slot := (h & (mask.(u64))).(i64);
         limit := self.icap;
@@ -610,11 +610,11 @@ IndexMap :: struct ($K: Type, $V: Type) {
     }
 
     // Retarget the index slot that stores entry-index `from` (probing from `h`)
-    // to store `to` instead — used by swap_remove after the tail entry is moved
+    // to store `to` instead — used by swapRemove after the tail entry is moved
     // into a hole (the slot pointing at the old tail must now point at its new
     // position). `from` MUST be in the index (caller contract); a full walk
     // without finding it is a loud abort.
-    index_retarget :: (self: *IndexMap(K, V), h: u64, from: i64, to: i64) {
+    indexRetarget :: (self: *IndexMap(K, V), h: u64, from: i64, to: i64) {
         mask := self.icap - 1;
         slot := (h & (mask.(u64))).(i64);
         limit := self.icap;
@@ -630,26 +630,26 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // rebuild-on-insert. No-op if it is already big enough (unlike `reindex`,
     // which always rebuilds — used after entry shifts). Rehashes existing
     // entry indices into the enlarged table.
-    ensure_index_cap :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
+    ensureIndexCap :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
         need := (n * 100 / INDEX_LOAD_PCT) + 1;
         want := if self.icap == 0 then 8 else self.icap;
         while want < need { want = want * 2; }
         if want == self.icap { return; }
-        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
+        if self.icap > 0 { alloc.deallocBytes(self.index); }
         ni : [*]i64 = alloc.alloc(i64, want).ptr;
         s := 0;
         while s < want { ni[s] = -1; s += 1; }
         self.index = ni;
         self.icap = want;
         e := 0;
-        while e < self.ecount { self.index_insert(self.entries[e].hash, e); e += 1; }
+        while e < self.ecount { self.indexInsert(self.entries[e].hash, e); e += 1; }
     }
 
     // Grow so the map can hold `n` entries (both the ordered array and the
-    // index) without a resize during subsequent `put_assume_capacity` calls.
-    ensure_total_capacity :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
-        self.ensure_entry_cap(n, alloc);
-        self.ensure_index_cap(n, alloc);
+    // index) without a resize during subsequent `putAssumeCapacity` calls.
+    ensureTotalCapacity :: (self: *IndexMap(K, V), n: i64, alloc: Allocator = context.allocator) {
+        self.ensureEntryCap(n, alloc);
+        self.ensureIndexCap(n, alloc);
     }
 
     // Entry capacity (Zig's `capacity()`): how many entries the ordered array
@@ -658,9 +658,9 @@ IndexMap :: struct ($K: Type, $V: Type) {
 
     // Entry index for `key`, or -1. Linear-probe the index, deref into
     // entries to confirm (hash pre-filter, then `==`). Stops at an empty slot.
-    find_index :: (self: *IndexMap(K, V), key: K) -> i64 {
+    findIndex :: (self: *IndexMap(K, V), key: K) -> i64 {
         if self.icap == 0 { return -1; }
-        h := map_hash_key(key);
+        h := mapHashKey(key);
         mask := self.icap - 1;
         slot := (h & (mask.(u64))).(i64);
         limit := self.icap;
@@ -675,17 +675,17 @@ IndexMap :: struct ($K: Type, $V: Type) {
     }
 
     // Find-or-append in one probe. Appends a fresh entry (preserving order) on
-    // a miss — the caller MUST initialise `value_ptr.*`. On a hit, returns
+    // a miss — the caller MUST initialise `valuePtr.*`. On a hit, returns
     // pointers to the existing entry, unchanged. Pointers/index are valid
     // until the next structural mutation.
-    get_or_put :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
-        existing := self.find_index(key);
+    getOrPut :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
+        existing := self.findIndex(key);
         if existing >= 0 {
-            return .{ key_ptr = *self.entries[existing].key, value_ptr = *self.entries[existing].value,
-                      found_existing = true, index = existing };
+            return .{ keyPtr = *self.entries[existing].key, valuePtr = *self.entries[existing].value,
+                      foundExisting = true, index = existing };
         }
-        self.ensure_entry_cap(self.ecount + 1, alloc);
-        h := map_hash_key(key);
+        self.ensureEntryCap(self.ecount + 1, alloc);
+        h := mapHashKey(key);
         e := self.ecount;
         self.entries[e].hash = h;             // value slot filled by the caller
         self.entries[e].key  = key;
@@ -694,86 +694,86 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if self.icap == 0 or self.ecount * 100 > self.icap * INDEX_LOAD_PCT {
             self.reindex(alloc);
         } else {
-            self.index_insert(h, e);
+            self.indexInsert(h, e);
         }
-        return .{ key_ptr = *self.entries[e].key, value_ptr = *self.entries[e].value,
-                  found_existing = false, index = e };
+        return .{ keyPtr = *self.entries[e].key, valuePtr = *self.entries[e].value,
+                  foundExisting = false, index = e };
     }
 
     // Insert `key`→`val`, APPENDING (preserving order) if new, overwriting the
     // value in place if `key` already exists.
     put :: (self: *IndexMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) {
-        r := self.get_or_put(key, alloc);
-        r.value_ptr.* = val;
+        r := self.getOrPut(key, alloc);
+        r.valuePtr.* = val;
     }
 
     // getOrPut, defaulting the value to `val` only on a fresh insert.
-    get_or_put_value :: (self: *IndexMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
-        r := self.get_or_put(key, alloc);
-        if !r.found_existing { r.value_ptr.* = val; }
+    getOrPutValue :: (self: *IndexMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
+        r := self.getOrPut(key, alloc);
+        if !r.foundExisting { r.valuePtr.* = val; }
         return r;
     }
 
     // Insert `key`→`val`; return the PREVIOUS value if the key existed, else null.
-    fetch_put :: (self: *IndexMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> ?V {
-        r := self.get_or_put(key, alloc);
-        if r.found_existing {
-            old := r.value_ptr.*;
-            r.value_ptr.* = val;
+    fetchPut :: (self: *IndexMap(K, V), key: K, val: V, alloc: Allocator = context.allocator) -> ?V {
+        r := self.getOrPut(key, alloc);
+        if r.foundExisting {
+            old := r.valuePtr.*;
+            r.valuePtr.* = val;
             return old;
         }
-        r.value_ptr.* = val;
+        r.valuePtr.* = val;
         return null;
     }
 
     // Insert without growing the ordered array (caller ensured capacity via
-    // `ensure_total_capacity`). Overwrites on hit; appends + indexes on miss.
-    put_assume_capacity :: (self: *IndexMap(K, V), key: K, val: V) {
-        existing := self.find_index(key);
+    // `ensureTotalCapacity`). Overwrites on hit; appends + indexes on miss.
+    putAssumeCapacity :: (self: *IndexMap(K, V), key: K, val: V) {
+        existing := self.findIndex(key);
         if existing >= 0 { self.entries[existing].value = val; return; }
-        h := map_hash_key(key);
+        h := mapHashKey(key);
         e := self.ecount;
         self.entries[e] = IMEntry(K, V){ hash = h, key = key, value = val };
         self.ecount += 1;
-        self.index_insert(h, e);
+        self.indexInsert(h, e);
     }
 
-    // put_assume_capacity returning the previous value (or null on insert).
-    fetch_put_assume_capacity :: (self: *IndexMap(K, V), key: K, val: V) -> ?V {
-        existing := self.find_index(key);
+    // putAssumeCapacity returning the previous value (or null on insert).
+    fetchPutAssumeCapacity :: (self: *IndexMap(K, V), key: K, val: V) -> ?V {
+        existing := self.findIndex(key);
         if existing >= 0 {
             old := self.entries[existing].value;
             self.entries[existing].value = val;
             return old;
         }
-        h := map_hash_key(key);
+        h := mapHashKey(key);
         e := self.ecount;
         self.entries[e] = IMEntry(K, V){ hash = h, key = key, value = val };
         self.ecount += 1;
-        self.index_insert(h, e);
+        self.indexInsert(h, e);
         return null;
     }
 
     get :: (self: *IndexMap(K, V), key: K) -> ?V {
-        i := self.find_index(key);
+        i := self.findIndex(key);
         if i < 0 { return null; }
         self.entries[i].value
     }
 
-    get_ptr :: (self: *IndexMap(K, V), key: K) -> ?*V {
-        i := self.find_index(key);
+    getPtr :: (self: *IndexMap(K, V), key: K) -> ?*V {
+        i := self.findIndex(key);
         if i < 0 { return null; }
         *self.entries[i].value
     }
 
     contains :: (self: *IndexMap(K, V), key: K) -> bool {
-        self.find_index(key) >= 0
+        self.findIndex(key) >= 0
     }
 
     // ORDER-PRESERVING remove (O(n)): drop the entry and shift every later
     // entry down one, then rebuild the index (their indices changed).
     remove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        e := self.find_index(key);
+        e := self.findIndex(key);
         if e < 0 { return false; }
         j := e;
         while j < self.ecount - 1 { self.entries[j] = self.entries[j + 1]; j += 1; }
@@ -787,22 +787,22 @@ IndexMap :: struct ($K: Type, $V: Type) {
     // delete the removed entry's slot by backward-shift, then, if the removed
     // entry was not itself the tail, retarget the slot pointing at the former
     // tail to the hole. Use only when order doesn't matter.
-    swap_remove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
-        e := self.find_index(key);
+    swapRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> bool {
+        e := self.findIndex(key);
         if e < 0 { return false; }
         last := self.ecount - 1;
-        self.index_remove(self.entries[e].hash, e);       // drop the removed key's slot
+        self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
         if e != last {
             self.entries[e] = self.entries[last];         // tail fills the hole
-            self.index_retarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+            self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
         }
         self.ecount -= 1;
         true
     }
 
     // ORDER-PRESERVING remove returning the removed value (or null if absent).
-    fetch_remove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        e := self.find_index(key);
+    fetchRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
+        e := self.findIndex(key);
         if e < 0 { return null; }
         v := self.entries[e].value;
         j := e;
@@ -813,16 +813,16 @@ IndexMap :: struct ($K: Type, $V: Type) {
     }
 
     // O(1)-amortized order-BREAKING remove returning the removed value (or
-    // null). In-place index fixup, exactly as `swap_remove` — no reindex.
-    fetch_swap_remove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
-        e := self.find_index(key);
+    // null). In-place index fixup, exactly as `swapRemove` — no reindex.
+    fetchSwapRemove :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> ?V {
+        e := self.findIndex(key);
         if e < 0 { return null; }
         v := self.entries[e].value;
         last := self.ecount - 1;
-        self.index_remove(self.entries[e].hash, e);       // drop the removed key's slot
+        self.indexRemove(self.entries[e].hash, e);       // drop the removed key's slot
         if e != last {
             self.entries[e] = self.entries[last];         // tail fills the hole
-            self.index_retarget(self.entries[e].hash, last, e);   // its slot now points at `e`
+            self.indexRetarget(self.entries[e].hash, last, e);   // its slot now points at `e`
         }
         self.ecount -= 1;
         return v;
@@ -836,7 +836,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if self.ecount == 0 { return null; }
         self.ecount -= 1;
         e := self.entries[self.ecount];
-        if self.icap > 0 { self.index_remove(e.hash, self.ecount); }
+        if self.icap > 0 { self.indexRemove(e.hash, self.ecount); }
         return e;
     }
 
@@ -852,7 +852,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     clone :: (self: *IndexMap(K, V), alloc: Allocator = context.allocator) -> IndexMap(K, V) {
         r : IndexMap(K, V) = .{};
         if self.ecount == 0 { return r; }
-        r.ensure_entry_cap(self.ecount, alloc);
+        r.ensureEntryCap(self.ecount, alloc);
         c.memcpy(r.entries, self.entries, self.ecount * @sizeOf(IMEntry(K, V)));
         r.ecount = self.ecount;
         r.reindex(alloc);
@@ -860,8 +860,8 @@ IndexMap :: struct ($K: Type, $V: Type) {
     }
 
     deinit :: (self: *IndexMap(K, V), alloc: Allocator = context.allocator) {
-        if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
-        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
+        if self.ecap > 0 { alloc.deallocBytes(self.entries); }
+        if self.icap > 0 { alloc.deallocBytes(self.index); }
         self.entries = null;
         self.index = null;
         self.ecount = 0;
@@ -871,7 +871,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
 
     // Stateful iterator over entries in INSERTION ORDER. Use:
     //   it := m.iterator();
-    //   while kv := it.next() { use(kv.key_ptr.*, kv.value_ptr.*); }
+    //   while kv := it.next() { use(kv.keyPtr.*, kv.valuePtr.*); }
     iterator :: (self: *IndexMap(K, V)) -> IndexIter(K, V) {
         IndexIter(K, V){ map = self, pos = 0 }
     }
@@ -885,7 +885,7 @@ IndexIter :: struct ($K: Type, $V: Type) {
         if self.pos >= self.map.ecount { return null; }
         i := self.pos;
         self.pos = i + 1;
-        return HashKV(K, V){ key_ptr = *self.map.entries[i].key, value_ptr = *self.map.entries[i].value };
+        return HashKV(K, V){ keyPtr = *self.map.entries[i].key, valuePtr = *self.map.entries[i].value };
     }
 
     reset :: (self: *IndexIter(K, V)) { self.pos = 0; }

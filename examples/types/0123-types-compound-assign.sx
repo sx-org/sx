@@ -11,14 +11,14 @@ main :: () {
     // ========================================================
     print("=== 16. Compound Assign ===\n");
     {
-        ca_a : f64 = 10.0;
-        ca_b : f32 = 3.0;
-        ca_a += ca_b;
-        print("f64+=f32: {}\n", ca_a);
+        caA : f64 = 10.0;
+        caB : f32 = 3.0;
+        caA += caB;
+        print("f64+=f32: {}\n", caA);
 
-        ca_c : i64 = 100;
-        ca_d : i32 = 7;
-        ca_c -= ca_d;
-        print("i64-=i32: {}\n", ca_c);
+        caC : i64 = 100;
+        caD : i32 = 7;
+        caC -= caD;
+        print("i64-=i32: {}\n", caC);
     }
 }

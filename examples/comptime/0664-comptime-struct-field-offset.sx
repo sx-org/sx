@@ -1,4 +1,4 @@
-// struct_field_offset(T, i) — the i-th field's byte offset, folded at
+// structFieldOffset(T, i) — the i-th field's byte offset, folded at
 // compile time from the same layout walk typeSizeBytes uses (fields
 // aligned to their own alignment, declaration order). Parity with
 // `@typeInfo`'s FieldInfo.offset is pinned.
@@ -9,13 +9,13 @@ PaddedT :: struct { a: u8; b: i64 };
 
 parity :: () -> bool {
     ti := @typeInfo(Padded);
-    match ti { case .struct: |si| { return si.fields[1].offset == struct_field_offset(Padded, 1); } else: {} }
+    match ti { case .struct: |si| { return si.fields[1].offset == structFieldOffset(Padded, 1); } else: {} }
     return false;
 }
 PARITY :: @run parity();
 
 main :: () {
-    print("{} {} {}\n", struct_field_offset(Padded, 0), struct_field_offset(Padded, 1), struct_field_offset(Padded, 2));
-    print("product: {} {}\n", struct_field_offset(PaddedT, 0), struct_field_offset(PaddedT, 1));
+    print("{} {} {}\n", structFieldOffset(Padded, 0), structFieldOffset(Padded, 1), structFieldOffset(Padded, 2));
+    print("product: {} {}\n", structFieldOffset(PaddedT, 0), structFieldOffset(PaddedT, 1));
     print("parity={}\n", PARITY);
 }

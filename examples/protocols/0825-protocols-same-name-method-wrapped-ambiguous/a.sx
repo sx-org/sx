@@ -2,7 +2,7 @@
 // protocol method-signature `() -> *Box` is a genuine collision.
 Box :: struct { a: i32; }
 
-a_box :: () -> i32 {
+aBox :: () -> i32 {
     b : Box = ---;
     b.a = 1;
     return b.a;

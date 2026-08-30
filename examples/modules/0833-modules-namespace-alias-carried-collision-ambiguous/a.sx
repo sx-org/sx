@@ -1,2 +1,2 @@
 t :: @import "x.sx";
-use_a :: () -> i64 { t.fx() }
+useA :: () -> i64 { t.fx() }

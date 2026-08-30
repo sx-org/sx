@@ -1,8 +1,8 @@
 @sizeOf(i64)   = 8
 @alignOf(i64)  = 8
 @sizeOf(P)     = 16
-struct_field_count(P) = 2
-struct_field_name(P,0)= a
+structFieldCount(P)  = 2
+structFieldName(P,0) = a
 @typeName(P)   = P
-is_flags(E)    = false
-variant_index    = 1
+isFlags(E)     = false
+variantIndex   = 1

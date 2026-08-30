@@ -3,7 +3,7 @@
 @import "modules/std.sx";
 @import "modules/ui/fluent.sx";
 
-slot_bytes :: () -> i64 => @sizeOf(View);
+slotBytes :: () -> i64 => @sizeOf(View);
 
 build :: (n: i64) -> VStack {
     VStack{ children = collectViews() {
@@ -17,12 +17,12 @@ warmup :: (n: i64) -> i64 {
     stack := build(n);
     root : View = stack;
     tree := RenderTree{};
-    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
-    command_count(*tree)
+    renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    commandCount(*tree)
 }
 
 sample :: (n: i64, builds: i64, walks: i64) -> (i64, i64, i64) {
-    t0 := time.mono_ns();
+    t0 := time.monoNs();
     b := 0;
     built := 0;
     while b < builds {
@@ -30,16 +30,16 @@ sample :: (n: i64, builds: i64, walks: i64) -> (i64, i64, i64) {
         built = built + stack.children.len;
         b = b + 1;
     }
-    t1 := time.mono_ns();
+    t1 := time.monoNs();
     stack := build(n);
     tree := RenderTree{};
     root : View = stack;
     k := 0;
     while k < walks {
         tree.nodes.len = 0;
-        render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+        renderRoot(*root, Size{ width = 200.0, height = 400.0 }, *tree);
         k = k + 1;
     }
-    t2 := time.mono_ns();
-    .{t1 - t0, t2 - t1, command_count(*tree) + (built - builds * n)}
+    t2 := time.monoNs();
+    .{t1 - t0, t2 - t1, commandCount(*tree) + (built - builds * n)}
 }

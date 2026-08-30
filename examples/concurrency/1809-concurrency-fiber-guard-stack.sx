@@ -28,9 +28,9 @@ GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
 STACK     :: 131072;     // 128 KB usable
 
 FiberCtx :: struct { regs: [13]u64; }
-Fiber :: struct { ctx: FiberCtx; finish: *FiberCtx; out: i64; guard_ok: i64; }
+Fiber :: struct { ctx: FiberCtx; finish: *FiberCtx; out: i64; guardOk: i64; }
 
-swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
+swapContext :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
     asm volatile {
         @string ASM
         stp x19, x20, [x0, #0]
@@ -66,38 +66,38 @@ T,
 fib_tramp :: () extern;
 
 // Real recursion → genuine stack usage on the guarded stack (well within 128KB).
-sum_to :: (n: i64) -> i64 {
+sumTo :: (n: i64) -> i64 {
     if n == 0 { return 0; }
-    return n + sum_to(n - 1);
+    return n + sumTo(n - 1);
 }
 
-fib_body :: (self: *Fiber) export "fib_body" {
-    self.out = sum_to(200);     // 200*201/2 = 20100
-    swap_context(*self.ctx, self.finish);
+fibBody :: (self: *Fiber) export "fib_body" {
+    self.out = sumTo(200);     // 200*201/2 = 20100
+    swapContext(*self.ctx, self.finish);
 }
 
 // mmap a [guard | usable-stack] region and mprotect the low guard page
 // PROT_NONE. Returns the 16-aligned stack top; reports guard-syscall success.
-guarded_stack :: (f: *Fiber, size: i64) -> u64 {
+guardedStack :: (f: *Fiber, size: i64) -> u64 {
     region : *void = mmap(null, GUARD + size, PROT_RW, MAP_AP, -1, 0);
-    if region == -1 { f.guard_ok = 0; return 0; }
-    f.guard_ok = 0;
-    if mprotect(region, GUARD, PROT_NONE) == 0 { f.guard_ok = 1; }
+    if region == -1 { f.guardOk = 0; return 0; }
+    f.guardOk = 0;
+    if mprotect(region, GUARD, PROT_NONE) == 0 { f.guardOk = 1; }
     usable : u64 = (xx region) + GUARD;
     top : u64 = usable + size;
     return top - (top % 16);
 }
 
 main :: () -> i64 {
-    main_ctx : FiberCtx = ---;
-    f : Fiber = ---;  f.finish = *main_ctx;  f.out = -1;  f.guard_ok = 0;
-    top := guarded_stack(*f, STACK);
+    mainCtx : FiberCtx = ---;
+    f : Fiber = ---;  f.finish = *mainCtx;  f.out = -1;  f.guardOk = 0;
+    top := guardedStack(*f, STACK);
     f.ctx.regs[0]  = xx *f;
     f.ctx.regs[10] = 0;
     f.ctx.regs[11] = xx fib_tramp;
     f.ctx.regs[12] = top;
-    swap_context(*main_ctx, *f.ctx);
-    print("guard armed: {}\n", f.guard_ok);   // 1 — mprotect(PROT_NONE) succeeded
+    swapContext(*mainCtx, *f.ctx);
+    print("guard armed: {}\n", f.guardOk);    // 1 — mprotect(PROT_NONE) succeeded
     print("sum: {}\n", f.out);                // 20100 — fiber ran on the guarded stack
     return 0;
 }

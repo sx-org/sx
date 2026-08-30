@@ -10,7 +10,7 @@ Holder :: struct { ctx: Context = .{}; }
 
 Box :: struct($T: Type) { v: T; }
 
-@context_extend box: Box(i64) = .{ v = 0 };
+@context.extend box: Box(i64) = .{ v = 0 };
 
 main :: () -> i64 {
     push Context{ allocator = context.allocator } {

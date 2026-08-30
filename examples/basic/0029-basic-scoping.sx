@@ -20,11 +20,11 @@ main :: () {
     print("outer: {}\n", sv);
 
     // Shadow with different type
-    st_v := 42;
-    print("shadow-type: {}\n", st_v);
+    stV := 42;
+    print("shadow-type: {}\n", stV);
     {
-        st_v := 3.14;
-        print("shadow-type: {}\n", st_v);
+        stV := 3.14;
+        print("shadow-type: {}\n", stV);
     }
 
     // Nested scopes (3 levels)

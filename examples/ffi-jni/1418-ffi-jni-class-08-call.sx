@@ -9,9 +9,9 @@ Activity :: @JniClass("android/app/Activity") extern {
     getWindow :: (self: *Self) -> *void;
 }
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-unused_jni :: (env: *void, act: *Activity) {
+unusedJni :: (env: *void, act: *Activity) {
     push .{ jni = env } {
         // This fails — sema doesn't know `Activity` as a type, or
         // the method dispatch doesn't recognize runtime-class members.
@@ -20,8 +20,8 @@ unused_jni :: (env: *void, act: *Activity) {
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        unused_jni(null, null);
+    if gShouldCall {
+        unusedJni(null, null);
     }
     print("ok\n");
     0

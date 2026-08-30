@@ -9,4 +9,4 @@ InternalError :: error { Bad }
 InternalProtocol :: interface { read :: (self: *Self) -> i64; }
 InternalAlias :: InternalStruct;
 
-internal_fn :: () -> i64 { 44 }
+internalFn :: () -> i64 { 44 }

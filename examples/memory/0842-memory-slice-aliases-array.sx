@@ -10,7 +10,7 @@ S :: struct { v: i64 = 0; }
 
 Holder :: struct { arr: [3]i64 = ---; }
 
-g_arr : [4]i64 = ---;
+gArr : [4]i64 = ---;
 
 main :: () -> i32 {
     // ── local array: write-through + read-through ────────────────────────
@@ -34,10 +34,10 @@ main :: () -> i32 {
     if nums[1] != 99 { return 5; }   // write-through offset lands at nums[1]
 
     // ── global array ─────────────────────────────────────────────────────
-    g_arr[0] = 1; g_arr[1] = 2; g_arr[2] = 3; g_arr[3] = 4;
-    gs : []i64 = g_arr[0..4];
+    gArr[0] = 1; gArr[1] = 2; gArr[2] = 3; gArr[3] = 4;
+    gs : []i64 = gArr[0..4];
     gs[2] = 88;
-    if g_arr[2] != 88 { return 6; }
+    if gArr[2] != 88 { return 6; }
 
     // ── struct-field array ───────────────────────────────────────────────
     h : Holder = ---;

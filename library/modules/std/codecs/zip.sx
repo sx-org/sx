@@ -13,7 +13,7 @@
 @import "modules/std/internal/zip_facade.sx";
 
 // These flat-imported aliases resolve to declarations authored in the public
-// zip_contracts part-file. The `StdZip*` bridge spellings stay internal and
+// zipContracts part-file. The `StdZip*` bridge spellings stay internal and
 // this facade authors only the five supported names below.
 Method            :: StdZipMethod;
 Entry             :: StdZipEntry;
@@ -35,15 +35,15 @@ EntryReader :: struct {
     // Construct this state only through Reader.stream*().
     state: StdZipEntryReaderState;
 
-    len :: (self: *EntryReader) -> i64 { std_zip_entry_reader_len(*self.state) }
-    offset :: (self: *EntryReader) -> i64 { std_zip_entry_reader_offset(*self.state) }
+    len :: (self: *EntryReader) -> i64 { stdZipEntryReaderLen(*self.state) }
+    offset :: (self: *EntryReader) -> i64 { stdZipEntryReaderOffset(*self.state) }
 
     seek :: (self: *EntryReader, offset: i64) -> !Error {
-        std_zip_entry_reader_seek(*self.state, offset)
+        stdZipEntryReaderSeek(*self.state, offset)
     }
 
     read :: (self: *EntryReader, output: string) -> (string, !Error) {
-        std_zip_entry_reader_read(*self.state, output)
+        stdZipEntryReaderRead(*self.state, output)
     }
 
     // Explicit fallible integrity finalization. Validates stream completion
@@ -51,126 +51,126 @@ EntryReader :: struct {
     // the checksum mismatches. Idempotent after the terminal empty read
     // (which performs the same validation). Always closes the reader;
     // deinit() stays the infallible cleanup for error paths.
-    finish :: (self: *EntryReader) -> !Error { std_zip_entry_reader_finish(*self.state) }
+    finish :: (self: *EntryReader) -> !Error { stdZipEntryReaderFinish(*self.state) }
 
-    deinit :: (self: *EntryReader) { std_zip_entry_reader_deinit(*self.state); }
+    deinit :: (self: *EntryReader) { stdZipEntryReaderDeinit(*self.state); }
 }
 
 Reader :: struct {
-    // Construct this state only through open(), open_source(), or open_file().
+    // Construct this state only through open(), openSource(), or openFile().
     state: StdZipReaderState;
 
-    len :: (self: *Reader) -> i64 { std_zip_reader_len(*self.state) }
-    comment :: (self: *Reader) -> string { std_zip_reader_comment(*self.state) }
-    is_zip64 :: (self: *Reader) -> bool { std_zip_reader_is_zip64(*self.state) }
+    len :: (self: *Reader) -> i64 { stdZipReaderLen(*self.state) }
+    comment :: (self: *Reader) -> string { stdZipReaderComment(*self.state) }
+    isZip64 :: (self: *Reader) -> bool { stdZipReaderIsZip64(*self.state) }
 
     entry :: (self: *Reader, index: i64) -> (Entry, !Error) {
-        std_zip_reader_entry(*self.state, index)
+        stdZipReaderEntry(*self.state, index)
     }
 
     // Exact, case-sensitive, first-match lookup. It does not allocate, even
     // when an archive contains duplicate names.
     find :: (self: *Reader, name: string) -> (i64, !Error) {
-        std_zip_reader_find(*self.state, name)
+        stdZipReaderFind(*self.state, name)
     }
 
     // Reads archive bytes at a relative offset and returns the initialized
     // prefix borrowed from output.
-    read_at :: (self: *Reader, offset: i64, output: string) -> (string, !Error) {
-        std_zip_reader_read_at(*self.state, offset, output)
+    readAt :: (self: *Reader, offset: i64, output: string) -> (string, !Error) {
+        stdZipReaderReadAt(*self.state, offset, output)
     }
 
-    extract :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
-        std_zip_reader_extract(*self.state, index, false, max_output, alloc)
+    extract :: (self: *Reader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+        stdZipReaderExtract(*self.state, index, false, maxOutput, alloc)
     }
 
-    extract_name :: (self: *Reader, name: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+    extractName :: (self: *Reader, name: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
         index := try self.find(name);
-        self.extract(index, max_output, alloc)
+        self.extract(index, maxOutput, alloc)
     }
 
     // Returns the initialized prefix borrowed from output.
-    extract_into :: (self: *Reader, index: i64, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
-        std_zip_reader_extract_into(*self.state, index, output, false, alloc)
+    extractInto :: (self: *Reader, index: i64, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
+        stdZipReaderExtractInto(*self.state, index, output, false, alloc)
     }
 
-    extract_name_into :: (self: *Reader, name: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
+    extractNameInto :: (self: *Reader, name: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
         index := try self.find(name);
-        self.extract_into(index, output, alloc)
+        self.extractInto(index, output, alloc)
     }
 
     // Streams bounded output to target without materializing the entry.
-    extract_to :: (self: *Reader, index: i64, target: Sink, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
-        std_zip_reader_extract_to(*self.state, index, target, false, max_output, alloc)
+    extractTo :: (self: *Reader, index: i64, target: Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+        stdZipReaderExtractTo(*self.state, index, target, false, maxOutput, alloc)
     }
 
-    stream :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
-        state := try std_zip_entry_reader(*self.state, index, false, max_output, alloc);
+    stream :: (self: *Reader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
+        state := try stdZipEntryReader(*self.state, index, false, maxOutput, alloc);
         EntryReader{ state = state }
     }
 
-    stream_name :: (self: *Reader, name: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
+    streamName :: (self: *Reader, name: string, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
         index := try self.find(name);
-        self.stream(index, max_output, alloc)
+        self.stream(index, maxOutput, alloc)
     }
 
     // Raw compressed entry bytes, useful for archive-preserving tools.
-    stream_compressed :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
-        state := try std_zip_entry_reader(*self.state, index, true, max_output, alloc);
+    streamCompressed :: (self: *Reader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
+        state := try stdZipEntryReader(*self.state, index, true, maxOutput, alloc);
         EntryReader{ state = state }
     }
 
-    extract_file :: (self: *Reader, index: i64, path: [:0]u8, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
-        std_zip_reader_extract_file(*self.state, index, path, max_output, alloc)
+    extractFile :: (self: *Reader, index: i64, path: [:0]u8, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+        stdZipReaderExtractFile(*self.state, index, path, maxOutput, alloc)
     }
 
     // Raw compressed payload operations support lossless transfer tools. CRC
     // validation belongs to the eventual decompressor, not this byte copy.
-    extract_compressed :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
-        std_zip_reader_extract(*self.state, index, true, max_output, alloc)
+    extractCompressed :: (self: *Reader, index: i64, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+        stdZipReaderExtract(*self.state, index, true, maxOutput, alloc)
     }
 
-    extract_compressed_into :: (self: *Reader, index: i64, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
-        std_zip_reader_extract_into(*self.state, index, output, true, alloc)
+    extractCompressedInto :: (self: *Reader, index: i64, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
+        stdZipReaderExtractInto(*self.state, index, output, true, alloc)
     }
 
-    extract_compressed_to :: (self: *Reader, index: i64, target: Sink, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
-        std_zip_reader_extract_to(*self.state, index, target, true, max_output, alloc)
+    extractCompressedTo :: (self: *Reader, index: i64, target: Sink, maxOutput: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+        stdZipReaderExtractTo(*self.state, index, target, true, maxOutput, alloc)
     }
 
     // Full validation streams/discards entry data in bounded windows.
-    validate :: (self: *Reader, headers_only: bool = false, alloc: Allocator = context.allocator) -> !Error {
-        std_zip_reader_validate(*self.state, headers_only, alloc)
+    validate :: (self: *Reader, headersOnly: bool = false, alloc: Allocator = context.allocator) -> !Error {
+        stdZipReaderValidate(*self.state, headersOnly, alloc)
     }
 
-    deinit :: (self: *Reader) { std_zip_reader_deinit(*self.state); }
+    deinit :: (self: *Reader) { stdZipReaderDeinit(*self.state); }
 }
 
 open :: (data: string, alloc: Allocator = context.allocator) -> (Reader, !Error) {
-    state := try std_zip_reader_memory(data, alloc);
+    state := try stdZipReaderMemory(data, alloc);
     Reader{ state = state }
 }
 
 // Finds an archive appended to an in-memory prefix, such as a self-extracting
 // payload. Plain open() deliberately requires the archive at offset zero.
-open_embedded :: (data: string, alloc: Allocator = context.allocator) -> (Reader, !Error) {
-    state := try std_zip_reader_embedded(data, alloc);
+openEmbedded :: (data: string, alloc: Allocator = context.allocator) -> (Reader, !Error) {
+    state := try stdZipReaderEmbedded(data, alloc);
     Reader{ state = state }
 }
 
-// source must outlive the returned Reader. max_metadata bounds resident
+// source must outlive the returned Reader. maxMetadata bounds resident
 // central-directory/name/extra/comment storage.
-open_source :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
-    state := try std_zip_reader_source(source, options.max_metadata, alloc);
+openSource :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
+    state := try stdZipReaderSource(source, options.maxMetadata, alloc);
     Reader{ state = state }
 }
 
-open_file :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
+openFile :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     if options.start < 0 { raise .InvalidOptions; }
     if size := options.size {
         if size < 0 { raise .InvalidOptions; }
     }
-    state := try std_zip_reader_file(path, options.start, options.size ?? 0, options.max_metadata, alloc);
+    state := try stdZipReaderFile(path, options.start, options.size ?? 0, options.maxMetadata, alloc);
     Reader{ state = state }
 }
 
@@ -180,91 +180,91 @@ Writer :: struct {
 
     // Memory output. Call finish() and then take() to transfer ownership.
     init :: (options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
-        state := try std_zip_writer_memory(options.zip64, alloc);
+        state := try stdZipWriterMemory(options.zip64, alloc);
         Writer{ state = state }
     }
 
     // target must outlive the Writer. Output is emitted incrementally; sink
     // errors poison the writer because accepted bytes cannot be rolled back.
-    init_sink :: (target: Sink, options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
-        state := try std_zip_writer_sink(target, options.zip64, alloc);
+    initSink :: (target: Sink, options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+        state := try stdZipWriterSink(target, options.zip64, alloc);
         Writer{ state = state }
     }
 
-    init_file :: (path: [:0]u8, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+    initFile :: (path: [:0]u8, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         if options.reserve < 0 { raise .InvalidOptions; }
-        state := try std_zip_writer_file(path, options.reserve, options.zip64, alloc);
+        state := try stdZipWriterFile(path, options.reserve, options.zip64, alloc);
         Writer{ state = state }
     }
 
     // Copies existing local records into memory without recompressing them.
     // A null finish comment preserves the source archive comment.
-    from_reader :: (source: *Reader, options: FromReaderOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
-        state := try std_zip_writer_from_reader(*source.state, options.force_zip64, alloc);
+    fromReader :: (source: *Reader, options: FromReaderOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+        state := try stdZipWriterFromReader(*source.state, options.forceZip64, alloc);
         Writer{ state = state }
     }
 
     // Opens an existing archive for in-place append, or creates it when absent.
     // A null finish comment preserves an existing archive comment.
-    append_file :: (path: [:0]u8, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
-        state := try std_zip_writer_append_file(path, options.force_zip64, options.max_metadata, alloc);
+    appendFile :: (path: [:0]u8, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
+        state := try stdZipWriterAppendFile(path, options.forceZip64, options.maxMetadata, alloc);
         Writer{ state = state }
     }
 
-    len :: (self: *Writer) -> i64 { std_zip_writer_len(*self.state) }
-    size :: (self: *Writer) -> i64 { std_zip_writer_size(*self.state) }
-    is_zip64 :: (self: *Writer) -> bool { std_zip_writer_is_zip64(*self.state) }
+    len :: (self: *Writer) -> i64 { stdZipWriterLen(*self.state) }
+    size :: (self: *Writer) -> i64 { stdZipWriterSize(*self.state) }
+    isZip64 :: (self: *Writer) -> bool { stdZipWriterIsZip64(*self.state) }
 
-    set_alignment :: (self: *Writer, alignment: i64) -> !Error {
-        std_zip_writer_set_alignment(*self.state, alignment)
+    setAlignment :: (self: *Writer, alignment: i64) -> !Error {
+        stdZipWriterSetAlignment(*self.state, alignment)
     }
 
-    reserve_prefix :: (self: *Writer, size: i64) -> !Error {
-        std_zip_writer_reserve_prefix(*self.state, size)
+    reservePrefix :: (self: *Writer, size: i64) -> !Error {
+        stdZipWriterReservePrefix(*self.state, size)
     }
 
     add :: (self: *Writer, name: string, data: string, options: EntryOptions = .{}) -> !Error {
-        std_zip_writer_add(*self.state, name, data, options)
+        stdZipWriterAdd(*self.state, name, data, options)
     }
 
     // source.size() is authoritative; early EOF is an error and reads never
     // exceed that declared bound.
-    add_source :: (self: *Writer, name: string, source: Source, options: EntryOptions = .{}) -> !Error {
-        std_zip_writer_add_source(*self.state, name, source, options)
+    addSource :: (self: *Writer, name: string, source: Source, options: EntryOptions = .{}) -> !Error {
+        stdZipWriterAddSource(*self.state, name, source, options)
     }
 
-    add_file :: (self: *Writer, name: string, path: [:0]u8, options: EntryOptions = .{}) -> !Error {
-        std_zip_writer_add_file(*self.state, name, path, options)
+    addFile :: (self: *Writer, name: string, path: [:0]u8, options: EntryOptions = .{}) -> !Error {
+        stdZipWriterAddFile(*self.state, name, path, options)
     }
 
     // Transfers the source entry's local record and compressed bytes without
     // decoding or recompressing them.
-    add_from :: (self: *Writer, source: *Reader, index: i64) -> !Error {
-        std_zip_writer_add_from(*self.state, *source.state, index)
+    addFrom :: (self: *Writer, source: *Reader, index: i64) -> !Error {
+        stdZipWriterAddFrom(*self.state, *source.state, index)
     }
 
-    read_at :: (self: *Writer, offset: i64, output: string) -> (string, !Error) {
-        std_zip_writer_read_at(*self.state, offset, output)
+    readAt :: (self: *Writer, offset: i64, output: string) -> (string, !Error) {
+        stdZipWriterReadAt(*self.state, offset, output)
     }
 
     // null preserves the source comment for update writers; new writers use
     // an empty comment. Passing "" explicitly clears an existing comment.
     finish :: (self: *Writer, comment: ?string = null) -> !Error {
-        std_zip_writer_finish(*self.state, comment)
+        stdZipWriterFinish(*self.state, comment)
     }
 
     // Valid only for a finished memory Writer. The returned bytes belong to
-    // the allocator passed to init()/from_reader().
-    take :: (self: *Writer) -> (string, !Error) { std_zip_writer_take(*self.state) }
+    // the allocator passed to init()/fromReader().
+    take :: (self: *Writer) -> (string, !Error) { stdZipWriterTake(*self.state) }
 
     // Fallible finalization. Flushes and closes the underlying file or
     // target and releases writer resources; flush/close failures raise Io.
     // After close() the writer is finished for good — deinit() is a no-op
     // and take() reports Finished, so memory writers should take() first.
     // deinit() remains the infallible cleanup for error paths.
-    close :: (self: *Writer) -> !Error { std_zip_writer_close(*self.state) }
+    close :: (self: *Writer) -> !Error { stdZipWriterClose(*self.state) }
 
-    deinit :: (self: *Writer) { std_zip_writer_deinit(*self.state); }
+    deinit :: (self: *Writer) { stdZipWriterDeinit(*self.state); }
 }
 
 Input :: struct {
@@ -285,8 +285,8 @@ create :: (inputs: []Input, options: WriterOptions = .{}, comment: string = "", 
     writer.take()
 }
 
-create_file :: (path: [:0]u8, inputs: []Input, options: FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !Error {
-    writer := try Writer.init_file(path, options, alloc);
+createFile :: (path: [:0]u8, inputs: []Input, options: FileWriterOptions = .{}, comment: string = "", alloc: Allocator = context.allocator) -> !Error {
+    writer := try Writer.initFile(path, options, alloc);
     defer writer.deinit();
     i := 0;
     while i < inputs.len {

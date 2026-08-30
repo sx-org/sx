@@ -21,9 +21,9 @@
 ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
-key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
+down :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ pointer = .{ value = 1 }, position = at(x, y) });
+key :: (k: LogicalKey) -> InputEvent => .keyDown(.{ logical = k });
 
 Cursor :: struct {
     row: i64 = 0;
@@ -46,19 +46,19 @@ main :: () -> i32 {
     sites := 0;
     distinct := false;
     marks := Identity.init(home);
-    push .{ compose_ui = *marks, allocator = away } {
-        marks.begin_build();
-        a := element_id();
-        b := element_id();
-        c := element_id();
-        d := element_id();
-        e := element_id();
+    push .{ composeUi = *marks, allocator = away } {
+        marks.beginBuild();
+        a := elementId();
+        b := elementId();
+        c := elementId();
+        d := elementId();
+        e := elementId();
         sites = marks.counts.len;
         distinct = a.value != b.value and b.value != c.value and c.value != d.value and d.value != e.value;
         marks.deinit()
     }
     print("identity sites {} distinct {} home {} away {}\n",
-        sites, distinct, home.leak_count(), away.leak_count());
+        sites, distinct, home.leakCount(), away.leakCount());
 
     // StateStore: one entry block per claim, and the list over them.
     entries := 0;
@@ -66,13 +66,13 @@ main :: () -> i32 {
     row := 0;
     tally := Identity.init(home);
     store := StateStore.init(home);
-    push .{ compose_ui = *tally, compose_state = *store, allocator = away } {
-        tally.begin_build();
-        store.begin_build();
-        n := use_state(i64, 1);
+    push .{ composeUi = *tally, composeState = *store, allocator = away } {
+        tally.beginBuild();
+        store.beginBuild();
+        n := useState(i64, 1);
         n.set(n.get() + 41);
-        seat := use_state(Cursor, .{ row = 2, col = 3 });
-        store.commit_build();
+        seat := useState(Cursor, .{ row = 2, col = 3 });
+        store.commitBuild();
         entries = store.entries.len;
         counted = n.get();
         row = seat.get().row;
@@ -80,7 +80,7 @@ main :: () -> i32 {
         tally.deinit()
     }
     print("state entries {} value {} row {} home {} away {}\n",
-        entries, counted, row, home.leak_count(), away.leak_count());
+        entries, counted, row, home.leakCount(), away.leakCount());
 
     // Router: the sequence a down captures against the committed frame.
     regions := 0;
@@ -88,8 +88,8 @@ main :: () -> i32 {
     pointers := Identity.init(home);
     taps := Router.init(home);
     live := CommittedUiSnapshot.init(home);
-    push .{ compose_ui = *pointers, compose_input = *taps, allocator = away } {
-        pointers.begin_build();
+    push .{ composeUi = *pointers, composeInput = *taps, allocator = away } {
+        pointers.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
@@ -99,14 +99,14 @@ main :: () -> i32 {
         taps.observe(*live);
         held := down(30.0, 10.0);
         taps.dispatch(*held);
-        regions = live.hit_list.len;
-        captured = taps.pressed(live.hit_list.items[0].id);
+        regions = live.hitList.len;
+        captured = taps.pressed(live.hitList.items[0].id);
         taps.deinit();
         live.deinit();
         pointers.deinit()
     }
     print("router regions {} captured {} home {} away {}\n",
-        regions, captured, home.leak_count(), away.leak_count());
+        regions, captured, home.leakCount(), away.leakCount());
 
     // CommittedUiSnapshot: the fill runs while `away` is ambient and the
     // release while neither tracker is, and the three buffers still come from
@@ -119,8 +119,8 @@ main :: () -> i32 {
     struck := 0;
     labels := Identity.init(home);
     shot := CommittedUiSnapshot.init(home);
-    push .{ compose_ui = *labels } {
-        labels.begin_build();
+    push .{ composeUi = *labels } {
+        labels.beginBuild();
         hit := *struck;
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
@@ -129,27 +129,27 @@ main :: () -> i32 {
                     hit.* += 1;
                 }))
             };
-            made := home.alloc_count;
+            made := home.allocCount;
             push .{ allocator = away } {
                 project(*tree, Size{ width = 60.0, height = 40.0 }, *shot)
             }
-            filled = home.alloc_count - made;
+            filled = home.allocCount - made;
 
             keys := FocusRouter.init();
             keys.observe(*shot);
-            still := home.alloc_count + away.alloc_count;
-            keys.request_focus(.{ value = shot.focus_list.items[0].id });
+            still := home.allocCount + away.allocCount;
+            keys.requestFocus(.{ value = shot.focusList.items[0].id });
             stroke := key(.enter);
             keys.dispatch(*stroke);
-            spent = home.alloc_count + away.alloc_count - still;
+            spent = home.allocCount + away.allocCount - still;
         }
     }
-    gave := home.dealloc_count;
+    gave := home.deallocCount;
     shot.deinit();
-    returned = home.dealloc_count - gave;
+    returned = home.deallocCount - gave;
     labels.deinit();
     print("snapshot filled {} returned {} home {} away {}\n",
-        filled, returned, home.leak_count(), away.leak_count());
+        filled, returned, home.leakCount(), away.leakCount());
     print("focus struck {} spent {}\n", struck, spent);
 
     // A `discard` is where a snapshot's allocator moves: it lets the buffers go
@@ -159,26 +159,26 @@ main :: () -> i32 {
     second := Arena.init(home, 2048);
     moved := CommittedUiSnapshot.init(first);
     untouched := true;
-    push .{ compose_ui = *stamps } {
-        stamps.begin_build();
+    push .{ composeUi = *stamps } {
+        stamps.beginBuild();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             };
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved);
-            untouched = second.end_index == 0;
+            untouched = second.endIndex == 0;
             moved.discard(second);
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
         }
     }
-    hits := moved.hit_list.len;
-    retargeted := second.end_index > 0;
+    hits := moved.hitList.len;
+    retargeted := second.endIndex > 0;
     moved.deinit();
     first.deinit();
     second.deinit();
     stamps.deinit();
     print("retarget before {} after {} hits {} home {} away {}\n",
-        untouched, retargeted, hits, home.leak_count(), away.leak_count());
+        untouched, retargeted, hits, home.leakCount(), away.leakCount());
 
     // UiRoot and FrameLoop: the root's carriers and arenas are the root
     // allocator's, and the builder environment comes from the allocator
@@ -191,7 +191,7 @@ main :: () -> i32 {
         seen := *taken;
         spin := FrameLoop.init(*app, closure(||_{ builds, seen } -> View {
             builds.* += 1;
-            n := use_state(i64, 0);
+            n := useState(i64, 0);
             n.set(n.get() + 1);
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, closure(||_{ seen } {
@@ -209,7 +209,7 @@ main :: () -> i32 {
         spin.deinit()
     }
     print("root built {} taps {} home {} away {}\n",
-        built, taken, home.leak_count(), away.leak_count());
+        built, taken, home.leakCount(), away.leakCount());
 
     scratch.deinit();
     0

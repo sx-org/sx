@@ -41,12 +41,12 @@ main :: () -> i32 {
     if roundtrip(xx counter).bump() != 6 { return 5; }
     if qualified(xx counter) != 7 { return 6; }
 
-    optional_holder := OptionalHolder{ item = xx counter };
-    if optional_holder.item.bump() != 8 { return 7; }
+    optionalHolder := OptionalHolder{ item = xx counter };
+    if optionalHolder.item.bump() != 8 { return 7; }
 
-    view_holder := ViewHolder{ item = counter, optional = view };
-    if view_holder.item.bump() != 9 { return 8; }
-    if view_holder.optional.bump() != 10 { return 9; }
+    viewHolder := ViewHolder{ item = counter, optional = view };
+    if viewHolder.item.bump() != 9 { return 8; }
+    if viewHolder.optional.bump() != 10 { return 9; }
     if counter.n != 10 { return 10; }
     0
 }

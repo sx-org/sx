@@ -14,7 +14,7 @@
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;
     value.write(*item);
-    if context.emit_ui != null {
-        context.emit_ui.children.append(item);
+    if context.emitUi != null {
+        context.emitUi.children.append(item);
     }
 }

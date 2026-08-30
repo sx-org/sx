@@ -21,53 +21,53 @@ out :: (str: string) -> void {
 @typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
 // Struct/tuple field reads (structs, tuples, untagged unions). The enum
-// duals are the variant_* family below; arrays/vectors use `.len` and
+// duals are the variant* family below; arrays/vectors use `.len` and
 // native indexing instead.
-struct_field_count :: ($T: Type) -> i64 intrinsic;
-struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
+structFieldCount :: ($T: Type) -> i64 intrinsic;
+structFieldName :: ($T: Type, idx: i64) -> string intrinsic;
 // The i-th field type of a struct/tuple. A comptime reflection builtin that
 // folds at LOWER time, so it composes inside `@typeEq` / `@typeName` / any
 // type-arg slot.
-struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
+structFieldType :: ($T: Type, idx: i64) -> Type intrinsic;
 // The i-th field's byte offset within the struct (tuples: element offset).
-struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
-// The target type of a pointer: `pointee_type(*X)` -> `X`. Comptime reflection,
-// folded at lower time like `struct_field_type` (so it composes in any type-arg
+structFieldOffset :: ($T: Type, idx: i64) -> i64 intrinsic;
+// The target type of a pointer: `pointeeType(*X)` -> `X`. Comptime reflection,
+// folded at lower time like `structFieldType` (so it composes in any type-arg
 // slot). A non-pointer argument is a loud compile error, not a silent fallthrough.
-pointee_type :: ($P: Type) -> Type intrinsic;
-struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
+pointeeType :: ($P: Type) -> Type intrinsic;
+structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
 // Enum / tagged-union variant reads — the kind-specific duals of the
-// struct_field_* family above.
-variant_count :: ($T: Type) -> i64 intrinsic;
-variant_name :: ($T: Type, idx: i64) -> string intrinsic;
-variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
-variant_payload :: (u: $T, idx: i64) -> any intrinsic;
-is_flags :: ($T: Type) -> bool intrinsic;
-variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
-variant_index :: ($T: Type, val: T) -> i64 intrinsic;
+// structField* family above.
+variantCount :: ($T: Type) -> i64 intrinsic;
+variantName :: ($T: Type, idx: i64) -> string intrinsic;
+variantType :: ($T: Type, idx: i64) -> Type intrinsic;
+variantPayload :: (u: $T, idx: i64) -> any intrinsic;
+isFlags :: ($T: Type) -> bool intrinsic;
+variantValue :: ($T: Type, idx: i64) -> i64 intrinsic;
+variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// An error value's live payload as an `any` view — the `variant_payload`
+// An error value's live payload as an `any` view — the `variantPayload`
 // sibling for error channels. A payload-free member views as `void`.
 @errorPayload :: (e: $T) -> any;
-// A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
+// A vector's lane COUNT (`vectorLanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
-// size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
+// size / element size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind
 // discrimination is `@typeInfo`'s job, like the count tables.
-vector_lanes :: ($T: Type) -> i64 intrinsic;
+vectorLanes :: ($T: Type) -> i64 intrinsic;
 // INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
 // variant read loads from a value of T, sign-encoded — negative means |w|
 // bytes then sign-extend (signed backing / tag type). A payload-less enum's
-// whole value is its tag; a tagged union's tag is the LOW @sizeOf(tag_type)
+// whole value is its tag; a tagged union's tag is the LOW tag-type-width
 // bytes at offset 0 (a backing-type union's header can be wider than the
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
-// `{ elem,  raw_any_data(av) + idx * @sizeOf(elem) }`. The walker's array
+// `{ elem,  rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
-any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 
 // ── Boxed-value views: a value's parts, read in place ──────────────────────
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
@@ -94,14 +94,14 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 @unbox :: (v: any, $T: Type) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
-// The `{data, type_id}` layout is private; these two are the stable contract
+// The `{data, typeId}` layout is private; these two are the stable contract
 // over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
 // writes names and re-resolves, never raw tags; byte copies through the data
 // pointer are SHALLOW — interior pointers are not followed; and a view carries
-// NO lifetime — `raw_make_any` trusts the caller that `data` points at a live,
+// NO lifetime — `rawMakeAny` trusts the caller that `data` points at a live,
 // aligned value of `tp` covering @sizeOf(tp) bytes.
-raw_any_data :: (av: any) -> *void intrinsic;
-raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
+rawAnyData :: (av: any) -> *void intrinsic;
+rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 
 // A volatile access is emitted exactly as written: the optimizer may not elide
 // it, duplicate it, fuse it with a neighbour, or move it across another
@@ -117,25 +117,25 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // or an aggregate. The access is one typed load/store of `T`, so an aggregate
 // `T` moves as a whole rather than field by field. `value` converts to `T` the
 // way any typed parameter does.
-@volatile_load  :: ($T: Type, address: *T) -> T;
-@volatile_store :: ($T: Type, address: *T, value: T);
+@volatileLoad  :: ($T: Type, address: *T) -> T;
+@volatileStore :: ($T: Type, address: *T, value: T);
 
 // The persist primitives `closure` (std/mem.sx) is written over.
 //
-// `@env_type(F)` is the environment a value of callable type `F` IS: the env
+// `@envType(F)` is the environment a value of callable type `F` IS: the env
 // struct of a `|…|_{ … }` literal, the state of an `impl (sig) for T` nominal,
-// the pointer word of a bare function. `@env_of(f)` is that environment as an
+// the pointer word of a bare function. `@envOf(f)` is that environment as an
 // initializer, so `make` writes it straight into the storage it funds.
-// `@call_ptr(F)` is the trampoline `(env: *void, params…) -> R` an erased
+// `@callPtr(F)` is the trampoline `(env: *void, params…) -> R` an erased
 // value dispatches through; a nominal and a bare function get one synthesized.
 //
-// A callable value IS its environment, so `@env_of(f)` has type `F` and
-// `@env_type(F)` is `F`. All three refuse a `Closure`: it carries an
+// A callable value IS its environment, so `@envOf(f)` has type `F` and
+// `@envType(F)` is `F`. All three refuse a `Closure`: it carries an
 // environment rather than being one, which is the arm where `closure` returns
 // its argument unchanged.
-@env_type :: ($F: Type) -> Type;
-@env_of :: (f: $F) -> F;
-@call_ptr :: ($F: Type) -> *void;
+@envType :: ($F: Type) -> Type;
+@envOf :: (f: $F) -> F;
+@callPtr :: ($F: Type) -> *void;
 
 // Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
 // same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
@@ -150,7 +150,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // Where the code is running: `true` under the comptime evaluator, `false` in
 // compiled code. The same lowered body serves both stages, so the answer is the
 // backend's rather than a fold.
-@is_comptime :: () -> bool;
+@isComptime :: () -> bool;
 
 // Write `msg` and stop the program. `site` defaults to the call site, so the
 // message carries `file:line:` unless the caller passes a site with no line.
@@ -170,7 +170,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
     } else {
         @printf("{}:{}: {}\n", site.file, site.line, msg);
     }
-    if @is_comptime() {
+    if @isComptime() {
         c.exit(1);
     }
     c.abort()
@@ -260,7 +260,7 @@ __sx_printf_u64 :: (n: u64) {
     c.write(1, *buf[i], (20 - i));
 }
 
-// Six fractional digits, zero-padded — the rendering `float_to_string` gives
+// Six fractional digits, zero-padded — the rendering `floatToString` gives
 // the same value.
 __sx_printf_f64 :: (f: f64) {
     v := f;
@@ -289,19 +289,19 @@ __sx_printf_f64 :: (f: f64) {
 //
 //     tally :: (n: i32, ..) -> i64 abi(.c) {
 //         ap: @VaList = ---;
-//         @va_start(*ap);
+//         @vaStart(*ap);
 //         total: i64 = 0;
-//         for i in 0..n { total += @va_arg(i32, *ap); }
-//         @va_end(*ap);
+//         for i in 0..n { total += @vaArg(i32, *ap); }
+//         @vaEnd(*ap);
 //         return total;
 //     }
 //
-// The cursor is owned by the function that declares it: `@va_start`, `@va_copy`
-// into it, and `@va_end` all take the address of a local. A `*@VaList` passed on
-// to a helper is a borrow — it reads with `@va_arg` and leaves the ending to the
-// owner. Every cursor a `@va_start` or a `@va_copy` opens is ended once.
+// The cursor is owned by the function that declares it: `@vaStart`, `@vaCopy`
+// into it, and `@vaEnd` all take the address of a local. A `*@VaList` passed on
+// to a helper is a borrow — it reads with `@vaArg` and leaves the ending to the
+// owner. Every cursor a `@vaStart` or a `@vaCopy` opens is ended once.
 //
-// `@va_arg` reads the type C's default argument promotions leave in the slot, so
+// `@vaArg` reads the type C's default argument promotions leave in the slot, so
 // it asks for `i32` where the caller wrote a `u8` and `f64` where it wrote an
 // `f32`.
 //
@@ -315,14 +315,14 @@ __sx_printf_f64 :: (f: f64) {
 // It is place-only: a call names a live list, `f(fmt, ap)` from a `@VaList`
 // local or parameter and `f(fmt, ap.*)` from a `*@VaList` borrow. An incoming
 // list is borrowed already open, so the callee reads and copies it but leaves
-// `@va_start` and `@va_end` to its caller.
+// `@vaStart` and `@vaEnd` to its caller.
 @VaList :: struct {
 }
 
-@va_start :: (list: *@VaList);
-@va_arg   :: ($T: Type, list: *@VaList) -> T;
-@va_copy  :: (dst: *@VaList, src: *@VaList);
-@va_end   :: (list: *@VaList);
+@vaStart :: (list: *@VaList);
+@vaArg   :: ($T: Type, list: *@VaList) -> T;
+@vaCopy  :: (dst: *@VaList, src: *@VaList);
+@vaEnd   :: (list: *@VaList);
 
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
@@ -331,17 +331,17 @@ __sx_printf_f64 :: (f: f64) {
 //
 // Handles are bare `u32`s so they intern no extra prelude type. Callers alias
 // them locally where it aids reading.
-raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
-raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
-raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
-                                                                // 4 tuple 5 union 6 array 7 vector 8 error
-raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-raw_field_count  :: (t: u32) -> i64 intrinsic;
-raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-raw_pointer_to        :: (t: Type) -> Type intrinsic;
+rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
+rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
+rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged-union
+                                                              // 4 tuple 5 union 6 array 7 vector 8 error
+rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+rawFieldCount   :: (t: u32) -> i64 intrinsic;
+rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+rawPointerTo    :: (t: Type) -> Type intrinsic;
 
 // ── `@typeInfo`: the reflected type shape ────────────────────────────────────
 //
@@ -418,7 +418,7 @@ TypeInfo :: enum {
     vector: VectorInfo;
     slice: SliceInfo;
     pointer: PointerInfo;
-    many_pointer: PointerInfo;
+    manyPointer: PointerInfo;
     optional: OptionalInfo;
     function;
     closure;
@@ -426,7 +426,7 @@ TypeInfo :: enum {
     pack;
     any;
     noreturn;
-    type_value;
+    typeValue;
 }
 
 // A spelled type folds at compile time; a runtime `Type` value loads the
@@ -438,7 +438,7 @@ TypeInfo :: enum {
 // module identity, so the field set is a compiler + stdlib contract, not a
 // shape any lookalike can satisfy. User code may construct values — `id = 0`
 // is enough for a diagnostic-only fake; a test that exercises identity
-// computes the matching value with `source_site_key_id`
+// computes the matching value with `sourceSiteKeyId`
 // (modules/std/source_site.sx).
 @SourceSite :: struct {
     // Normalized source file identity, independent of the working directory.
@@ -459,7 +459,7 @@ TypeInfo :: enum {
     ordinal: u64 = 0;
 
     // Compile-time fingerprint of (file, declaration, ordinal), exactly
-    // `source_site_key_id(source_site_key(site))`. It contains no line,
+    // `sourceSiteKeyId(sourceSiteKey(site))`. It contains no line,
     // column, pointer, padding, compiler-process, or runtime state.
     id: u64 = 0;
 }
@@ -471,13 +471,13 @@ TypeInfo :: enum {
 // allocator (`gpa`, `gpa.(Allocator)`); `free` of a handle refuses at compile
 // time, and a handle over a temporary cannot be returned.
 //
-// Zero is the empty request, and null is the empty answer: `alloc_bytes(0)`
-// returns null and allocates nothing, and `dealloc_bytes(null)` does nothing.
+// Zero is the empty request, and null is the empty answer: `allocBytes(0)`
+// returns null and allocates nothing, and `deallocBytes(null)` does nothing.
 // A zero-sized type — the environment of a capture-free lambda — therefore
 // reaches `make` and `create` as a null pointer that funds no storage.
 Allocator :: interface {
-    alloc_bytes :: (self: *Self, size: i64) -> *void;
-    dealloc_bytes :: (self: *Self, ptr: *void);
+    allocBytes :: (self: *Self, size: i64) -> *void;
+    deallocBytes :: (self: *Self, ptr: *void);
 }
 
 // The error channel async rides: a canceled task raises `.Canceled` out of
@@ -493,20 +493,20 @@ IoErr :: error { Failed; Canceled }
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
 // minimum the fiber scheduler needs; everything ergonomic
 // (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
-// (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
+// (std/io.sx), the same way `alloc(T,n)` sits over `allocBytes`.
 //
-//   spawn_raw  — submit a task; opaque handle (fiber bootstrap).
-//   suspend_raw— suspend current fiber; raises `IoErr.Canceled` on a cancel.
+//   spawnRaw   — submit a task; opaque handle (fiber bootstrap).
+//   suspendRaw — suspend current fiber; raises `IoErr.Canceled` on a cancel.
 //   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
-//   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
+//   nowMs      — clock hook (a PROTOCOL method so the deterministic-sim
 //                Io can return a fake clock).
-//   arm_timer  — register a timer; backs `timeout`.
+//   armTimer   — register a timer; backs `timeout`.
 //
 // `ParkToken` is an opaque per-suspension token (unused by the blocking
 // impl). `SpawnOpts.pin` is inert: no impl reads it, and the M:1 model runs
 // every fiber on the spawning thread.
-PinTarget :: enum { any; main; on_thread; }
+PinTarget :: enum { any; main; onThread; }
 
 SpawnOpts :: struct {
     pin: PinTarget = .any;
@@ -514,10 +514,10 @@ SpawnOpts :: struct {
     // spawned task's cancel flag (the `Future.canceled` `Atomic(bool)`, erased to
     // `*void` so this foundation type stays free of the atomic dependency). A
     // suspending impl stashes it on the spawned execution context so its
-    // `suspend_raw` can consult it and raise `IoErr.Canceled` on resume. `null`
+    // `suspendRaw` can consult it and raise `IoErr.Canceled` on resume. `null`
     // (the default) means "no cancellation channel" — the blocking impl and any
     // uncancellable spawn leave it unset.
-    cancel_flag: *void = null;
+    cancelFlag: *void = null;
 }
 
 ParkToken :: struct {
@@ -527,30 +527,30 @@ ParkToken :: struct {
 // Like `Allocator`: the runtime object is unique state, borrowed by the
 // handle, never owned by it.
 Io :: interface {
-    spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
+    spawnRaw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
     // `ready(park)` — called from a DIFFERENT context (the worker that completes
     // the awaited task) — knows which context to resume. Passed by pointer for
-    // exactly that write-back. `ready`/`arm_timer` read the recorded handle.
-    suspend_raw :: (self: *Self, park: *ParkToken) -> !IoErr.Canceled;
+    // exactly that write-back. `ready`/`armTimer` read the recorded handle.
+    suspendRaw :: (self: *Self, park: *ParkToken) -> !IoErr.Canceled;
     ready :: (self: *Self, park: ParkToken);
-    poll :: (self: *Self, deadline_ms: i64) -> i64;
-    now_ms :: (self: *Self) -> i64;
-    arm_timer :: (self: *Self, deadline_ms: i64, park: ParkToken) -> *void;
-    // `current_park()` — a `ParkToken` identifying the CURRENTLY-running execution
+    poll :: (self: *Self, deadlineMs: i64) -> i64;
+    nowMs :: (self: *Self) -> i64;
+    armTimer :: (self: *Self, deadlineMs: i64, park: ParkToken) -> *void;
+    // `currentPark()` — a `ParkToken` identifying the CURRENTLY-running execution
     // context, so a fan-in waiter (`race`) can register the SAME awaiter across
     // several futures' `park` slots before parking once. A suspending impl
     // returns `{ handle = <current fiber> }`; the blocking impl has no fiber and
     // returns `{ handle = null }` (race never parks there — its futures are born
-    // `.ready`). Unlike `suspend_raw`, this captures the awaiter WITHOUT parking.
-    current_park :: (self: *Self) -> ParkToken;
+    // `.ready`). Unlike `suspendRaw`, this captures the awaiter WITHOUT parking.
+    currentPark :: (self: *Self) -> ParkToken;
 }
 
 // --- Context ---
 //
 // The dynamically-scoped capability bag. The struct is declared EMPTY: the
-// compiler assembles 100% of its fields from the program's `@context_extend`
+// compiler assembles 100% of its fields from the program's `@context.extend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
 // like any user field. `__sx_default_context` is emitted from the assembled
@@ -562,7 +562,7 @@ Io :: interface {
 // There is no untyped escape slot: a module that wants to carry a payload
 // declares its own typed field:
 //
-//     @context_extend logger: ?*Logger = null;
+//     @context.extend logger: ?*Logger = null;
 //
 // Guideline (not enforced): prefer one POINTER per concern over fat inline
 // values — every `push` copies the whole Context, so a 2 KB inline field
@@ -572,7 +572,7 @@ Context :: struct {}
 
 // The JNIEnv* the JVM hands a native method. `null` is the unchecked
 // sentinel. DSL dispatch and helpers read `context.jni`.
-@context_extend jni: *void = null;
+@context.extend jni: *void = null;
 
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
 // `val.(T, alloc)`, falls through the built-in conversion ladder to an
@@ -586,13 +586,13 @@ Into :: constraint(Target: Type) {
 
 // Fat-value ABI views. Compiler-maintained contracts: the compiler recognizes
 // these declarations by (module, name) identity. Ergonomic accessors stay the
-// normal path — `.ptr` / `.len` on a slice or string, `.fn_ptr` / `.env` on a
+// normal path — `.ptr` / `.len` on a slice or string, `.fnPtr` / `.env` on a
 // closure. Nullary `@Slice` is this erased `{ptr, len}` view; `@Slice(T, Len)`
 // is the typed fat pointer (`@Slice(T, i64)` is `[]T`). A string's `.len` is
 // a byte count; a slice's is an element count.
 
 @Closure :: struct {
-    fn_ptr: *void;
+    fnPtr: *void;
     env: *void;
 }
 
@@ -603,12 +603,12 @@ Into :: constraint(Target: Type) {
 
 @Protocol :: struct {
     ctx: *void;
-    type_id: Type;
+    typeId: Type;
 }
 
 @Any :: struct {
     data: *void;
-    type_id: Type;
+    typeId: Type;
 }
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.

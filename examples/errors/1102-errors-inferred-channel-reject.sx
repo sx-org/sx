@@ -36,7 +36,7 @@ shorthand :: (n: i32) -> (i32, !) {
     return n;
 }
 
-slot_fwd :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !IoErr) {
+slotFwd :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !IoErr) {
     return h(x);
 }
 
@@ -53,20 +53,20 @@ leak :: (n: i32) -> (i32, !) {
     return n;
 }
 
-dyn_fwd :: () -> !IoErr {
+dynFwd :: () -> !IoErr {
     return wrap();
 }
 
 main :: () -> i32 {
     canal : Closure(i32) -> (i32, !IoErr) = inner;
-    slot_bare  : Closure(i32) -> (i32, !) = inner;
-    slot_named : Closure(i32) -> (i32, !) = stray;
-    slot_dyn   : Closure(i32) -> (i32, !) = leak;
+    slotBare  : Closure(i32) -> (i32, !) = inner;
+    slotNamed : Closure(i32) -> (i32, !) = stray;
+    slotDyn   : Closure(i32) -> (i32, !) = leak;
     g := |x: i32| -> (i32, !) { if x < 0 { raise Other.Nope; } return x; };
     print("{} {} {}\n", canal(1) catch { -1 }, forward(1) catch { -2 }, stray(1) catch { -3 });
     print("{}\n", shorthand(1) catch { -4 });
-    print("{}\n", slot_fwd(g, 1) catch { -5 });
-    print("{}\n", dyn_fwd() catch { -6 });
-    print("{} {} {}\n", slot_bare(1) catch { -7 }, slot_named(1) catch { -8 }, slot_dyn(1) catch { -9 });
+    print("{}\n", slotFwd(g, 1) catch { -5 });
+    print("{}\n", dynFwd() catch { -6 });
+    print("{} {} {}\n", slotBare(1) catch { -7 }, slotNamed(1) catch { -8 }, slotDyn(1) catch { -9 });
     return 0;
 }

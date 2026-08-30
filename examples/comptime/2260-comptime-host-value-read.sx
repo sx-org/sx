@@ -1,0 +1,10 @@
+// Reading the whole `@host` value builds a struct, so it needs the contract
+// `modules/std/target.sx` declares.
+@import "modules/std.sx";
+@import "modules/std/target.sx";
+
+main :: () {
+    h := @host;
+    print("{} {}\n", h.pointerSize, h.isSimulator);
+    print("{} {}\n", h.os == @host.os, h.arch == @host.arch);
+}

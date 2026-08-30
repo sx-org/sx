@@ -26,7 +26,7 @@ Label :: @OpenVariant(View) {
 }
 
 // The same assertion, written once and instantiated at the set.
-assert_it :: ($T: Type, a: any) -> T => a.(T);
+assertIt :: ($T: Type, a: any) -> T => a.(T);
 
 Grabbed :: error { nothing }
 
@@ -44,7 +44,7 @@ main :: () -> i32 {
     print("{}\n", direct.render());
 
     // The same assertion through a type parameter.
-    generic := assert_it(View, a);
+    generic := assertIt(View, a);
     print("{}\n", generic.render());
 
     // With a failure channel, and through a chain.

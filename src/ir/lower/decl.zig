@@ -195,11 +195,11 @@ fn isExportedEntryName(name: []const u8) bool {
 }
 
 /// The well-known stdlib build driver (`library/modules/build.sx`). It is invoked
-/// by the compiler post-codegen when no `@run on_build(...)` override exists, but
+/// by the compiler post-codegen when no `@run onBuild(...)` override exists, but
 /// is never CALLED from sx — so it must be force-lowered like an OS entry point,
 /// else lazy lowering leaves it a bodiless `declare` stub the VM can't run.
 fn isDefaultBuildPipeline(name: []const u8) bool {
-    return std.mem.eql(u8, name, "default_pipeline");
+    return std.mem.eql(u8, name, "defaultPipeline");
 }
 
 /// Lower all top-level declarations from a root node.
@@ -225,7 +225,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // (extern-ref validation, C-import collection) sees the expanded program.
     const decls = self.expandModuleDrivers(source_decls);
     root.data.root.decls = decls;
-    // Pass 0b: collect every `@context_extend` declaration program-wide into
+    // Pass 0b: collect every `@context.extend` declaration program-wide into
     // ProgramIndex (sorted, validated). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert but the collected list
     // still powers the registered-field diagnostic.
@@ -237,7 +237,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // layout the admission checks measure.
     admitOpenVariants(self, decls);
     // Pass 1a': assemble the program Context — append the collected
-    // `@context_extend` fields to the registered Context struct. Must run
+    // `@context.extend` fields to the registered Context struct. Must run
     // after `scanDecls` (every named type an extension can reference is
     // registered) and before `emitDefaultContextGlobal` / any body lowering
     // (both consume the assembled layout via findByName("Context")).
@@ -312,13 +312,13 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.checkInfiniteSize();
     // Pass 2: lower main (and comptime side-effects)
     self.lowerMainAndComptime(decls);
-    // Pass 2b: force-lower the stdlib build driver `default_pipeline` (in the
+    // Pass 2b: force-lower the stdlib build driver `defaultPipeline` (in the
     // flat-imported `modules/build.sx`, so NOT in the main `decls` above). The
-    // compiler auto-invokes it post-codegen when no `@run on_build(...)` override
+    // compiler auto-invokes it post-codegen when no `@run onBuild(...)` override
     // exists, but nothing CALLS it from sx — so without this it stays a bodiless
     // stub the build VM can't run. No-ops when build.sx isn't imported.
-    self.lazyLowerFunction("default_pipeline");
-    // Pass 3: lower deferred functions (any_to_string etc.) now that all types are registered
+    self.lazyLowerFunction("defaultPipeline");
+    // Pass 3: lower deferred functions (anyToString etc.) now that all types are registered
     self.lowerDeferredTypeFns();
     // Pass 4: target-specific entry-point sanity checks
     self.checkRequiredEntryPoints();
@@ -445,13 +445,13 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
     }
 }
 
-/// Inject compile-time constants from target_config into comptime_constants.
-/// `OS` / `ARCH` are compiler facts, so they exist whether or not the program
-/// declares the enum they are variants of: with `std/target.sx` in the program
-/// they carry the declared enum's tag (a runtime read of `OS` yields that
+/// Inject the target facts from target_config into comptime_constants.
+/// `@host` is a compiler fact, so it exists whether or not the program declares
+/// the enums its os / arch fields are variants of: with `std/target.sx` in the
+/// program they carry the declared enum's tag (a runtime read yields that
 /// constant); without it they carry the target's variant NAME, which is all a
-/// module-scope `inline if OS == .windows` needs — and every low-level backend
-/// selecting its platform arm depends on exactly that, since importing
+/// module-scope `inline if @host.os == .windows` needs — and every low-level
+/// backend selecting its platform arm depends on exactly that, since importing
 /// `target.sx` from inside the arm it selects would be circular.
 pub fn injectComptimeConstants(self: *Lowering) void {
     const tc = self.target_config orelse return;
@@ -470,7 +470,6 @@ pub fn injectComptimeConstants(self: *Lowering) void {
         "macos"
     else
         "unknown";
-    putTargetConstant(self, "OS", "OperatingSystem", os_variant);
 
     const arch_variant: []const u8 = if (tc.isWasm32())
         "wasm32"
@@ -482,24 +481,26 @@ pub fn injectComptimeConstants(self: *Lowering) void {
         "x86_64"
     else
         "unknown";
-    putTargetConstant(self, "ARCH", "Architecture", arch_variant);
 
-    // POINTER_SIZE: i64 (4 for wasm32, 8 for wasm64 and other 64-bit targets)
     const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
-    self.comptime_constants.put("POINTER_SIZE", .{ .int_val = ptr_size }) catch {};
+
+    const fields = self.alloc.alloc(Lowering.ComptimeValue.Field, 4) catch return;
+    fields[0] = .{ .name = "os", .value = targetEnumValue(self, "OperatingSystem", os_variant) };
+    fields[1] = .{ .name = "arch", .value = targetEnumValue(self, "Architecture", arch_variant) };
+    fields[2] = .{ .name = "pointerSize", .value = .{ .int_val = ptr_size } };
+    fields[3] = .{ .name = "isSimulator", .value = .{ .bool_val = tc.isIOSSimulator() } };
+    self.comptime_constants.put("@host", .{ .struct_val = fields }) catch {};
 }
 
-fn putTargetConstant(self: *Lowering, name: []const u8, enum_name: []const u8, variant: []const u8) void {
+fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) Lowering.ComptimeValue {
     const enum_name_id = self.module.types.internString(enum_name);
     if (self.module.types.findByName(enum_name_id)) |enum_ty| {
         const info = self.module.types.get(enum_ty);
         if (info == .@"enum") {
-            const tag = self.findVariantIndex(info.@"enum".variants, variant);
-            self.comptime_constants.put(name, .{ .enum_tag = .{ .ty = enum_ty, .tag = tag } }) catch {};
-            return;
+            return .{ .enum_tag = .{ .ty = enum_ty, .tag = self.findVariantIndex(info.@"enum".variants, variant) } };
         }
     }
-    self.comptime_constants.put(name, .{ .target_variant = variant }) catch {};
+    return .{ .target_variant = variant };
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {
@@ -1285,8 +1286,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // (`L :: K.len`, `E :: K[1]`, `R :: LIT.r`) register with the count
     // placeholder so the folders reach them. Runs AFTER pass 2 so the
     // aggregate (array const / struct const) is registered regardless of
-    // declaration order; gated on the receiver naming a const aggregate so
-    // a namespaced member (`F :: m.PI_ISH`) is never mis-typed.
+    // declaration order; gated on the receiver naming a const aggregate or a
+    // comptime struct constant so a namespaced member (`F :: m.PI_ISH`) is
+    // never mis-typed.
     for (decls) |decl| {
         if (decl.data != .const_decl) continue;
         const cd = decl.data.const_decl;
@@ -1298,9 +1300,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             else => continue,
         };
         if (obj.data != .identifier) continue;
-        const recv_is_agg = switch (self.selectModuleConst(obj.data.identifier.name)) {
+        const recv = obj.data.identifier.name;
+        const recv_is_agg = switch (self.selectModuleConst(recv)) {
             .resolved => |sel| sel.info.value.data == .array_literal or sel.info.value.data == .struct_literal,
-            .own_opaque, .ambiguous, .none => false,
+            .own_opaque, .ambiguous, .none => if (self.comptime_constants.get(recv)) |cv| cv == .struct_val else false,
         };
         if (!recv_is_agg) continue;
         self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
@@ -1832,10 +1835,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             break :blk null;
         },
         // An enum-literal global (`chosen : Color = .green;`) serializes to
-        // the variant's tag value against the destination enum type. The
-        // compiler-injected `OS`/`ARCH` globals flow through here
-        // too; their runtime reads resolve via `comptime_constants`, so the
-        // serialized tag only affects the static initializer.
+        // the variant's tag value against the destination enum type.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
         // Any other initializer shape (`.field_access` on a const, a call, an
         // arithmetic expression, …) is not a static constant the compiler can
@@ -2303,7 +2303,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
         // permanently-wrong empty layout, so reject loudly.
         // The other composite RHS kinds (function / closure / pointer / slice
         // / optional / array) do NOT hit this: a struct field / signature that
-        // names such an alias above its decl (e.g. `body_read_fn: BodyReadFn`
+        // names such an alias above its decl (e.g. `bodyReadFn: BodyReadFn`
         // above `BodyReadFn :: (...) -> i64`) is patched by the struct/field
         // re-resolution machinery — a working forward-reference pattern the
         // stdlib http module relies on — so scoping the rejection to tuple
@@ -3635,7 +3635,7 @@ pub fn registerNamespaceQualifiedFns(self: *Lowering, ns_name: []const u8, own_d
 
 pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.FnDecl, short: []const u8) void {
     // Only PLAIN free functions need a qualified identity. Generic /
-    // comptime / pack functions (`@Vector`, `print`, `any_to_string`) are
+    // comptime / pack functions (`@Vector`, `print`, `anyToString`) are
     // dispatched by monomorphization off their BARE template name, not the
     // plain `resolveFuncByName` / `lazyLowerFunction` path that trips the
     // collision assert; registering a qualified alias for them
@@ -3776,10 +3776,10 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     if (fd.type_params.len > 0) return; // generics handled by monomorphization
 
     // Defer functions with type-category matches until all types are registered.
-    // any_to_string uses `match type { case slice: ... }` which compiles a switch
+    // anyToString uses `match type { case slice: ... }` which compiles a switch
     // with type tags from resolveTypeCategoryTags. This must happen AFTER main is
     // fully lowered so all types ([]i32, List__i32, etc.) are in the TypeTable.
-    if (!self.processing_deferred and std.mem.eql(u8, name, "any_to_string")) {
+    if (!self.processing_deferred and std.mem.eql(u8, name, "anyToString")) {
         self.deferred_type_fns.append(self.alloc, name) catch {};
         return;
     }
@@ -3916,7 +3916,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
     // An `abi(.naked)` (naked) function has no frame: its params arrive in ABI
-    // registers and are read directly by the asm body (e.g. `swap_context`'s
+    // registers and are read directly by the asm body (e.g. `swapContext`'s
     // `from`/`to`). Spilling them to allocas would (a) need a frame and (b) emit
     // `store i64 %0, …` — "cannot use argument of naked function" (LLVM verifier).
     // Leave the LLVM args declared-but-unused (the verifier allows that); the asm

@@ -199,7 +199,8 @@ pub const SourceConstCtx = struct {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
     pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.lowering.foldConstStructField(name, field, span, self.frame);
+        return self.lowering.foldComptimeStructField(name, field) orelse
+            self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     // Type-query builtin folds (`field_count`/`@sizeOf`/`@alignOf`) — delegate to
     // the wrapped Lowering, which can resolve the type-expr arg.
@@ -266,8 +267,8 @@ pub const Binding = struct {
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
-    /// boundary parameter. Its caller opened it and ends it, so `@va_start` /
-    /// `@va_end` here would act on another frame's list.
+    /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
+    /// `@vaEnd` here would act on another frame's list.
     borrowed_cursor: bool = false,
 };
 
@@ -460,7 +461,7 @@ pub const Lowering = struct {
     /// holds at most one, so the map is the coherence check as well as the
     /// dispatch table.
     callable_nominals: std.AutoHashMap(TypeId, lower_protocol.CallableNominal),
-    /// The `@call_ptr` trampoline synthesized for a callable type, so one type
+    /// The `@callPtr` trampoline synthesized for a callable type, so one type
     /// persists through one trampoline however many times `closure` erases it.
     persist_trampolines: std.AutoHashMap(TypeId, inst_mod.FuncId),
     /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
@@ -618,7 +619,7 @@ pub const Lowering = struct {
     /// and are decided at a use site that sees both.
     protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)),
     /// One tag-indexed conformance table per contract a RUNTIME question
-    /// reached: an interface's `(type_id, Q) → vtable-or-null`, a constraint's
+    /// reached: an interface's `(typeId, Q) → vtable-or-null`, a constraint's
     /// conformer bits. Minted on first read, filled when the impls are final.
     conformance_tables: std.AutoArrayHashMapUnmanaged(TypeId, inst_mod.GlobalId) = .empty,
     /// Exact receiver type recorded when a nullary-protocol impl method is
@@ -676,7 +677,7 @@ pub const Lowering = struct {
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
-    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
+    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `..` tail from it
     /// A RETURN-position callable binder (`-> $F/(i64) -> i64`), while the type
     /// it names is still unknown. Nothing at a call decides that binder, so the
     /// value the body hands back fixes the function's return type.
@@ -890,7 +891,7 @@ pub const Lowering = struct {
     struct_const_map: std.StringHashMap(StructConstInfo), // "Struct.CONST" → value info
     extern_name_map: std.StringHashMap([]const u8), // sx name → C name for #extern renames
     target_config: ?@import("../target.zig").TargetConfig = null, // compilation target (for inline if)
-    comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. OS, ARCH)
+    comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. @host)
     /// Module constants bound to a comptime `[N]Type` list (`S :: .[A, B];`).
     /// A type list has no runtime representation — it exists to drive
     /// `inline for` expansion, so it never becomes a global.
@@ -927,7 +928,7 @@ pub const Lowering = struct {
     inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
-    /// is part of the contract — e.g. `Io.suspend_raw`); a conforming impl
+    /// is part of the contract — e.g. `Io.suspendRaw`); a conforming impl
     /// MUST keep the `!` even when its concrete body never raises, so the
     /// "declared `!` but never errors — drop the `!`" warning (a free-fn
     /// linting hint) is a false positive for these. The empty-inferred-set
@@ -936,13 +937,20 @@ pub const Lowering = struct {
 
     pub const ComptimeValue = union(enum) {
         int_val: i64,
+        bool_val: bool,
         enum_tag: struct { ty: TypeId, tag: u32 },
-        /// A target fact (`OS` / `ARCH`) in a program that does not declare the
-        /// enum it is a variant of: the variant NAME the target selects. It
-        /// compares against an enum literal at comptime and has no runtime
-        /// reading — the declaration a runtime read needs is exactly the one
-        /// that would have given it a tag.
+        /// A `@host` enum field in a program that does not declare the enum it
+        /// is a variant of: the variant NAME the target selects. It compares
+        /// against an enum literal at comptime and has no runtime reading — the
+        /// declaration a runtime read needs is exactly the one that would have
+        /// given it a tag.
         target_variant: []const u8,
+        struct_val: []const Field,
+
+        pub const Field = struct {
+            name: []const u8,
+            value: ComptimeValue,
+        };
     };
 
     pub const StructConstInfo = struct {
@@ -1752,7 +1760,7 @@ pub const Lowering = struct {
             else => return null,
         };
         if (c.args.len != 1) return null;
-        const is_fc = std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count");
+        const is_fc = std.mem.eql(u8, name, "structFieldCount") or std.mem.eql(u8, name, "variantCount");
         const is_sz = std.mem.eql(u8, name, "@sizeOf");
         const is_al = std.mem.eql(u8, name, "@alignOf");
         if (!is_fc and !is_sz and !is_al) return null;
@@ -1819,7 +1827,8 @@ pub const Lowering = struct {
         return self.foldConstArrayElem(name, idx, span, null);
     }
     pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
-        return self.foldConstStructField(name, field, span, null);
+        return self.foldComptimeStructField(name, field) orelse
+            self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
@@ -2366,7 +2375,7 @@ pub const Lowering = struct {
                 const ty_name = self.formatTypeName(obj_ty);
                 const id = diags.addFmtId(.err, span, "field '{s}' not found on type '{s}'", .{ field, ty_name });
                 // An unknown field on the CONTEXT enumerates the program's
-                // registered `@context_extend` fields (shared enumeration helper) —
+                // registered `@context.extend` fields (shared enumeration helper) —
                 // covers both `context.typo` reads and `push .{ typo = … }`.
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);
@@ -3301,6 +3310,8 @@ pub const Lowering = struct {
 
     // --- lower/comptime.zig (lower_comptime) ---
     pub const SelectedConst = lower_comptime.SelectedConst;
+    pub const evalComptimeValue = lower_comptime.evalComptimeValue;
+    pub const foldComptimeStructField = lower_comptime.foldComptimeStructField;
     pub const evalComptimeCondition = lower_comptime.evalComptimeCondition;
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
     pub const evalStaticTypeMatch = lower_comptime.evalStaticTypeMatch;

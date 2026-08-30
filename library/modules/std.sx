@@ -47,7 +47,7 @@ OptionalInfo    :: core.OptionalInfo;
 
 // --- Type system & reflection intrinsics ---
 // (no aliases: an intrinsic is a compiler feature, not a library export. The
-// compiler dispatches `@sizeOf` / `struct_field_count` / … from its registry before
+// compiler dispatches `@sizeOf` / `structFieldCount` / … from its registry before
 // name resolution, so they resolve with no import at all — the declarations in
 // std/core.sx are their source identity, not their reachability. Same reason
 // `string` and `@Vector` have no alias here.)
@@ -60,7 +60,7 @@ writer        :: @import "modules/std/writer.sx";
 Writer        :: writer.Writer;
 StringBuilder :: writer.StringBuilder;
 FdWriter      :: writer.FdWriter;
-write_each    :: writer.write_each;
+writeEach     :: writer.writeEach;
 
 // --- Formatting ---
 
@@ -77,36 +77,36 @@ __sx_chain_cast_assert   :: fmt.__sx_chain_cast_assert;
 __sx_chain_cast_or_panic :: fmt.__sx_chain_cast_or_panic;
 __sx_chain_cast_maybe    :: fmt.__sx_chain_cast_maybe;
 
-any_to_string      :: fmt.any_to_string;
-int_to_string      :: fmt.int_to_string;
-uint_to_string     :: fmt.uint_to_string;
-int_to_hex_string  :: fmt.int_to_hex_string;
-float_to_string    :: fmt.float_to_string;
-bool_to_string     :: fmt.bool_to_string;
-struct_to_string   :: fmt.struct_to_string;
-enum_to_string     :: fmt.enum_to_string;
-flags_to_string    :: fmt.flags_to_string;
-vector_to_string   :: fmt.vector_to_string;
-array_to_string    :: fmt.array_to_string;
-slice_to_string    :: fmt.slice_to_string;
-pointer_to_string  :: fmt.pointer_to_string;
-optional_to_string :: fmt.optional_to_string;
+anyToString      :: fmt.anyToString;
+intToString      :: fmt.intToString;
+uintToString     :: fmt.uintToString;
+intToHexString   :: fmt.intToHexString;
+floatToString    :: fmt.floatToString;
+boolToString     :: fmt.boolToString;
+structToString   :: fmt.structToString;
+enumToString     :: fmt.enumToString;
+flagsToString    :: fmt.flagsToString;
+vectorToString   :: fmt.vectorToString;
+arrayToString    :: fmt.arrayToString;
+sliceToString    :: fmt.sliceToString;
+pointerToString  :: fmt.pointerToString;
+optionalToString :: fmt.optionalToString;
 
 // --- String ops ---
 
 concat      :: fmt.concat;
 substr      :: fmt.substr;
 last        :: fmt.last;
-path_join   :: fmt.path_join;
-cstring_len  :: fmt.cstring_len;
-from_cstring :: fmt.from_cstring;
-to_cstring   :: fmt.to_cstring;
+pathJoin    :: fmt.pathJoin;
+cstringLen  :: fmt.cstringLen;
+fromCstring :: fmt.fromCstring;
+toCstring   :: fmt.toCstring;
 
 // fmt internals, re-exported only because they were always part of the
 // flat prelude surface.
-build_format    :: fmt.build_format;
-hex_group       :: fmt.hex_group;
-decompose_u16x4 :: fmt.decompose_u16x4;
+buildFormat    :: fmt.buildFormat;
+hexGroup       :: fmt.hexGroup;
+decomposeU16x4 :: fmt.decomposeU16x4;
 
 // --- Containers ---
 
@@ -116,22 +116,22 @@ IndexMap :: map.IndexMap;
 
 // --- Async / Io capability (impls in std/io.sx) ---
 
-io_mod      :: @import "modules/std/io.sx";
-CBlockingIo :: io_mod.CBlockingIo;
-Future      :: io_mod.Future;
-FutureState :: io_mod.FutureState;
+ioMod       :: @import "modules/std/io.sx";
+CBlockingIo :: ioMod.CBlockingIo;
+Future      :: ioMod.Future;
+FutureState :: ioMod.FutureState;
 IoErr       :: core.IoErr;
-async       :: io_mod.async;
-await       :: io_mod.await;
-cancel      :: io_mod.cancel;
+async       :: ioMod.async;
+await       :: ioMod.await;
+cancel      :: ioMod.cancel;
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
 c       :: @import "modules/std/c.sx";
 posix   :: @import "modules/std/posix.sx";
 mem     :: @import "modules/std/mem.sx";
-alloc_string :: mem.alloc_string;
-alloc_slice  :: mem.alloc_slice;
+allocString :: mem.allocString;
+allocSlice  :: mem.allocSlice;
 // Intentional allocator-prelude re-export. Static method heads obey the same
 // one-hop visibility boundary as every other type use; this own alias is what
 // makes bare `GPA.init()` part of the std facade rather than an accidental

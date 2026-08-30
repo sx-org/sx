@@ -85,15 +85,15 @@ pub const Op = union(enum) {
     const_string: StringId,
     const_null,
     const_undef, // `---` undefined initializer
-    /// `@is_comptime()` builtin. The SAME lowered IR is run by both
+    /// `@isComptime()` builtin. The SAME lowered IR is run by both
     /// the comptime interpreter and the compiled backend, so this can't fold at
     /// lower time: the interp evaluates it to `true`, emit_llvm emits constant
     /// `false`. Lets stdlib (`process.exit`, `@panic`) take a comptime-only
     /// diagnostic branch that dead-codes out of compiled binaries.
     is_comptime,
-    /// `trace.print_interpreter_frames()`. At comptime the interp
+    /// `trace.printInterpreterFrames()`. At comptime the interp
     /// walks its sx call-frame chain and appends it to the output; in compiled
-    /// code it's a no-op (only ever reached from a dead `@is_comptime()` branch,
+    /// code it's a no-op (only ever reached from a dead `@isComptime()` branch,
     /// where there is no interpreter stack to walk).
     interp_print_frames,
     /// a return-trace frame value (`u64`) for the push site.
@@ -389,12 +389,12 @@ pub const VaCopy = struct {
 };
 
 /// Memory ordering for atomic ops. The sx-surface `Ordering` enum
-/// (`relaxed`/`acquire`/`release`/`acq_rel`/`seq_cst`) is read statically at
+/// (`relaxed`/`acquire`/`release`/`acqRel`/`seqCst`) is read statically at
 /// lower-time (the arg MUST be a constant enum literal) and baked here, so the
 /// op carries no runtime ordering operand. The LLVM mapping is EXPLICIT (LLVM's
 /// `LLVMAtomicOrdering` is non-contiguous: Monotonic=2/Acquire=4/…/SeqCst=7) —
 /// never an identity cast.
-pub const AtomicOrdering = enum { relaxed, acquire, release, acq_rel, seq_cst };
+pub const AtomicOrdering = enum { relaxed, acquire, release, acqRel, seqCst };
 
 pub const AtomicLoad = struct {
     ptr: Ref,
@@ -439,7 +439,7 @@ pub const AtomicCmpxchg = struct {
     weak: bool,
 };
 
-/// Standalone memory fence (`fence(.seq_cst)`) — no address, void result. The
+/// Standalone memory fence (`fence(.seqCst)`) — no address, void result. The
 /// ordering may NOT be `relaxed` (LLVM has no monotonic/unordered fence).
 pub const AtomicFence = struct {
     ordering: AtomicOrdering,
@@ -627,7 +627,7 @@ pub const BuiltinId = enum(u16) {
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
-    // offsets, and variant values get their own). variant_* shares the same
+    // offsets, and variant values get their own). variant* shares the same
     // member arrays.
     rt_member_name,
     rt_member_type,
@@ -876,7 +876,7 @@ pub const ConstantValue = union(enum) {
     vtable: []const FuncId,
     /// Function pointer leaf, for static initializers that include
     /// function addresses inside nested aggregates (e.g. an `inline`
-    /// protocol value `{ ctx, __type_id, fn…}` in the process-wide
+    /// protocol value `{ ctx, typeId, fn…}` in the process-wide
     /// default Context).
     func_ref: FuncId,
     /// Relocatable address of another IR global (e.g. `p : *T = @g`).

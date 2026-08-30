@@ -7,7 +7,7 @@
 
 @import "modules/std.sx";
 
-takes_u64 :: (v: u64) { print("arg={}\n", v); }
+takesU64 :: (v: u64) { print("arg={}\n", v); }
 
 main :: () {
     // `:=` inference: the literal fits u64 (> i64.max), so `x` infers u64.
@@ -19,7 +19,7 @@ main :: () {
     print("{}\n", y);                    // 18446744073709551615
 
     // Call-argument position.
-    takes_u64(0xcbf29ce484222325.(u64));
+    takesU64(0xcbf29ce484222325.(u64));
 
     // `xx` to u64 (truncating cast) accepts max u64 too.
     z : u64 = xx 0xffffffffffffffff;

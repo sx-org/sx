@@ -76,13 +76,13 @@ pub const TypeResolver = struct {
     }
 
     /// The full numeric-limit accessor field set: `.min`/`.max` (valid on int AND
-    /// float) plus the float-only `.epsilon`/`.min_positive`/`.true_min`/`.inf`/
+    /// float) plus the float-only `.epsilon`/`.minPositive`/`.trueMin`/`.inf`/
     /// `.nan`. THE single trigger for the `lowerNumericLimit` intercept — only a
     /// field in this set is treated as a limit access; anything else falls through
     /// to ordinary field lowering. Keeps the accessor name set in one place so the
     /// intercept and `expr_typer` can't recognize different surfaces.
     pub fn isLimitField(field: []const u8) bool {
-        const names = [_][]const u8{ "min", "max", "epsilon", "min_positive", "true_min", "inf", "nan" };
+        const names = [_][]const u8{ "min", "max", "epsilon", "minPositive", "trueMin", "inf", "nan" };
         for (names) |n| if (std.mem.eql(u8, field, n)) return true;
         return false;
     }
@@ -96,8 +96,8 @@ pub const TypeResolver = struct {
     ///   - `.min` = most-NEGATIVE finite (`-max`, NOT C's DBL_MIN)
     ///   - `.max` = largest finite
     ///   - `.epsilon` = ULP of 1.0 (`floatEps`; f64 = 2^-52, f32 = 2^-23)
-    ///   - `.min_positive` = smallest positive NORMAL (`floatMin`; = C DBL_MIN)
-    ///   - `.true_min` = smallest positive SUBNORMAL (`floatTrueMin`)
+    ///   - `.minPositive` = smallest positive NORMAL (`floatMin`; = C DBL_MIN)
+    ///   - `.trueMin` = smallest positive SUBNORMAL (`floatTrueMin`)
     ///   - `.inf` = +infinity, `.nan` = a quiet NaN
     /// THE single float-limit fold: the value path and `expr_typer` hold the
     /// queried `TypeId` and ask here; `floatLimitFor` is the same fold keyed by
@@ -118,8 +118,8 @@ pub const TypeResolver = struct {
         if (std.mem.eql(u8, field, "min")) return -@as(f64, std.math.floatMax(T));
         if (std.mem.eql(u8, field, "max")) return @as(f64, std.math.floatMax(T));
         if (std.mem.eql(u8, field, "epsilon")) return @as(f64, std.math.floatEps(T));
-        if (std.mem.eql(u8, field, "min_positive")) return @as(f64, std.math.floatMin(T));
-        if (std.mem.eql(u8, field, "true_min")) return @as(f64, std.math.floatTrueMin(T));
+        if (std.mem.eql(u8, field, "minPositive")) return @as(f64, std.math.floatMin(T));
+        if (std.mem.eql(u8, field, "trueMin")) return @as(f64, std.math.floatTrueMin(T));
         if (std.mem.eql(u8, field, "inf")) return @as(f64, std.math.inf(T));
         if (std.mem.eql(u8, field, "nan")) return @as(f64, std.math.nan(T));
         return null;

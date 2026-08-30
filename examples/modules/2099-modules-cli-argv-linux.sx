@@ -1,20 +1,20 @@
 // Std/cli LINUX argv lock (cross-target). compile_only on a non-linux dev host
 // (the `target` sidecar mismatches host arch+os → the runner asserts .exit +
 // .stderr from `sx ir --target`); runs the assertions end-to-end (exit 0) on a
-// linux runner. `inline if OS` prunes the linux backend away on any other host,
+// linux runner. `inline if @host.os` prunes the linux backend away on any other host,
 // so compiling for linux is what type-checks it.
 cli :: @import "modules/std/cli.sx";
 
 main :: () -> i32 {
-    argc := cli.os_argc();
+    argc := cli.osArgc();
     if argc < 1 { return 1; }
 
     buf : [64]string = ---;
-    args := cli.os_args(buf[0..64]);
+    args := cli.osArgs(buf[0..64]);
     if args.len != argc { return 2; }
     if args[0].len == 0 { return 3; }
 
     // The fill clamps to the caller's buffer, not to argc.
-    if cli.os_args(buf[0..0]).len != 0 { return 4; }
+    if cli.osArgs(buf[0..0]).len != 0 { return 4; }
     return 0;
 }

@@ -21,50 +21,50 @@ SxMultiProbe :: @ObjcClass("SxMultiProbe", extends = NSObject) {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         gpa := GPA.init();
         tracker := TrackingAllocator.init(gpa);
 
         push .{ allocator = tracker } {
-            alloc_before   := tracker.alloc_count;
-            dealloc_before := tracker.dealloc_count;
+            allocBefore   := tracker.allocCount;
+            deallocBefore := tracker.deallocCount;
 
             f1 := SxMultiProbe.alloc();
             f2 := SxMultiProbe.alloc();
             f3 := SxMultiProbe.alloc();
 
-            alloc_after_three := tracker.alloc_count - alloc_before;
+            allocAfterThree := tracker.allocCount - allocBefore;
 
             f1.release();
             f2.release();
             f3.release();
 
-            alloc_delta   := tracker.alloc_count   - alloc_before;
-            dealloc_delta := tracker.dealloc_count - dealloc_before;
+            allocDelta   := tracker.allocCount   - allocBefore;
+            deallocDelta := tracker.deallocCount - deallocBefore;
 
-            // alloc_delta MAY include extras from autorelease/etc. but
+            // allocDelta MAY include extras from autorelease/etc. but
             // each SxMultiProbe.alloc contributes at least 1. Check the
             // BALANCE: every alloc paired with a dealloc.
-            if dealloc_delta != alloc_delta {
+            if deallocDelta != allocDelta {
                 print("FAIL: alloc/dealloc unbalanced; alloc={} dealloc={}\n",
-                      alloc_delta, dealloc_delta);
+                      allocDelta, deallocDelta);
                 return 1;
             }
-            if alloc_after_three < 3 {
+            if allocAfterThree < 3 {
                 print("FAIL: 3 SxMultiProbe.alloc()s should produce >= 3 tracker allocs; saw {}\n",
-                      alloc_after_three);
+                      allocAfterThree);
                 return 1;
             }
-            if dealloc_delta < 3 {
+            if deallocDelta < 3 {
                 print("FAIL: 3 release()s should produce >= 3 tracker deallocs; saw {}\n",
-                      dealloc_delta);
+                      deallocDelta);
                 return 1;
             }
         }
 
         print("multi-instance round-trip: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

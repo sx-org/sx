@@ -407,9 +407,9 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
 /// already covered by `.parameterized_type_expr`; this names the type-QUERY /
 /// projection builtins that parse as a plain `.call`.
 pub fn isTypeReturningBuiltinName(name: []const u8) bool {
-    return std.mem.eql(u8, name, "struct_field_type") or
-        std.mem.eql(u8, name, "variant_type") or
-        std.mem.eql(u8, name, "pointee_type") or
+    return std.mem.eql(u8, name, "structFieldType") or
+        std.mem.eql(u8, name, "variantType") or
+        std.mem.eql(u8, name, "pointeeType") or
         std.mem.eql(u8, name, "@typeOf");
 }
 

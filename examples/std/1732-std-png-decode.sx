@@ -30,7 +30,7 @@ roundtrip :: (fmt: png.PixelFormat, channels: i64) {
 
 main :: () {
     roundtrip(.gray, 1);
-    roundtrip(.gray_alpha, 2);
+    roundtrip(.grayAlpha, 2);
     roundtrip(.rgb, 3);
     roundtrip(.rgba, 4);
 

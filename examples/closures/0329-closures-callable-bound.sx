@@ -13,7 +13,7 @@ apply :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(v); }
 twice :: (f: $F/(i64) -> i64, v: i64) -> i64 { return f(f(v)); }
 double :: (x: i64) -> i64 { return x * 2; }
 
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
+makeAdder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n = n } x + n; }
 
 main :: () {
     n := 7;
@@ -32,7 +32,7 @@ main :: () {
 
     // Each adder IS its own env, so `n` travels with the value and two adders
     // are independent.
-    add3 := make_adder(3);
-    add10 := make_adder(10);
+    add3 := makeAdder(3);
+    add10 := makeAdder(10);
     print("adders {} {} size {}\n", add3(4), add10(4), @sizeOf(@typeOf(add3)));
 }

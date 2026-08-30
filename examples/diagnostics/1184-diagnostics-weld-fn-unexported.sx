@@ -3,10 +3,10 @@
 //
 // The two surfaces it would otherwise name have their own spellings: the
 // compiler-API surface is an `intrinsic` bound by the registry (1189 / 1242), and
-// a build callback is an ordinary function registered with `on_build`, kept out of
+// a build callback is an ordinary function registered with `onBuild`, kept out of
 // the binary by reachability rather than by its ABI (1664).
 @import "modules/std.sx";
 
-not_a_real_compiler_fn :: (x: i64) -> i64 abi(.compiler);
+notARealCompilerFn :: (x: i64) -> i64 abi(.compiler);
 
 main :: () { print("unreached\n"); }

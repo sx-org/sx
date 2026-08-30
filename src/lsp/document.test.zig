@@ -206,16 +206,16 @@ fn findMemberRef(sema: *const sx.sema.SemaResult, name: []const u8, owner: []con
     return null;
 }
 
-// A `@context_extend` declaration records a member DEF owned by "Context",
+// A `@context.extend` declaration records a member DEF owned by "Context",
 // with the span of the field-name token — the anchor definition/references
 // resolve to.
-test "analyzeDocument: @context_extend records a Context member def" {
+test "analyzeDocument: @context.extend records a Context member def" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "@context.extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx_decl.sx", src, 1);
     try store.analyzeDocument(doc);
 
@@ -501,7 +501,7 @@ test "analyzeDocument: imports inside a module driver register from every branch
     try store.analyzeDocument(b_doc);
 
     const main_src: [:0]const u8 =
-        \\inline if OS == .macos {
+        \\inline if @host.os == .macos {
         \\    @import "driver_a.sx";
         \\} else {
         \\    @import "driver_b.sx";
@@ -611,7 +611,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
     try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
 }
 
-test "analyzeDocument: a @context_extend member's type owns its method uses" {
+test "analyzeDocument: a @context.extend member's type owns its method uses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -624,7 +624,7 @@ test "analyzeDocument: a @context_extend member's type owns its method uses" {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
-        \\@context_extend shape: Shape;
+        \\@context.extend shape: Shape;
     ;
     const lib_doc = try store.openOrUpdate("ctx_lib.sx", lib_src, 1);
     try store.analyzeDocument(lib_doc);

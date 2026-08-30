@@ -16,7 +16,7 @@ make :: () -> Record { .{ a = 11 } }
 accept :: (value: Record) -> i64 { value.a }
 defaulted :: (value: i64 = LOCAL_DEFAULT) -> i64 { value }
 generic :: ($T: Type, value: T) -> i64 { 71 }
-generic_record :: ($T: Type, value: T) -> Record { .{ a = 121 } }
+genericRecord :: ($T: Type, value: T) -> Record { .{ a = 121 } }
 choose :: ($mode: Mode) -> i64 {
     if mode == .chosen { return 91; }
     0

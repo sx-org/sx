@@ -1,2 +1,2 @@
-c_only_fn :: () -> i32 { 42 }
-c_only_const :: 7;
+cOnlyFn :: () -> i32 { 42 }
+cOnlyConst :: 7;

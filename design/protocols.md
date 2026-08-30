@@ -24,7 +24,7 @@ exist only as monomorphized direct calls; it emits no vtables, no tables, no
 metadata.
 
 An **interface** is additionally a runtime value: a three-word handle
-`{ctx, type_id, vtable}` whose first two words are byte-identical to an `any` of
+`{ctx, typeId, vtable}` whose first two words are byte-identical to an `any` of
 the referent. The handle **borrows**. The referent lives outside it, the handle
 carries no allocator word, copying a handle aliases the same referent, no
 spelling allocates one, and `free` refuses one. A program's ownership of the
@@ -55,13 +55,13 @@ call-scoped `[N]I`; the array does not invent referents.
 `.{ }` is a struct literal. It never forms a handle and is never `?T`
 absence. `?T` none is `null`. `null` does not type at a non-optional slot
 (`x : I = null`, `x : i64 = null`). `---` is uninit (LLVM undef, no handle);
-`parent_allocator: Allocator = ---` is the GPU dummy. A statically-constructed
+`parentAllocator: Allocator = ---` is the GPU dummy. A statically-constructed
 struct cannot take `---` at an I field.
 
 ## Static positions
 
 Four positions build their handle before `main` runs: a module-scope global's
-initializer, an `@context_extend` default, an interface-typed struct-field
+initializer, an `@context.extend` default, an interface-typed struct-field
 default, and a field or element of a statically-constructed value. The one
 operand that coerces there names a module-scope global — a bare or
 module-qualified path whose root is a module namespace, `xx` recursing into it.
@@ -96,8 +96,8 @@ constraint form carries those signatures.
 ## Re-erasure
 
 `p.(Q)` between interfaces is one runtime read of a link-time
-`(type_id, Q) → vtable-or-null` table over the pairs with a program-unique impl.
-The result handle reuses `p`'s ctx and type_id and takes the table's
+`(typeId, Q) → vtable-or-null` table over the pairs with a program-unique impl.
+The result handle reuses `p`'s ctx and typeId and takes the table's
 vtable-or-null (same referent, new dispatch word). A pair with visibility-disjoint
 duplicate impls is absent and reads null. The table is built per `Q` when a
 re-erasure to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe

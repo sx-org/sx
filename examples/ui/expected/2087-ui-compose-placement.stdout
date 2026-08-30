@@ -1,20 +1,20 @@
 card 52x28
-  .rounded_rect at 4,4 44x20 corner 8 opacity 1.000000
+  .roundedRect at 4,4 44x20 corner 8 opacity 1.000000
   .text 'card' at 10,6 32x16
 same 52x28
 chip
-  .rounded_rect at 10,8 40x24 corner 4 opacity 1.000000
+  .roundedRect at 10,8 40x24 corner 4 opacity 1.000000
   .text '9' at 10,8 40x24
 faded
-  .opacity_push at 0,0 0x0 corner 0 opacity 0.500000
+  .opacityPush at 0,0 0x0 corner 0 opacity 0.500000
   .rect at 0,0 40x16 corner 0 opacity 0.500000
-  .clip_push at 0,0 40x16 corner 0 opacity 0.000000
+  .clipPush at 0,0 40x16 corner 0 opacity 0.000000
   .text 'dim' at 0,0 40x16
-  .clip_pop at 0,0 0x0 corner 0 opacity 0.000000
-  .opacity_pop at 0,0 0x0 corner 0 opacity 0.000000
+  .clipPop at 0,0 0x0 corner 0 opacity 0.000000
+  .opacityPop at 0,0 0x0 corner 0 opacity 0.000000
 hidden 0x0
 screen
-  .rounded_rect at 2,2 40x28 corner 6 opacity 1.000000
+  .roundedRect at 2,2 40x28 corner 6 opacity 1.000000
   .text 'ok' at 14,8 16x16
   .rect at 1,35 32x16 corner 0 opacity 1.000000
   .text 'deep' at 1,35 32x16

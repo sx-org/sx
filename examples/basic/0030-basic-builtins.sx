@@ -86,38 +86,38 @@ main :: () {
     // @typeName
     print("typename: {}\n", @typeName(Point));
 
-    // struct_field_count on struct
-    print("fieldcount: {}\n", struct_field_count(Point));
+    // structFieldCount on struct
+    print("fieldcount: {}\n", structFieldCount(Point));
 
-    // struct_field_count on enum
-    print("fieldcount-enum: {}\n", variant_count(Color));
+    // structFieldCount on enum
+    print("fieldcount-enum: {}\n", variantCount(Color));
 
-    // struct_field_name on struct
-    print("fieldname0: {}\n", struct_field_name(Point, 0));
-    print("fieldname1: {}\n", struct_field_name(Point, 1));
+    // structFieldName on struct
+    print("fieldname0: {}\n", structFieldName(Point, 0));
+    print("fieldname1: {}\n", structFieldName(Point, 1));
 
-    // struct_field_name on enum
-    print("fieldname-enum0: {}\n", variant_name(Color, 0));
-    print("fieldname-enum2: {}\n", variant_name(Color, 2));
+    // structFieldName on enum
+    print("fieldname-enum0: {}\n", variantName(Color, 0));
+    print("fieldname-enum2: {}\n", variantName(Color, 2));
 
-    // struct_field_value (use any_to_string to avoid sext-on-any bug)
-    fv_pt := Point{ 11, 22 };
+    // structFieldValue (use anyToString to avoid sext-on-any bug)
+    fvPt := Point{ 11, 22 };
     out("fieldval0: ");
-    out(any_to_string(struct_field_value(fv_pt, 0)));
+    out(anyToString(structFieldValue(fvPt, 0)));
     out("\n");
     out("fieldval1: ");
-    out(any_to_string(struct_field_value(fv_pt, 1)));
+    out(anyToString(structFieldValue(fvPt, 1)));
     out("\n");
 
-    // variant_index on plain enum
-    fi_c : Color = .green;
-    print("fieldidx: {}\n", variant_index(Color, fi_c));
+    // variantIndex on plain enum
+    fiC : Color = .green;
+    print("fieldidx: {}\n", variantIndex(Color, fiC));
 
-    // variant_index on tagged enum
-    fi_sh : Shape = .circle(1.0);
-    print("fieldidx-tagged: {}\n", variant_index(Shape, fi_sh));
-    fi_sh2 : Shape = .none;
-    print("fieldidx-tagged2: {}\n", variant_index(Shape, fi_sh2));
+    // variantIndex on tagged enum
+    fiSh : Shape = .circle(1.0);
+    print("fieldidx-tagged: {}\n", variantIndex(Shape, fiSh));
+    fiSh2 : Shape = .none;
+    print("fieldidx-tagged2: {}\n", variantIndex(Shape, fiSh2));
 
     // cast
     cval : f64 = 3.7;

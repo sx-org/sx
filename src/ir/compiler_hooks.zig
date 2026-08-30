@@ -5,11 +5,11 @@ const FuncId = inst.FuncId;
 
 // ── BuildConfig ─────────────────────────────────────────────────────────
 // Mutable build configuration accumulated by the sx-driven build pipeline
-// (`default_pipeline` / an `on_build` callback) running on the comptime VM,
+// (`defaultPipeline` / an `onBuild` callback) running on the comptime VM,
 // which reads/writes these fields via the `intrinsic` primitives.
 
 /// `(src_dir, dest_in_bundle)` pair recorded by
-/// `BuildOptions.add_asset_dir(src, dest)`. The sx bundler walks the
+/// `BuildOptions.addAssetDir(src, dest)`. The sx bundler walks the
 /// list and recursively copies each `src` directory into the bundle
 /// at the relative `dest` path (e.g. `("assets", "assets")` copies
 /// `./assets/` to `<bundle>/assets/`). Android's Week-7 APK path will
@@ -26,29 +26,27 @@ pub const BuildConfig = struct {
     output_path: ?[]const u8 = null,
     wasm_shell_path: ?[]const u8 = null,
 
-    /// Post-link callback registered via
-    /// `BuildOptions.set_post_link_callback(fn)`. When set, the
+    /// Post-link callback registered via `onBuild(cb)`. When set, the
     /// compiler re-enters the comptime VM after `target.link()`
-    /// and invokes this function with no args. A `false` return is
-    /// treated as a build failure.
+    /// and invokes this function. A `false` return is treated as a
+    /// build failure.
     post_link_callback_fn: ?FuncId = null,
-    /// True when the post-link callback was registered via `on_build(cb)`
-    /// (`cb: (opt: BuildOptions) -> bool`) rather than via
-    /// `set_post_link_callback(cb)` (`cb: () -> bool`). When set, the compiler
-    /// invokes the callback with the opaque `BuildOptions` handle as its arg.
+    /// True when the post-link callback takes the `BuildOptions` handle
+    /// (`cb: (opt: BuildOptions) -> bool`) rather than no args. When set, the
+    /// compiler invokes the callback with the opaque handle as its arg.
     post_link_takes_options: bool = false,
     /// Alternative to `post_link_callback_fn`: the qualified name of
-    /// a module whose `bundle_main` function should be called
+    /// a module whose `bundleMain` function should be called
     /// post-link.
     post_link_module: ?[]const u8 = null,
 
     /// Path of the freshly-linked binary, populated by `main.zig`
     /// right before the post-link callback runs. The sx-side bundler
-    /// reads this via `binary_path()` to know what file to wrap.
+    /// reads this via `binaryPath()` to know what file to wrap.
     binary_path: ?[]const u8 = null,
 
     // Apple `.app` / Android `.apk` bundling parameters. Set either
-    // by the sx-side `BuildOptions.set_bundle_*` methods (preferred)
+    // by the sx-side `BuildOptions.setBundle*` methods (preferred)
     // or by main.zig from CLI flags (transitional fallback). The sx
     // bundler reads them via the matching accessor methods.
     bundle_path: ?[]const u8 = null,
@@ -64,14 +62,14 @@ pub const BuildConfig = struct {
     /// C companion object files (`@import c { @source ... }`, compiled to `.o`)
     /// and `@library` link names, forwarded by main.zig before the post-link
     /// callback so the sx-driven build pipeline can read them via the
-    /// `c_object_paths()` / `link_libraries()` compiler primitives and pass them
+    /// `cObjectPaths()` / `linkLibraries()` compiler primitives and pass them
     /// to `link`. Slices reference compiler-owned memory that outlives the
     /// callback.
     c_object_paths: []const []const u8 = &.{},
     link_libraries: []const []const u8 = &.{},
 
     /// The fully-merged link flags (CLI `extra_link_flags` + `@run` build-block
-    /// flags), forwarded by main.zig. The sx driver reads them via `build_flags()`
+    /// flags), forwarded by main.zig. The sx driver reads them via `buildFlags()`
     /// and passes them to `link`. (Distinct from `link_flags`, which holds only
     /// the `@run`-accumulated subset.)
     merged_link_flags: []const []const u8 = &.{},
@@ -91,11 +89,11 @@ pub const BuildConfig = struct {
     target_framework_paths: []const []const u8 = &.{},
 
     /// User-supplied `AndroidManifest.xml` override (`--manifest <path>`
-    /// or `BuildOptions.set_manifest_path("...")`). When null, the
+    /// or `BuildOptions.setManifestPath("...")`). When null, the
     /// Android bundler synthesizes a default manifest.
     manifest_path: ?[]const u8 = null,
     /// User-supplied debug keystore path (`--keystore <path>` or
-    /// `BuildOptions.set_keystore_path("...")`). When null, the Android
+    /// `BuildOptions.setKeystorePath("...")`). When null, the Android
     /// bundler uses `$HOME/.android/debug.keystore` (auto-generated on
     /// first use via `keytool`).
     keystore_path: ?[]const u8 = null,
@@ -126,8 +124,8 @@ pub const BuildConfig = struct {
 pub const BuildHooks = struct {
     ctx: *anyopaque,
     /// Verify + emit the codegen'd module to its object file; return the path
-    /// (ctx-owned). The `emit_object()` primitive — an ACTION: emission is
-    /// sx-driven via `default_pipeline`.
+    /// (ctx-owned). The `emitObject()` primitive — an ACTION: emission is
+    /// sx-driven via `defaultPipeline`.
     emit_object: *const fn (ctx: *anyopaque) anyerror![]const u8,
     /// Link `objects` → `output`, with the given `libraries` / `frameworks` /
     /// link `flags` / `target` triple. (`objects` is the full object list; the

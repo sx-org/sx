@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-inline if POINTER_SIZE == 8 {
+inline if @host.pointerSize == 8 {
     private chosen :: () -> i64 { return 1; }
     private CHOSEN_N :: 41;
 } else {

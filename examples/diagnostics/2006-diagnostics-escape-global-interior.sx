@@ -7,12 +7,12 @@
 Inner :: struct { n: i64; }
 Outer :: struct { head: i64; inner: Inner; }
 
-g_outer := Outer{ head = 1, inner = Inner{ n = 2 } };
+gOuter := Outer{ head = 1, inner = Inner{ n = 2 } };
 
 Box :: struct { p: *Inner; }
 
 make :: () -> Box {
-    return Box{ p = *g_outer.inner };
+    return Box{ p = *gOuter.inner };
 }
 
 B :: @run make();

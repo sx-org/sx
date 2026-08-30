@@ -8,17 +8,17 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-build_axis :: () -> Type {
+buildAxis :: () -> Type {
     dirs := .[
         VariantInfo{ name = "north", payload = void },
         VariantInfo{ name = "east",  payload = i64 },   // carries a bearing
         VariantInfo{ name = "south", payload = void },
         VariantInfo{ name = "west",  payload = void },
     ];
-    return make_enum("Axis", dirs[0..2]);   // first two only — a comptime subslice
+    return makeEnum("Axis", dirs[0..2]);   // first two only — a comptime subslice
 }
 
-Axis :: build_axis();
+Axis :: buildAxis();
 
 main :: () -> i32 {
     a : Axis = .north;

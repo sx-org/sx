@@ -5,13 +5,13 @@
 // File is a small by-value handle whose portable slot holds either a POSIX
 // descriptor or the bits of a Win32 HANDLE.
 
-inline if OS == .windows {
+inline if @host.os == .windows {
     @import "modules/std/fs/windows.sx";
 } else {
     @import "modules/std/fs/posix.sx";
 }
 
-OpenMode :: enum { read; write; append; read_write; }
+OpenMode :: enum { read; write; append; readWrite; }
 SeekFrom :: enum { set; current; end; }
 
 File :: struct {
@@ -19,70 +19,70 @@ File :: struct {
     // the bits of a Win32 HANDLE.
     fd: i64 = -1;
 
-    is_valid :: (self: *File) -> bool {
-        self != null and fs_file_is_valid(self.fd)
+    isValid :: (self: *File) -> bool {
+        self != null and fsFileIsValid(self.fd)
     }
 
     close :: (self: *File) -> bool {
-        if !self.is_valid() { return false; }
-        ok := fs_file_close(self.fd);
+        if !self.isValid() { return false; }
+        ok := fsFileClose(self.fd);
         self.fd = -1;
         ok
     }
 
     read :: (self: *File, output: string) -> i64 {
-        if !self.is_valid() { return -1; }
-        fs_file_read(self.fd, output)
+        if !self.isValid() { return -1; }
+        fsFileRead(self.fd, output)
     }
 
     write :: (self: *File, data: string) -> i64 {
-        if !self.is_valid() { return -1; }
-        fs_file_write(self.fd, data)
+        if !self.isValid() { return -1; }
+        fsFileWrite(self.fd, data)
     }
 
     // Set the file's length. The file position is unspecified afterwards;
     // callers that keep writing must seek explicitly.
     truncate :: (self: *File, len: i64) -> bool {
-        if !self.is_valid() { return false; }
-        fs_file_truncate(self.fd, len)
+        if !self.isValid() { return false; }
+        fsFileTruncate(self.fd, len)
     }
 
     seek :: (self: *File, offset: i64, from: SeekFrom) -> i64 {
-        if !self.is_valid() { return -1; }
+        if !self.isValid() { return -1; }
         code := 0;
         if from == .current { code = 1; }
         else if from == .end { code = 2; }
-        fs_file_seek(self.fd, offset, code)
+        fsFileSeek(self.fd, offset, code)
     }
 }
 
-open_file :: (path: [:0]u8, mode: OpenMode) -> ?File {
+openFile :: (path: [:0]u8, mode: OpenMode) -> ?File {
     code := 0;
     if mode == .write { code = 1; }
     else if mode == .append { code = 2; }
-    else if mode == .read_write { code = 3; }
-    handle := fs_open_handle(path, code);
-    if !fs_file_is_valid(handle) { return null; }
+    else if mode == .readWrite { code = 3; }
+    handle := fsOpenHandle(path, code);
+    if !fsFileIsValid(handle) { return null; }
     File{ fd = handle }
 }
-read_file :: (path: [:0]u8) -> ?string { fs_read_file(path) }
-write_file :: (path: [:0]u8, data: string) -> bool { fs_write_file(path, data) }
-append_file :: (path: [:0]u8, data: string) -> bool { fs_append_file(path, data) }
-exists :: (path: [:0]u8) -> bool { fs_exists(path) }
-delete_file :: (path: [:0]u8) -> bool { fs_delete_file(path) }
-delete_dir :: (path: [:0]u8) -> bool { fs_delete_dir(path) }
-create_dir :: (path: [:0]u8) -> bool { fs_create_dir(path) }
-create_dir_all :: (path: [:0]u8) -> bool { fs_create_dir_all(path) }
-set_mode :: (path: [:0]u8, mode: u32) -> bool { fs_set_mode(path, mode) }
-move :: (old_path: [:0]u8, new_path: [:0]u8) -> bool { fs_move(old_path, new_path) }
-copy_file :: (source: [:0]u8, destination: [:0]u8) -> bool { fs_copy_file(source, destination) }
-basename :: (path: string) -> string { fs_basename(path) }
-dirname :: (path: string) -> string { fs_dirname(path) }
+readFile :: (path: [:0]u8) -> ?string { fsReadFile(path) }
+writeFile :: (path: [:0]u8, data: string) -> bool { fsWriteFile(path, data) }
+appendFile :: (path: [:0]u8, data: string) -> bool { fsAppendFile(path, data) }
+exists :: (path: [:0]u8) -> bool { fsExists(path) }
+deleteFile :: (path: [:0]u8) -> bool { fsDeleteFile(path) }
+deleteDir :: (path: [:0]u8) -> bool { fsDeleteDir(path) }
+createDir :: (path: [:0]u8) -> bool { fsCreateDir(path) }
+createDirAll :: (path: [:0]u8) -> bool { fsCreateDirAll(path) }
+setMode :: (path: [:0]u8, mode: u32) -> bool { fsSetMode(path, mode) }
+move :: (oldPath: [:0]u8, newPath: [:0]u8) -> bool { fsMove(oldPath, newPath) }
+copyFile :: (source: [:0]u8, destination: [:0]u8) -> bool { fsCopyFile(source, destination) }
+basename :: (path: string) -> string { fsBasename(path) }
+dirname :: (path: string) -> string { fsDirname(path) }
 
 // Whole-second modification timestamps. These are deliberately small
 // portable adapters rather than public platform stat/FileTime layouts.
-modified_seconds :: (file: *File) -> (i64, bool) {
-    if file == null or !file.is_valid() { return 0, false; }
-    fs_modified_seconds_handle(file.fd)
+modifiedSeconds :: (file: *File) -> (i64, bool) {
+    if file == null or !file.isValid() { return 0, false; }
+    fsModifiedSecondsHandle(file.fd)
 }
-set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool { fs_set_modified_seconds(path, seconds) }
+setModifiedSeconds :: (path: [:0]u8, seconds: i64) -> bool { fsSetModifiedSeconds(path, seconds) }

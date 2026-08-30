@@ -17,8 +17,8 @@
 TlsStep :: enum {
     Done;       // operation completed — handshake finished, or read/write made
                 // progress (the accompanying byte count says how much).
-    WantRead;   // would block: needs the fd readable. Caller arms add_read, retries.
-    WantWrite;  // would block: needs the fd writable. Caller arms add_write, retries.
+    WantRead;   // would block: needs the fd readable. Caller arms addRead, retries.
+    WantWrite;  // would block: needs the fd writable. Caller arms addWrite, retries.
     Closed;     // peer sent a clean close_notify (an orderly end-of-stream).
     Fatal;      // unrecoverable protocol/transport error — drop the connection.
 }

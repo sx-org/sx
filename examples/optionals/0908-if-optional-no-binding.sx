@@ -5,22 +5,22 @@
 
 P :: struct { x: i64; }
 
-check_i64 :: (n: ?i64) {
+checkI64 :: (n: ?i64) {
     if n { print("i64 present\n"); } else { print("i64 absent\n"); }
 }
 
-check_p :: (p: ?P) {
+checkP :: (p: ?P) {
     if p { print("P present\n"); } else { print("P absent\n"); }
 }
 
 main :: () {
     a : ?i64 = null;
     b : ?i64 = 42;
-    check_i64(a);   // i64 absent
-    check_i64(b);   // i64 present
+    checkI64(a);   // i64 absent
+    checkI64(b);   // i64 present
 
-    p_null : ?P = null;
-    p_some : ?P = P{ x = 9 };
-    check_p(p_null);   // P absent
-    check_p(p_some);   // P present
+    pNull : ?P = null;
+    pSome : ?P = P{ x = 9 };
+    checkP(pNull);   // P absent
+    checkP(pSome);   // P present
 }

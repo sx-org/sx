@@ -22,7 +22,7 @@ main :: () {
     s : Sink = .{};
     t : Take = s;
 
-    many : [*]u8 = xx a.alloc_bytes(8);
+    many : [*]u8 = xx a.allocBytes(8);
     truth : usize = xx many;
     one : *u8 = xx many;
     raw : *void = many;
@@ -45,5 +45,5 @@ main :: () {
     slot : *i64 = xx s.seen;
     print("scalar {}\n", slot.* == 42);
 
-    a.dealloc_bytes(raw);
+    a.deallocBytes(raw);
 }

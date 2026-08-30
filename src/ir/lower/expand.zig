@@ -9,7 +9,7 @@
 //! declaration order.
 //!
 //! Containment is what the opacity buys: the windows and posix `std.fs`
-//! backends both resolve, both author `fs_file_is_valid`, and neither reaches
+//! backends both resolve, both author `fsFileIsValid`, and neither reaches
 //! module scope until its branch is selected.
 //!
 //! A condition or iterable that COMPUTES rather than names is executed, not
@@ -222,8 +222,9 @@ const Expansion = struct {
     }
 
     /// The comptime facts a driver folds against, established before the scan
-    /// that would otherwise establish them: the two target enums the OS / ARCH
-    /// constants are tags of, and the module constants a condition can name.
+    /// that would otherwise establish them: the two target enums `@host`'s os
+    /// and arch fields are tags of, and the module constants a condition can
+    /// name.
     fn primeTargetFacts(ex: *Expansion, decls: []const *Node) void {
         var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
         defer seen.deinit();
@@ -473,7 +474,7 @@ const Expansion = struct {
     /// wrote plus what taken groups have spliced — and, where the program has
     /// one, the implicit Context. The Context is a single program-global
     /// layout, so it cannot be read before it is settled: while any undecided
-    /// driver could still write a `@context_extend`, the fact is not
+    /// driver could still write a `@context.extend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
     /// against an open set whose layout is not final. Once nothing can
     /// contribute, the decided space registers (incrementally — a declaration is
@@ -506,7 +507,7 @@ const Expansion = struct {
     }
 
     /// Register the decided declaration space the way `lowerRoot` registers the
-    /// whole program: the `@context_extend` collection, then the scan. Both are
+    /// whole program: the `@context.extend` collection, then the scan. Both are
     /// incremental — a declaration is registered once, whichever pass reached
     /// it first — so a group spliced since the last evaluation is all that is
     /// added, and the whole-program pass later adds only what expansion never
@@ -667,7 +668,15 @@ const Expansion = struct {
                 };
                 return ex.driveCondition(cd.value, src, depth + 1);
             },
-            .field_access => return ex.driveQualifiedCondition(node, src, depth),
+            // A comptime STRUCT root is a value, not a namespace: the field
+            // projects here, and a miss is unfoldable rather than a name the
+            // driver waits on.
+            .field_access => |fa| {
+                const on_struct = if (ex.self.evalComptimeValue(fa.object)) |root| root == .struct_val else false;
+                if (!on_struct) return ex.driveQualifiedCondition(node, src, depth);
+                const v = ex.self.evalComptimeValue(node) orelse return null;
+                return if (v == .bool_val) v.bool_val else null;
+            },
             .comptime_expr => |ce| {
                 if (!ex.self.expansion.claimRun(node)) return null;
                 defer ex.self.expansion.releaseRun(node);

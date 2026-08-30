@@ -19,15 +19,15 @@ http :: @import "modules/std/http.sx";
 PORT :: 18996;
 
 Counter :: struct {
-    listen_errors: i64 = 0;
-    last_detail: i64 = 0;
+    listenErrors: i64 = 0;
+    lastDetail: i64 = 0;
 }
 
-on_event :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
+onEvent :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
     c : *Counter = xx ctx;
     if ev == http.EventKind.LISTEN_ERROR {
-        c.listen_errors += 1;
-        c.last_detail = detail;
+        c.listenErrors += 1;
+        c.lastDetail = detail;
     }
 }
 
@@ -44,16 +44,16 @@ main :: () -> i32 {
         counter : Counter = .{};
         cfg : http.Config = .{
             port = PORT,
-            max_conn = 4,
-            on_event = on_event,
-            on_event_ctx = xx *counter,
+            maxConn = 4,
+            onEvent = onEvent,
+            onEventCtx = xx *counter,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
         // Kill the readiness queue out from under the loop: every wait()
         // from here on fails immediately.
-        inline if OS == .linux {
+        inline if @host.os == .linux {
             socket.close(srv.loop.epfd);
         } else {
             socket.close(srv.loop.kq);
@@ -62,17 +62,17 @@ main :: () -> i32 {
         // Without the fault stop this never returns (the corpus times out).
         srv.run();
 
-        if counter.listen_errors < 5 {
-            print("expected >= 5 LISTEN_ERROR emissions, got {}\n", counter.listen_errors);
+        if counter.listenErrors < 5 {
+            print("expected >= 5 LISTEN_ERROR emissions, got {}\n", counter.listenErrors);
             failed = 1;
         }
-        if counter.last_detail < 5 {
-            print("expected the consecutive count in detail, got {}\n", counter.last_detail);
+        if counter.lastDetail < 5 {
+            print("expected the consecutive count in detail, got {}\n", counter.lastDetail);
             failed = 1;
         }
 
         srv.close();
-        leaked = gpa.alloc_count;
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

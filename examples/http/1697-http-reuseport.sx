@@ -1,7 +1,7 @@
-// std.http — Config.reuse_port: SO_REUSEPORT multi-listener support.
+// std.http — Config.reusePort: SO_REUSEPORT multi-listener support.
 //
 // The multi-loop scaling pattern: one Server (its own event loop, slots,
-// stats) per thread, ALL bound to the same port with reuse_port=true —
+// stats) per thread, ALL bound to the same port with reusePort=true —
 // the kernel distributes incoming connections across the listeners, so
 // the single-threaded loop stops being the ceiling. This example locks
 // the knob single-threadedly: two Servers bind the same port and are
@@ -9,8 +9,8 @@
 // OS-specific (linux hashes the 4-tuple; darwin favors recent binders),
 // so only TOTAL service is asserted, never the distribution.
 //
-// Asserts: two reuse_port Servers init on one port; a third server
-// WITHOUT reuse_port on that port fails Bind (the knob is opt-in, no
+// Asserts: two reusePort Servers init on one port; a third server
+// WITHOUT reusePort on that port fails Bind (the knob is opt-in, no
 // accidental sharing); 8 sequential connections all get served by the
 // pair (responses name their server; the split is printed nowhere);
 // GPA net-zero after both close.
@@ -19,15 +19,15 @@ http :: @import "modules/std/http.sx";
 
 PORT :: 19012;
 
-route_one :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "one"; }
-route_two :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "two"; }
+routeOne :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "one"; }
+routeTwo :: (req: *http.Request, resp: *http.Response, ctx: usize) { resp.body = "two"; }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
-    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
     if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
-    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    if !socket.setNonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
 
@@ -46,7 +46,7 @@ contains :: (hay: string, needle: string) -> bool {
 
 // One connection against the PAIR: send, tick both servers, read to EOF.
 roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -57,7 +57,7 @@ roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap:
         s2.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], (cap - total));
+            n, re := socket.readNb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == .Closed { done = true; }
             break;
@@ -75,22 +75,22 @@ main :: () -> i32 {
 
     push .{ allocator = gpa } {
         cap : i64 = 16384;
-        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        rbuf : [*]u8 = xx context.allocator.allocBytes(cap);
 
-        cfg1 : http.Config = .{ port = PORT, max_conn = 8, reuse_port = true };
-        srv1, e1 := http.Server.init(cfg1, route_one, 0);
+        cfg1 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
+        srv1, e1 := http.Server.init(cfg1, routeOne, 0);
         if e1 { print("srv1 init failed\n"); return 1; }
 
-        cfg2 : http.Config = .{ port = PORT, max_conn = 8, reuse_port = true };
-        srv2, e2 := http.Server.init(cfg2, route_two, 0);
-        if e2 { print("srv2 init: expected shared bind via reuse_port\n"); failed = 1; }
+        cfg2 : http.Config = .{ port = PORT, maxConn = 8, reusePort = true };
+        srv2, e2 := http.Server.init(cfg2, routeTwo, 0);
+        if e2 { print("srv2 init: expected shared bind via reusePort\n"); failed = 1; }
 
         // Control: WITHOUT the knob the same port must refuse to bind —
-        // reuse_port sharing is strictly opt-in.
-        cfg3 : http.Config = .{ port = PORT, max_conn = 8 };
-        srv3, e3 := http.Server.init(cfg3, route_one, 0);
+        // reusePort sharing is strictly opt-in.
+        cfg3 : http.Config = .{ port = PORT, maxConn = 8 };
+        srv3, e3 := http.Server.init(cfg3, routeOne, 0);
         if !e3 {
-            print("plain bind on a reuse_port port: expected Bind error\n");
+            print("plain bind on a reusePort port: expected Bind error\n");
             failed = 1;
             srv3.close();
         }
@@ -100,9 +100,9 @@ main :: () -> i32 {
             k : i64 = 0;
             while k < 8 {
                 r := roundtrip2(*srv1, *srv2, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-                hit_one := contains(r, "HTTP/1.1 200 OK") and contains(r, "one");
-                hit_two := contains(r, "HTTP/1.1 200 OK") and contains(r, "two");
-                if hit_one or hit_two { served += 1; }
+                hitOne := contains(r, "HTTP/1.1 200 OK") and contains(r, "one");
+                hitTwo := contains(r, "HTTP/1.1 200 OK") and contains(r, "two");
+                if hitOne or hitTwo { served += 1; }
                 k += 1;
             }
             if served != 8 {
@@ -114,8 +114,8 @@ main :: () -> i32 {
         // must not cascade srv2's buffers into the leak report's noise.
         if !e2 { srv2.close(); }
         srv1.close();
-        context.allocator.dealloc_bytes(rbuf);
-        leaked = gpa.alloc_count;
+        context.allocator.deallocBytes(rbuf);
+        leaked = gpa.allocCount;
     }
 
     if leaked != 0 {

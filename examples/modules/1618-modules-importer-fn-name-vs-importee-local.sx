@@ -10,17 +10,17 @@ lib :: @import "1618-modules-importer-fn-name-vs-importee-local/lib.sx";
 // Module-scope fn named like the importee's LOCAL `h`.
 h :: (x: i64) -> i64 { return x + 1; }
 
-shadow_target :: (x: i64) -> void { print("local fnptr {}\n", x); }
+shadowTarget :: (x: i64) -> void { print("local fnptr {}\n", x); }
 
 main :: () -> i32 {
-    cfg : lib.Cfg = .{ on_event = lib.hook };
+    cfg : lib.Cfg = .{ onEvent = lib.hook };
     lib.emit(cfg, 41);
     print("h(1) = {}\n", h(1));
 
     // Same-module shadow: a local fn-pointer named `h` shadows THIS
     // module's own `h` in both call and value position.
     {
-        h : (x: i64) -> void = shadow_target;
+        h : (x: i64) -> void = shadowTarget;
         h(7);
         f := h;
         f(8);
@@ -32,7 +32,7 @@ main :: () -> i32 {
     // both local namespaces — an INNER nested fn beats an outer callable
     // var, and an INNER callable var beats an outer nested fn.
     {
-        h : (x: i64) -> i64 = double_it;                // outer callable var
+        h : (x: i64) -> i64 = doubleIt;                // outer callable var
         {
             h :: (x: i64) -> i64 { return x + 100; }    // inner nested fn wins
             print("inner nested fn: {}\n", h(3));       // 103
@@ -42,7 +42,7 @@ main :: () -> i32 {
     {
         h :: (x: i64) -> i64 { return x + 100; }        // outer nested fn
         {
-            h : (x: i64) -> i64 = double_it;            // inner var wins
+            h : (x: i64) -> i64 = doubleIt;             // inner var wins
             print("inner var: {}\n", h(3));             // 6
         }
         print("outer nested fn: {}\n", h(3));           // 103
@@ -50,4 +50,4 @@ main :: () -> i32 {
     0
 }
 
-double_it :: (x: i64) -> i64 { return x * 2; }
+doubleIt :: (x: i64) -> i64 { return x * 2; }

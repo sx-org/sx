@@ -6,7 +6,7 @@ Quat :: struct {
 
     identity :: () -> Quat { Quat{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 } }
 
-    from_axis_angle :: (axis: Vec3, angle: f32) -> Quat {
+    fromAxisAngle :: (axis: Vec3, angle: f32) -> Quat {
         n := axis.normalize();
         half := angle * 0.5;
         s := @sin(half);
@@ -44,7 +44,7 @@ Quat :: struct {
         v.add(u.cross(t).scale(2.0))
     }
 
-    to_mat4 :: (self: Quat) -> Mat4 {
+    toMat4 :: (self: Quat) -> Mat4 {
         x2 := self.x * self.x;
         y2 := self.y * self.y;
         z2 := self.z * self.z;

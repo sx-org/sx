@@ -2,7 +2,7 @@
 //
 // `@BuildShape` is compiler-produced FACT and lives in stdlib. Planning is
 // ordinary library POLICY over those facts, so `Plan` / `PlanPolicy` /
-// `make_plan` are declared right here rather than in stdlib — nothing about
+// `makePlan` are declared right here rather than in stdlib — nothing about
 // them is a language contract. A hybrid accepter asks for the shape, reserves
 // from the plan, then runs.
 @import "modules/std.sx";
@@ -14,25 +14,25 @@ Drawable :: constraint {
 
 // Example-owned planning policy over the compiler's facts.
 PlanPolicy :: struct {
-    reserve_static: bool = true;
-    dynamic_chunk: i32 = 64;
+    reserveStatic: bool = true;
+    dynamicChunk: i32 = 64;
 }
 
 Plan :: struct {
     shape: @BuildShape = .{};
-    static_capacity: i32 = 0;
-    reserved_bytes: i64 = 0;
-    dynamic_chunk: i32 = 64;
+    staticCapacity: i32 = 0;
+    reservedBytes: i64 = 0;
+    dynamicChunk: i32 = 64;
 }
 
-make_plan :: (shape: @BuildShape, policy: PlanPolicy) -> Plan {
-    reserved : i64 = if policy.reserve_static then shape.known_bytes ?? 0 else 0;
-    capacity : i32 = if policy.reserve_static then shape.static_expressions else 0;
+makePlan :: (shape: @BuildShape, policy: PlanPolicy) -> Plan {
+    reserved : i64 = if policy.reserveStatic then shape.knownBytes ?? 0 else 0;
+    capacity : i32 = if policy.reserveStatic then shape.staticExpressions else 0;
     Plan{
         shape = shape,
-        static_capacity = capacity,
-        reserved_bytes = reserved,
-        dynamic_chunk = policy.dynamic_chunk,
+        staticCapacity = capacity,
+        reservedBytes = reserved,
+        dynamicChunk = policy.dynamicChunk,
     }
 }
 
@@ -60,19 +60,19 @@ Hold :: struct {
 
 panel :: (content: $B/@BuildBlock(Drawable)) -> i32 {
     shape: @BuildShape = content.shape();
-    plan := make_plan(shape, .{
-        reserve_static = true,
-        dynamic_chunk = 8,
+    plan := makePlan(shape, .{
+        reserveStatic = true,
+        dynamicChunk = 8,
     });
     print("shape static={} dynamic={} known={} align={}\n",
-        shape.static_expressions,
-        shape.dynamic_regions,
-        shape.known_bytes ?? -1,
-        shape.max_alignment);
+        shape.staticExpressions,
+        shape.dynamicRegions,
+        shape.knownBytes ?? -1,
+        shape.maxAlignment);
     print("plan capacity={} reserved={} chunk={}\n",
-        plan.static_capacity,
-        plan.reserved_bytes,
-        plan.dynamic_chunk);
+        plan.staticCapacity,
+        plan.reservedBytes,
+        plan.dynamicChunk);
     sink := Hold{};
     content.run(*sink);
     sink.n

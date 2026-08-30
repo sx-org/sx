@@ -24,8 +24,8 @@ error: 'Stray' cannot be converted to 'View': it is not a member of it
 note: instantiated from here
   --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:33:18
    |
-33 |     forwarded := into_view(Stray{ text = "still not one" });
-   |                  ^^^^^^^^^
+33 |     forwarded := intoView(Stray{ text = "still not one" });
+   |                  ^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Stray :: @OpenVariant(View) { … }'
    |

@@ -4,21 +4,21 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-read_i8 :: (env: *void, target: *void) -> i8 {
+readI8 :: (env: *void, target: *void) -> i8 {
     @JniCall(i8, env, target, "getByte", "()B")
 }
 
-read_u8 :: (env: *void, target: *void) -> u8 {
+readU8 :: (env: *void, target: *void) -> u8 {
     @JniCall(u8, env, target, "getUnsignedByte", "()B")
 }
 
-read_i16 :: (env: *void, target: *void) -> i16 {
+readI16 :: (env: *void, target: *void) -> i16 {
     @JniCall(i16, env, target, "getShort", "()S")
 }
 
-read_u16 :: (env: *void, target: *void) -> u16 {
+readU16 :: (env: *void, target: *void) -> u16 {
     @JniCall(u16, env, target, "getChar", "()C")
 }
 
@@ -26,19 +26,19 @@ Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> i8;
 }
 
-unused_dsl :: (env: *void, b: *Buf) {
+unusedDsl :: (env: *void, b: *Buf) {
     push .{ jni = env } {
         _ := b.get();
     }
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := read_i8(null, null);
-        _ := read_u8(null, null);
-        _ := read_i16(null, null);
-        _ := read_u16(null, null);
-        unused_dsl(null, null);
+    if gShouldCall {
+        _ := readI8(null, null);
+        _ := readU8(null, null);
+        _ := readI16(null, null);
+        _ := readU16(null, null);
+        unusedDsl(null, null);
     }
     print("ok\n");
     0

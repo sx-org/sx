@@ -29,21 +29,21 @@ SxFoo :: @ObjcClass("SxFoo") {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         cls : Class = objc_getClass("SxFoo".ptr);
         if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
 
-        sel_bump : SEL = sel_registerName("bump".ptr);
-        imp_bump : *void = class_getMethodImplementation(cls, sel_bump);
-        if imp_bump == null { print("FAIL: bump IMP missing\n"); return 1; }
+        selBump : SEL = sel_registerName("bump".ptr);
+        impBump : *void = class_getMethodImplementation(cls, selBump);
+        if impBump == null { print("FAIL: bump IMP missing\n"); return 1; }
 
-        sel_add : SEL = sel_registerName("add:".ptr);
-        imp_add : *void = class_getMethodImplementation(cls, sel_add);
-        if imp_add == null { print("FAIL: add: IMP missing\n"); return 1; }
+        selAdd : SEL = sel_registerName("add:".ptr);
+        impAdd : *void = class_getMethodImplementation(cls, selAdd);
+        if impAdd == null { print("FAIL: add: IMP missing\n"); return 1; }
 
         print("IMP: bump ok, add: ok\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("IMP: bump ok, add: ok\n");
     }
     0

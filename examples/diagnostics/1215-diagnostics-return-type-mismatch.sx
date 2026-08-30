@@ -3,10 +3,10 @@
 // diagnose.
 @import "modules/std.sx";
 
-bad_trailing :: () -> i64 { "not an int" }
-bad_explicit :: () -> i64 { return "also not an int"; }
+badTrailing :: () -> i64 { "not an int" }
+badExplicit :: () -> i64 { return "also not an int"; }
 
 main :: () {
-    print("{}\n", bad_trailing());
-    print("{}\n", bad_explicit());
+    print("{}\n", badTrailing());
+    print("{}\n", badExplicit());
 }

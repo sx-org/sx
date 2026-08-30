@@ -23,18 +23,18 @@ SxBar :: @ObjcClass("SxBar") export {
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         b := SxBar.alloc();
         if b == null { print("FAIL: alloc returned null\n"); return 1; }
         b.bump();
         b.bump();
         print("counter: {}\n", b.get());
 
-        sel_release : SEL = sel_registerName("release".ptr);
-        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
-        release_fn(b, sel_release);
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(b, selRelease);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("counter: 2\n");
     }
     0

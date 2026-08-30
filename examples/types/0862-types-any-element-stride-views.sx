@@ -1,4 +1,4 @@
-// any_element(av, elem, i) — element view into an array/vector held by
+// anyElement(av, elem, i) — element view into an array/vector held by
 // an `any`: pure stride math, `{elem, raw data + i * @sizeOf(elem)}`.
 // The walker's array/vector arms re-aim ONE view per index; `elem` can
 // be a compile-time type (size folds to a constant) or a runtime Type
@@ -12,7 +12,7 @@ main :: () -> i64 {
     i := 0;
     while i < 4 {
         if i > 0 { print(" "); }
-        print("{}", any_element(av, i16, i));
+        print("{}", anyElement(av, i16, i));
         i += 1;
     }
     print("\n");                                     // 10 -20 30 -40
@@ -21,14 +21,14 @@ main :: () -> i64 {
     // ALIGNMENT is bigger; the lanes are packed).
     vel := @Vector(3, f32).[1.0, 3.0, 2.0];
     vv : any = vel;
-    print("{} {} {}\n", any_element(vv, f32, 0), any_element(vv, f32, 1), any_element(vv, f32, 2));
+    print("{} {} {}\n", anyElement(vv, f32, 0), anyElement(vv, f32, 1), anyElement(vv, f32, 2));
 
     // Runtime element Type: same composition through the size table.
     et := @typeOf(arr[0]);
-    print("{}\n", any_element(av, et, 2));           // 30
+    print("{}\n", anyElement(av, et, 2));           // 30
 
     // Views alias the array's storage.
     arr[1] = 99;
-    print("{}\n", any_element(av, i16, 1));          // 99
+    print("{}\n", anyElement(av, i16, 1));          // 99
     return 0;
 }

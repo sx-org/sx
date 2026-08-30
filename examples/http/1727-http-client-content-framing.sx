@@ -26,7 +26,7 @@ contains :: (value: string, needle: string) -> bool {
     false
 }
 
-write_all :: (fd: i32, data: string) -> bool {
+writeAll :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
         n := socket.write(fd, *data.ptr[at], (data.len - at));
@@ -36,7 +36,7 @@ write_all :: (fd: i32, data: string) -> bool {
     true
 }
 
-hex_into :: (value: i64, dst: [*]u8) -> i64 {
+hexInto :: (value: i64, dst: [*]u8) -> i64 {
     tmp : [16]u8 = ---;
     n : i64 = 0;
     v := value;
@@ -52,14 +52,14 @@ hex_into :: (value: i64, dst: [*]u8) -> i64 {
     n
 }
 
-bodyless_then_normal :: (first_head: string, method: string) -> bool {
+bodylessThenNormal :: (firstHead: string, method: string) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     storage : [4096]u8 = ---;
-    if !write_all(pair[1], first_head) { socket.close(pair[0]); socket.close(pair[1]); return false; }
+    if !writeAll(pair[1], firstHead) { socket.close(pair[0]); socket.close(pair[1]); return false; }
     first, fe := http.Client.recv(pair[0], *storage[0], storage.len, method);
     ok := !fe and first.body.len == 0;
-    if ok { ok = write_all(pair[1], "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"); }
+    if ok { ok = writeAll(pair[1], "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"); }
     if ok {
         second, se := http.Client.recv(pair[0], *storage[0], storage.len);
         ok = !se and second.status == 200 and second.body == "pong";
@@ -69,13 +69,13 @@ bodyless_then_normal :: (first_head: string, method: string) -> bool {
     ok
 }
 
-informational_final :: () -> bool {
+informationalFinal :: () -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     wire := concat("HTTP/1.1 100 Continue\r\nContent-Length: 999\r\n\r\n",
         concat("HTTP/1.1 103 Early Hints\r\nTransfer-Encoding: chunked\r\n\r\n",
             "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"));
-    ok := write_all(pair[1], wire);
+    ok := writeAll(pair[1], wire);
     if ok {
         storage : [4096]u8 = ---;
         response, e := http.Client.recv(pair[0], *storage[0], storage.len);
@@ -85,82 +85,82 @@ informational_final :: () -> bool {
     ok
 }
 
-write_chunked :: (fd: i32, data: string) -> bool {
+writeChunked :: (fd: i32, data: string) -> bool {
     hex : [18]u8 = ---;
-    n := hex_into(data.len, *hex[0]);
+    n := hexInto(data.len, *hex[0]);
     hex[n] = '\r'; hex[n + 1] = '\n';
-    return write_all(fd, string{ ptr = *hex[0], len = n + 2 })
-        and write_all(fd, data) and write_all(fd, "\r\n0\r\n\r\n");
+    return writeAll(fd, string{ ptr = *hex[0], len = n + 2 })
+        and writeAll(fd, data) and writeAll(fd, "\r\n0\r\n\r\n");
 }
 
-decode_case :: (packed: string, plain: string, coding: string, framing: i64, one_short: bool) -> bool {
+decodeCase :: (packed: string, plain: string, coding: string, framing: i64, oneShort: bool) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := concat("HTTP/1.1 200 OK\r\nContent-Encoding: ", coding);
     if framing == 0 {
-        head = concat(head, concat("\r\nContent-Length: ", concat(int_to_string(packed.len), "\r\n\r\n")));
+        head = concat(head, concat("\r\nContent-Length: ", concat(intToString(packed.len), "\r\n\r\n")));
     } else if framing == 1 {
         head = concat(head, "\r\nTransfer-Encoding: chunked\r\n\r\n");
     } else {
         head = concat(head, "\r\nConnection: close\r\n\r\n");
     }
-    ok := write_all(pair[1], head);
+    ok := writeAll(pair[1], head);
     if ok {
-        if framing == 1 { ok = write_chunked(pair[1], packed); }
-        else { ok = write_all(pair[1], packed); }
+        if framing == 1 { ok = writeChunked(pair[1], packed); }
+        else { ok = writeAll(pair[1], packed); }
     }
     if framing == 2 { socket.close(pair[1]); pair[1] = -1; }
-    cap := head.len + plain.len - (if one_short then 1 else 0);
-    storage := context.allocator.alloc_bytes(cap);
+    cap := head.len + plain.len - (if oneShort then 1 else 0);
+    storage := context.allocator.allocBytes(cap);
     if storage == null { socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); } return false; }
     response, e := http.Client.recv(pair[0], xx storage, cap);
-    if one_short { ok = ok and e == .TooLarge; }
+    if oneShort { ok = ok and e == .TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
-        ok = ok and !e and response.decoded_from != null and response.decoded_from?! == wanted
+        ok = ok and !e and response.decodedFrom != null and response.decodedFrom?! == wanted
             and same(response.body, plain);
     }
-    context.allocator.dealloc_bytes(storage);
+    context.allocator.deallocBytes(storage);
     socket.close(pair[0]); if pair[1] >= 0 { socket.close(pair[1]); }
     ok
 }
 
-raw_coding_preserved :: () -> bool {
+rawCodingPreserved :: () -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     wire := concat("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Encoding: br\r\n",
         "Content-Encoding: gzip\r\n\r\nraw");
-    ok := write_all(pair[1], wire);
-    conn : http.ClientConn = .{ fd = pair[0], accept_compression = false };
+    ok := writeAll(pair[1], wire);
+    conn : http.ClientConn = .{ fd = pair[0], acceptCompression = false };
     storage : [4096]u8 = ---;
-    response, e := http.Client.recv_on(*conn, *storage[0], storage.len);
-    ok = ok and !e and response.decoded_from == null and response.body == "raw"
-        and contains(response.headers_raw, "Content-Encoding: br")
-        and contains(response.headers_raw, "Content-Encoding: gzip");
+    response, e := http.Client.recvOn(*conn, *storage[0], storage.len);
+    ok = ok and !e and response.decodedFrom == null and response.body == "raw"
+        and contains(response.headersRaw, "Content-Encoding: br")
+        and contains(response.headersRaw, "Content-Encoding: gzip");
     socket.close(pair[0]); socket.close(pair[1]);
     ok
 }
 
-range_coding_preserved :: (packed: string, coding: string, status: i64) -> bool {
+rangeCodingPreserved :: (packed: string, coding: string, status: i64) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
-    head := concat(concat(concat("HTTP/1.1 ", int_to_string(status)),
+    head := concat(concat(concat("HTTP/1.1 ", intToString(status)),
         " Range\r\nContent-Encoding: "), concat(coding,
         "\r\nContent-Range: bytes */99\r\nContent-Length: "));
-    head = concat(head, concat(int_to_string(packed.len), "\r\n\r\n"));
-    ok := write_all(pair[1], head) and write_all(pair[1], packed);
-    storage := context.allocator.alloc_bytes(head.len + packed.len);
+    head = concat(head, concat(intToString(packed.len), "\r\n\r\n"));
+    ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
+    storage := context.allocator.allocBytes(head.len + packed.len);
     if storage == null { socket.close(pair[0]); socket.close(pair[1]); return false; }
     response, e := http.Client.recv(pair[0], xx storage, head.len + packed.len);
-    ok = ok and !e and response.status == status and response.decoded_from == null
+    ok = ok and !e and response.status == status and response.decodedFrom == null
         and response.header("content-encoding") == coding and same(response.body, packed);
-    context.allocator.dealloc_bytes(storage);
+    context.allocator.deallocBytes(storage);
     socket.close(pair[0]); socket.close(pair[1]);
     ok
 }
 
-corrupt_copy :: (data: string, at: i64) -> string {
-    raw := context.allocator.alloc_bytes(data.len);
+corruptCopy :: (data: string, at: i64) -> string {
+    raw := context.allocator.allocBytes(data.len);
     if raw == null { return ""; }
     result : string = .{ ptr = raw.([*]u8), len = data.len };
     i : i64 = 0;
@@ -169,12 +169,12 @@ corrupt_copy :: (data: string, at: i64) -> string {
     result
 }
 
-encoded_response_fails :: (packed: string, coding: string) -> bool {
+encodedResponseFails :: (packed: string, coding: string) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := concat("HTTP/1.1 200 OK\r\nContent-Encoding: ",
-        concat(coding, concat("\r\nContent-Length: ", concat(int_to_string(packed.len), "\r\n\r\n"))));
-    ok := write_all(pair[1], head) and write_all(pair[1], packed);
+        concat(coding, concat("\r\nContent-Length: ", concat(intToString(packed.len), "\r\n\r\n"))));
+    ok := writeAll(pair[1], head) and writeAll(pair[1], packed);
     socket.close(pair[1]);
     storage : [4096]u8 = ---;
     _, e := http.Client.recv(pair[0], *storage[0], storage.len);
@@ -182,12 +182,12 @@ encoded_response_fails :: (packed: string, coding: string) -> bool {
     ok and e == .Recv
 }
 
-coding_list_fails :: (value: string) -> bool {
+codingListFails :: (value: string) -> bool {
     pair : [2]i32 = ---;
     if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     wire := concat("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Encoding: ",
         concat(value, "\r\n\r\nx"));
-    ok := write_all(pair[1], wire);
+    ok := writeAll(pair[1], wire);
     socket.close(pair[1]);
     storage : [4096]u8 = ---;
     _, e := http.Client.recv(pair[0], *storage[0], storage.len);
@@ -200,13 +200,13 @@ main :: () -> i32 {
     arena := mem.Arena.init(gpa, 65536);
     ok := true;
     push .{ allocator = arena } {
-        ok = bodyless_then_normal("HTTP/1.1 200 OK\r\nContent-Length: 999\r\nContent-Encoding: gzip\r\n\r\n", "HEAD")
-            and bodyless_then_normal("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", "HEAD")
-            and bodyless_then_normal("HTTP/1.1 204 No Content\r\nContent-Length: 999\r\n\r\n", "GET")
-            and bodyless_then_normal("HTTP/1.1 204 No Content\r\nTransfer-Encoding: chunked\r\n\r\n", "GET")
-            and bodyless_then_normal("HTTP/1.1 304 Not Modified\r\nContent-Length: 999\r\n\r\n", "GET")
-            and bodyless_then_normal("HTTP/1.1 304 Not Modified\r\nTransfer-Encoding: chunked\r\n\r\n", "GET")
-            and informational_final() and raw_coding_preserved();
+        ok = bodylessThenNormal("HTTP/1.1 200 OK\r\nContent-Length: 999\r\nContent-Encoding: gzip\r\n\r\n", "HEAD")
+            and bodylessThenNormal("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", "HEAD")
+            and bodylessThenNormal("HTTP/1.1 204 No Content\r\nContent-Length: 999\r\n\r\n", "GET")
+            and bodylessThenNormal("HTTP/1.1 204 No Content\r\nTransfer-Encoding: chunked\r\n\r\n", "GET")
+            and bodylessThenNormal("HTTP/1.1 304 Not Modified\r\nContent-Length: 999\r\n\r\n", "GET")
+            and bodylessThenNormal("HTTP/1.1 304 Not Modified\r\nTransfer-Encoding: chunked\r\n\r\n", "GET")
+            and informationalFinal() and rawCodingPreserved();
 
         plain := "content-framing-payload-content-framing-payload";
         gz := gzip.encode(plain) catch { ok = false; "" };
@@ -214,18 +214,18 @@ main :: () -> i32 {
         if ok {
             framing : i64 = 0;
             while framing < 3 {
-                if !decode_case(gz, plain, "gzip", framing, false)
-                    or !decode_case(gz, plain, "gzip", framing, true)
-                    or !decode_case(zl, plain, "deflate", framing, false)
-                    or !decode_case(zl, plain, "deflate", framing, true) { ok = false; }
+                if !decodeCase(gz, plain, "gzip", framing, false)
+                    or !decodeCase(gz, plain, "gzip", framing, true)
+                    or !decodeCase(zl, plain, "deflate", framing, false)
+                    or !decodeCase(zl, plain, "deflate", framing, true) { ok = false; }
                 framing += 1;
             }
         }
         if ok {
-            ok = range_coding_preserved(gz, "gzip", 206)
-                and range_coding_preserved(gz, "gzip", 416)
-                and range_coding_preserved(zl, "deflate", 206)
-                and range_coding_preserved(zl, "deflate", 416);
+            ok = rangeCodingPreserved(gz, "gzip", 206)
+                and rangeCodingPreserved(gz, "gzip", 416)
+                and rangeCodingPreserved(zl, "deflate", 206)
+                and rangeCodingPreserved(zl, "deflate", 416);
         }
 
         // RFC 1952 concatenated members are one gzip representation.
@@ -233,30 +233,30 @@ main :: () -> i32 {
         gb := gzip.encode("second") catch { ok = false; "" };
         if ok {
             joined := concat(ga, gb);
-            ok = decode_case(joined, "first-second", "gzip", 0, false);
+            ok = decodeCase(joined, "first-second", "gzip", 0, false);
         }
 
         // Target framing/codec terminal failures after decoded output, not
         // merely a bad magic byte: checksum corruption and truncated trailers
         // must never surface a partial successful body.
         if ok {
-            bad_gzip_sum := corrupt_copy(gz, gz.len - 8);
-            bad_zlib_sum := corrupt_copy(zl, zl.len - 1);
-            if bad_gzip_sum.len == 0 or bad_zlib_sum.len == 0 { ok = false; }
+            badGzipSum := corruptCopy(gz, gz.len - 8);
+            badZlibSum := corruptCopy(zl, zl.len - 1);
+            if badGzipSum.len == 0 or badZlibSum.len == 0 { ok = false; }
             else {
-                ok = encoded_response_fails(bad_gzip_sum, "gzip")
-                    and encoded_response_fails(gz[..gz.len - 1], "gzip")
-                    and encoded_response_fails(bad_zlib_sum, "deflate")
-                    and encoded_response_fails(zl[..zl.len - 1], "deflate")
-                    and coding_list_fails("gzip, deflate")
-                    and coding_list_fails("gzip,")
-                    and coding_list_fails(",gzip");
+                ok = encodedResponseFails(badGzipSum, "gzip")
+                    and encodedResponseFails(gz[..gz.len - 1], "gzip")
+                    and encodedResponseFails(badZlibSum, "deflate")
+                    and encodedResponseFails(zl[..zl.len - 1], "deflate")
+                    and codingListFails("gzip, deflate")
+                    and codingListFails("gzip,")
+                    and codingListFails(",gzip");
             }
         }
     }
     arena.deinit();
-    if !ok or gpa.alloc_count != 0 {
-        print("http client content framing failed; leaks={}\n", gpa.alloc_count);
+    if !ok or gpa.allocCount != 0 {
+        print("http client content framing failed; leaks={}\n", gpa.allocCount);
         return 1;
     }
     print("http client HEAD/1xx/no-body framing and bounded raw/gzip/zlib ok\n");

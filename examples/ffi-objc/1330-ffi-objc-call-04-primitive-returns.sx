@@ -12,29 +12,29 @@
 @import "modules/ffi/objc.sx";
 
 main :: () -> i32 {
-    inline if OS == .macos {
+    inline if @host.os == .macos {
         // ── Nil-recv quick smoke ───────────────────────────────────
-        nil_cls := @ObjcCall(*void, null, "class");
-        print("nil class    = {}\n", nil_cls == null);
+        nilCls := @ObjcCall(*void, null, "class");
+        print("nil class    = {}\n", nilCls == null);
 
-        nil_n := @ObjcCall(i64, null, "hash");
-        print("nil hash     = {}\n", nil_n);
+        nilN := @ObjcCall(i64, null, "hash");
+        print("nil hash     = {}\n", nilN);
 
         // ── Real-recv: NSObject ────────────────────────────────────
         // *void return: [NSObject class] -> NSObject's metaclass (non-null,
         // and conveniently == self when sent to the class itself).
-        ns_object := objc_getClass("NSObject".ptr);
-        meta := @ObjcCall(*void, ns_object, "class");
+        nsObject := objc_getClass("NSObject".ptr);
+        meta := @ObjcCall(*void, nsObject, "class");
         print("meta non-null = {}\n", meta != null);
 
         // i64 return: [obj hash] returns NSUInteger. On the NSObject
         // class itself the value is implementation-defined but stable
         // within a process — pinning it as non-zero is enough for ABI
         // verification.
-        h := @ObjcCall(i64, ns_object, "hash");
+        h := @ObjcCall(i64, nsObject, "hash");
         print("hash non-zero = {}\n", h != 0);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

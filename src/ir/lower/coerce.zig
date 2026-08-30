@@ -34,7 +34,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // of the plan switch — the `.coerce` ladder's box arm is node-less
     // and would always spill a copy. A PROTOCOL source is exempt: it has
     // no storage to borrow, and `xx p : any` is the CONCRETE view
-    // (protocol_to_any — the {ctx, type_id} prefix) rather than a box.
+    // (protocol_to_any — the {ctx, typeId} prefix) rather than a box.
     if (dst_ty == .any and src_ty != .any and src_ty != .unresolved and
         self.getProtocolInfo(src_ty) == null)
     {
@@ -108,7 +108,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
         // Interface → interface: one row of the target's conformance table
-        // supplies the new dispatch word; ctx and type_id ride across unchanged.
+        // supplies the new dispatch word; ctx and typeId ride across unchanged.
         // An absent row panics here — the consumed temperaments read it as a
         // value instead.
         .reerase_protocol => return reeraseHandle(self, operand, src_ty, dst_ty, .panic),
@@ -134,12 +134,12 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             // ladder below, whose value arm erases via a self-contained copy.
         },
         // Protocol → pointer: recover the typed ctx pointer (field 0) of the
-        // `{ ctx, __type_id, vtable_ptr }` value.
+        // `{ ctx, typeId, vtable_ptr }` value.
         .protocol_to_pointer => {
             // A pointer-to-PROTOCOL target is a type lie, not a recovery:
             // ctx addresses the CONCRETE value, so `s.(*Sizable)` would
             // return concrete bytes typed as a protocol-value pointer —
-            // and `*P` dispatch would load them as {ctx, type_id, vtable}.
+            // and `*P` dispatch would load them as {ctx, typeId, vtable}.
             // Refuse with the two honest spellings.
             if (!dst_ty.isBuiltin()) {
                 const dinfo = self.module.types.get(dst_ty);
@@ -157,7 +157,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             return self.builder.emit(.{ .bitcast = .{ .operand = ctx_ref, .from = void_ptr_ty, .to = dst_ty } }, dst_ty);
         },
         // Protocol → @Protocol: the modeled raw-view retrieval. Built
-        // FIELD-WISE — {ctx, __type_id} is the prefix of BOTH protocol
+        // FIELD-WISE — {ctx, typeId} is the prefix of BOTH protocol
         // layouts, so the view can never carry a wrong word and the result
         // is a real value that works in any position (a bit reinterpret
         // would width-mismatch on `inline`-kind values, which are wider).
@@ -596,8 +596,8 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
     }
 }
 
-/// The `any` view of a protocol value (§7.3): its `{ctx, __type_id}` prefix
-/// IS an any `{data, type_id}`, so the view names the CONCRETE receiver.
+/// The `any` view of a protocol value (§7.3): its `{ctx, typeId}` prefix
+/// IS an any `{data, typeId}`, so the view names the CONCRETE receiver.
 pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
     const void_ptr_ty = self.module.types.ptrTo(.void);
     const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
@@ -797,7 +797,7 @@ pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeI
 }
 
 /// `p.(Q)` between interfaces (§6.4). The conformance check and the result's
-/// dispatch word are one runtime read: the result reuses `p`'s ctx and type_id
+/// dispatch word are one runtime read: the result reuses `p`'s ctx and typeId
 /// and takes the table's vtable-or-null. `on_absent` is what a null row means
 /// here — the unconsumed form panics, the soft form answers the null handle,
 /// whose ctx is the `?Q` absent sentinel.
@@ -1634,7 +1634,7 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 
 /// A type whose values are AGGREGATE-shaped at the IR level, for the pun
 /// test above — the classification is by representation, not by kind
-/// nominality: `string` ({ptr,len}), `any` ({data,type_id}), slices, and
+/// nominality: `string` ({ptr,len}), `any` ({data,typeId}), slices, and
 /// closures ({fn,env}) are aggregate-IR even though string/any are
 /// builtins. Aggregate↔aggregate same-width reinterprets are the
 /// legitimate raw-view family (string→@Slice, closure→@Closure);
@@ -1814,9 +1814,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // variadic pack / the decl-init hooks).
         .box_any => return boxAnyOf(self, val, src_ty, null),
         // Closure VALUE → bare function-pointer slot: not soundly representable.
-        // A bare `(T) -> U` slot is called as `fn_ptr(ctx, args)` with NO env
+        // A bare `(T) -> U` slot is called as `fnPtr(ctx, args)` with NO env
         // arg, but a closure's underlying fn takes an env slot — so passing a
-        // closure value's fn_ptr drops the env and shifts the args (UB for a
+        // closure value's fnPtr drops the env and shifts the args (UB for a
         // matching ABI, a wrong-tuple read for ∅-widening, a segfault when the
         // closure captures). Only a closure LITERAL can cross this boundary,
         // via the static adapter `lowerLambda` emits (so a literal arrives here
@@ -1887,7 +1887,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // string → cstring: ONLY a string LITERAL coerces implicitly — its
         // bytes are a terminated constant (Odin's literal blessing). Any
         // other string may be an unterminated view, so it must materialize
-        // through `to_cstring`.
+        // through `toCstring`.
         // The destination is `.cstring` OR a `[*]u8`/`[*]i8` C byte pointer
         // (the C-import synthesis of `char const *`) — the emitted value is
         // the data pointer, typed as the DESTINATION.
@@ -1897,17 +1897,17 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "only a string LITERAL coerces to '{s}' implicitly; an arbitrary string may be an unterminated view — materialize it with to_cstring(s)", .{self.formatTypeName(dst_ty)});
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "only a string LITERAL coerces to '{s}' implicitly; an arbitrary string may be an unterminated view — materialize it with toCstring(s)", .{self.formatTypeName(dst_ty)});
             }
             return val;
         },
         // cstring → string: the length is implicit (strlen), so the
-        // conversion is never silent — `from_cstring(c)` is the zero-copy
-        // view, `substr(from_cstring(c), 0, ...)` the owned copy.
+        // conversion is never silent — `fromCstring(c)` is the zero-copy
+        // view, `substr(fromCstring(c), 0, ...)` the owned copy.
         .cstring_to_string_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with from_cstring(c)", .{});
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with fromCstring(c)", .{});
             }
             return val;
         },

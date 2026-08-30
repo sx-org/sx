@@ -6,7 +6,7 @@ internal :: @import "0900-modules-namespace-alias-one-hop-carry/internal.sx";
 bridge :: @import "0900-modules-namespace-alias-one-hop-carry/bridge.sx";
 
 main :: () -> i32 {
-    if internal.engine_alias.secret() != 9 { return 1; }
-    if bridge.engine_alias.secret() != 9 { return 2; }
+    if internal.engineAlias.secret() != 9 { return 1; }
+    if bridge.engineAlias.secret() != 9 { return 2; }
     0
 }

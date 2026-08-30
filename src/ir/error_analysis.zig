@@ -362,7 +362,7 @@ pub const ErrorAnalysis = struct {
             if (se.node.dyn) self.l.materialiseDynChannel(se.node.fd, se.name) else self.l.materialiseInferredChannel(se.node.fd, se.name, sorted);
             // Skip `main` (its `!` is the program's top error channel) and any
             // protocol-impl method (its `!` is dictated by the protocol
-            // contract — e.g. `Io.suspend_raw` — so a non-raising impl body
+            // contract — e.g. `Io.suspendRaw` — so a non-raising impl body
             // is not a "drop the `!`" case; see `impl_method_names`).
             const whole_return_is_channel = Lowering.astChannelNode(se.node.rt) == se.node.rt;
             if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {

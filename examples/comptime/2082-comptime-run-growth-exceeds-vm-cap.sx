@@ -7,7 +7,7 @@
 
 grow :: () -> i64 {
     xs : List(i64) = .{};
-    xs.ensure_capacity(1 << 26);
+    xs.ensureCapacity(1 << 26);
     0
 }
 

@@ -9,7 +9,7 @@ fs :: @import "modules/std/fs.sx";
 tt :: @import "vendors/stb_truetype/stb_truetype.sx";
 
 main :: () -> i32 {
-    data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");
+    data := fs.readFile("/System/Library/Fonts/Helvetica.ttc");
     if data == null {
         print("font missing\n");
         return 1;
@@ -19,7 +19,7 @@ main :: () -> i32 {
     off := tt.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
     print("font offset >= 0: {}\n", off >= 0);
 
-    info : *void = context.allocator.alloc_bytes(256);
+    info : *void = context.allocator.allocBytes(256);
     ok := tt.stbtt_InitFont(info, bytes.ptr, off);
     print("init ok: {}\n", ok != 0);
 

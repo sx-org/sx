@@ -7,7 +7,7 @@
 @import "modules/std.sx";
 
 // `List.append` grows through `context.allocator`.
-sum_list :: () -> i64 {
+sumList :: () -> i64 {
     xs : List(i64) = .{};
     xs.append(1);
     xs.append(2);
@@ -22,7 +22,7 @@ label :: () -> string { format("{}-{}", 7, "ok") }
 
 // An arena pushed onto the Context: the push replaces the allocator field for
 // the block, and the arena's own cursor is comptime state that never escapes.
-arena_sum :: () -> i64 {
+arenaSum :: () -> i64 {
     a := mem.Arena.init(context.allocator, 4096);
     t := 0;
     push .{ allocator = a } {
@@ -35,12 +35,12 @@ arena_sum :: () -> i64 {
     return t;
 }
 
-SUM   :: @run sum_list();
+SUM   :: @run sumList();
 LABEL :: @run label();
-ARENA :: @run arena_sum();
+ARENA :: @run arenaSum();
 
 main :: () {
-    print("{} {}\n", SUM, sum_list());
+    print("{} {}\n", SUM, sumList());
     print("{} {}\n", LABEL, label());
-    print("{} {}\n", ARENA, arena_sum());
+    print("{} {}\n", ARENA, arenaSum());
 }

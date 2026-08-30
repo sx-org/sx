@@ -1,15 +1,15 @@
-// Runtime variant reflection: `variant_value(t, i)` with a runtime Type
+// Runtime variant reflection: `variantValue(t, i)` with a runtime Type
 // reads the `__sx_member_value_ptrs` tables (explicit values, explicit
 // tags, ordinal default — enums AND tagged unions, from the single
-// `memberValue` source the static fold uses); `variant_index(t, av)` with
+// `memberValue` source the static fold uses); `variantIndex(t, av)` with
 // a runtime Type takes the value as an `any` VIEW and scans value → the
 // sequential ordinal (the tag word reads `__sx_variant_tag_width` wide —
 // a signed backing sign-extends, a layout-struct union loads its narrow
-// tag slot, never the wider header); `is_flags(t)` answers at runtime;
-// `variant_payload(av, i)` composes with runtime indices. Static answers
+// tag slot, never the wider header); `isFlags(t)` answers at runtime;
+// `variantPayload(av, i)` composes with runtime indices. Static answers
 // == runtime answers by construction (parity lines). Also pins
-// static `variant_value` for tagged unions with EXPLICIT tags — it answers
-// the declared tag, not the ordinal, matching the inverse `variant_index`
+// static `variantValue` for tagged unions with EXPLICIT tags — it answers
+// the declared tag, not the ordinal, matching the inverse `variantIndex`
 // which reverse-maps them.
 @import "modules/std.sx";
 
@@ -22,53 +22,53 @@ Wire :: enum { ping :: 0x10; pong :: 0x20; data :: 0x100: i64; }
 Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
 
 main :: () {
-    // static variant_value on a tagged union with explicit tags
-    print("static wire: {} {} {}\n", variant_value(Wire, 0), variant_value(Wire, 1), variant_value(Wire, 2));
+    // static variantValue on a tagged union with explicit tags
+    print("static wire: {} {} {}\n", variantValue(Wire, 0), variantValue(Wire, 1), variantValue(Wire, 2));
 
-    // runtime variant_value: ordinals, explicit values, flags
+    // runtime variantValue: ordinals, explicit values, flags
     cv : any = Color.green;
     ct := @typeOf(cv);
-    print("rt vv color: {} {} {}\n", variant_value(ct, 0), variant_value(ct, 1), variant_value(ct, 2));
+    print("rt vv color: {} {} {}\n", variantValue(ct, 0), variantValue(ct, 1), variantValue(ct, 2));
     pv : any = Prio.mid;
     pt := @typeOf(pv);
-    print("rt vv prio: {} {} {}\n", variant_value(pt, 0), variant_value(pt, 1), variant_value(pt, 2));
+    print("rt vv prio: {} {} {}\n", variantValue(pt, 0), variantValue(pt, 1), variantValue(pt, 2));
     fv : any = Flag.B;
     ft := @typeOf(fv);
-    print("rt vv flags: {} {} {} {}\n", variant_value(ft, 0), variant_value(ft, 1), variant_value(ft, 2), variant_value(ft, 3));
-    print("rt is_flags: {} {}\n", is_flags(ft), is_flags(ct));
+    print("rt vv flags: {} {} {} {}\n", variantValue(ft, 0), variantValue(ft, 1), variantValue(ft, 2), variantValue(ft, 3));
+    print("rt isFlags: {} {}\n", isFlags(ft), isFlags(ct));
 
-    // runtime variant_index: the value travels as an any view
-    print("rt vi color: {}\n", variant_index(ct, cv));
-    print("rt vi prio: {}\n", variant_index(pt, pv));
+    // runtime variantIndex: the value travels as an any view
+    print("rt vi color: {}\n", variantIndex(ct, cv));
+    print("rt vi prio: {}\n", variantIndex(pt, pv));
     nv : any = Neg.minus;
     nt := @typeOf(nv);
-    print("rt vi neg: {} (vv {})\n", variant_index(nt, nv), variant_value(nt, 0));
+    print("rt vi neg: {} (vv {})\n", variantIndex(nt, nv), variantValue(nt, 0));
 
     // tagged union with payload + explicit tags
     w : Wire = .data(42);
     wv : any = w;
     wt := @typeOf(wv);
-    print("rt vi wire: {}\n", variant_index(wt, wv));
-    print("rt vn wire: {}\n", variant_name(wt, variant_index(wt, wv)));
+    print("rt vi wire: {}\n", variantIndex(wt, wv));
+    print("rt vn wire: {}\n", variantName(wt, variantIndex(wt, wv)));
 
-    // variant_payload composes with a runtime index
+    // variantPayload composes with a runtime index
     s : Shape = .circle(2.5);
     sv : any = s;
     st := @typeOf(sv);
-    si := variant_index(st, sv);
-    print("shape idx: {} name: {}\n", si, variant_name(st, si));
-    pl := variant_payload(sv, si);
+    si := variantIndex(st, sv);
+    print("shape idx: {} name: {}\n", si, variantName(st, si));
+    pl := variantPayload(sv, si);
     print("payload: {}\n", pl);
 
     // layout-struct union: u32 tag narrower than the 8-byte header
     e : Ev = .key(7);
     ev : any = e;
     et := @typeOf(ev);
-    ei := variant_index(et, ev);
-    print("ev idx: {} name: {} payload: {}\n", ei, variant_name(et, ei), variant_payload(ev, ei));
+    ei := variantIndex(et, ev);
+    print("ev idx: {} name: {} payload: {}\n", ei, variantName(et, ei), variantPayload(ev, ei));
 
     // static/runtime parity
     print("parity: {} {}\n",
-        variant_value(pt, 2) == variant_value(Prio, 2),
-        variant_index(ct, cv) == variant_index(Color, Color.green));
+        variantValue(pt, 2) == variantValue(Prio, 2),
+        variantIndex(ct, cv) == variantIndex(Color, Color.green));
 }

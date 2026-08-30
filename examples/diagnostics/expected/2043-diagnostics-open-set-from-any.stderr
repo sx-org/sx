@@ -10,21 +10,21 @@ help: name the member as the target instead, or open the box with a type switch 
    |               ^^^^^^^^
 
 error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
-  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:29:41
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:29:40
    |
-29 | assert_it :: ($T: Type, a: any) -> T => a.(T);
-   |                                         ^^^^^
+29 | assertIt :: ($T: Type, a: any) -> T => a.(T);
+   |                                        ^^^^^
 
 note: instantiated from here
   --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:47:16
    |
-47 |     generic := assert_it(View, a);
-   |                ^^^^^^^^^
+47 |     generic := assertIt(View, a);
+   |                ^^^^^^^^
 
 help: name the member as the target instead, or open the box with a type switch — its arms bind the member
    |
-29 | assert_it :: ($T: Type, a: any) -> T => a.(T);
-   |                                         ^^^^^
+29 | assertIt :: ($T: Type, a: any) -> T => a.(T);
+   |                                        ^^^^^
 
 error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
   --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:52:16

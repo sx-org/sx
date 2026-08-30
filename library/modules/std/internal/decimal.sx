@@ -2,9 +2,9 @@
 // decimal.sx — exact decimal <-> binary conversion for f64.
 //
 // Two directions:
-//   `to_f64(sig, exp10)` — the double NEAREST to `sig * 10^exp10`, ties
+//   `toF64(sig, exp10)` — the double NEAREST to `sig * 10^exp10`, ties
 //     to even.
-//   `shortest(f)` — the FEWEST decimal digits whose value `to_f64` maps
+//   `shortest(f)` — the FEWEST decimal digits whose value `toF64` maps
 //     back to exactly `f`.
 //
 // Composed, they are the identity on every finite double, subnormals and
@@ -27,13 +27,13 @@
 // not).
 FloatBits :: union { f: f64; s: i64; }
 
-float_bits :: (f: f64) -> i64 {
+floatBits :: (f: f64) -> i64 {
     u : FloatBits = ---;
     u.f = f;
     u.s
 }
 
-float_of_bits :: (bits: i64) -> f64 {
+floatOfBits :: (bits: i64) -> f64 {
     u : FloatBits = ---;
     u.s = bits;
     u.f
@@ -41,7 +41,7 @@ float_of_bits :: (bits: i64) -> f64 {
 
 // A NaN or an infinity: IEEE-754 reserves the all-ones exponent field
 // for both.
-is_non_finite :: (bits: i64) -> bool {
+isNonFinite :: (bits: i64) -> bool {
     ((bits >> 52) & 0x7FF) == 0x7FF
 }
 
@@ -50,7 +50,7 @@ is_non_finite :: (bits: i64) -> bool {
 // multiply with room to spare.
 //
 // 96 limbs span 2688 bits. The widest value either conversion forms is
-// `to_f64`'s scaled divisor at the full digit cap, about 2592 bits.
+// `toF64`'s scaled divisor at the full digit cap, about 2592 bits.
 
 private LIMB_BITS :: 28;
 private LIMB_MASK :: 0xFFFFFFF;
@@ -79,16 +79,16 @@ Nat :: struct {
         }
     }
 
-    copy_from :: (self: *Nat, o: *Nat) {
+    copyFrom :: (self: *Nat, o: *Nat) {
         self.n = o.n;
         i := 0;
         while i < o.n { self.limbs[i] = o.limbs[i]; i += 1; }
     }
 
-    is_zero :: (self: *Nat) -> bool { self.n == 0 }
+    isZero :: (self: *Nat) -> bool { self.n == 0 }
 
     // Position of the highest set bit, counted from one; 0 for zero.
-    bit_len :: (self: *Nat) -> i64 {
+    bitLen :: (self: *Nat) -> i64 {
         if self.n == 0 { return 0; }
         top := self.limbs[self.n - 1];
         b := 0;
@@ -140,7 +140,7 @@ Nat :: struct {
     }
 
     // `d` must fit in one limb.
-    add_small :: (self: *Nat, d: i64) {
+    addSmall :: (self: *Nat, d: i64) {
         carry := d;
         i := 0;
         while carry != 0 {
@@ -153,7 +153,7 @@ Nat :: struct {
     }
 
     // `m` must fit in one limb.
-    mul_small :: (self: *Nat, m: i64) {
+    mulSmall :: (self: *Nat, m: i64) {
         carry := 0;
         i := 0;
         while i < self.n {
@@ -205,14 +205,14 @@ Nat :: struct {
         while self.n > 0 and self.limbs[self.n - 1] == 0 { self.n -= 1; }
     }
 
-    mul_pow5 :: (self: *Nat, k: i64) {
+    mulPow5 :: (self: *Nat, k: i64) {
         r := k;
-        while r >= POW5_STEP { self.mul_small(POW5[POW5_STEP]); r -= POW5_STEP; }
-        if r > 0 { self.mul_small(POW5[r]); }
+        while r >= POW5_STEP { self.mulSmall(POW5[POW5_STEP]); r -= POW5_STEP; }
+        if r > 0 { self.mulSmall(POW5[r]); }
     }
 
-    mul_pow10 :: (self: *Nat, k: i64) {
-        self.mul_pow5(k);
+    mulPow10 :: (self: *Nat, k: i64) {
+        self.mulPow5(k);
         self.shl(k);
     }
 }
@@ -221,7 +221,7 @@ Nat :: struct {
 // callers size so the quotient fits. `num` is left holding the
 // remainder and `work` is scratch.
 private divide :: (num: *Nat, den: *Nat, qbits: i64, work: *Nat) -> i64 {
-    work.copy_from(den);
+    work.copyFrom(den);
     work.shl(qbits - 1);
     q := 0;
     i := qbits;
@@ -254,8 +254,8 @@ Significand :: struct {
             if d != 0 { self.more = true; }
             return false;
         }
-        self.mag.mul_small(10);
-        self.mag.add_small(d);
+        self.mag.mulSmall(10);
+        self.mag.addSmall(d);
         if self.mag.n != 0 { self.digits += 1; }   // leading zeros are not significant
         true
     }
@@ -271,8 +271,8 @@ private DEXP_ZERO :: 0 - 325;
 // case that `sig.more` marks as truncated rounds up, the true value
 // being above it. Returns an infinity when the value is past the finite
 // range and 0.0 when it is below half the smallest subnormal.
-to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
-    if sig.mag.is_zero() { return 0.0; }
+toF64 :: (sig: *Significand, exp10: i64) -> f64 {
+    if sig.mag.isZero() { return 0.0; }
     dexp := sig.digits + exp10;          // the value is under 10^dexp
     if dexp >= DEXP_INF { return f64.inf; }
     if dexp <= DEXP_ZERO { return 0.0; }
@@ -283,15 +283,15 @@ to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
     num  : Nat = ---;
     den  : Nat = ---;
     work : Nat = ---;
-    num.copy_from(*sig.mag);
+    num.copyFrom(*sig.mag);
     den.set(1);
     scale := exp10;
-    if exp10 >= 0 { num.mul_pow5(exp10); }
-    else          { den.mul_pow5(0 - exp10); }
+    if exp10 >= 0 { num.mulPow5(exp10); }
+    else          { den.mulPow5(0 - exp10); }
 
     // A quotient of bit lengths brackets the value within one power of
     // two, so `2^(lg-1) <= value < 2^(lg+1)`.
-    lg := num.bit_len() - den.bit_len() + scale;
+    lg := num.bitLen() - den.bitLen() + scale;
     e := lg - 53;
     if e < 0 - 1074 { e = 0 - 1074; }   // the subnormal floor
 
@@ -306,9 +306,9 @@ to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
         half := (q & 1) == 1;
         q = q >> 1;
         e += 1;
-        if half and (sig.more or !num.is_zero() or (q & 1) == 1) { q += 1; }
+        if half and (sig.more or !num.isZero() or (q & 1) == 1) { q += 1; }
     } else {
-        work.copy_from(*num);
+        work.copyFrom(*num);
         work.shl(1);
         c := work.cmp(*den);
         if c > 0 { q += 1; }
@@ -317,8 +317,8 @@ to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
     if q >= (1 << 53) { q = q >> 1; e += 1; }   // the round-up carried
 
     if e > 971 { return f64.inf; }
-    if q < (1 << 52) { return float_of_bits(q); }              // subnormal
-    float_of_bits(((e + 1075) << 52) | (q - (1 << 52)))
+    if q < (1 << 52) { return floatOfBits(q); }              // subnormal
+    floatOfBits(((e + 1075) << 52) | (q - (1 << 52)))
 }
 
 // `mant * 10^exp10` written with `digits` decimal digits.
@@ -333,7 +333,7 @@ Decimal :: struct {
 private LOG10_2_NUM :: 30103;
 private LOG10_2_DEN :: 100000;
 
-private floor_div :: (a: i64, b: i64) -> i64 {
+private floorDiv :: (a: i64, b: i64) -> i64 {
     q := a / b;
     if a % b != 0 and (a < 0) != (b < 0) { q -= 1; }
     q
@@ -342,14 +342,14 @@ private floor_div :: (a: i64, b: i64) -> i64 {
 // Whether `r + mp` reaches `s`, the test that says the digits emitted so
 // far already round up into the value's upper neighbour. `inclusive`
 // carries round-to-even's acceptance of an exact boundary.
-private reaches_upper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
-    work.copy_from(r);
+private reachesUpper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+    work.copyFrom(r);
     work.add(mp);
     c := work.cmp(s);
     if inclusive then c >= 0 else c > 0
 }
 
-// The shortest decimal `to_f64` maps back to exactly `f`, which must be
+// The shortest decimal `toF64` maps back to exactly `f`, which must be
 // finite and strictly positive.
 //
 // The digits come from the Steele-White generator run on exact integers:
@@ -359,7 +359,7 @@ private reaches_upper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Na
 // prefix IS the shortest naming of `f`, and it lies inside `f`'s
 // rounding interval by construction.
 shortest :: (f: f64) -> Decimal {
-    bits := float_bits(f);
+    bits := floatBits(f);
     ebits := (bits >> 52) & 0x7FF;
     frac := bits & 0xFFFFFFFFFFFFF;
     m := frac;
@@ -371,7 +371,7 @@ shortest :: (f: f64) -> Decimal {
     inclusive := (m & 1) == 0;
     // A power of two other than the smallest normal sits twice as close
     // to its predecessor as to its successor.
-    narrow_below := m == (1 << 52) and ebits > 1;
+    narrowBelow := m == (1 << 52) and ebits > 1;
 
     r  : Nat = ---;
     s  : Nat = ---;
@@ -380,13 +380,13 @@ shortest :: (f: f64) -> Decimal {
     work : Nat = ---;
     r.set(m);
     if e >= 0 {
-        if narrow_below {
+        if narrowBelow {
             r.shl(e + 2);  s.set(4);  mm.set(1); mm.shl(e); mp.set(1); mp.shl(e + 1);
         } else {
             r.shl(e + 1);  s.set(2);  mm.set(1); mm.shl(e); mp.set(1); mp.shl(e);
         }
     } else {
-        if narrow_below {
+        if narrowBelow {
             r.shl(2);  s.set(1); s.shl(2 - e);  mm.set(1); mp.set(2);
         } else {
             r.shl(1);  s.set(1); s.shl(1 - e);  mm.set(1); mp.set(1);
@@ -395,31 +395,31 @@ shortest :: (f: f64) -> Decimal {
 
     // `k` is the decimal weight one above the leading digit: the digits
     // spell `0.d0d1... * 10^k`.
-    k := floor_div((e + int_bit_len(m) - 1) * LOG10_2_NUM, LOG10_2_DEN) + 1;
-    if k >= 0 { s.mul_pow10(k); }
-    else { r.mul_pow10(0 - k); mm.mul_pow10(0 - k); mp.mul_pow10(0 - k); }
+    k := floorDiv((e + intBitLen(m) - 1) * LOG10_2_NUM, LOG10_2_DEN) + 1;
+    if k >= 0 { s.mulPow10(k); }
+    else { r.mulPow10(0 - k); mm.mulPow10(0 - k); mp.mulPow10(0 - k); }
 
     // Settle `k` from the guess: raise it while the value still reaches
     // 10^k, then lower it while a tenth of that would still hold it.
-    while reaches_upper(*r, *mp, *s, inclusive, *work) { s.mul_small(10); k += 1; }
-    while !reaches_upper_scaled(*r, *mp, *s, inclusive, *work) {
-        r.mul_small(10); mm.mul_small(10); mp.mul_small(10); k -= 1;
+    while reachesUpper(*r, *mp, *s, inclusive, *work) { s.mulSmall(10); k += 1; }
+    while !reachesUpperScaled(*r, *mp, *s, inclusive, *work) {
+        r.mulSmall(10); mm.mulSmall(10); mp.mulSmall(10); k -= 1;
     }
 
     n := 0;
     p := 0;
     emitting := true;
     while emitting {
-        r.mul_small(10); mm.mul_small(10); mp.mul_small(10);
+        r.mulSmall(10); mm.mulSmall(10); mp.mulSmall(10);
         d := 0;
         while r.cmp(*s) >= 0 { r.sub(*s); d += 1; }
         cl := r.cmp(*mm);
         low := if inclusive then cl <= 0 else cl < 0;
-        high := reaches_upper(*r, *mp, *s, inclusive, *work);
+        high := reachesUpper(*r, *mp, *s, inclusive, *work);
         if low or high {
             up := high;
             if low and high {
-                work.copy_from(*r);
+                work.copyFrom(*r);
                 work.shl(1);
                 up = work.cmp(*s) >= 0;
             }
@@ -433,18 +433,18 @@ shortest :: (f: f64) -> Decimal {
     Decimal{ mant = n, exp10 = k - p, digits = p }
 }
 
-// `reaches_upper` one decimal place coarser — the test that `k` can come
+// `reachesUpper` one decimal place coarser — the test that `k` can come
 // down by one.
-private reaches_upper_scaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
-    work.copy_from(r);
+private reachesUpperScaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+    work.copyFrom(r);
     work.add(mp);
-    work.mul_small(10);
+    work.mulSmall(10);
     c := work.cmp(s);
     if inclusive then c >= 0 else c > 0
 }
 
 // Position of the highest set bit of a positive `v`, counted from one.
-private int_bit_len :: (v: i64) -> i64 {
+private intBitLen :: (v: i64) -> i64 {
     b := 0;
     x := v;
     while x != 0 { b += 1; x = x >> 1; }

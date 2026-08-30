@@ -13,6 +13,6 @@ zshadow :: @import c {
 };
 
 main :: () -> i32 {
-    print("from_unit: {}\n", zshadow.zlibCompileFlags() == 3735928559);
+    print("fromUnit: {}\n", zshadow.zlibCompileFlags() == 3735928559);
     0
 }

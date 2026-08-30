@@ -6,12 +6,12 @@ CanvasView :: struct {
     doc: *Document;
 }
 
-cv_active_id :: (c: *CanvasView) -> i64 {
-    layer_at(c.doc, c.doc.active).id
+cvActiveId :: (c: *CanvasView) -> i64 {
+    layerAt(c.doc, c.doc.active).id
 }
 
 // Takes a `*Layer` directly — a value produced by ANOTHER chain (main's
 // direct `document.sx` import) must typecheck here: single type identity.
-cv_id_of :: (l: *Layer) -> i64 {
+cvIdOf :: (l: *Layer) -> i64 {
     l.id
 }

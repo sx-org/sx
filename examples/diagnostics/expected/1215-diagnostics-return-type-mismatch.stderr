@@ -1,11 +1,11 @@
 error: cannot return a value of type 'string' where 'i64' is expected
-  --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:6:29
+  --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:6:28
    |
- 6 | bad_trailing :: () -> i64 { "not an int" }
-   |                             ^^^^^^^^^^^^
+ 6 | badTrailing :: () -> i64 { "not an int" }
+   |                            ^^^^^^^^^^^^
 
 error: cannot return a value of type 'string' where 'i64' is expected
-  --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:7:36
+  --> examples/diagnostics/1215-diagnostics-return-type-mismatch.sx:7:35
    |
- 7 | bad_explicit :: () -> i64 { return "also not an int"; }
-   |                                    ^^^^^^^^^^^^^^^^^
+ 7 | badExplicit :: () -> i64 { return "also not an int"; }
+   |                                   ^^^^^^^^^^^^^^^^^

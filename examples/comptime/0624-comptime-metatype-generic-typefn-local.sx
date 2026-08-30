@@ -1,21 +1,21 @@
 // A GENERIC type-fn (`($T) -> Type`) may use LOCALS before its `return` — the
 // full body is comptime-evaluated, not just the return expression. Here
-// `make_status` assembles a variant list in a local `vs` (whose `ok` payload is
-// the type parameter `T`), then mints `Status` from it via `make_enum`. 0620 is
+// `makeStatus` assembles a variant list in a local `vs` (whose `ok` payload is
+// the type parameter `T`), then mints `Status` from it via `makeEnum`. 0620 is
 // the same shape in a non-generic builder.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make_status :: ($T: Type) -> Type {
+makeStatus :: ($T: Type) -> Type {
     vs := .[
         VariantInfo{ name = "ok",      payload = T },      // payload = the type arg
         VariantInfo{ name = "pending", payload = void },
         VariantInfo{ name = "failed",  payload = i64 },    // error code
     ];
-    return make_enum("Status", vs);
+    return makeEnum("Status", vs);
 }
 
-Status :: make_status(f64);
+Status :: makeStatus(f64);
 
 show :: (s: Status) {
     match s {

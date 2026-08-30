@@ -8,7 +8,7 @@
 sq :: @import "vendors/sqlite/sqlite.sx";
 
 main :: () -> i32 {
-    v := sq.sqlite_version();
+    v := sq.sqliteVersion();
     if v != "3.53.2" {
         print("unexpected sqlite version: {}\n", v);
         return 1;
@@ -22,13 +22,13 @@ main :: () -> i32 {
 
     st, pe := db.prepare("SELECT name, n FROM t WHERE n > ?1 ORDER BY n");
     if pe { print("prepare failed\n"); db.close(); return 1; }
-    st.bind_int64(1, 1) catch { ee = true; };
+    st.bindInt64(1, 1) catch { ee = true; };
     rc, se := st.step();
     serr := false;
     if se { serr = true; }
     if serr or ee { print("step failed\n"); st.finalize(); db.close(); return 1; }
     if rc == sq.SQLITE_ROW {
-        print("row: {} {}\n", st.column_text(0), st.column_int64(1));
+        print("row: {} {}\n", st.columnText(0), st.columnInt64(1));
     }
     st.finalize();
     db.close();

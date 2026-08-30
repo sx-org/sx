@@ -25,14 +25,14 @@ Zone :: enum {
     bottom;
     left;
     right;
-    top_left;
-    top_right;
-    bottom_left;
-    bottom_right;
+    topLeft;
+    topRight;
+    bottomLeft;
+    bottomRight;
 }
 
 // Match expression as implicit return with mixed null/concrete arms
-zone_to_alignment :: (zone: Zone) -> ?Alignment {
+zoneToAlignment :: (zone: Zone) -> ?Alignment {
     match zone {
         case .floating:     null;
         case .fill:         ALIGN_CENTER;
@@ -41,17 +41,17 @@ zone_to_alignment :: (zone: Zone) -> ?Alignment {
         case .bottom:       ALIGN_BOTTOM;
         case .left:         ALIGN_LEADING;
         case .right:        ALIGN_TRAILING;
-        case .top_left:     ALIGN_TOP_LEADING;
-        case .top_right:    ALIGN_TOP_TRAILING;
-        case .bottom_left:  ALIGN_BOTTOM_LEADING;
-        case .bottom_right: ALIGN_BOTTOM_TRAILING;
+        case .topLeft:     ALIGN_TOP_LEADING;
+        case .topRight:    ALIGN_TOP_TRAILING;
+        case .bottomLeft:  ALIGN_BOTTOM_LEADING;
+        case .bottomRight: ALIGN_BOTTOM_TRAILING;
     }
 }
 
 // Side-effect match inside a function returning bool — must NOT be
 // affected by optional inference (no null arms here)
 NodeType :: enum { rect; text; image; }
-process_node :: (t: NodeType) -> bool {
+processNode :: (t: NodeType) -> bool {
     match t {
         case .rect: { out("rect\n"); }
         case .text: { out("text\n"); }
@@ -62,24 +62,24 @@ process_node :: (t: NodeType) -> bool {
 
 main :: () -> void {
     // Test null arm
-    r0 := zone_to_alignment(.floating);
+    r0 := zoneToAlignment(.floating);
     if a := r0 { print("BUG: floating should be null, got h={}\n", xx a.h); }
     else { out("ok: floating is null\n"); }
 
     // Test concrete arms
-    r1 := zone_to_alignment(.left);
+    r1 := zoneToAlignment(.left);
     if a := r1 { print("ok: left h={}\n", xx a.h); }
     else { out("BUG: left returned null\n"); }
 
-    r2 := zone_to_alignment(.center);
+    r2 := zoneToAlignment(.center);
     if a := r2 { print("ok: center h={}\n", xx a.h); }
     else { out("BUG: center returned null\n"); }
 
-    r3 := zone_to_alignment(.top_right);
-    if a := r3 { print("ok: top_right h={} v={}\n", xx a.h, xx a.v); }
-    else { out("BUG: top_right returned null\n"); }
+    r3 := zoneToAlignment(.topRight);
+    if a := r3 { print("ok: topRight h={} v={}\n", xx a.h, xx a.v); }
+    else { out("BUG: topRight returned null\n"); }
 
     // Test side-effect match (no null arms) still works
-    process_node(.rect);
-    process_node(.text);
+    processNode(.rect);
+    processNode(.text);
 }

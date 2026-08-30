@@ -32,11 +32,11 @@ main :: () -> ! {
     defer arena.deinit();
 
     // ── cli.parse: dispatch <group> <command> + a value flag ─────────
-    publish_flags : []FlagSpec = .[
-        FlagSpec{ name = "out", takes_value = true, required = true },
+    publishFlags : []FlagSpec = .[
+        FlagSpec{ name = "out", takesValue = true, required = true },
     ];
     cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "publish", flags = publishFlags },
         Command{ group = "ci", command = "status",  flags = .[]          },
     ];
     argv : []string = .["ci", "publish", "--out", "dist"];
@@ -44,8 +44,8 @@ main :: () -> ! {
     p := try cli.parse(argv, cmds, *d);
     report("cli-group",   p.group == "ci");
     report("cli-command", p.command == "publish");
-    report("cli-index",   p.cmd_index == 0);
-    report("cli-flag",    p.value_of("out") == "dist");
+    report("cli-index",   p.cmdIndex == 0);
+    report("cli-flag",    p.valueOf("out") == "dist");
 
     // ── json.parse: read a small document into the value model ───────
     doc := "{\"name\":\"sx\",\"xs\":[1,2,3]}";

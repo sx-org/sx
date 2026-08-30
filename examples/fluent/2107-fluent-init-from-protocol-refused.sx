@@ -23,31 +23,31 @@ Label :: @OpenVariant(View) {
     render :: (self: *Label) -> string => self.text;
 }
 
-form_Round :: ufcs (value: $I/@Init(Round)) {
+formRound :: ufcs (value: $I/@Init(Round)) {
     slot: Round = ---;
     value.write(*slot);
     print("Round {}\n", slot.s);
 }
 
-form_opt_Round :: ufcs (value: $I/@Init(?Round)) {
+formOptRound :: ufcs (value: $I/@Init(?Round)) {
     slot: ?Round = ---;
     value.write(*slot);
     print("?Round {}\n", slot?!.s);
 }
 
-form_View :: ufcs (value: $I/@Init(View)) {
+formView :: ufcs (value: $I/@Init(View)) {
     slot: View = ---;
     value.write(*slot);
     print("View {}\n", slot.render());
 }
 
-form_opt_View :: ufcs (value: $I/@Init(?View)) {
+formOptView :: ufcs (value: $I/@Init(?View)) {
     slot: ?View = ---;
     value.write(*slot);
     print("?View {}\n", slot?!.render());
 }
 
-form_Wide :: ufcs (value: $I/@Init(Wide)) {
+formWide :: ufcs (value: $I/@Init(Wide)) {
     slot: Wide = ---;
     value.write(*slot);
     print("Wide {}\n", slot.a);
@@ -59,16 +59,16 @@ main :: () -> i32 {
     w := Wide{ a = 1, b = 2 };
     x := w.(Boxed);
 
-    form_Round(b);
-    b.form_Round();
-    form_View(b);
-    b.form_View();
-    form_opt_Round(b);
-    b.form_opt_Round();
-    form_opt_View(b);
-    b.form_opt_View();
+    formRound(b);
+    b.formRound();
+    formView(b);
+    b.formView();
+    formOptRound(b);
+    b.formOptRound();
+    formOptView(b);
+    b.formOptView();
 
-    form_Wide(x);
-    x.form_Wide();
+    formWide(x);
+    x.formWide();
     0
 }

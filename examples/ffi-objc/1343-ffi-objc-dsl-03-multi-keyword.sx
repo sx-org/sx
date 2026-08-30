@@ -9,23 +9,23 @@ SxProbeMultiKeyword :: @ObjcClass("SxProbeMultiKeyword") extern {
     combine_and :: (self: *Self, a: i32, b: i32) -> i32;
 }
 
-combine_imp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
+combineImp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
     a * 100 + b
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
-        ns_object := objc_getClass("NSObject".ptr);
-        cls := objc_allocateClassPair(ns_object, "SxProbeMultiKeyword".ptr, 0);
+    inline if @host.os == .macos {
+        nsObject := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(nsObject, "SxProbeMultiKeyword".ptr, 0);
         sel := sel_registerName("combine:and:".ptr);
-        class_addMethod(cls, sel, xx combine_imp, "i@:ii".ptr);
+        class_addMethod(cls, sel, xx combineImp, "i@:ii".ptr);
         objc_registerClassPair(cls);
 
         inst : *SxProbeMultiKeyword = xx class_createInstance(cls, 0);
         n := inst.combine_and(7, 42);
         print("combine_and(7, 42) = {}\n", n);
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0

@@ -549,26 +549,22 @@ pub const ProtocolResolver = struct {
 
         var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
 
-        // Field 0: ctx: *void. Field 1: __type_id — the concrete type's
-        // TypeId, stamped at erasure (RTTI, Agra's Option-B ruling). The
-        // {ctx, __type_id} prefix is byte-identical to an `any`
-        // {data, type_id}, so downcasts and the protocol type switch read
-        // the prefix through the any machinery. Dunder name: a protocol
-        // METHOD named `type_id` must not collide (same reason as
-        // `__vtable`); the public spelling is @Protocol's `type_id`.
+        // Slot 1 carries the concrete type's TypeId, stamped at erasure, so
+        // that the {ctx, typeId} prefix is byte-identical to an `any`
+        // {data, typeId} and downcasts and the protocol type switch read it
+        // through the any machinery.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),
             .ty = void_ptr_ty,
         }) catch unreachable;
         fields.append(self.l.alloc, .{
-            .name = table.internString("__type_id"),
+            .name = table.internString("typeId"),
             .ty = .type_value,
         }) catch unreachable;
 
-        // Vtable pointer
         fields.append(self.l.alloc, .{
-            .name = table.internString("__vtable"),
+            .name = table.internString("vtable"),
             .ty = void_ptr_ty,
         }) catch unreachable;
 
@@ -943,7 +939,7 @@ pub const ProtocolResolver = struct {
                 self.recordProtocolImplMethod(proto.ty, proto_name, concrete_ty, method_fd, source, false);
                 // Record it as a protocol-impl method so the "declared `!`
                 // but never errors" warning skips it: a `!` on a protocol
-                // method is part of the contract (e.g. `Io.suspend_raw`), so
+                // method is part of the contract (e.g. `Io.suspendRaw`), so
                 // a conforming impl can't drop it even if its body never raises.
                 self.l.impl_method_names.put(qualified, {}) catch {};
                 impl_methods.put(method_fd.name, {}) catch {};

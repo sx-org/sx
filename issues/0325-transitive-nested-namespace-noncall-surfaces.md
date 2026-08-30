@@ -6,7 +6,7 @@
 
 ## Required behavior
 
-For `facade.engine_alias.Member`, prove that `engine_alias` is authored by the
+For `facade.engineAlias.Member`, prove that `engineAlias` is authored by the
 facade target or carried through exactly one of its direct flat imports before
 resolving any terminal member. Apply the same target pinning to:
 

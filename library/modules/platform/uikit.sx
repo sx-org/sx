@@ -1,7 +1,7 @@
 // Pure UIKit + CAEAGLLayer + CADisplayLink backend for iOS.
 //
-// Linking is per-target via the game's build.sx (`opts.add_framework("UIKit")`
-// + `opts.add_framework("OpenGLES")` + `opts.add_framework("QuartzCore")` on
+// Linking is per-target via the game's build.sx (`opts.addFramework("UIKit")`
+// + `opts.addFramework("OpenGLES")` + `opts.addFramework("QuartzCore")` on
 // `.ios`). iOS-only by nature: platform selection lives at the consumer
 // seam, not per-function here — touching this host on another target
 // fails at link/JIT with the UIKit symbol named.
@@ -16,7 +16,7 @@
 @import "modules/platform/types.sx";
 @import "modules/platform/api.sx";
 
-UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
 chdir             :: (path: [*]u8) -> i32 extern;
 
@@ -194,98 +194,98 @@ GpuMode :: enum {
 
 UIKitPlatform :: struct {
     window: ?*UIWindow = null;
-    root_vc: ?*UIViewController = null;
+    rootVc: ?*UIViewController = null;
     // SxGLView (gles mode) or SxMetalView (metal mode) — both extend
     // UIView, so the common method surface is reachable as *UIView.
-    gl_view: ?*UIView = null;
+    glView: ?*UIView = null;
     // CAEAGLLayer (gles) or CAMetalLayer (metal) — both extend CALayer.
-    gl_layer: ?*CALayer = null;
-    gl_ctx: ?*EAGLContext = null;
-    display_link: ?*CADisplayLink = null;
-    color_renderbuffer: u32 = 0;
+    glLayer: ?*CALayer = null;
+    glCtx: ?*EAGLContext = null;
+    displayLink: ?*CADisplayLink = null;
+    colorRenderbuffer: u32 = 0;
     framebuffer: u32 = 0;
-    gl_initialized: bool = false;
-    gpu_mode: GpuMode = .gles;
+    glInitialized: bool = false;
+    gpuMode: GpuMode = .gles;
     // The Obj-C class handed to UIApplicationMain as the app delegate.
     // The host ships no app class names: the shell's boot
-    // (platform/uikit_app.sx `uikit_app_run`) sets its own, an app with
-    // custom delegates sets this to theirs before `run_frame_loop`.
+    // (platform/uikit_app.sx `uikitAppRun`) sets its own, an app with
+    // custom delegates sets this to theirs before `runFrameLoop`.
     // Must be a NUL-terminated string (a literal is).
-    delegate_class_name: string = "";
+    delegateClassName: string = "";
 
     // Hidden UITextField; firstResponder ⇆ keyboard visibility.
-    text_field: ?*UITextField = null;
+    textField: ?*UITextField = null;
 
-    viewport_w: f32 = 0.0;
-    viewport_h: f32 = 0.0;
-    pixel_w: i32 = 0;
-    pixel_h: i32 = 0;
-    dpi_scale: f32 = 1.0;
+    viewportW: f32 = 0.0;
+    viewportH: f32 = 0.0;
+    pixelW: i32 = 0;
+    pixelH: i32 = 0;
+    dpiScale: f32 = 1.0;
 
-    delta_time: f32 = 0.016;
+    deltaTime: f32 = 0.016;
     // Latest CADisplayLink.targetTimestamp captured each tick — forwarded
-    // through FrameContext to MetalGPU.end_frame() for presentDrawable:atTime:.
-    last_target_ts: f64 = 0.0;
+    // through FrameContext to MetalGPU.endFrame() for presentDrawable:atTime:.
+    lastTargetTs: f64 = 0.0;
 
-    frame_closure: Closure() = ---;
-    has_frame_closure: bool = false;
+    frameClosure: Closure() = ---;
+    hasFrameClosure: bool = false;
 
     events: List(PlatformEvent) = .{};
 
-    safe_top: f32 = 0.0;
-    safe_left: f32 = 0.0;
-    safe_bottom: f32 = 0.0;
-    safe_right: f32 = 0.0;
+    safeTop: f32 = 0.0;
+    safeLeft: f32 = 0.0;
+    safeBottom: f32 = 0.0;
+    safeRight: f32 = 0.0;
 
-    keyboard_visible: bool = false;
-    keyboard_height: f32 = 0.0;
+    keyboardVisible: bool = false;
+    keyboardHeight: f32 = 0.0;
 
     // Keyboard inset lockstep: when willChangeFrame fires we read the
     // animation duration from the notification's userInfo and interpolate
-    // `keyboard_height` over that window on each display-link tick. Each
+    // `keyboardHeight` over that window on each display-link tick. Each
     // animation has a fresh start time and target — if a second event
     // arrives mid-animation, the next interpolation starts from the
     // currently-interpolated value (not from the previous animation's
     // origin). The easing is `smoothstep` (cubic Hermite) which closely
     // approximates UIKit's keyboard curve to within a frame at the
     // standard 0.25s slide duration.
-    kb_anim_from: f32 = 0.0;
-    kb_anim_to: f32 = 0.0;
-    kb_anim_start: f64 = 0.0;
-    kb_anim_dur: f64 = 0.0;
-    kb_anim_curve: u64 = 0;
-    kb_animating: bool = false;
+    kbAnimFrom: f32 = 0.0;
+    kbAnimTo: f32 = 0.0;
+    kbAnimStart: f64 = 0.0;
+    kbAnimDur: f64 = 0.0;
+    kbAnimCurve: u64 = 0;
+    kbAnimating: bool = false;
 
-    saved_title: [*]u8 = null;
+    savedTitle: [*]u8 = null;
 }
 
 impl Platform for UIKitPlatform {
     init :: (self: *UIKitPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
-        self.dpi_scale = 1.0;
-        self.delta_time = 0.016;
-        self.has_frame_closure = false;
-        self.gl_initialized = false;
-        self.keyboard_visible = false;
-        self.keyboard_height = 0.0;
-        self.saved_title = title.ptr;
+        self.dpiScale = 1.0;
+        self.deltaTime = 0.016;
+        self.hasFrameClosure = false;
+        self.glInitialized = false;
+        self.keyboardVisible = false;
+        self.keyboardHeight = 0.0;
+        self.savedTitle = title.ptr;
 
         // iOS apps start with CWD=/. chdir to the bundle's resourcePath so the
         // game's relative `fopen("assets/...")` calls find their data — must
         // happen BEFORE any code that loads fonts/textures from disk.
-        uikit_chdir_to_bundle();
-        if self.gpu_mode == .gles {
-            self.create_gl_context();
+        uikitChdirToBundle();
+        if self.gpuMode == .gles {
+            self.createGlContext();
         } else {
-            // Metal mode: skip EAGL. dpi_scale still needs to be known
+            // Metal mode: skip EAGL. dpiScale still needs to be known
             // before the window exists so callers can size resources.
-            self.read_screen_scale();
+            self.readScreenScale();
         }
         true
     }
 
     // Boots UIKit with the app-delegate class named in
-    // `self.delegate_class_name` — the host ships no app class names;
-    // the shell's boot (platform/uikit_app.sx `uikit_app_run`) or the
+    // `self.delegateClassName` — the host ships no app class names;
+    // the shell's boot (platform/uikit_app.sx `uikitAppRun`) or the
     // app's own sets the field first. The name goes in the
     // delegateClassName slot: the delegate is a UIResponder, NOT the
     // UIApplication subclass — pass nil for the principal so UIKit uses
@@ -293,17 +293,17 @@ impl Platform for UIKitPlatform {
     // newer UIKit call UIApplication class methods on it (e.g.
     // `+registerAsSystemApp`) → unrecognized selector crash during
     // UIApplicationMain prep.
-    run_frame_loop :: (self: *UIKitPlatform, frame_fn: Closure()) {
-        self.frame_closure = frame_fn;
-        self.has_frame_closure = true;
-        if self.delegate_class_name.len == 0 {
-            NSLog(nsstring("[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n"));
+    runFrameLoop :: (self: *UIKitPlatform, frameFn: Closure()) {
+        self.frameClosure = frameFn;
+        self.hasFrameClosure = true;
+        if self.delegateClassName.len == 0 {
+            NSLog(nsstring("[sx] UIKitPlatform.runFrameLoop: delegateClassName unset — boot through uikitAppRun (platform/uikit_app.sx) or set your own delegate class first\n"));
             return;
         }
-        UIApplicationMain(0, (0).(*void), (0).(*NSString), nsstring(self.delegate_class_name));
+        UIApplicationMain(0, (0).(*void), (0).(*NSString), nsstring(self.delegateClassName));
     }
 
-    poll_events :: (self: *UIKitPlatform) -> []PlatformEvent {
+    pollEvents :: (self: *UIKitPlatform) -> []PlatformEvent {
         result : []PlatformEvent = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;
@@ -311,54 +311,54 @@ impl Platform for UIKitPlatform {
         result
     }
 
-    begin_frame :: (self: *UIKitPlatform) -> FrameContext {
-        self.refresh_safe_insets();
+    beginFrame :: (self: *UIKitPlatform) -> FrameContext {
+        self.refreshSafeInsets();
         FrameContext{
-            viewport_w = self.viewport_w,
-            viewport_h = self.viewport_h,
-            pixel_w = self.pixel_w,
-            pixel_h = self.pixel_h,
-            dpi_scale = self.dpi_scale,
-            delta_time = self.delta_time,
-            target_present_time = self.last_target_ts,
+            viewportW = self.viewportW,
+            viewportH = self.viewportH,
+            pixelW = self.pixelW,
+            pixelH = self.pixelH,
+            dpiScale = self.dpiScale,
+            deltaTime = self.deltaTime,
+            targetPresentTime = self.lastTargetTs,
         }
     }
 
-    end_frame :: (self: *UIKitPlatform) {
-        if self.gpu_mode == .gles {
-            self.present_renderbuffer();
+    endFrame :: (self: *UIKitPlatform) {
+        if self.gpuMode == .gles {
+            self.presentRenderbuffer();
         }
-        // Metal mode: caller's gpu.end_frame() handles present.
+        // Metal mode: caller's gpu.endFrame() handles present.
     }
 
-    safe_insets :: (self: *UIKitPlatform) -> EdgeInsets {
-        bottom := self.safe_bottom;
-        if self.keyboard_visible {
-            if self.keyboard_height > bottom { bottom = self.keyboard_height; }
+    safeInsets :: (self: *UIKitPlatform) -> EdgeInsets {
+        bottom := self.safeBottom;
+        if self.keyboardVisible {
+            if self.keyboardHeight > bottom { bottom = self.keyboardHeight; }
         }
         EdgeInsets{
-            top = self.safe_top,
-            left = self.safe_left,
+            top = self.safeTop,
+            left = self.safeLeft,
             bottom = bottom,
-            right = self.safe_right,
+            right = self.safeRight,
         }
     }
 
     keyboard :: (self: *UIKitPlatform) -> KeyboardState {
         KeyboardState{
-            visible = self.keyboard_visible,
-            height = self.keyboard_height,
+            visible = self.keyboardVisible,
+            height = self.keyboardHeight,
         }
     }
 
-    show_keyboard :: (self: *UIKitPlatform) {
-        if tf := self.text_field {
+    showKeyboard :: (self: *UIKitPlatform) {
+        if tf := self.textField {
             tf.becomeFirstResponder();
         }
     }
 
-    hide_keyboard :: (self: *UIKitPlatform) {
-        if tf := self.text_field {
+    hideKeyboard :: (self: *UIKitPlatform) {
+        if tf := self.textField {
             tf.resignFirstResponder();
         }
     }
@@ -369,53 +369,53 @@ impl Platform for UIKitPlatform {
 
     // ── Internal helpers ───────────────────────────────────────────────────
 
-    refresh_safe_insets :: (self: *UIKitPlatform) {
-        if gl_view := self.gl_view {
-            i := gl_view.safeAreaInsets();
-            self.safe_top    = i.top;
-            self.safe_left   = i.left;
-            self.safe_bottom = i.bottom;
-            self.safe_right  = i.right;
+    refreshSafeInsets :: (self: *UIKitPlatform) {
+        if glView := self.glView {
+            i := glView.safeAreaInsets();
+            self.safeTop    = i.top;
+            self.safeLeft   = i.left;
+            self.safeBottom = i.bottom;
+            self.safeRight  = i.right;
         }
     }
 
-    read_screen_scale :: (self: *UIKitPlatform) {
+    readScreenScale :: (self: *UIKitPlatform) {
         screen := UIScreen.mainScreen();
-        self.dpi_scale = screen.nativeScale();
+        self.dpiScale = screen.nativeScale();
     }
 
-    create_gl_context :: (self: *UIKitPlatform) {
+    createGlContext :: (self: *UIKitPlatform) {
         // Read the screen scale up-front so callers can size font caches and
         // textures with the right DPI before the window even exists.
         screen := UIScreen.mainScreen();
-        self.dpi_scale = screen.nativeScale();
+        self.dpiScale = screen.nativeScale();
 
         ctx := EAGLContext.alloc().initWithAPI(EAGL_API_GLES3);
-        self.gl_ctx = ctx;
+        self.glCtx = ctx;
         EAGLContext.setCurrentContext(ctx);
 
-        load_gl(ios_gl_proc);
+        loadGl(iosGlProc);
     }
 
     // Allocate the color renderbuffer + framebuffer and bind them. The
     // renderbuffer gets its pixel storage from the CAEAGLLayer via
     // `[ctx renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer]`, so the
     // layer must already be in the view hierarchy at the right size.
-    setup_renderbuffer :: (self: *UIKitPlatform) {
+    setupRenderbuffer :: (self: *UIKitPlatform) {
 
         glGenFramebuffers(1, *self.framebuffer);
-        glGenRenderbuffers(1, *self.color_renderbuffer);
+        glGenRenderbuffers(1, *self.colorRenderbuffer);
 
-        glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, self.colorRenderbuffer);
 
-        if gl_ctx := self.gl_ctx {
-            if gl_layer := self.gl_layer {
-                gl_ctx.renderbufferStorage_fromDrawable(GL_RENDERBUFFER, gl_layer);
+        if glCtx := self.glCtx {
+            if glLayer := self.glLayer {
+                glCtx.renderbufferStorage_fromDrawable(GL_RENDERBUFFER, glLayer);
             }
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, self.framebuffer);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, self.color_renderbuffer);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, self.colorRenderbuffer);
 
         pw : i32 = 0;
         ph : i32 = 0;
@@ -423,13 +423,13 @@ impl Platform for UIKitPlatform {
         GL_RENDERBUFFER_HEIGHT :u32: 0x8D43;
         glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH,  *pw);
         glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, *ph);
-        self.pixel_w = pw;
-        self.pixel_h = ph;
-        self.viewport_w = pw;
-        self.viewport_h = ph;
-        if self.dpi_scale > 0.0 {
-            self.viewport_w = self.viewport_w / self.dpi_scale;
-            self.viewport_h = self.viewport_h / self.dpi_scale;
+        self.pixelW = pw;
+        self.pixelH = ph;
+        self.viewportW = pw;
+        self.viewportH = ph;
+        if self.dpiScale > 0.0 {
+            self.viewportW = self.viewportW / self.dpiScale;
+            self.viewportH = self.viewportH / self.dpiScale;
         }
 
         glViewport(0, 0, pw, ph);
@@ -440,30 +440,30 @@ impl Platform for UIKitPlatform {
         }
     }
 
-    present_renderbuffer :: (self: *UIKitPlatform) {
-        glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
-        if gl_ctx := self.gl_ctx {
-            gl_ctx.presentRenderbuffer(GL_RENDERBUFFER);
+    presentRenderbuffer :: (self: *UIKitPlatform) {
+        glBindRenderbuffer(GL_RENDERBUFFER, self.colorRenderbuffer);
+        if glCtx := self.glCtx {
+            glCtx.presentRenderbuffer(GL_RENDERBUFFER);
         }
     }
 
-    // Metal mode equivalent of setup_renderbuffer's "tell me how big the
+    // Metal mode equivalent of setupRenderbuffer's "tell me how big the
     // drawable is in pixels". Reads the layer's bounds in points and scales
-    // to pixels via dpi_scale.
-    compute_layer_pixel_size :: (self: *UIKitPlatform) {
-        if gl_view := self.gl_view {
-            b := gl_view.bounds();
+    // to pixels via dpiScale.
+    computeLayerPixelSize :: (self: *UIKitPlatform) {
+        if glView := self.glView {
+            b := glView.bounds();
 
-            w_pts : f64 = b.width;
-            h_pts : f64 = b.height;
-            self.viewport_w = w_pts;
-            self.viewport_h = h_pts;
+            wPts : f64 = b.width;
+            hPts : f64 = b.height;
+            self.viewportW = wPts;
+            self.viewportH = hPts;
 
-            scale64 : f64 = self.dpi_scale.(f64);
-            pw : f64 = w_pts * scale64;
-            ph : f64 = h_pts * scale64;
-            self.pixel_w = pw;
-            self.pixel_h = ph;
+            scale64 : f64 = self.dpiScale.(f64);
+            pw : f64 = wPts * scale64;
+            ph : f64 = hPts * scale64;
+            self.pixelW = pw;
+            self.pixelH = ph;
         }
     }
 
@@ -478,58 +478,58 @@ impl Platform for UIKitPlatform {
     //   UIKeyboardAnimationDurationUserInfoKey → NSNumber wrapping double
     // Keyboard height = how much of the screen the keyboard covers from the bottom.
     // If the keyboard's end Y >= screen.height, the keyboard is offscreen (hiding).
-    keyboard_will_change_frame :: (self: *UIKitPlatform, notification: *NSNotification) {
+    keyboardWillChangeFrame :: (self: *UIKitPlatform, notification: *NSNotification) {
 
-        user_info := notification.userInfo();
-        if user_info == null { return; }
+        userInfo := notification.userInfo();
+        if userInfo == null { return; }
 
-        end_value_raw := user_info.objectForKey(nsstring("UIKeyboardFrameEndUserInfoKey"));
-        if end_value_raw == null { return; }
-        end_value : *NSValue = end_value_raw.(*NSValue);
-        end_rect := end_value.CGRectValue();
+        endValueRaw := userInfo.objectForKey(nsstring("UIKeyboardFrameEndUserInfoKey"));
+        if endValueRaw == null { return; }
+        endValue : *NSValue = endValueRaw.(*NSValue);
+        endRect := endValue.CGRectValue();
 
-        dur_value_raw := user_info.objectForKey(nsstring("UIKeyboardAnimationDurationUserInfoKey"));
-        anim_dur : f64 = 0.0;
-        if dur_value_raw != null {
-            dur_value : *NSNumber = dur_value_raw.(*NSNumber);
-            anim_dur = dur_value.doubleValue();
+        durValueRaw := userInfo.objectForKey(nsstring("UIKeyboardAnimationDurationUserInfoKey"));
+        animDur : f64 = 0.0;
+        if durValueRaw != null {
+            durValue : *NSNumber = durValueRaw.(*NSNumber);
+            animDur = durValue.doubleValue();
         }
 
-        curve_value_raw := user_info.objectForKey(nsstring("UIKeyboardAnimationCurveUserInfoKey"));
-        curve_int : u64 = 0;
-        if curve_value_raw != null {
-            curve_value : *NSNumber = curve_value_raw.(*NSNumber);
-            curve_int = curve_value.unsignedLongValue();
+        curveValueRaw := userInfo.objectForKey(nsstring("UIKeyboardAnimationCurveUserInfoKey"));
+        curveInt : u64 = 0;
+        if curveValueRaw != null {
+            curveValue : *NSNumber = curveValueRaw.(*NSNumber);
+            curveInt = curveValue.unsignedLongValue();
         }
 
         if win := self.window {
-            win_screen := win.screen();
-            screen_bounds := win_screen.bounds();
+            winScreen := win.screen();
+            screenBounds := winScreen.bounds();
 
             // Keyboard height = how much of the screen the keyboard covers from the
             // bottom. When the keyboard is hiding, its end-frame.y == screen.height,
             // so the height comes out 0 and visible becomes false.
-            kb_top : f64 = end_rect.y;
-            sh     : f64 = screen_bounds.height;
-            h := sh - kb_top;
+            kbTop : f64 = endRect.y;
+            sh     : f64 = screenBounds.height;
+            h := sh - kbTop;
             if h < 0.0 { h = 0.0; }
             if h > sh  { h = sh;  }
-            target_h : f32 = h.(f32);
+            targetH : f32 = h.(f32);
 
-            self.keyboard_visible = h > 0.5;
+            self.keyboardVisible = h > 0.5;
 
-            if anim_dur <= 0.0 {
-                self.keyboard_height = target_h;
-                self.kb_animating = false;
+            if animDur <= 0.0 {
+                self.keyboardHeight = targetH;
+                self.kbAnimating = false;
                 return;
             }
 
-            self.kb_anim_from = self.keyboard_height;
-            self.kb_anim_to = target_h;
-            self.kb_anim_start = CACurrentMediaTime();
-            self.kb_anim_dur = anim_dur;
-            self.kb_anim_curve = curve_int;
-            self.kb_animating = true;
+            self.kbAnimFrom = self.keyboardHeight;
+            self.kbAnimTo = targetH;
+            self.kbAnimStart = CACurrentMediaTime();
+            self.kbAnimDur = animDur;
+            self.kbAnimCurve = curveInt;
+            self.kbAnimating = true;
         }
     }
 
@@ -541,45 +541,45 @@ impl Platform for UIKitPlatform {
     // supplies the right CAEAGLLayer / CAMetalLayer subclass. iOS reads
     // the window back through the delegate's `-window`
     // (`self.window` here backs it).
-    scene_will_connect :: (self: *UIKitPlatform, scene: *void, gl_view: *UIView) {
+    sceneWillConnect :: (self: *UIKitPlatform, scene: *void, glView: *UIView) {
 
         win := UIWindow.alloc().initWithWindowScene(scene);
         self.window = win;
 
         vc := UIViewController.alloc().init();
-        self.root_vc = vc;
+        self.rootVc = vc;
 
         // Set the VC's view BEFORE setRootViewController to avoid a
         // default-view lazy-load.
-        self.gl_view = gl_view;
-        vc.setView(gl_view);
+        self.glView = glView;
+        vc.setView(glView);
 
         win.setRootViewController(vc);
 
-        gl_layer := gl_view.layer();
-        self.gl_layer = gl_layer;
+        glLayer := glView.layer();
+        self.glLayer = glLayer;
 
         // Mark the layer opaque (no compositor blend). Required for EAGL +
         // recommended for Metal (CAMetalLayer.opaque defaults YES but doesn't
         // hurt to be explicit).
-        gl_layer.setOpaque(1);
+        glLayer.setOpaque(1);
 
-        if self.gpu_mode == .gles {
+        if self.gpuMode == .gles {
             // EAGL drawable properties dict required by
             // EAGLContext.renderbufferStorage:fromDrawable: (color format,
             // non-retained backing). Without this dict the renderbuffer
             // allocation silently fails and the framebuffer reports INCOMPLETE.
-            ns_no := NSNumber.numberWithBool(0);
+            nsNo := NSNumber.numberWithBool(0);
 
-            retained_key    := uikit_extern_nsstring("kEAGLDrawablePropertyRetainedBacking".ptr);
-            colorformat_key := uikit_extern_nsstring("kEAGLDrawablePropertyColorFormat".ptr);
-            rgba8_value     := uikit_extern_nsstring("kEAGLColorFormatRGBA8".ptr);
+            retainedKey    := uikitExternNsstring("kEAGLDrawablePropertyRetainedBacking".ptr);
+            colorformatKey := uikitExternNsstring("kEAGLDrawablePropertyColorFormat".ptr);
+            rgba8Value     := uikitExternNsstring("kEAGLColorFormatRGBA8".ptr);
 
             dict := NSMutableDictionary.dictionary();
-            dict.setObject_forKey(ns_no, retained_key);
-            dict.setObject_forKey(rgba8_value, colorformat_key);
-            eagl_layer : *CAEAGLLayer = gl_layer.(*CAEAGLLayer);
-            eagl_layer.setDrawableProperties(dict);
+            dict.setObject_forKey(nsNo, retainedKey);
+            dict.setObject_forKey(rgba8Value, colorformatKey);
+            eaglLayer : *CAEAGLLayer = glLayer.(*CAEAGLLayer);
+            eaglLayer.setDrawableProperties(dict);
         }
 
         // Match the layer's drawable scale to the screen's native scale so we
@@ -587,27 +587,27 @@ impl Platform for UIKitPlatform {
         // on 64-bit Apple platforms; reading as f32 would clobber the value.
         screen2 := win.screen();
         scale := screen2.nativeScale();
-        self.dpi_scale = scale;
-        gl_view.setContentScaleFactor(scale);
+        self.dpiScale = scale;
+        glView.setContentScaleFactor(scale);
 
         // Renderbuffer is allocated lazily in -[SxGLView layoutSubviews] once
         // the layer has its real on-screen bounds. makeKeyAndVisible triggers
-        // a layout pass; layoutSubviews calls setup_renderbuffer.
+        // a layout pass; layoutSubviews calls setupRenderbuffer.
         win.makeKeyAndVisible();
 
-        // Hidden UITextField as the firstResponder source for show_keyboard /
-        // hide_keyboard. Lives as a subview of the GL view so it's in the
+        // Hidden UITextField as the firstResponder source for showKeyboard /
+        // hideKeyboard. Lives as a subview of the GL view so it's in the
         // responder chain but is sized 0×0 so it can't be tapped.
         tf := UITextField.alloc().init();
-        self.text_field = tf;
-        gl_view.addSubview(tf);
+        self.textField = tf;
+        glView.addSubview(tf);
 
         // CADisplayLink: vsync-driven tick into our SxGLView. The second arg
         // is a SEL value (not a dispatch selector), so it still goes through
         // sel_registerName.
-        sel_tick := sel_registerName("sxTick:".ptr);
-        link := CADisplayLink.displayLinkWithTarget_selector(gl_view, sel_tick);
-        self.display_link = link;
+        selTick := sel_registerName("sxTick:".ptr);
+        link := CADisplayLink.displayLinkWithTarget_selector(glView, selTick);
+        self.displayLink = link;
         runloop := NSRunLoop.currentRunLoop();
         link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopDefaultMode"));
 
@@ -616,108 +616,108 @@ impl Platform for UIKitPlatform {
 
     // CADisplayLink callback (vsync-paced). Drives keyboard-inset
     // interpolation and calls the user's frame closure.
-    gl_view_tick :: (self: *UIKitPlatform, link: *CADisplayLink) {
+    glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
 
         // Keyboard-inset lockstep — sx-side cubic ease-out approximation of
         // UIKit's private keyboard curve. Sample targetTimestamp so we
         // interpolate at the time this frame will be visible.
-        if self.kb_animating {
-            target_ts := link.targetTimestamp();
-            elapsed := target_ts - self.kb_anim_start;
+        if self.kbAnimating {
+            targetTs := link.targetTimestamp();
+            elapsed := targetTs - self.kbAnimStart;
             // Negative elapsed can happen if a just-fired willChangeFrame set
-            // kb_anim_start to a wall time AFTER this tick already captured
+            // kbAnimStart to a wall time AFTER this tick already captured
             // its targetTimestamp. Without the clamp, t < 0 makes the cubic
             // ease-out overshoot in the opposite direction.
             if elapsed < 0.0 { elapsed = 0.0; }
-            if elapsed >= self.kb_anim_dur or self.kb_anim_dur <= 0.0 {
-                self.keyboard_height = self.kb_anim_to;
-                self.kb_animating = false;
+            if elapsed >= self.kbAnimDur or self.kbAnimDur <= 0.0 {
+                self.keyboardHeight = self.kbAnimTo;
+                self.kbAnimating = false;
             } else {
-                t : f32 = (elapsed / self.kb_anim_dur).(f32);
+                t : f32 = (elapsed / self.kbAnimDur).(f32);
                 inv := 1.0 - t;
                 eased := 1.0 - inv * inv * inv;
-                self.keyboard_height = self.kb_anim_from + (self.kb_anim_to - self.kb_anim_from) * eased;
+                self.keyboardHeight = self.kbAnimFrom + (self.kbAnimTo - self.kbAnimFrom) * eased;
             }
         }
 
-        if !self.has_frame_closure { return; }
-        if !self.gl_initialized { return; }
+        if !self.hasFrameClosure { return; }
+        if !self.glInitialized { return; }
 
-        dur_d := link.duration();
-        self.delta_time = dur_d;
-        self.last_target_ts = link.targetTimestamp();
+        durD := link.duration();
+        self.deltaTime = durD;
+        self.lastTargetTs = link.targetTimestamp();
 
-        fn := self.frame_closure;
+        fn := self.frameClosure;
         fn();
     }
 
     // UIView -layoutSubviews callback. Sets up the renderbuffer (gles) or
     // computes the layer pixel size (metal) on the first layout pass.
-    gl_view_did_layout :: (self: *UIKitPlatform) {
-        if self.gl_initialized { return; }
-        if self.gpu_mode == .gles {
-            self.setup_renderbuffer();
+    glViewDidLayout :: (self: *UIKitPlatform) {
+        if self.glInitialized { return; }
+        if self.gpuMode == .gles {
+            self.setupRenderbuffer();
         } else {
-            self.compute_layer_pixel_size();
+            self.computeLayerPixelSize();
         }
-        self.gl_initialized = true;
+        self.glInitialized = true;
     }
 
     // Touch IMPs — UIKit fires touchesBegan/Moved/Ended/Cancelled with an
     // NSSet<UITouch *> + UIEvent. Single-touch model matching chess's UX.
 
-    push_touch_down :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        touch := uikit_first_touch(touches);
+    pushTouchDown :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        touch := uikitFirstTouch(touches);
         if touch == null { return; }
-        pos := uikit_touch_location(touch, view);
-        self.events.append(.input(.pointer_down(uikit_pointer(pos))));
+        pos := uikitTouchLocation(touch, view);
+        self.events.append(.input(.pointerDown(uikitPointer(pos))));
     }
 
-    push_touch_moved :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        touch := uikit_first_touch(touches);
+    pushTouchMoved :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        touch := uikitFirstTouch(touches);
         if touch == null { return; }
-        pos := uikit_touch_location(touch, view);
-        self.events.append(.input(.pointer_move(uikit_pointer(pos))));
+        pos := uikitTouchLocation(touch, view);
+        self.events.append(.input(.pointerMove(uikitPointer(pos))));
     }
 
-    push_touch_up :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        touch := uikit_first_touch(touches);
+    pushTouchUp :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        touch := uikitFirstTouch(touches);
         if touch == null { return; }
-        pos := uikit_touch_location(touch, view);
-        self.events.append(.input(.pointer_up(uikit_pointer(pos))));
+        pos := uikitTouchLocation(touch, view);
+        self.events.append(.input(.pointerUp(uikitPointer(pos))));
     }
 
-    push_touch_cancel :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        touch := uikit_first_touch(touches);
+    pushTouchCancel :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        touch := uikitFirstTouch(touches);
         if touch == null { return; }
-        pos := uikit_touch_location(touch, view);
-        self.events.append(.input(.pointer_cancel(uikit_pointer(pos))));
+        pos := uikitTouchLocation(touch, view);
+        self.events.append(.input(.pointerCancel(uikitPointer(pos))));
     }
 }
 
 // Single-touch model: one contact, pointer id 0; timestamps ride the
 // process monotonic clock.
-uikit_pointer :: (pos: Point) -> PointerEvent {
+uikitPointer :: (pos: Point) -> PointerEvent {
     PointerEvent{
-        header = .{ time_ns = time.mono_ns().(u64) },
+        header = .{ timeNs = time.monoNs().(u64) },
         kind = .touch,
         position = pos,
     }
 }
 
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
-// abi(.c) so this is callable from `load_gl`'s C-conv proc-loader slot.
-ios_gl_proc :: (name: cstring) -> *void abi(.c) {
-    rtld_default : *void = (0 - 2).(*void);
-    dlsym(rtld_default, name)
+// abi(.c) so this is callable from `loadGl`'s C-conv proc-loader slot.
+iosGlProc :: (name: cstring) -> *void abi(.c) {
+    rtldDefault : *void = (0 - 2).(*void);
+    dlsym(rtldDefault, name)
 }
 
 // Read a `extern NSString * const k...` global from the loaded image. The
 // extern variable holds a pointer to the NSString instance — dlsym returns
 // the address of that variable, which we dereference.
-uikit_extern_nsstring :: (name: [*]u8) -> *void {
-    rtld_default : *void = (0 - 2).(*void);
-    p := dlsym(rtld_default, name);
+uikitExternNsstring :: (name: [*]u8) -> *void {
+    rtldDefault : *void = (0 - 2).(*void);
+    p := dlsym(rtldDefault, name);
     if p == null { return null; }
     pp : **void = p.(**void);
     pp.*
@@ -727,7 +727,7 @@ uikit_extern_nsstring :: (name: [*]u8) -> *void {
 // Free helpers
 // ───────────────────────────────────────────────────────────────────────────
 
-uikit_chdir_to_bundle :: () {
+uikitChdirToBundle :: () {
     bundle := NSBundle.mainBundle();
     rsrc := bundle.resourcePath();
     if rsrc == null { return; }
@@ -738,14 +738,14 @@ uikit_chdir_to_bundle :: () {
 // location to view-local coordinates. Used by push_touch_* methods on
 // UIKitPlatform.
 
-uikit_touch_location :: (touch: *void, view: *void) -> Point {
+uikitTouchLocation :: (touch: *void, view: *void) -> Point {
     t : *UITouch = touch.(*UITouch);
     p := t.locationInView(view);
     Point{ x = p.x, y = p.y }
 }
 
-uikit_first_touch :: (touches: *void) -> *void {
-    touches_set : *NSSet = touches.(*NSSet);
-    touches_set.anyObject()
+uikitFirstTouch :: (touches: *void) -> *void {
+    touchesSet : *NSSet = touches.(*NSSet);
+    touchesSet.anyObject()
 }
 

@@ -11,7 +11,7 @@
 //! which ones is judged SYNTACTICALLY and conservatively (specs.md §6.9): an
 //! unexpanded body mentioning `impl P for …` contributes an impl of `P`, and
 //! every declaration name it spells is a name the module scope may still gain,
-//! and every `@context_extend` it spells is a field the program Context may
+//! and every `@context.extend` it spells is a field the program Context may
 //! still gain. Every branch and every iteration counts — the whole node is
 //! unexpanded, so no arm can be ruled out yet.
 //!
@@ -61,7 +61,7 @@ const Item = struct {
     impls: []const []const u8,
     scope: []const u8,
     names: []const []const u8,
-    /// How many `@context_extend` declarations its unexpanded branches could
+    /// How many `@context.extend` declarations its unexpanded branches could
     /// still put into the program Context.
     contexts: u32,
     retired: bool,
@@ -104,7 +104,7 @@ pub const Worklist = struct {
     /// `@run` nodes being driven right now — a condition that reaches the run
     /// it is itself part of would otherwise recurse forever.
     driving: std.AutoHashMap(*const Node, void),
-    /// How many `@context_extend` declarations unretired drivers could still
+    /// How many `@context.extend` declarations unretired drivers could still
     /// add. The program Context is ONE layout, so it publishes only at zero.
     open_contexts: u32 = 0,
     /// Registered-but-untaken monomorphization rounds.
@@ -291,7 +291,7 @@ pub const Worklist = struct {
     /// Has the program Context stopped growing? Its layout is program-global
     /// and single: an evaluation that reads it must see the one the whole
     /// program ends up with, so it publishes only once no undecided driver can
-    /// still write a `@context_extend`.
+    /// still write a `@context.extend`.
     pub fn contextFinal(w: *const Worklist) bool {
         return w.open_contexts == 0;
     }
@@ -389,7 +389,7 @@ const Scan = struct {
     /// where selecting the branch would put it and merged nowhere. A flat
     /// import would merge the module's declarations into the driver's scope,
     /// so those are names that scope may still gain; behind an alias only the
-    /// alias is. Impls and `@context_extend` are program-global either way.
+    /// alias is. Impls and `@context.extend` are program-global either way.
     /// The module's flat imports are already part of its declaration list, and
     /// the drivers it holds are swept exactly like the registering one — a
     /// branch two modules away contributes the same.

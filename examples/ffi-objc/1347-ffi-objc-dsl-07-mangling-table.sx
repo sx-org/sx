@@ -23,28 +23,28 @@ SxManglingProbe :: @ObjcClass("SxManglingProbe") extern {
     insert_after_index             :: (self: *Self, a: i32, b: i32, c: i32) -> i32;
     add_observer_for_event         :: (self: *Self, a: i32, b: i32, c: i32, d: i32) -> i32;
     initWithFrame_options          :: (self: *Self, f: i32, o: i32) -> i32;
-    custom_name                    :: (self: *Self) -> i32 @ObjcMethod(selector = "actualSelectorName");
+    customName                    :: (self: *Self) -> i32 @ObjcMethod(selector = "actualSelectorName");
 }
 
-universal_imp :: (self: *void, _cmd: *void, a: i32, b: i32, c: i32, d: i32) -> i32 abi(.c) {
+universalImp :: (self: *void, _cmd: *void, a: i32, b: i32, c: i32, d: i32) -> i32 abi(.c) {
     // Returns the arg count's witness; the test doesn't check return
     // values, only that dispatch succeeds for each selector shape.
     a + b + c + d
 }
 
 main :: () -> i32 {
-    inline if OS == .macos {
-        ns_object := objc_getClass("NSObject".ptr);
-        cls := objc_allocateClassPair(ns_object, "SxManglingProbe".ptr, 0);
+    inline if @host.os == .macos {
+        nsObject := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(nsObject, "SxManglingProbe".ptr, 0);
 
         // Register one IMP per selector we'll dispatch to.
-        class_addMethod(cls, sel_registerName("length".ptr),                              xx universal_imp, "i@:".ptr);
-        class_addMethod(cls, sel_registerName("addObject:".ptr),                          xx universal_imp, "i@:i".ptr);
-        class_addMethod(cls, sel_registerName("combine:and:".ptr),                        xx universal_imp, "i@:ii".ptr);
-        class_addMethod(cls, sel_registerName("insert:after:index:".ptr),                 xx universal_imp, "i@:iii".ptr);
-        class_addMethod(cls, sel_registerName("add:observer:for:event:".ptr),             xx universal_imp, "i@:iiii".ptr);
-        class_addMethod(cls, sel_registerName("initWithFrame:options:".ptr),              xx universal_imp, "i@:ii".ptr);
-        class_addMethod(cls, sel_registerName("actualSelectorName".ptr),                  xx universal_imp, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("length".ptr),                              xx universalImp, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("addObject:".ptr),                          xx universalImp, "i@:i".ptr);
+        class_addMethod(cls, sel_registerName("combine:and:".ptr),                        xx universalImp, "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("insert:after:index:".ptr),                 xx universalImp, "i@:iii".ptr);
+        class_addMethod(cls, sel_registerName("add:observer:for:event:".ptr),             xx universalImp, "i@:iiii".ptr);
+        class_addMethod(cls, sel_registerName("initWithFrame:options:".ptr),              xx universalImp, "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("actualSelectorName".ptr),                  xx universalImp, "i@:".ptr);
 
         objc_registerClassPair(cls);
 
@@ -58,11 +58,11 @@ main :: () -> i32 {
         _ = inst.insert_after_index(1, 2, 3);
         _ = inst.add_observer_for_event(1, 2, 3, 4);
         _ = inst.initWithFrame_options(1, 2);
-        _ = inst.custom_name();
+        _ = inst.customName();
 
         print("mangling table OK\n");
     }
-    inline if OS != .macos {
+    inline if @host.os != .macos {
         print("skipped (not macos)\n");
     }
     0
