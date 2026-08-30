@@ -73,15 +73,14 @@ anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
 // struct and union fields, enum and tagged-union variants, array elements,
 // vector lanes, and the count a slice's or string's header carries. `@field`
-// views the i-th member at its offset — a tagged union's members share the
-// payload offset. `@elementAt` views the i-th element of an array, vector,
-// slice, or string, striding from the buffer a fat pointer names. `@inner`
-// views an optional's payload, null when it is absent. Each result borrows the
-// boxed storage, so it aliases later writes and copies nothing. An index past
-// the count is UB.
+// views the i-th of those parts: a member at its layout offset — a tagged
+// union's members share the payload offset — or an element striding from the
+// in-place storage or from the buffer a fat pointer names. `@inner` views an
+// optional's payload, null when it is absent. Each result borrows the boxed
+// storage, so it aliases later writes and copies nothing. An index past the
+// count is UB.
 @len :: (v: any) -> i64;
 @field :: (v: any, idx: i64) -> any;
-@elementAt :: (v: any, idx: i64) -> any;
 @inner :: (v: any) -> ?any;
 
 // ── Type identity, and the typed read of boxed storage ─────────────────────

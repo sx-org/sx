@@ -2802,7 +2802,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@errorPayload",
         .@"@len",
         .@"@field",
-        .@"@elementAt",
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
@@ -3107,7 +3106,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@errorPayload",
         .@"@len",
         .@"@field",
-        .@"@elementAt",
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
@@ -3399,7 +3397,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@errorPayload",
         .@"@len",
         .@"@field",
-        .@"@elementAt",
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
@@ -3751,7 +3748,6 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@errorPayload",
         .@"@len",
         .@"@field",
-        .@"@elementAt",
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
@@ -3965,14 +3961,9 @@ fn boxedTableCount(self: *Lowering, recv: Ref, _: Ref) Ref {
 }
 
 /// The buffer a fat pointer's header names — pointer_size bytes at its front.
-fn boxedHeaderBuffer(self: *Lowering, recv: Ref, _: Ref) Ref {
+fn boxedHeaderBuffer(self: *Lowering, recv: Ref) Ref {
     const bytes = self.builder.anyData(recv, self.module.types.manyPtrTo(.u8));
     return zextLoadI64(self, bytes, self.module.types.pointer_size);
-}
-
-/// The boxed storage itself, where an array's or vector's elements sit.
-fn boxedStorage(self: *Lowering, recv: Ref, _: Ref) Ref {
-    return self.builder.anyData(recv, .i64);
 }
 
 /// Merge two i64 readings of a boxed value through a stack slot, choosing by
@@ -4045,19 +4036,35 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
     const idx = self.lowerExpr(c.args[1]);
     self.target_type = saved_target;
 
-    if (id == .@"@field") {
-        const args = self.alloc.dupe(Ref, &.{ recv, idx }) catch return sentinel;
-        const member_tag = self.builder.callBuiltin(.rt_member_type, args, .type_value);
-        const offset = self.builder.callBuiltin(.rt_field_offset, args, .i64);
-        const base = self.builder.anyData(recv, .i64);
-        return self.builder.makeAny(member_tag, self.builder.add(base, offset, .i64));
-    }
-    const elem_args = self.alloc.dupe(Ref, &.{ recv, self.builder.constInt(0, .i64) }) catch return sentinel;
-    const elem = self.builder.callBuiltin(.rt_member_type, elem_args, .type_value);
+    // A fat pointer's parts stride from the buffer its header names, off a
+    // member table of ONE row — the element. Every other kind's parts sit in
+    // the boxed storage at offset row `idx`.
+    const b = &self.builder;
+    const row = boxedLenRow(self, recv);
+    const is_fat = b.emit(.{ .cmp_ne = .{ .lhs = row, .rhs = b.constInt(0, .i64) } }, .bool);
+    const elem_args = self.alloc.dupe(Ref, &.{ recv, b.constInt(0, .i64) }) catch return sentinel;
+    const row_args = self.alloc.dupe(Ref, &.{ recv, idx }) catch return sentinel;
+    const slot = b.alloca(.any);
+    const fat_bb = self.freshBlock("part.fat");
+    const flat_bb = self.freshBlock("part.flat");
+    const merge_bb = self.freshBlock("part.merge");
+    b.condBr(is_fat, fat_bb, &.{}, flat_bb, &.{});
+
+    b.switchToBlock(fat_bb);
+    const elem = b.callBuiltin(.rt_member_type, elem_args, .type_value);
     const size_args = self.alloc.dupe(Ref, &.{elem}) catch return sentinel;
-    const elem_size = self.builder.callBuiltin(.@"rt_@sizeOf", size_args, .i64);
-    const stride = self.builder.mul(idx, elem_size, .i64);
-    return self.builder.makeAny(elem, self.builder.add(boxedFatMerge(self, recv, boxedHeaderBuffer, boxedStorage), stride, .i64));
+    const stride = b.mul(idx, b.callBuiltin(.@"rt_@sizeOf", size_args, .i64), .i64);
+    b.store(slot, b.makeAny(elem, b.add(boxedHeaderBuffer(self, recv), stride, .i64)));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(flat_bb);
+    const member = b.callBuiltin(.rt_member_type, row_args, .type_value);
+    const offset = b.callBuiltin(.rt_field_offset, row_args, .i64);
+    b.store(slot, b.makeAny(member, b.add(b.anyData(recv, .i64), offset, .i64)));
+    b.br(merge_bb, &.{});
+
+    b.switchToBlock(merge_bb);
+    return b.load(slot, .any);
 }
 
 /// `@inner(v)` — the payload of a boxed optional as a `?any`. The two reprs
@@ -4424,7 +4431,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.lowerErrorPayload(c.args[0], c.callee.span);
     }
     if (intrinsics.findByName(name)) |id| switch (id) {
-        .@"@len", .@"@field", .@"@elementAt" => return lowerBoxedViewIntrinsic(self, id, c),
+        .@"@len", .@"@field" => return lowerBoxedViewIntrinsic(self, id, c),
         .@"@inner" => return lowerInnerIntrinsic(self, c),
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         else => {},

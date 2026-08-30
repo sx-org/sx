@@ -405,7 +405,7 @@ writeElements :: (w: Writer, val: any) {
     i := 0;
     while i < n {
         if i > 0 { w.write(", "); }
-        writeAny(w, @elementAt(val, i));
+        writeAny(w, @field(val, i));
         i += 1;
     }
     w.write("]");

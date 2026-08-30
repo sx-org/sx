@@ -1089,8 +1089,9 @@ pub const TypeTable = struct {
     /// the three can never drift. Struct members use the same aligned
     /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
     /// offset (the header size — identical for every variant); an untagged
-    /// union's arms all overlay at 0. Null for a type without addressable
-    /// members or an out-of-range `idx`.
+    /// union's arms all overlay at 0; array elements and vector lanes stride
+    /// by their element size. Null for a type without addressable members or
+    /// an out-of-range `idx`.
     pub fn memberOffsetBytes(self: *const TypeTable, id: TypeId, idx: i64) ?usize {
         if (idx < 0 or id.index() >= self.infos.items.len or id.isBuiltin()) return null;
         const i: usize = @intCast(idx);
@@ -1124,6 +1125,8 @@ pub const TypeTable = struct {
                 }
                 return self.typeSizeBytes(u.tag_type);
             },
+            .array => |a| return if (i < a.length) i * self.typeSizeBytes(a.element) else null,
+            .vector => |v| return if (i < v.length) i * self.typeSizeBytes(v.element) else null,
             else => return null,
         }
     }
