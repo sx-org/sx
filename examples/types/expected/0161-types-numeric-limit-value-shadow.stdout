@@ -1,7 +1,7 @@
-local f64: epsilon=11 max=22 min_positive=33
+local f64: epsilon=11 max=22 minPositive=33
 local i32: max=78 min=-78
 local u8: max=7
-global f32: epsilon=44 max=55 min_positive=66
+global f32: epsilon=44 max=55 minPositive=66
 const i16: max=99 min=-99
 typed val e=11
 lim i32.max=2147483647 i32.min=-2147483648

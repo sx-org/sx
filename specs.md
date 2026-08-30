@@ -265,7 +265,7 @@ not a number (it lexes as an identifier). There is no scientific-exponent
 
 String literals support escape sequences (`\n`, `\t`, `\r`, `\\`, `\"`, `\0`) and may span multiple lines directly:
 ```sx
-shader_src := "#version 330 core
+shaderSrc := "#version 330 core
 void main() {
     gl_Position = vec4(0.0);
 }
@@ -274,7 +274,7 @@ void main() {
 
 **Heredoc strings** use `@string DELIMITER` syntax (inspired by Jai). Content is completely raw — no escape processing. The delimiter is any identifier. Content starts after the newline following the delimiter and ends when the delimiter appears at column 0 of a line.
 ```sx
-vert_src := @string GLSL
+vertSrc := @string GLSL
 #version 330 core
 void main() {
     gl_Position = vec4(aPos, 1.0);
@@ -551,12 +551,12 @@ is simply still open — an unclosed `(`, an argument list, a `{` with no `}` ye
 ```sx
 LIMIT : i64
     : 9;                      // a typed constant
-errno_loc : *i32
+errnoLoc : *i32
     extern libc "__error";    // an extern data global
 mystery :: i64
     intrinsic;                // a typed intrinsic
 
-sx_double :: (n: i32) -> i32 export
+sxDouble :: (n: i32) -> i32 export
     "double_c"
     { n * 2 }                 // the linkage tail reads on to the body
 ```
@@ -697,8 +697,8 @@ float type (the same `lowerNumericLimit` intercept, via `builder.constFloat`):
 hi  := f64.max;           // largest finite double
 lo  := f64.min;           // most-NEGATIVE finite = -max  (NOT C's DBL_MIN)
 eps := f64.epsilon;       // ULP of 1.0  (f64 = 2^-52, f32 = 2^-23)
-mp  := f64.min_positive;  // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
-tm  := f64.true_min;      // smallest positive SUBNORMAL (next value above 0.0)
+mp  := f64.minPositive;   // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
+tm  := f64.trueMin;       // smallest positive SUBNORMAL (next value above 0.0)
 pin := f64.inf;           // +infinity
 qn  := f64.nan;           // a quiet NaN
 ```
@@ -707,43 +707,43 @@ qn  := f64.nan;           // a quiet NaN
 - **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
   types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
   the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
-  smallest positive normal; that is `.min_positive` here.
+  smallest positive normal; that is `.minPositive` here.
 - **Float-only accessors.**
   - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
     representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
     **machine epsilon** used for relative-tolerance comparisons, **NOT** C#'s
-    `Double.Epsilon` (which is the smallest denormal — that is `.true_min` here).
+    `Double.Epsilon` (which is the smallest denormal — that is `.trueMin` here).
     Defining property: `1.0 + epsilon != 1.0` while `1.0 + epsilon/2.0 == 1.0`.
-  - `.min_positive` — the smallest positive **NORMAL** value (`f64 = 2^-1022`,
+  - `.minPositive` — the smallest positive **NORMAL** value (`f64 = 2^-1022`,
     `f32 = 2^-126`). Equals C's `DBL_MIN` / Rust's `MIN_POSITIVE`.
-  - `.true_min` — the smallest positive **SUBNORMAL**: the next value above `0.0`
+  - `.trueMin` — the smallest positive **SUBNORMAL**: the next value above `0.0`
     (`f64` bits `0x0000000000000001 = 2^-1074`, `f32` bits `0x00000001 = 2^-149`).
-    Named `true_min` (after Zig's `floatTrueMin`) to avoid the Java/Go/JS
+    Named `trueMin` (after Zig's `floatTrueMin`) to avoid the Java/Go/JS
     `MIN_VALUE` footgun, where a bare `MIN_VALUE` names the smallest *subnormal*
     yet reads like the most-negative value.
     - **FTZ/DAZ caveat.** Subnormals are exactly the values that vanish under
       flush-to-zero (FTZ) / denormals-are-zero (DAZ) CPU modes. If such a mode is
-      active, a loaded `.true_min` can flush to `0.0` on the **first arithmetic
+      active, a loaded `.trueMin` can flush to `0.0` on the **first arithmetic
       operation** that touches it. The folded constant always carries the exact
       subnormal bit pattern; read or store it through a bit reinterpret *before*
       any arithmetic if you need the true value to survive. Numerical-library
-      authors who toggle FTZ/DAZ should not be surprised when `true_min * 1.0`
+      authors who toggle FTZ/DAZ should not be surprised when `trueMin * 1.0`
       reads back as `0.0`.
   - `.inf` — positive infinity (`inf > max`).
   - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
     guaranteed property is that it is unequal to everything, itself included
     (`nan != nan` is `true` — native float `!=` lowers unordered).
-- **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
-  `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose
+- **Float-only on an integer is an error.** `.epsilon` / `.minPositive` /
+  `.trueMin` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
+  `u8.inf`, `i64.trueMin`) is a clean compile error — integer types expose
   only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
   union (`union { f: f64; bits: u64; }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
-  `epsilon = 0x3CB0000000000000`, `min_positive = 0x0010000000000000`,
-  `true_min = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
+  `epsilon = 0x3CB0000000000000`, `minPositive = 0x0010000000000000`,
+  `trueMin = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
   `0x7F7FFFFF` / `0xFF7FFFFF` / `0x34000000` / `0x00800000` / `0x00000001` /
   `0x7F800000`.
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
@@ -881,7 +881,7 @@ would otherwise silently let a later store clobber an earlier one. An empty
 
 #### Restrictions
 - Pattern matching (`match x { case ... }`) is not supported on unions.
-- Unions cannot be printed directly via `print("{}", union_val)` — access individual fields instead.
+- Unions cannot be printed directly via `print("{}", unionVal)` — access individual fields instead.
 
 ### Struct Types
 User-defined product types with named fields.
@@ -1267,7 +1267,7 @@ Color  :: struct { r, g, b, a: f32; }
 Widget :: struct { value: i64; }
 
 Buf :: struct { … }
-write_field :: (out: *Buf, name: string, v: any) { … }
+writeField :: (out: *Buf, name: string, v: any) { … }
 
 Serialize :: interface {
     write :: (self: *Self, out: *Buf);
@@ -1279,7 +1279,7 @@ inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
             inline for i in 0..structFieldCount(T) {
-                write_field(out, structFieldName(T, i),
+                writeField(out, structFieldName(T, i),
                             structFieldValue(self.*, i));
             }
         }
@@ -2123,10 +2123,10 @@ copy := ptr.*;          // Vec2
 
 **Auto-deref**: `p.field` is sugar for `p.*.field`.
 ```sx
-set_x :: (p: *Vec2, val: f32) {
+setX :: (p: *Vec2, val: f32) {
     p.x = val;          // auto-deref: p.*.x = val
 }
-set_x(*v, 99.0);
+setX(*v, 99.0);
 ```
 
 **Null**: Pointer types are nullable by default — permanently; this is part
@@ -2230,7 +2230,7 @@ y: ?i32 = null;      // optional i32, no value
 Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 
 #### LLVM Representation
-- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + has_value flag
+- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + presence flag
 - Pointer optionals (`?*T`): bare pointer — null represents absence
 
 #### Implicit Wrapping
@@ -2264,7 +2264,7 @@ and arithmetic / ordering on un-narrowed optionals stay rejected.
   tagged-union payload compares by tag only). A null payload is never read.
 - `?T == T` (either order): false when the optional is null, otherwise the
   payload compare. A literal on the concrete side types at the payload
-  (`opt_width == 40.0` against a `?f32`).
+  (`optWidth == 40.0` against a `?f32`).
 - `?T == null` keeps its meaning as the presence test (subsumed by the
   general rule).
 - Two distinct optional types (`?f32` vs `?f64`) do not compare, and a payload
@@ -2309,7 +2309,7 @@ if val := x {
 
 #### While-Optional Binding
 ```sx
-while val := get_next() {
+while val := getNext() {
     // val is the unwrapped value
 }
 ```
@@ -2388,9 +2388,9 @@ sdl  :: @library "SDL3";
 socket    :: (domain: i32, type: i32, protocol: i32) -> i32 extern libc;
 SDL_Init  :: (flags: u32) -> bool extern sdl;
 abs       :: (x: i32) -> i32 extern;            // no LIB: resolves from a framework / auto-linked lib
-write_fd  :: (fd: i32, buf: [*]u8, n: u64) -> i64 extern libc "write";  // [LIB] ["csym"] rename
+writeFd   :: (fd: i32, buf: [*]u8, n: u64) -> i64 extern libc "write";  // [LIB] ["csym"] rename
 sx_square :: (x: i32) -> i32 export { x * x }   // define; C can call `sx_square`
-triple_c  :: (x: i32) -> i32 export "triple_c" { x * 3 }  // export under a C name
+tripleC   :: (x: i32) -> i32 export "triple_c" { x * 3 }  // export under a C name
 
 // Data globals — `extern` imports an external global
 __stdinp  : *void extern;
@@ -2524,9 +2524,9 @@ comptime-pack (`..$args`, e.g. `print` / `format`):
 
 ```sx
 s :: @import "modules/std.sx";
-my_print :: s.print;          // comptime-pack fn through a namespace
+myPrint  :: s.print;          // comptime-pack fn through a namespace
 helper2  :: r.helper;         // renamed plain fn
-my_print("x = {}\n", helper2());
+myPrint("x = {}\n", helper2());
 ```
 
 (For making an alias *dot-callable*, see `name :: ufcs target;` in the
@@ -2547,7 +2547,7 @@ sum :: (a: $T, b: T) -> T {
   sum(1.5, 2.5)    // T = f64
   ```
 - A function-type bound written as the function's **return** type introduces the binder there:
-  `make_adder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
+  `makeAdder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
   type, which must satisfy the head. The call supplies no type argument for F.
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`
@@ -2565,7 +2565,7 @@ FnType       := '(' [ TypeExpr { ',' TypeExpr } ] ')' '->' TypeExpr
 
 ```sx
 largest   :: (xs: []$T/Ord) -> T { … }                  // one bound
-are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
+areEqual  :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 apply     :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }   // function-type head
 ```
@@ -2712,7 +2712,7 @@ pathJoin :: (..parts: []string) -> string { ... }
   and Interfaces §5.2; a concrete rvalue is refused — the `[N]I` array does
   not invent referents — and a constraint element type is refused as a
   storable position) and is packed into a runtime `[N]I`.
-  `xs[runtime_i].method()` then dispatches through the handle — this is the
+  `xs[runtimeI].method()` then dispatches through the handle — this is the
   **runtime** counterpart to the comptime heterogeneous pack `..xs: I`. A
   `..` spread of an existing slice into `[]I` coerces per element the same
   way.
@@ -2916,7 +2916,7 @@ Key axis — **concrete vs erased, comptime vs runtime**:
   runtime index is an error (a pack has no runtime representation). Use it when
   you need per-position types (monomorphization, `xs.T` / `xs.value` projection).
 - `..xs: []I` (slice of interface) **erases** each element to a handle but is
-  **runtime**: `xs[runtime_i].method()` works in an ordinary loop. Use it when
+  **runtime**: `xs[runtimeI].method()` works in an ordinary loop. Use it when
   you need to iterate the args at runtime and only the interface matters. It is
   the runtime counterpart to the pack.
 
@@ -3001,7 +3001,7 @@ suggestion:
   variadic `..xs: []I` (a runtime slice) instead of a pack `..xs: P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the
   return a multi-return of those slots, or a `struct { ..P(Ts) }` field);
-- iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
+- iterating it (`for x in xs`, `xs[runtimeI]`) → `inline for x in xs` (or
   `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
   `..xs: []I` for a runtime loop.
 
@@ -3028,9 +3028,9 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
   ownAllocator: Allocator;
 
   recompute :: (self: *Combined) {
-    new_val := self.mapper(..self.sources.value);  // product projection + spread
-    if new_val == self.value  return;
-    self.value = new_val;
+    newVal := self.mapper(..self.sources.value);  // product projection + spread
+    if newVal == self.value  return;
+    self.value = newVal;
   }
 }
 
@@ -3090,7 +3090,7 @@ array dimension / lane count uses (see "Array dimensions are integral", §2):
 - A **non-integral** compile-time float — literal OR const expression — is a
   **compile error** with one uniform wording at every site:
   `y : i64 = 1.5`, `y : i64 = M + 0.5`, `y : i64 = F + 0.25` (= 2.75),
-  `y : i64 = f64.true_min + 0.5` (= 0.5), `y : i64 = 5.5 % 2.0` (= 1.5), and
+  `y : i64 = f64.trueMin + 0.5` (= 0.5), `y : i64 = 5.5 % 2.0` (= 1.5), and
   `y : i64 = 5.0 / 2.0` (= 2.5) all →
   "cannot implicitly narrow non-integral float '…' to 'i64'; use an explicit
   cast (`xx`/`.(T)`)".
@@ -3511,7 +3511,7 @@ double :: (n: i32) -> i32 {
   n * 2;   // the return value; the `;` changes nothing
 }
 
-log_size :: () {
+logSize :: () {
   measure();   // nothing demands the value — discarded
 }
 ```
@@ -3539,7 +3539,7 @@ local function and an inlined comptime callee:
 
 ```sx
 report := || -> !ParseErr measure();   // discarded, then the success exit
-raise_it := || -> !ParseErr ParseErr.BadDigit;
+raiseIt := || -> !ParseErr ParseErr.BadDigit;
 ```
 
 It is also decided per live path: where the tail is an `if` or a `match`, each
@@ -3981,7 +3981,7 @@ above 8 is only safe if every storage path for those values honours it.
 ```text
 payload    = max(@sizeOf(member))              // ≤ max; a ceiling, not a reservation
 alignment  = max(declared align, @alignOf(tag))  // not a max over members
-@sizeOf(P) = align_up(align_up(@sizeOf(tag), alignment) + payload, alignment)
+@sizeOf(P) = alignUp(alignUp(@sizeOf(tag), alignment) + payload, alignment)
 ```
 
 The tag's own alignment is a **floor**: it lives in the same value, so a set
@@ -4289,7 +4289,7 @@ An **open** type argument takes the expression's own type instead, and the set i
 reached afterwards by ordinary expected-type formation:
 
 ```sx
-store_as_view :: (value: $I/@Init($V/View)) -> View {
+storeAsView :: (value: $I/@Init($V/View)) -> View {
     item: V = ---;
     value.write(*item);   // writes exactly *V
     item                  // returned at expected View: lift + slot copy
@@ -4660,8 +4660,8 @@ type := @typeOf(val);
 match type {
     case unsigned: result = uintToString(xx val);
     case int:      result = intToString(xx val);
-    case struct:   result = struct_to_string_over_views(type, val);
-    case enum:     result = enum_walk_over_tables(type, val);
+    case struct:   result = structToStringOverViews(type, val);
+    case enum:     result = enumWalkOverTables(type, val);
 }
 ```
 Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
@@ -4693,7 +4693,7 @@ match av {
     case []u8: |b|   { print("{} bytes\n", b.len); }   // composite types are real tags
     case ?i64: |o|   { print("{}\n", o ?? 0); }        // tags are EXACT — no flattening
     case signed: |n| { print("{}\n", n + 1); }         // categories widen: n is i64
-    case struct: |s| { walk_fields(s); }               // other kinds bind the `any` view
+    case struct: |s| { walkFields(s); }                // other kinds bind the `any` view
     else:            { print("{}\n", @typeName(@typeOf(av))); }  // av stays `any`
 }
 ```
@@ -4914,7 +4914,7 @@ likewise snapshotted into a fresh temp rather than written back.)
 ```sx
 events := plat.pollEvents();        // []Event
 for *ev in events {                  // ev : *Event — no copy
-    pipeline.dispatch_event(ev);     // passes the pointer
+    pipeline.dispatchEvent(ev);      // passes the pointer
 }
 ```
 
@@ -5118,19 +5118,19 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 A factory either returns the unique lambda or erases it, and the return type says
 which:
 ```sx
-make_adder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
-add5 := make_adder(5);                 // the env itself — no heap
+makeAdder :: (n: i64) -> $F/(i64) -> i64 { return |x|_{ n } x + n; }
+add5 := makeAdder(5);                  // the env itself — no heap
 print("{}\n", add5(100));              // 105
 
-make_handler :: (n: i64) -> Closure(i64) -> i64 {
+makeHandler :: (n: i64) -> Closure(i64) -> i64 {
     return closure(|x|_{ n } x + n);   // env on context.allocator
 }
 ```
 
-`$F` on `make_adder` is the return binder in Generic Functions: the body fixes F
+`$F` on `makeAdder` is the return binder in Generic Functions: the body fixes F
 (here the literal's unique type). A body returns one type — one literal on two
 paths is one type; two literals are two types and cannot both be the return. The
-caller binds the value (`add5 := make_adder(5)`) and does not spell F; a later
+caller binds the value (`add5 := makeAdder(5)`) and does not spell F; a later
 signature names the unique by introducing its own binder (`apply(add5, 1)`,
 `closure(add5)`).
 
@@ -5143,12 +5143,12 @@ parameter — is a `Closure`, so anything capturing that reaches it goes through
 ```sx
 Button :: struct {
     label: string;
-    on_click: ?Closure(i64) -> void;
+    onClick: ?Closure(i64) -> void;
 }
-btn := Button{label = "OK", on_click = null };
-btn_id := 7;
-btn.on_click = closure(|x|_{ id = btn_id } print("{} {}\n", id, x));
-if handler := btn.on_click {
+btn := Button{label = "OK", onClick = null };
+btnId := 7;
+btn.onClick = closure(|x|_{ id = btnId } print("{} {}\n", id, x));
+if handler := btn.onClick {
     handler(1);
 }
 ```
@@ -5187,11 +5187,11 @@ struct literals exactly (`name = value` — the argument slot is free because
 assignment is statement-only).
 
 ```sx
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) { ... }
+scaffold :: (topBar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) { ... }
 
-scaffold(content = chat_list);                       // reach past defaults by name
-scaffold(top_bar = toolbar, content = chat_list);    // any order among named
-scaffold(chat_list_closure, fab = fab_button);       // positional, then named
+scaffold(content = chatList);                         // reach past defaults by name
+scaffold(topBar = toolbar, content = chatList);       // any order among named
+scaffold(chatListClosure, fab = fabButton);           // positional, then named
 ```
 
 - **Order**: positional arguments first, then named ones. A positional
@@ -5217,7 +5217,7 @@ scaffold(chat_list_closure, fab = fab_button);       // positional, then named
   did-you-mean suggestion; missing required parameters are reported by name.
 
 UFCS calls compose: the receiver binds the FIRST parameter positionally, and
-named arguments may bind the rest (`buf.write_all(data, flush = true)`). A
+named arguments may bind the rest (`buf.writeAll(data, flush = true)`). A
 ufcs **alias** resolves names against the *target* function's declared
 parameter names. Extern functions accept named arguments when their
 declaration declares parameter names.
@@ -5246,8 +5246,8 @@ each(items) { |x| print("{}\n", x); };
 // ≡
 each(items, |x| { print("{}\n", x); });
 
-scaffold(top_bar = toolbar) { chat_list(); };  // named slots + trailing block
-scaffold() { chat_list(); };                   // defaults skipped, block binds `content`
+scaffold(topBar = toolbar) { chatList(); };    // named slots + trailing block
+scaffold() { chatList(); };                    // defaults skipped, block binds `content`
 ```
 
 - **Binding**: the block binds the last declared parameter, which must be
@@ -5300,7 +5300,7 @@ scaffold() { chat_list(); };                   // defaults skipped, block binds 
   `catch |e|`, `@run`, or a bare closure body:
   `if (mk() catch |e| Pt { x = 0 }).x == 1 { … }`. Push is different — named
   aggregates are legal in the context expr and the following brace is the push
-  body: `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
+  body: `push Context{ io = myIo } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain continuation**: after the block's closing `}`, **dot-led** postfix
@@ -5357,24 +5357,24 @@ functions — the receiver participates in `$T` binding and the call
 monomorphizes exactly like the direct spelling:
 
 ```sx
-first_of :: ufcs (xs: []$T) -> T { xs[0] }
+firstOf :: ufcs (xs: []$T) -> T { xs[0] }
 
-xs.first_of();       // dot — binds $T from the receiver
-first_of(xs);        // direct
+xs.firstOf();       // dot — binds $T from the receiver
+firstOf(xs);        // direct
 ```
 
 #### UFCS Aliases
 The alias form decouples the method name from the function name —
 useful when the bare name reads poorly in dot position:
 ```sx
-arena_alloc :: (arena: *Arena, size: i64) -> *void { ... }
-alloc :: ufcs arena_alloc;
+arenaAlloc :: (arena: *Arena, size: i64) -> *void { ... }
+alloc :: ufcs arenaAlloc;
 
-myArena.alloc(42);        // calls arena_alloc(myArena, 42)
+myArena.alloc(42);        // calls arenaAlloc(myArena, 42)
 alloc(myArena, 42);       // also works as a direct call
 ```
 
-This avoids the naming redundancy of `myArena.arena_alloc(42)`.
+This avoids the naming redundancy of `myArena.arenaAlloc(42)`.
 
 ### Field Access
 ```sx
@@ -5384,7 +5384,7 @@ Used for module access (`std.print`) and struct member access.
 
 ### Enum Literal
 ```sx
-.variant_name
+.variantName
 ```
 The enum type is inferred from context (expected type from declaration or parameter).
 
@@ -5412,13 +5412,13 @@ its terminator.
 The `push` statement installs a new implicit context for the duration of a block. The context is CALL-CARRIED (a hidden `*Context` parameter threaded through every sx call, never a global): `push` allocates the new Context on the pushing frame's stack, and the body — including every function it calls — reads through it. On exit the previous context is back in force.
 
 ```sx
-push .{ allocator = arena.allocator(), logger = *my_logger } {
+push .{ allocator = arena.allocator(), logger = *myLogger } {
     handle(client);   // inside here, `context` has the new value
 }
 // context is restored to its previous value here
 ```
 
-A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push some_ctx { … }`) stores it as-is — seed it from `context` first to inherit.
+A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push someCtx { … }`) stores it as-is — seed it from `context` first to inherit.
 
 **`Context` struct** — assembled PER PROGRAM, 100% from `@context.extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
@@ -5430,7 +5430,7 @@ cAllocator : CAllocator = .{};
 cBlockingIo : CBlockingIo = .{};
 @context.extend io: Io = cBlockingIo;
 ```
-Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
+Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = myImplGlobal;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
 `push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context.extend` fields with their declaring modules, so the demand is traceable.
 
@@ -5440,7 +5440,7 @@ Any module — stdlib or user — can declare a field the program's Context carr
 
 ```sx
 @context.extend ui: *Ui = null;      // bare nullable pointer — the default idiom
-@context.extend frame_stats: FrameStats = .{};
+@context.extend frameStats: FrameStats = .{};
 ```
 
 `?*Ui` works too and opts the field into checked nullability (consumers must
@@ -5809,7 +5809,7 @@ The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build 
 ```sx
 @import "modules/build.sx";
 
-configure_build :: () {
+configureBuild :: () {
     opts := buildOptions();
     opts.addLinkFlag("-lm");
     opts.setOutputPath("out/my_program");
@@ -5820,7 +5820,7 @@ configure_build :: () {
         opts.addLinkFlag("-sALLOW_MEMORY_GROWTH=1");
     }
 }
-@run configure_build();
+@run configureBuild();
 ```
 
 **API:**
@@ -5974,8 +5974,8 @@ Semantics:
 - **Flat imports do not carry private names.** A flat importer referring to a
   private name gets a "private to its declaring module" (functions) or
   undeclared/unknown diagnostic — never the declaration.
-- **Namespaces do not expose private members.** `ns.priv_member` reports
-  "namespace 'ns' has no member 'priv_member'". Deep traversal keeps the
+- **Namespaces do not expose private members.** `ns.privMember` reports
+  "namespace 'ns' has no member 'privMember'". Deep traversal keeps the
   ORIGINAL requester's authority: an intermediate private alias is not
   traversable from another file either.
 - **A private named-import alias is not carried.** It binds only in its author
@@ -6176,7 +6176,7 @@ Two registration forms:
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
 `bundlePath` is set and no callback was registered, the compiler
-auto-falls-back to `post_link_module = "platform.bundle"`. The sx
+auto-falls-back to `setPostLinkModule("platform.bundle")`. The sx
 bundler reads `bundlePath()` regardless of which flag the user used.
 The callback returns `false` to fail the build.
 
@@ -6492,9 +6492,9 @@ control to the nearest enclosing fallback target:
 - otherwise → the enclosing failable boundary (propagation).
 
 ```sx
-v       := try parse_digit(s);          // propagate on failure
+v       := try parseDigit(s);           // propagate on failure
 v2, n   := try parse(s);                // multi-value
-try must_init();                        // statement form, discard values
+try mustInit();                         // statement form, discard values
 v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
@@ -6512,7 +6512,7 @@ inferred channel. The block's last expression is its success value.
 v := try {
   h := try open(path);
   defer close(h);
-  try read_all(h)
+  try readAll(h)
 } catch |e| {
   log.warn("load failed: {}", e);
   default
@@ -6539,12 +6539,12 @@ expression. `foo() catch {}` absorbs.
 A bare binding (`catch e { }`) is a parse error with a hint to write the pipes.
 
 ```sx
-v := parse_digit(s) catch |e| {
+v := parseDigit(s) catch |e| {
   log.warn("bad input: {}", e);
   return default;                       // noreturn body
 };
 
-v := parse_digit(s) catch |e| compute_fallback(e);   // value-producing body
+v := parseDigit(s) catch |e| computeFallback(e);   // value-producing body
 
 v, n := parse(s) catch |e| {
   log.warn("parse failed: {}", e);
@@ -6573,8 +6573,8 @@ initialize `:=`, a typed mutable declaration (`name: T =`), or a body-local
 constant declaration (`name ::` or `name: T :`).
 
 ```sx
-must_init() catch |e| { log.warn("{}", e); };  // OK — statement
-x := must_init() catch |e| { 0 };              // ERROR: nothing to bind
+mustInit() catch |e| { log.warn("{}", e); };  // OK — statement
+x := mustInit() catch |e| { 0 };              // ERROR: nothing to bind
 ```
 
 Give the callee a value channel (`-> (T, !E)`) where the handled expression
@@ -6596,14 +6596,14 @@ also defaults a failable. On a failable LHS the RHS shape decides the result:
 short-circuit.
 
 ```sx
-v := parse_digit(s) ?? 0;                        // value terminator → non-failable
+v := parseDigit(s) ?? 0;                         // value terminator → non-failable
 v := try foo() ?? try boo();                     // chain, propagate if both fail
 v := foo() ?? boo() ?? 0;                        // bare operands, 0 absorbs all
-v, n := parse_pair(s) ?? .{0, 0};                // tuple terminator (multi-value)
+v, n := parsePair(s) ?? .{0, 0};                 // tuple terminator (multi-value)
 ```
 
 A **void** failable (`-> !`) rejects a plain-value RHS (no success type to
-fall back to); `must_init() ?? must_other()` (chain) and `must_init() catch {}`
+fall back to); `mustInit() ?? mustOther()` (chain) and `mustInit() catch {}`
 (absorb) are the legal forms.
 
 `or` / `and` are logical operators over booleans; a failable operand is a type
@@ -6650,12 +6650,12 @@ identity, named functions included:
 
 ```sx
 slot    : Closure(() -> (i32, !Both));
-io_slot : Closure(() -> (i32, !IoErr));
+ioSlot  : Closure(() -> (i32, !IoErr));
 
 slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
 slot    = inner;   // OK — inner's inferred channel IS Both
 slot    = ok;      // ERROR — a non-failable function is not a failable slot
-io_slot = inner;   // ERROR — Both is not IoErr
+ioSlot  = inner;   // ERROR — Both is not IoErr
 ```
 
 No dest-typed thunk, environment stash, or hidden allocation stands behind a slot
@@ -6764,10 +6764,10 @@ error is its `.error` arm.
 conditional cleanup is a `defer` in front of an `if`, not a form of its own:
 
 ```sx
-make_handle :: () -> (Handle, !) {
-  h := try sys_open();
+makeHandle :: () -> (Handle, !) {
+  h := try sysOpen();
   keep := false;
-  defer if !keep sys_close(h);   // close unless the handle is handed out
+  defer if !keep sysClose(h);   // close unless the handle is handed out
 
   try configure(h);
   try register(h);

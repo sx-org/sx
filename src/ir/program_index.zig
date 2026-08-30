@@ -589,7 +589,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
 /// through the SINGLE int folder — no parallel integer logic here); only the
 /// genuinely float-producing shapes — a float literal, a NON-INTEGRAL float-const
 /// leaf, a builtin FLOAT numeric-limit accessor (`f64.max`, `f32.epsilon`,
-/// `f64.true_min`, …), a unary negate, and `+ - * / %` arithmetic involving a
+/// `f64.trueMin`, …), a unary negate, and `+ - * / %` arithmetic involving a
 /// float — are evaluated here in `f64`. A comparison or any other shape is not a
 /// compile-time float leaf → null.
 ///
@@ -618,7 +618,7 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
         .identifier => |id| ctx.lookupFloatName(id.name) orelse qualifiedDottedFloat(id.name, ctx),
         .type_expr => |te| ctx.lookupFloatName(te.name) orelse qualifiedDottedFloat(te.name, ctx),
         .field_access => |fa| blk: {
-            // A numeric-limit accessor on a builtin FLOAT type (`f64.true_min`,
+            // A numeric-limit accessor on a builtin FLOAT type (`f64.trueMin`,
             // `f32.epsilon`, `f64.max`, …) is a compile-time float leaf — the
             // float twin of `evalConstIntExpr`'s `<IntType>.min`/`.max` arm, via
             // the SAME `type_resolver` fold (the facility `lowerNumericLimit`

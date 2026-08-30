@@ -18,8 +18,8 @@
 // modern/64-bit form where duplicates exist; `sqlite3_bind_text` /
 // `sqlite3_bind_blob` keep the 32-bit length forms, which skip
 // text64's encoding arg — per-value sizes beyond 2 GiB are out of
-// scope). Deliberately NOT
-// bound, each a real boundary rather than an omission:
+// scope). Deliberately NOT bound, each a real boundary rather than an
+// omission:
 //   * callback-taking APIs (exec's row callback, busy_handler,
 //     hooks, trace/progress, authorizer, create_function/collation)
 //     — they need C->sx function-pointer callbacks; busyTimeout and

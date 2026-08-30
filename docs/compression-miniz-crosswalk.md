@@ -97,7 +97,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_validate_mem_archive` | `zip.open(data)` followed by `Reader.validate(...)` |
 | `mz_zip_writer_add_cfile` | The `FILE *` source adapter is replaced by `zip.Source` plus `Writer.addSource`, or by `Writer.addFile` for paths |
 | `mz_zip_writer_add_file` | `zip.Writer.addFile(name, path, options)` |
-| `mz_zip_writer_add_from_zip_reader` | `zip.Writer.addFrom(source_reader, index)` transfers an entry of a valid archive without recompressing it |
+| `mz_zip_writer_add_from_zip_reader` | `zip.Writer.addFrom(source, index)` transfers an entry of a valid archive without recompressing it |
 | `mz_zip_writer_add_mem` | `zip.Writer.add(name, data)` |
 | `mz_zip_writer_add_mem_ex` | Ordinary uncompressed input maps to `zip.Writer.add(name, data, EntryOptions)`; arbitrary caller-supplied precompressed payload plus uncompressed size/CRC has no public path, while valid archive transfer uses `addFrom` |
 | `mz_zip_writer_add_mem_ex_v2` | `EntryOptions.extra`, `centralExtra`, metadata, descriptor, method, and level cover the ordinary-input form; there is no path for arbitrary precompressed input with a caller-supplied size and CRC |
@@ -107,12 +107,12 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_writer_finalize_heap_archive` | `zip.Writer.finish(comment)` followed by ownership-transferring `take()` |
 | `mz_zip_writer_init` | `zip.Writer.initSink(target)` maps only `existing_size == 0`; the C callback writer's nonzero existing logical-size contract has no public SX equivalent |
 | `mz_zip_writer_init_cfile` | Borrowed `FILE *` output is replaced by `zip.Sink` or `Writer.initFile`; no C handle leaks through stdlib |
-| `mz_zip_writer_init_file` | `zip.Writer.initFile(path, size_to_reserve_at_beginning)`, which keeps the reserve-prefix argument |
-| `mz_zip_writer_init_file_v2` | `zip.Writer.initFile(path, reserve, zip64, alloc)`, which keeps prefix reservation and forced ZIP64; other C flags map only where a typed `Writer` operation exists |
+| `mz_zip_writer_init_file` | `zip.Writer.initFile(path, .{ reserve = n })` |
+| `mz_zip_writer_init_file_v2` | `zip.Writer.initFile(path, .{ reserve = n, zip64 = z }, alloc)`; other C flags map only where a typed `Writer` operation exists |
 | `mz_zip_writer_init_from_reader` | True in-place file conversion/append maps to `zip.Writer.appendFile(path)`; `Writer.fromReader(reader)` instead creates a separate memory copy and is not the same storage transition |
 | `mz_zip_writer_init_from_reader_v2` | `zip.Writer.appendFile(path, forceZip64, ...)` is the true file-append mapping; `fromReader` is the separate memory-copy alternative |
-| `mz_zip_writer_init_heap` | Memory output maps to `zip.Writer.init()` plus `reservePrefix(size_to_reserve_at_beginning)`; the C initial-allocation-capacity hint has no public equivalent |
-| `mz_zip_writer_init_heap_v2` | `zip.Writer.init(zip64)` plus `reservePrefix(size_to_reserve_at_beginning)`; there is no initial-capacity hint |
+| `mz_zip_writer_init_heap` | Memory output maps to `zip.Writer.init()` plus `reservePrefix(size)`; the C initial-allocation-capacity hint has no public equivalent |
+| `mz_zip_writer_init_heap_v2` | `zip.Writer.init(.{ zip64 = z })` plus `reservePrefix(size)`; there is no initial-capacity hint |
 | `mz_zip_writer_init_v2` | `zip.Writer.initSink(target, zip64)` maps only zero `existing_size`; typed operations replace supported flags, but no public operation adopts a pre-existing callback-output prefix |
 | `mz_zip_zero_struct` | By-value constructors produce valid initialized `Reader`/`Writer` values; zeroed invalid C state has no spelling |
 | `tdefl_compress` | Internal. `std.internal.compress.Deflater.stepFlush` is the resumable state machine behind the public encoders |

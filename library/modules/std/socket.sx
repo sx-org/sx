@@ -1,13 +1,12 @@
 // POSIX socket module — per-OS.
 //
-// The sockaddrIn layout, the SOL_SOCKET / SO_REUSEADDR option codes, the
-// fcntl O_NONBLOCK bit, the errno values, and the errno-slot symbol all differ
-// between darwin (BSD) and Linux-family libcs (glibc/musl/bionic). Each is
-// branched on `@host.os` below, in two independent top-level `inline if` blocks.
-// An unsupported target (e.g. windows) matches
-// NEITHER block, so
-// `SockAddr` / `O_NONBLOCK` / `errno_slot` / … stay undefined and the first use
-// is a loud compile error — never a silent darwin-default fallback.
+// The sockaddrIn layout, the SOL_SOCKET / SO_REUSEADDR option codes, and the
+// fcntl O_NONBLOCK bit differ between darwin (BSD) and Linux-family libcs
+// (glibc/musl/bionic). Each is branched on `@host.os` below, in two independent
+// top-level `inline if` blocks. An unsupported target (e.g. windows) matches
+// NEITHER block, so `SockAddr` / `O_NONBLOCK` / `sockaddrIn` / … stay undefined
+// and the first use is a loud compile error — never a silent darwin-default
+// fallback.
 //
 // The darwin path runs on the macOS host; the linux path is IR-locked
 // cross-target by examples (the `.build` `target` sidecar) and exercised by a

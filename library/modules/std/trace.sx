@@ -46,9 +46,10 @@ spaces :: (n: i32) -> string {
 
 // The error-trace buffer C API (library/vendors/sx_trace_runtime/sx_trace.c),
 // linked in for the JIT and auto-injected for AOT when traces are used.
-// `frame_at` returns the raw stored `u64`; `__trace_resolve_frame` turns it
-// into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in compiled code, or
-// by resolving the packed `(func_id, span.start)` in the comptime interpreter.
+// `sx_trace_frame_at` returns the raw stored `u64`; `__trace_resolve_frame`
+// turns it into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in
+// compiled code, or by resolving the packed `(func_id, span.start)` in the
+// comptime interpreter.
 sx_trace_len       :: () -> u32 extern;
 sx_trace_truncated :: () -> u32 extern;
 sx_trace_frame_at  :: (i: u32) -> u64 extern;

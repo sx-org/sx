@@ -75,7 +75,7 @@ main :: () -> i32 {
     print("throughType zero={} doubles={} counted={}\n", zero(n, a, b, c), doubles(n, x, 2.5, narrow), counted(3, p, q, r));
     print("throughReader sx={}\n", ownThrough(reader, 3, p, q, r));
 
-    print("sum_all_type={}\n", @typeName(SumAll));
+    print("sumAllType={}\n", @typeName(SumAll));
     print("tallyType={}\n", @typeName(Tally));
     print("relayType={}\n", @typeName(Relay));
     print("tallyIsFixed={}\n", Tally == Fixed);

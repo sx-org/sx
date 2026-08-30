@@ -1,6 +1,5 @@
-// Nothing here imports `modules/std/target.sx`, so `OperatingSystem` is
-// absent from the type table and the match compares the target's variant
-// NAME.
+// Nothing here imports `modules/std/target.sx`, so `OperatingSystem` is absent
+// from the type table and the match compares the target's variant NAME.
 @import "modules/std.sx";
 
 inline if @host.isSimulator {

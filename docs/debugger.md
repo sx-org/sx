@@ -167,8 +167,8 @@ push-then-clear and leave no residue — the steady state mirrors Zig's.
 ```
 error return trace (most recent call last):
   parse at parse.sx:12:5
-     if !is_digit(s[0]) raise .BadDigit;
-                        ^
+     if !isDigit(s[0]) raise .BadDigit;
+                       ^
   run   at main.sx:20:9
      v := try parse(s);
           ^

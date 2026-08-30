@@ -120,8 +120,8 @@ main :: () -> ! {
 
     report("max-round-trips",        survives(f64.max, arena));
     report("min-round-trips",        survives(f64.min, arena));
-    report("min-normal-round-trips", survives(f64.min_positive, arena));
-    report("true-min-round-trips",   survives(f64.true_min, arena));
+    report("min-normal-round-trips", survives(f64.minPositive, arena));
+    report("true-min-round-trips",   survives(f64.trueMin, arena));
     report("epsilon-round-trips",    survives(f64.epsilon, arena));
     report("one-round-trips",        survives(1.0, arena));
     print("=== DONE ===\n");

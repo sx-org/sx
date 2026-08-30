@@ -188,7 +188,7 @@ test "TypeResolver.isIntLimitField: the two limits an integer carries" {
 
 test "TypeResolver.isLimitField: the accessor set, nothing else" {
     // The full numeric-limit surface — int .min/.max plus the float-only ones.
-    for ([_][]const u8{ "min", "max", "epsilon", "min_positive", "true_min", "inf", "nan" }) |f| {
+    for ([_][]const u8{ "min", "max", "epsilon", "minPositive", "trueMin", "inf", "nan" }) |f| {
         try std.testing.expect(TypeResolver.isLimitField(f));
     }
     // Ordinary fields / near-misses are not limit accessors.
@@ -210,18 +210,18 @@ test "TypeResolver.floatLimitFor: pinned f64 bit patterns" {
     try std.testing.expectEqual(@as(u64, 0x7FEFFFFFFFFFFFFF), L.bits("f64", "max"));
     try std.testing.expectEqual(@as(u64, 0xFFEFFFFFFFFFFFFF), L.bits("f64", "min")); // -max
     try std.testing.expectEqual(@as(u64, 0x3CB0000000000000), L.bits("f64", "epsilon"));
-    try std.testing.expectEqual(@as(u64, 0x0010000000000000), L.bits("f64", "min_positive"));
-    try std.testing.expectEqual(@as(u64, 0x0000000000000001), L.bits("f64", "true_min"));
+    try std.testing.expectEqual(@as(u64, 0x0010000000000000), L.bits("f64", "minPositive"));
+    try std.testing.expectEqual(@as(u64, 0x0000000000000001), L.bits("f64", "trueMin"));
     try std.testing.expectEqual(@as(u64, 0x7FF0000000000000), L.bits("f64", "inf"));
-    // .min = -max (NOT C's DBL_MIN, which is min_positive); the ordering holds.
+    // .min = -max (NOT C's DBL_MIN, which is minPositive); the ordering holds.
     const v = struct {
         fn f(name: []const u8, field: []const u8) f64 {
             return TypeResolver.floatLimitFor(name, field).?;
         }
     };
     try std.testing.expectEqual(v.f("f64", "min"), -v.f("f64", "max"));
-    try std.testing.expect(v.f("f64", "true_min") < v.f("f64", "min_positive"));
-    try std.testing.expect(v.f("f64", "true_min") > 0.0);
+    try std.testing.expect(v.f("f64", "trueMin") < v.f("f64", "minPositive"));
+    try std.testing.expect(v.f("f64", "trueMin") > 0.0);
     try std.testing.expect(std.math.isInf(v.f("f64", "inf")));
     // Quiet NaN: unequal to itself; exact mantissa bits intentionally not pinned.
     try std.testing.expect(std.math.isNan(v.f("f64", "nan")));
@@ -238,8 +238,8 @@ test "TypeResolver.floatLimitFor: pinned f32 bit patterns (widened value narrows
     try std.testing.expectEqual(@as(u32, 0x7F7FFFFF), L.bits("f32", "max"));
     try std.testing.expectEqual(@as(u32, 0xFF7FFFFF), L.bits("f32", "min")); // -max
     try std.testing.expectEqual(@as(u32, 0x34000000), L.bits("f32", "epsilon"));
-    try std.testing.expectEqual(@as(u32, 0x00800000), L.bits("f32", "min_positive"));
-    try std.testing.expectEqual(@as(u32, 0x00000001), L.bits("f32", "true_min"));
+    try std.testing.expectEqual(@as(u32, 0x00800000), L.bits("f32", "minPositive"));
+    try std.testing.expectEqual(@as(u32, 0x00000001), L.bits("f32", "trueMin"));
     try std.testing.expectEqual(@as(u32, 0x7F800000), L.bits("f32", "inf"));
     const nan_v: f32 = @floatCast(TypeResolver.floatLimitFor("f32", "nan").?);
     try std.testing.expect(std.math.isNan(nan_v));

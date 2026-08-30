@@ -102,13 +102,13 @@ main :: () {
     // Explicit escape: `xx` / `cast` always truncate, integral or not —
     // including a non-integral const EXPRESSION (`xx (M + 0.5)` → 2), a
     // non-integral float-const-LEAF expression (`xx (F + 0.25)` → 2), a
-    // non-integral numeric-limit expr (`xx (f64.true_min + 0.5)` → 0), and a
+    // non-integral numeric-limit expr (`xx (f64.trueMin + 0.5)` → 0), and a
     // non-integral float `%` (`xx (5.5 % 2.0)` → 1).
     e : i64 = xx 4.9;
     c : i64 = 1.5.(i64);
     xc : i64 = xx (M + 0.5);
     xf : i64 = xx (F + 0.25);
-    xl : i64 = xx (f64.true_min + 0.5);
+    xl : i64 = xx (f64.trueMin + 0.5);
     xm : i64 = xx (5.5 % 2.0);
     xd : i64 = xx (5.0 / 2.0);   // non-integral float DIVISION → truncates to 2
     print("xx={} cast={} xxExpr={} xxFlt={} xxLimit={} xxMod={} xxDiv={}\n", e, c, xc, xf, xl, xm, xd);

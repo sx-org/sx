@@ -180,7 +180,7 @@ pub const ExprTyper = struct {
                     }
                 }
                 // Numeric-limit accessor: `<Type>.min`/`.max` (int or float) or a
-                // float-only `.epsilon`/`.min_positive`/`.true_min`/`.inf`/`.nan`
+                // float-only `.epsilon`/`.minPositive`/`.trueMin`/`.inf`/`.nan`
                 // is a comptime const of the queried type — mirrors the
                 // lowerFieldAccess intercept so inference reports the same type
                 // (without it the const would be mistyped, e.g. boxed into an Any
