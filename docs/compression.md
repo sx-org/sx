@@ -51,8 +51,9 @@ the call, defaulting to `context.allocator`. Release `result.ptr` through that
 same allocator. An allocating operation never uses a null string as its public
 failure result; allocation failure uses the error channel.
 
-Functions ending in `_into` initialize a prefix of caller-owned storage and
-return a borrowed slice into that storage. Do not deallocate that slice.
+Functions whose names end in `Into` initialize a prefix of caller-owned
+storage and return a borrowed slice into that storage. Do not deallocate
+that slice.
 
 Decoding and extraction operations default to a 1 GiB output limit. Pass a
 smaller application-specific limit for untrusted input. ZIP source/file opens
@@ -134,7 +135,7 @@ from compression failure.
 `zip.open` and `zip.openEmbedded` borrow their input archive bytes. Those
 bytes must outlive the `zip.Reader`. Entries and their name/comment/extra
 views borrow the reader. `extract` and `extractCompressed` return owned
-storage; `_into` variants return borrowed caller-buffer prefixes.
+storage; `Into` variants return borrowed caller-buffer prefixes.
 
 For bounded random-access input, implement `zip.Source`:
 
