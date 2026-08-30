@@ -32,7 +32,7 @@ hold :: (content: $B/@BuildBlock(Drawable)) {
 
 // The refusal is on the TYPE, not on the spelling: an expression that yields a
 // block is refused where a bare name is.
-hold_indirect :: (flag: bool, content: $B/@BuildBlock(Drawable)) {
+holdIndirect :: (flag: bool, content: $B/@BuildBlock(Drawable)) {
     saved := if flag { content } else { content };
     kept : B = content;
 }
@@ -51,7 +51,7 @@ reach :: (content: $B/@BuildBlock(Drawable)) {
 
 main :: () -> i32 {
     hold() { Label{ text = "a" }; };
-    hold_indirect(true) { Label{ text = "a2" }; };
+    holdIndirect(true) { Label{ text = "a2" }; };
     _l := leak() { Label{ text = "b" }; };
     capture() { Label{ text = "c" }; };
     reach() { Label{ text = "d" }; };

@@ -14,13 +14,13 @@ Holder :: struct {
     }
 
     // Direct invocation through *self.
-    call_direct :: (self: *Holder) {
+    callDirect :: (self: *Holder) {
         if self.has == false { return; }
         self.cb();
     }
 
     // Hoist-then-call form — must agree with the direct form.
-    call_hoisted :: (self: *Holder) {
+    callHoisted :: (self: *Holder) {
         if self.has == false { return; }
         fn := self.cb;
         fn();
@@ -33,8 +33,8 @@ main :: () -> i32 {
     h : Holder = .{};
     h.set(|| { ticks += 1; });
 
-    h.call_direct();
-    h.call_hoisted();
+    h.callDirect();
+    h.callHoisted();
 
     return ticks;
 }

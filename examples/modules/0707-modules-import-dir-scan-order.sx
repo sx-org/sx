@@ -2,11 +2,11 @@
 //
 // When a directory is imported, the resolver iterates files
 // alphabetically. Inside the directory, `aaa_uses.sx` comes BEFORE
-// `types.sx` but its `make_my` returns `MyEnum` (defined in
+// `types.sx` but its `makeMy` returns `MyEnum` (defined in
 // `types.sx`). The combined directory module must put `aaa_uses.sx`'s
 // transitive imports (which include `MyEnum`) into the global scan
 // stream BEFORE `aaa_uses.sx`'s own decls so the tagged_union for
-// MyEnum is registered before `make_my`'s return type is resolved.
+// MyEnum is registered before `makeMy`'s return type is resolved.
 //
 // Appending each file's `own_decls` before its `decls` inverts that order and
 // registers `MyEnum` as a placeholder struct via the `resolveTypeName`
@@ -18,7 +18,7 @@
 @import "0707-modules-import-dir-scan-order";
 
 main :: () -> i32 {
-    e := make_my();
+    e := makeMy();
     match e {
         case .a: { print("a\n"); }
         case .b: |v| { print("b={}\n", v); }

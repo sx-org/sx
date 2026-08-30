@@ -23,16 +23,16 @@ Coll :: struct {
     m :: (self: *Coll, v: i64) -> i64 { v * 2 + self.m }
 }
 
-make_coll :: () -> Coll { Coll{} }
+makeColl :: () -> Coll { Coll{} }
 
-promoted_sum :: (n: i64) -> i64 {
+promotedSum :: (n: i64) -> i64 {
     p := Peek{ secret = n };
     w : Wrap(i64) = ---;
     w.secret = n;
     p.doubled() + w.secret
 }
 
-same_file_sum :: (n: i64) -> i64 {
+sameFileSum :: (n: i64) -> i64 {
     local := Box{ secret = n };
     local.secret += 1;
     local.secret

@@ -8,5 +8,5 @@ PublicProtocol :: InternalProtocol;
 PublicAlias :: InternalAlias;
 
 PUBLIC_CONST : i64 = 22;
-public_global : i64 = 33;
-public_fn :: internal_fn;
+publicGlobal : i64 = 33;
+publicFn :: internalFn;

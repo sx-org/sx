@@ -10,6 +10,6 @@
 @import "0758-modules-same-name-struct-mutual-ref/b.sx";
 
 main :: () -> i32 {
-    print("b={}\n", b_test());
+    print("b={}\n", bTest());
     0
 }

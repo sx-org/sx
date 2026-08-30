@@ -13,11 +13,11 @@ Show :: interface { fmt :: (self: *Self) -> i64; }
 Dot :: struct { n: i64; }
 Bar :: struct { n: i64; }
 
-pick_list :: () -> [2]Type {
+pickList :: () -> [2]Type {
     return .[Dot, Bar];
 }
 
-inline for T in @run pick_list() {
+inline for T in @run pickList() {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
 }
 

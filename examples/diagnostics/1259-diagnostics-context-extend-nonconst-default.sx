@@ -3,8 +3,8 @@
 // initialize it, and the serializer rejects it rather than zero-filling the field.
 @import "modules/std.sx";
 
-now_ms :: () -> i64 { return 42; }
+nowMs :: () -> i64 { return 42; }
 
-@context.extend started_at: i64 = now_ms();
+@context.extend startedAt: i64 = nowMs();
 
 main :: () {}

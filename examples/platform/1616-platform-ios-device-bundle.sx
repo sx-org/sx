@@ -39,7 +39,7 @@ configure :: () {
 // IMP for application:didFinishLaunchingWithOptions:
 //   Obj-C: -(BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts
 //   Type encoding: "c@:@@"  -- BOOL (signed char), self, _cmd, id, id
-did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
+didFinishLaunching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
     NSLog(nsstring("[sx-device-probe] launched\n"));
     return 1; // YES
 }
@@ -49,7 +49,7 @@ main :: () -> i32 {
     SxAppDelegate := objc_allocateClassPair(UIResponder, "SxAppDelegate".ptr, 0);
 
     sel := sel_registerName("application:didFinishLaunchingWithOptions:".ptr);
-    class_addMethod(SxAppDelegate, sel, xx did_finish_launching, "c@:@@".ptr);
+    class_addMethod(SxAppDelegate, sel, xx didFinishLaunching, "c@:@@".ptr);
 
     objc_registerClassPair(SxAppDelegate);
 

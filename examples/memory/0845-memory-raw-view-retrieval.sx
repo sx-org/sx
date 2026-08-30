@@ -16,7 +16,7 @@ Sizable :: interface { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
-take_raw :: (r: @Protocol) -> *void { r.ctx }
+takeRaw :: (r: @Protocol) -> *void { r.ctx }
 
 main :: () {
     // closure -> @Closure, both spellings
@@ -48,7 +48,7 @@ main :: () {
     print("inline typeId: {}\n", a.(@Protocol).typeId == @typeOf(a));
 
     // a real constructed value: passes through call args
-    print("arg: {}\n", take_raw(a.(@Protocol)) == *ga);
+    print("arg: {}\n", takeRaw(a.(@Protocol)) == *ga);
 
     // parity with the typed ctx-pointer recovery
     p : *void = xx a;

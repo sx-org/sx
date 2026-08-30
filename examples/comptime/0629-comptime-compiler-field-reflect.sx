@@ -25,13 +25,13 @@ Pair  :: struct { lo: Point; hi: Point; }
 
 pair    :: @run rawFindType(rawIntern("Pair"));
 n       :: @run rawFieldCount(rawFindType(rawIntern("Pair")));
-f0_name :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 0));
-f1_name :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 1));
+f0Name  :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 0));
+f1Name  :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("Pair")), 1));
 // field 0's type is `Point` — read its nominal name through the type handle.
-f0_type :: @run rawTextOf(rawTypeName(rawFieldType(rawFindType(rawIntern("Pair")), 0)));
+f0Type :: @run rawTextOf(rawTypeName(rawFieldType(rawFindType(rawIntern("Pair")), 0)));
 
 main :: () {
     print("Pair has {} fields\n", n);
-    print("field 0 = {} : {}\n", f0_name, f0_type);
-    print("field 1 = {} : {}\n", f1_name, f0_type);
+    print("field 0 = {} : {}\n", f0Name, f0Type);
+    print("field 1 = {} : {}\n", f1Name, f0Type);
 }

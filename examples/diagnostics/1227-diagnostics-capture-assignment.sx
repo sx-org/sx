@@ -17,7 +17,7 @@ E :: error { Bad; Empty }
 
 must :: (n: i32) -> !E { if n == 0 { raise .Empty; } return; }
 
-pack_mut :: (..xs: i64) {
+packMut :: (..xs: i64) {
     inline for x in xs { x = 999; }          // pack-element alias — immutable
 }
 
@@ -47,8 +47,8 @@ main :: () -> i32 {
     // 4. catch error binding
     must(0) catch |e| { e = .Bad; };
 
-    // 5. inline-for pack-element alias (in pack_mut above)
-    pack_mut(1, 2, 3);
+    // 5. inline-for pack-element alias (in packMut above)
+    packMut(1, 2, 3);
 
     // 6. multi-assign spelling — capture on the LHS
     a := 0;

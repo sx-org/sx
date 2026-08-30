@@ -19,41 +19,41 @@ impl Plain for Doubler { plain :: (self: *Doubler) -> i64 { self.k + 1 } }
 Tripler :: struct { k: i64; }
 impl Sink for Tripler { emit :: (self: *Tripler, n: i64) -> i64 { n * self.k + 1 } }
 
-the_sink : Doubler = .{ k = 3 };
-the_mark : Doubler = .{ k = 9 };
+theSink : Doubler = .{ k = 3 };
+theMark : Doubler = .{ k = 9 };
 loud : Tripler = .{ k = 7 };
 
-@context.extend sink: Sink = the_sink;
-@context.extend note: Mark = xx the_mark;
+@context.extend sink: Sink = theSink;
+@context.extend note: Mark = xx theMark;
 
 // An ordinary global takes the same static form at either vtable spelling —
 // the Context is one client of the fold, not a special case.
-standing : Plain = the_mark;
+standing : Plain = theMark;
 
 // The same body either side of the phase line: the comptime evaluation reads
 // the VM's copy of the default context and dispatches against the conformer
 // the handle carries; the runtime call goes through the vtable slot.
-through_default :: () -> i64 { context.sink.emit(5) + context.note.mark() }
+throughDefault :: () -> i64 { context.sink.emit(5) + context.note.mark() }
 
 // A `push` installs another conformer of the same protocol; the dispatch
 // inside follows the value, not the declaration.
-through_push :: () -> i64 {
+throughPush :: () -> i64 {
     push .{ sink = loud } { return context.sink.emit(5); }
 }
 
 // The borrowed referent is the declared global itself, so a write through it
 // is visible to the next dispatch — the fold is a borrow, not a copy.
 retuned :: () -> i64 {
-    the_sink.k = 4;
+    theSink.k = 4;
     return context.sink.emit(5);
 }
 
-CT :: @run through_default();
-CT_PUSH :: @run through_push();
+CT :: @run throughDefault();
+CT_PUSH :: @run throughPush();
 
 main :: () {
-    print("{} {}\n", CT, through_default());
-    print("{} {}\n", CT_PUSH, through_push());
+    print("{} {}\n", CT, throughDefault());
+    print("{} {}\n", CT_PUSH, throughPush());
     print("{}\n", retuned());
     print("{}\n", standing.plain());
 }

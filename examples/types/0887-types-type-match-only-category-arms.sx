@@ -5,7 +5,7 @@
 
 ParseErr :: error { BadDigit; Overflow };
 
-only_opt :: (t: Type) -> string {
+onlyOpt :: (t: Type) -> string {
     match t {
         case optional: return "optional";
         else:          return "other";
@@ -13,7 +13,7 @@ only_opt :: (t: Type) -> string {
     "unreached"
 }
 
-only_err :: (t: Type) -> string {
+onlyErr :: (t: Type) -> string {
     match t {
         case error: return "error";
         else:           return "other";
@@ -34,9 +34,9 @@ mixed :: (t: Type) -> string {
 
 main :: () {
     o : ?i64 = 5;
-    print("only optional: {}\n", only_opt(@typeOf(o)));
-    print("only error: {}\n", only_err(ParseErr));
-    print("only neg: {}\n", only_opt(i64));
+    print("only optional: {}\n", onlyOpt(@typeOf(o)));
+    print("only error: {}\n", onlyErr(ParseErr));
+    print("only neg: {}\n", onlyOpt(i64));
     print("mixed opt: {}\n", mixed(@typeOf(o)));
     print("mixed err: {}\n", mixed(ParseErr));
     print("mixed void: {}\n", mixed(void));

@@ -14,7 +14,7 @@ ui :: @import "modules/ui/types.sx";
 foundation :: @import "modules/ui/render.sx";
 
 // A reader written in the foundation's terms, which never mentions compose.
-count_text :: (tree: *foundation.RenderTree) -> i64 {
+countText :: (tree: *foundation.RenderTree) -> i64 {
     n := 0;
     for node in tree.nodes {
         if node.type == .text { n += 1; }
@@ -36,7 +36,7 @@ main :: () -> i32 {
     for n in tree.nodes {
         print("{} {}x{}\n", n.type, n.frame.size.width, n.frame.size.height);
     }
-    print("text nodes {}\n", count_text(*tree));
+    print("text nodes {}\n", countText(*tree));
 
     // A text node carries the size and the colour the component was given.
     label := tree.nodes.items[0];

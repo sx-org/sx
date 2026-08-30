@@ -5,7 +5,7 @@
 //
 // `WrapU` is authored only by `main`, so its union field type `Box` resolves at
 // registration (`registerUnionDecl` → the source-aware body builder) to
-// MAIN's `Box`. Accessing `w.b.m` therefore typechecks, while `dep_box` uses dep's
+// MAIN's `Box`. Accessing `w.b.m` therefore typechecks, while `depBox` uses dep's
 // DISTINCT `Box { a }`.
 //
 // The union field is main's own `Box`, `w.b.m` resolves, exit 0.
@@ -20,6 +20,6 @@ WrapU :: union { b: Box; n: i32; }
 main :: () -> i32 {
     w : WrapU = ---;
     w.b.m = 5;
-    print("own={} dep={}\n", w.b.m, dep_box());
+    print("own={} dep={}\n", w.b.m, depBox());
     0
 }

@@ -8,7 +8,7 @@
 
 EXACT_PATH :: ".sx-tmp/bench-compress/sx-exact.matrix";
 
-strategy_at :: (index: i64) -> compress.Strategy {
+strategyAt :: (index: i64) -> compress.Strategy {
     if index == 1 { return .filtered; }
     if index == 2 { return .huffmanOnly; }
     if index == 3 { return .rle; }
@@ -16,7 +16,7 @@ strategy_at :: (index: i64) -> compress.Strategy {
     .default
 }
 
-strategy_name :: (index: i64) -> string {
+strategyName :: (index: i64) -> string {
     if index == 1 { return "filtered"; }
     if index == 2 { return "huffman_only"; }
     if index == 3 { return "rle"; }
@@ -24,7 +24,7 @@ strategy_name :: (index: i64) -> string {
     "default"
 }
 
-append_record :: (corpus: i64, level: i64, strategy: i64, packed: string) -> bool {
+appendRecord :: (corpus: i64, level: i64, strategy: i64, packed: string) -> bool {
     header : [16]u8 = .[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     header[0] = corpus.(u8);
     header[1] = level.(u8);
@@ -37,19 +37,19 @@ append_record :: (corpus: i64, level: i64, strategy: i64, packed: string) -> boo
     fs.appendFile(EXACT_PATH, header[..]) and fs.appendFile(EXACT_PATH, packed)
 }
 
-run_corpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> bool {
+runCorpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> bool {
     level := 0;
     while level <= 10 {
         strategy := 0;
         while strategy < 5 {
             options : compress.Options = .{
                 level = level,
-                strategy = strategy_at(strategy),
+                strategy = strategyAt(strategy),
             };
             packed := zlib.encode(data, options, alloc) catch { return false; };
             print("exact corpus={} level={} strategy={} packed={}\n",
-                label, level, strategy_name(strategy), packed.len);
-            ok := append_record(corpus, level, strategy, packed);
+                label, level, strategyName(strategy), packed.len);
+            ok := appendRecord(corpus, level, strategy, packed);
             alloc.deallocBytes(packed.ptr);
             if !ok { return false; }
             strategy += 1;
@@ -71,7 +71,7 @@ main :: () -> i32 {
         data.ptr[i] = ('a' + ((i / 97 + i) % 11)).(u8);
         i += 1;
     }
-    ok := run_corpus("repetitive", 0, data, gpa);
+    ok := runCorpus("repetitive", 0, data, gpa);
 
     state := 0x12345678;
     i = 0;
@@ -82,7 +82,7 @@ main :: () -> i32 {
         data.ptr[i] = (state & 0xff).(u8);
         i += 1;
     }
-    if ok { ok = run_corpus("incompressible", 1, data, gpa); }
+    if ok { ok = runCorpus("incompressible", 1, data, gpa); }
 
     gpa.deallocBytes(raw);
     if !ok or gpa.allocCount != 0 { return 1; }

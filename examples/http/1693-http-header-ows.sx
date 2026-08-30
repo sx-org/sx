@@ -29,7 +29,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("got:", req.body);
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -51,7 +51,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-count_occurrences :: (hay: string, needle: string) -> i64 {
+countOccurrences :: (hay: string, needle: string) -> i64 {
     n : i64 = 0;
     i := 0;
     while i + needle.len <= hay.len {
@@ -74,18 +74,18 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
     return false;   // unreachable — the loop above always returns
 }
 
-// Send `first`; if wait_for is set, tick until it shows; send `second`;
+// Send `first`; if waitFor is set, tick until it shows; send `second`;
 // read to EOF.
-staged :: (srv: *http.Server, first: string, second: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+staged :: (srv: *http.Server, first: string, second: string, waitFor: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, first.ptr, first.len);
     total : i64 = 0;
-    if wait_for.len > 0 {
+    if waitFor.len > 0 {
         spins : i64 = 0;
         while spins < 400 {
             if drain(srv, fd, buf, cap, *total) { break; }
-            if contains(string{ ptr = buf, len = total }, wait_for) { break; }
+            if contains(string{ ptr = buf, len = total }, waitFor) { break; }
             spins += 1;
         }
     }
@@ -142,7 +142,7 @@ main :: () -> i32 {
             "body", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 100 Continue", "Expect-ows interim", *failed);
         check(r, "got:body", "Expect-ows echo", *failed);
-        if count_occurrences(r, "100 Continue") != 1 {
+        if countOccurrences(r, "100 Continue") != 1 {
             print("Expect-ows: expected exactly one 100\n");
             failed = 1;
         }

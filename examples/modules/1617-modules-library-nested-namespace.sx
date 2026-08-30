@@ -4,7 +4,7 @@
 b :: @import "1617-modules-library-nested-namespace/b.sx";
 
 main :: () -> i32 {
-    v := b.version_via_b();
+    v := b.versionViaB();
     print("pcap version non-empty: {}\n", v.len > 0);
     return 0;
 }

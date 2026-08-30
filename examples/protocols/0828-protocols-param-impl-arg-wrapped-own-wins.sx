@@ -26,6 +26,6 @@ impl Tagged(*Box) for Holder {
 
 main :: () -> i32 {
     h : Holder = .{ n = 7 };
-    print("tag={} dep={}\n", h.tag(), dep_box());
+    print("tag={} dep={}\n", h.tag(), depBox());
     0
 }

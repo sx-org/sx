@@ -8,7 +8,7 @@ Box :: struct {
     boxed :: (self: Box) -> i64 { self.v }   // value receiver
 }
 
-sum_ptr :: (xs: *List(i64)) -> i64 {
+sumPtr :: (xs: *List(i64)) -> i64 {
     total : i64 = 0;
     for n in xs { total = total + n; }         // iterate through a *List
     total
@@ -29,7 +29,7 @@ main :: () -> i32 {
     for n in xs { s = s + n; }
     print("sum2 {}\n", s);                     // 360
 
-    print("via ptr {}\n", sum_ptr(*xs));       // 360
+    print("via ptr {}\n", sumPtr(*xs));       // 360
 
     bs := List(Box){};
     bs.append(.{ v = 7 });

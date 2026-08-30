@@ -2,5 +2,5 @@
 Q :: interface { first :: (self: *Self) -> i64; tag :: (self: *Self) -> i64; }
 Holder :: struct { v: i64; }
 impl Q for Holder { first :: (self: *Holder) -> i64 => 7; tag :: (self: *Holder) -> i64 => 200 + self.v; }
-own_first :: () -> i64 { h := Holder{ v = 1 }; x := h.(Q); return x.first(); }
-own_tag :: () -> i64 { h := Holder{ v = 1 }; x := h.(Q); return x.tag(); }
+ownFirst :: () -> i64 { h := Holder{ v = 1 }; x := h.(Q); return x.first(); }
+ownTag :: () -> i64 { h := Holder{ v = 1 }; x := h.(Q); return x.tag(); }

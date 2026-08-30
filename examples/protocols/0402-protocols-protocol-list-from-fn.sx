@@ -21,23 +21,23 @@ add :: (items: *List(Sizable), w: Leaf) {
 main :: () -> void {
     // Works: protocol value created in main, appended to list
     out("=== Created in main ===\n");
-    list_a : List(Sizable) = .{};
+    listA : List(Sizable) = .{};
     leaf := Leaf{ value = 42 };
     s := leaf.(Sizable);
-    list_a.append(s);
-    r1 := list_a.items[0].size();
+    listA.append(s);
+    r1 := listA.items[0].size();
     print("first:  {} (expected 42)\n", r1);
-    r2 := list_a.items[0].size();
+    r2 := listA.items[0].size();
     print("second: {} (expected 42)\n", r2);
 
     // The handle is created inside add(); both dispatches read the `make`
     // storage, not add()'s frame.
     out("=== Created in add() ===\n");
-    list_b : List(Sizable) = .{};
-    add(*list_b, Leaf{ value = 99 });
-    r3 := list_b.items[0].size();
+    listB : List(Sizable) = .{};
+    add(*listB, Leaf{ value = 99 });
+    r3 := listB.items[0].size();
     print("first:  {} (expected 99)\n", r3);
-    r4 := list_b.items[0].size();
+    r4 := listB.items[0].size();
     print("second: {} (expected 99)\n", r4);
 
     out("=== OK ===\n");

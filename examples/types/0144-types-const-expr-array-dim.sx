@@ -26,43 +26,43 @@ StructAlias :: [M + 1]P;      // 5, struct elements
 
 main :: () {
     // const + literal: direct and via alias resolve to the same length.
-    add_d : [M + 1]i64 = ---;
-    add_a : AddAlias = ---;
-    add_d[4] = 7;
-    add_a[4] = 7;
-    print("add direct.len={} alias.len={} d4={} a4={}\n", add_d.len, add_a.len, add_d[4], add_a[4]);
+    addD : [M + 1]i64 = ---;
+    addA : AddAlias = ---;
+    addD[4] = 7;
+    addA[4] = 7;
+    print("add direct.len={} alias.len={} d4={} a4={}\n", addD.len, addA.len, addD[4], addA[4]);
 
     // const * const.
-    mul_d : [M * N]i64 = ---;
-    mul_a : MulAlias = ---;
-    mul_d[23] = 230;
-    mul_a[23] = 230;
-    print("mul direct.len={} alias.len={} d23={} a23={}\n", mul_d.len, mul_a.len, mul_d[23], mul_a[23]);
+    mulD : [M * N]i64 = ---;
+    mulA : MulAlias = ---;
+    mulD[23] = 230;
+    mulA[23] = 230;
+    print("mul direct.len={} alias.len={} d23={} a23={}\n", mulD.len, mulA.len, mulD[23], mulA[23]);
 
     // const - const.
-    sub_d : [N - M]i64 = ---;
-    sub_a : SubAlias = ---;
-    sub_d[1] = 9;
-    sub_a[1] = 9;
-    print("sub direct.len={} alias.len={} d1={} a1={}\n", sub_d.len, sub_a.len, sub_d[1], sub_a[1]);
+    subD : [N - M]i64 = ---;
+    subA : SubAlias = ---;
+    subD[1] = 9;
+    subA[1] = 9;
+    print("sub direct.len={} alias.len={} d1={} a1={}\n", subD.len, subA.len, subD[1], subA[1]);
 
     // nested and parenthesised forms (direct vs alias).
-    nest_d : [M + N - 1]i64 = ---;
-    nest_a : NestAlias = ---;
-    paren_d : [(M + 1) * 2]i64 = ---;
-    paren_a : ParenAlias = ---;
-    print("nest direct.len={} alias.len={} paren direct.len={} alias.len={}\n", nest_d.len, nest_a.len, paren_d.len, paren_a.len);
+    nestD : [M + N - 1]i64 = ---;
+    nestA : NestAlias = ---;
+    parenD : [(M + 1) * 2]i64 = ---;
+    parenA : ParenAlias = ---;
+    print("nest direct.len={} alias.len={} paren direct.len={} alias.len={}\n", nestD.len, nestA.len, parenD.len, parenA.len);
 
     // typed const inside the expression dimension.
-    typ_d : [M + TK]i64 = ---;
-    typ_a : TypedAlias = ---;
-    print("typed direct.len={} alias.len={}\n", typ_d.len, typ_a.len);
+    typD : [M + TK]i64 = ---;
+    typA : TypedAlias = ---;
+    print("typed direct.len={} alias.len={}\n", typD.len, typA.len);
 
     // string elements (slice/pointer class) — no bus error, correct reads.
-    str_a : StrAlias = ---;
-    str_a[0] = "hi";
-    str_a[4] = "yo";
-    print("str alias.len={} i0={} i4={}\n", str_a.len, str_a[0], str_a[4]);
+    strA : StrAlias = ---;
+    strA[0] = "hi";
+    strA[4] = "yo";
+    print("str alias.len={} i0={} i4={}\n", strA.len, strA[0], strA[4]);
 
     // struct elements.
     ps : StructAlias = ---;

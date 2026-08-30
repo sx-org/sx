@@ -20,10 +20,10 @@ Label  :: struct { text: string = ""; }
 lift :: ($T: Type/@Init(Button), x: T) -> T { x }
 
 // A hand-over into a parameter whose target is fixed to `Label`.
-into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
+intoLabel :: (value: $I/@Init(Label)) -> i32 { 0 }
 
 relay :: (value: $I/@Init($T)) -> i32 {
-    into_label(value)
+    intoLabel(value)
 }
 
 // Bounds that name no single target: too many arguments, and none at all.

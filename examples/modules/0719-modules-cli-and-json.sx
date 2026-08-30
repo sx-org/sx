@@ -32,11 +32,11 @@ main :: () -> ! {
     defer arena.deinit();
 
     // ── cli.parse: dispatch <group> <command> + a value flag ─────────
-    publish_flags : []FlagSpec = .[
+    publishFlags : []FlagSpec = .[
         FlagSpec{ name = "out", takesValue = true, required = true },
     ];
     cmds : []Command = .[
-        Command{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "publish", flags = publishFlags },
         Command{ group = "ci", command = "status",  flags = .[]          },
     ];
     argv : []string = .["ci", "publish", "--out", "dist"];

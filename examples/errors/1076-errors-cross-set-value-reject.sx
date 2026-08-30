@@ -11,28 +11,28 @@
 Narrow :: error { Wide }
 Broad  :: error { Wide; Extra }
 
-broad_src :: () -> (i32, !Broad) { raise .Extra; }
+broadSrc :: () -> (i32, !Broad) { raise .Extra; }
 
-take_narrow :: (n: Narrow) -> void { print("{}\n", n); }
+takeNarrow :: (n: Narrow) -> void { print("{}\n", n); }
 
 Holder :: struct { e: Narrow; }
 
 main :: () -> i32 {
-    v, be := broad_src();
+    v, be := broadSrc();
 
     narrowed : Narrow = be;      // error: neither Broad member is in Narrow
-    take_narrow(be);             // error: same, in argument position
+    takeNarrow(be);             // error: same, in argument position
     h := Holder{ e = be };      // error: same, in field-init position
 
     short : Narrow = .Extra;     // error: Extra not in Narrow
-    take_narrow(.Extra);         // error: same, in argument position
+    takeNarrow(.Extra);         // error: same, in argument position
     hs := Holder{ e = .Extra }; // error: same, in field-init position
     if short == .Extra { return 1; }  // error: same, in comparison position
-    bad_raise() catch {};        // force bad_raise to lower
+    badRaise() catch {};        // force badRaise to lower
     return 0;
 }
 
 // A shorthand raise is membership-checked against the declared channel.
-bad_raise :: () -> !Narrow {
+badRaise :: () -> !Narrow {
     raise .Extra;                // error: Extra not in Narrow
 }

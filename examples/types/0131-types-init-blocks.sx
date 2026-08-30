@@ -92,10 +92,10 @@ main :: () {
 
     // IB4: conditional inside init block
     {
-        add_extra := true;
+        addExtra := true;
         b := Builder{ total = 0, count = 0 }.{
             self.add(10);
-            if add_extra {
+            if addExtra {
                 self.add(90);
             }
         };
@@ -104,11 +104,11 @@ main :: () {
 
     // IB5: init block + auto type erasure combined
     {
-        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        useCounter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         c0 := SimpleCounter{ val = 0 }.{
             self.val = 50;
         };
-        result := use_counter(c0.(Counter));
+        result := useCounter(c0.(Counter));
         print("IB5: {}\n", result);
     }
 
@@ -131,9 +131,9 @@ main :: () {
                 Dims{ w = size, h = size }
             }
         }
-        use_dims :: (d: Dims) { print("SM1: {} {}\n", d.w, d.h); }
-        use_dims(.create(16.0, 8.0));
-        use_dims(.square(5.0));
+        useDims :: (d: Dims) { print("SM1: {} {}\n", d.w, d.h); }
+        useDims(.create(16.0, 8.0));
+        useDims(.square(5.0));
     }
 
     // SM2: Shorthand in variable declaration with explicit type

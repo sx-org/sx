@@ -9,15 +9,15 @@
 
 __stdinp : *void extern;
 
-stdinp_addr_via_helper :: () -> u64 {
+stdinpAddrViaHelper :: () -> u64 {
     xx *__stdinp
 }
 
 main :: () -> i32 {
     direct  : u64 = xx *__stdinp;
-    via_helper := stdinp_addr_via_helper();
+    viaHelper := stdinpAddrViaHelper();
     print("direct non-null = {}\n", direct != 0);
-    print("helper non-null = {}\n", via_helper != 0);
-    print("eq              = {}\n", direct == via_helper);
+    print("helper non-null = {}\n", viaHelper != 0);
+    print("eq              = {}\n", direct == viaHelper);
     0
 }

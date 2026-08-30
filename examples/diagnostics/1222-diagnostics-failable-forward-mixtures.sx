@@ -11,33 +11,33 @@
 MyErr :: error { Boom }
 BareErr :: error { Odd; Big }
 
-pure_cal :: (x: i64) -> !MyErr {
+pureCal :: (x: i64) -> !MyErr {
     if x < 0 { raise .Boom; }
 }
 
-val_cal :: (x: i64) -> (i64, !MyErr) {
+valCal :: (x: i64) -> (i64, !MyErr) {
     if x < 0 { raise .Boom; }
     return x;
 }
 
-bare_cal :: (x: i64) -> ! {
+bareCal :: (x: i64) -> ! {
     if x < 0 { raise BareErr.Odd; }
 }
 
 // (1) pure → value-carrying: rejected (0 value slots vs 1)
 f1 :: (x: i64) -> (i64, !) {
-    return pure_cal(x);
+    return pureCal(x);
 }
 
 // (2) value-carrying → pure: rejected (1 value slot vs 0)
 f2 :: (x: i64) -> ! {
     if x > 100 { raise BareErr.Big; }
-    return val_cal(x);
+    return valCal(x);
 }
 
 // (3) bare `!` → named set: rejected (BareErr ⊄ MyErr)
 f3 :: (x: i64) -> !MyErr {
-    return bare_cal(x);
+    return bareCal(x);
 }
 
 main :: () -> i32 {

@@ -4,6 +4,6 @@
 
 __stdinp : *void extern;
 
-stdinp_addr_present :: () -> i32 {
+stdinpAddrPresent :: () -> i32 {
     1
 }

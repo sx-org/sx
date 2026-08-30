@@ -29,7 +29,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("got:", req.body);
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -51,7 +51,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-count_occurrences :: (hay: string, needle: string) -> i64 {
+countOccurrences :: (hay: string, needle: string) -> i64 {
     n : i64 = 0;
     i := 0;
     while i + needle.len <= hay.len {
@@ -75,23 +75,23 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
     return false;   // unreachable — the loop above always returns
 }
 
-// Send `first`; tick until `wait_for` shows up (or give the server 50
-// quiet ticks to prove it stays silent when wait_for is empty); send
+// Send `first`; tick until `waitFor` shows up (or give the server 50
+// quiet ticks to prove it stays silent when waitFor is empty); send
 // `second`; give the server 20 more ticks (a need-more read cycle over
 // the partial body — a duplicate interim would surface here); send
 // `third`; read to EOF. The whole wire exchange — interim + final
 // response — lands in buf. Empty pieces are skipped.
-staged :: (srv: *http.Server, first: string, second: string, third: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+staged :: (srv: *http.Server, first: string, second: string, third: string, waitFor: string, buf: [*]u8, cap: i64) -> string {
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, first.ptr, first.len);
     total : i64 = 0;
     // Phase 1: wait for the interim (or prove silence).
-    if wait_for.len > 0 {
+    if waitFor.len > 0 {
         spins : i64 = 0;
         while spins < 400 {
             if drain(srv, fd, buf, cap, *total) { break; }   // early EOF (a reject)
-            if contains(string{ ptr = buf, len = total }, wait_for) { break; }
+            if contains(string{ ptr = buf, len = total }, waitFor) { break; }
             spins += 1;
         }
     } else {
@@ -133,8 +133,8 @@ check :: (r: string, frag: string, label: string, failed: *i64) {
     }
 }
 
-check_no_100 :: (r: string, label: string, failed: *i64) {
-    if count_occurrences(r, "100 Continue") != 0 {
+checkNo100 :: (r: string, label: string, failed: *i64) {
+    if countOccurrences(r, "100 Continue") != 0 {
         print("{}: unexpected 100 Continue\n", label);
         failed.* = 1;
     }
@@ -161,7 +161,7 @@ main :: () -> i32 {
             "hello", "world", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 100 Continue", "CL staged interim", *failed);
         check(r, "got:helloworld", "CL staged echo", *failed);
-        if count_occurrences(r, "100 Continue") != 1 {
+        if countOccurrences(r, "100 Continue") != 1 {
             print("CL staged: expected exactly one 100\n");
             failed = 1;
         }
@@ -171,7 +171,7 @@ main :: () -> i32 {
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 2048\r\nConnection: close\r\n\r\n",
             "", "", "", rbuf, cap);
         check(r, "HTTP/1.1 413", "over-max final status", *failed);
-        check_no_100(r, "over-max", *failed);
+        checkNo100(r, "over-max", *failed);
 
         // (c) body already complete in one shot → no 100, straight to 200
         r = staged(*srv,
@@ -179,7 +179,7 @@ main :: () -> i32 {
             "", "", "", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "one-shot status", *failed);
         check(r, "got:abc", "one-shot echo", *failed);
-        check_no_100(r, "one-shot", *failed);
+        checkNo100(r, "one-shot", *failed);
 
         // (d) HTTP/1.0: the expectation is ignored — no 100, still served
         r = staged(*srv,
@@ -187,14 +187,14 @@ main :: () -> i32 {
             "hi", "", "", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "1.0 status", *failed);
         check(r, "got:hi", "1.0 echo", *failed);
-        check_no_100(r, "1.0", *failed);
+        checkNo100(r, "1.0", *failed);
 
         // (e) an unsupported expectation on 1.1 → 417
         r = staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: whatever\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
             "", "", "", rbuf, cap);
         check(r, "HTTP/1.1 417", "unsupported expectation", *failed);
-        check_no_100(r, "unsupported expectation", *failed);
+        checkNo100(r, "unsupported expectation", *failed);
 
         // (f) chunked framing: headers → one 100 → chunked body → 200 echo
         r = staged(*srv,
@@ -202,7 +202,7 @@ main :: () -> i32 {
             "3\r\nabc\r\n", "0\r\n\r\n", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 100 Continue", "chunked interim", *failed);
         check(r, "got:abc", "chunked echo", *failed);
-        if count_occurrences(r, "100 Continue") != 1 {
+        if countOccurrences(r, "100 Continue") != 1 {
             print("chunked: expected exactly one 100\n");
             failed = 1;
         }

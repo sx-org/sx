@@ -8,4 +8,4 @@ inline if @host.pointerSize == 8 {
     Slot :: struct { a: i32; }
 }
 
-gated_size :: () -> i64 { @sizeOf(Slot) }
+gatedSize :: () -> i64 { @sizeOf(Slot) }

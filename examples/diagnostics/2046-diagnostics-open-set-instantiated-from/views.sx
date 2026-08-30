@@ -16,4 +16,4 @@ Label :: @OpenVariant(View) {
 into :: ($T: Type, x: $S) -> T => x;
 
 // One more hop, so the note has a chain to walk back through.
-into_view :: (x: $S) -> View => into(View, x);
+intoView :: (x: $S) -> View => into(View, x);

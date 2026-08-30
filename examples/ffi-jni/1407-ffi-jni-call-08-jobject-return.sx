@@ -11,15 +11,15 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-get_window :: (env: *void, activity: *void) -> *void {
+getWindow :: (env: *void, activity: *void) -> *void {
     @JniCall(*void, env, activity, "getWindow", "()Landroid/view/Window;")
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := get_window(null, null);
+    if gShouldCall {
+        _ := getWindow(null, null);
     }
     print("ok\n");
     0

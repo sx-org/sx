@@ -6,8 +6,8 @@
 @import "modules/std/mem.sx";
 
 main :: () {
-    stack_buf : [64]u8 = ---;
-    buf := BufAlloc.init(*stack_buf[0], 64);
+    stackBuf : [64]u8 = ---;
+    buf := BufAlloc.init(*stackBuf[0], 64);
     a := buf.(Allocator);
 
     // memRealloc — bytes level, grown past the 64-byte buffer

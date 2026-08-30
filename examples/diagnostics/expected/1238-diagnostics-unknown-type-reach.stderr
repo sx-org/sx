@@ -23,7 +23,7 @@ error: unknown type 'BadGlobal1238'
    |          ^^^^^^^^^^^^^^^
 
 error: unknown type 'BadParamDefault1238'
-  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:10:33
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:10:32
    |
-10 | with_default1238 :: (x: S1238 = BadParamDefault1238{}) -> i64 { return x.a; }
-   |                                 ^^^^^^^^^^^^^^^^^^^^^
+10 | withDefault1238 :: (x: S1238 = BadParamDefault1238{}) -> i64 { return x.a; }
+   |                                ^^^^^^^^^^^^^^^^^^^^^

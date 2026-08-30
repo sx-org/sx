@@ -14,7 +14,7 @@ gp : [2]Pair = .[ .{ a = 1, b = 2 }, .{ a = 3, b = 4 } ];
 
 grid : [2][3]i64 = .[ .[0, 0, 0], .[0, 0, 0] ];
 
-write_global :: (i: i64, v: i64) { g[i] = v; }
+writeGlobal :: (i: i64, v: i64) { g[i] = v; }
 
 main :: () {
     // Scalar global array — const index.
@@ -27,7 +27,7 @@ main :: () {
     print("g[k]={}\n", g[k]);            // 333
 
     // Scalar global array — store from another function.
-    write_global(0, 111);
+    writeGlobal(0, 111);
     print("g[0]={}\n", g[0]);            // 111
 
     // Struct-element global array (16-byte stride) — const and var index.

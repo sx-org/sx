@@ -7,4 +7,4 @@ inner :: @import "pkg/view.sx";
 View :: inner.View;
 Label :: inner.Label;
 describe :: inner.describe;
-size_here :: inner.size_here;
+sizeHere :: inner.sizeHere;

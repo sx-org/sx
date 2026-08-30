@@ -3,7 +3,7 @@
 // a.sx defaults to 10, b.sx to 20. Each module calls `cfg()` bare with the arg
 // OMITTED. The omitted trailing arg must be filled from the RESOLVED author's
 // default (own-author wins), not the first-wins winner's — expanding
-// `from_b`'s `cfg()` to the winner a.sx's default (10) returns 10.
+// `fromB`'s `cfg()` to the winner a.sx's default (10) returns 10.
 // Per-source default-argument expansion.
 @import "modules/std.sx";
 @import "0730-modules-flat-same-name-default-arg/a.sx";
@@ -14,7 +14,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("from_a binds a.cfg default (10)", from_a() == 10);
-    report("from_b binds b.cfg default (20)", from_b() == 20);
+    report("fromA binds a.cfg default (10)", fromA() == 10);
+    report("fromB binds b.cfg default (20)", fromB() == 20);
     0
 }

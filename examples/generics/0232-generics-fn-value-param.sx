@@ -8,7 +8,7 @@
 @import "modules/std.sx";
 
 apply :: (f: $F) -> i64 { return f(); }
-some_fn :: () -> i64 { return 7; }
+someFn :: () -> i64 { return 7; }
 
 relay :: (g: $G) -> i64 { return apply(g); }
 apply2 :: (f: $F, a: i64, b: i64) -> i64 { return f(a, b); }
@@ -17,10 +17,10 @@ add2 :: (a: i64, b: i64) -> i64 { return a + b; }
 describe :: (f: $F) -> string { return @typeName(@typeOf(f)); }
 
 main :: () {
-    print("{}\n", apply(some_fn));
-    print("{}\n", relay(some_fn));
+    print("{}\n", apply(someFn));
+    print("{}\n", relay(someFn));
     print("{}\n", apply2(add2, 3, 4));
-    print("{}\n", describe(some_fn));
+    print("{}\n", describe(someFn));
     print("{}\n", describe(add2));
 }
 

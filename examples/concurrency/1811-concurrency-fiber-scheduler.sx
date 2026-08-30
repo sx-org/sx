@@ -45,21 +45,21 @@ main :: () -> i64 {
 
     // Three DIFFERENT fiber bodies (distinct captured ids), interleaving via
     // yieldNow. Each appends its id once per round for 3 rounds.
-    spawn_worker :: (ps: *sched.Scheduler, psh: *Shared, my_id: i64) {
-        ps.spawn(||_{ ps, psh, my_id } {
+    spawnWorker :: (ps: *sched.Scheduler, psh: *Shared, myId: i64) {
+        ps.spawn(||_{ ps, psh, myId } {
             r := 0;
             while r < 3 {
-                append(psh, my_id);
+                append(psh, myId);
                 if r < 2 { ps.yieldNow(); }   // cooperate between rounds
                 r = r + 1;
             }
-            psh.done[my_id] = 1;
+            psh.done[myId] = 1;
         });
     }
 
-    spawn_worker(ps, psh, 0);
-    spawn_worker(ps, psh, 1);
-    spawn_worker(ps, psh, 2);
+    spawnWorker(ps, psh, 0);
+    spawnWorker(ps, psh, 1);
+    spawnWorker(ps, psh, 2);
 
     s.run();
 

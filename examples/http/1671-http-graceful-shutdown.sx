@@ -30,7 +30,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "ok";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -39,7 +39,7 @@ dial_port :: (port: i64) -> i32 {
     return fd;
 }
 
-resp_complete :: (buf: [*]u8, len: i64) -> bool {
+respComplete :: (buf: [*]u8, len: i64) -> bool {
     s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
@@ -91,14 +91,14 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
         n, re := socket.readNb(fd, *scratch[total], (cap - total));
         if !re { total += n; }
         else if re == .Closed { return string{ ptr = scratch, len = total }; }
-        if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
+        if respComplete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }
     return "";
 }
 
 // True once `fd` has been closed by the peer (read sees EOF / Closed).
-peer_closed :: (srv: *http.Server, fd: i32) -> bool {
+peerClosed :: (srv: *http.Server, fd: i32) -> bool {
     probe : [64]u8 = ---;
     tries := 0;
     while tries < 200 {
@@ -135,7 +135,7 @@ main :: () -> i32 {
             // An IDLE keep-alive connection: complete one request, then
             // leave the socket open (CONN_KEEPALIVE on the server). It
             // must be closed immediately on stop().
-            idle := dial_port(PORT);
+            idle := dialPort(PORT);
             if idle < 0 { print("idle dial failed\n"); rc = 1; }
             if rc == 0 {
                 ri := roundtrip(*srv, idle, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
@@ -148,7 +148,7 @@ main :: () -> i32 {
             // pending (genuinely in-flight, not idle), and stop() must
             // drain it rather than drop it. The body's tail arrives AFTER
             // stop, during the drain.
-            busy := dial_port(PORT);
+            busy := dialPort(PORT);
             if rc == 0 and busy < 0 { print("busy dial failed\n"); rc = 1; }
             if rc == 0 {
                 head := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nho";
@@ -169,7 +169,7 @@ main :: () -> i32 {
                 socket.write(busy, tail.ptr, tail.len);
 
                 // Idle keep-alive is closed the instant beginStop runs.
-                if !peer_closed(*srv, idle) { print("idle keep-alive not closed on stop\n"); rc = 1; }
+                if !peerClosed(*srv, idle) { print("idle keep-alive not closed on stop\n"); rc = 1; }
 
                 // Drive the bounded drain (what run() does after stopping),
                 // and concurrently read the in-flight response — it must
@@ -183,7 +183,7 @@ main :: () -> i32 {
                     srv.tick(20) catch {};
                     n, re := socket.readNb(busy, *scratch[total], (cap - total));
                     if !re { total += n; }
-                    if resp_complete(scratch, total) { got = true; break; }
+                    if respComplete(scratch, total) { got = true; break; }
                     if srv.inFlight() == 0 and total == 0 { continue; }
                 }
 
@@ -204,7 +204,7 @@ main :: () -> i32 {
             srv2, se2 := http.Server.init(cfg, handler, 0);
             if se2 { print("server2 init failed (port leaked?)\n"); rc = 1; }
             else {
-                c := dial_port(PORT);
+                c := dialPort(PORT);
                 if c < 0 { print("restart dial failed\n"); rc = 1; }
                 else {
                     r := roundtrip(*srv2, c, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 7\r\n\r\nrestart", scratch, cap);

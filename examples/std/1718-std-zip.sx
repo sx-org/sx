@@ -5,7 +5,7 @@ ZipSource :: zip.Source;
 ZipSink :: zip.Sink;
 
 // Exact output from miniz 77d0dce8627735138c51770d1799a1ef48f2117d
-// for the deterministic archive assembled by make_archive(alloc, ""). This
+// for the deterministic archive assembled by makeArchive(alloc, ""). This
 // pins the complete ZIP bytes, including headers, DEFLATE payload, descriptors,
 // central directory, and EOCD—not merely sizes or decoded contents.
 MINIZ_EXACT_ARCHIVE : [409]u8 = .[
@@ -40,10 +40,10 @@ MINIZ_EXACT_ARCHIVE : [409]u8 = .[
 
 MemorySource :: struct {
     data: string;
-    max_chunk: i64 = i64.max;
-    largest_request: i64 = 0;
+    maxChunk: i64 = i64.max;
+    largestRequest: i64 = 0;
     calls: i64 = 0;
-    fail_at: i64 = -1;
+    failAt: i64 = -1;
     failure: Error = .Io;
 }
 
@@ -52,12 +52,12 @@ impl ZipSource for MemorySource {
 
     readAt :: (self: *MemorySource, offset: i64, output: string) -> (string, !Error) {
         self.calls += 1;
-        if output.len > self.largest_request { self.largest_request = output.len; }
+        if output.len > self.largestRequest { self.largestRequest = output.len; }
         if offset < 0 or offset > self.data.len { raise .InvalidData; }
-        if self.fail_at >= 0 and offset >= self.fail_at { raise self.failure; }
+        if self.failAt >= 0 and offset >= self.failAt { raise self.failure; }
         take := self.data.len - offset;
         if take > output.len { take = output.len; }
-        if take > self.max_chunk { take = self.max_chunk; }
+        if take > self.maxChunk { take = self.maxChunk; }
         i := 0;
         while i < take { output[i] = self.data[offset + i]; i += 1; }
         output[..take]
@@ -68,13 +68,13 @@ Collector :: struct {
     bytes: [16384]u8 = .{};
     len: i64 = 0;
     calls: i64 = 0;
-    fail_after: i64 = -1;
+    failAfter: i64 = -1;
     failure: Error = .Io;
 }
 
 impl ZipSink for Collector {
     write :: (self: *Collector, data: string) -> !Error {
-        if self.fail_after >= 0 and self.calls >= self.fail_after { raise self.failure; }
+        if self.failAfter >= 0 and self.calls >= self.failAfter { raise self.failure; }
         self.calls += 1;
         if data.len > self.bytes.len - self.len { raise .OutputLimit; }
         i := 0;
@@ -112,7 +112,7 @@ same :: (left: string, right: string) -> bool {
     true
 }
 
-central_header_at :: (archive: string, index: i64) -> i64 {
+centralHeaderAt :: (archive: string, index: i64) -> i64 {
     at := 0;
     found := 0;
     while at + 4 <= archive.len {
@@ -125,7 +125,7 @@ central_header_at :: (archive: string, index: i64) -> i64 {
     -1
 }
 
-stream_reports_checksum :: (stream: *zip.EntryReader) -> bool {
+streamReportsChecksum :: (stream: *zip.EntryReader) -> bool {
     scratch : [17]u8 = ---;
     while true {
         part, failure := stream.read(scratch[..]);
@@ -135,13 +135,13 @@ stream_reports_checksum :: (stream: *zip.EntryReader) -> bool {
     false
 }
 
-metadata_limit_rejected :: (source: ZipSource, limit: i64, alloc: Allocator) -> bool {
+metadataLimitRejected :: (source: ZipSource, limit: i64, alloc: Allocator) -> bool {
     reader := zip.openSource(source, .{ maxMetadata = limit }, alloc) catch |e| { return e == .OutputLimit; };
     reader.deinit();
     false
 }
 
-make_archive :: (alloc: Allocator, archiveComment: string = "archive comment") -> string {
+makeArchive :: (alloc: Allocator, archiveComment: string = "archive comment") -> string {
     repeated := "miniz exact miniz exact miniz exact miniz exact miniz exact";
     localExtra : [7]u8 = .[0xfe, 0xca, 3, 0, 'a', 'b', 'c'];
     centralExtra : [6]u8 = .[0xef, 0xbe, 2, 0, 'X', 'Y'];
@@ -166,17 +166,17 @@ make_archive :: (alloc: Allocator, archiveComment: string = "archive comment") -
     archive
 }
 
-test_exact_miniz_bytes :: (alloc: Allocator) -> bool {
-    archive := make_archive(alloc, "");
+testExactMinizBytes :: (alloc: Allocator) -> bool {
+    archive := makeArchive(alloc, "");
     if archive.ptr == null { return false; }
     exact := same(archive, MINIZ_EXACT_ARCHIVE[..]);
     alloc.deallocBytes(archive.ptr);
     exact
 }
 
-test_memory_reader :: (alloc: Allocator) -> bool {
+testMemoryReader :: (alloc: Allocator) -> bool {
     repeated := "miniz exact miniz exact miniz exact miniz exact miniz exact";
-    archive := make_archive(alloc);
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
     reader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
     if reader.len() != 3 or reader.comment() != "archive comment" or reader.isZip64() {
@@ -191,9 +191,9 @@ test_memory_reader :: (alloc: Allocator) -> bool {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     }
     if (reader.find("deflated.txt") catch { -1 }) != 1 { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
-    wrong_case_failed := false;
-    ignored_index := reader.find("DEFLATED.TXT") catch |e| { wrong_case_failed = e == .NotFound; -1 };
-    if !wrong_case_failed { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
+    wrongCaseFailed := false;
+    ignoredIndex := reader.find("DEFLATED.TXT") catch |e| { wrongCaseFailed = e == .NotFound; -1 };
+    if !wrongCaseFailed { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
 
     output : [128]u8 = ---;
     plain := reader.extractInto(1, output[..], alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
@@ -214,10 +214,10 @@ test_memory_reader :: (alloc: Allocator) -> bool {
     decoded := deflate.decode(compressed, 1024, alloc) catch {
         alloc.deallocBytes(compressed.ptr); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    compressed_ok := same(decoded, repeated);
+    compressedOk := same(decoded, repeated);
     alloc.deallocBytes(decoded.ptr);
     alloc.deallocBytes(compressed.ptr);
-    if !compressed_ok { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
+    if !compressedOk { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
 
     sink := Collector{};
     made := reader.extractTo(1, xx sink, 1024, alloc) catch {
@@ -233,25 +233,25 @@ test_memory_reader :: (alloc: Allocator) -> bool {
     true
 }
 
-test_sources_and_sinks :: (alloc: Allocator) -> bool {
-    archive := make_archive(alloc);
+testSourcesAndSinks :: (alloc: Allocator) -> bool {
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
     source := MemorySource{ data = archive };
     reader := zip.openSource(xx source, .{ maxMetadata = 65536 }, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
     plain := reader.extractName("stored.txt", 64, alloc) catch {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    source_ok := same(plain, "stored payload") and source.calls > 0 and source.largest_request <= 65536;
+    sourceOk := same(plain, "stored payload") and source.calls > 0 and source.largestRequest <= 65536;
     alloc.deallocBytes(plain.ptr);
     reader.deinit();
-    if !source_ok { alloc.deallocBytes(archive.ptr); return false; }
+    if !sourceOk { alloc.deallocBytes(archive.ptr); return false; }
 
-    limited_source := MemorySource{ data = archive };
-    tiny_limit_failed := metadata_limit_rejected(xx limited_source, 1, alloc);
-    if !tiny_limit_failed { alloc.deallocBytes(archive.ptr); return false; }
+    limitedSource := MemorySource{ data = archive };
+    tinyLimitFailed := metadataLimitRejected(xx limitedSource, 1, alloc);
+    if !tinyLimitFailed { alloc.deallocBytes(archive.ptr); return false; }
 
     payload := "source source source source source source";
-    input := MemorySource{ data = payload, max_chunk = 5 };
+    input := MemorySource{ data = payload, maxChunk = 5 };
     output := Collector{};
     writer := zip.Writer.initSink(xx output, .{}, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
     writer.addSource("source.txt", xx input, .{ method = .deflate, level = 6, storeSmall = false }) catch {
@@ -260,22 +260,22 @@ test_sources_and_sinks :: (alloc: Allocator) -> bool {
     writer.finish() catch { writer.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     writer.deinit();
     streamed := zip.open(output.bytes[..output.len], alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
-    streamed_plain := streamed.extractName("source.txt", 1024, alloc) catch {
+    streamedPlain := streamed.extractName("source.txt", 1024, alloc) catch {
         streamed.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    streamed_ok := same(streamed_plain, payload) and input.calls > 1;
-    alloc.deallocBytes(streamed_plain.ptr);
+    streamedOk := same(streamedPlain, payload) and input.calls > 1;
+    alloc.deallocBytes(streamedPlain.ptr);
     streamed.deinit();
     alloc.deallocBytes(archive.ptr);
-    streamed_ok
+    streamedOk
 }
 
-test_entry_streams :: (alloc: Allocator) -> bool {
+testEntryStreams :: (alloc: Allocator) -> bool {
     repeated := "miniz exact miniz exact miniz exact miniz exact miniz exact";
-    archive := make_archive(alloc);
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
 
-    source := MemorySource{ data = archive, max_chunk = 7 };
+    source := MemorySource{ data = archive, maxChunk = 7 };
     reader := zip.openSource(xx source, .{ maxMetadata = 65536 }, alloc) catch {
         alloc.deallocBytes(archive.ptr); return false;
     };
@@ -297,10 +297,10 @@ test_entry_streams :: (alloc: Allocator) -> bool {
         stream.deinit(); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
     middle : [11]u8 = ---;
-    middle_bytes := stream.read(middle[..]) catch {
+    middleBytes := stream.read(middle[..]) catch {
         stream.deinit(); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    if !same(middle_bytes, repeated[20..31]) {
+    if !same(middleBytes, repeated[20..31]) {
         stream.deinit(); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     }
     stream.seek(0) catch {
@@ -308,27 +308,27 @@ test_entry_streams :: (alloc: Allocator) -> bool {
     };
 
     restored : [128]u8 = ---;
-    restored_len := 0;
+    restoredLen := 0;
     reading := true;
     while reading {
-        end := restored_len + 5;
+        end := restoredLen + 5;
         if end > restored.len { end = restored.len; }
-        part := stream.read(restored[restored_len..end]) catch {
+        part := stream.read(restored[restoredLen..end]) catch {
             stream.deinit(); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
         };
-        restored_len += part.len;
+        restoredLen += part.len;
         if part.len == 0 { reading = false; }
     }
-    stream_ok := restored_len == repeated.len and same(restored[..restored_len], repeated) and
+    streamOk := restoredLen == repeated.len and same(restored[..restoredLen], repeated) and
                  stream.offset() == repeated.len and stream.len() == repeated.len and source.calls > 0;
     stream.deinit();
-    if !stream_ok { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
+    if !streamOk { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; }
 
-    expected_raw := reader.extractCompressed(1, 1024, alloc) catch {
+    expectedRaw := reader.extractCompressed(1, 1024, alloc) catch {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    raw_stream := reader.streamCompressed(1, 1024, alloc) catch {
-        alloc.deallocBytes(expected_raw.ptr); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
+    rawStream := reader.streamCompressed(1, 1024, alloc) catch {
+        alloc.deallocBytes(expectedRaw.ptr); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
     raw : [128]u8 = ---;
     rawLen := 0;
@@ -336,88 +336,88 @@ test_entry_streams :: (alloc: Allocator) -> bool {
     while reading {
         end := rawLen + 3;
         if end > raw.len { end = raw.len; }
-        part := raw_stream.read(raw[rawLen..end]) catch {
-            raw_stream.deinit(); alloc.deallocBytes(expected_raw.ptr);
+        part := rawStream.read(raw[rawLen..end]) catch {
+            rawStream.deinit(); alloc.deallocBytes(expectedRaw.ptr);
             reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
         };
         rawLen += part.len;
         if part.len == 0 { reading = false; }
     }
-    raw_ok := same(raw[..rawLen], expected_raw);
-    raw_stream.deinit();
-    alloc.deallocBytes(expected_raw.ptr);
+    rawOk := same(raw[..rawLen], expectedRaw);
+    rawStream.deinit();
+    alloc.deallocBytes(expectedRaw.ptr);
     reader.deinit();
     alloc.deallocBytes(archive.ptr);
-    raw_ok
+    rawOk
 }
 
-test_terminal_checksum_errors :: (alloc: Allocator) -> bool {
-    archive := make_archive(alloc);
+testTerminalChecksumErrors :: (alloc: Allocator) -> bool {
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
-    stored_at := central_header_at(archive, 0);
-    deflated_at := central_header_at(archive, 1);
-    if stored_at < 0 or deflated_at < 0 {
+    storedAt := centralHeaderAt(archive, 0);
+    deflatedAt := centralHeaderAt(archive, 1);
+    if storedAt < 0 or deflatedAt < 0 {
         alloc.deallocBytes(archive.ptr); return false;
     }
 
-    archive[stored_at + 16] ^= 1;
-    stored_reader := zip.open(archive, alloc) catch {
-        archive[stored_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    archive[storedAt + 16] ^= 1;
+    storedReader := zip.open(archive, alloc) catch {
+        archive[storedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    stored_stream := stored_reader.stream(0, 1024, alloc) catch {
-        stored_reader.deinit(); archive[stored_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    storedStream := storedReader.stream(0, 1024, alloc) catch {
+        storedReader.deinit(); archive[storedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    stored_ok := stream_reports_checksum(*stored_stream);
-    stored_stream.deinit(); stored_stream.deinit();
-    stored_reader.deinit();
-    archive[stored_at + 16] ^= 1;
-    if !stored_ok { alloc.deallocBytes(archive.ptr); return false; }
+    storedOk := streamReportsChecksum(*storedStream);
+    storedStream.deinit(); storedStream.deinit();
+    storedReader.deinit();
+    archive[storedAt + 16] ^= 1;
+    if !storedOk { alloc.deallocBytes(archive.ptr); return false; }
 
-    archive[deflated_at + 16] ^= 1;
-    deflated_reader := zip.open(archive, alloc) catch {
-        archive[deflated_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    archive[deflatedAt + 16] ^= 1;
+    deflatedReader := zip.open(archive, alloc) catch {
+        archive[deflatedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    deflated_stream := deflated_reader.stream(1, 1024, alloc) catch {
-        deflated_reader.deinit(); archive[deflated_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    deflatedStream := deflatedReader.stream(1, 1024, alloc) catch {
+        deflatedReader.deinit(); archive[deflatedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    deflated_ok := stream_reports_checksum(*deflated_stream);
-    deflated_stream.deinit(); deflated_stream.deinit();
-    deflated_reader.deinit();
-    archive[deflated_at + 16] ^= 1;
-    if !deflated_ok { alloc.deallocBytes(archive.ptr); return false; }
+    deflatedOk := streamReportsChecksum(*deflatedStream);
+    deflatedStream.deinit(); deflatedStream.deinit();
+    deflatedReader.deinit();
+    archive[deflatedAt + 16] ^= 1;
+    if !deflatedOk { alloc.deallocBytes(archive.ptr); return false; }
 
-    archive[deflated_at + 16] ^= 1;
-    source := MemorySource{ data = archive, max_chunk = 7 };
-    source_reader := zip.openSource(xx source, .{ maxMetadata = 65536 }, alloc) catch {
-        archive[deflated_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    archive[deflatedAt + 16] ^= 1;
+    source := MemorySource{ data = archive, maxChunk = 7 };
+    sourceReader := zip.openSource(xx source, .{ maxMetadata = 65536 }, alloc) catch {
+        archive[deflatedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    archive[deflated_at + 16] ^= 1;
-    source_stream := source_reader.stream(1, 1024, alloc) catch {
-        source_reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
+    archive[deflatedAt + 16] ^= 1;
+    sourceStream := sourceReader.stream(1, 1024, alloc) catch {
+        sourceReader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    source_ok := stream_reports_checksum(*source_stream);
-    source_stream.deinit(); source_stream.deinit();
-    source_reader.deinit();
-    if !source_ok { alloc.deallocBytes(archive.ptr); return false; }
+    sourceOk := streamReportsChecksum(*sourceStream);
+    sourceStream.deinit(); sourceStream.deinit();
+    sourceReader.deinit();
+    if !sourceOk { alloc.deallocBytes(archive.ptr); return false; }
 
-    archive[deflated_at + 16] ^= 1;
-    seek_reader := zip.open(archive, alloc) catch {
-        archive[deflated_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    archive[deflatedAt + 16] ^= 1;
+    seekReader := zip.open(archive, alloc) catch {
+        archive[deflatedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    seek_stream := seek_reader.stream(1, 1024, alloc) catch {
-        seek_reader.deinit(); archive[deflated_at + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
+    seekStream := seekReader.stream(1, 1024, alloc) catch {
+        seekReader.deinit(); archive[deflatedAt + 16] ^= 1; alloc.deallocBytes(archive.ptr); return false;
     };
-    seek_failure := seek_stream.seek(seek_stream.len());
-    seek_ok := !seek_failure and stream_reports_checksum(*seek_stream);
-    seek_stream.deinit(); seek_stream.deinit();
-    seek_reader.deinit();
-    archive[deflated_at + 16] ^= 1;
+    seekFailure := seekStream.seek(seekStream.len());
+    seekOk := !seekFailure and streamReportsChecksum(*seekStream);
+    seekStream.deinit(); seekStream.deinit();
+    seekReader.deinit();
+    archive[deflatedAt + 16] ^= 1;
     alloc.deallocBytes(archive.ptr);
-    seek_ok
+    seekOk
 }
 
-test_transfer_errors_and_cleanup :: (alloc: Allocator) -> bool {
-    archive := make_archive(alloc);
+testTransferErrorsAndCleanup :: (alloc: Allocator) -> bool {
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
     source := MemorySource{ data = archive };
     reader := zip.openSource(xx source, .{ maxMetadata = 65536 }, alloc) catch {
@@ -426,76 +426,76 @@ test_transfer_errors_and_cleanup :: (alloc: Allocator) -> bool {
 
     tracking := TrackingAllocator{ parent = alloc };
     before := tracking.live;
-    source.fail_at = 0;
+    source.failAt = 0;
     source.failure = .UnexpectedEnd;
-    provisional, provisional_failure := zip.Writer.fromReader(*reader, .{}, tracking);
-    if !provisional_failure { provisional.deinit(); }
-    from_reader_ok := provisional_failure == .UnexpectedEnd and tracking.live == before;
-    if !from_reader_ok {
+    provisional, provisionalFailure := zip.Writer.fromReader(*reader, .{}, tracking);
+    if !provisionalFailure { provisional.deinit(); }
+    fromReaderOk := provisionalFailure == .UnexpectedEnd and tracking.live == before;
+    if !fromReaderOk {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     }
 
-    memory_writer := zip.Writer.init(.{}, alloc) catch {
+    memoryWriter := zip.Writer.init(.{}, alloc) catch {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    source_failure := memory_writer.addFrom(*reader, 0);
-    memory_writer.deinit();
-    if source_failure != .UnexpectedEnd {
+    sourceFailure := memoryWriter.addFrom(*reader, 0);
+    memoryWriter.deinit();
+    if sourceFailure != .UnexpectedEnd {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     }
 
-    source.fail_at = -1;
-    target := Collector{ fail_after = 0, failure = .OutputLimit };
-    sink_writer := zip.Writer.initSink(xx target, .{}, alloc) catch {
+    source.failAt = -1;
+    target := Collector{ failAfter = 0, failure = .OutputLimit };
+    sinkWriter := zip.Writer.initSink(xx target, .{}, alloc) catch {
         reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    target_failure := sink_writer.addFrom(*reader, 0);
-    source.fail_at = 0;
+    targetFailure := sinkWriter.addFrom(*reader, 0);
+    source.failAt = 0;
     source.failure = .UnexpectedEnd;
-    both_failure := sink_writer.addFrom(*reader, 0);
-    sink_writer.deinit();
+    bothFailure := sinkWriter.addFrom(*reader, 0);
+    sinkWriter.deinit();
     reader.deinit();
     alloc.deallocBytes(archive.ptr);
-    target_failure == .OutputLimit and both_failure == .OutputLimit
+    targetFailure == .OutputLimit and bothFailure == .OutputLimit
 }
 
-test_empty_unsupported_entries :: (alloc: Allocator) -> bool {
+testEmptyUnsupportedEntries :: (alloc: Allocator) -> bool {
     writer := zip.Writer.init(.{}, alloc) catch { return false; };
     writer.add("empty.bin", "", .{ method = .store }) catch { writer.deinit(); return false; };
     writer.finish("") catch { writer.deinit(); return false; };
     archive := writer.take() catch { writer.deinit(); return false; };
     writer.deinit();
-    central := central_header_at(archive, 0);
+    central := centralHeaderAt(archive, 0);
     if central < 0 { alloc.deallocBytes(archive.ptr); return false; }
-    original_flags := archive[central + 8];
-    original_method := archive[central + 10];
+    originalFlags := archive[central + 8];
+    originalMethod := archive[central + 10];
     empty : [1]u8 = ---;
 
-    archive[central + 8] = original_flags | 1;
-    encrypted_reader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
-    _, encrypted_failure := encrypted_reader.extractInto(0, empty[..0], alloc);
-    encrypted_reader.deinit();
-    archive[central + 8] = original_flags | 0x20;
-    patched_reader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
-    _, patched_failure := patched_reader.extractInto(0, empty[..0], alloc);
-    patched_reader.deinit();
-    archive[central + 8] = original_flags;
+    archive[central + 8] = originalFlags | 1;
+    encryptedReader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
+    _, encryptedFailure := encryptedReader.extractInto(0, empty[..0], alloc);
+    encryptedReader.deinit();
+    archive[central + 8] = originalFlags | 0x20;
+    patchedReader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
+    _, patchedFailure := patchedReader.extractInto(0, empty[..0], alloc);
+    patchedReader.deinit();
+    archive[central + 8] = originalFlags;
     archive[central + 10] = 99;
-    unknown_reader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
-    _, decoded_failure := unknown_reader.extractInto(0, empty[..0], alloc);
-    raw := unknown_reader.extractCompressedInto(0, empty[..0], alloc) catch {
-        unknown_reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
+    unknownReader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
+    _, decodedFailure := unknownReader.extractInto(0, empty[..0], alloc);
+    raw := unknownReader.extractCompressedInto(0, empty[..0], alloc) catch {
+        unknownReader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    unknown_reader.deinit();
-    archive[central + 10] = original_method;
-    ok := encrypted_failure == .Unsupported and patched_failure == .Unsupported and
-          decoded_failure == .Unsupported and raw.len == 0;
+    unknownReader.deinit();
+    archive[central + 10] = originalMethod;
+    ok := encryptedFailure == .Unsupported and patchedFailure == .Unsupported and
+          decodedFailure == .Unsupported and raw.len == 0;
     alloc.deallocBytes(archive.ptr);
     ok
 }
 
-test_update_and_transfer :: (alloc: Allocator) -> bool {
-    archive := make_archive(alloc);
+testUpdateAndTransfer :: (alloc: Allocator) -> bool {
+    archive := makeArchive(alloc);
     if archive.ptr == null { return false; }
     source := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
 
@@ -506,67 +506,67 @@ test_update_and_transfer :: (alloc: Allocator) -> bool {
         updater.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
     updater.finish() catch { updater.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    updated_bytes := updater.take() catch {
+    updatedBytes := updater.take() catch {
         updater.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
     updater.deinit();
-    updated := zip.open(updated_bytes, alloc) catch {
-        source.deinit(); alloc.deallocBytes(updated_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+    updated := zip.open(updatedBytes, alloc) catch {
+        source.deinit(); alloc.deallocBytes(updatedBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
     if updated.len() != 4 or updated.comment() != "archive comment" {
-        updated.deinit(); source.deinit(); alloc.deallocBytes(updated_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+        updated.deinit(); source.deinit(); alloc.deallocBytes(updatedBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     }
     added := updated.extractName("added.txt", 128, alloc) catch {
-        updated.deinit(); source.deinit(); alloc.deallocBytes(updated_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+        updated.deinit(); source.deinit(); alloc.deallocBytes(updatedBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
-    update_ok := same(added, "new payload");
+    updateOk := same(added, "new payload");
     alloc.deallocBytes(added.ptr);
     updated.deinit();
-    alloc.deallocBytes(updated_bytes.ptr);
-    if !update_ok { source.deinit(); alloc.deallocBytes(archive.ptr); return false; }
+    alloc.deallocBytes(updatedBytes.ptr);
+    if !updateOk { source.deinit(); alloc.deallocBytes(archive.ptr); return false; }
 
     transfer := zip.Writer.init(.{}, alloc) catch { source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     transfer.addFrom(*source, 1) catch { transfer.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     transfer.finish("") catch { transfer.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    transfer_bytes := transfer.take() catch { transfer.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    transferBytes := transfer.take() catch { transfer.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     transfer.deinit();
-    transferred := zip.open(transfer_bytes, alloc) catch {
-        source.deinit(); alloc.deallocBytes(transfer_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+    transferred := zip.open(transferBytes, alloc) catch {
+        source.deinit(); alloc.deallocBytes(transferBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
-    original_raw := source.extractCompressed(1, 1024, alloc) catch {
-        transferred.deinit(); source.deinit(); alloc.deallocBytes(transfer_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+    originalRaw := source.extractCompressed(1, 1024, alloc) catch {
+        transferred.deinit(); source.deinit(); alloc.deallocBytes(transferBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
-    copied_raw := transferred.extractCompressed(0, 1024, alloc) catch {
-        alloc.deallocBytes(original_raw.ptr); transferred.deinit(); source.deinit();
-        alloc.deallocBytes(transfer_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+    copiedRaw := transferred.extractCompressed(0, 1024, alloc) catch {
+        alloc.deallocBytes(originalRaw.ptr); transferred.deinit(); source.deinit();
+        alloc.deallocBytes(transferBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
-    transfer_ok := same(original_raw, copied_raw);
-    alloc.deallocBytes(copied_raw.ptr);
-    alloc.deallocBytes(original_raw.ptr);
+    transferOk := same(originalRaw, copiedRaw);
+    alloc.deallocBytes(copiedRaw.ptr);
+    alloc.deallocBytes(originalRaw.ptr);
     transferred.deinit();
-    alloc.deallocBytes(transfer_bytes.ptr);
-    if !transfer_ok { source.deinit(); alloc.deallocBytes(archive.ptr); return false; }
+    alloc.deallocBytes(transferBytes.ptr);
+    if !transferOk { source.deinit(); alloc.deallocBytes(archive.ptr); return false; }
 
     forced := zip.Writer.fromReader(*source, .{ forceZip64 = true }, alloc) catch {
         source.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
     forced.finish() catch { forced.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    forced_bytes := forced.take() catch { forced.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    forcedBytes := forced.take() catch { forced.deinit(); source.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     forced.deinit();
-    forced_reader := zip.open(forced_bytes, alloc) catch {
-        source.deinit(); alloc.deallocBytes(forced_bytes.ptr); alloc.deallocBytes(archive.ptr); return false;
+    forcedReader := zip.open(forcedBytes, alloc) catch {
+        source.deinit(); alloc.deallocBytes(forcedBytes.ptr); alloc.deallocBytes(archive.ptr); return false;
     };
-    forced_ok := forced_reader.isZip64() and forced_reader.len() == 3;
-    forced_reader.validate(false, alloc) catch { forced_ok = false; };
-    forced_reader.deinit();
-    alloc.deallocBytes(forced_bytes.ptr);
+    forcedOk := forcedReader.isZip64() and forcedReader.len() == 3;
+    forcedReader.validate(false, alloc) catch { forcedOk = false; };
+    forcedReader.deinit();
+    alloc.deallocBytes(forcedBytes.ptr);
 
     source.deinit();
     alloc.deallocBytes(archive.ptr);
-    forced_ok
+    forcedOk
 }
 
-test_prefix_and_duplicates :: (alloc: Allocator) -> bool {
+testPrefixAndDuplicates :: (alloc: Allocator) -> bool {
     writer := zip.Writer.init(.{}, alloc) catch { return false; };
     writer.reservePrefix(7) catch { writer.deinit(); return false; };
     writer.add("duplicate", "first", .{ method = .store }) catch { writer.deinit(); return false; };
@@ -599,84 +599,84 @@ test_prefix_and_duplicates :: (alloc: Allocator) -> bool {
     ok
 }
 
-test_files :: (alloc: Allocator) -> bool {
-    archive_path := "/tmp/sx_std_zip_public.zip";
-    input_path := "/tmp/sx_std_zip_input.txt";
-    extracted_path := "/tmp/sx_std_zip_extracted.txt";
-    fs.deleteFile(archive_path); fs.deleteFile(input_path); fs.deleteFile(extracted_path);
-    if !fs.writeFile(input_path, "file payload") or !fs.setModifiedSeconds(input_path, 1700000000) { return false; }
+testFiles :: (alloc: Allocator) -> bool {
+    archivePath := "/tmp/sx_std_zip_public.zip";
+    inputPath := "/tmp/sx_std_zip_input.txt";
+    extractedPath := "/tmp/sx_std_zip_extracted.txt";
+    fs.deleteFile(archivePath); fs.deleteFile(inputPath); fs.deleteFile(extractedPath);
+    if !fs.writeFile(inputPath, "file payload") or !fs.setModifiedSeconds(inputPath, 1700000000) { return false; }
 
-    writer := zip.Writer.initFile(archive_path, .{}, alloc) catch { fs.deleteFile(input_path); return false; };
+    writer := zip.Writer.initFile(archivePath, .{}, alloc) catch { fs.deleteFile(inputPath); return false; };
     writer.add("base.txt", "base", .{ method = .store }) catch {
-        writer.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+        writer.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
-    writer.addFile("from-file.txt", input_path, .{ method = .deflate, useFileModifiedTime = true }) catch {
-        writer.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    writer.addFile("from-file.txt", inputPath, .{ method = .deflate, useFileModifiedTime = true }) catch {
+        writer.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
     writer.finish("file comment") catch {
-        writer.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+        writer.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
     writer.deinit();
 
-    append := zip.Writer.appendFile(archive_path, .{ maxMetadata = 65536 }, alloc) catch {
-        fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    append := zip.Writer.appendFile(archivePath, .{ maxMetadata = 65536 }, alloc) catch {
+        fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
     append.add("added.txt", "added", .{ method = .deflate }) catch {
-        append.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+        append.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
-    append.finish() catch { append.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false; };
+    append.finish() catch { append.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false; };
     append.deinit();
 
-    reader := zip.openFile(archive_path, .{ maxMetadata = 65536 }, alloc) catch {
-        fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    reader := zip.openFile(archivePath, .{ maxMetadata = 65536 }, alloc) catch {
+        fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
     if reader.len() != 3 or reader.comment() != "file comment" {
-        reader.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+        reader.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     }
-    file_entry := reader.entry(1) catch {
-        reader.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    fileEntry := reader.entry(1) catch {
+        reader.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
-    if file_entry.modifiedSeconds == null or file_entry.modifiedSeconds?! != 1700000000 {
-        reader.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    if fileEntry.modifiedSeconds == null or fileEntry.modifiedSeconds?! != 1700000000 {
+        reader.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     }
-    made := reader.extractFile(2, extracted_path, 64, alloc) catch {
-        reader.deinit(); fs.deleteFile(archive_path); fs.deleteFile(input_path); return false;
+    made := reader.extractFile(2, extractedPath, 64, alloc) catch {
+        reader.deinit(); fs.deleteFile(archivePath); fs.deleteFile(inputPath); return false;
     };
     reader.deinit();
-    maybeFile := fs.openFile(extracted_path, .read);
+    maybeFile := fs.openFile(extractedPath, .read);
     if maybeFile == null {
-        fs.deleteFile(archive_path); fs.deleteFile(input_path); fs.deleteFile(extracted_path); return false;
+        fs.deleteFile(archivePath); fs.deleteFile(inputPath); fs.deleteFile(extractedPath); return false;
     }
     file := maybeFile?!;
     buffer : [16]u8 = ---;
     read := file.read(buffer[..]);
     closed := file.close();
     ok := made == 5 and read == 5 and closed and same(buffer[..read], "added");
-    fs.deleteFile(archive_path); fs.deleteFile(input_path); fs.deleteFile(extracted_path);
+    fs.deleteFile(archivePath); fs.deleteFile(inputPath); fs.deleteFile(extractedPath);
     ok
 }
 
-test_errors_and_poison :: (alloc: Allocator) -> bool {
-    invalid_level := zip.Writer.init(.{}, alloc) catch { return false; };
-    level_failed := false;
-    invalid_level.add("bad", "x", .{ level = 11 }) catch |e| { level_failed = e == .InvalidOptions; };
-    invalid_level.deinit();
-    if !level_failed { return false; }
+testErrorsAndPoison :: (alloc: Allocator) -> bool {
+    invalidLevel := zip.Writer.init(.{}, alloc) catch { return false; };
+    levelFailed := false;
+    invalidLevel.add("bad", "x", .{ level = 11 }) catch |e| { levelFailed = e == .InvalidOptions; };
+    invalidLevel.deinit();
+    if !levelFailed { return false; }
 
-    old_time := zip.Writer.init(.{}, alloc) catch { return false; };
-    time_failed := false;
-    old_time.add("old", "x", .{ modifiedSeconds = 0 }) catch |e| { time_failed = e == .InvalidOptions; };
-    old_time.deinit();
-    if !time_failed { return false; }
+    oldTime := zip.Writer.init(.{}, alloc) catch { return false; };
+    timeFailed := false;
+    oldTime.add("old", "x", .{ modifiedSeconds = 0 }) catch |e| { timeFailed = e == .InvalidOptions; };
+    oldTime.deinit();
+    if !timeFailed { return false; }
 
-    failing := Collector{ fail_after = 1 };
+    failing := Collector{ failAfter = 1 };
     writer := zip.Writer.initSink(xx failing, .{}, alloc) catch { return false; };
-    first_failed := false;
-    writer.add("payload", "payload payload payload", .{ storeSmall = false }) catch |e| { first_failed = e == .Io; };
-    calls_after_failure := failing.calls;
-    second_failed := false;
-    writer.add("again", "again", .{}) catch |e| { second_failed = e == .Io; };
-    poisoned := first_failed and second_failed and failing.calls == calls_after_failure;
+    firstFailed := false;
+    writer.add("payload", "payload payload payload", .{ storeSmall = false }) catch |e| { firstFailed = e == .Io; };
+    callsAfterFailure := failing.calls;
+    secondFailed := false;
+    writer.add("again", "again", .{}) catch |e| { secondFailed = e == .Io; };
+    poisoned := firstFailed and secondFailed and failing.calls == callsAfterFailure;
     writer.deinit();
     poisoned
 }
@@ -685,7 +685,7 @@ test_errors_and_poison :: (alloc: Allocator) -> bool {
 // checksum (clean after the terminal read, raising when the stream was
 // abandoned early); Writer.close reports backend flush/close failures and is
 // idempotent, with take() extracted first for memory writers.
-test_finalization :: (alloc: Allocator) -> bool {
+testFinalization :: (alloc: Allocator) -> bool {
     inputs : [1]zip.Input = .[ .{ name = "a.txt", data = "finalization coverage payload" } ];
     archive := zip.create(inputs[..], .{}, "", alloc) catch { return false; };
     reader := zip.open(archive, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
@@ -705,9 +705,9 @@ test_finalization :: (alloc: Allocator) -> bool {
     partial, pe := abandoned.read(buf[..8]);
     if pe { ok = false; }
     if partial.len == 0 { ok = false; }
-    early_raised := false;
-    abandoned.finish() catch { early_raised = true; };
-    if !early_raised { ok = false; }
+    earlyRaised := false;
+    abandoned.finish() catch { earlyRaised = true; };
+    if !earlyRaised { ok = false; }
     abandoned.deinit();
 
     writer := zip.Writer.init(.{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
@@ -727,13 +727,13 @@ test_finalization :: (alloc: Allocator) -> bool {
 
 FailingAllocator :: struct {
     parent: Allocator;
-    fail_at: i64 = -1;
+    failAt: i64 = -1;
     count: i64 = 0;
 }
 
 impl Allocator for FailingAllocator {
     allocBytes :: (self: *FailingAllocator, size: i64) -> *void {
-        if self.fail_at >= 0 and self.count >= self.fail_at { return null; }
+        if self.failAt >= 0 and self.count >= self.failAt { return null; }
         self.count += 1;
         self.parent.allocBytes(size)
     }
@@ -752,11 +752,11 @@ impl Allocator for FailingAllocator {
 // the emit that observed it). The fromReader allocation sweep forces every
 // init failure point — including replacement-writer init — under the
 // net-zero leak gate.
-test_add_from_failures :: (alloc: Allocator) -> bool {
+testAddFromFailures :: (alloc: Allocator) -> bool {
     // fail.txt is FIRST so its local record sits at offset 0, and the source
     // entries carry NO data descriptor — otherwise the descriptor pre-read
     // (past the payload) fails before anything is emitted and the rollback
-    // path is never exercised. With fail_at = 30 the 30-byte header read
+    // path is never exercised. With failAt = 30 the 30-byte header read
     // (offset 0) succeeds, the header is EMITTED, and the following
     // name/payload chunk read (offset 30) is the first to fail — exactly the
     // after-emission boundary.
@@ -772,164 +772,164 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     // name/payload reads that follow).
     flaky := MemorySource{ data = archive, failure = .NotFound };
     reader := zip.openSource(xx *flaky, .{}, alloc) catch { alloc.deallocBytes(archive.ptr); return false; };
-    keep_index := reader.find("keep.txt") catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    fail_index := reader.find("fail.txt") catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    keepIndex := reader.find("keep.txt") catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    failIndex := reader.find("fail.txt") catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
 
-    test_writer := zip.Writer.init(.{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    test_writer.add("front", "front-data", .{ method = .store }) catch { ok = false; };
-    flaky.fail_at = 30;
-    source_error_seen := false;
-    test_writer.addFrom(*reader, fail_index) catch |e| {
-        source_error_seen = e == .NotFound;
+    testWriter := zip.Writer.init(.{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    testWriter.add("front", "front-data", .{ method = .store }) catch { ok = false; };
+    flaky.failAt = 30;
+    sourceErrorSeen := false;
+    testWriter.addFrom(*reader, failIndex) catch |e| {
+        sourceErrorSeen = e == .NotFound;
     };
-    if !source_error_seen { ok = false; }
-    flaky.fail_at = -1;
-    test_writer.addFrom(*reader, keep_index) catch { ok = false; };
-    test_writer.finish("") catch { ok = false; };
-    test_bytes, test_te := test_writer.take();
-    if test_te { ok = false; }
-    test_writer.deinit();
+    if !sourceErrorSeen { ok = false; }
+    flaky.failAt = -1;
+    testWriter.addFrom(*reader, keepIndex) catch { ok = false; };
+    testWriter.finish("") catch { ok = false; };
+    testBytes, testTe := testWriter.take();
+    if testTe { ok = false; }
+    testWriter.deinit();
 
     control := zip.Writer.init(.{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     control.add("front", "front-data", .{ method = .store }) catch { ok = false; };
-    control.addFrom(*reader, keep_index) catch { ok = false; };
+    control.addFrom(*reader, keepIndex) catch { ok = false; };
     control.finish("") catch { ok = false; };
-    control_bytes, control_te := control.take();
-    if control_te { ok = false; }
+    controlBytes, controlTe := control.take();
+    if controlTe { ok = false; }
     control.deinit();
 
-    if test_bytes.len != control_bytes.len { ok = false; }
+    if testBytes.len != controlBytes.len { ok = false; }
     else {
         i := 0;
-        while i < test_bytes.len {
-            if test_bytes[i] != control_bytes[i] { ok = false; break; }
+        while i < testBytes.len {
+            if testBytes[i] != controlBytes[i] { ok = false; break; }
             i += 1;
         }
     }
-    if test_bytes.ptr != null { alloc.deallocBytes(test_bytes.ptr); }
-    if control_bytes.ptr != null { alloc.deallocBytes(control_bytes.ptr); }
+    if testBytes.ptr != null { alloc.deallocBytes(testBytes.ptr); }
+    if controlBytes.ptr != null { alloc.deallocBytes(controlBytes.ptr); }
 
     // Borrowed sink cannot roll back: the writer poisons; further adds and
     // finish raise instead of emitting over a half-written record.
     sink := Collector{};
-    sink_writer := zip.Writer.initSink(xx *sink, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    flaky.fail_at = 30;
-    poisoned_error := false;
-    sink_writer.addFrom(*reader, fail_index) catch |e| { poisoned_error = e == .NotFound; };
-    if !poisoned_error { ok = false; }
-    add_after_poison := false;
-    sink_writer.add("later", "x", .{ method = .store }) catch { add_after_poison = true; };
-    if !add_after_poison { ok = false; }
-    finish_after_poison := false;
-    sink_writer.finish("") catch { finish_after_poison = true; };
-    if !finish_after_poison { ok = false; }
-    sink_writer.deinit();
-    flaky.fail_at = -1;
+    sinkWriter := zip.Writer.initSink(xx *sink, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    flaky.failAt = 30;
+    poisonedError := false;
+    sinkWriter.addFrom(*reader, failIndex) catch |e| { poisonedError = e == .NotFound; };
+    if !poisonedError { ok = false; }
+    addAfterPoison := false;
+    sinkWriter.add("later", "x", .{ method = .store }) catch { addAfterPoison = true; };
+    if !addAfterPoison { ok = false; }
+    finishAfterPoison := false;
+    sinkWriter.finish("") catch { finishAfterPoison = true; };
+    if !finishAfterPoison { ok = false; }
+    sinkWriter.deinit();
+    flaky.failAt = -1;
 
     // Simultaneous target + source failure: the sink rejects the header emit
     // before the payload read can fail — the TARGET error surfaces.
-    dual_sink := Collector{ fail_after = 0 };
-    dual_writer := zip.Writer.initSink(xx *dual_sink, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    flaky.fail_at = 30;
-    target_won := false;
-    dual_writer.addFrom(*reader, fail_index) catch |e| { target_won = e == .Io; };
-    if !target_won { ok = false; }
-    dual_writer.deinit();
-    flaky.fail_at = -1;
+    dualSink := Collector{ failAfter = 0 };
+    dualWriter := zip.Writer.initSink(xx *dualSink, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    flaky.failAt = 30;
+    targetWon := false;
+    dualWriter.addFrom(*reader, failIndex) catch |e| { targetWon = e == .Io; };
+    if !targetWon { ok = false; }
+    dualWriter.deinit();
+    flaky.failAt = -1;
 
     // File backend: the same post-emission failure must truly roll back on
     // disk (ftruncate behind std.fs) — the file writer stays reusable and
     // the finished archive matches a control file that never saw the failure.
-    file_path := "/tmp/sx_zip_addfrom_rollback";
-    control_path := "/tmp/sx_zip_addfrom_control";
-    fs.deleteFile(file_path); fs.deleteFile(control_path);
-    fw := zip.Writer.initFile(file_path, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    filePath := "/tmp/sx_zip_addfrom_rollback";
+    controlPath := "/tmp/sx_zip_addfrom_control";
+    fs.deleteFile(filePath); fs.deleteFile(controlPath);
+    fw := zip.Writer.initFile(filePath, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     fw.add("front", "front-data", .{ method = .store }) catch { ok = false; };
-    flaky.fail_at = 30;
-    file_source_error := false;
-    fw.addFrom(*reader, fail_index) catch |e| { file_source_error = e == .NotFound; };
-    if !file_source_error { ok = false; }
-    flaky.fail_at = -1;
-    fw.addFrom(*reader, keep_index) catch { ok = false; };
+    flaky.failAt = 30;
+    fileSourceError := false;
+    fw.addFrom(*reader, failIndex) catch |e| { fileSourceError = e == .NotFound; };
+    if !fileSourceError { ok = false; }
+    flaky.failAt = -1;
+    fw.addFrom(*reader, keepIndex) catch { ok = false; };
     fw.finish("") catch { ok = false; };
     fw.close() catch { ok = false; };
     fw.deinit();
 
-    cf := zip.Writer.initFile(control_path, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    cf := zip.Writer.initFile(controlPath, .{}, alloc) catch { reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
     cf.add("front", "front-data", .{ method = .store }) catch { ok = false; };
-    cf.addFrom(*reader, keep_index) catch { ok = false; };
+    cf.addFrom(*reader, keepIndex) catch { ok = false; };
     cf.finish("") catch { ok = false; };
     cf.close() catch { ok = false; };
     cf.deinit();
 
-    file_buf : [4096]u8 = ---;
-    control_buf : [4096]u8 = ---;
-    file_len := -1;
-    control_len := -1;
-    maybeFile := fs.openFile(file_path, .read);
+    fileBuf : [4096]u8 = ---;
+    controlBuf : [4096]u8 = ---;
+    fileLen := -1;
+    controlLen := -1;
+    maybeFile := fs.openFile(filePath, .read);
     if maybeFile != null {
         handle := maybeFile?!;
-        file_len = handle.read(file_buf[..]);
+        fileLen = handle.read(fileBuf[..]);
         handle.close();
     }
-    maybe_control := fs.openFile(control_path, .read);
-    if maybe_control != null {
-        handle := maybe_control?!;
-        control_len = handle.read(control_buf[..]);
+    maybeControl := fs.openFile(controlPath, .read);
+    if maybeControl != null {
+        handle := maybeControl?!;
+        controlLen = handle.read(controlBuf[..]);
         handle.close();
     }
-    if file_len <= 0 or control_len <= 0 or file_len != control_len { ok = false; }
+    if fileLen <= 0 or controlLen <= 0 or fileLen != controlLen { ok = false; }
     else {
         i := 0;
-        while i < file_len {
-            if file_buf[i] != control_buf[i] { ok = false; break; }
+        while i < fileLen {
+            if fileBuf[i] != controlBuf[i] { ok = false; break; }
             i += 1;
         }
     }
-    fs.deleteFile(file_path); fs.deleteFile(control_path);
+    fs.deleteFile(filePath); fs.deleteFile(controlPath);
 
     // fromReader allocation sweep: every init failure point — including
     // replacement-writer initialization — must clean up fully (the caller's
     // net-zero gate catches any leaked comment/prefix copy).
     n := 0;
-    saw_failure := false;
-    saw_success := false;
+    sawFailure := false;
+    sawSuccess := false;
     while n < 128 {
-        failing := FailingAllocator{ parent = alloc, fail_at = n };
+        failing := FailingAllocator{ parent = alloc, failAt = n };
         provisional, pe := zip.Writer.fromReader(*reader, .{}, xx *failing);
-        if pe { saw_failure = true; }
+        if pe { sawFailure = true; }
         else {
-            saw_success = true;
+            sawSuccess = true;
             provisional.deinit();
         }
         n += 1;
-        if saw_success { break; }
+        if sawSuccess { break; }
     }
-    if !saw_failure { ok = false; }
-    if !saw_success { ok = false; }
+    if !sawFailure { ok = false; }
+    if !sawSuccess { ok = false; }
 
     // The createFile convenience: writes a whole archive to a path in one
     // call; read it back through openFile (create() itself is exercised by
     // the failure tests above).
-    convenience_path := "/tmp/sx_zip_create_file_convenience";
-    fs.deleteFile(convenience_path);
-    conv_inputs : [1]zip.Input = .[ .{ name = "conv.txt", data = "convenience payload", options = .{ method = .store } } ];
-    zip.createFile(convenience_path, conv_inputs[..], .{}, "", alloc) catch { ok = false; };
-    conv_reader := zip.openFile(convenience_path, .{}, alloc) catch { fs.deleteFile(convenience_path); reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
-    conv_extracted := conv_reader.extractName("conv.txt", 4096, alloc) catch {
-        conv_reader.deinit(); fs.deleteFile(convenience_path); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
+    conveniencePath := "/tmp/sx_zip_create_file_convenience";
+    fs.deleteFile(conveniencePath);
+    convInputs : [1]zip.Input = .[ .{ name = "conv.txt", data = "convenience payload", options = .{ method = .store } } ];
+    zip.createFile(conveniencePath, convInputs[..], .{}, "", alloc) catch { ok = false; };
+    convReader := zip.openFile(conveniencePath, .{}, alloc) catch { fs.deleteFile(conveniencePath); reader.deinit(); alloc.deallocBytes(archive.ptr); return false; };
+    convExtracted := convReader.extractName("conv.txt", 4096, alloc) catch {
+        convReader.deinit(); fs.deleteFile(conveniencePath); reader.deinit(); alloc.deallocBytes(archive.ptr); return false;
     };
-    conv_ok := conv_extracted.len == 19;
-    conv_at := 0;
-    conv_expect := "convenience payload";
-    while conv_ok and conv_at < conv_extracted.len {
-        if conv_extracted[conv_at] != conv_expect[conv_at] { conv_ok = false; }
-        conv_at += 1;
+    convOk := convExtracted.len == 19;
+    convAt := 0;
+    convExpect := "convenience payload";
+    while convOk and convAt < convExtracted.len {
+        if convExtracted[convAt] != convExpect[convAt] { convOk = false; }
+        convAt += 1;
     }
-    if !conv_ok { ok = false; }
-    alloc.deallocBytes(conv_extracted.ptr);
-    conv_reader.deinit();
-    fs.deleteFile(convenience_path);
+    if !convOk { ok = false; }
+    alloc.deallocBytes(convExtracted.ptr);
+    convReader.deinit();
+    fs.deleteFile(conveniencePath);
 
     reader.deinit();
     alloc.deallocBytes(archive.ptr);
@@ -938,19 +938,19 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
 
 main :: () -> i32 {
     alloc := mem.GPA.init();
-    if !test_exact_miniz_bytes(alloc) { print("miniz byte identity failed\n"); return 1; }
-    if !test_memory_reader(alloc) { print("memory reader failed\n"); return 2; }
-    if !test_sources_and_sinks(alloc) { print("source/sink failed\n"); return 3; }
-    if !test_entry_streams(alloc) { print("entry stream failed\n"); return 4; }
-    if !test_terminal_checksum_errors(alloc) { print("terminal checksum failed\n"); return 5; }
-    if !test_transfer_errors_and_cleanup(alloc) { print("transfer errors/cleanup failed\n"); return 6; }
-    if !test_empty_unsupported_entries(alloc) { print("empty unsupported entry failed\n"); return 7; }
-    if !test_update_and_transfer(alloc) { print("update/transfer failed\n"); return 8; }
-    if !test_prefix_and_duplicates(alloc) { print("prefix/duplicates failed\n"); return 9; }
-    if !test_files(alloc) { print("file integration failed\n"); return 10; }
-    if !test_errors_and_poison(alloc) { print("errors/poison failed\n"); return 11; }
-    if !test_finalization(alloc) { print("finalization failed\n"); return 12; }
-    if !test_add_from_failures(alloc) { print("add_from failure boundaries failed\n"); return 13; }
+    if !testExactMinizBytes(alloc) { print("miniz byte identity failed\n"); return 1; }
+    if !testMemoryReader(alloc) { print("memory reader failed\n"); return 2; }
+    if !testSourcesAndSinks(alloc) { print("source/sink failed\n"); return 3; }
+    if !testEntryStreams(alloc) { print("entry stream failed\n"); return 4; }
+    if !testTerminalChecksumErrors(alloc) { print("terminal checksum failed\n"); return 5; }
+    if !testTransferErrorsAndCleanup(alloc) { print("transfer errors/cleanup failed\n"); return 6; }
+    if !testEmptyUnsupportedEntries(alloc) { print("empty unsupported entry failed\n"); return 7; }
+    if !testUpdateAndTransfer(alloc) { print("update/transfer failed\n"); return 8; }
+    if !testPrefixAndDuplicates(alloc) { print("prefix/duplicates failed\n"); return 9; }
+    if !testFiles(alloc) { print("file integration failed\n"); return 10; }
+    if !testErrorsAndPoison(alloc) { print("errors/poison failed\n"); return 11; }
+    if !testFinalization(alloc) { print("finalization failed\n"); return 12; }
+    if !testAddFromFailures(alloc) { print("addFrom failure boundaries failed\n"); return 13; }
     if alloc.allocCount != 0 { print("std.zip leaked {} allocations\n", alloc.allocCount); return 14; }
     print("std.zip ok\n");
     0

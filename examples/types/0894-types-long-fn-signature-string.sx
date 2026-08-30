@@ -3,16 +3,16 @@
 // complete, byte for byte, with every parameter and the return type intact.
 @import "modules/std.sx";
 
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_One :: struct { v: i64; }
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Two :: struct { v: i64; }
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Three :: struct { v: i64; }
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Four :: struct { v: i64; }
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Five :: struct { v: i64; }
-Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Ret :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesOne :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesTwo :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesThree :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesFour :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesFive :: struct { v: i64; }
+VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesRet :: struct { v: i64; }
 
 show :: (a: any) { print("{}\n", a); }
 
-wide :: (p0: Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_One, p1: Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Two, p2: Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Three, p3: Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Four, p4: Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Five) -> Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Ret {
+wide :: (p0: VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesOne, p1: VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesTwo, p2: VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesThree, p3: VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesFour, p4: VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesFive) -> VeryLongNominalTypeNamePaddingSoTheRenderedSignatureRunsWellPastFiveHundredAndTwelveBytesRet {
     return .{ v = p0.v + p1.v + p2.v + p3.v + p4.v };
 }
 

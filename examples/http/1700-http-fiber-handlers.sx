@@ -37,9 +37,9 @@ PORT :: 19015;
 SUM_LEN :: 200000;
 
 Obs :: struct {
-    handler_tid: usize = 0;
-    stall_rc: i64 = -99;
-    stall_got: i64 = 0;
+    handlerTid: usize = 0;
+    stallRc: i64 = -99;
+    stallGot: i64 = 0;
 }
 
 checksum :: (s: string) -> i64 {
@@ -55,7 +55,7 @@ checksum :: (s: string) -> i64 {
 route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     obs : *Obs = xx ctx;
     if req.path == "/sum" {
-        if obs.handler_tid == 0 { obs.handler_tid = pthread_self(); }
+        if obs.handlerTid == 0 { obs.handlerTid = pthread_self(); }
         scratch : [8192]u8 = ---;
         total : i64 = 0;
         h : i64 = 0;
@@ -78,15 +78,15 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
             if rc <= 0 { break; }
             got += rc;
         }
-        obs.stall_rc = rc;
-        obs.stall_got = got;
+        obs.stallRc = rc;
+        obs.stallGot = got;
         resp.body = "stalled";   // discarded — the conn was evicted
         return;
     }
     resp.body = "pong";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -108,7 +108,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-num_after :: (hay: string, key: string) -> i64 {
+numAfter :: (hay: string, key: string) -> i64 {
     i := 0;
     while i + key.len <= hay.len {
         j := 0;
@@ -131,7 +131,7 @@ num_after :: (hay: string, key: string) -> i64 {
     return -1;
 }
 
-send_all :: (srv: *http.Server, fd: i32, s: string) {
+sendAll :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
         n, we := socket.writeNb(fd, *s.ptr[sent], (s.len - sent));
@@ -140,7 +140,7 @@ send_all :: (srv: *http.Server, fd: i32, s: string) {
     }
 }
 
-read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+readResponse :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     total : i64 = 0;
     t : i64 = 0;
     while t < 20000 {
@@ -156,7 +156,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
             i += 1;
         }
         if he >= 0 {
-            cl := num_after(resp, "Content-Length: ");
+            cl := numAfter(resp, "Content-Length: ");
             if cl >= 0 and total >= he + cl { return total; }
         }
         t += 1;
@@ -169,7 +169,7 @@ main :: () -> i32 {
     failed : i64 = 0;
     leaked : i64 = 0;
     obs : Obs = .{};
-    main_tid := pthread_self();
+    mainTid := pthread_self();
 
     push .{ allocator = gpa } {
         cap : i64 = 65536;
@@ -193,10 +193,10 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: bodyless fiber dispatch ───────────────────────────
-        c1 := dial_port(PORT);
+        c1 := dialPort(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\n\r\n");
-        r1 := read_response(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\n\r\n");
+        r1 := readResponse(*srv, c1, rbuf, cap);
         resp1 := string{ ptr = rbuf, len = r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") or !contains(resp1, "pong") {
             print("case1: no pong\n");
@@ -219,23 +219,23 @@ main :: () -> i32 {
         pongs : i64 = 0;
         ptrials : i64 = 0;
         while ptrials < 10 {
-            cp := dial_port(PORT);
+            cp := dialPort(PORT);
             if cp < 0 { print("dial cp failed\n"); srv.close(); return 1; }
             // let the server ACCEPT first (the fresh conn's read watch is
             // registered mid-tick; its data event surfaces from the next wait)
             srv.tick(1) catch {};
             srv.tick(1) catch {};
-            bytes_in_before := srv.stats().bytesIn;
-            served_before := srv.stats().requestsServed;
+            bytesInBefore := srv.stats().bytesIn;
+            servedBefore := srv.stats().requestsServed;
             psent : i64 = 0;
             while psent < preq.len {
                 n, we := socket.writeNb(cp, *preq.ptr[psent], (preq.len - psent));
                 if !we { psent += n; }
             }
             srv.tick(50) catch {};
-            tick_bytes := srv.stats().bytesIn - bytes_in_before;
-            tick_served := srv.stats().requestsServed - served_before;
-            if tick_bytes < preq.len and tick_served < 2 {
+            tickBytes := srv.stats().bytesIn - bytesInBefore;
+            tickServed := srv.stats().requestsServed - servedBefore;
+            if tickBytes < preq.len and tickServed < 2 {
                 // the pipeline surfaced to the server in parts — the
                 // one-tick premise is void; retry on a fresh conn
                 socket.close(cp);
@@ -244,10 +244,10 @@ main :: () -> i32 {
                 ptrials += 1;
                 continue;
             }
-            if tick_served != 2 {
+            if tickServed != 2 {
                 // everything was read in the one tick and still not both
                 // served — the same-tick re-drive is genuinely broken
-                print("case1b: {} served in one tick ({} bytes read, want 2)\n", tick_served, tick_bytes);
+                print("case1b: {} served in one tick ({} bytes read, want 2)\n", tickServed, tickBytes);
                 socket.close(cp);
                 failed = 1;
                 break;
@@ -287,55 +287,55 @@ main :: () -> i32 {
             sum = (sum * 31 + body[i]) % 1000000007;
             i += 1;
         }
-        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
-        send_all(*srv, c1, string{ ptr = body, len = 70001 });
-        send_all(*srv, c1, string{ ptr = *body[70001], len = 59999 });
-        send_all(*srv, c1, string{ ptr = *body[130000], len = SUM_LEN - 130000 });
-        r2 := read_response(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        sendAll(*srv, c1, string{ ptr = body, len = 70001 });
+        sendAll(*srv, c1, string{ ptr = *body[70001], len = 59999 });
+        sendAll(*srv, c1, string{ ptr = *body[130000], len = SUM_LEN - 130000 });
+        r2 := readResponse(*srv, c1, rbuf, cap);
         resp2 := string{ ptr = rbuf, len = r2 };
         if !contains(resp2, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
-        if num_after(resp2, "len=") != SUM_LEN { print("case2: bad len {}\n", num_after(resp2, "len=")); failed = 1; }
-        if num_after(resp2, "sum=") != sum { print("case2: bad sum\n"); failed = 1; }
-        if obs.handler_tid == 0 { print("case2: handler never ran\n"); failed = 1; }
-        if obs.handler_tid != main_tid { print("case2: handler ran OFF the loop thread\n"); failed = 1; }
+        if numAfter(resp2, "len=") != SUM_LEN { print("case2: bad len {}\n", numAfter(resp2, "len=")); failed = 1; }
+        if numAfter(resp2, "sum=") != sum { print("case2: bad sum\n"); failed = 1; }
+        if obs.handlerTid == 0 { print("case2: handler never ran\n"); failed = 1; }
+        if obs.handlerTid != mainTid { print("case2: handler ran OFF the loop thread\n"); failed = 1; }
 
         // ── case 3: keep-alive after the fiber-served stream ──────────
-        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r3 := read_response(*srv, c1, rbuf, cap);
+        sendAll(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r3 := readResponse(*srv, c1, rbuf, cap);
         resp3 := string{ ptr = rbuf, len = r3 };
         if !contains(resp3, "pong") { print("case3: no pong\n"); failed = 1; }
         socket.close(c1);
 
         // ── case 4: stalled body → eviction wakes the parked fiber ────
-        c4 := dial_port(PORT);
+        c4 := dialPort(PORT);
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(*srv, c4, string{ ptr = body, len = 1024 });
+        sendAll(*srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        sendAll(*srv, c4, string{ ptr = body, len = 1024 });
         // go silent; the 400 ms stall bound evicts, faulting the channel —
         // the fiber wakes with -1 (same thread: obs is readable directly)
         t : i64 = 0;
-        while t < 20000 and obs.stall_rc == -99 {
+        while t < 20000 and obs.stallRc == -99 {
             srv.tick(1) catch {};
             t += 1;
         }
         socket.close(c4);
-        if obs.stall_rc != -1 { print("case4: rc {} (want -1)\n", obs.stall_rc); failed = 1; }
-        if obs.stall_got != 1024 { print("case4: got {} (want 1024)\n", obs.stall_got); failed = 1; }
+        if obs.stallRc != -1 { print("case4: rc {} (want -1)\n", obs.stallRc); failed = 1; }
+        if obs.stallGot != 1024 { print("case4: got {} (want 1024)\n", obs.stallGot); failed = 1; }
 
         // ── case 5: server healthy after the eviction ─────────────────
-        c5 := dial_port(PORT);
+        c5 := dialPort(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c5, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r5 := read_response(*srv, c5, rbuf, cap);
+        sendAll(*srv, c5, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r5 := readResponse(*srv, c5, rbuf, cap);
         resp5 := string{ ptr = rbuf, len = r5 };
         if !contains(resp5, "pong") { print("case5: no pong\n"); failed = 1; }
         socket.close(c5);
 
         // ── case 6: close() with a fiber parked mid-body must return ──
-        c6 := dial_port(PORT);
+        c6 := dialPort(PORT);
         if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
-        send_all(*srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(*srv, c6, string{ ptr = body, len = 2048 });
+        sendAll(*srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        sendAll(*srv, c6, string{ ptr = body, len = 2048 });
         t = 0;
         while t < 5 { srv.tick(1) catch {}; t += 1; }   // fiber parked in readBody
 

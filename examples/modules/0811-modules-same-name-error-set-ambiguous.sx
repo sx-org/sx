@@ -29,7 +29,7 @@ describe :: ($T: Type) -> i32 {
     r
 }
 
-fail_io :: () -> !IoErr {
+failIo :: () -> !IoErr {
     raise .Disk;
 }
 

@@ -2,6 +2,6 @@
 
 // b.sx directly imports c.sx, so it CAN name `COnly` — proving the type is
 // only one flat hop away here, two hops away from a file that imports b.sx.
-b_make :: () -> COnly {
+bMake :: () -> COnly {
     .{ v = 99 }
 }

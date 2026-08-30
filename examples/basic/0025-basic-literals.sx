@@ -45,9 +45,9 @@ END;
     print("heredoc: {}\n", hd);
 
     // Undefined with type
-    undef_val : i32 = ---;
-    undef_val = 77;
-    print("undef-then-set: {}\n", undef_val);
+    undefVal : i32 = ---;
+    undefVal = 77;
+    print("undef-then-set: {}\n", undefVal);
 
     // Enum literal (context-inferred)
     c : Color = .green;

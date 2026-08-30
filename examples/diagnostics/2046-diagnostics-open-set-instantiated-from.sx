@@ -30,7 +30,7 @@ main :: () -> i32 {
     print("{}\n", lifted.render());
 
     // And through a second generic, which forwards to the first.
-    forwarded := into_view(Stray{ text = "still not one" });
+    forwarded := intoView(Stray{ text = "still not one" });
     print("{}\n", forwarded.render());
     0
 }

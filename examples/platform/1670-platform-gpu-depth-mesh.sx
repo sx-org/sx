@@ -74,7 +74,7 @@ main :: () -> i32 {
     red   : [4]f32 = .[1.0, 0.0, 0.0, 1.0];
 
     gpu.setDepthMode(.less);
-    if !gpu.beginFrame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
     gpu.setShader(sh);
     gpu.setVertexBuffer(vb);
     gpu.setIndexBuffer(ib);

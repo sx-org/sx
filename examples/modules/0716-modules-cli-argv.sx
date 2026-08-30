@@ -27,5 +27,5 @@ main :: () {
     }
 
     if osArgc() == args.len { print("argc-consistent: ok\n"); }
-    else { print("argc-consistent: FAIL (os_argc={} len={})\n", osArgc(), args.len); }
+    else { print("argc-consistent: FAIL (osArgc={} len={})\n", osArgc(), args.len); }
 }

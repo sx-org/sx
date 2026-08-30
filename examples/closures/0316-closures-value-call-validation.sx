@@ -14,7 +14,7 @@
 S :: struct { cb: Closure(i64, i64) -> i64; }
 P :: struct { x: i64; y: i64; }
 addfn :: (a: i64, b: i64) -> i64 => a + b;
-takes_cb :: (cb: Closure(i64) -> i64) -> i64 => cb(5);
+takesCb :: (cb: Closure(i64) -> i64) -> i64 => cb(5);
 opt3 :: (a: i64, b: i64, c: ?i64) -> i64 { return c ?? -1; }
 mk :: (a: i64, b: i64, p: P, w: i32) -> i64 { return a + b + p.x * 10 + p.y + w; }
 withdef :: (a: i64, b: i64 = 99) -> i64 { return a + b; }
@@ -49,7 +49,7 @@ main :: () {
     print("fnptr spread: {}\n", f(..pair));
 
     // closure param called inside the callee (exact arity)
-    print("param: {}\n", takes_cb(|x: i64| -> i64 x * 2));
+    print("param: {}\n", takesCb(|x: i64| -> i64 x * 2));
 
     // top-level fn: tuple spread expands positionally
     print("top spread: {}\n", addfn(..pair));
@@ -83,6 +83,6 @@ main :: () {
     // default-arg fill counts the spread's WIDTH:
     // a 2-tuple supplies both params (no default), a 1-tuple fills `b = 99`
     print("defaults full spread: {}\n", withdef(..pair));
-    one_t := .{7,};
-    print("defaults 1-tuple spread: {}\n", withdef(..one_t));
+    oneT := .{7,};
+    print("defaults 1-tuple spread: {}\n", withdef(..oneT));
 }

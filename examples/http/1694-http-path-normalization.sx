@@ -32,7 +32,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = concat("p:", req.path);
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -55,7 +55,7 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(port);
+    fd := dialPort(port);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -83,7 +83,7 @@ check :: (r: string, frag: string, label: string, failed: *i64) {
     }
 }
 
-ends_with :: (hay: string, tail: string) -> bool {
+endsWith :: (hay: string, tail: string) -> bool {
     if tail.len > hay.len { return false; }
     off := hay.len - tail.len;
     i := 0;
@@ -97,17 +97,17 @@ ends_with :: (hay: string, tail: string) -> bool {
 // One GET on PORT_A; the echoed canonical path is asserted BOTH-ANCHORED:
 // it must start right after the header terminator and run to EOF, so a
 // non-normalized "p:/a/.." can never satisfy a "p:/" expectation.
-expect_path :: (srv: *http.Server, target: string, want: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+expectPath :: (srv: *http.Server, target: string, want: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
     r := roundtrip(srv, PORT_A, req, buf, cap);
     check(r, "HTTP/1.1 200 OK", label, failed);
-    if !ends_with(r, concat("\r\n\r\np:", want)) {
+    if !endsWith(r, concat("\r\n\r\np:", want)) {
         print("{}: body is not exactly \"p:{}\"\n", label, want);
         failed.* = 1;
     }
 }
 
-expect_400 :: (srv: *http.Server, target: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+expect400 :: (srv: *http.Server, target: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
     r := roundtrip(srv, PORT_A, req, buf, cap);
     check(r, "HTTP/1.1 400", label, failed);
@@ -131,37 +131,37 @@ main :: () -> i32 {
         reqArena := mem.Arena.init(gpa, 65536);
         push .{ allocator = reqArena } {
             // (a) percent-decode in the path
-            expect_path(*srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, *failed);
+            expectPath(*srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, *failed);
 
             // (b) dot segments collapse; the query survives UNdecoded
-            expect_path(*srv, "/a/./b/../c?x=%2F", "/a/c?x=%2F", "dots+query", rbuf, cap, *failed);
+            expectPath(*srv, "/a/./b/../c?x=%2F", "/a/c?x=%2F", "dots+query", rbuf, cap, *failed);
 
             // (c) %2e%2e must not smuggle a ".." past the normalizer
-            expect_400(*srv, "/%2e%2e/etc", "encoded traversal", rbuf, cap, *failed);
+            expect400(*srv, "/%2e%2e/etc", "encoded traversal", rbuf, cap, *failed);
 
             // (d) ".." climbing above the root
-            expect_400(*srv, "/a/../../b", "above-root", rbuf, cap, *failed);
+            expect400(*srv, "/a/../../b", "above-root", rbuf, cap, *failed);
 
             // (e) NUL
-            expect_400(*srv, "/a%00b", "pct-nul", rbuf, cap, *failed);
+            expect400(*srv, "/a%00b", "pct-nul", rbuf, cap, *failed);
 
             // (f) encoded slash changes segmentation
-            expect_400(*srv, "/a%2Fb", "pct-slash", rbuf, cap, *failed);
+            expect400(*srv, "/a%2Fb", "pct-slash", rbuf, cap, *failed);
 
             // (g) malformed escape
-            expect_400(*srv, "/a%zzb", "bad escape", rbuf, cap, *failed);
+            expect400(*srv, "/a%zzb", "bad escape", rbuf, cap, *failed);
 
             // (h) decoded CRLF
-            expect_400(*srv, "/a%0D%0Ab", "pct-crlf", rbuf, cap, *failed);
+            expect400(*srv, "/a%0D%0Ab", "pct-crlf", rbuf, cap, *failed);
 
             // (i) clean fast path is untouched
-            expect_path(*srv, "/plain", "/plain", "clean", rbuf, cap, *failed);
+            expectPath(*srv, "/plain", "/plain", "clean", rbuf, cap, *failed);
 
             // (j) "/a/.." is the root
-            expect_path(*srv, "/a/..", "/", "pop-to-root", rbuf, cap, *failed);
+            expectPath(*srv, "/a/..", "/", "pop-to-root", rbuf, cap, *failed);
 
             // (k) trailing "/." keeps the directory shape
-            expect_path(*srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, *failed);
+            expectPath(*srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, *failed);
         }
         reqArena.deinit();
 
@@ -176,7 +176,7 @@ main :: () -> i32 {
         check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
         // end-anchored: the rebuilt path carries the SHRUNKEN length, so
         // the echo has no stale tail after it
-        if !ends_with(r, "\r\n\r\np:/x/y?k=%20") {
+        if !endsWith(r, "\r\n\r\np:/x/y?k=%20") {
             print("pooled shrunken path: body mismatch\n");
             failed = 1;
         }
@@ -186,7 +186,7 @@ main :: () -> i32 {
         // everything after the target) intact
         r = roundtrip(*srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "absolute-form status", *failed);
-        if !ends_with(r, "\r\n\r\np:/a b/c?q=%2F") {
+        if !endsWith(r, "\r\n\r\np:/a b/c?q=%2F") {
             print("absolute-form canonical path: body mismatch\n");
             failed = 1;
         }

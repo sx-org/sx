@@ -13,15 +13,15 @@ main :: () {
     a := TrackingAllocator.init(base);
 
     answer := 0;
-    ctx_held := 0;
+    ctxHeld := 0;
     push .{ allocator = ctx } {
         n := 41;
         f := context.io.async(||_{ n } -> (i64, !IoErr) n, a);
         answer = await(f) catch { 0 };
-        ctx_held = ctx.leakCount();
+        ctxHeld = ctx.leakCount();
     }
     print("read {} level {} ctx holds {}\n",
-          answer, a.allocCount == a.deallocCount, ctx_held);
+          answer, a.allocCount == a.deallocCount, ctxHeld);
 
     // A worker that WRITES its env writes the persisted copy — the binding the
     // literal read keeps the value it had.

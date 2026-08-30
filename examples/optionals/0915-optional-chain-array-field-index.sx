@@ -19,16 +19,16 @@ Holder :: struct { ps: [2]Pt; sl: []i64; }
 PArr :: struct { p: *[3]i64; }   // pointer-to-array field
 PU8  :: struct { p: *[4]u8;  }   // sub-word element
 
-g_i64 : [3]i64 = ---;
-g_u8  : [4]u8  = ---;
+gI64 : [3]i64 = ---;
+gU8  : [4]u8  = ---;
 
-mk_parr :: (present: bool) -> ?PArr {
-    if present { return PArr{ p = *g_i64 }; }
+mkParr :: (present: bool) -> ?PArr {
+    if present { return PArr{ p = *gI64 }; }
     return null;
 }
-mk_pu8 :: () -> ?PU8 { return PU8{ p = *g_u8 }; }
+mkPu8 :: () -> ?PU8 { return PU8{ p = *gU8 }; }
 
-mk_arr :: (present: bool) -> ?Arr3 {
+mkArr :: (present: bool) -> ?Arr3 {
     if present {
         r : Arr3 = ---;
         r.xs[0] = 1; r.xs[1] = 2; r.xs[2] = 3;
@@ -37,7 +37,7 @@ mk_arr :: (present: bool) -> ?Arr3 {
     return null;
 }
 
-mk_holder :: (data: []i64) -> ?Holder {
+mkHolder :: (data: []i64) -> ?Holder {
     r : Holder = ---;
     r.ps[0].x = 10; r.ps[0].y = 11;
     r.ps[1].x = 20; r.ps[1].y = 21;
@@ -47,37 +47,37 @@ mk_holder :: (data: []i64) -> ?Holder {
 
 main :: () {
     // Present receiver: unwraps + indexes.
-    print("present[0]: {}\n", mk_arr(true)?.xs[0] ?? 99);   // 1
-    print("present[2]: {}\n", mk_arr(true)?.xs[2] ?? 99);   // 3
+    print("present[0]: {}\n", mkArr(true)?.xs[0] ?? 99);   // 1
+    print("present[2]: {}\n", mkArr(true)?.xs[2] ?? 99);   // 3
 
     // Null receiver: short-circuits to null, coalesced to the default.
-    print("null:       {}\n", mk_arr(false)?.xs[0] ?? 99);  // 99
+    print("null:       {}\n", mkArr(false)?.xs[0] ?? 99);  // 99
 
     // Result is `?ElemType` — bind it, then unwrap.
-    x := mk_arr(true)?.xs[1];                                // ?i64
+    x := mkArr(true)?.xs[1];                                // ?i64
     print("bound:      {}\n", x ?? 0);                       // 2
-    print("unwrap:     {}\n", mk_arr(true)?.xs[2]?!);         // 3
+    print("unwrap:     {}\n", mkArr(true)?.xs[2]?!);         // 3
 
     // Struct-element array `[2]Pt`: indexing yields `?Pt`.
-    p := mk_holder(.[])?.ps[1];                              // ?Pt
+    p := mkHolder(.[])?.ps[1];                               // ?Pt
     print("struct.x:   {}\n", p?.x ?? -1);                   // 20
     print("struct.y:   {}\n", p?.y ?? -1);                   // 21
 
     // Slice field through the chain.
     arr : [3]i64 = .[5, 6, 7];
-    print("slice[1]:   {}\n", mk_holder(arr[..])?.sl[1] ?? -1); // 6
+    print("slice[1]:   {}\n", mkHolder(arr[..])?.sl[1] ?? -1); // 6
 
     // Pointer-to-array field `?*[N]T`: indexing auto-derefs through the
     // unwrapped pointer (GEP the pointee array element), multi-element.
-    g_i64[0] = 10; g_i64[1] = 20; g_i64[2] = 30;
-    print("ptr[0]:     {}\n", mk_parr(true)?.p[0] ?? 99);   // 10
-    print("ptr[1]:     {}\n", mk_parr(true)?.p[1] ?? 99);   // 20
-    print("ptr[2]:     {}\n", mk_parr(true)?.p[2] ?? 99);   // 30
+    gI64[0] = 10; gI64[1] = 20; gI64[2] = 30;
+    print("ptr[0]:     {}\n", mkParr(true)?.p[0] ?? 99);   // 10
+    print("ptr[1]:     {}\n", mkParr(true)?.p[1] ?? 99);   // 20
+    print("ptr[2]:     {}\n", mkParr(true)?.p[2] ?? 99);   // 30
     // Null receiver short-circuits — no deref of the null pointer.
-    print("ptr null:   {}\n", mk_parr(false)?.p[0] ?? 99);  // 99
+    print("ptr null:   {}\n", mkParr(false)?.p[0] ?? 99);  // 99
 
     // Sub-word element `?*[4]u8` — adjacent lanes not clobbered.
-    g_u8[0] = 7; g_u8[1] = 8; g_u8[2] = 9; g_u8[3] = 200;
-    print("u8[0]:      {}\n", mk_pu8()?.p[0] ?? 0);          // 7
-    print("u8[3]:      {}\n", mk_pu8()?.p[3] ?? 0);          // 200
+    gU8[0] = 7; gU8[1] = 8; gU8[2] = 9; gU8[3] = 200;
+    print("u8[0]:      {}\n", mkPu8()?.p[0] ?? 0);          // 7
+    print("u8[3]:      {}\n", mkPu8()?.p[3] ?? 0);          // 200
 }

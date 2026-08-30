@@ -13,7 +13,7 @@ Shape :: enum { circle: f32; rect: i32; none; }
 Point :: struct { x, y: i64; }
 Size2 :: struct { w, h: i64; }
 
-only_union :: (t: Type) -> string {
+onlyUnion :: (t: Type) -> string {
     match t {
         case union: return "union";
         else:       return "other";
@@ -49,9 +49,9 @@ kind :: (x: $T) -> string {
 
 main :: () {
     tu := TU{ i = 5 };
-    print("untagged: {}\n", only_union(@typeOf(tu)));
-    print("enum: {}\n", only_union(@typeOf(E.a)));
-    print("tagged: {}\n", only_union(@typeOf(Shape.none)));
+    print("untagged: {}\n", onlyUnion(@typeOf(tu)));
+    print("enum: {}\n", onlyUnion(@typeOf(E.a)));
+    print("tagged: {}\n", onlyUnion(@typeOf(Shape.none)));
 
     print("both untagged: {}\n", both(@typeOf(tu)));
     print("both tagged: {}\n", both(@typeOf(Shape.none)));

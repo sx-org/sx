@@ -46,18 +46,18 @@ main :: () -> i64 {
 
     // Compound assign through a property evaluates the receiver EXACTLY ONCE:
     // a moving receiver reads and writes the SAME element (not two different ones).
-    g_idx = 0;
+    gIdx = 0;
     cells[0] = .{ raw = 10 };
     cells[1] = .{ raw = 20 };
-    next_cell().celsius += 1;                 // reads & writes cells[0]
-    print("once: c0={} c1={} idx={}\n", cells[0].celsius, cells[1].celsius, g_idx);  // 11 20 1
+    nextCell().celsius += 1;                 // reads & writes cells[0]
+    print("once: c0={} c1={} idx={}\n", cells[0].celsius, cells[1].celsius, gIdx);  // 11 20 1
     return 0;
 }
 
-g_idx : i64 = 0;
+gIdx : i64 = 0;
 cells : [2]Temp = .[ .{}, .{} ];
-next_cell :: () -> *Temp {
-    cur := g_idx;
-    g_idx = g_idx + 1;
+nextCell :: () -> *Temp {
+    cur := gIdx;
+    gIdx = gIdx + 1;
     return *cells[cur];
 }

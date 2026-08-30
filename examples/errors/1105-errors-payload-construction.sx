@@ -53,7 +53,7 @@ small :: (n: i64) -> (i64, !Small) {
     return n;
 }
 
-into_mixed :: (n: i64) -> (i64, !Mixed) {
+intoMixed :: (n: i64) -> (i64, !Mixed) {
     return small(n);
 }
 
@@ -63,7 +63,7 @@ main :: () -> i32 {
     print("defaults={}\n", widen(1) catch |e| read(e));
     print("bare={}\n", widen(2) catch |e| read(e));
     print("ok={}\n", widen(5) catch { -9 });
-    print("mixed={}\n", into_mixed(-1) catch |e| match e {
+    print("mixed={}\n", intoMixed(-1) catch |e| match e {
         case .S: |s| s;
         else: -1;
     });

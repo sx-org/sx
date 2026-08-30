@@ -9,5 +9,5 @@
 @import "0833-modules-namespace-alias-carried-collision-ambiguous/b.sx";
 
 main :: () {
-    print("{} {} {}\n", use_a(), use_b(), t.fx());
+    print("{} {} {}\n", useA(), useB(), t.fx());
 }

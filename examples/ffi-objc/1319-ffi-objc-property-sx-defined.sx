@@ -55,8 +55,8 @@ main :: () -> i32 {
 
         // Confirm the setter selector is absent on the class.
         cls : Class = objc_getClass("SxBox".ptr);
-        sel_set_area : SEL = sel_registerName("setArea:".ptr);
-        m := class_getInstanceMethod(cls, sel_set_area);
+        selSetArea : SEL = sel_registerName("setArea:".ptr);
+        m := class_getInstanceMethod(cls, selSetArea);
         if m != null {
             print("FAIL: setArea: should not be registered (readonly)\n");
             return 1;

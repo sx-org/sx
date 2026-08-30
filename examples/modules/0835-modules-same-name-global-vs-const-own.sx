@@ -9,5 +9,5 @@
 h :: @import "0835-modules-same-name-global-vs-const-own/h.sx";
 
 main :: () {
-    print("a_k={} use_k={}\n", a_k(), h.use_k());
+    print("aK={} useK={}\n", aK(), h.useK());
 }

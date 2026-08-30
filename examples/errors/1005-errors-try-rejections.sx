@@ -16,13 +16,13 @@ gb    :: () -> !B  { return; }
 plain :: () -> i32 { return 0; }
 
 // `try` in a non-failable function.
-bad_ctx :: () -> i32 {
+badCtx :: () -> i32 {
     try ga();                  // error: `try` outside a failable function
     return 0;
 }
 
 // `try` on a non-failable operand.
-bad_operand :: () -> !A {
+badOperand :: () -> !A {
     try plain();               // error: operand has type i32 (not failable)
     return;
 }
@@ -34,8 +34,8 @@ widen :: () -> !A {
 }
 
 main :: () -> i32 {
-    a := bad_ctx();            // force bad_ctx to lower
-    b := bad_operand();        // force bad_operand to lower
+    a := badCtx();             // force badCtx to lower
+    b := badOperand();         // force badOperand to lower
     c := widen();              // force widen to lower
     return 0;
 }

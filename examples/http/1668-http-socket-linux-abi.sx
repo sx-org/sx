@@ -44,14 +44,14 @@ main :: () -> i32 {
     // pinned IR.
     ai : socket.AddrInfo = .{};
     base : usize = xx *ai;
-    off_len:   usize = xx *ai.aiAddrlen;
-    off_addr:  usize = xx *ai.aiAddr;
-    off_canon: usize = xx *ai.aiCanonname;
-    off_next:  usize = xx *ai.aiNext;
-    if off_len   - base != 16 { return 18; }
-    if off_addr  - base != 24 { return 19; }
-    if off_canon - base != 32 { return 20; }
-    if off_next  - base != 40 { return 21; }
+    offLen:   usize = xx *ai.aiAddrlen;
+    offAddr:  usize = xx *ai.aiAddr;
+    offCanon: usize = xx *ai.aiCanonname;
+    offNext:  usize = xx *ai.aiNext;
+    if offLen   - base != 16 { return 18; }
+    if offAddr  - base != 24 { return 19; }
+    if offCanon - base != 32 { return 20; }
+    if offNext  - base != 40 { return 21; }
 
     // linux sockaddrIn6: family is the 2-byte sa_family_t at offset 0.
     ip6 : [16]u8 = .{};

@@ -11,11 +11,11 @@
 // host-address `.int` value has no `ptr` form `LLVMConstInt` can lower.
 @import "modules/std.sx";
 
-build_greeting :: () -> string {
+buildGreeting :: () -> string {
     return concat("hello", " world");
 }
 
-GREETING :: @run build_greeting();
+GREETING :: @run buildGreeting();
 
 main :: () -> i32 {
     print("greeting = '{}'\n", GREETING);

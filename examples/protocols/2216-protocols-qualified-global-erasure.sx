@@ -1,5 +1,5 @@
 // A static interface-typed position folds a namespace-qualified global
-// (`m.the_w`) the same way it folds a bare global: the handle borrows that
+// (`m.theW`) the same way it folds a bare global: the handle borrows that
 // symbol. A path rooted at a global VALUE (`g.field`) is refused.
 @import "modules/std.sx";
 @import "2216-protocols-qualified-global-erasure/mod.sx";
@@ -9,7 +9,7 @@ P :: interface { a :: (self: *Self) -> i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 S :: struct { inner: P; }
 
-g : S = .{ inner = m.the_w };
+g : S = .{ inner = m.theW };
 
 main :: () {
     print("{}\n", g.inner.a());

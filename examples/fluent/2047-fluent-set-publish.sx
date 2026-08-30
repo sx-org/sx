@@ -47,10 +47,10 @@ Collect :: struct {
 }
 
 // A helper whose RETURN type is the set: its result already is a `View`.
-make_header :: (text: string) -> View { return Panel{ title = text }; }
+makeHeader :: (text: string) -> View { return Panel{ title = text }; }
 
 // A helper whose return type is a MEMBER: the expected type lifts it.
-make_label :: (text: string) -> Label => Label{ text = text };
+makeLabel :: (text: string) -> Label => Label{ text = text };
 
 // An ordinary helper, with a side effect, whose type is not a member.
 note :: (text: string) -> Plain {
@@ -73,8 +73,8 @@ main :: () -> i32 {
         // A value that already is a View.
         already;
         // A call whose result is a View, and one whose result is a member.
-        make_header("a helper's View");
-        make_label("a helper's member");
+        makeHeader("a helper's View");
+        makeLabel("a helper's member");
         // Another member type: membership is per declaration, not per shape.
         Panel{ title = "another member" };
 

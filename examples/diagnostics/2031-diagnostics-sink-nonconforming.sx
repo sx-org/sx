@@ -36,7 +36,7 @@ missing :: (content: $B/@BuildBlock(Drawable)) {
     content.run(*sink);
 }
 
-wrong_protocol :: (content: $B/@BuildBlock(Drawable)) {
+wrongProtocol :: (content: $B/@BuildBlock(Drawable)) {
     sink := Wrong{};
     content.run(*sink);
 }
@@ -47,14 +47,14 @@ instance :: (content: $B/@BuildBlock(Drawable)) {
     content.run(*sink);
 }
 
-by_value :: (content: $B/@BuildBlock(Drawable)) {
+byValue :: (content: $B/@BuildBlock(Drawable)) {
     sink := Sink(Drawable){};
     content.run(sink);
 }
 
 main :: () {
     missing() { Label{ text = "a" }; };
-    wrong_protocol() { Label{ text = "b" }; };
+    wrongProtocol() { Label{ text = "b" }; };
     instance() { Label{ text = "c" }; };
-    by_value() { Label{ text = "d" }; };
+    byValue() { Label{ text = "d" }; };
 }

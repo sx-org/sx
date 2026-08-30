@@ -25,7 +25,7 @@ http :: @import "modules/std/http.sx";
 
 PORT :: 18993;
 BODY_LEN :: 8388608;    // 8 MB — beyond send-buffer autotune caps on both OSes
-                        // (the client's receive window is clamped in dial_port,
+                        // (the client's receive window is clamped in dialPort,
                         // so the kernel cannot swallow the body: the server
                         // reliably parks in CONN_WRITING)
 FLOOD_LEN :: 65536;     // 64 KB of garbage vs an 8 KB readBufCap
@@ -48,7 +48,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = string{ ptr = b, len = BODY_LEN };
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     // Clamp the receive buffer BEFORE connect: fixes the advertised window
@@ -82,7 +82,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dial_port(PORT);
+        ca := dialPort(PORT);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -161,9 +161,9 @@ main :: () -> i32 {
 
         if failed == 0 {
             bodyStart := he + 4;
-            got_body := total - bodyStart;
-            if got_body != BODY_LEN {
-                print("body truncated/extended: {} bytes (want {})\n", got_body, BODY_LEN);
+            gotBody := total - bodyStart;
+            if gotBody != BODY_LEN {
+                print("body truncated/extended: {} bytes (want {})\n", gotBody, BODY_LEN);
                 failed = 1;
             } else {
                 // byte-exact: same pattern checksum, nothing spliced in
@@ -173,7 +173,7 @@ main :: () -> i32 {
                     want = (want * 31 + ((i * 13 + 7) % 251)) % 1000000007;
                     i += 1;
                 }
-                got := checksum(*rbuf[bodyStart], got_body);
+                got := checksum(*rbuf[bodyStart], gotBody);
                 if got != want {
                     print("body corrupted: checksum {} (want {})\n", got, want);
                     failed = 1;

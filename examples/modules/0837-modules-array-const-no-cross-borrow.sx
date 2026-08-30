@@ -1,7 +1,7 @@
 // An ARRAY-typed `::` const is an immutable global owned by its module.
 // Cross-module: the main file's scalar `K : i64 : 4` and h.sx's array
 // `K : [4]i64 : .[...]` coexist — each module's bare `K` binds its OWN
-// author (h's use_k reads ITS array, main's K stays the scalar 4).
+// author (h's useK reads ITS array, main's K stays the scalar 4).
 
 @import "modules/std.sx";
 h :: @import "0837-modules-array-const-no-cross-borrow/h.sx";
@@ -9,5 +9,5 @@ h :: @import "0837-modules-array-const-no-cross-borrow/h.sx";
 K : i64 : 4;
 
 main :: () {
-    print("{} {}\n", K, h.use_k());
+    print("{} {}\n", K, h.useK());
 }

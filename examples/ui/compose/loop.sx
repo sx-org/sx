@@ -126,10 +126,10 @@ FrameLoop :: struct {
         r.arenas[r.parity].reset();
         push .{
             allocator = r.arenas[r.parity],
-            compose_ui = *r.identity,
-            compose_state = *r.store,
-            compose_input = *r.taps,
-            compose_focus = *r.focus,
+            composeUi = *r.identity,
+            composeState = *r.store,
+            composeInput = *r.taps,
+            composeFocus = *r.focus,
         } {
             r.pump();
             r.identity.beginBuild();

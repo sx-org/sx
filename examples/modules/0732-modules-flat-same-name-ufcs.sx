@@ -12,7 +12,7 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("from_a v.bump() binds a.bump (+1)", from_a_ufcs() == 11);
-    report("from_b v.bump() binds b.bump (+100)", from_b_ufcs() == 110);
+    report("fromA v.bump() binds a.bump (+1)", fromAUfcs() == 11);
+    report("fromB v.bump() binds b.bump (+100)", fromBUfcs() == 110);
     0
 }

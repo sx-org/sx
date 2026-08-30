@@ -9,7 +9,7 @@
 // ~{memory}`), which is the §II.11 silent-miscompile risk zone — and runs
 // natively on x86_64-linux (printing "ok\n"). See 1640 for an x86 multi-output
 // example, 1645/1647/1649/1650 for aarch64 examples that execute on this host.
-sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
+sysWrite :: (fd: i64, buf: *u8, count: i64) -> i64 {
     return asm volatile {
         "syscall",
         [ret] "={rax}" -> i64,      // return: bytes written, in rax
@@ -23,5 +23,5 @@ sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
 
 main :: () {
     msg : [3]u8 = .[111, 107, 10];      // "ok\n"
-    n := sys_write(1, *msg[0], 3);
+    n := sysWrite(1, *msg[0], 3);
 }

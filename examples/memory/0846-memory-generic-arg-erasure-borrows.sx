@@ -34,7 +34,7 @@ poke :: (a: Allocator) {
     a.deallocBytes(p);
 }
 
-gen_poke :: (s: $P, a: Allocator) {
+genPoke :: (s: $P, a: Allocator) {
     p := a.allocBytes(8);
     a.deallocBytes(p);
     _ = s;
@@ -42,7 +42,7 @@ gen_poke :: (s: $P, a: Allocator) {
 
 // $T-DEPENDENT params keep their (target-less) behavior — only concrete
 // annotations supply targets.
-gen_id :: (x: $T) -> T { x }
+genId :: (x: $T) -> T { x }
 
 main :: () {
     amb := CountA{ n = 0 };
@@ -57,7 +57,7 @@ main :: () {
     // generic call: borrows identically — no ambient copy
     t2 := Tracker{ allocs = 0, deallocs = 0 };
     push .{ allocator = amb } {
-        gen_poke(1, xx t2);
+        genPoke(1, xx t2);
     }
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
@@ -72,7 +72,7 @@ main :: () {
     print("no fund: {}/{} size {}\n", t3.allocs, t3.deallocs, s.size());
 
     // generic $T param unaffected
-    print("id: {}\n", gen_id(42));
+    print("id: {}\n", genId(42));
 }
 
 Sizable :: interface { size :: (self: *Self) -> i64; }

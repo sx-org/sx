@@ -5,13 +5,13 @@
 // wins) and the broken winner must NOT be lowered — a rerouted fn value never
 // uses the winner. A fn-value site that lazily lowers the name-keyed winner
 // BEFORE the resolver reroutes surfaces the winner's
-// `unresolved 'missing_from_a'` for a function the value never touches.
+// `unresolved 'missingFromA'` for a function the value never touches.
 // Per-source function-value conversion must not pre-lower the winner.
 @import "modules/std.sx";
 @import "0735-modules-flat-same-name-fn-value-winner/a.sx";
 @import "0735-modules-flat-same-name-fn-value-winner/b.sx";
 
 main :: () -> i32 {
-    print("from_b_value = {}\n", from_b_value());
+    print("fromBValue = {}\n", fromBValue());
     0
 }

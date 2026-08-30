@@ -24,13 +24,13 @@ Thing :: struct {
         if o == .one { return self.state.b and arg.enabled; }
         self.state.b or arg.enabled
     }
-    after_pick :: (self: *Thing, other: *Thing) -> bool {
+    afterPick :: (self: *Thing, other: *Thing) -> bool {
         _ := other.pick(.one);
         self.state.b
     }
     count :: (self: *Thing, ..$args) -> bool { self.state.b and args.len == 2 }
-    static_pick :: ($o: Ord) -> bool { o == .one }
-    static_count :: (..$args) -> bool { args.len == 2 }
+    staticPick :: ($o: Ord) -> bool { o == .one }
+    staticCount :: (..$args) -> bool { args.len == 2 }
 }
 
 use :: () -> bool {

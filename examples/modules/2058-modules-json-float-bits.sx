@@ -32,7 +32,7 @@ report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
-report_band :: (kind: string, j: i64, ok: bool) {
+reportBand :: (kind: string, j: i64, ok: bool) {
     print("magnitude-{}-{}: {}\n", j, kind, if ok then "ok" else "FAIL");
 }
 
@@ -42,7 +42,7 @@ isNonFinite :: (bits: i64) -> bool {
 }
 
 // The encoded binary exponent supplies a stable decimal-magnitude proxy.
-decimal_exponent :: (bits: i64) -> i64 {
+decimalExponent :: (bits: i64) -> i64 {
     e2 := ((bits >> 52) & 0x7FF) - 1023;
     n := e2 * 30103;
     q := n / 100000;
@@ -50,8 +50,8 @@ decimal_exponent :: (bits: i64) -> i64 {
     q
 }
 
-band_of :: (bits: i64) -> i64 {
-    d := decimal_exponent(bits);
+bandOf :: (bits: i64) -> i64 {
+    d := decimalExponent(bits);
     if d < 0 { d = 0 - d; }
     i := 0;
     while i < BANDS - 1 {
@@ -91,7 +91,7 @@ main :: () -> ! {
         if isNonFinite(bits) { continue; }
         u.s = bits;
         if u.f == 0.0 { continue; }
-        b := band_of(bits);
+        b := bandOf(bits);
         seen[b] += 1;
         f := if (i & 1) == 1 then 0.0 - u.f else u.f;
         if !survives(f, arena) { lost[b] += 1; }
@@ -99,24 +99,24 @@ main :: () -> ! {
 
     j := 0;
     while j < BANDS {
-        report_band("sampled",     j, seen[j] > 0);
-        report_band("round-trips", j, lost[j] == 0);
+        reportBand("sampled",     j, seen[j] > 0);
+        reportBand("round-trips", j, lost[j] == 0);
         j += 1;
     }
 
-    sub_seen := 0;
-    sub_lost := 0;
+    subSeen := 0;
+    subLost := 0;
     k := 0;
     while k < SUBNORMALS {
         k += 1;
         u.s = rng.next() & 0xFFFFFFFFFFFFF;   // exponent field zero
         if u.f == 0.0 { continue; }
-        sub_seen += 1;
+        subSeen += 1;
         f := if (k & 1) == 1 then 0.0 - u.f else u.f;
-        if !survives(f, arena) { sub_lost += 1; }
+        if !survives(f, arena) { subLost += 1; }
     }
-    report("subnormal-sampled",     sub_seen > 0);
-    report("subnormal-round-trips", sub_lost == 0);
+    report("subnormal-sampled",     subSeen > 0);
+    report("subnormal-round-trips", subLost == 0);
 
     report("max-round-trips",        survives(f64.max, arena));
     report("min-round-trips",        survives(f64.min, arena));

@@ -76,10 +76,10 @@ main :: () {
     while i < N { g.put(i, i * 2, gpa); i += 1; }
     report("grow-len", g.len == N);
     // entries are still in insertion order 0,1,2,...
-    order_ok := true;
+    orderOk := true;
     i = 0;
-    while i < N { if g.keyAt(i) != i or g.valAt(i) != i * 2 { order_ok = false; } i += 1; }
-    report("grow-order", order_ok);
+    while i < N { if g.keyAt(i) != i or g.valAt(i) != i * 2 { orderOk = false; } i += 1; }
+    report("grow-order", orderOk);
     // lookup still works
     all := true;
     i = 0;

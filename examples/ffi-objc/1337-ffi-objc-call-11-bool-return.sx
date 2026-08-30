@@ -5,7 +5,7 @@
 // test is about the source-level type being meaningful, not a
 // distinct ABI path.
 //
-// Two IMPs are installed: `yes_imp` returns true, `no_imp` returns
+// Two IMPs are installed: `yesImp` returns true, `noImp` returns
 // false. Both are dispatched through `@ObjcCall(bool)` and the
 // results are checked.
 
@@ -13,29 +13,29 @@
 @import "modules/build.sx";
 @import "modules/ffi/objc.sx";
 
-yes_imp :: (self: *void, _cmd: *void) -> bool abi(.c) { true }
-no_imp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }
+yesImp :: (self: *void, _cmd: *void) -> bool abi(.c) { true }
+noImp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }
 
 main :: () -> i32 {
     inline if @host.os == .macos {
         // Nil-recv: libobjc returns a zeroed slot, which decodes as false.
-        nil_b := @ObjcCall(bool, null, "isEqual:");
-        print("nil bool     = {}\n", nil_b);
+        nilB := @ObjcCall(bool, null, "isEqual:");
+        print("nil bool     = {}\n", nilB);
 
-        ns_object := objc_getClass("NSObject".ptr);
-        my_cls := objc_allocateClassPair(ns_object, "SxBoolProbe".ptr, 0);
+        nsObject := objc_getClass("NSObject".ptr);
+        myCls := objc_allocateClassPair(nsObject, "SxBoolProbe".ptr, 0);
 
         // BOOL type-encoded as `B` (C99 _Bool) in `B@:` — implicit
         // (self: id, _cmd: SEL) return BOOL. Some toolchains prefer
         // `c` (signed char) for BOOL on i386, but `B` is unambiguous
         // on arm64 and works for runtime-registered IMPs.
-        sel_yes := sel_registerName("yes".ptr);
-        sel_no  := sel_registerName("no".ptr);
-        class_addMethod(my_cls, sel_yes, xx yes_imp, "B@:".ptr);
-        class_addMethod(my_cls, sel_no,  xx no_imp,  "B@:".ptr);
-        objc_registerClassPair(my_cls);
+        selYes := sel_registerName("yes".ptr);
+        selNo  := sel_registerName("no".ptr);
+        class_addMethod(myCls, selYes, xx yesImp, "B@:".ptr);
+        class_addMethod(myCls, selNo,  xx noImp,  "B@:".ptr);
+        objc_registerClassPair(myCls);
 
-        instance := class_createInstance(my_cls, 0);
+        instance := class_createInstance(myCls, 0);
         y := @ObjcCall(bool, instance, "yes");
         n := @ObjcCall(bool, instance, "no");
         print("yes = {}\n", y);

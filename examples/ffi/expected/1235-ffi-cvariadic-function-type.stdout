@@ -1,9 +1,9 @@
 fixed sx=15 c=15
 promoted sx=4 c=4
-zero_empty=7 zero_tail=7
-fixed_one=9
-field_open=7 field_shut=11
+zeroEmpty=7 zeroTail=7
+fixedOne=9
+fieldOpen=7 fieldShut=11
 summer=(i32, ..) -> i64 abi(.c)
 zero=(..) -> i64 abi(.c)
 empty=() -> i64 abi(.c)
-summer_is_fixed=false zero_is_empty=false
+summerIsFixed=false zeroIsEmpty=false

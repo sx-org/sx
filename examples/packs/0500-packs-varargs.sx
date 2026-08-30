@@ -8,7 +8,7 @@ sum :: (..args: []i32) -> i32 {
     result
 }
 
-print_all :: (..args: []i32) {
+printAll :: (..args: []i32) {
     for it in args {
         out(intToString(it));
         out(" ");
@@ -20,7 +20,7 @@ main :: () -> i32 {
     out(intToString(sum(10, 20, 30)));
     out("\n");
 
-    print_all(1, 2, 3, 4, 5);
+    printAll(1, 2, 3, 4, 5);
 
     arr : [3]i32 = .[10, 20, 30];
     out(intToString(sum(..arr)));

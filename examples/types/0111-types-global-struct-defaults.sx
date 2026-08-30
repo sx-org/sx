@@ -9,18 +9,18 @@ Foo :: struct {
     name: string = "default";
 }
 
-g_empty       : Foo = .{};
-g_partial     : Foo = .{ x = 99 };
-g_override    : Foo = .{ running = false };
-g_reorder     : Foo = .{ x = 7, running = false, name = "hi" };
-g_positional  : Foo = .{ false, 13, "pos" };
+gEmpty       : Foo = .{};
+gPartial     : Foo = .{ x = 99 };
+gOverride    : Foo = .{ running = false };
+gReorder     : Foo = .{ x = 7, running = false, name = "hi" };
+gPositional  : Foo = .{ false, 13, "pos" };
 
 main :: () -> void {
-    l_empty : Foo = .{};
-    print("local         running={} x={} name={}\n", l_empty.running, l_empty.x, l_empty.name);
-    print("g_empty       running={} x={} name={}\n", g_empty.running, g_empty.x, g_empty.name);
-    print("g_partial     running={} x={} name={}\n", g_partial.running, g_partial.x, g_partial.name);
-    print("g_override    running={} x={} name={}\n", g_override.running, g_override.x, g_override.name);
-    print("g_reorder     running={} x={} name={}\n", g_reorder.running, g_reorder.x, g_reorder.name);
-    print("g_positional  running={} x={} name={}\n", g_positional.running, g_positional.x, g_positional.name);
+    lEmpty : Foo = .{};
+    print("local         running={} x={} name={}\n", lEmpty.running, lEmpty.x, lEmpty.name);
+    print("gEmpty       running={} x={} name={}\n", gEmpty.running, gEmpty.x, gEmpty.name);
+    print("gPartial     running={} x={} name={}\n", gPartial.running, gPartial.x, gPartial.name);
+    print("gOverride    running={} x={} name={}\n", gOverride.running, gOverride.x, gOverride.name);
+    print("gReorder     running={} x={} name={}\n", gReorder.running, gReorder.x, gReorder.name);
+    print("gPositional  running={} x={} name={}\n", gPositional.running, gPositional.x, gPositional.name);
 }

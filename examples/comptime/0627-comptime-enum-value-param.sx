@@ -15,7 +15,7 @@ pick :: ($o: Ord) -> i64 {
 }
 
 // `o` read as a compile-time integer (its variant tag) in a TYPE position.
-tag_dim :: ($o: Ord) -> i64 {
+tagDim :: ($o: Ord) -> i64 {
     arr : [o]i64 = ---;
     return arr.len;
 }
@@ -23,5 +23,5 @@ tag_dim :: ($o: Ord) -> i64 {
 main :: () {
     print("{}\n", pick(.b));                       // 20
     print("{} {} {}\n", pick(.a), pick(.b), pick(.c)); // 10 20 30
-    print("{} {} {}\n", tag_dim(.a), tag_dim(.b), tag_dim(.c)); // 0 1 2
+    print("{} {} {}\n", tagDim(.a), tagDim(.b), tagDim(.c)); // 0 1 2
 }

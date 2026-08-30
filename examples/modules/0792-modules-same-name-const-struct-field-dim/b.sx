@@ -3,4 +3,4 @@
 // differs from A's — never collapsed to a global last-wins `K`.
 K :: 7;
 Box :: struct { arr: [K]u8; }
-b_sz :: () -> i64 { return @sizeOf(Box); }
+bSz :: () -> i64 { return @sizeOf(Box); }

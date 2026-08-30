@@ -49,9 +49,9 @@ main :: () -> i32 {
         p := m.here();
         print("at: ({}, {})\n", p.x, p.y);
 
-        sel_release : SEL = sel_registerName("release".ptr);
-        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
-        release_fn(m, sel_release);
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(m, selRelease);
     }
     inline if @host.os != .macos {
         print("at: (7.500000, 8.250000)\n");

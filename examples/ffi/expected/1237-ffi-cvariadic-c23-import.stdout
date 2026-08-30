@@ -1,10 +1,10 @@
-zero_fixed sx=15 c=15
-zero_fixed_doubles sx=4.250000 c=4.250000
+zeroFixed sx=15 c=15
+zeroFixedDoubles sx=4.250000 c=4.250000
 fixed sx=24 c=24
 borrowed sx=24
-through_type zero=15 doubles=4.250000 counted=24
-through_reader sx=24
+throughType zero=15 doubles=4.250000 counted=24
+throughReader sx=24
 sum_all_type=(..) -> i64 abi(.c)
-tally_type=(i32, ..) -> i64 abi(.c)
-relay_type=(i32, @VaList) -> i64 abi(.c)
-tally_is_fixed=false
+tallyType=(i32, ..) -> i64 abi(.c)
+relayType=(i32, @VaList) -> i64 abi(.c)
+tallyIsFixed=false

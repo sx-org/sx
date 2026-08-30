@@ -10,7 +10,7 @@ Label :: struct { text: string = ""; }
 vstack :: (gap: f64, content: $F/() -> void) -> i64 { content(); xx gap }
 place :: (a: i64, m: Label) -> i64 => a + m.text.len;
 twice :: ufcs (n: i64) -> i64 => n * 2;
-begin_build :: () { print("begin\n"); }
+beginBuild :: () { print("begin\n"); }
 
 main :: () -> i32 {
     screen := vstack(12.0) {
@@ -23,7 +23,7 @@ main :: () -> i32 {
     print("fused {} {}\n", screen, wrapped);
 
     // A `;` between the call and the brace group is two statements.
-    begin_build();
+    beginBuild();
     {
         print("scope\n");
     }

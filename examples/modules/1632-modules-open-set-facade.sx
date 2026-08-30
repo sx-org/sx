@@ -18,7 +18,7 @@ main :: () -> i32 {
     print("{} {}\n", v.render(), @typeOf(v));
 
     // One set: the size the package measures inside itself is the size out here.
-    print("size in {} out {}\n", pkg.size_here(), @sizeOf(pkg.View));
+    print("size in {} out {}\n", pkg.sizeHere(), @sizeOf(pkg.View));
 
     // And the value crosses into a signature the package wrote in its own terms,
     // and into a bound written on the facade's spelling out here.

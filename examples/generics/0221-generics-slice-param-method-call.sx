@@ -22,7 +22,7 @@ Box :: struct {
     }
 }
 
-free_take :: (n: *i64, xs: []$T) -> i64 { xs.len }
+freeTake :: (n: *i64, xs: []$T) -> i64 { xs.len }
 
 main :: () -> i64 {
     b := Box{ n = 1 };
@@ -39,7 +39,7 @@ main :: () -> i64 {
     print("{}\n", b.first(f));        // 1.5
 
     v : i64 = 0;
-    print("{}\n", free_take(*v, a));
+    print("{}\n", freeTake(*v, a));
 
     s : []i64 = a;
     print("{}\n", s);

@@ -26,7 +26,7 @@ Holder :: struct {
 
 main :: () -> i32 {
     out : List(View) = .{};
-    push .{ ui_out = *out } {
+    push .{ uiOut = *out } {
         // The name before the dot is a module, then a type: neither is an argument.
         print("{} {}\n", lib.publish(6), Holder.publish(3));
 

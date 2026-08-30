@@ -3,7 +3,7 @@
 // must never be rewritten: #import "modules/old/thing.sx"
 @import "modules/old/thing.sx";
 @import "modules/keep/asis.sx";
-name_bound :: @import "modules/old/other.sx";
+nameBound :: @import "modules/old/other.sx";
 
 main :: () {
     // a string mentioning an import path must survive untouched:

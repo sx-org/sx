@@ -15,10 +15,10 @@ classify :: (c: fac.Color) -> i64 {        // param typed via re-exported enum a
 }
 ordinal :: (c: fac.Color) -> i64 { return xx c; }   // xx enum→int
 
-use_shape :: (s: fac.Shape) -> i64 { return s.kind; }   // struct via the same alias shape
+useShape :: (s: fac.Shape) -> i64 { return s.kind; }   // struct via the same alias shape
 
 main :: () -> i32 {
     sh : fac.Shape = .{ kind = 30 };
     // 2 (classify Green) + 1 (ordinal Green) + 30 (shape) = 33
-    return xx (classify(fac.Color.Green) + ordinal(fac.Color.Green) + use_shape(sh));
+    return xx (classify(fac.Color.Green) + ordinal(fac.Color.Green) + useShape(sh));
 }

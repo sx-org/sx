@@ -1,12 +1,12 @@
 // `-> @place` write-through output. An asm result can be
 // STORED through a place (a local / struct field) instead of returned: the
 // place output does NOT join the result tuple. Here one value output is
-// returned (into `main_val`) while a second is written through `@other`. The
+// returned (into `mainVal`) while a second is written through `@other`. The
 // two are combined to 42. Read-write (`+`) and indirect (`*`) place outputs
 // have their own pins — 1650 and 1652. aarch64-pinned; ir-only elsewhere.
 compute :: () -> i64 {
     other : i64 = 0;
-    main_val := asm volatile {
+    mainVal := asm volatile {
         @string ASM
         mov %[m], #5
         mov %[o], #37
@@ -14,6 +14,6 @@ ASM,
         [m] "=r" -> i64,        // value output → returned
         [o] "=r" -> *other,     // place output → stored through @other
     };
-    return main_val + other;    // 5 + 37 = 42
+    return mainVal + other;    // 5 + 37 = 42
 }
 main :: () -> i64 { return compute(); }

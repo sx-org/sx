@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-print_any :: (av: any) {
+printAny :: (av: any) {
     ti := @typeInfo(@typeOf(av));
     match ti {
         case .struct: |si| {
@@ -15,7 +15,7 @@ print_any :: (av: any) {
             while i < si.fields.len {
                 if i > 0 { print(", "); }
                 print("{}: ", si.fields[i].name);
-                print_any(structFieldValue(av, i));
+                printAny(structFieldValue(av, i));
                 i += 1;
             }
             print("}");
@@ -30,7 +30,7 @@ print_any :: (av: any) {
             i := 0;
             while i < ai.len {
                 if i > 0 { print(", "); }
-                print_any(anyElement(av, ai.elem, i));
+                printAny(anyElement(av, ai.elem, i));
                 i += 1;
             }
             print("]");
@@ -40,7 +40,7 @@ print_any :: (av: any) {
             i := 0;
             while i < vi.lanes {
                 if i > 0 { print(", "); }
-                print_any(anyElement(av, vi.elem, i));
+                printAny(anyElement(av, vi.elem, i));
                 i += 1;
             }
             print("]");
@@ -58,8 +58,8 @@ print_any :: (av: any) {
 Header :: struct { magic: u16; flags: u8; }
 
 Payload :: union {                                // C-style UNTAGGED union
-    as_int:   i64;
-    as_bytes: [8]u8;
+    asInt:   i64;
+    asBytes: [8]u8;
 }
 
 Packet :: struct {
@@ -80,8 +80,8 @@ main :: () {
         count   = 65535,
         vel     = .[1.0, 3.0, 2.0],
         samples = .[10, -20, 30, -40],
-        payload = .{ as_int = 7 },
+        payload = .{ asInt = 7 },
     };
-    print_any(pkt);
+    printAny(pkt);
     print("\n");
 }

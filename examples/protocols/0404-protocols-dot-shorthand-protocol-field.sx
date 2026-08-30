@@ -37,7 +37,7 @@ Rect :: struct {
 
 Container :: struct {
     child: Drawable;
-    computed_frame: Rect = .zero();
+    computedFrame: Rect = .zero();
 }
 
 // Two different structs, each with List(Container), both calling .append(.{...})

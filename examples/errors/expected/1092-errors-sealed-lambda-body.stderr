@@ -10,15 +10,15 @@ help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
    |                          ^
 
 error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
-  --> examples/errors/1092-errors-sealed-lambda-body.sx:24:46
+  --> examples/errors/1092-errors-sealed-lambda-body.sx:24:45
    |
-24 |     _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
-   |                                              ^
+24 |     _ = a.make(Button{ onTap = |x: i64| x + n });  // reject: inner lambda sealed
+   |                                             ^
 
 help: name it in the env: `|…|_{ n } …`, which is the copy `n = n`
    |
-24 |     _ = a.make(Button{ on_tap = |x: i64| x + n });  // reject: inner lambda sealed
-   |                                              ^
+24 |     _ = a.make(Button{ onTap = |x: i64| x + n });  // reject: inner lambda sealed
+   |                                             ^
 
 error: 'n' is not in scope in this lambda body — it reads its parameters and its env, nothing else
   --> examples/errors/1092-errors-sealed-lambda-body.sx:26:37

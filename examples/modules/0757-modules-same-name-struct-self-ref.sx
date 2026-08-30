@@ -11,6 +11,6 @@
 @import "0757-modules-same-name-struct-self-ref/b.sx";
 
 main :: () -> i32 {
-    print("a={} b={}\n", a_box(), b_chain());
+    print("a={} b={}\n", aBox(), bChain());
     0
 }

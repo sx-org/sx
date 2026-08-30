@@ -10,15 +10,15 @@ help: an initializer is formed at the argument of a value parameter — '$T' can
    |                   ^^^^^^^^^^^^^
 
 error: '@Init(Button)' does not satisfy the bound '@Init(Label)' on '$I'
-  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:23:26
+  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:23:25
    |
-23 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
-   |                          ^^^^^^^^^^^^
+23 | intoLabel :: (value: $I/@Init(Label)) -> i32 { 0 }
+   |                         ^^^^^^^^^^^^
 
 help: this initializer writes 'Button', and the bound asks for 'Label'
    |
-23 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
-   |                          ^^^^^^^^^^^^
+23 | intoLabel :: (value: $I/@Init(Label)) -> i32 { 0 }
+   |                         ^^^^^^^^^^^^
 
 error: the bound '@Init' on '$I' takes one type argument, but 2 are written
   --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:30:21

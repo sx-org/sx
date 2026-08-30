@@ -18,27 +18,27 @@ E :: enum {
     wrap: Inner;
 }
 
-ret_bare :: () -> ?E { return .quit; }
-ret_plain :: () -> ?E { return .resize(1.5); }
-ret_struct :: () -> ?E { return .pair(.{ a = 1.0, b = 2.0 }); }
-ret_nested :: () -> ?E { return .wrap(.two(7)); }
+retBare :: () -> ?E { return .quit; }
+retPlain :: () -> ?E { return .resize(1.5); }
+retStruct :: () -> ?E { return .pair(.{ a = 1.0, b = 2.0 }); }
+retNested :: () -> ?E { return .wrap(.two(7)); }
 
 take :: (e: ?E = null) -> ?E { e }
 
 main :: () {
-    process.assert(ret_bare() != null, "bare arm");
+    process.assert(retBare() != null, "bare arm");
 
-    if e := ret_plain() {
+    if e := retPlain() {
         n := match e { case .resize: |v| { v } else: 0.0 };
         process.assert(n == 1.5, "plain payload intact");
     } else { process.assert(false, "plain present"); }
 
-    if e := ret_struct() {
+    if e := retStruct() {
         s := match e { case .pair: |p| { p.a + p.b } else: 0.0 };
         process.assert(s == 3.0, "struct payload intact");
     } else { process.assert(false, "struct present"); }
 
-    if e := ret_nested() {
+    if e := retNested() {
         n := match e { case .wrap: |i| {
             match i { case .two: |v| { v } else: 0 }
         } else: 0 };

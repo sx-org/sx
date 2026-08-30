@@ -3,15 +3,15 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-read_long :: (env: *void, target: *void) -> i64 {
+readLong :: (env: *void, target: *void) -> i64 {
     @JniCall(i64, env, target, "currentTimeMillis", "()J")
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := read_long(null, null);
+    if gShouldCall {
+        _ := readLong(null, null);
     }
     print("ok\n");
     0

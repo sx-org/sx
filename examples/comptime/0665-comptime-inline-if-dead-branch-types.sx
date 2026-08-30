@@ -10,7 +10,7 @@ ENABLED :: false;
 main :: () {
     inline if ENABLED {
         a : *MissingA = null;
-        missing_fn(a);
+        missingFn(a);
     } else {
         print("const ok\n");
     }

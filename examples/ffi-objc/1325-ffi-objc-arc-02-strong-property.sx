@@ -45,10 +45,10 @@ main :: () -> i32 {
             // Midpoint: with strong setter, child is retained by parent;
             // tracker.deallocCount should NOT have advanced beyond d0.
             // Without strong setter, child auto-dealloc'd on release.
-            d_mid := tracker.deallocCount;
-            if d_mid != d0 {
+            dMid := tracker.deallocCount;
+            if dMid != d0 {
                 print("FAIL: child dealloc'd at midpoint (strong setter not retaining); delta={}\n",
-                      d_mid - d0);
+                      dMid - d0);
                 return 1;
             }
 
@@ -56,12 +56,12 @@ main :: () -> i32 {
 
             // After parent.release: parent.dealloc fires, releases the
             // strong child ivar, child deallocs, state freed.
-            d_end := tracker.deallocCount;
+            dEnd := tracker.deallocCount;
             // Net: 2 allocs (parent + child state), 2 deallocs (both freed).
             // Balance check: dealloc delta == alloc delta.
-            if d_end - d0 != tracker.allocCount - a0 {
+            if dEnd - d0 != tracker.allocCount - a0 {
                 print("FAIL: unbalanced; alloc={} dealloc={}\n",
-                      tracker.allocCount - a0, d_end - d0);
+                      tracker.allocCount - a0, dEnd - d0);
                 return 1;
             }
         }

@@ -1,7 +1,7 @@
 // An imported pack function whose fixed-prefix param
 // type is visible only in its defining module must resolve during pack
 // monomorphization. `lib.sx` imports `dep.sx` (which defines `Needs`) and
-// exposes `make() -> Needs` plus `use_pack(n: Needs, ..$args)`. `main` imports
+// exposes `make() -> Needs` plus `usePack(n: Needs, ..$args)`. `main` imports
 // ONLY `lib.sx`, so `Needs` is two flat hops away and not bare-visible here —
 // main never names it.
 //
@@ -9,13 +9,13 @@
 // caller's source, so `n: Needs` resolves under the pack fn's own source
 // (`fd.body.source_file`) — matching the rest of the pack signature/body —
 // rather than in main's context, where it is not visible. The control plain fn
-// `use_plain(n: Needs)` types through the source-pinned call-arg path.
+// `usePlain(n: Needs)` types through the source-pinned call-arg path.
 @import "modules/std.sx";
 @import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
 
 main :: () -> i32 {
     x := make();
-    print("plain {}\n", use_plain(x));
-    print("pack {}\n", use_pack(x, 1, 2));
+    print("plain {}\n", usePlain(x));
+    print("pack {}\n", usePack(x, 1, 2));
     return 0;
 }

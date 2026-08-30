@@ -20,7 +20,7 @@ g : i64 = 0;
 main :: () -> i32 {
     a := 1;
     b := 2;
-    a, undeclared_b = b, a;     // typo'd target — plain multi-assign to an undeclared name
+    a, undeclaredB = b, a;     // typo'd target — plain multi-assign to an undeclared name
     xs : [2]i64 = .[1, 2];
     for *x in xs {
         x, a = 9, 9;            // by-ref capture target assigned without `.*`

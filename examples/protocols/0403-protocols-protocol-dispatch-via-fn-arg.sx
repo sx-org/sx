@@ -18,10 +18,10 @@ add :: (items: *List(Sizable), w: Leaf) {
     items.append(context.allocator.make(w));
 }
 
-dispatch_fn :: (items: *List(Sizable)) {
-    out("dispatch_fn: about to dispatch\n");
+dispatchFn :: (items: *List(Sizable)) {
+    out("dispatchFn: about to dispatch\n");
     s := items.items[0].size();
-    print("dispatch_fn: result = {}\n", s);
+    print("dispatchFn: result = {}\n", s);
 }
 
 main :: () -> void {
@@ -39,6 +39,6 @@ main :: () -> void {
 
     // Then from function
     out("=== From function ===\n");
-    dispatch_fn(*items);
+    dispatchFn(*items);
     out("=== OK ===\n");
 }

@@ -1,20 +1,20 @@
 // `@JniCall(i32)` (jint return). CallIntMethod is vtable slot 49.
 //
-// Runtime: unreachable. Same `g_should_call` global pattern as
-// `ffi-jni-call-03` — keeps `read_int` alive so the IR snapshot has
+// Runtime: unreachable. Same `gShouldCall` global pattern as
+// `ffi-jni-call-03` — keeps `readInt` alive so the IR snapshot has
 // the JNI lowering visible, but the dereferences never execute.
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
-read_int :: (env: *void, target: *void) -> i32 {
+readInt :: (env: *void, target: *void) -> i32 {
     @JniCall(i32, env, target, "getCount", "()I")
 }
 
 main :: () -> i32 {
-    if g_should_call {
-        _ := read_int(null, null);
+    if gShouldCall {
+        _ := readInt(null, null);
     }
     print("ok\n");
     0

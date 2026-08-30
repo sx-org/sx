@@ -523,7 +523,7 @@ b19 : B19 = .{};
 
 // The handle array every interleaved lane dispatches through: 20 borrows of
 // 20 named conformers, erased once, read back per iteration.
-fill_handles :: (h: []Allocator, slabs: [*]u8) {
+fillHandles :: (h: []Allocator, slabs: [*]u8) {
     b00.base = *slabs[0 * SLAB]; b00.cap = SLAB - 64; h[0] = *b00;
     b01.base = *slabs[1 * SLAB]; b01.cap = SLAB - 64; h[1] = *b01;
     b02.base = *slabs[2 * SLAB]; b02.cap = SLAB - 64; h[2] = *b02;
@@ -555,12 +555,12 @@ fill_handles :: (h: []Allocator, slabs: [*]u8) {
 //
 // The default target is a named global handle, which is what a `*Allocator`
 // field can point at in a static initializer.
-ap_default : Allocator = b00;
-@context.extend ap: *Allocator = *ap_default;
+apDefault : Allocator = b00;
+@context.extend ap: *Allocator = *apDefault;
 
 // ── Lanes ────────────────────────────────────────────────────────────────
 
-direct_lane :: (arena: *Arena) -> i64 {
+directLane :: (arena: *Arena) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -576,7 +576,7 @@ direct_lane :: (arena: *Arena) -> i64 {
     el
 }
 
-borrow_lane :: (arena: *Arena) -> i64 {
+borrowLane :: (arena: *Arena) -> i64 {
     a : Allocator = arena;
     t0 := monoNs();
     sink := 0;
@@ -593,7 +593,7 @@ borrow_lane :: (arena: *Arena) -> i64 {
     el
 }
 
-ctx_lane :: (arena: *Arena) -> i64 {
+ctxLane :: (arena: *Arena) -> i64 {
     push .{ allocator = arena } {
         t0 := monoNs();
         sink := 0;
@@ -611,7 +611,7 @@ ctx_lane :: (arena: *Arena) -> i64 {
     }
 }
 
-default_lane :: () -> i64 {
+defaultLane :: () -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -632,7 +632,7 @@ default_lane :: () -> i64 {
 // The receiver changes per allocation, in the order the runtime-filled index
 // stream dictates. `h.len` is 20 or 2 — the same loop measures both, so the
 // only difference between the two interleaved lanes is the switch's width.
-interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
+interleavedLane :: (h: []Allocator, idx: []i64) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -650,7 +650,7 @@ interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
 
 // The same 20 receivers, walked in a fixed rotation: the switch is as wide as
 // the interleaved lane's, the sequence is perfectly predictable.
-rotate_lane :: (h: []Allocator) -> i64 {
+rotateLane :: (h: []Allocator) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -671,7 +671,7 @@ rotate_lane :: (h: []Allocator) -> i64 {
 
 // The pointer-field anchor: one conformer, reached as `context.ap`. Against
 // the CTX lane this is exactly the cost of the extra dependent load.
-ctx_ptr_lane :: (arena: *Arena) -> i64 {
+ctxPtrLane :: (arena: *Arena) -> i64 {
     ah : Allocator = arena;
     push .{ ap = *ah } {
         t0 := monoNs();
@@ -693,9 +693,9 @@ ctx_ptr_lane :: (arena: *Arena) -> i64 {
 // The interleaved lanes' pointer twin. Cycling an array of `*Allocator` —
 // rather than retargeting one Context field per iteration — is what isolates
 // the indirection honestly: the dispatched-to set and the index stream are
-// the same as `interleaved_lane`'s, and the only added work is the load of
+// the same as `interleavedLane`'s, and the only added work is the load of
 // the pointer before the load of the handle.
-interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
+interleavedPtrLane :: (ps: []*Allocator, idx: []i64) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -711,7 +711,7 @@ interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
     el
 }
 
-rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
+rotatePtrLane :: (ps: []*Allocator) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -733,7 +733,7 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
 // `push` per allocation, overriding the handle field. A push copies the
 // whole Context, so the pair below differs only in the width of the one
 // field being written.
-push_h16_lane :: (arena: *Arena) -> i64 {
+pushH16Lane :: (arena: *Arena) -> i64 {
     t0 := monoNs();
     sink := 0;
     i := 0;
@@ -751,7 +751,7 @@ push_h16_lane :: (arena: *Arena) -> i64 {
     el
 }
 
-push_ptr_lane :: (arena: *Arena) -> i64 {
+pushPtrLane :: (arena: *Arena) -> i64 {
     ah : Allocator = arena;
     t0 := monoNs();
     sink := 0;
@@ -791,7 +791,7 @@ main :: () {
     // heap array whose contents no pass can fold.
     slabs := context.allocator.alloc(u8, NCONF * SLAB);
     handles := context.allocator.alloc(Allocator, NCONF);
-    fill_handles(handles, slabs.ptr);
+    fillHandles(handles, slabs.ptr);
     pair := context.allocator.alloc(Allocator, 2);
     pair[0] = *b00;
     pair[1] = *b01;
@@ -820,27 +820,27 @@ main :: () {
     t := 0;
     while t < TRIALS {
         arena := Arena.init(gpa, CHUNK);
-        direct[t] = direct_lane(*arena);
+        direct[t] = directLane(*arena);
         arena.reset();
-        borrow[t] = borrow_lane(*arena);
+        borrow[t] = borrowLane(*arena);
         arena.reset();
-        ctx[t] = ctx_lane(*arena);
+        ctx[t] = ctxLane(*arena);
         arena.deinit();
-        dflt[t] = default_lane();
-        in20[t] = interleaved_lane(handles, idx20);
-        in2[t] = interleaved_lane(pair, idx2);
-        rot[t] = rotate_lane(handles);
+        dflt[t] = defaultLane();
+        in20[t] = interleavedLane(handles, idx20);
+        in2[t] = interleavedLane(pair, idx2);
+        rot[t] = rotateLane(handles);
 
         arena2 := Arena.init(gpa, CHUNK);
-        ctxp[t] = ctx_ptr_lane(*arena2);
+        ctxp[t] = ctxPtrLane(*arena2);
         arena2.reset();
-        push16[t] = push_h16_lane(*arena2);
+        push16[t] = pushH16Lane(*arena2);
         arena2.reset();
-        pushp[t] = push_ptr_lane(*arena2);
+        pushp[t] = pushPtrLane(*arena2);
         arena2.deinit();
-        in20p[t] = interleaved_ptr_lane(hptr, idx20);
-        in2p[t] = interleaved_ptr_lane(pptr, idx2);
-        rotp[t] = rotate_ptr_lane(hptr);
+        in20p[t] = interleavedPtrLane(hptr, idx20);
+        in2p[t] = interleavedPtrLane(pptr, idx2);
+        rotp[t] = rotatePtrLane(hptr);
         t = t + 1;
     }
 

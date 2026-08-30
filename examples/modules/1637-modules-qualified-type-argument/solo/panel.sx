@@ -18,6 +18,6 @@ mk :: () -> Vw {
     return v;
 }
 
-mk_note :: () -> Note { n : Note = .{ text = "solo note" }; return n; }
+mkNote :: () -> Note { n : Note = .{ text = "solo note" }; return n; }
 
-mk_box :: () -> Box(i64) { b : Box(i64) = .{ v = 7 }; return b; }
+mkBox :: () -> Box(i64) { b : Box(i64) = .{ v = 7 }; return b; }

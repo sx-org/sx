@@ -15,13 +15,13 @@
 
 T :: struct { a: i64 = 0; b: i64 = 0; }
 
-mk_struct :: () -> ?T   { t : T = .{ a = 7, b = 11 }; return t; }
-mk_scalar :: () -> ?i64 { return 5; }
-mk_null   :: () -> ?i64 { return null; }
+mkStruct :: () -> ?T   { t : T = .{ a = 7, b = 11 }; return t; }
+mkScalar :: () -> ?i64 { return 5; }
+mkNull   :: () -> ?i64 { return null; }
 
-X :: @run mk_struct();  // present ?T
-Y :: @run mk_scalar();  // present ?i64
-N :: @run mk_null();    // null ?i64
+X :: @run mkStruct();  // present ?T
+Y :: @run mkScalar();  // present ?i64
+N :: @run mkNull();    // null ?i64
 
 main :: () {
     // Present optional-of-struct: payload bridged field-by-field.

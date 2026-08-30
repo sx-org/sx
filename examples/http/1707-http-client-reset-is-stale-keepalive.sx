@@ -40,18 +40,18 @@ main :: () -> i32 {
 
     // The request lands in afd's receive queue and is never read.
     se := http.Client.sendOn(*c, "GET", "/hello", "127.0.0.1", "", "");
-    if se { print("send_on failed\n"); return 4; }
+    if se { print("sendOn failed\n"); return 4; }
 
     // Let it arrive, then close with it unread → RST rather than FIN.
-    sleep_ms(100);
+    sleepMs(100);
     socket.close(afd);
-    sleep_ms(100);
+    sleepMs(100);
 
     buf : [4096]u8 = ---;
     r, re := http.Client.recvOn(*c, *buf[0], 4096);
     _ := r;
     if !re {
-        print("FAIL: recv_on returned a response from a reset conn\n");
+        print("FAIL: recvOn returned a response from a reset conn\n");
         return 5;
     }
     if re != .Closed {
@@ -70,6 +70,6 @@ main :: () -> i32 {
 clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
-sleep_ms :: (ms: i64) {
+sleepMs :: (ms: i64) {
     usleep(ms * 1000);
 }

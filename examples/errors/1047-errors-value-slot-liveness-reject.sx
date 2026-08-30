@@ -17,19 +17,19 @@ parse :: (n: i32) -> (i32, !E) {
 }
 
 // (A) the read sits on the error path — `err` is present here, not absent.
-bad_a :: () -> i32 {
+badA :: () -> i32 {
     v, err := parse(5);
     if err { return v; }                  // REJECTED: err present on this path
     return 0;
 }
 
 // (B) a tag-compare narrows which error, but does not prove there is none.
-bad_b :: () -> i32 {
+badB :: () -> i32 {
     v, err := parse(5);
     if err == .Bad { return 1; }
     return v;                             // REJECTED: err not proven absent
 }
 
 main :: () -> i32 {
-    return bad_a() + bad_b();
+    return badA() + badB();
 }

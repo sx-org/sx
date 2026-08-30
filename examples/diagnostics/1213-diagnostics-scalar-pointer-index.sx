@@ -7,7 +7,7 @@
 // indexing is intended. The read path shares its guard with
 // 1203-diagnostics-index-non-indexable.sx.
 //
-// Lvalue-through-index shapes (`w.arr[i].a = v`, `ps_arr[i].a = v` for `*[N]S`,
+// Lvalue-through-index shapes (`w.arr[i].a = v`, `psArr[i].a = v` for `*[N]S`,
 // `mp[i].a = v` for `[*]S`) are unaffected.
 @import "modules/std.sx";
 S :: struct { a: i64; }

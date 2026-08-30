@@ -12,12 +12,12 @@ inner :: ($T: Type) -> i64 { @sizeOf(T) }
 outer :: ($T: Type, v: T) -> i64 { inner(T) }
 
 // Recursive comptime walk over a forwarded param (the TrivialState shape).
-count_leaves :: ($T: Type) -> i64 {
+countLeaves :: ($T: Type) -> i64 {
     n := 0;
     inline match T {
         case struct: {
             inline for i in 0..structFieldCount(T) {
-                n += count_leaves(structFieldType(T, i));
+                n += countLeaves(structFieldType(T, i));
             }
         }
         else: { n = 1; }
@@ -25,7 +25,7 @@ count_leaves :: ($T: Type) -> i64 {
     n
 }
 
-walk :: ($T: Type, v: T) -> i64 { count_leaves(T) }
+walk :: ($T: Type, v: T) -> i64 { countLeaves(T) }
 
 Pair :: struct { a: i64; b: f32; }
 Nested :: struct { p: Pair; flag: bool; }

@@ -29,7 +29,7 @@ impl @BuildSink(Drawable) for Tally {
 Eq :: constraint {}
 Hashable :: constraint {}
 
-count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
+countInto :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
     sink.seen += n;
     sink.seen
 }
@@ -56,7 +56,7 @@ main :: () -> i32 {
     t := Tally{};
     print("{} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), sunk(*t));
     print("{}\n", block() { Label{ text = "in a block" }; });
-    print("count {} {}\n", count_into(*t, 3), count_into(*t, 4));
+    print("count {} {}\n", countInto(*t, 3), countInto(*t, 4));
     print("lift {} {}\n", lift(Label, l), l.draw());
     0
 }

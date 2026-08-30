@@ -12,13 +12,13 @@ fail :: () -> !EventErr {
     raise .Boom;
 }
 
-fail_q :: () -> !EventErr {
+failQ :: () -> !EventErr {
     raise EventErr.Boom;
 }
 
 main :: () -> i32 {
     r := fail();
-    q := fail_q();
+    q := failQ();
     if r == .Boom and q == EventErr.Boom {
         print("own EventErr.Boom\n");
         return 0;

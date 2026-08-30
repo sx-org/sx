@@ -9,18 +9,18 @@ Marker :: interface {}
 Sq :: struct { n: i64; }
 impl Marker for Sq {}
 
-the_sq : Sq = .{ n = 1 };
+theSq : Sq = .{ n = 1 };
 
-@context.extend mark: Marker = the_sq;
+@context.extend mark: Marker = theSq;
 
-standing : Marker = the_sq;
+standing : Marker = theSq;
 
 main :: () {
     print("ctx type   {}\n", @typeOf(context.mark) == Sq);
     print("std type   {}\n", @typeOf(standing) == Sq);
     print("ctx id     {}\n", context.mark.(@Protocol).typeId == Sq);
 
-    the_sq.n = 7;
+    theSq.n = 7;
     print("ctx borrow {}\n", context.mark.(Sq).n);
     print("std borrow {}\n", standing.(Sq).n);
 }

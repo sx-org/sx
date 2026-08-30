@@ -5,15 +5,15 @@
 @import "modules/std.sx";
 
 // Two concrete handlers that match the per-mono fn-pointer shape.
-double_i64 :: (env: *void, x: i64) -> i64 => x * 2;
+doubleI64 :: (env: *void, x: i64) -> i64 => x * 2;
 
-via_fnptr :: (..$args) -> $args[1] {
-    fp : (*void, $args[0]) -> $args[1] = double_i64;
+viaFnptr :: (..$args) -> $args[1] {
+    fp : (*void, $args[0]) -> $args[1] = doubleI64;
     return fp(null, args[0]);
 }
 
 main :: () -> i32 {
-    n := via_fnptr(7, 0);  // (i64, i64) → fp : (*void, i64) -> i64
+    n := viaFnptr(7, 0);  // (i64, i64) → fp : (*void, i64) -> i64
     print("{}\n", n);
     return 0;
 }

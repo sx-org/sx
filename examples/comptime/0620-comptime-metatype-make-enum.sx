@@ -2,7 +2,7 @@
 // nominal enum from a `[]VariantInfo` VALUE, rather than a hardcoded literal
 // (the channel-result constructors hardcode theirs). The variant list is an
 // ordinary comptime value, so a builder ASSEMBLES it in a local before minting —
-// here `build_level` constructs `vs` (a local array, which could be filled
+// here `buildLevel` constructs `vs` (a local array, which could be filled
 // conditionally / in a loop), then mints `Level` from it.
 //
 // This exercises `define` decoding a value-arg SLICE (`decodeVariantElements`'s
@@ -11,7 +11,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-build_level :: () -> Type {
+buildLevel :: () -> Type {
     // The variant list lives in a local (not inlined into `define`): a non-
     // generic `() -> Type` builder has its whole body comptime-evaluated, so
     // `vs` is in scope when `makeEnum` mints from it.
@@ -23,7 +23,7 @@ build_level :: () -> Type {
     return makeEnum("Level", vs);
 }
 
-Level :: build_level();
+Level :: buildLevel();
 
 show :: (l: Level) {
     match l {

@@ -50,8 +50,8 @@ median :: (xs: []i64) -> i64 {
     xs[xs.len / 2]
 }
 
-report :: (label: string, build_ns: i64, walk_ns: i64) {
-    print("{}\tbuild {} ns\twalk {} ns\n", label, build_ns, walk_ns);
+report :: (label: string, buildNs: i64, walkNs: i64) {
+    print("{}\tbuild {} ns\twalk {} ns\n", label, buildNs, walkNs);
 }
 
 main :: () {

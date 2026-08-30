@@ -40,23 +40,23 @@ impl Into(Block) for Closure(i32, *void) -> void {
 
 // Side-effect capture so we can observe both args reached the
 // closure body.
-g_sum: i32 = 0;
-g_tag: *void = null;
+gSum: i32 = 0;
+gTag: *void = null;
 
 main :: () -> i32 {
     cl := |n: i32, tag: *void| {
-        g_sum = n + 1;
-        g_tag = tag;
+        gSum = n + 1;
+        gTag = tag;
     };
     b : Block = cl.(Block);
 
-    invoke_fn : (*Block, i32, *void) -> void abi(.c) = b.invoke.((*Block, i32, *void) -> void abi(.c));
+    invokeFn : (*Block, i32, *void) -> void abi(.c) = b.invoke.((*Block, i32, *void) -> void abi(.c));
     sentinel: i32 = 42;
-    invoke_fn(*b, 41, *sentinel);
+    invokeFn(*b, 41, *sentinel);
 
-    if g_sum != 42 { print("FAIL: g_sum expected 42, got {}\n", g_sum); return 1; }
-    if g_tag == null { print("FAIL: g_tag null\n"); return 1; }
+    if gSum != 42 { print("FAIL: gSum expected 42, got {}\n", gSum); return 1; }
+    if gTag == null { print("FAIL: gTag null\n"); return 1; }
 
-    print("block multi-arg ok: sum={}\n", g_sum);
+    print("block multi-arg ok: sum={}\n", gSum);
     0
 }

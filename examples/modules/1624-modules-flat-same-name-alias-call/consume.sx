@@ -1,3 +1,3 @@
 // A generic consumer both authors reach: the alias arrives here as an ordinary
 // function value, so the argument must already carry the caller's own author.
-apply_seeded :: (f: (i64) -> i64, seed: $T) -> i64 { return f(seed); }
+applySeeded :: (f: (i64) -> i64, seed: $T) -> i64 { return f(seed); }

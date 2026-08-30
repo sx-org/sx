@@ -30,7 +30,7 @@ describe :: ($T: Type) -> string {
 }
 
 // Pack-fn collecting per-position types (bare path).
-type_list :: (..$args) -> string {
+typeList :: (..$args) -> string {
     list := $args;
     s := "[";
     i : i64 = 0;
@@ -105,10 +105,10 @@ main :: () -> i32 {
 
     // ── 8. Comptime-generated struct (Wrap($T)) ─────────────
     print("=== 8. Wrap($T) ===\n");
-    w_int := Wrap(i64){ v = 42 };
-    w_str := Wrap(string){ v = "wrapped" };
-    print("Wrap(i64).v:    {}\n", w_int.v);
-    print("Wrap(string).v: {}\n", w_str.v);
+    wInt := Wrap(i64){ v = 42 };
+    wStr := Wrap(string){ v = "wrapped" };
+    print("Wrap(i64).v:    {}\n", wInt.v);
+    print("Wrap(string).v: {}\n", wStr.v);
 
     // ── 9. Reflection builtins on Types ─────────────────────
     print("=== 9. reflection on Type ===\n");
@@ -121,10 +121,10 @@ main :: () -> i32 {
 
     // ── 10. Type pack (..$args) walking ─────────────────────
     print("=== 10. ..$args walking ===\n");
-    print("type_list():            {}\n", type_list());
-    print("type_list(1):           {}\n", type_list(42));
-    print("type_list(1, \"x\"):    {}\n", type_list(42, "x"));
-    print("type_list(true, 3.14):  {}\n", type_list(true, 3.14));
+    print("typeList():            {}\n", typeList());
+    print("typeList(1):           {}\n", typeList(42));
+    print("typeList(1, \"x\"):    {}\n", typeList(42, "x"));
+    print("typeList(true, 3.14):  {}\n", typeList(true, 3.14));
 
     // ── 11. Type in struct field ────────────────────────────
     print("=== 11. Type in struct field ===\n");
@@ -190,10 +190,10 @@ main :: () -> i32 {
 // @typeEq(i64, i64):    true
 // @typeEq(i64, string): false
 // === 10. ..$args walking ===
-// type_list():            []
-// type_list(1):           [i64]
-// type_list(1, "x"):      [i64, string]
-// type_list(true, 3.14):  [bool, f64]
+// typeList():            []
+// typeList(1):           [i64]
+// typeList(1, "x"):      [i64, string]
+// typeList(true, 3.14):  [bool, f64]
 // === 11. Type in struct field ===
 // h.t == i64:    true
 // h.t == string: false

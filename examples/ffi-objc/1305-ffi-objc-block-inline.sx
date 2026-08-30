@@ -6,9 +6,9 @@
 @import "modules/std/mem.sx";
 @import "modules/ffi/objc_block.sx";
 
-invoke_once :: (b: *Block) {
-  invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
-  invoke_fn(b);
+invokeOnce :: (b: *Block) {
+  invokeFn : (*Block) -> void abi(.c) = xx b.invoke;
+  invokeFn(b);
 }
 
 main :: () -> i32 {
@@ -16,6 +16,6 @@ main :: () -> i32 {
   blk := closure(||_{ x } {
     print("inline block, x = {}\n", x);
   }).(Block);
-  invoke_once(*blk);
+  invokeOnce(*blk);
   0
 }

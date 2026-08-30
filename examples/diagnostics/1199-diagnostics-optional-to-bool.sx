@@ -7,9 +7,9 @@
 
 @import "modules/std.sx";
 
-takes_bool :: (b: bool) { if b { print("true\n"); } else { print("false\n"); } }
+takesBool :: (b: bool) { if b { print("true\n"); } else { print("false\n"); } }
 
 main :: () {
   a : ?i64 = 42;
-  takes_bool(a);   // <- '?i64' cannot be used where 'bool' is expected
+  takesBool(a);   // <- '?i64' cannot be used where 'bool' is expected
 }

@@ -6,10 +6,10 @@ Sizable :: interface { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
-take_view :: (v: *Sizable) -> i64 { v.size() }
+takeView :: (v: *Sizable) -> i64 { v.size() }
 make :: () -> Widget { Widget{ value = 2 } }
 
 main :: () {
     pv : *Sizable = Widget{ value = 1 };   // rvalue literal → refusal
-    print("{}\n", take_view(make()));       // rvalue call result → refusal
+    print("{}\n", takeView(make()));       // rvalue call result → refusal
 }

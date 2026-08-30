@@ -19,22 +19,22 @@ Frame :: struct {
 }
 
 // ctx pointer + string + two Colors.
-probe_string_two_colors :: (ctx: *i32, label: string, bg: Color, fg: Color) {
+probeStringTwoColors :: (ctx: *i32, label: string, bg: Color, fg: Color) {
     print("A fg=({},{},{},{}) bg=({},{},{},{}) label={}\n",
         fg.r, fg.g, fg.b, fg.a, bg.r, bg.g, bg.b, bg.a, label);
 }
 
-// Full draw_btn-like shape: Frame + string + f32 + two Colors + f32.
-probe_frame_draw :: (
+// Full drawBtn-like shape: Frame + string + f32 + two Colors + f32.
+probeFrameDraw :: (
     ctx: *i32,
     frame: Frame,
     label: string,
-    font_sz: f32,
+    fontSz: f32,
     bg: Color,
     fg: Color,
     radius: f32
 ) {
-    fi : i64 = xx font_sz;
+    fi : i64 = xx fontSz;
     ri : i64 = xx radius;
     fx : i64 = xx frame.origin.x;
     fy : i64 = xx frame.origin.y;
@@ -45,7 +45,7 @@ probe_frame_draw :: (
 }
 
 // One Color after string — always worked; keep as a control.
-probe_one_color :: (ctx: *i32, label: string, fg: Color) {
+probeOneColor :: (ctx: *i32, label: string, fg: Color) {
     print("C fg=({},{},{},{}) label={}\n", fg.r, fg.g, fg.b, fg.a, label);
 }
 
@@ -55,8 +55,8 @@ main :: () -> i64 {
     fg := Color{ r = 230, g = 230, b = 240, a = 255 };
     f := Frame.make(10.0, 20.0, 100.0, 40.0);
 
-    probe_string_two_colors(*n, "New Game", bg, fg);
-    probe_frame_draw(*n, f, "Notes", 14.0, bg, fg, 8.0);
-    probe_one_color(*n, "Hint", fg);
+    probeStringTwoColors(*n, "New Game", bg, fg);
+    probeFrameDraw(*n, f, "Notes", 14.0, bg, fg, 8.0);
+    probeOneColor(*n, "Hint", fg);
     0
 }

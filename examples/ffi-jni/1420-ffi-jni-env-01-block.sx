@@ -4,8 +4,8 @@
 @import "modules/std.sx";
 
 main :: () -> i32 {
-    synth_env : *void = null;
-    push .{ jni = synth_env } {
+    synthEnv : *void = null;
+    push .{ jni = synthEnv } {
         print("inside push .{ jni = env } scope\n");
     }
     0

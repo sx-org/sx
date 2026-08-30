@@ -4,11 +4,11 @@ error: error member 'Elsewhere' is not in caller's error set 'Named'
 29 |     wide()
    |     ^^^^^^
 
-error: unresolved 'no_such_name' (in examples/diagnostics/2077-diagnostics-pure-failable-tail.sx fn irreducible)
+error: unresolved 'noSuchName' (in examples/diagnostics/2077-diagnostics-pure-failable-tail.sx fn irreducible)
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:43:5
    |
-43 |     no_such_name
-   |     ^^^^^^^^^^^^
+43 |     noSuchName
+   |     ^^^^^^^^^^
 
 error: error member '.Missing' is not in error set 'Named'
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:49:5

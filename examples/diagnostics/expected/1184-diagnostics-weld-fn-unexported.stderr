@@ -1,5 +1,5 @@
 error: unknown ABI (expected '.c' or '.naked')
-  --> examples/diagnostics/1184-diagnostics-weld-fn-unexported.sx:10:48
+  --> examples/diagnostics/1184-diagnostics-weld-fn-unexported.sx:10:44
    |
-10 | not_a_real_compiler_fn :: (x: i64) -> i64 abi(.compiler);
-   |                                                ^^^^^^^^
+10 | notARealCompilerFn :: (x: i64) -> i64 abi(.compiler);
+   |                                            ^^^^^^^^

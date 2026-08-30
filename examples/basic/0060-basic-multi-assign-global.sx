@@ -10,50 +10,50 @@
 //
 // An INDEX target on a GLOBAL array base addresses it in place through
 // `global_addr`. Also covers a two-index global-array multi-assign and a swap
-// (`g_swap[0], g_swap[1] = g_swap[1], g_swap[0]`, RHS-before-stores), pinning
+// (`gSwap[0], gSwap[1] = gSwap[1], gSwap[0]`, RHS-before-stores), pinning
 // store ordering.
 
 @import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 
-g_total : i64 = 0;
-g_opt : ?i64 = null;
-g_col : Color = .green;
-g_arr : [3]i64 = .[ 10, 20, 30 ];
-g_swap : [2]i64 = .[ 1, 2 ];
+gTotal : i64 = 0;
+gOpt : ?i64 = null;
+gCol : Color = .green;
+gArr : [3]i64 = .[ 10, 20, 30 ];
+gSwap : [2]i64 = .[ 1, 2 ];
 
 main :: () -> i32 {
     a := 1;
-    g_total, a = 40, 50;        // global target + local target
-    print("g={} a={}\n", g_total, a);
+    gTotal, a = 40, 50;        // global target + local target
+    print("g={} a={}\n", gTotal, a);
 
-    g_total, _ = g_total + 2, a + 99;   // global target + `_` discard leg
-    print("g={}\n", g_total);
+    gTotal, _ = gTotal + 2, a + 99;   // global target + `_` discard leg
+    print("g={}\n", gTotal);
 
     // Optional targets take a `null` RHS typed against the TARGET, not the
     // enclosing fn's return type — global and local, first/last position.
-    g_opt, a = 7, 1;                    // scalar → optional coercion into the global
-    print("opt_set={}\n", g_opt ?? -1);
-    g_opt, a = null, 2;                 // null → optional GLOBAL
+    gOpt, a = 7, 1;                    // scalar → optional coercion into the global
+    print("optSet={}\n", gOpt ?? -1);
+    gOpt, a = null, 2;                 // null → optional GLOBAL
     lo : ?i64 = 9;
     a, lo = 3, null;                    // null → optional LOCAL (last position)
-    print("g_opt_null={} lo_null={} a={}\n", g_opt == null, lo == null, a);
+    print("gOptNull={} loNull={} a={}\n", gOpt == null, lo == null, a);
 
     // Enum-literal RHS resolves against the enum global target's type.
-    g_col, a = .red, 4;
-    print("col_red={} a={}\n", g_col == Color.red, a);
+    gCol, a = .red, 4;
+    print("colRed={} a={}\n", gCol == Color.red, a);
 
     // GLOBAL array index target — the store must land in the
     // global's storage in place, not a loaded copy. Mixed with a local target.
-    g_arr[1], a = 77, 5;
-    print("arr1={} a={}\n", g_arr[1], a);            // arr1=77
+    gArr[1], a = 77, 5;
+    print("arr1={} a={}\n", gArr[1], a);            // arr1=77
     // Two global-array index targets in one statement (first + last).
-    g_arr[0], g_arr[2] = 88, 99;
-    print("arr={} {} {}\n", g_arr[0], g_arr[1], g_arr[2]);  // 88 77 99
+    gArr[0], gArr[2] = 88, 99;
+    print("arr={} {} {}\n", gArr[0], gArr[1], gArr[2]);  // 88 77 99
     // Swap through global-array indices: both RHS reads happen BEFORE either
     // store, so the values exchange rather than one clobbering the other.
-    g_swap[0], g_swap[1] = g_swap[1], g_swap[0];
-    print("swap={} {}\n", g_swap[0], g_swap[1]);     // 2 1
+    gSwap[0], gSwap[1] = gSwap[1], gSwap[0];
+    print("swap={} {}\n", gSwap[0], gSwap[1]);     // 2 1
     0
 }

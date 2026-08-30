@@ -19,8 +19,8 @@ each :: (xs: []i64, body: $F/(i64) -> void) { for v in xs { body(v); } }
 pair :: (f: $F/(i64, i64) -> void) { f(3, 4); }
 Sink :: struct($T: Type) { taken: Closure(i64); }
 
-scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) {
-    if tb := top_bar { tb(); }
+scaffold :: (topBar: ?Closure() = null, fab: ?Closure() = null, content: $F/() -> void) {
+    if tb := topBar { tb(); }
     content();
     if fb := fab { fb(); }
 }
@@ -31,7 +31,7 @@ check :: (f: $F/() -> void) -> bool { f(); true }
 main :: () {
     _ = vstack(8.0) { print("a\n"); print("b\n"); };
     scaffold() { print("content\n"); };
-    scaffold(top_bar = toolbar) { print("content2\n"); };
+    scaffold(topBar = toolbar) { print("content2\n"); };
     r := vstack(2.0) { print("x\n"); };
     print("ret {}\n", r);
     // The env takes `n` by value, so the block mutates its own field.

@@ -11,11 +11,11 @@
 @import "modules/std/meta.sx";
 
 // Declared but never `define`d — an incomplete forward slot.
-mk_undefined :: () -> Type {
+mkUndefined :: () -> Type {
     return declare("Undefined");
 }
 
-Undefined :: mk_undefined();
+Undefined :: mkUndefined();
 
 main :: () -> i32 {
     u : Undefined = ---;

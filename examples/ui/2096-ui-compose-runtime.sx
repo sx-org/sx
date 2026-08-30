@@ -92,7 +92,7 @@ main :: () -> i32 {
     // capturing handler — spends nothing, and the teardown leaves nothing.
     steady := 0;
     ran := 0;
-    taps_seen := 0;
+    tapsSeen := 0;
     tracker := TrackingAllocator.init(context.allocator);
     push .{ allocator = tracker } {
         quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker);
@@ -123,13 +123,13 @@ main :: () -> i32 {
         }
         steady = tracker.allocCount - warm;
         ran = spin.frames;
-        taps_seen = seen;
+        tapsSeen = seen;
 
         quiet.deinit();
         spin.deinit()
     }
-    print("frames {} taps {} steady_allocs {} outstanding {}\n",
-        ran, taps_seen, steady, tracker.leakCount());
+    print("frames {} taps {} steadyAllocs {} outstanding {}\n",
+        ran, tapsSeen, steady, tracker.leakCount());
 
     // A builder written under one allocator, handed to a loop made under
     // another. The loop is told which allocator the closure's environment came
@@ -149,13 +149,13 @@ main :: () -> i32 {
             v
         });
         push .{ allocator = elsewhere } {
-            far_loop := FrameLoop.init(*far, build, owner);
-            far_loop.run(2);
-            far_loop.deinit()
+            farLoop := FrameLoop.init(*far, build, owner);
+            farLoop.run(2);
+            farLoop.deinit()
         }
         far.deinit()
     }
-    print("far_built {} owner_outstanding {} elsewhere_outstanding {}\n",
+    print("farBuilt {} ownerOutstanding {} elsewhereOutstanding {}\n",
         built, owner.leakCount(), elsewhere.leakCount());
 
     // The same question asked of a snapshot outside any loop. A caller that
@@ -167,7 +167,7 @@ main :: () -> i32 {
     solo := TrackingAllocator.init(context.allocator);
     push .{ allocator = solo } {
         marks := Identity.init(solo);
-        push .{ compose_ui = *marks } {
+        push .{ composeUi = *marks } {
             marks.beginBuild();
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
@@ -186,6 +186,6 @@ main :: () -> i32 {
         }
         marks.deinit()
     }
-    print("settled_allocs {} snapshot_freed {}\n", settled, returned);
+    print("settledAllocs {} snapshotFreed {}\n", settled, returned);
     0
 }

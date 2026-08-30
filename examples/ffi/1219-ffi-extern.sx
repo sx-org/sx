@@ -7,7 +7,7 @@ pkg :: @import "tests/fixtures/testpkg";
 // --- Extern function binding ---
 libc :: @library "c";
 
-c_abs :: (n: i32) -> i32 extern libc "abs";
+cAbs :: (n: i32) -> i32 extern libc "abs";
 
 // --- Protocol declarations (static dispatch only) ---
 
@@ -18,6 +18,6 @@ main :: () {
     // ========================================================
     print("=== 15. Extern ===\n");
 
-    // Symbol rename: c_abs maps to C's abs()
-    print("extern-rename: {}\n", c_abs(xx -42));
+    // Symbol rename: cAbs maps to C's abs()
+    print("extern-rename: {}\n", cAbs(xx -42));
 }

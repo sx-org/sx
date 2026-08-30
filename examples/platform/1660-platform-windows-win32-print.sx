@@ -15,7 +15,7 @@
 kernel32 :: @library "kernel32";
 
 // DWORD = u32, HANDLE/LPVOID = *void, BOOL = i32.
-GetStdHandle :: (n_std_handle: u32) -> *void extern;
+GetStdHandle :: (nStdHandle: u32) -> *void extern;
 WriteFile :: (file: *void, buf: *u8, n: u32, written: *u32, overlapped: *void) -> i32 extern;
 ExitProcess :: (code: u32) -> void extern;
 

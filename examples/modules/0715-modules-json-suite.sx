@@ -36,7 +36,7 @@ report :: (label: string, ok: bool) {
 }
 
 // Half-open containment [lo, hi).
-in_range :: (x: i64, lo: i64, hi: i64) -> bool {
+inRange :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }
 
@@ -50,7 +50,7 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 // True when parsing `"a<b>b"` (a string holding the RAW control byte `b`)
 // raises BadControlChar. Built from a byte buffer because a raw control
 // byte can't appear in an sx string literal.
-ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
+ctrlRaises :: (b: u8, alloc: Allocator) -> bool {
     raw : [5]u8 = ---;
     raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
     return raises(string{ ptr = *raw[0], len = 5 }, .BadControlChar, alloc);
@@ -138,8 +138,8 @@ main :: () -> ! {
     report("st-min",  o.items[3].val.int == 0 - 9223372036854775807 - 1);
     report("st-max",  o.items[4].val.int == 9223372036854775807);
     report("st-bool", o.items[5].val.bool == true);
-    is_null := match o.items[6].val { case .null: true; else: false; };
-    report("st-null", is_null);
+    isNull := match o.items[6].val { case .null: true; else: false; };
+    report("st-null", isNull);
     xs := o.items[7].val.array;
     report("st-xs", xs.len == 3 and xs.items[0].int == 1 and
                     xs.items[1].int == 0 - 2 and xs.items[2].int == 3);
@@ -225,9 +225,9 @@ main :: () -> ! {
     report("err-trail-scalar", raises("null x",  .TrailingGarbage, a));
 
     // BadControlChar: a raw control byte (< 0x20) inside a string.
-    report("err-ctrl-tab", ctrl_raises(9,  a));   // raw 0x09
-    report("err-ctrl-lf",  ctrl_raises(10, a));   // raw 0x0A
-    report("err-ctrl-nul", ctrl_raises(0,  a));   // raw 0x00
+    report("err-ctrl-tab", ctrlRaises(9,  a));   // raw 0x09
+    report("err-ctrl-lf",  ctrlRaises(10, a));   // raw 0x0A
+    report("err-ctrl-nul", ctrlRaises(0,  a));   // raw 0x00
 
     print("=== DONE ===\n");
     return;

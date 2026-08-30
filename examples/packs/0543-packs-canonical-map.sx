@@ -22,10 +22,10 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 }
 impl VL($R) for Combined($R, ..$Ts) { get :: (self: *Combined) -> $R => self.value; }
 
-// (named `zip_map`, not `map`: the prelude now exports a `map` namespace —
+// (named `zipMap`, not `map`: the prelude now exports a `map` namespace —
 // `std/map.sx`'s HashMap / IndexMap — which a bare top-level `map` here
 // would collide with.)
-zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
+zipMap :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
     c : Combined($R, ..sources.T) = ---;
     c.sources = .{..sources};
     c.value = mapper(..sources.get);
@@ -33,7 +33,7 @@ zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
 }
 
 main :: () -> i32 {
-    r := zip_map(|a, b| a + b, IntCell{ v = 40 }, IntCell{ v = 2 });
+    r := zipMap(|a, b| a + b, IntCell{ v = 40 }, IntCell{ v = 2 });
     print("{}\n", r.get());     // 42
     0
 }

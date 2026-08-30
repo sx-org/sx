@@ -1,4 +1,4 @@
-const_one=1
+constOne=1
 raised=0
-clamp_hi=10
-clamp_lo=7
+clampHi=10
+clampLo=7

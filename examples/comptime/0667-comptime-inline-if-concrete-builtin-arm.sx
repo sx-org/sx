@@ -6,7 +6,7 @@
 // leading `$T: Type` form.
 @import "modules/std.sx";
 
-by_inline :: (v: $K) -> i64 {
+byInline :: (v: $K) -> i64 {
     n := 0;
     inline match K {
         case i64: { n = 1; }
@@ -18,7 +18,7 @@ by_inline :: (v: $K) -> i64 {
     n
 }
 
-by_type :: ($T: Type) -> i64 {
+byType :: ($T: Type) -> i64 {
     n := 0;
     inline match T {
         case i64: { n = 1; }
@@ -33,6 +33,6 @@ main :: () {
     x : i64 = 7;
     b : u8 = 1;
     f : f32 = 1.5;
-    print("{} {} {} {} {}\n", by_inline(x), by_inline(b), by_inline(f), by_inline("s"), by_inline(true));
-    print("{} {} {} {}\n", by_type(i64), by_type(u8), by_type(f32), by_type(bool));
+    print("{} {} {} {} {}\n", byInline(x), byInline(b), byInline(f), byInline("s"), byInline(true));
+    print("{} {} {} {}\n", byType(i64), byType(u8), byType(f32), byType(bool));
 }

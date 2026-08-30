@@ -7,7 +7,7 @@ b :: @import "0854-modules-nominal-missing-method-no-crossbind/b.sx";
 
 main :: () -> i32 {
     av := a.Thing.make();
-    _ := av.only_b();
-    _ := a.Thing.static_b();
+    _ := av.onlyB();
+    _ := a.Thing.staticB();
     0
 }

@@ -6,7 +6,7 @@ Point :: struct {
 }
 
 // Print all arguments — accepts any type, dispatches via type-switch
-print_any :: (..args: []any) {
+printAny :: (..args: []any) {
     for it in args {
         type := @typeOf(it);
         match type {
@@ -33,11 +33,11 @@ count :: (..args: []any) -> i32 {
 }
 
 main :: () -> i32 {
-    print_any(42, "hello", true, 3.14);
+    printAny(42, "hello", true, 3.14);
 
     // Test with struct
     p := Point{ x=10, y=20 };
-    print_any("point:", p, 99);
+    printAny("point:", p, 99);
 
     // Test count
     out(intToString(count(1, 2, 3)));

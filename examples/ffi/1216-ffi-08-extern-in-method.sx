@@ -38,7 +38,7 @@ impl Doubler for Counter {
 }
 
 // ── 3. Closure body calling a #extern fn ────────────────────────────
-make_adder :: (bias: i32) -> $F/(i32) -> i32 {
+makeAdder :: (bias: i32) -> $F/(i32) -> i32 {
     return |x: i32|_{ bias = bias } -> i32 ffi_method_helper(x) + bias;
 }
 
@@ -53,7 +53,7 @@ main :: () -> i32 {
     print("protocol     = {}\n", c.doubled());
 
     // 3. closure
-    adder := make_adder(100);
+    adder := makeAdder(100);
     print("closure(5)   = {}\n", adder(5));
 
     // 4. inline match arm — only one arm survives codegen on a given

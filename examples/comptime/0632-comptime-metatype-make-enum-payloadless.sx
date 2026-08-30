@@ -6,14 +6,14 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make_suit :: () -> Type {
+makeSuit :: () -> Type {
     return makeEnum("Suit", .[
         VariantInfo{ name = "hearts",   payload = void },
         VariantInfo{ name = "spades",   payload = void },
         VariantInfo{ name = "diamonds", payload = void },
     ]);
 }
-Suit :: make_suit();
+Suit :: makeSuit();
 
 show :: (s: Suit) {
     match s {

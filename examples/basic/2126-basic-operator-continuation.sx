@@ -54,12 +54,12 @@ main :: () -> i32 {
 -fee;
 
     // the same reading with a raw identifier, whose backtick is part of the gap
-    raw_break := base
+    rawBreak := base
 -`x;
-    raw_same_line := base -`x;
+    rawSameLine := base -`x;
 
     print("spaced={} trailing={} value={}\n", spaced, trailing, value);
-    print("raw_break={} raw_same_line={}\n", raw_break, raw_same_line);
+    print("rawBreak={} rawSameLine={}\n", rawBreak, rawSameLine);
 
     // the `;` is the cut: with one above it, `-fee` is a negation of its own
     print("cut\n");

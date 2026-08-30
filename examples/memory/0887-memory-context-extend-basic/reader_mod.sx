@@ -1,6 +1,6 @@
-// Reads `context.trace_depth` WITHOUT importing decl_mod.sx (which declares
+// Reads `context.traceDepth` WITHOUT importing decl_mod.sx (which declares
 // it). After assembly the Context is one ordinary program-global struct type;
 // access needs no import.
 @import "modules/std.sx";
 
-read_depth :: () -> i64 { return context.trace_depth; }
+readDepth :: () -> i64 { return context.traceDepth; }

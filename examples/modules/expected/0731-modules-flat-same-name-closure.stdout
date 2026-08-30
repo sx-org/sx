@@ -1,4 +1,4 @@
-from_a closure binds a.pick (1): ok
-from_b closure binds b.pick (2): ok
-from_a fn-value binds a.pick (1): ok
-from_b fn-value binds b.pick (2): ok
+fromA closure binds a.pick (1): ok
+fromB closure binds b.pick (2): ok
+fromA fn-value binds a.pick (1): ok
+fromB fn-value binds b.pick (2): ok

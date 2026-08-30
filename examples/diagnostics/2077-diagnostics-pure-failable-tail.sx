@@ -25,22 +25,22 @@ wide :: () -> ! {
 }
 
 // 1. Refused: the same forward rule as an explicit `return wide();`.
-implicit_forward :: () -> !Named {
+implicitForward :: () -> !Named {
     wide()
 }
 
 // The same-set forward is the control — it is accepted and returns the tag.
-same_set :: () -> !Named {
+sameSet :: () -> !Named {
     .Nope
 }
 
-forward_same_set :: () -> !Named {
-    same_set()
+forwardSameSet :: () -> !Named {
+    sameSet()
 }
 
 // 2. Refused: nothing types this tail, so nothing can dispose of it.
 irreducible :: () -> !Named {
-    no_such_name
+    noSuchName
 }
 
 // The contextual spelling still resolves against the declared set — so a tag
@@ -63,8 +63,8 @@ SxApp :: @JniClass("co/swipelab/sxpurefailable/SxApp", main = true) {
 }
 
 main :: () -> i32 {
-    forward_same_set() catch { print("caught\n"); };
-    implicit_forward() catch { print("caught\n"); };
+    forwardSameSet() catch { print("caught\n"); };
+    implicitForward() catch { print("caught\n"); };
     irreducible() catch { print("caught\n"); };
     nonmember() catch { print("caught\n"); };
 

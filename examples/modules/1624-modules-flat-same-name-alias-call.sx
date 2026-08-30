@@ -13,12 +13,12 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("b call binds b.target (120)", b_call() == 120);
-    report("b fn-value binds b.target (120)", b_value() == 120);
-    report("b capture binds b.target (120)", b_capture() == 120);
-    report("b generic consumer binds b.target (120)", b_consumed() == 120);
-    report("a call binds a.target (7)", a_call() == 7);
-    report("a fn-value binds a.target (7)", a_value() == 7);
-    report("a generic consumer binds a.target (7)", a_consumed() == 7);
+    report("b call binds b.target (120)", bCall() == 120);
+    report("b fn-value binds b.target (120)", bValue() == 120);
+    report("b capture binds b.target (120)", bCapture() == 120);
+    report("b generic consumer binds b.target (120)", bConsumed() == 120);
+    report("a call binds a.target (7)", aCall() == 7);
+    report("a fn-value binds a.target (7)", aValue() == 7);
+    report("a generic consumer binds a.target (7)", aConsumed() == 7);
     0
 }

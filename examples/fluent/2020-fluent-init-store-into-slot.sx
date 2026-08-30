@@ -21,12 +21,12 @@ store :: (value: $I/@Init($T)) -> *T {
 
 // Forwarding an initializer to another `$I/@Init(T)` parameter is synchronous and
 // hands over the single write — it does not wrap the recipe in a second one.
-store_via :: (value: $I/@Init($T)) -> *T {
+storeVia :: (value: $I/@Init($T)) -> *T {
     store(value)
 }
 
 // A receiver may decline to write. Then the expression never runs.
-count_only :: (value: $I/@Init($T)) -> i32 {
+countOnly :: (value: $I/@Init($T)) -> i32 {
     3
 }
 
@@ -37,11 +37,11 @@ main :: () -> i32 {
     print("stored: {} {}\n", b.label, b.alpha);
     context.allocator.destroy(b);
 
-    f := store_via(Button{ label = "Forwarded" });
+    f := storeVia(Button{ label = "Forwarded" });
     print("forwarded: {} {}\n", f.label, f.alpha);
     context.allocator.destroy(f);
 
-    print("declined: {}\n", count_only(Button{ label = "never built" }));
+    print("declined: {}\n", countOnly(Button{ label = "never built" }));
     0
 }
 

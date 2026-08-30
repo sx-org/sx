@@ -16,18 +16,18 @@ main :: () {
     task := TrackingAllocator.init(base);
 
     answer := 0;
-    ctx_allocs := 0;
+    ctxAllocs := 0;
     push .{ allocator = ctx } {
         n := 41;
         f := context.io.async(||_{ n } -> (i64, !IoErr) n + 1, task);
         answer = await(f) catch { 0 };
-        ctx_allocs = ctx.allocCount;
+        ctxAllocs = ctx.allocCount;
     }
 
     print("answer {}\n", answer);
     print("task allocs {} deallocs {} outstanding {}\n",
           task.allocCount, task.deallocCount, task.leakCount());
-    print("context allocs {}\n", ctx_allocs);
+    print("context allocs {}\n", ctxAllocs);
 
     // A worker that is ALREADY a `Closure` is taken unchanged — `closure` is
     // identity on one — so the task funds the other three and the env it was

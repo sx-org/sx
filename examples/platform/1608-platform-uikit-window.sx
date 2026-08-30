@@ -7,7 +7,7 @@
 //   3. window.rootViewController = vc
 //   4. [window makeKeyAndVisible]
 //
-// `g_window` is a module-level global so the window outlives the IMP scope
+// `gWindow` is a module-level global so the window outlives the IMP scope
 // (no ARC; UIKit retains it as the key window anyway).
 
 @import "modules/std.sx";
@@ -17,15 +17,15 @@
 
 UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 
-g_window : *void = ---;
+gWindow : *void = ---;
 
 // SxSceneDelegate's `window` property. UIKit retains the delegate, and the
 // module global keeps the window alive.
-window_getter :: (self: *void, _cmd: *void) -> *void abi(.c) {
-    return g_window;
+windowGetter :: (self: *void, _cmd: *void) -> *void abi(.c) {
+    return gWindow;
 }
-window_setter :: (self: *void, _cmd: *void, w: *void) abi(.c) {
-    g_window = w;
+windowSetter :: (self: *void, _cmd: *void, w: *void) abi(.c) {
+    gWindow = w;
 }
 
 sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, options: *void) abi(.c) {
@@ -38,19 +38,19 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
     UIViewController := objc_getClass("UIViewController".ptr);
     UIColor          := objc_getClass("UIColor".ptr);
 
-    sel_alloc            := sel_registerName("alloc".ptr);
-    sel_init             := sel_registerName("init".ptr);
-    sel_init_with_scene  := sel_registerName("initWithWindowScene:".ptr);
-    sel_view             := sel_registerName("view".ptr);
-    sel_system_blue      := sel_registerName("systemBlueColor".ptr);
-    sel_set_bg           := sel_registerName("setBackgroundColor:".ptr);
-    sel_set_root_vc      := sel_registerName("setRootViewController:".ptr);
-    sel_make_key_visible := sel_registerName("makeKeyAndVisible".ptr);
+    selAlloc            := sel_registerName("alloc".ptr);
+    selInit             := sel_registerName("init".ptr);
+    selInitWithScene    := sel_registerName("initWithWindowScene:".ptr);
+    selView             := sel_registerName("view".ptr);
+    selSystemBlue       := sel_registerName("systemBlueColor".ptr);
+    selSetBg            := sel_registerName("setBackgroundColor:".ptr);
+    selSetRootVc        := sel_registerName("setRootViewController:".ptr);
+    selMakeKeyVisible   := sel_registerName("makeKeyAndVisible".ptr);
 
-    msg_o   : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
-    msg_v   : (*void, *void)               -> void abi(.c) = xx objc_msgSend;
-    msg_oo  : (*void, *void, *void)        -> void abi(.c) = xx objc_msgSend;
-    msg_ooo : (*void, *void, *void)        -> *void abi(.c) = xx objc_msgSend;
+    msgO   : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
+    msgV   : (*void, *void)               -> void abi(.c) = xx objc_msgSend;
+    msgOo  : (*void, *void, *void)        -> void abi(.c) = xx objc_msgSend;
+    msgOoo : (*void, *void, *void)        -> *void abi(.c) = xx objc_msgSend;
 
     // UIKit invokes this callback only after the UIWindowScene exists, unlike
     // application:didFinishLaunchingWithOptions: where connectedScenes is still
@@ -58,24 +58,24 @@ sceneWillConnect :: (self: *void, _cmd: *void, scene: *void, session: *void, opt
     if scene == xx 0 { NSLog(nsstring("[sx] scene NULL\n")); return; }
     NSLog(nsstring("[sx] scene: ok\n"));
 
-    win_raw := msg_o(UIWindow, sel_alloc);
-    g_window = msg_ooo(win_raw, sel_init_with_scene, scene);
+    winRaw := msgO(UIWindow, selAlloc);
+    gWindow = msgOoo(winRaw, selInitWithScene, scene);
     NSLog(nsstring("[sx] window: ok\n"));
 
-    vc_raw := msg_o(UIViewController, sel_alloc);
-    vc     := msg_o(vc_raw, sel_init);
-    msg_oo(g_window, sel_set_root_vc, vc);
+    vcRaw  := msgO(UIViewController, selAlloc);
+    vc     := msgO(vcRaw, selInit);
+    msgOo(gWindow, selSetRootVc, vc);
 
-    blue := msg_o(UIColor, sel_system_blue);
-    view := msg_o(vc, sel_view);
-    msg_oo(view, sel_set_bg, blue);
-    msg_oo(g_window, sel_set_bg, blue);
+    blue := msgO(UIColor, selSystemBlue);
+    view := msgO(vc, selView);
+    msgOo(view, selSetBg, blue);
+    msgOo(gWindow, selSetBg, blue);
 
-    msg_v(g_window, sel_make_key_visible);
+    msgV(gWindow, selMakeKeyVisible);
     NSLog(nsstring("[sx] makeKeyAndVisible done\n"));
 }
 
-did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
+didFinishLaunching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
     _ := self;
     _ := _cmd;
     _ := app;
@@ -90,25 +90,25 @@ main :: () -> i32 {
 
     class_addMethod(SxAppDelegate,
         sel_registerName("application:didFinishLaunchingWithOptions:".ptr),
-        xx did_finish_launching, "c@:@@".ptr);
+        xx didFinishLaunching, "c@:@@".ptr);
     objc_registerClassPair(SxAppDelegate);
 
     // The bundler's UIApplicationSceneManifest names `SxSceneDelegate`.
     // Register it before UIApplicationMain reads the scene configuration.
     SxSceneDelegate := objc_allocateClassPair(UIResponder, "SxSceneDelegate".ptr, 0);
-    scene_proto := objc_getProtocol("UISceneDelegate".ptr);
-    window_scene_proto := objc_getProtocol("UIWindowSceneDelegate".ptr);
-    if scene_proto != null { class_addProtocol(SxSceneDelegate, scene_proto); }
-    if window_scene_proto != null { class_addProtocol(SxSceneDelegate, window_scene_proto); }
+    sceneProto := objc_getProtocol("UISceneDelegate".ptr);
+    windowSceneProto := objc_getProtocol("UIWindowSceneDelegate".ptr);
+    if sceneProto != null { class_addProtocol(SxSceneDelegate, sceneProto); }
+    if windowSceneProto != null { class_addProtocol(SxSceneDelegate, windowSceneProto); }
     class_addMethod(SxSceneDelegate,
         sel_registerName("scene:willConnectToSession:options:".ptr),
         xx sceneWillConnect, "v@:@@@".ptr);
     class_addMethod(SxSceneDelegate,
         sel_registerName("window".ptr),
-        xx window_getter, "@@:".ptr);
+        xx windowGetter, "@@:".ptr);
     class_addMethod(SxSceneDelegate,
         sel_registerName("setWindow:".ptr),
-        xx window_setter, "v@:@".ptr);
+        xx windowSetter, "v@:@".ptr);
     objc_registerClassPair(SxSceneDelegate);
 
     return UIApplicationMain(0, xx 0, xx 0, nsstring("SxAppDelegate"));

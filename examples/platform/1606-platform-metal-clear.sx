@@ -66,40 +66,40 @@ TRI_VERTS : [18]f32 = .[
 ];
 
 gPlat   : *UIKitPlatform = null;
-g_gpu    : *MetalGPU      = null;
-g_shader : ShaderHandle   = 0;
-g_vbuf   : BufferHandle   = 0;
+gGpu    : *MetalGPU      = null;
+gShader : ShaderHandle   = 0;
+gVbuf   : BufferHandle   = 0;
 
 frame :: () {
     if gPlat == null { return; }
-    if g_gpu  == null { return; }
+    if gGpu  == null { return; }
 
     // Lazy-init the GPU on the first frame where the layer is available
     // (the layer is created during -[SxAppDelegate didFinishLaunching:]
     // which fires AFTER our main() returns into UIApplicationMain).
-    if g_gpu.layer == null {
+    if gGpu.layer == null {
         glLayer := gPlat.glLayer;
         if glLayer == null { return; }
-        if !g_gpu.init(glLayer, gPlat.pixelW, gPlat.pixelH) { return; }
+        if !gGpu.init(glLayer, gPlat.pixelW, gPlat.pixelH) { return; }
     }
 
     // Compile shader + upload vertex buffer once.
-    if g_shader == 0 {
-        g_shader = g_gpu.createShader(TRI_MSL, "");
-        if g_shader == 0 { return; }
+    if gShader == 0 {
+        gShader = gGpu.createShader(TRI_MSL, "");
+        if gShader == 0 { return; }
     }
-    if g_vbuf == 0 {
-        g_vbuf = g_gpu.createBuffer(72);  // 3 verts × 24 bytes
-        if g_vbuf == 0 { return; }
-        g_gpu.updateBuffer(g_vbuf, *TRI_VERTS, 72);
+    if gVbuf == 0 {
+        gVbuf = gGpu.createBuffer(72);  // 3 verts × 24 bytes
+        if gVbuf == 0 { return; }
+        gGpu.updateBuffer(gVbuf, *TRI_VERTS, 72);
     }
 
     bg : ClearColor = .{ r = 0.07, g = 0.10, b = 0.18, a = 1.0 };
-    if !g_gpu.beginFrame(bg) { return; }
-    g_gpu.setShader(g_shader);
-    g_gpu.setVertexBuffer(g_vbuf);
-    g_gpu.drawTriangles(0, 3);
-    g_gpu.endFrame(0.0);
+    if !gGpu.beginFrame(bg) { return; }
+    gGpu.setShader(gShader);
+    gGpu.setVertexBuffer(gVbuf);
+    gGpu.drawTriangles(0, 3);
+    gGpu.endFrame(0.0);
 }
 
 main :: () -> i32 {
@@ -109,7 +109,7 @@ main :: () -> i32 {
     if !plat.init("Metal Clear", 0, 0) { return 1; }
     gPlat = plat;
 
-    g_gpu = context.allocator.make(MetalGPU{});
+    gGpu = context.allocator.make(MetalGPU{});
 
     uikitAppRun(plat, frame);
     plat.shutdown();

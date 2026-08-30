@@ -11,7 +11,7 @@
 
 inline if @host.os == .android {
     @import "modules/std.sx";
-    g_android_only : i32 = 0;
+    gAndroidOnly : i32 = 0;
 }
 
 main :: () { print("ok\n"); }

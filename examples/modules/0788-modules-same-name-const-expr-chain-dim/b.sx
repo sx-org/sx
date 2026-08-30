@@ -3,8 +3,8 @@
 // so the dimension fold gives B's length 11 — never A's via the global map.
 M :: 10;
 K :: M + 1;
-b_val :: () -> i64 { return K; }
-b_len :: () -> i64 {
+bVal :: () -> i64 { return K; }
+bLen :: () -> i64 {
     arr : [K]u8 = ---;
     return arr.len;
 }

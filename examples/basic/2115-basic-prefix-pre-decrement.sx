@@ -14,9 +14,9 @@ main :: () -> i32 {
     --g;
     print("global={}\n", g);
 
-    --lib.lib_g;
-    --lib.lib_pair.a;
-    print("qualified={} field={}\n", lib.lib_g, lib.lib_pair.a);
+    --lib.libG;
+    --lib.libPair.a;
+    print("qualified={} field={}\n", lib.libG, lib.libPair.a);
 
     b : Counter = .{ count = 5 };
     --b.count;

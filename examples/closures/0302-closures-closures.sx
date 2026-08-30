@@ -3,7 +3,7 @@
 // --- Closure Basics ---
 
 // Factory: returns a new closure each time
-make_adder :: (n: i64) -> $F/(i64) -> i64 {
+makeAdder :: (n: i64) -> $F/(i64) -> i64 {
     return |x: i64|_{ n = n } -> i64 x + n;
 }
 
@@ -24,15 +24,15 @@ triple :: (x: i64) -> i64 { return x * 3; }
 // Struct with optional closure callback
 Widget :: struct {
     name: string;
-    on_update: ?Closure(i64) -> void;
+    onUpdate: ?Closure(i64) -> void;
 }
 
 main :: () {
     // 1. Basic closure with capture
     offset := 100;
-    add_offset := |x: i64|_{ offset = offset } -> i64 x + offset;
+    addOffset := |x: i64|_{ offset = offset } -> i64 x + offset;
      
-    print("basic: {}\n", add_offset(42));
+    print("basic: {}\n", addOffset(42));
 
     // 2. Capture by value (snapshot semantics)
     n := 10;
@@ -56,8 +56,8 @@ main :: () {
     logger("system ready");
 
     // 5. Factory pattern
-    add5 := make_adder(5);
-    add10 := make_adder(10);
+    add5 := makeAdder(5);
+    add10 := makeAdder(10);
     print("factory: {} {}\n", add5(100), add10(100));
 
     // 6. A bare fn answers the callable bound out of its own shape
@@ -79,18 +79,18 @@ main :: () {
 
     // 10. Multiple closures from same scope
     base := 100;
-    cl_add := |x: i64|_{ base = base } -> i64 x + base;
-    cl_mul := |x: i64|_{ base = base } -> i64 x * base;
-    print("multi: {} {}\n", cl_add(5), cl_mul(5));
+    clAdd := |x: i64|_{ base = base } -> i64 x + base;
+    clMul := |x: i64|_{ base = base } -> i64 x * base;
+    print("multi: {} {}\n", clAdd(5), clMul(5));
 
     // 11. Optional closures
-    w1 := Widget{ name = "slider", on_update = |val: i64| {
+    w1 := Widget{ name = "slider", onUpdate = |val: i64| {
         print("widget: {} = {}\n", "slider", val);
     } };
-    w2 := Widget{ name = "label", on_update = null };
+    w2 := Widget{ name = "label", onUpdate = null };
 
-    if h := w1.on_update { h(42); }
-    if h := w2.on_update { h(0); } else { print("widget: no handler\n"); }
+    if h := w1.onUpdate { h(42); }
+    if h := w2.onUpdate { h(0); } else { print("widget: no handler\n"); }
 
     print("=== DONE ===\n");
 }

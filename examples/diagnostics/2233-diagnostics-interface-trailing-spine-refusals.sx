@@ -8,20 +8,20 @@ W :: struct { v: i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 S :: struct { inner: P; }
 
-trailing_cast :: () -> P { W{ v = 1 }.(P) }
-trailing_in_literal :: () -> S { S{ inner = W{ v = 2 } } }
-trailing_empty_literal :: () -> P { .{} }
+trailingCast :: () -> P { W{ v = 1 }.(P) }
+trailingInLiteral :: () -> S { S{ inner = W{ v = 2 } } }
+trailingEmptyLiteral :: () -> P { .{} }
 
 take :: (v: P) -> P { v }
-through_argument :: () -> P { take(W{ v = 3 }) }
-through_binding :: () -> P { r : P = ---; r = W{ v = 4 }; r }
+throughArgument :: () -> P { take(W{ v = 3 }) }
+throughBinding :: () -> P { r : P = ---; r = W{ v = 4 }; r }
 absent :: () -> ?P { null }
 
 main :: () {
-    _ = trailing_cast();
-    _ = trailing_in_literal();
-    _ = trailing_empty_literal();
-    _ = through_argument();
-    _ = through_binding();
+    _ = trailingCast();
+    _ = trailingInLiteral();
+    _ = trailingEmptyLiteral();
+    _ = throughArgument();
+    _ = throughBinding();
     _ = absent();
 }

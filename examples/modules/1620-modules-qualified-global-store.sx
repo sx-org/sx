@@ -9,13 +9,13 @@
 lib :: @import "1620-modules-qualified-global-store/lib.sx";
 
 main :: () -> i32 {
-    print("{}\n", lib.lib_g);   // read: 0
-    lib.lib_g = 5;              // qualified plain store
-    print("{}\n", lib.lib_g);   // 5
-    lib.lib_g += 10;            // qualified compound store (load-op-store)
-    print("{}\n", lib.lib_g);   // 15
-    lib.lib_g *= 2;             // 30
-    print("{}\n", lib.lib_g);   // 30
-    if lib.lib_g != 30 { return 1; }
+    print("{}\n", lib.libG);   // read: 0
+    lib.libG = 5;              // qualified plain store
+    print("{}\n", lib.libG);   // 5
+    lib.libG += 10;            // qualified compound store (load-op-store)
+    print("{}\n", lib.libG);   // 15
+    lib.libG *= 2;             // 30
+    print("{}\n", lib.libG);   // 30
+    if lib.libG != 30 { return 1; }
     0
 }

@@ -101,23 +101,23 @@ main :: () {
     print("fieldname-enum2: {}\n", variantName(Color, 2));
 
     // structFieldValue (use anyToString to avoid sext-on-any bug)
-    fv_pt := Point{ 11, 22 };
+    fvPt := Point{ 11, 22 };
     out("fieldval0: ");
-    out(anyToString(structFieldValue(fv_pt, 0)));
+    out(anyToString(structFieldValue(fvPt, 0)));
     out("\n");
     out("fieldval1: ");
-    out(anyToString(structFieldValue(fv_pt, 1)));
+    out(anyToString(structFieldValue(fvPt, 1)));
     out("\n");
 
     // variantIndex on plain enum
-    fi_c : Color = .green;
-    print("fieldidx: {}\n", variantIndex(Color, fi_c));
+    fiC : Color = .green;
+    print("fieldidx: {}\n", variantIndex(Color, fiC));
 
     // variantIndex on tagged enum
-    fi_sh : Shape = .circle(1.0);
-    print("fieldidx-tagged: {}\n", variantIndex(Shape, fi_sh));
-    fi_sh2 : Shape = .none;
-    print("fieldidx-tagged2: {}\n", variantIndex(Shape, fi_sh2));
+    fiSh : Shape = .circle(1.0);
+    print("fieldidx-tagged: {}\n", variantIndex(Shape, fiSh));
+    fiSh2 : Shape = .none;
+    print("fieldidx-tagged2: {}\n", variantIndex(Shape, fiSh2));
 
     // cast
     cval : f64 = 3.7;

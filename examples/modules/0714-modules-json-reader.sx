@@ -32,7 +32,7 @@ report :: (label: string, ok: bool) {
 }
 
 // Half-open containment [lo, hi).
-in_range :: (x: i64, lo: i64, hi: i64) -> bool {
+inRange :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }
 
@@ -46,7 +46,7 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 // True when parsing `"a<b>b"` (a string holding the RAW control byte `b`)
 // raises BadControlChar. Built from a byte buffer because a raw control
 // byte can't appear in an sx string literal.
-ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
+ctrlRaises :: (b: u8, alloc: Allocator) -> bool {
     raw : [5]u8 = ---;
     raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
     return raises(string{ ptr = *raw[0], len = 5 }, .BadControlChar, alloc);
@@ -61,8 +61,8 @@ main :: () -> ! {
     src := DOC;
     root := try parse(src, arena);
 
-    is_object := match root { case .object: true; else: false; };
-    report("root-is-object", is_object);
+    isObject := match root { case .object: true; else: false; };
+    report("root-is-object", isObject);
 
     o := root.object;
     report("member-count",   o.len == 6);
@@ -77,8 +77,8 @@ main :: () -> ! {
 
     report("bool-value", o.items[3].val.bool == true);
 
-    is_null := match o.items[4].val { case .null: true; else: false; };
-    report("null-value", is_null);
+    isNull := match o.items[4].val { case .null: true; else: false; };
+    report("null-value", isNull);
 
     // The nested pair asserted as one expression — a string `==` on each
     // side of `and`.
@@ -88,10 +88,10 @@ main :: () -> ! {
     // ── 2. Heap discipline: view vs decoded ──────────────────────────
     base : i64 = xx src.ptr;
     stop := base + src.len;
-    p_plain : i64 = xx o.items[0].val.str.ptr;   // "plain": no escape -> VIEW into src
-    p_esc   : i64 = xx o.items[1].val.str.ptr;   // "a\nb": escaped -> DECODED into arena
-    report("plain-is-view",     in_range(p_plain, base, stop));
-    report("escaped-allocated", !in_range(p_esc, base, stop));
+    pPlain : i64 = xx o.items[0].val.str.ptr;   // "plain": no escape -> VIEW into src
+    pEsc   : i64 = xx o.items[1].val.str.ptr;   // "a\nb": escaped -> DECODED into arena
+    report("plain-is-view",     inRange(pPlain, base, stop));
+    report("escaped-allocated", !inRange(pEsc, base, stop));
 
     // ── 3. Round-trip back through the writer ────────────────────────
     buf : [256]u8 = ---;
@@ -141,9 +141,9 @@ main :: () -> ! {
 
     // ── 7. RFC 8259 §7: unescaped control bytes (U+0000..U+001F) ──────
     // A RAW control byte inside a string is invalid JSON -> BadControlChar.
-    report("err-raw-tab", ctrl_raises(9,  arena));   // raw 0x09
-    report("err-raw-lf",  ctrl_raises(10, arena));   // raw 0x0A
-    report("err-raw-nul", ctrl_raises(0,  arena));   // raw 0x00
+    report("err-raw-tab", ctrlRaises(9,  arena));   // raw 0x09
+    report("err-raw-lf",  ctrlRaises(10, arena));   // raw 0x0A
+    report("err-raw-nul", ctrlRaises(0,  arena));   // raw 0x00
 
     // POSITIVE: the ESCAPED control forms stay valid and decode to the
     // exact bytes. JSON "\t\n\u0009" -> 0x09 0x0A 0x09 (3 bytes).

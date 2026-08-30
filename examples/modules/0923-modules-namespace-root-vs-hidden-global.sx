@@ -10,7 +10,7 @@ util :: @import "0923-modules-namespace-root-vs-hidden-global/util_mod.sx";
 
 main :: () -> i32 {
     if util.helper() != 33 { return 1; }
-    if g.mid_fn() != 5 { return 2; }
+    if g.midFn() != 5 { return 2; }
     print("ok\n");
     return 0;
 }

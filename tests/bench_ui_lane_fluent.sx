@@ -3,7 +3,7 @@
 @import "modules/std.sx";
 @import "modules/ui/fluent.sx";
 
-slot_bytes :: () -> i64 => @sizeOf(View);
+slotBytes :: () -> i64 => @sizeOf(View);
 
 build :: (n: i64) -> VStack {
     VStack{ children = collectViews() {

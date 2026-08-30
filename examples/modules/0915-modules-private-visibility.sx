@@ -8,10 +8,10 @@ fac :: @import "0915-modules-private-visibility/facade.sx";
 
 main :: () -> i32 {
     print("{}\n", lib.exposed());
-    h : lib.Alias = lib.make_hidden();
+    h : lib.Alias = lib.makeHidden();
     print("{}\n", h.v);
     print("{}\n", lib.bump());
-    print("{}\n", lib.pick_on());
-    print("{}\n", fac.use_inner());
+    print("{}\n", lib.pickOn());
+    print("{}\n", fac.useInner());
     return 0;
 }

@@ -1,6 +1,6 @@
 tally=3
-constant_empty=7
-constant_tail=7
+constantEmpty=7
+constantTail=7
 ints sx=15 c=15
 promoted sx=4 c=4
 doubles sx=5.250000 c=5.250000

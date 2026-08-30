@@ -28,7 +28,7 @@ main :: () -> i32 {
     // time (only the sim's validation layer aborts), so pin the field, not
     // the pipeline call.
     if gpu.targetFormat != MTL_PIXEL_FORMAT_BGRA8_UNORM {
-        print("target_format after init: {}\n", gpu.targetFormat);
+        print("targetFormat after init: {}\n", gpu.targetFormat);
         return 1;
     }
 

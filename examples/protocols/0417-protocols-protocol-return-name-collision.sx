@@ -4,8 +4,8 @@
 //
 // Here the user's `Event` enum shares its name with the stdlib
 // `std/event.sx` `Event :: struct` (pulled in, namespaced as `event`, by
-// `@import "modules/std.sx"`). `Plat.one_event` returns the user's `Event`;
-// `ev := g_plat.one_event()` infers that type, so the `case .key_up:|e|`
+// `@import "modules/std.sx"`). `Plat.oneEvent` returns the user's `Event`;
+// `ev := gPlat.oneEvent()` infers that type, so the `case .keyUp:|e|`
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //
 // `registerProtocolDecl` anchors signature resolution to `pd.source_file`, as
@@ -15,21 +15,21 @@
 
 Keycode :: enum { unknown; escape; enter; }
 KeyData :: struct { key: Keycode; }
-Event   :: enum { none; key_up: KeyData; }
+Event   :: enum { none; keyUp: KeyData; }
 
-Plat :: interface { one_event :: (self: *Self) -> Event; }
+Plat :: interface { oneEvent :: (self: *Self) -> Event; }
 
 Impl :: struct { dummy: i64; }
 impl Plat for Impl {
-    one_event :: (self: *Impl) -> Event { return .key_up(.{ key = .escape }); }
+    oneEvent :: (self: *Impl) -> Event { return .keyUp(.{ key = .escape }); }
 }
 
 main :: () {
     impl : Impl = .{ dummy = 0 };
-    g_plat := impl.(Plat);
-    ev := g_plat.one_event();          // type INFERRED from protocol return
+    gPlat := impl.(Plat);
+    ev := gPlat.oneEvent();          // type INFERRED from protocol return
     match ev {
-        case .key_up: |e| {
+        case .keyUp: |e| {
             // `e` is KeyData (payload of the user's Event), `.escape` a Keycode
             if e.key == .escape { print("escape!\n"); }
         }

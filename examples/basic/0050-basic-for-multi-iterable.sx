@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-pair_sum :: (xs: []i64, ys: []i64) -> i64 {
+pairSum :: (xs: []i64, ys: []i64) -> i64 {
     total := 0;
     for x, y in xs, ys { total += x * y; }
     total
@@ -24,7 +24,7 @@ main :: () -> i32 {
     // Parallel slices.
     a4 : [4]i64 = .[1, 2, 3, 4];
     b4 : [4]i64 = .[10, 20, 30, 40];
-    print("dot={}\n", pair_sum(a4, b4));
+    print("dot={}\n", pairSum(a4, b4));
 
     // Arrow bodies.
     s := 0;

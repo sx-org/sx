@@ -16,7 +16,7 @@ own :: () -> string {
 
 // The hard temperament asks the same question, and its refusal path names the
 // same member: what the ok side answers with is what the panic side is about.
-own_hard :: () -> string {
+ownHard :: () -> string {
     p : Panel = .{ tag = "beta hard" };
     v : View = p;
     return v.(Panel).tag;

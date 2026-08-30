@@ -1,2 +1,2 @@
-from_a :: () -> i64 { return 1; }
-pick   :: from_a;
+fromA  :: () -> i64 { return 1; }
+pick   :: fromA;

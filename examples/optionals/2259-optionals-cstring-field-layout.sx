@@ -17,14 +17,14 @@ impl GPU for Impl {
 
 present :: (c: ?cstring) -> bool { return c != null; }
 
-protocol_present :: () -> bool {
+protocolPresent :: () -> bool {
     impl := Impl{};
     g : ?GPU = impl.(GPU);
     return g != null;
 }
 
 COMPTIME_CSTRING  :: @run present("hi");
-COMPTIME_PROTOCOL :: @run protocol_present();
+COMPTIME_PROTOCOL :: @run protocolPresent();
 
 main :: () -> i32 {
     print("{}\n", @sizeOf(S));

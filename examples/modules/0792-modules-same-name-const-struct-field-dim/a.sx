@@ -2,4 +2,4 @@
 // by A's `K`. `@sizeOf(Box)` folds the field dimension against A's `K` (= 2).
 K :: 2;
 Box :: struct { arr: [K]u8; }
-a_sz :: () -> i64 { return @sizeOf(Box); }
+aSz :: () -> i64 { return @sizeOf(Box); }

@@ -13,8 +13,8 @@ report :: (label: string, ok: bool) {
 }
 
 main :: () -> i32 {
-    report("b head binds b.Make (mark)", b_head() == 2);
-    report("b alias head binds b.Make (mark)", b_alias_head() == 3);
-    report("a head binds a.Make (tag)", a_head() == 1);
+    report("b head binds b.Make (mark)", bHead() == 2);
+    report("b alias head binds b.Make (mark)", bAliasHead() == 3);
+    report("a head binds a.Make (tag)", aHead() == 1);
     0
 }

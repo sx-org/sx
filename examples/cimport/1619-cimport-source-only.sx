@@ -9,9 +9,9 @@ only :: @import c {
     @source "1619-cimport-source-only/only.c";
 };
 
-only_answer :: () -> i32 extern only "only_answer";
+onlyAnswer :: () -> i32 extern only "only_answer";
 
 main :: () -> i32 {
-    print("answer = {}\n", only_answer() + 1);
+    print("answer = {}\n", onlyAnswer() + 1);
     0
 }

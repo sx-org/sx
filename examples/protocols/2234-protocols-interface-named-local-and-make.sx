@@ -15,7 +15,7 @@ made :: () -> Sizable {
     return p.(Sizable);
 }
 
-Holder :: struct { parent_allocator: Allocator = ---; }
+Holder :: struct { parentAllocator: Allocator = ---; }
 
 main :: () {
     print("{}\n", pretty(Widget{ value = 7 }));
@@ -36,6 +36,6 @@ main :: () {
     print("{}\n", list.items[1].size());
 
     dummy : Holder = .{};
-    dummy.parent_allocator = context.allocator;
+    dummy.parentAllocator = context.allocator;
     print("dummy\n");
 }

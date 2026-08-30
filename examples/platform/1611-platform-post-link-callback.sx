@@ -1,7 +1,7 @@
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-// Post-link callback registration. The compiler invokes `post_link`
+// Post-link callback registration. The compiler invokes `postLink`
 // after `target.link()` returns (sx build). Under `sx run` (JIT) the
 // callback is registered but never invoked because there is no link
 // phase, so this file prints `runtime main` alone; `sx build` is what
@@ -9,14 +9,14 @@
 
 puts :: (s: [:0]u8) -> i32 extern libc;
 
-post_link :: (opt: BuildOptions) -> bool {
+postLink :: (opt: BuildOptions) -> bool {
     puts("[post-link] callback fired");
     true
 }
 
 configure :: () {
     opts := buildOptions();
-    onBuild(post_link);
+    onBuild(postLink);
 }
 @run configure();
 

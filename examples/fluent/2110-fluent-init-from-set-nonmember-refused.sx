@@ -18,57 +18,57 @@ Label :: @OpenVariant(View) {
 
 Plain :: struct { text: string = ""; }
 
-form_Plain :: ufcs (value: $I/@Init(Plain)) {
+formPlain :: ufcs (value: $I/@Init(Plain)) {
     slot: Plain = ---;
     value.write(*slot);
 }
 
-form_opt_Plain :: ufcs (value: $I/@Init(?Plain)) {
+formOptPlain :: ufcs (value: $I/@Init(?Plain)) {
     slot: ?Plain = ---;
     value.write(*slot);
 }
 
-form_Named :: ufcs (value: $I/@Init(Named)) {
+formNamed :: ufcs (value: $I/@Init(Named)) {
     slot: Named = ---;
     value.write(*slot);
 }
 
-form_Label :: ufcs (value: $I/@Init(Label)) {
+formLabel :: ufcs (value: $I/@Init(Label)) {
     slot: Label = ---;
     value.write(*slot);
 }
 
 ViewI64 :: struct { a: View; b: i64 };
 LabelI64 :: struct { a: Label; b: i64 };
-form_Tuple :: ufcs (value: $I/@Init(LabelI64)) {
+formTuple :: ufcs (value: $I/@Init(LabelI64)) {
     slot: LabelI64 = ---;
     value.write(*slot);
 }
 
-need_Label :: ufcs (l: Label) { print("need Label {}\n", l.text); }
-need_opt_Label :: ufcs (l: ?Label) { print("need ?Label {}\n", l?!.text); }
+needLabel :: ufcs (l: Label) { print("need Label {}\n", l.text); }
+needOptLabel :: ufcs (l: ?Label) { print("need ?Label {}\n", l?!.text); }
 
-echo_Label :: (l: Label) -> Label => l;
+echoLabel :: (l: Label) -> Label => l;
 
 main :: () -> i32 {
     v : View = Label{ text = "member" };
 
-    form_Plain(v);
-    v.form_Plain();
-    form_opt_Plain(v);
-    v.form_opt_Plain();
-    form_Named(v);
-    v.form_Named();
+    formPlain(v);
+    v.formPlain();
+    formOptPlain(v);
+    v.formOptPlain();
+    formNamed(v);
+    v.formNamed();
 
-    need_Label(v);
-    v.need_Label();
-    form_Label(echo_Label(v));
-    echo_Label(v).form_Label();
+    needLabel(v);
+    v.needLabel();
+    formLabel(echoLabel(v));
+    echoLabel(v).formLabel();
 
     t : ViewI64 = .{a = v, b = 3};
-    form_Tuple(t);
+    formTuple(t);
 
     label : Label = v;
-    need_opt_Label(v);
+    needOptLabel(v);
     0
 }

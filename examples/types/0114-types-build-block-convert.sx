@@ -14,20 +14,20 @@
 @import "modules/std.sx";
 @import "modules/ffi/objc_block.sx";
 
-preview_void :: (..$args) -> string {
+previewVoid :: (..$args) -> string {
     return buildBlockConvert($args, void);
 }
 
-preview_i32 :: (..$args) -> string {
+previewI32 :: (..$args) -> string {
     return buildBlockConvert($args, i32);
 }
 
-run_all :: () {
-    print("--- void / 0 args ---\n{}\n", preview_void());
-    print("--- void / bool ---\n{}\n", preview_void(true));
-    print("--- void / i64, string ---\n{}\n", preview_void(42, "hi"));
-    print("--- i32 / f64 ---\n{}\n", preview_i32(3.14));
+runAll :: () {
+    print("--- void / 0 args ---\n{}\n", previewVoid());
+    print("--- void / bool ---\n{}\n", previewVoid(true));
+    print("--- void / i64, string ---\n{}\n", previewVoid(42, "hi"));
+    print("--- i32 / f64 ---\n{}\n", previewI32(3.14));
 }
-@run run_all();
+@run runAll();
 
 main :: () { print("rt\n"); }

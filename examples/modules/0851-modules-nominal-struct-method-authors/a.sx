@@ -24,13 +24,13 @@ Thing :: struct {
         if o == .one { return self.state.a + arg.amount; }
         self.state.a - arg.amount
     }
-    after_pick :: (self: *Thing, other: *Thing) -> i64 {
+    afterPick :: (self: *Thing, other: *Thing) -> i64 {
         _ := other.pick(.one);
         self.state.a
     }
     count :: (self: *Thing, ..$args) -> i64 { self.state.a + args.len }
-    static_pick :: ($o: Ord) -> i64 { if o == .one { return 3; } 4 }
-    static_count :: (..$args) -> i64 { args.len }
+    staticPick :: ($o: Ord) -> i64 { if o == .one { return 3; } 4 }
+    staticCount :: (..$args) -> i64 { args.len }
 }
 
 use :: () -> i64 {

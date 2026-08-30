@@ -1,5 +1,5 @@
 // A Context default borrows a global, and the operand may be reached through a
-// module namespace: `m.the_w` names the same symbol a bare global does, so the
+// module namespace: `m.theW` names the same symbol a bare global does, so the
 // default folds to a borrow of that symbol.
 @import "modules/std.sx";
 @import "2228-protocols-context-default-qualified/mod.sx";
@@ -8,7 +8,7 @@ m :: @import "2228-protocols-context-default-qualified/mod.sx";
 P :: interface { a :: (self: *Self) -> i64; }
 impl P for W { a :: (self: *W) -> i64 { self.v } }
 
-@context.extend probe: P = m.the_w;
+@context.extend probe: P = m.theW;
 
 CT :: @run context.probe.a();
 
@@ -17,6 +17,6 @@ main :: () {
 
     // The borrow is of the global itself, so a write is visible to the next
     // dispatch.
-    the_w.v = 12;
+    theW.v = 12;
     print("{}\n", context.probe.a());
 }

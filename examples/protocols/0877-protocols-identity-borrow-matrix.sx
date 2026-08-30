@@ -20,7 +20,7 @@ impl Counter for Tally {
 
 Holder :: struct { c: Counter; }
 
-use_counter :: (c: Counter) -> i64 { c.bump() }
+useCounter :: (c: Counter) -> i64 { c.bump() }
 
 main :: () {
     // Reflection: which declaration head a name carries is a compile-time fact.
@@ -31,7 +31,7 @@ main :: () {
     // Every spelling borrows the SAME storage:
     a : Counter = xx t;            // xx at a decl target
     b := t.(Counter);              // target-explicit postfix
-    _ = use_counter(xx t);         // call-arg erasure (bumps t)
+    _ = useCounter(xx t);         // call-arg erasure (bumps t)
     h := Holder{ c = xx t };      // struct-field target
 
     _ = a.bump();

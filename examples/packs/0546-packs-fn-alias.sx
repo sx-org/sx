@@ -7,26 +7,26 @@
 s :: @import "modules/std.sx";
 r :: @import "0546-packs-fn-alias-rich.sx";
 
-pack_sum :: (..$args) -> i64 {
+packSum :: (..$args) -> i64 {
     args[0] + args[1]
 }
-sum_alias :: pack_sum;        // same-file pack alias
+sumAlias :: packSum;        // same-file pack alias
 
 helper2 :: r.helper;          // renamed plain, namespace RHS
-head_of :: r.first_of;        // renamed runtime-generic, namespace RHS
-sum2 :: r.my_pack;            // renamed pack, namespace RHS
+headOf :: r.firstOf;          // renamed runtime-generic, namespace RHS
+sum2 :: r.myPack;             // renamed pack, namespace RHS
 
-my_print :: s.print;          // std's print — comptime pack + $fmt
-my_format :: s.format;        // value-returning sibling
+myPrint :: s.print;          // std's print — comptime pack + $fmt
+myFormat :: s.format;        // value-returning sibling
 
 main :: () {
-    print("pack: {}\n", sum_alias(3, 4));
+    print("pack: {}\n", sumAlias(3, 4));
     print("plain: {}\n", helper2());
     arr := .[10, 20, 30];
     xs : []i64 = arr;
-    print("generic: {}\n", head_of(xs));
+    print("generic: {}\n", headOf(xs));
     print("ns-pack: {}\n", sum2(20, 22));
-    my_print("std-print: {} {}\n", 1, "two");
-    t := my_format("std-format {}", 42);
-    my_print("{}\n", t);
+    myPrint("std-print: {} {}\n", 1, "two");
+    t := myFormat("std-format {}", 42);
+    myPrint("{}\n", t);
 }

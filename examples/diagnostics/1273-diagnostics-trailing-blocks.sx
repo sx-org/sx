@@ -12,7 +12,7 @@ plain :: (a: i64, b: i64) -> i64 { a + b }
 vari :: (n: i64, ..rest: []i64) {}
 rower :: (row: $R/(i64) -> void) { row(1); }
 erased :: (row: Closure(i64)) { row(1); }
-scaffold :: (top_bar: ?Closure() = null, content: $F/() -> void) { content(); }
+scaffold :: (topBar: ?Closure() = null, content: $F/() -> void) { content(); }
 toolbar :: () { print("t\n"); }
 
 main :: () {

@@ -10,7 +10,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make_list :: () -> Type {
+makeList :: () -> Type {
     h := declare("List");
     return define(h, .enum(.{ variants = .[
         VariantInfo{ name = "cons", payload = *List },   // self-reference
@@ -18,7 +18,7 @@ make_list :: () -> Type {
     ] }));
 }
 
-List :: make_list();
+List :: makeList();
 
 // Recursive traversal: `count` matches `n.*` (deref) into the same nominal type.
 count :: (n: *List) -> i64 {

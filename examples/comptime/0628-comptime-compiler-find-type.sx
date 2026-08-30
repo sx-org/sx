@@ -22,12 +22,12 @@ TypeId   :: u32;
 Point :: struct { x: i64; y: i64; z: i64; }
 
 // Look the struct up by name and count its fields, all at comptime.
-point_fields :: @run rawFieldCount(rawFindType(rawIntern("Point")));
+pointFields :: @run rawFieldCount(rawFindType(rawIntern("Point")));
 
 // A name with no matching type folds to the `unresolved` sentinel (0).
-missing_id :: @run rawFindType(rawIntern("NoSuchType"));
+missingId :: @run rawFindType(rawIntern("NoSuchType"));
 
 main :: () {
-    print("Point has {} fields\n", point_fields);
-    print("missing type id = {}\n", missing_id);
+    print("Point has {} fields\n", pointFields);
+    print("missing type id = {}\n", missingId);
 }

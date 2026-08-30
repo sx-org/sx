@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-g_should_call : bool = false;
+gShouldCall : bool = false;
 
 helper :: (target: *void) {
     @JniCall(void, context.jni, target, "noop", "()V");
@@ -17,7 +17,7 @@ unused :: (env: *void, target: *void) {
 }
 
 main :: () -> i32 {
-    if g_should_call {
+    if gShouldCall {
         unused(null, null);
     }
     print("ok\n");

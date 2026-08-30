@@ -33,11 +33,11 @@ user :: (rc: *http.RouteCtx) {
 
 // GET and EXPLICIT HEAD on the same path: the explicit HEAD route must
 // win over the GET fallback even though it is registered AFTER the GET.
-hd_get :: (rc: *http.RouteCtx) {
+hdGet :: (rc: *http.RouteCtx) {
     rc.resp.body = "hd get";
 }
 
-hd_head :: (rc: *http.RouteCtx) {
+hdHead :: (rc: *http.RouteCtx) {
     rc.resp.addHeader("X-Via", "head-route");
 }
 
@@ -48,7 +48,7 @@ nf :: (rc: *http.RouteCtx) {
     rc.resp.body = "custom nf";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -70,7 +70,7 @@ contains :: (hay: string, needle: string) -> bool {
     return false;
 }
 
-count_occurrences :: (hay: string, needle: string) -> i64 {
+countOccurrences :: (hay: string, needle: string) -> i64 {
     n : i64 = 0;
     i := 0;
     while i + needle.len <= hay.len {
@@ -83,7 +83,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 }
 
 roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
-    fd := dial_port(PORT);
+    fd := dialPort(PORT);
     if fd < 0 { return ""; }
     socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
@@ -124,8 +124,8 @@ main :: () -> i32 {
         router.get("/hello", hello);
         router.post("/submit", submit);
         router.get("/users/:id", user);
-        router.get("/hd", hd_get);
-        router.route("HEAD", "/hd", hd_head);   // AFTER the GET — must still win
+        router.get("/hd", hdGet);
+        router.route("HEAD", "/hd", hdHead);   // AFTER the GET — must still win
         router.setNotFound(nf);
 
         cfg : http.Config = .{ port = PORT, maxConn = 4, requestCount = 10 };
@@ -142,16 +142,16 @@ main :: () -> i32 {
         r = roundtrip(*srv,
             "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\nGET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
             rbuf, cap);
-        if count_occurrences(r, "HTTP/1.1 200 OK") != 2 {
+        if countOccurrences(r, "HTTP/1.1 200 OK") != 2 {
             print("HEAD fallback: expected two 200s\n");
             failed = 1;
         }
-        if count_occurrences(r, "Content-Length: 11") != 2 {
+        if countOccurrences(r, "Content-Length: 11") != 2 {
             print("HEAD fallback: expected CL 11 on BOTH responses\n");
             failed = 1;
         }
         check(r, "\r\n\r\nHTTP/1.1 200 OK", "HEAD fallback framing", *failed);
-        if count_occurrences(r, "hello world") != 1 {
+        if countOccurrences(r, "hello world") != 1 {
             print("HEAD fallback: expected exactly one body\n");
             failed = 1;
         }
@@ -164,7 +164,7 @@ main :: () -> i32 {
         // (d) HEAD on an unregistered path reaches the CUSTOM notFound
         r = roundtrip(*srv, "HEAD /nope HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 404", "HEAD 404", *failed);
-        check(r, "X-NF: 1", "HEAD custom not_found", *failed);
+        check(r, "X-NF: 1", "HEAD custom notFound", *failed);
 
         // (e) fallback through a PARAM route: matchPattern must fill the
         // params in the second pass (value surfaced via header)

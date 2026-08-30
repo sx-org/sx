@@ -60,7 +60,7 @@ main :: () -> i32 {
            uv = .[0.5, 1.0], joints = .[0.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
     ];
     idx : [6]u32 = .[0, 1, 2, 3, 4, 5];
-    if !renderer.setSkinnedMesh(verts[..], idx[..]) { print("set_skinned_mesh failed\n"); return 1; }
+    if !renderer.setSkinnedMesh(verts[..], idx[..]) { print("setSkinnedMesh failed\n"); return 1; }
 
     // Positions are authored in clip space, so the node transform is identity.
     tree := RenderTree.init();
@@ -87,30 +87,30 @@ main :: () -> i32 {
     // The offscreen pass starts in `.less` so beginFrame installs that
     // state with the far-plane clear (same shape as 1670).
     gpu.setDepthMode(.less);
-    if !gpu.beginFrame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
     renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
     gpu.endFrame(0.0);
     if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
-    rest_center := sample(px, center);
+    restCenter := sample(px, center);
 
     renderer.setBonePalette(moved[..]);
-    if !gpu.beginFrame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    if !gpu.beginFrame(ClearColor.black()) { print("beginFrame failed\n"); return 1; }
     renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
     gpu.endFrame(0.0);
     if !gpu.readOffscreen(px) { print("readback failed\n"); return 1; }
-    moved_center := sample(px, center);
-    moved_bone0 := sample(px, bone0);
+    movedCenter := sample(px, center);
+    movedBone0 := sample(px, bone0);
 
-    print("ui skin identity center: {}\n", rest_center);
-    print("ui skin moved center: {}\n", moved_center);
-    print("ui skin bone0: {}\n", moved_bone0);
+    print("ui skin identity center: {}\n", restCenter);
+    print("ui skin moved center: {}\n", movedCenter);
+    print("ui skin bone0: {}\n", movedBone0);
 
-    if rest_center != "black" { return 1; }
-    if moved_center != "green" { return 1; }
-    if moved_bone0 != "red" { return 1; }
+    if restCenter != "black" { return 1; }
+    if movedCenter != "green" { return 1; }
+    if movedBone0 != "red" { return 1; }
     0
 }

@@ -35,14 +35,14 @@ Animated :: struct ($T: Lerpable) {
         }
     }
 
-    set_immediate :: (self: *Animated(T), value: T) {
+    setImmediate :: (self: *Animated(T), value: T) {
         self.current = value;
         self.from = value;
         self.to = value;
         self.active = false;
     }
 
-    animate_to :: (self: *Animated(T), target: T, dur: f32) {
+    animateTo :: (self: *Animated(T), target: T, dur: f32) {
         self.from = self.current;
         self.to = target;
         self.elapsed = 0.0;
@@ -64,10 +64,10 @@ Animated :: struct ($T: Lerpable) {
 
 main :: () -> void {
     anim := Animated(Size).make(Size.zero());
-    anim.set_immediate(Size{ width = 100.0, height = 50.0 });
+    anim.setImmediate(Size{ width = 100.0, height = 50.0 });
     print("after set: {}x{}\n", anim.current.width, anim.current.height);
 
-    anim.animate_to(Size{ width = 200.0, height = 100.0 }, 1.0);
+    anim.animateTo(Size{ width = 200.0, height = 100.0 }, 1.0);
     anim.tick(0.5);
     print("mid anim: {}x{}\n", anim.current.width, anim.current.height);
 

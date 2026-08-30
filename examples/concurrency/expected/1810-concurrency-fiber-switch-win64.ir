@@ -6,7 +6,7 @@ module asm "    subq $32, %rsp"
 module asm "    call fib_body"
 module asm "    ud2"
 
-@g_out = internal global ptr null
+@gOut = internal global ptr null
 
 ; Function Attrs: nounwind
 declare ptr @GetStdHandle(i32) #0
@@ -187,7 +187,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal void @emit_num(i64 %0) #0 {
+define internal void @emitNum(i64 %0) #0 {
 entry:
   %alloca = alloca i64, align 8
   %allocaN = alloca [1 x i8], align 1
@@ -204,7 +204,7 @@ entry:
 if.then.3:                                        ; preds = %entry
   store [1 x i8] c"0", ptr %allocaN, align 1
   store i32 0, ptr %allocaN, align 4
-  %gload = load ptr, ptr @g_out, align 8
+  %gload = load ptr, ptr @gOut, align 8
   %igp.ptr = getelementptr i8, ptr %allocaN, i64 0
   %call = call i32 @WriteFile(ptr %gload, ptr %igp.ptr, i32 1, ptr %allocaN, ptr null)
   ret void
@@ -238,7 +238,7 @@ while.body.6:                                     ; preds = %while.hdr.5
 
 while.exit.7:                                     ; preds = %while.hdr.5
   store i32 0, ptr %allocaN, align 4
-  %gloadN = load ptr, ptr @g_out, align 8
+  %gloadN = load ptr, ptr @gOut, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %igp.ptr17 = getelementptr i8, ptr %allocaN, i64 %loadN
   %loadN = load i64, ptr %allocaN, align 8
@@ -249,7 +249,7 @@ while.exit.7:                                     ; preds = %while.hdr.5
 }
 
 ; Function Attrs: nounwind
-define internal void @emit_b(i8 %0) #0 {
+define internal void @emitB(i8 %0) #0 {
 entry:
   %alloca = alloca i8, align 1
   store i8 %0, ptr %alloca, align 1
@@ -259,7 +259,7 @@ entry:
   store i8 %load, ptr %igp.ptr, align 1
   %allocaN = alloca i32, align 4
   store i32 0, ptr %allocaN, align 4
-  %gload = load ptr, ptr @g_out, align 8
+  %gload = load ptr, ptr @gOut, align 8
   %igp.ptr3 = getelementptr i8, ptr %allocaN, i64 0
   %call = call i32 @WriteFile(ptr %gload, ptr %igp.ptr3, i32 1, ptr %allocaN, ptr null)
   ret void
@@ -269,7 +269,7 @@ entry:
 define i32 @main() #0 {
 entry:
   %call = call ptr @GetStdHandle(i32 -11)
-  store ptr %call, ptr @g_out, align 8
+  store ptr %call, ptr @gOut, align 8
   %callN = call i64 @run()
   %alloca = alloca i64, align 8
   store i64 %callN, ptr %alloca, align 8
@@ -283,11 +283,11 @@ entry:
   %allocaN = alloca i64, align 8
   store i64 %andN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emit_num(i64 %loadN)
-  call void @emit_b(i8 32)
+  call void @emitNum(i64 %loadN)
+  call void @emitB(i8 32)
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emit_num(i64 %loadN)
-  call void @emit_b(i8 32)
+  call void @emitNum(i64 %loadN)
+  call void @emitB(i8 32)
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -312,15 +312,15 @@ if.merge.11:                                      ; preds = %if.then.10, %if.the
   br label %if.merge.9
 
 if.then.12:                                       ; preds = %if.merge.9
-  call void @emit_b(i8 80)
+  call void @emitB(i8 80)
   br label %if.merge.14
 
 if.else.13:                                       ; preds = %if.merge.9
-  call void @emit_b(i8 70)
+  call void @emitB(i8 70)
   br label %if.merge.14
 
 if.merge.14:                                      ; preds = %if.else.13, %if.then.12
-  call void @emit_b(i8 10)
+  call void @emitB(i8 10)
   call void @ExitProcess(i32 0)
   ret i32 0
 }

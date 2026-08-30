@@ -89,22 +89,22 @@ StateStore :: struct {
     }
 }
 
-@context.extend compose_state: *StateStore = null;
+@context.extend composeState: *StateStore = null;
 
 // Claims the storage this call site owns for the build in progress.
 useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
-    process.assert(context.compose_ui != null and context.compose_state != null,
-        "use_state outside a compose build — push .{ compose_ui = *root.identity, compose_state = *root.store }");
-    store := context.compose_state;
-    process.assert(store.inBuild, "use_state outside a build transaction — call begin_build first");
+    process.assert(context.composeUi != null and context.composeState != null,
+        "useState outside a compose build — push .{ composeUi = *root.identity, composeState = *root.store }");
+    store := context.composeState;
+    process.assert(store.inBuild, "useState outside a build transaction — call beginBuild first");
 
     hasher := siteHasher(site, STATE_DOMAIN);
-    hasher.writeU64Le(context.compose_ui.nextOccurrence(site.key).(u64));
+    hasher.writeU64Le(context.composeUi.nextOccurrence(site.key).(u64));
     key := hasher.state;
 
     if e := store.find(key) {
         if e.ty != T or e.size != @sizeOf(T) {
-            print("use_state at {}:{} changed payload type between builds\n", site.file, site.line);
+            print("useState at {}:{} changed payload type between builds\n", site.file, site.line);
             process.exit(1)
         }
         e.claimed = true;

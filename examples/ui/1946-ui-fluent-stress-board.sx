@@ -14,7 +14,7 @@
 @import "modules/ui/fluent/storage.sx";
 
 BoardViewState :: struct {
-    cell_eids: [81]u64 = ---;
+    cellEids: [81]u64 = ---;
 }
 
 BoardView :: @OpenVariant(View) {
@@ -34,7 +34,7 @@ BoardView :: @OpenVariant(View) {
 
 main :: () -> i32 {
     st := BoardViewState{};
-    for i in 0..81 { st.cell_eids[i] = (i + 1).(u64); }
+    for i in 0..81 { st.cellEids[i] = (i + 1).(u64); }
 
     cells := VStack{ children = collectViews() {
         for i in 0..81 {

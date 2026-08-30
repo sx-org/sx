@@ -4,8 +4,8 @@
 
 a :: @import "0911-modules-deep-qualified-call-identity/a.sx";
 b :: @import "0911-modules-deep-qualified-call-identity/b.sx";
-long_a :: @import "0911-modules-deep-qualified-call-identity/long_author_a_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sx";
-long_b :: @import "0911-modules-deep-qualified-call-identity/long_author_b_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sx";
+longA :: @import "0911-modules-deep-qualified-call-identity/long_author_a_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sx";
+longB :: @import "0911-modules-deep-qualified-call-identity/long_author_b_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sx";
 
 LOCAL_DEFAULT :: 900;
 
@@ -23,8 +23,8 @@ main :: () -> i32 {
     // Same terminal name + same inferred T must still produce two monos.
     if a.one.two.three.engine.generic(1) != 71 { return 6; }
     if b.one.two.three.engine.generic(1) != 82 { return 7; }
-    agr := a.one.two.three.engine.generic_record(1);
-    bgr := b.one.two.three.engine.generic_record(1);
+    agr := a.one.two.three.engine.genericRecord(1);
+    bgr := b.one.two.three.engine.genericRecord(1);
     if agr.a != 121 or bgr.b != 232 { return 12; }
 
     // An authored global value remains a receiver even though its root is a
@@ -34,8 +34,8 @@ main :: () -> i32 {
 
     // These author source paths make each identity-bearing base exceed 256
     // bytes after full-path encoding. Generic and pack monos must stay exact.
-    if long_a.generic(1) != 301 or long_b.generic(1) != 401 { return 16; }
-    if long_a.pack(1, 2) != 302 or long_b.pack(1, 2) != 402 { return 17; }
+    if longA.generic(1) != 301 or longB.generic(1) != 401 { return 16; }
+    if longA.pack(1, 2) != 302 or longB.pack(1, 2) != 402 { return 17; }
 
     if a.one.two.three.engine.choose(.chosen) != 91 { return 8; }
     if b.one.two.three.engine.choose(.chosen) != 102 { return 9; }

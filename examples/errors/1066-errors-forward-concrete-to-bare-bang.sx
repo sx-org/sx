@@ -31,7 +31,7 @@ fwd :: (x: i64) -> (i64, !) {
 }
 
 // matched set: concrete → same concrete
-fwd_same :: (x: i64) -> (i64, !MyErr) {
+fwdSame :: (x: i64) -> (i64, !MyErr) {
     return inner(x);
 }
 
@@ -48,12 +48,12 @@ fwd2 :: (x: i64) -> (i64, i64, !) {
 check :: (x: i64) -> !MyErr {
     if x < 0 { raise .Boom; }
 }
-fwd_pure :: (x: i64) -> ! {
+fwdPure :: (x: i64) -> ! {
     return check(x);
 }
 
 // pure same-set forward (concrete → concrete)
-check_same :: (x: i64) -> !MyErr {
+checkSame :: (x: i64) -> !MyErr {
     return check(x);
 }
 
@@ -67,7 +67,7 @@ pair :: () -> (i64, MyErr, !) {
 }
 
 // `try` on a forwarded result propagates through the caller's bare channel
-use_try :: (x: i64) -> (i64, !) {
+useTry :: (x: i64) -> (i64, !) {
     v := try fwd(x);
     return v + 1;
 }
@@ -93,9 +93,9 @@ main :: () -> i32 {
     print("catch fallback = {}\n", c);
 
     // matched-set forward untouched
-    s, es := fwd_same(6);
+    s, es := fwdSame(6);
     if es { return 5; }
-    print("fwd_same(6) = {}\n", s);
+    print("fwdSame(6) = {}\n", s);
 
     // multi-value forward, both slots + error path
     a, b, em := fwd2(10);
@@ -105,16 +105,16 @@ main :: () -> i32 {
     if em2 != MyErr.Boom { return 9; }
 
     // pure failable forward
-    ep := fwd_pure(1);
+    ep := fwdPure(1);
     if ep { return 10; }
-    ep2 := fwd_pure(-1);
+    ep2 := fwdPure(-1);
     if ep2 != MyErr.Boom { return 11; }
-    print("fwd_pure ok\n");
+    print("fwdPure ok\n");
 
     // pure same-set forward
-    eq := check_same(-1);
+    eq := checkSame(-1);
     if eq != MyErr.Boom { return 13; }
-    if check_same(1) { return 15; }
+    if checkSame(1) { return 15; }
     print("pure same ok\n");
 
     // tie-break: value tuple with an error-set-typed slot is the value list
@@ -124,7 +124,7 @@ main :: () -> i32 {
     print("pair = {}, Boom-as-value\n", pv);
 
     // try / ?? interop
-    t, et := use_try(4);
+    t, et := useTry(4);
     if et { return 12; }
     o := fwd(-1) ?? 90;
     print("try = {}, ?? = {}\n", t, o);

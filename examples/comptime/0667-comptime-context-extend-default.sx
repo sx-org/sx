@@ -4,11 +4,11 @@
 // constant the LLVM backend emits and the value `@run` sees cannot diverge.
 @import "modules/std.sx";
 
-@context.extend build_tag: i64 = 1234;
+@context.extend buildTag: i64 = 1234;
 
-TAG :: @run context.build_tag;
+TAG :: @run context.buildTag;
 
 main :: () {
     print("comptime read the default: {}\n", TAG);
-    print("runtime reads it too: {}\n", context.build_tag);
+    print("runtime reads it too: {}\n", context.buildTag);
 }

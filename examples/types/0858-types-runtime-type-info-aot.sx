@@ -6,9 +6,9 @@
 @import "modules/std.sx";
 Padded :: struct { a: u8; b: i64; c: u16; }
 Color  :: enum { red; green; blue; }
-Overlay :: union { as_int: i64; bytes: [8]u8; }
+Overlay :: union { asInt: i64; bytes: [8]u8; }
 
-kind_of :: (tp: Type) -> string {
+kindOf :: (tp: Type) -> string {
     ti := @typeInfo(tp);
     match ti {
         case .struct: |si| { return format("struct n={} f1={}@{}", si.fields.len, si.fields[1].name, si.fields[1].offset); }
@@ -23,11 +23,11 @@ kind_of :: (tp: Type) -> string {
 }
 
 main :: () {
-    print("{}\n", kind_of(@typeOf(Padded{ a = 1, b = 2, c = 3 })));
-    print("{}\n", kind_of(@typeOf(Color.red)));
-    av : any = Overlay{ as_int = 5 };
-    print("{}\n", kind_of(@typeOf(av)));
+    print("{}\n", kindOf(@typeOf(Padded{ a = 1, b = 2, c = 3 })));
+    print("{}\n", kindOf(@typeOf(Color.red)));
+    av : any = Overlay{ asInt = 5 };
+    print("{}\n", kindOf(@typeOf(av)));
     ts : [3]Type = .[i16, [4]f32, string];
     k := 0;
-    while k < 3 { print("{}\n", kind_of(ts[k])); k += 1; }
+    while k < 3 { print("{}\n", kindOf(ts[k])); k += 1; }
 }

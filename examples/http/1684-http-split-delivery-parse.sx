@@ -53,7 +53,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     resp.body = "plain-ok";
 }
 
-dial_port :: (port: i64) -> i32 {
+dialPort :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddrIn(port, 0x0100007F);   // 127.0.0.1
@@ -76,7 +76,7 @@ contains :: (hay: string, needle: string) -> bool {
 }
 
 // Send `s` in `piece`-byte slices, ticking the server between slices.
-send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
+sendSplit :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
     sent : i64 = 0;
     while sent < s.len {
         want := piece;
@@ -94,7 +94,7 @@ send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
 
 // Read one full response (headers + Content-Length body); leaves the
 // connection open (keep-alive).
-read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
+readResponse :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
     total : i64 = 0;
     stall : i64 = 0;
     while stall < 400 {
@@ -156,7 +156,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }
 
-        ca := dial_port(PORT);
+        ca := dialPort(PORT);
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         // ── 1. header block split 7 bytes at a time ───────────────────
@@ -169,23 +169,23 @@ main :: () -> i32 {
                 i += 1;
             }
             r1 = concat(r1, "\r\n");
-            send_split(*srv, ca, r1, 7);
+            sendSplit(*srv, ca, r1, 7);
         }
-        resp1 := read_response(*srv, ca, rbuf, cap);
+        resp1 := readResponse(*srv, ca, rbuf, cap);
         if !contains(resp1, "HTTP/1.1 200 OK") or !contains(resp1, "val-23") {
             print("split-header request failed\n");
             failed = 1;
         }
 
         // ── 2. chunked body: 32 chunks, ext + trailer, split by 13 ────
-        body_want : i64 = N_CHUNKS * CHUNK_DATA;
+        bodyWant : i64 = N_CHUNKS * CHUNK_DATA;
         chk : i64 = 0;
         push .{ allocator = reqArena } {
             // build the full decoded body first for the expected checksum
-            full : [*]u8 = xx context.allocator.allocBytes(body_want);
+            full : [*]u8 = xx context.allocator.allocBytes(bodyWant);
             i := 0;
-            while i < body_want { full[i] = xx (65 + (i % 26)); i += 1; }
-            chk = checksum(string{ ptr = full, len = body_want });
+            while i < bodyWant { full[i] = xx (65 + (i % 26)); i += 1; }
+            chk = checksum(string{ ptr = full, len = bodyWant });
 
             r2 := "POST /body HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n";
             c := 0;
@@ -197,12 +197,12 @@ main :: () -> i32 {
                 c += 1;
             }
             r2 = concat(r2, "0\r\nX-Trailer: ignored\r\n\r\n");
-            send_split(*srv, ca, r2, 13);
+            sendSplit(*srv, ca, r2, 13);
         }
-        resp2 := read_response(*srv, ca, rbuf, cap);
+        resp2 := readResponse(*srv, ca, rbuf, cap);
         expect2 : string = "";
         push .{ allocator = reqArena } {   // arena-owned, freed at deinit
-            expect2 = concat(intToString(body_want), concat(":", intToString(chk)));
+            expect2 = concat(intToString(bodyWant), concat(":", intToString(chk)));
         }
         ok2 := contains(resp2, "HTTP/1.1 200 OK") and contains(resp2, expect2);
         if !ok2 {
@@ -213,7 +213,7 @@ main :: () -> i32 {
         // ── 3. pipelined plain request on the same connection ─────────
         r3 := "GET /plain HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(ca, r3.ptr, r3.len);
-        resp3 := read_response(*srv, ca, rbuf, cap);
+        resp3 := readResponse(*srv, ca, rbuf, cap);
         if !contains(resp3, "HTTP/1.1 200 OK") or !contains(resp3, "plain-ok") {
             print("follow-up plain request failed\n");
             failed = 1;
