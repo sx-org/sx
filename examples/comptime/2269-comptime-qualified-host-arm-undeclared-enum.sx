@@ -1,0 +1,10 @@
+// The enum `@host.os` is a variant of has no declaration this program can
+// reach, and a qualified arm still names it.
+inline match @host.os {
+    case OperatingSystem.macos: HOST_OS :: "macos";
+    case OperatingSystem.linux: HOST_OS :: "linux";
+    case OperatingSystem.windows: HOST_OS :: "windows";
+    else: @error("no qualified arm names this host's os");
+}
+
+main :: () {}
