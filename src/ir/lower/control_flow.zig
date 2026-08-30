@@ -1180,6 +1180,32 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
     return .{ .ref = subject, .ty = .any };
 }
 
+/// Append the switch case dispatching `value` to `target`, unless an earlier
+/// arm already claims that value — the second arm can never run, and one
+/// integer carrying two cases is invalid IR.
+fn claimCase(
+    self: *Lowering,
+    claimed: *std.AutoHashMap(u64, ast.Span),
+    cases: *std.ArrayList(inst_mod.SwitchBranch.Case),
+    value: u64,
+    target: BlockId,
+    span: ast.Span,
+) void {
+    if (claimed.get(value)) |first| {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "duplicate match arm: an earlier arm already matches this value", .{});
+            d.addNote(id, first, "first matched here");
+        }
+        return;
+    }
+    claimed.put(value, span) catch unreachable;
+    cases.append(self.alloc, .{
+        .value = @intCast(value),
+        .target = target,
+        .args = &.{},
+    }) catch unreachable;
+}
+
 pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
     const error_only = demand == .error_only;
@@ -1430,15 +1456,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var arm_tag_values = std.ArrayList([]const u64).empty;
     defer arm_tag_values.deinit(self.alloc);
     // Type switch: the CONCRETE type an arm names (null for category arms /
-    // the default) — the capture phase binds `|v|` as this type; and the
-    // first-wins claim set — a tag belongs to the first arm that names it,
-    // and an arm left with no tags is a LOUD unreachable-arm error (the
-    // overlap `case int:` / `case i64:` would otherwise resolve silently
-    // by order).
+    // the default) — the capture phase binds `|v|` as this type.
     var arm_concrete = std.ArrayList(?TypeId).empty;
     defer arm_concrete.deinit(self.alloc);
     for (me.arms) |_| arm_concrete.append(self.alloc, null) catch unreachable;
-    var claimed = std.AutoHashMap(u64, void).init(self.alloc);
+    // First-wins claim set: a case value belongs to the first arm that names
+    // it, keyed to that arm's span. A type-match arm left with no tags is a
+    // LOUD unreachable-arm error (the overlap `case int:` / `case i64:` would
+    // otherwise resolve silently by order).
+    var claimed = std.AutoHashMap(u64, ast.Span).init(self.alloc);
     defer claimed.deinit();
     // An error or qualified arm's verdict; null on every other spelling.
     var arm_verdicts = std.ArrayList(?lower_error.ArmVerdict).empty;
@@ -1510,7 +1536,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             var eff = std.ArrayList(u64).empty;
             for (raw_tags) |t| {
                 if (claimed.contains(t)) continue;
-                claimed.put(t, {}) catch unreachable;
+                claimed.put(t, pat.span) catch unreachable;
                 eff.append(self.alloc, t) catch unreachable;
             }
             if (raw_tags.len > 0 and eff.items.len == 0) {
@@ -1598,7 +1624,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             var eff_tv = std.ArrayList(u64).empty;
             for (raw_tv) |t| {
                 if (claimed.contains(t)) continue;
-                claimed.put(t, {}) catch unreachable;
+                claimed.put(t, pat.span) catch unreachable;
                 eff_tv.append(self.alloc, t) catch unreachable;
             }
             if (raw_tv.len > 0 and eff_tv.items.len == 0) {
@@ -1621,11 +1647,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             const verdict = lower_error.qualifyMatchArm(self, subject_ty, pat);
             arm_verdicts.items[i] = verdict;
             switch (verdict) {
-                .ok => |ok| cases.append(self.alloc, .{
-                    .value = @intCast(ok.case_value),
-                    .target = arm_blocks.items[i],
-                    .args = &.{},
-                }) catch unreachable,
+                .ok => |ok| claimCase(self, &claimed, &cases, ok.case_value, arm_blocks.items[i], pat.span),
                 else => lower_error.refuseQualifiedArm(self, verdict, subject_ty, pat),
             }
         } else if (is_error_set_match) {
@@ -1646,11 +1668,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     continue;
                 },
             };
-            cases.append(self.alloc, .{
-                .value = member,
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            claimCase(self, &claimed, &cases, member, arm_blocks.items[i], pat.span);
         } else if (is_optional_match) {
             // Optional match: .some → 1 (has_value=true), .none → 0
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
@@ -1660,22 +1678,19 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 else => "",
             };
             const case_val: u64 = if (std.mem.eql(u8, pat_name, "some")) 1 else 0;
-            cases.append(self.alloc, .{
-                .value = @intCast(case_val),
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            claimCase(self, &claimed, &cases, case_val, arm_blocks.items[i], pat.span);
         } else {
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
-            const case_val: u64 = blk: {
+            // A pattern that names no value of the subject registers no case.
+            const resolved: union(enum) { value: u64, no_variant, unnamed } = blk: {
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
-                    .int_literal => |il| break :blk @intCast(il.value),
-                    .char_literal => |cl| break :blk @intCast(cl.value),
-                    .bool_literal => |bl| break :blk @as(u64, if (bl.value) 1 else 0),
-                    else => break :blk @as(u64, @intCast(i)),
+                    .int_literal => |il| break :blk .{ .value = @as(u64, @intCast(il.value)) },
+                    .char_literal => |cl| break :blk .{ .value = @as(u64, @intCast(cl.value)) },
+                    .bool_literal => |bl| break :blk .{ .value = @as(u64, if (bl.value) 1 else 0) },
+                    else => break :blk .unnamed,
                 };
                 // Look up variant value in the subject's type
                 if (!subject_ty.isBuiltin()) {
@@ -1685,38 +1700,44 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const vname = self.module.types.strings.get(f.name);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.tagged_union.explicit_tag_values) |vals| {
-                                    if (vi < vals.len) break :blk @intCast(@as(u64, @bitCast(vals[vi])));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @intCast(vi);
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     } else if (ty_info == .@"enum") {
                         for (ty_info.@"enum".variants, 0..) |v, vi| {
                             const vname = self.module.types.strings.get(v);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.@"enum".explicit_values) |vals| {
-                                    if (vi < vals.len) break :blk @intCast(@as(u64, @bitCast(vals[vi])));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @intCast(vi);
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     }
                 }
-                break :blk @intCast(i);
+                break :blk .unnamed;
             };
-            cases.append(self.alloc, .{
-                .value = @intCast(case_val),
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            switch (resolved) {
+                .value => |cv| claimCase(self, &claimed, &cases, cv, arm_blocks.items[i], pat.span),
+                .no_variant => {},
+                .unnamed => {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, pat.span, "this match arm does not name a value of type '{s}'", .{self.formatTypeName(subject_ty)});
+                    }
+                },
+            }
         }
     }
 
@@ -1765,19 +1786,24 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
 
-        // An arm no switch case targets is unreachable: a type-match arm whose
-        // tags are all claimed, or a refused qualified arm. Lowering it emits
-        // invalid IR — a runtime cast with no matching type, a payload read in
-        // a block with no predecessor.
-        const refused_arm = if (arm_verdicts.items[i]) |v| switch (v) {
-            .ok => false,
-            else => true,
-        } else false;
-        if (arm.pattern != null and (refused_arm or
-            (is_type_match and arm_tag_values.items[i].len == 0)))
-        {
-            self.builder.emitUnreachable();
-            continue;
+        // A patterned arm no switch case targets is unreachable. Lowering it
+        // emits invalid IR — a runtime cast with no matching type, a payload
+        // read in a block with no predecessor.
+        if (arm.pattern != null) {
+            const bb = arm_blocks.items[i];
+            var targeted = default_bb.? == bb;
+            if (!targeted) {
+                for (cases.items) |c| {
+                    if (c.target == bb) {
+                        targeted = true;
+                        break;
+                    }
+                }
+            }
+            if (!targeted) {
+                self.builder.emitUnreachable();
+                continue;
+            }
         }
 
         var arm_scope = Scope.init(self.alloc, self.scope);

@@ -1,0 +1,23 @@
+error: duplicate match arm: an earlier arm already matches this value
+  --> examples/diagnostics/2266-diagnostics-overlapping-match-arms.sx:10:14
+   |
+10 |         case .green: 2;
+   |              ^^^^^^
+
+note: first matched here
+  --> examples/diagnostics/2266-diagnostics-overlapping-match-arms.sx:9:14
+   |
+ 9 |         case .green: 1;
+   |              ^^^^^^
+
+error: duplicate match arm: an earlier arm already matches this value
+  --> examples/diagnostics/2266-diagnostics-overlapping-match-arms.sx:18:14
+   |
+18 |         case .green: 2;
+   |              ^^^^^^
+
+note: first matched here
+  --> examples/diagnostics/2266-diagnostics-overlapping-match-arms.sx:17:14
+   |
+17 |         case Color.green: 1;
+   |              ^^^^^^^^^^^
