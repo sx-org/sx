@@ -395,6 +395,10 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
             .identifier => |id| isTypeReturningBuiltinName(id.name),
             else => false,
         },
+        // A reflected member projection (`@typeInfo(T).struct.fields[i].type`)
+        // is a Type, so a `$T: Type` argument slot spelled with one binds
+        // through `resolveTypeArg`, not through value inference.
+        .field_access => typeInfoProjection(node) != null,
         .tuple_literal => |tl| blk: {
             for (tl.elements) |el| {
                 if (!isTypeShapedAstNode(el.value, table)) break :blk false;
@@ -403,6 +407,70 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         },
         else => false,
     };
+}
+
+/// The parts of a reflected member projection —
+/// `@typeInfo(T).<kind>.fields[<index>].<member>`. `kind` and `member` travel
+/// as spelled; which pairing names a type is resolution's.
+pub const TypeInfoProjection = struct {
+    type_arg: *const Node,
+    kind: []const u8,
+    index: *const Node,
+    member: []const u8,
+};
+
+/// The projection `node` spells, or null when it spells none.
+pub fn typeInfoProjection(node: *const Node) ?TypeInfoProjection {
+    const member = switch (node.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    const element = switch (member.object.data) {
+        .index_expr => |ix| ix,
+        else => return null,
+    };
+    const list = switch (element.object.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    if (!std.mem.eql(u8, list.field, "fields")) return null;
+    const kind = switch (list.object.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    const call = switch (kind.object.data) {
+        .call => |c| c,
+        else => return null,
+    };
+    switch (call.callee.data) {
+        .identifier => |id| if (!std.mem.eql(u8, id.name, "@typeInfo")) return null,
+        else => return null,
+    }
+    if (call.args.len != 1) return null;
+    return .{
+        .type_arg = call.args[0],
+        .kind = kind.field,
+        .index = element.index,
+        .member = member.field,
+    };
+}
+
+/// Whether `node` grows from a `@typeInfo` call through member / index links,
+/// whatever the chain spells. Arity is no part of the root: `@typeInfo` takes
+/// one argument, so a chain over any other count names no type either.
+pub fn typeInfoRooted(node: *const Node) bool {
+    var cur = node;
+    while (true) {
+        switch (cur.data) {
+            .field_access => |fa| cur = fa.object,
+            .index_expr => |ix| cur = ix.object,
+            .call => |c| return switch (c.callee.data) {
+                .identifier => |id| std.mem.eql(u8, id.name, "@typeInfo"),
+                else => false,
+            },
+            else => return false,
+        }
+    }
 }
 
 /// Comptime builtins whose call result IS a `Type` (so a call to one is

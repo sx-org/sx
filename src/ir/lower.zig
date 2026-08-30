@@ -2022,6 +2022,11 @@ pub const Lowering = struct {
                 }
             }
         }
+        // A `@typeInfo`-rooted chain either spells the reflected member
+        // projection or names no type; every other shape would fall through to
+        // `type_bridge`'s silent `.unresolved` and panic at LLVM emission.
+        if (type_bridge.typeInfoRooted(node))
+            return self.resolveTypeInfoMemberType(node) orelse self.refuseTypeInfoProjection(node);
         // Expression-form dotted type (`m.Cfg{...}`).
         if (node.data == .field_access) {
             if (self.qualifiedTypeName(node)) |qname| {
@@ -3848,6 +3853,8 @@ pub const Lowering = struct {
     pub const probeFormedType = lower_generic.probeFormedType;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
+    pub const resolveTypeInfoMemberType = lower_generic.resolveTypeInfoMemberType;
+    pub const refuseTypeInfoProjection = lower_generic.refuseTypeInfoProjection;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
     pub const formatSourceTypeName = lower_generic.formatSourceTypeName;

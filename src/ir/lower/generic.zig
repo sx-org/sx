@@ -280,6 +280,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             return true;
         },
         .field_access => {
+            if (type_bridge.typeInfoProjection(node)) |p| return self.isStaticTypeArg(p.type_arg);
             const path = self.qualifiedTypeName(node) orelse return false;
             defer self.alloc.free(path);
             const root_end = std.mem.indexOfScalar(u8, path, '.') orelse return false;
@@ -626,6 +627,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // an unregistered name (the silent-default trap) — a failed lookup must
         // surface as a diagnostic + `.unresolved`.
         .field_access => {
+            if (resolveTypeInfoMemberType(self, node)) |t| return t;
             const path = self.qualifiedTypeName(node) orelse {
                 if (self.diagnostics) |diags|
                     diags.addFmt(.err, node.span, "unresolved qualified type in type-argument position", .{});
@@ -1879,6 +1881,67 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
         if (typeFnOfAuthor(self, fa)) |fd| return fd;
     }
     return mapped;
+}
+
+/// The variant `T` reflects into and the Type-valued member of its element
+/// record: a struct's fields carry `.type`, an enum's variants `.payload`. Null
+/// for a type whose reflected variant carries no `fields` list.
+const ReflectedFields = struct { kind: []const u8, member: []const u8 };
+fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
+    return switch (table.get(t)) {
+        .@"struct" => .{ .kind = "struct", .member = "type" },
+        .tagged_union, .@"enum" => .{ .kind = "enum", .member = "payload" },
+        else => null,
+    };
+}
+
+/// The type a reflected member projection names —
+/// `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload`.
+/// Null when `node` spells no projection; `.unresolved` when it spells one that
+/// names no type. A tagless variant's payload is `void`.
+pub fn resolveTypeInfoMemberType(self: *Lowering, node: *const Node) ?TypeId {
+    const p = type_bridge.typeInfoProjection(node) orelse return null;
+    const t = self.resolveTypeArg(p.type_arg);
+    if (t == .unresolved) return .unresolved;
+    const table = &self.module.types;
+    const reflected = reflectedFields(table, t) orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "a reflected member projection reads a '.struct' or '.enum' member; '{s}' reflects as neither", .{self.formatTypeName(t)});
+        return .unresolved;
+    };
+    if (!std.mem.eql(u8, p.kind, reflected.kind)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "'{s}' reflects as '.{s}', not '.{s}'", .{ self.formatTypeName(t), reflected.kind, p.kind });
+        return .unresolved;
+    }
+    if (!std.mem.eql(u8, p.member, reflected.member)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "a '.{s}' member names its type '.{s}', not '.{s}'", .{ reflected.kind, reflected.member, p.member });
+        return .unresolved;
+    }
+    const idx: usize = switch (program_index_mod.foldDimU32(p.index, self, 0)) {
+        .ok => |n| n,
+        else => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, p.index.span, "a reflected member index must be a non-negative compile-time integer", .{});
+            return .unresolved;
+        },
+    };
+    const n = table.memberCount(t) orelse 0;
+    if (idx >= n) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, p.index.span, "reflected member index {d} out of range ('{s}' has {d} member{s})", .{
+                idx, self.formatTypeName(t), n, if (n == 1) @as([]const u8, "") else "s",
+            });
+        return .unresolved;
+    }
+    return table.memberType(t, @intCast(idx)) orelse .void;
+}
+
+pub fn refuseTypeInfoProjection(self: *Lowering, node: *const Node) TypeId {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, node.span, "a reflected member projection reads '@typeInfo(T).struct.fields[i].type' or '@typeInfo(T).enum.fields[i].payload'", .{});
+    return .unresolved;
 }
 
 /// Resolve a .call node that represents a type constructor (e.g., List(T), @Vector(N, T)).
