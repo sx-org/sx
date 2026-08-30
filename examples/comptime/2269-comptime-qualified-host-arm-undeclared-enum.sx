@@ -1,5 +1,4 @@
-// The enum `@host.os` is a variant of has no declaration this program can
-// reach, and a qualified arm still names it.
+// A qualified `@host.os` arm resolves with no declaration of the enum in reach.
 inline match @host.os {
     case OperatingSystem.macos: HOST_OS :: "macos";
     case OperatingSystem.linux: HOST_OS :: "linux";
