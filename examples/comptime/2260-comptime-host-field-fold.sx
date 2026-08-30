@@ -1,5 +1,5 @@
-// Nothing here imports `modules/std/target.sx`, so `OperatingSystem` is absent
-// from the type table and the match compares the target's variant NAME.
+// Field-access `@host.os` is an `inline match` subject; `@host.isSimulator`
+// folds as a bool condition, including under `!`.
 @import "modules/std.sx";
 
 inline if @host.isSimulator {
