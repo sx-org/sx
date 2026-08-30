@@ -1,0 +1,5 @@
+// `$N: u32` and `-> $N` name the same generic `N`; the `$` after `->` does not
+// introduce a second parameter.
+nth :: (xs: []i64, $N: u32) -> $N {
+    return xs[N];
+}

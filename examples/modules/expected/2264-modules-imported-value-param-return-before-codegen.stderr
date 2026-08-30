@@ -1,0 +1,5 @@
+error: 'N' is a value parameter, not a type
+  --> examples/modules/2264-modules-imported-value-param-return-before-codegen/lib.sx:1:32
+   |
+ 1 | nth :: (xs: []i64, $N: u32) -> $N {
+   |                                ^^
