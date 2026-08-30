@@ -1,6 +1,6 @@
 // A dotted construction head whose prefix is a type, not a namespace, names no
-// type: sx has no `Type.NestedType` access, so the head fails through the same
-// value-in-type-position path as the `x : Holder.Missing` annotation spelling.
+// type: sx has no `Type.NestedType` access. The binding is unread: diagnosis is
+// at the construction head.
 @import "modules/std.sx";
 
 Holder :: struct { v: i32 }

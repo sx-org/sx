@@ -1976,10 +1976,7 @@ pub const Lowering = struct {
                 }
             }
         }
-        // A dotted type reference reaching type position as an EXPRESSION
-        // `field_access` chain — `m.Cfg` written as a struct-literal head
-        // (`m.Cfg{...}`) — resolves through the same dotted-name path as the
-        // `x : m.Cfg` annotation spelling.
+        // Expression-form dotted type (`m.Cfg{...}`).
         if (node.data == .field_access) {
             if (self.qualifiedTypeName(node)) |qname| {
                 defer self.alloc.free(qname);
