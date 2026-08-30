@@ -1,0 +1,38 @@
+// `inline for field in @typeInfo(T).struct.fields` / `.enum.fields` walks a
+// type's reflected members. The cursor IS the member record: `.name`, `.index`
+// and `.offset`, and `.type` (a variant's `.payload`) wherever a type is
+// spelled.
+@import "modules/std.sx";
+
+Left   :: struct { value: i64; }
+Right  :: struct { flag: bool; }
+Holder :: struct { a: *Left; b: *Right; }
+
+Point :: struct { x: i64; ok: bool; z: f64; }
+Shape :: enum { circle: f64; rect: i64; empty; }
+
+peel :: ($T: Type) -> [@typeInfo(T).struct.fields.len]VariantInfo {
+    vs : [@typeInfo(T).struct.fields.len]VariantInfo = ---;
+    inline for field in @typeInfo(T).struct.fields {
+        vs[field.index] = VariantInfo{
+            name    = field.name,
+            payload = @typeInfo(pointeeType(field.type)).struct.fields[0].type,
+        };
+    }
+    return vs;
+}
+
+main :: () {
+    for v in peel(Holder) {
+        print("{} -> {}\n", v.name, @typeName(v.payload));
+    }
+
+    inline for field in @typeInfo(Point).struct.fields {
+        slot : field.type = ---;
+        print("{} {} @{} {}\n", field.index, field.name, field.offset, @typeName(@typeOf(slot)));
+    }
+
+    inline for variant in @typeInfo(Shape).enum.fields {
+        print("{} = {} ({})\n", variant.name, variant.value, @typeName(variant.payload));
+    }
+}

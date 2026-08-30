@@ -409,6 +409,36 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
     };
 }
 
+/// The parts of a reflected member list — `@typeInfo(T).<kind>.fields`. `kind`
+/// travels as spelled; which kind `T` reflects into is resolution's.
+pub const TypeInfoFields = struct {
+    type_arg: *const Node,
+    kind: []const u8,
+};
+
+/// The member list `node` spells, or null when it spells none.
+pub fn typeInfoFields(node: *const Node) ?TypeInfoFields {
+    const list = switch (node.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    if (!std.mem.eql(u8, list.field, "fields")) return null;
+    const kind = switch (list.object.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    const call = switch (kind.object.data) {
+        .call => |c| c,
+        else => return null,
+    };
+    switch (call.callee.data) {
+        .identifier => |id| if (!std.mem.eql(u8, id.name, "@typeInfo")) return null,
+        else => return null,
+    }
+    if (call.args.len != 1) return null;
+    return .{ .type_arg = call.args[0], .kind = kind.field };
+}
+
 /// The parts of a reflected member projection —
 /// `@typeInfo(T).<kind>.fields[<index>].<member>`. `kind` and `member` travel
 /// as spelled; which pairing names a type is resolution's.
@@ -429,27 +459,10 @@ pub fn typeInfoProjection(node: *const Node) ?TypeInfoProjection {
         .index_expr => |ix| ix,
         else => return null,
     };
-    const list = switch (element.object.data) {
-        .field_access => |fa| fa,
-        else => return null,
-    };
-    if (!std.mem.eql(u8, list.field, "fields")) return null;
-    const kind = switch (list.object.data) {
-        .field_access => |fa| fa,
-        else => return null,
-    };
-    const call = switch (kind.object.data) {
-        .call => |c| c,
-        else => return null,
-    };
-    switch (call.callee.data) {
-        .identifier => |id| if (!std.mem.eql(u8, id.name, "@typeInfo")) return null,
-        else => return null,
-    }
-    if (call.args.len != 1) return null;
+    const list = typeInfoFields(element.object) orelse return null;
     return .{
-        .type_arg = call.args[0],
-        .kind = kind.field,
+        .type_arg = list.type_arg,
+        .kind = list.kind,
         .index = element.index,
         .member = member.field,
     };

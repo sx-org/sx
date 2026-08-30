@@ -5,6 +5,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const errors = @import("../../errors.zig");
 const contracts = @import("../../contracts.zig");
+const type_bridge = @import("../type_bridge.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -770,15 +771,20 @@ fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId
     return false;
 }
 
+/// The `<iterable>[<index>]` node one unrolled iteration binds as its element.
+fn elementNode(self: *Lowering, iterable: *Node, span: ast.Span, index: i64) ?*Node {
+    const idx_node = self.alloc.create(Node) catch return null;
+    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
+    const elem_node = self.alloc.create(Node) catch return null;
+    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = iterable, .index = idx_node } } };
+    return elem_node;
+}
+
 /// The `xs[<index>]` node one unrolled pack iteration binds as its element.
 fn packElementNode(self: *Lowering, pack_name: []const u8, span: ast.Span, index: i64) ?*Node {
     const id_node = self.alloc.create(Node) catch return null;
     id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
-    const idx_node = self.alloc.create(Node) catch return null;
-    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
-    const elem_node = self.alloc.create(Node) catch return null;
-    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
-    return elem_node;
+    return elementNode(self, id_node, span, index);
 }
 
 /// A range position binds the i64 cursor whatever its bounds are spelled as.
@@ -974,26 +980,30 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS, and
-/// comptime `[N]Type` lists, mirroring the runtime multi-iterable contract:
-/// position 0 drives the iteration count (a pack's arity, a list's length, or
-/// a bounded range's span) and trailing range bounds are ignored. Per
-/// iteration the body is lowered once; a range capture binds as an `int_val`
-/// comptime constant (so `xs[i]` substitutes the concrete per-position
-/// argument), a pack capture binds as an AST alias for the synthesized
-/// `xs[<i>]` (`Binding.pack_elem`), inheriting full pack-element semantics —
-/// substitution, typing, and the interface-only constraint check — and a
-/// type-list capture binds as a type param, legal in type position.
+/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS,
+/// comptime `[N]Type` lists, and reflected member lists
+/// (`@typeInfo(T).<kind>.fields`), mirroring the runtime multi-iterable
+/// contract: position 0 drives the iteration count (a pack's arity, a list's
+/// length, a type's member count, or a bounded range's span) and trailing range
+/// bounds are ignored. Per iteration the body is lowered once; a range capture
+/// binds as an `int_val` comptime constant (so `xs[i]` substitutes the concrete
+/// per-position argument), a pack or member capture binds as an AST alias for
+/// the synthesized `<iterable>[<i>]` (`Binding.alias_node`), inheriting the
+/// element's full semantics — substitution, typing, and the interface-only
+/// constraint check — and a type-list capture binds as a type param, legal in
+/// type position.
 ///
 ///   inline for i in 0..xs.len { xs[i].show(); }      // index form
 ///   inline for x in xs { x.show(); }                 // element form
 ///   inline for x, i in xs, 0.. { ... }               // element + index
 ///   inline for T in TYPES { v : T = ---; }           // type-list form
+///   inline for f in @typeInfo(T).struct.fields { }   // member form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
         pack: []const u8, // pack name
         type_list: []const TypeId,
+        members: *Node, // the `@typeInfo(T).<kind>.fields` node
     };
     var classes = std.ArrayList(IterClass).empty;
     defer classes.deinit(self.alloc);
@@ -1042,25 +1052,37 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 return self.builder.constInt(0, .void);
             }
             classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
+        } else if (type_bridge.typeInfoFields(it.expr)) |spelled| {
+            const list = self.resolveTypeInfoFields(spelled, it.expr.span) orelse return self.builder.constInt(0, .void);
+            const len = self.module.types.memberCount(list.owner) orelse 0;
+            if (idx == 0) {
+                count = len;
+            } else if (len < count) {
+                if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: '{s}' has {} reflected member{s} but the unroll is {} iterations", .{
+                    self.formatTypeName(list.owner), len, if (len == 1) @as([]const u8, "") else @as([]const u8, "s"), count,
+                });
+                return self.builder.constInt(0, .void);
+            }
+            classes.append(self.alloc, .{ .members = it.expr }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, a type list, or a reflected member list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}` / `inline for f in @typeInfo(T).struct.fields {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
 
-    // `*x` on a pack element: there is no storage to borrow — an element
-    // is an AST-substituted call argument.
+    // Only a range cursor has storage to borrow; every other class is an
+    // AST-substituted comptime element.
     for (fe.captures, 0..) |cap, ci| {
-        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .pack) {
-            const sp = cap.span orelse fe.iterables[ci].expr.span;
-            if (self.diagnostics) |d| d.addFmt(.err, sp, "a pack element cannot be captured by reference", .{});
-            return self.builder.constInt(0, .void);
-        }
-        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .type_list) {
-            const sp = cap.span orelse fe.iterables[ci].expr.span;
-            if (self.diagnostics) |d| d.addFmt(.err, sp, "a type cannot be captured by reference", .{});
-            return self.builder.constInt(0, .void);
-        }
+        if (!cap.by_ref or ci >= classes.items.len) continue;
+        const borrowed: []const u8 = switch (classes.items[ci]) {
+            .range => continue,
+            .pack => "a pack element",
+            .type_list => "a type",
+            .members => "a reflected member",
+        };
+        const sp = cap.span orelse fe.iterables[ci].expr.span;
+        if (self.diagnostics) |d| d.addFmt(.err, sp, "{s} cannot be captured by reference", .{borrowed});
+        return self.builder.constInt(0, .void);
     }
 
     for (fe.captures, 0..) |cap, ci| {
@@ -1079,6 +1101,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             .type_list => {
                 if (self.diagnostics) |d| d.addFmt(.err, ta.span, "a type-list cursor binds a type, not a value — it takes no type annotation", .{});
                 return self.builder.constInt(0, .void);
+            },
+            .members => |list| {
+                const elem = elementNode(self, list, fe.iterables[ci].expr.span, 0) orelse continue;
+                _ = checkElementCaptureType(self, cap, self.inferExprType(elem));
             },
         }
     }
@@ -1129,11 +1155,16 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 .pack => |pack_name| {
                     const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
                     const elem_ty = self.inferExprType(elem_node);
-                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
+                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .alias_node = elem_node, .origin = .pack_elem_alias });
                 },
                 .type_list => |list| {
                     type_scope.?.put(cap.name, list[@intCast(i)]) catch {};
                     self.type_bindings = type_scope.?;
+                },
+                .members => |list| {
+                    const elem_node = elementNode(self, list, fe.iterables[ci].expr.span, i) orelse break;
+                    const elem_ty = self.inferExprType(elem_node);
+                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .alias_node = elem_node, .origin = .reflected_member_alias });
                 },
             }
         }

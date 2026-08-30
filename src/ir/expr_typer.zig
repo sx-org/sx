@@ -400,9 +400,9 @@ pub const ExprTyper = struct {
             .identifier => |id| {
                 if (self.l.scope) |scope| {
                     if (scope.lookup(id.name)) |binding| {
-                        // `inline for x in xs` element capture — type as the
-                        // synthesized `xs[<i>]` it aliases.
-                        if (binding.pack_elem) |elem| return self.l.inferExprType(elem);
+                        // An `inline for` element capture types as the
+                        // synthesized `<iterable>[<i>]` it aliases.
+                        if (binding.alias_node) |elem| return self.l.inferExprType(elem);
                         return binding.ty;
                     }
                 }

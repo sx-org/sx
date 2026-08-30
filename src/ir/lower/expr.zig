@@ -1025,14 +1025,14 @@ fn comptimeStructRef(self: *Lowering, name: []const u8, fields: []const lower.Lo
 }
 
 pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) Ref {
-    // `inline for x in xs` element capture as the receiver: re-enter with the
-    // synthesized `xs[<i>]` as the object, so every pack-element rule below
+    // An `inline for` element capture as the receiver: re-enter with the
+    // synthesized `<iterable>[<i>]` as the object, so every element rule below
     // (interface-only constraint check, projection, substitution) sees the
     // canonical `xs[i].<field>` shape.
     if (fa.object.data == .identifier) {
         if (self.scope) |scope| {
             if (scope.lookup(fa.object.data.identifier.name)) |binding| {
-                if (binding.pack_elem) |elem| {
+                if (binding.alias_node) |elem| {
                     var patched = fa.*;
                     patched.object = elem;
                     return self.lowerFieldAccess(&patched, span);
@@ -3537,7 +3537,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (sb.binding) |binding| {
                     // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
-                    if (binding.pack_elem) |elem| break :blk self.lowerExpr(elem);
+                    if (binding.alias_node) |elem| break :blk self.lowerExpr(elem);
                     // Flow narrowing: a name proven present by a
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
@@ -3924,7 +3924,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         // as a pointer — `inttoptr (i64 <value> to ptr)`, a wild
                         // pointer that segfaults on deref and emits invalid stores
                         // for asm `-> @const`. Diagnose loudly.
-                        if (!binding.is_ref_capture and binding.pack_elem == null) {
+                        if (!binding.is_ref_capture and binding.alias_node == null) {
                             if (self.diagnostics) |d|
                                 d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
                             break :blk self.emitPlaceholder("addr_of_const");

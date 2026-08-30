@@ -280,6 +280,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             return true;
         },
         .field_access => {
+            if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
             if (type_bridge.typeInfoProjection(node)) |p| return self.isStaticTypeArg(p.type_arg);
             const path = self.qualifiedTypeName(node) orelse return false;
             defer self.alloc.free(path);
@@ -627,6 +628,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // an unregistered name (the silent-default trap) — a failed lookup must
         // surface as a diagnostic + `.unresolved`.
         .field_access => {
+            if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeArg(aliased);
             if (resolveTypeInfoMemberType(self, node)) |t| return t;
             const path = self.qualifiedTypeName(node) orelse {
                 if (self.diagnostics) |diags|
@@ -1886,13 +1888,34 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
 /// The variant `T` reflects into and the Type-valued member of its element
 /// record: a struct's fields carry `.type`, an enum's variants `.payload`. Null
 /// for a type whose reflected variant carries no `fields` list.
-const ReflectedFields = struct { kind: []const u8, member: []const u8 };
-fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
+pub const ReflectedFields = struct { kind: []const u8, member: []const u8 };
+pub fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
     return switch (table.get(t)) {
         .@"struct" => .{ .kind = "struct", .member = "type" },
         .tagged_union, .@"enum" => .{ .kind = "enum", .member = "payload" },
         else => null,
     };
+}
+
+pub const ReflectedList = struct { owner: TypeId, element: ReflectedFields };
+
+/// The type whose reflected members `@typeInfo(T).<kind>.fields` lists, paired
+/// with the element record that lists them. Null after a diagnosed refusal: `T`
+/// reflects into no member list, or into a kind other than the one spelled.
+pub fn resolveTypeInfoFields(self: *Lowering, list: type_bridge.TypeInfoFields, span: ast.Span) ?ReflectedList {
+    const t = self.resolveTypeArg(list.type_arg);
+    if (t == .unresolved) return null;
+    const reflected = reflectedFields(&self.module.types, t) orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "reflected members are read off a '.struct' or '.enum'; '{s}' reflects as neither", .{self.formatTypeName(t)});
+        return null;
+    };
+    if (!std.mem.eql(u8, list.kind, reflected.kind)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'{s}' reflects as '.{s}', not '.{s}'", .{ self.formatTypeName(t), reflected.kind, list.kind });
+        return null;
+    }
+    return .{ .owner = t, .element = reflected };
 }
 
 /// The type a reflected member projection names —
@@ -1901,22 +1924,11 @@ fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
 /// names no type. A tagless variant's payload is `void`.
 pub fn resolveTypeInfoMemberType(self: *Lowering, node: *const Node) ?TypeId {
     const p = type_bridge.typeInfoProjection(node) orelse return null;
-    const t = self.resolveTypeArg(p.type_arg);
-    if (t == .unresolved) return .unresolved;
+    const list = self.resolveTypeInfoFields(.{ .type_arg = p.type_arg, .kind = p.kind }, node.span) orelse return .unresolved;
     const table = &self.module.types;
-    const reflected = reflectedFields(table, t) orelse {
+    if (!std.mem.eql(u8, p.member, list.element.member)) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, node.span, "a reflected member projection reads a '.struct' or '.enum' member; '{s}' reflects as neither", .{self.formatTypeName(t)});
-        return .unresolved;
-    };
-    if (!std.mem.eql(u8, p.kind, reflected.kind)) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, node.span, "'{s}' reflects as '.{s}', not '.{s}'", .{ self.formatTypeName(t), reflected.kind, p.kind });
-        return .unresolved;
-    }
-    if (!std.mem.eql(u8, p.member, reflected.member)) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, node.span, "a '.{s}' member names its type '.{s}', not '.{s}'", .{ reflected.kind, reflected.member, p.member });
+            d.addFmt(.err, node.span, "a '.{s}' member names its type '.{s}', not '.{s}'", .{ list.element.kind, list.element.member, p.member });
         return .unresolved;
     }
     const idx: usize = switch (program_index_mod.foldDimU32(p.index, self, 0)) {
@@ -1927,15 +1939,15 @@ pub fn resolveTypeInfoMemberType(self: *Lowering, node: *const Node) ?TypeId {
             return .unresolved;
         },
     };
-    const n = table.memberCount(t) orelse 0;
+    const n = table.memberCount(list.owner) orelse 0;
     if (idx >= n) {
         if (self.diagnostics) |d|
             d.addFmt(.err, p.index.span, "reflected member index {d} out of range ('{s}' has {d} member{s})", .{
-                idx, self.formatTypeName(t), n, if (n == 1) @as([]const u8, "") else "s",
+                idx, self.formatTypeName(list.owner), n, if (n == 1) @as([]const u8, "") else "s",
             });
         return .unresolved;
     }
-    return table.memberType(t, @intCast(idx)) orelse .void;
+    return table.memberType(list.owner, @intCast(idx)) orelse .void;
 }
 
 pub fn refuseTypeInfoProjection(self: *Lowering, node: *const Node) TypeId {

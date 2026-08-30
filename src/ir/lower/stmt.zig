@@ -1752,6 +1752,7 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
         .match_payload => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{ verb, name }),
         .catch_err => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a catch error binding is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
         .pack_elem_alias => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a pack-element alias is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
+        .reflected_member_alias => d.addFmt(.err, span, "cannot {s} immutable capture '{s}' — a reflected member is read-only; copy it into a `:=` local to mutate", .{ verb, name }),
         .other => d.addFmt(.err, span, "cannot {s} '{s}' — it names a binding with no storable location; copy it into a `:=` local to mutate", .{ verb, name }),
     }
 }
