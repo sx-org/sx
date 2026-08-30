@@ -400,7 +400,7 @@ pub fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
         .local_fn => return false,
         .binding => |b| b,
     };
-    if (binding.pack_elem != null) return false;
+    if (binding.alias_node != null) return false;
     return self.callableSigOf(binding.ty) != null;
 }
 
@@ -1547,7 +1547,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // call. A fn-pointer-typed pack-element alias is
                             // excluded — the substitution path owns it.
                             if (self.callableShapeOf(binding.ty)) |shape| {
-                                if (shape != .fn_ptr or binding.pack_elem == null) {
+                                if (shape != .fn_ptr or binding.alias_node == null) {
                                     if (callValue(self, .{
                                         .ty = binding.ty,
                                         .ref = if (binding.is_alloca) Ref.none else binding.ref,

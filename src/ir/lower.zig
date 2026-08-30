@@ -254,20 +254,23 @@ pub const Binding = struct {
         match_payload,
         /// `catch |e|` error binding.
         catch_err,
-        /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
+        /// `inline for x in xs` pack-element alias (`alias_node` is also set).
         pack_elem_alias,
+        /// `inline for field in @typeInfo(T).<kind>.fields` member alias
+        /// (`alias_node` is also set).
+        reflected_member_alias,
     };
 
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
     is_ref_capture: bool = false, // `for *x in xs` — `ref` is `*elem`; auto-deref in value positions
-    /// `inline for x in xs` element capture: `x` is an AST ALIAS for the
-    /// synthesized `xs[<i>]` of the current unroll iteration (`ref` is
-    /// `.none`). Identifier consumers substitute this node, so the capture
-    /// inherits the full pack-element semantics — concrete-arg substitution,
-    /// typing, and the interface-only constraint check.
-    pack_elem: ?*ast.Node = null,
+    /// An `inline for` element capture is an AST ALIAS for the synthesized
+    /// `<iterable>[<i>]` of the current unroll iteration (`ref` is `.none`).
+    /// Identifier consumers substitute this node, so the capture inherits the
+    /// element's full semantics — concrete-arg substitution, typing, and the
+    /// interface-only constraint check.
+    alias_node: ?*ast.Node = null,
     origin: Origin = .other,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
@@ -1789,12 +1792,35 @@ pub const Lowering = struct {
         return @intCast(self.typeAlignBytes(ty));
     }
 
-    fn fieldAccessNamed(node: *const Node, field: []const u8) ?ast.FieldAccess {
-        const fa = switch (node.data) {
-            .field_access => |f| f,
+    /// An `inline for` capture's aliased element re-rooted under a member read,
+    /// so `field.type` reads as `@typeInfo(T).<kind>.fields[<i>].type` wherever
+    /// a name-rooted chain would otherwise be looked up. The value grammar
+    /// builds a field access and the type grammar joins the path into one
+    /// dotted name; both spell the same read. Null when the root names no
+    /// aliasing capture.
+    pub fn aliasedFieldAccess(self: *Lowering, node: *const Node) ?*const Node {
+        var root: []const u8 = undefined;
+        var member: []const u8 = undefined;
+        switch (node.data) {
+            .field_access => |fa| {
+                if (fa.object.data != .identifier) return null;
+                root = fa.object.data.identifier.name;
+                member = fa.field;
+            },
+            .type_expr => |te| {
+                const dot = std.mem.indexOfScalar(u8, te.name, '.') orelse return null;
+                root = te.name[0..dot];
+                member = te.name[dot + 1 ..];
+                if (std.mem.indexOfScalar(u8, member, '.') != null) return null;
+            },
             else => return null,
-        };
-        return if (std.mem.eql(u8, fa.field, field)) fa else null;
+        }
+        const scope = self.scope orelse return null;
+        const binding = scope.lookup(root) orelse return null;
+        const alias = binding.alias_node orelse return null;
+        const rerooted = self.alloc.create(Node) catch return null;
+        rerooted.* = .{ .span = node.span, .data = .{ .field_access = .{ .object = alias, .field = member } } };
+        return rerooted;
     }
 
     /// Fold `@typeInfo(T).struct.fields.len` / `.enum.fields.len` to the
@@ -1802,33 +1828,20 @@ pub const Lowering = struct {
     /// `@typeInfo` reflects `T` into: a mismatched kind is a wrong-variant
     /// read, not a count, so it stays unfolded and takes the ordinary error path.
     pub fn evalConstFieldAccessInt(self: *Lowering, node: *const Node) ?i64 {
-        const count = fieldAccessNamed(node, "len") orelse return null;
-        const list = fieldAccessNamed(count.object, "fields") orelse return null;
-        const kind = switch (list.object.data) {
-            .field_access => |fa| fa,
+        const count = switch (node.data) {
+            .field_access => |f| f,
             else => return null,
         };
-        const c = switch (kind.object.data) {
-            .call => |call| call,
-            else => return null,
-        };
-        const callee = switch (c.callee.data) {
-            .identifier => |id| id.name,
-            else => return null,
-        };
-        if (!std.mem.eql(u8, callee, "@typeInfo") or c.args.len != 1) return null;
+        if (!std.mem.eql(u8, count.field, "len")) return null;
+        const list = type_bridge.typeInfoFields(count.object) orelse return null;
         // A runtime Type arg is no compile-time integer, and `resolveTypeArg`
         // would emit a spurious "unresolved type" from this SPECULATIVE fold.
-        if (!self.isStaticTypeArg(c.args[0])) return null;
-        const ty = self.resolveTypeArg(c.args[0]);
+        if (!self.isStaticTypeArg(list.type_arg)) return null;
+        const ty = self.resolveTypeArg(list.type_arg);
         if (ty == .unresolved) return null;
         const n = self.module.types.memberCount(ty) orelse return null;
-        const reflected_kind: []const u8 = switch (self.module.types.get(ty)) {
-            .@"struct" => "struct",
-            .@"enum", .tagged_union => "enum",
-            else => return null,
-        };
-        if (!std.mem.eql(u8, kind.field, reflected_kind)) return null;
+        const reflected = lower_generic.reflectedFields(&self.module.types, ty) orelse return null;
+        if (!std.mem.eql(u8, list.kind, reflected.kind)) return null;
         return n;
     }
 
@@ -2022,6 +2035,7 @@ pub const Lowering = struct {
                 }
             }
         }
+        if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeWithBindings(aliased);
         // A `@typeInfo`-rooted chain either spells the reflected member
         // projection or names no type; every other shape would fall through to
         // `type_bridge`'s silent `.unresolved` and panic at LLVM emission.
@@ -3854,6 +3868,7 @@ pub const Lowering = struct {
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
     pub const resolveTypeInfoMemberType = lower_generic.resolveTypeInfoMemberType;
+    pub const resolveTypeInfoFields = lower_generic.resolveTypeInfoFields;
     pub const refuseTypeInfoProjection = lower_generic.refuseTypeInfoProjection;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;

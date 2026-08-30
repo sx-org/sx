@@ -4809,6 +4809,11 @@ inline for T in TYPES { }           // comptime unroll over a `[N]Type` list:
                                     // T is a comptime Type, legal in type
                                     // position (see "Constraints and
                                     // Interfaces" §3)
+inline for f in @typeInfo(T).struct.fields { }
+                                    // comptime unroll over a type's reflected
+                                    // members (`.struct` / `.enum`): f is the
+                                    // member record, and `f.type` (a variant's
+                                    // `f.payload`) is legal in type position
 ```
 
 **Range bound markers.** Each side of `..` takes an optional marker — `=`

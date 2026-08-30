@@ -16,7 +16,7 @@ error: inline for: pack 'xs' has 2 elements but the unroll is 5 iterations
 22 |     inline for i, x in 0..5, xs { }
    |                              ^^
 
-error: inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N { }` / `inline for x in xs { }` / `inline for T in TYPES { }`
+error: inline for: each iterable must be a comptime range, a pack, a type list, or a reflected member list — `inline for i in 0..N { }` / `inline for x in xs { }` / `inline for T in TYPES { }` / `inline for f in @typeInfo(T).struct.fields { }`
   --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:30:21
    |
 30 |     inline for x in arr { }

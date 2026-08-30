@@ -518,7 +518,7 @@ pub fn isByValueBindingIdent(self: *Lowering, node: *const Node) bool {
     if (node.data != .identifier) return false;
     const scope = self.scope orelse return false;
     const binding = scope.lookup(node.data.identifier.name) orelse return false;
-    return !binding.is_alloca and !binding.is_ref_capture and binding.pack_elem == null;
+    return !binding.is_alloca and !binding.is_ref_capture and binding.alias_node == null;
 }
 
 /// Build a protocol value from a concrete value via xx conversion.
