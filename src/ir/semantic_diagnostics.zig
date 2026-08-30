@@ -1098,10 +1098,8 @@ pub const UnknownTypeChecker = struct {
     /// `resolveTypeWithBindings`: never let a non-error-set name
     /// after `!` reach the lowering stub.
     fn reportIfNotErrorSet(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span) void {
-        // Split the head off a dotted member spelling exactly as
-        // `qualifiedChannelMember` does, so the check accepts precisely the
-        // spellings that bind. A head that is itself compound carries
-        // non-identifier characters — trust it, matching `reportIfUnknownType`.
+        // Last-dot split, as `qualifiedChannelMember`. Compound heads carry
+        // non-identifier characters — trust them, matching `reportIfUnknownType`.
         const head = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| name[0..dot] else name;
         if (!isIdentLike(head)) return;
         const sets = self.error_sets orelse return;

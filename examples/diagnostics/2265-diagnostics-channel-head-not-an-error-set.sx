@@ -1,6 +1,6 @@
 // A dotted channel operand names one member of the error set its head names.
 // A head naming no error set — an undeclared name, or a module namespace — is
-// diagnosed where it is written, whether or not the call's result is read.
+// diagnosed where it is written.
 @import "modules/std.sx";
 ns :: @import "2265-diagnostics-channel-head-not-an-error-set/net.sx";
 
