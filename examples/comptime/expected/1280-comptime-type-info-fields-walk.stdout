@@ -1,5 +1,7 @@
 a -> i64
 b -> bool
+a : Left
+b : Right
 0 x @0 i64
 1 ok @8 bool
 2 z @16 f64

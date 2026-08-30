@@ -263,6 +263,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .type_expr => |te| {
+            if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
             // A type-keyword name (e.g. `i64`) is always static.
             // A user-defined name that happens to be in scope as
             // a runtime variable (`x: Type = i64; type_name(x)`)
@@ -550,6 +551,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             return .unresolved;
         },
         .type_expr => |te| {
+            if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeArg(aliased);
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized
             // target (`x.(structFieldType(T, i))`) parses as a type_expr,

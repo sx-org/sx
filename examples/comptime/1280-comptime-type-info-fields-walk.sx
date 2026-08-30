@@ -11,6 +11,10 @@ Holder :: struct { a: *Left; b: *Right; }
 Point :: struct { x: i64; ok: bool; z: f64; }
 Shape :: enum { circle: f64; rect: i64; empty; }
 
+nameOf :: ($T: Type) -> string {
+    return @typeName(T);
+}
+
 peel :: ($T: Type) -> [@typeInfo(T).struct.fields.len]VariantInfo {
     vs : [@typeInfo(T).struct.fields.len]VariantInfo = ---;
     inline for field in @typeInfo(T).struct.fields {
@@ -27,9 +31,14 @@ main :: () {
         print("{} -> {}\n", v.name, @typeName(v.payload));
     }
 
+    inline for field in @typeInfo(Holder).struct.fields {
+        slot : pointeeType(field.type) = ---;
+        print("{} : {}\n", field.name, @typeName(@typeOf(slot)));
+    }
+
     inline for field in @typeInfo(Point).struct.fields {
         slot : field.type = ---;
-        print("{} {} @{} {}\n", field.index, field.name, field.offset, @typeName(@typeOf(slot)));
+        print("{} {} @{} {}\n", field.index, field.name, field.offset, nameOf(field.type));
     }
 
     inline for variant in @typeInfo(Shape).enum.fields {
