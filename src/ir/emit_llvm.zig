@@ -264,8 +264,6 @@ pub const LLVMEmitter = struct {
     // lazily on the first call.
     jni_slots: std.StringHashMap(JniSlotPair),
 
-    // Cached field name arrays for reflection (TypeId → LLVM global)
-    field_name_arrays: std.AutoHashMap(u32, c.LLVMValueRef),
     // The always-linked member-name table (member id → name); built once.
     tag_name_array: ?c.LLVMValueRef = null,
     // The member-payload-type table (member id → TypeId); built on the first
@@ -295,10 +293,6 @@ pub const LLVMEmitter = struct {
     type_size_array_len: u32 = 0,
     type_align_array: ?c.LLVMValueRef = null,
     type_align_array_len: u32 = 0,
-    sf_count_array: ?c.LLVMValueRef = null,
-    sf_count_array_len: u32 = 0,
-    variant_count_array: ?c.LLVMValueRef = null,
-    variant_count_array_len: u32 = 0,
     is_flags_array: ?c.LLVMValueRef = null,
     is_flags_array_len: u32 = 0,
     vector_lanes_array: ?c.LLVMValueRef = null,
@@ -311,15 +305,11 @@ pub const LLVMEmitter = struct {
     slice_len_info_array_len: u32 = 0,
     optional_flag_array: ?c.LLVMValueRef = null,
     optional_flag_array_len: u32 = 0,
-    // Field-family master-index tables: [N x ptr] → per-type arrays.
-    member_name_ptrs: ?c.LLVMValueRef = null,
-    member_name_ptrs_len: u32 = 0,
+    // Member-view master-index tables: [N x ptr] → per-type arrays.
     member_type_ptrs: ?c.LLVMValueRef = null,
     member_type_ptrs_len: u32 = 0,
     field_offset_ptrs: ?c.LLVMValueRef = null,
     field_offset_ptrs_len: u32 = 0,
-    member_value_ptrs: ?c.LLVMValueRef = null,
-    member_value_ptrs_len: u32 = 0,
     // Runtime `@typeInfo` records — [N x ptr] master to per-type
     // TypeInfo constants (each its own global; bytes match the sx layout).
     type_info_records: ?c.LLVMValueRef = null,
@@ -462,7 +452,6 @@ pub const LLVMEmitter = struct {
             .closure_struct_type = null,
             .objc_msg_send_value = null,
             .jni_slots = std.StringHashMap(JniSlotPair).init(alloc),
-            .field_name_arrays = std.AutoHashMap(u32, c.LLVMValueRef).init(alloc),
             .target_config = target_config,
             .build_config = .{},
             .di_files = std.StringHashMap(c.LLVMMetadataRef).init(alloc),
@@ -475,7 +464,6 @@ pub const LLVMEmitter = struct {
         self.build_config.deinit(self.alloc);
         self.ref_map.deinit();
         self.func_map.deinit();
-        self.field_name_arrays.deinit();
         var jni_it = self.jni_slots.keyIterator();
         while (jni_it.next()) |k| self.alloc.free(k.*);
         self.jni_slots.deinit();
@@ -1971,7 +1959,6 @@ pub const LLVMEmitter = struct {
             .make_any => |ma| self.ops().emitMakeAny(ma),
 
             // ── Reflection ops ──────────────────────────────────────
-            .field_name_get => |fr| self.ops().emitFieldNameGet(fr),
             .field_value_get => |fr| self.ops().emitFieldValueGet(fr, func_idx),
             .error_member_name_get => |u| self.ops().emitErrorMemberNameGet(u),
             .error_name_get => |u| self.ops().emitErrorNameGet(u),

@@ -138,8 +138,8 @@ TryResult :: ($T: Type) -> Type {
 
 // ── Constructing a minted tagged-union VALUE by variant index ─────────────────
 //
-// The read side reflects a type's members (`structFieldCount`/`structFieldName`/
-// `structFieldType`) and a value's active payload (`structFieldValue`); `makeVariant` is
+// The read side reflects a type's members (`@typeInfo(T).struct.fields`) and a
+// value's active payload (`structFieldValue`); `makeVariant` is
 // the missing WRITE side. It builds a value of a MINTED tagged-union `E` (one
 // made by `makeEnum` / `define(declare, .enum(...))`) whose active variant is
 // `idx`, carrying `payload`. Needed when the variant is selected at RUNTIME but
@@ -153,7 +153,7 @@ TryResult :: ($T: Type) -> Type {
 // layout directly. It is NOT valid for a source `enum { … }` whose tag may be
 // narrower, nor for a `#packed`-backed union — spell those with a literal
 // `.label(…)`. Contract (caller-guaranteed, no runtime check, like any raw
-// construction): `0 <= idx < structFieldCount(E)`, and `payload`'s type IS variant
+// construction): `0 <= idx < @typeInfo(E).enum.fields.len`, and `payload`'s type IS variant
 // `idx`'s payload type. `payload` must be non-void (a payload-less variant has
 // no value to carry — match it by tag).
 makeVariant :: ($E: Type, idx: i64, payload: $P) -> E {

@@ -1,20 +1,12 @@
-// The split reflection families are kind-gated: structField* serves
-// structs/tuples (and untagged unions); variant* serves enums/tagged
-// unions; arrays/vectors use `.len` + native indexing. Each wrong-kind
-// call is a loud compile error naming the right builtin — never a
-// silently-wrong count/name.
+// The split value-reflection families are kind-gated: `structFieldValue` serves
+// structs/tuples (and untagged unions); `variantPayload` serves enums/tagged
+// unions; arrays/vectors use native indexing. Each wrong-kind call is a loud
+// compile error naming the right builtin — never a silently-wrong member.
 @import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
-Color :: enum { red; green; blue; }
 
 main :: () {
-    print("{}\n", structFieldCount(Color));     // enum → use variantCount
-    print("{}\n", structFieldName(Color, 0));   // enum → use variantName
-    print("{}\n", variantCount(Point));         // struct → use structFieldCount
-    print("{}\n", variantName(Point, 0));       // struct → use structFieldName
-    print("{}\n", structFieldCount([4]i64));    // array → use .len
-    c := Color.red;
     print("{}\n", variantPayload(Point{ x = 1, y = 2 }, 0));  // struct value → structFieldValue
     v : @Vector(3, f32) = .[1.0, 2.0, 3.0];
     print("{}\n", structFieldValue(v, 0));      // vector → index natively

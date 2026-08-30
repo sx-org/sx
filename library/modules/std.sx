@@ -47,7 +47,7 @@ OptionalInfo    :: core.OptionalInfo;
 
 // --- Type system & reflection intrinsics ---
 // (no aliases: an intrinsic is a compiler feature, not a library export. The
-// compiler dispatches `@sizeOf` / `structFieldCount` / … from its registry before
+// compiler dispatches `@sizeOf` / `@alignOf` / … from its registry before
 // name resolution, so they resolve with no import at all — the declarations in
 // std/core.sx are their source identity, not their reachability. Same reason
 // `string` and `@Vector` have no alias here.)

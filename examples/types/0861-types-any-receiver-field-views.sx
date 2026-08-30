@@ -1,6 +1,6 @@
 // structFieldValue / variantPayload on an `any` RECEIVER: reads go
 // THROUGH the view via the runtime reflection tables — the result is
-//   { structFieldType(tag, i),  av.data + structFieldOffset(tag, i) }
+//   { the tag's i-th member type,  av.data + that member's offset }
 // so field access composes by repeated calls with no copies (the
 // walker's recursion pattern), aliasing the boxed value's storage.
 // For a tagged union the offset table answers the payload offset, so

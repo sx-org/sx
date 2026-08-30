@@ -2,8 +2,8 @@
 // declaration group per element of a curated type list, flattened into module
 // scope. Each iteration is an ordinary impl with a concrete `T` — membership,
 // dispatch, and every downstream rule apply to the expanded program unchanged.
-// The cursor binds in type position exactly like a `$T: Type` binding, so the
-// reflection builtins supply the field-wise body.
+// The cursor binds in type position exactly like a `$T: Type` binding, so a
+// reflected member walk supplies the field-wise body.
 @import "modules/std.sx";
 
 Point  :: struct { x: i64; y: i64; }
@@ -21,8 +21,8 @@ SERIALIZABLE :: .[Point, Rect, Color];
 inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T) {
-            inline for i in 0..structFieldCount(T) {
-                print("{}={} ", structFieldName(T, i), structFieldValue(self.*, i));
+            inline for field in @typeInfo(T).struct.fields {
+                print("{}={} ", field.name, structFieldValue(self.*, field.index));
             }
             print("\n");
         }

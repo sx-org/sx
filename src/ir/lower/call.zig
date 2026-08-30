@@ -2785,16 +2785,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // must decide here rather than fall through a catch-all.
         .@"@typeOf",
         .@"@typeName",
-        .structFieldCount,
-        .variantCount,
-        .structFieldName,
-        .variantName,
-        .structFieldType,
-        .variantType,
-        .structFieldOffset,
         .structFieldValue,
         .variantPayload,
-        .variantValue,
         .variantIndex,
         .pointeeType,
         .isFlags,
@@ -3089,16 +3081,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldCount,
-        .variantCount,
-        .structFieldName,
-        .variantName,
-        .structFieldType,
-        .variantType,
-        .structFieldOffset,
         .structFieldValue,
         .variantPayload,
-        .variantValue,
         .variantIndex,
         .pointeeType,
         .isFlags,
@@ -3380,16 +3364,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldCount,
-        .variantCount,
-        .structFieldName,
-        .variantName,
-        .structFieldType,
-        .variantType,
-        .structFieldOffset,
         .structFieldValue,
         .variantPayload,
-        .variantValue,
         .variantIndex,
         .pointeeType,
         .isFlags,
@@ -3731,16 +3707,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .structFieldCount,
-        .variantCount,
-        .structFieldName,
-        .variantName,
-        .structFieldType,
-        .variantType,
-        .structFieldOffset,
         .structFieldValue,
         .variantPayload,
-        .variantValue,
         .variantIndex,
         .pointeeType,
         .isFlags,
@@ -4231,49 +4199,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const a: i64 = @intCast(self.module.types.typeAlignBytes(ty));
         return self.builder.constInt(a, .i64);
     }
-    if (std.mem.eql(u8, name, "structFieldCount") or std.mem.eql(u8, name, "variantCount")) {
-        const is_variant_fam = std.mem.eql(u8, name, "variantCount");
-        // Runtime Type arg: tag-indexed count-table read. Kind gates
-        // are a STATIC-arg feature; at runtime the table answers (a wrong-kind
-        // tag reads 0 — kind discrimination at runtime is `@typeInfo`'s job).
-        if (!self.isStaticTypeArg(c.args[0])) {
-            const bi: inst_mod.BuiltinId = if (is_variant_fam) .rt_variant_count else .rt_struct_field_count;
-            const arg_ref = self.lowerExpr(c.args[0]);
-            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(bi, args_owned, .i64);
-        }
-        // structFieldCount(T) → const_int(N) for structs/tuples/unions
-        // (scalar/fieldless types fold to 0 so generic walkers can gate leaves);
-        // variantCount(E) → the enum/tagged-union variant count. Each family
-        // rejects the other's kinds; arrays/vectors left both families (`.len`
-        // is the native spelling for their lengths/lanes).
-        const ty = self.resolveTypeArg(c.args[0]);
-        const info = if (ty.isBuiltin() or ty == .unresolved) null else self.module.types.get(ty);
-        if (is_variant_fam) {
-            if (info) |i| switch (i) {
-                .@"enum" => |e| return self.builder.constInt(@intCast(e.variants.len), .i64),
-                .tagged_union => |u| return self.builder.constInt(@intCast(u.fields.len), .i64),
-                else => {},
-            };
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "variantCount expects an enum or tagged-union type; '{s}' is not one — for struct/tuple fields use structFieldCount", .{self.formatTypeName(ty)});
-            return self.builder.constInt(0, .i64);
-        }
-        if (info) |i| switch (i) {
-            .@"struct" => |s| return self.builder.constInt(@intCast(s.fields.len), .i64),
-            .@"union" => |u| return self.builder.constInt(@intCast(u.fields.len), .i64),
-            .@"enum", .tagged_union => {
-                if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "structFieldCount expects a struct or tuple type; '{s}' is an enum — use variantCount", .{self.formatTypeName(ty)});
-                return self.builder.constInt(0, .i64);
-            },
-            .array, .vector => {
-                if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "structFieldCount is not for arrays/vectors — use `.len` on the value (its length/lane count)", .{});
-                return self.builder.constInt(0, .i64);
-            },
-            else => {},
-        };
-        // Scalars and other fieldless types: 0 fields (a leaf).
-        return self.builder.constInt(0, .i64);
-    }
     if (std.mem.eql(u8, name, "@typeName")) {
         // @typeName(T):
         //   - Statically resolvable arg (type expression, pack
@@ -4326,8 +4251,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
         // occupy 4). Static arg folds; a runtime Type reads the lane table
         // (non-vector tags answer 0 — kind discrimination is `@typeInfo`'s
-        // job, same rule as the count tables). A static NON-vector is a
-        // loud error: `.len` / structFieldCount are the right spellings.
+        // job). A static NON-vector is a loud error: `.len` is the right
+        // spelling.
         if (c.args.len < 1) return self.builder.constInt(0, .i64);
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
@@ -4354,42 +4279,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             if (info == .@"enum") return self.builder.constBool(info.@"enum".is_flags);
         }
         return self.builder.constBool(false);
-    }
-    if (std.mem.eql(u8, name, "structFieldName") or std.mem.eql(u8, name, "variantName")) {
-        if (c.args.len < 2) return self.builder.constString(self.module.types.internString(""));
-        if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type: master-index member-name table read.
-            const tp = self.lowerExpr(c.args[0]);
-            const idx = self.lowerExpr(c.args[1]);
-            const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constString(self.module.types.internString(""));
-            return self.builder.callBuiltin(.rt_member_name, args_owned, .string);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (!reflectFamilyOk(self, name, ty, c.callee.span)) {
-            return self.builder.constString(self.module.types.internString(""));
-        }
-        // Fold to a comptime STRING constant when the type resolves AND the index
-        // is a compile-time constant (incl. an `inline for` loop var) — so a
-        // minted variant NAME / any comptime use gets a const string the
-        // type-construction VM can evaluate, mirroring the `field_type` /
-        // `field_count` folds. A member with no name (positional-tuple / array /
-        // vector element) folds to "". A dynamic (runtime) index falls back to
-        // the `field_name_get` instruction.
-        if (ty != .unresolved) {
-            switch (program_index_mod.foldDimU32(c.args[1], self, 0)) {
-                .ok => |n| {
-                    const nm = self.module.types.memberName(ty, @intCast(n)) orelse self.module.types.internString("");
-                    return self.builder.constString(nm);
-                },
-                else => {},
-            }
-        }
-        const idx = self.lowerExpr(c.args[1]);
-        return self.builder.emit(.{ .field_name_get = .{
-            .base = .none,
-            .index = idx,
-            .struct_type = ty,
-        } }, .string);
     }
     if (std.mem.eql(u8, name, "@isComptime")) {
         // True under the comptime interpreter, false in compiled code — the
@@ -4470,8 +4359,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             // `any` receiver: read THROUGH the view — pure runtime table
             // composition over the 1a machinery (the rt builtins consult the
             // any's tag via reflectArgTypeId):
-            //   result.tag  = structFieldType(tag, i)   (rt_member_type)
-            //   result.data = av.data + field_offset(tag, i)
+            //   result.tag  = rt_member_type(tag, i)
+            //   result.data = av.data + rt_field_offset(tag, i)
             // For a tagged union the offset table answers the payload offset,
             // so `variantPayload(av, i)` composes identically. A wrong-kind
             // tag or an out-of-range index is UB (same OOB rule as the rest
@@ -4601,69 +4490,14 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.builder.constType(arg_ty);
         }
     }
-    if (std.mem.eql(u8, name, "structFieldOffset")) {
-        // structFieldOffset(T, i) → const_int(byte offset of field i).
-        // Layout from the SAME walk typeSizeBytes/fieldOffset use (each field
-        // aligned to its own alignment, declaration order). Tuples walk their
-        // element types; untagged-union arms overlay at 0.
-        if (c.args.len < 2) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type: field-offset table read.
-            const tp = self.lowerExpr(c.args[0]);
-            const idx = self.lowerExpr(c.args[1]);
-            const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_field_offset, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        const idx: usize = switch (program_index_mod.foldDimU32(c.args[1], self, 0)) {
-            .ok => |n| n,
-            else => {
-                if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "structFieldOffset index must be a non-negative compile-time integer", .{});
-                return self.builder.constInt(0, .i64);
-            },
-        };
-        if (!ty.isBuiltin() and ty != .unresolved) {
-            const info = self.module.types.get(ty);
-            switch (info) {
-                .@"struct", .@"union" => {
-                    // Fold from the shared walk (`memberOffsetBytes`) — the
-                    // same source the runtime tables and the VM answer from.
-                    if (self.module.types.memberOffsetBytes(ty, @intCast(idx))) |off| {
-                        return self.builder.constInt(@intCast(off), .i64);
-                    }
-                    const n_fields = self.module.types.memberCount(ty) orelse 0;
-                    if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "structFieldOffset index {d} out of range ({d} fields)", .{ idx, n_fields });
-                    return self.builder.constInt(0, .i64);
-                },
-                else => {},
-            }
-        }
-        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "structFieldOffset expects a struct or tuple type; '{s}' is not one", .{self.formatTypeName(ty)});
-        return self.builder.constInt(0, .i64);
-    }
-    if (std.mem.eql(u8, name, "structFieldType") or std.mem.eql(u8, name, "variantType") or std.mem.eql(u8, name, "pointeeType")) {
-        if (!std.mem.eql(u8, name, "pointeeType") and c.args.len == 2 and !self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type: member-type tag table read → Type value.
-            const tp = self.lowerExpr(c.args[0]);
-            const idx = self.lowerExpr(c.args[1]);
-            const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constType(.void);
-            return self.builder.callBuiltin(.rt_member_type, args_owned, .type_value);
-        }
-        if (!std.mem.eql(u8, name, "pointeeType")) {
-            const recv_ty = self.resolveTypeArg(c.args[0]);
-            if (!reflectFamilyOk(self, name, recv_ty, c.callee.span)) {
-                return self.builder.constType(.unresolved);
-            }
-        }
-        // VALUE-position `field_type(T, i)` / `pointee(P)` — produce a comptime
-        // Type value. Both ALSO resolve in TYPE position (a type-arg slot routes
-        // through `resolveTypeArg` → `resolveTypeCallWithBindings`); this is the
+    if (std.mem.eql(u8, name, "pointeeType")) {
+        // VALUE-position `pointeeType(P)` — a comptime Type value. It ALSO
+        // resolves in TYPE position (a type-arg slot routes through
+        // `resolveTypeArg` → `resolveTypeCallWithBindings`); this is the
         // value-position twin (e.g. assigned to a `Type` field like
-        // `EnumVariant.payload`, or a `$P: Type` arg's value), folding the index
-        // — including an `inline for` loop var — through the SAME
-        // `resolveTypeCallWithBindings` so the two positions never disagree.
-        // Without this they fall through to generic-function lowering, which
-        // can't fold the index → "cannot infer …" / "unknown intrinsic".
+        // `VariantInfo.payload`, or a `$P: Type` arg's value), routed through
+        // the SAME resolver so the two positions never disagree. Without this
+        // it falls through to generic-function lowering → "cannot infer …".
         const ty = self.resolveTypeCallWithBindings(c);
         return self.builder.constType(ty);
     }
@@ -4742,46 +4576,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // Plain enum / tagged union with AUTO tags: tag already == ordinal.
         return tag;
     }
-    if (std.mem.eql(u8, name, "variantValue")) {
-        // variantValue(T, i) → the i-th variant's integer value, from the
-        // single source `memberValue` (explicit values / explicit tags /
-        // ordinal default — enums AND tagged unions).
-        if (c.args.len < 2) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type: member-value master-table read (same [N x ptr]
-            // pattern as the name/type/offset families).
-            const tp = self.lowerExpr(c.args[0]);
-            const idx = self.lowerExpr(c.args[1]);
-            const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_variant_value, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        const idx = self.lowerExpr(c.args[1]);
-        if (!ty.isBuiltin()) {
-            const explicit: ?[]const i64 = switch (self.module.types.get(ty)) {
-                .@"enum" => |e| e.explicit_values,
-                .tagged_union => |u| u.explicit_tag_values,
-                else => null,
-            };
-            if (explicit != null) {
-                // Explicit values: an array of memberValue rows, indexed at
-                // runtime (the index need not be comptime).
-                const count = self.module.types.memberCount(ty) orelse 0;
-                var elems = std.ArrayList(Ref).empty;
-                defer elems.deinit(self.alloc);
-                var i: i64 = 0;
-                while (i < count) : (i += 1) {
-                    const v = self.module.types.memberValue(ty, i) orelse 0;
-                    elems.append(self.alloc, self.builder.constInt(v, .i64)) catch unreachable;
-                }
-                const arr_ty = self.module.types.arrayOf(.i64, @intCast(count));
-                const arr = self.builder.structInit(elems.items, arr_ty);
-                return self.builder.emit(.{ .index_get = .{ .lhs = arr, .rhs = idx } }, .i64);
-            }
-        }
-        // Auto values: value == ordinal, the index itself.
-        return idx;
-    }
     if (std.mem.eql(u8, name, "__sx_variant_tag_width")) {
         // INTERNAL: the sign-encoded tag-word width (fmt's runtime variant
         // walk). Static arg folds; runtime Type reads the width table.
@@ -4813,57 +4607,6 @@ pub fn reflectionArgIsType(self: *Lowering, arg: *const Node) bool {
     return ty == .type_value or ty == .any;
 }
 
-/// Guard for the type-introspection builtins (`@sizeOf`, `@alignOf`,
-/// `field_count`, `@typeName`, `@typeEq`, `type_is_unsigned`,
-/// `isFlags`): every argument must denote a type. A value argument is
-/// rejected with a diagnostic rather than silently reinterpreted as a
-/// TypeId index or sized via its `typeof`.
-///
-/// Returns null when `name` is not a guarded builtin OR every argument
-/// is a type (→ fall through to normal dispatch). Returns a harmless
-/// result-typed sentinel Ref when a violation was diagnosed; the
-/// emitted `.err` gates the build so the value is never observed.
-/// Kind gate for the split reflection families. `structField*` accepts
-/// struct/tuple/union (and, for count, fieldless scalars fold to 0 at the
-/// caller); `variant*` accepts enum/tagged-union. The other family's kinds
-/// get a diagnostic naming the right builtin. Returns false when a
-/// diagnostic was emitted (caller returns its neutral constant).
-pub fn reflectFamilyOk(self: *Lowering, name: []const u8, ty: TypeId, span: ?ast.Span) bool {
-    if (ty.isBuiltin() or ty == .unresolved) return true;
-    const info = self.module.types.get(ty);
-    const fam = reflectFamily(name) orelse return true;
-    if (fam.is_variant) {
-        if (info == .@"enum" or info == .tagged_union) return true;
-        if (self.diagnostics) |d| d.addFmt(.err, span, "{s} expects an enum or tagged-union type; '{s}' is not one — for struct/tuple fields use {s}", .{ name, self.formatTypeName(ty), fam.sibling });
-        return false;
-    }
-    switch (info) {
-        .@"enum", .tagged_union => {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "{s} expects a struct or tuple type; '{s}' is an enum — use {s}", .{ name, self.formatTypeName(ty), fam.sibling });
-            return false;
-        },
-        .array, .vector => {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "{s} is not for arrays/vectors — use `.len` / native indexing on the value", .{name});
-            return false;
-        },
-        else => return true,
-    }
-}
-
-/// Which half of the split reflection families `name` belongs to, paired with
-/// the other half's spelling of the same query. Null outside the split.
-fn reflectFamily(name: []const u8) ?struct { is_variant: bool, sibling: []const u8 } {
-    const pairs = [_][2][]const u8{
-        .{ "structFieldName", "variantName" },
-        .{ "structFieldType", "variantType" },
-    };
-    for (pairs) |p| {
-        if (std.mem.eql(u8, name, p[0])) return .{ .is_variant = false, .sibling = p[1] };
-        if (std.mem.eql(u8, name, p[1])) return .{ .is_variant = true, .sibling = p[0] };
-    }
-    return null;
-}
-
 /// Each persist primitive takes exactly one argument. Returns null when the
 /// call has it, else a `Ref.none` sentinel after diagnosing — the argument
 /// handlers index `args[0]` unconditionally.
@@ -4891,13 +4634,20 @@ pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.S
     return null;
 }
 
+/// Guard for the type-introspection builtins (`@sizeOf`, `@alignOf`,
+/// `@typeName`, `@typeEq`, `isFlags`): every argument must denote a type. A
+/// value argument is rejected with a diagnostic rather than silently
+/// reinterpreted as a TypeId index or sized via its `typeof`.
+///
+/// Returns null when `name` is not a guarded builtin OR every argument
+/// is a type (→ fall through to normal dispatch). Returns a harmless
+/// result-typed sentinel Ref when a violation was diagnosed; the
+/// emitted `.err` gates the build so the value is never observed.
 pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     const arity: usize = if (std.mem.eql(u8, name, "@typeEq"))
         2
     else if (std.mem.eql(u8, name, "@sizeOf") or
         std.mem.eql(u8, name, "@alignOf") or
-        std.mem.eql(u8, name, "structFieldCount") or
-        std.mem.eql(u8, name, "variantCount") or
         std.mem.eql(u8, name, "@typeName") or
         std.mem.eql(u8, name, "isFlags"))
         1

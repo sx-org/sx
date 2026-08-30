@@ -9,6 +9,9 @@
 //
 // `string` and `@Vector` are here for the same reason, one layer down: they are
 // language primitives the type system answers by name, declared nowhere at all.
+//
+// `@typeInfo` is absent: its RESULT is the prelude's `TypeInfo`, so reading one
+// needs that type in scope.
 
 P :: struct { a: i64; b: f32; }
 E :: enum { X; Y; }
@@ -16,7 +19,6 @@ E :: enum { X; Y; }
 // Layout + reflection — folded at lowering.
 SIZE  :: @run @sizeOf(P);        // 16
 ALIGN :: @run @alignOf(i64);     //  8
-NFLD  :: @run structFieldCount(P);    //  2
 IDX   :: @run variantIndex(E, E.Y); // 1
 CT_SQRT :: @run @sqrt(16.0);
 
@@ -31,10 +33,8 @@ main :: () -> i64 {
     // Reflection / layout, at runtime and comptime.
     bad = bad + check("@sizeOf", @sizeOf(P), 16);
     bad = bad + check("@alignOf", @alignOf(i64), 8);
-    bad = bad + check("structFieldCount", structFieldCount(P), 2);
     bad = bad + check("comptime @sizeOf", SIZE, 16);
     bad = bad + check("comptime @alignOf", ALIGN, 8);
-    bad = bad + check("comptime structFieldCount", NFLD, 2);
     bad = bad + check("comptime variantIndex", IDX, 1);
 
     // Math — lowered to a builtin call; `@run` evaluates the same ops.

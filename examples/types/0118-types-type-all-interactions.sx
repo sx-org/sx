@@ -115,7 +115,7 @@ main :: () -> i32 {
     print("@sizeOf(i64):      {}\n", @sizeOf(i64));
     print("@sizeOf(*u8):      {}\n", @sizeOf(*u8));
     print("@alignOf(f64):     {}\n", @alignOf(f64));
-    print("structFieldCount(Point): {}\n", structFieldCount(Point));
+    print("fields(Point):     {}\n", @typeInfo(Point).struct.fields.len);
     print("@typeEq(i64, i64):    {}\n", @typeEq(i64, i64));
     print("@typeEq(i64, string): {}\n", @typeEq(i64, string));
 
@@ -186,7 +186,7 @@ main :: () -> i32 {
 // @sizeOf(i64):      8
 // @sizeOf(*u8):      8
 // @alignOf(f64):     8
-// structFieldCount(Point): 2
+// fields(Point):     2
 // @typeEq(i64, i64):    true
 // @typeEq(i64, string): false
 // === 10. ..$args walking ===

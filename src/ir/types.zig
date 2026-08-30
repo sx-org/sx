@@ -1084,7 +1084,7 @@ pub const TypeTable = struct {
     }
 
     /// Byte offset of member `idx` inside a value of type `id` — the single
-    /// source of truth behind `structFieldOffset` (static fold, the runtime
+    /// source of truth behind the reflected `.offset` (static fold, the runtime
     /// `__sx_field_offset_ptrs` tables, and the VM's `rt_field_offset`), so
     /// the three can never drift. Struct members use the same aligned
     /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
@@ -1156,10 +1156,10 @@ pub const TypeTable = struct {
     /// Integer value of variant `idx`: its explicit value when the enum /
     /// tagged union declares one (custom values, flags, explicit tags), else
     /// its ordinal. Null for a non-variant type, a negative / out-of-range
-    /// `idx`, or an out-of-range id. The single value source behind
-    /// `variantValue` (static fold, the runtime `__sx_member_value_ptrs`
-    /// tables, and the VM's `rt_variant_value`), so the three can never
-    /// drift. Backs the `type_field_value` reader too.
+    /// `idx`, or an out-of-range id. The single value source behind the
+    /// reflected `.value` — the static fold, the `__sx_type_infos` records,
+    /// and the comptime VM's record builder — so the three can never drift.
+    /// Backs the `type_field_value` reader too.
     pub fn memberValue(self: *const TypeTable, id: TypeId, idx: i64) ?i64 {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);

@@ -1,37 +1,24 @@
-// Int-returning type-query builtins (`structFieldCount` / `@sizeOf` / `@alignOf`)
-// fold as comptime CONSTANTS — usable as an `inline for` bound and an array
-// dimension, exactly like a plain `K :: 3` const.
-// (This is what lets a `($T) -> Type` builder loop `inline for 0..structFieldCount(T)`
-// to assemble a variant list from a type's members — the `race` result synthesis.)
+// Int-returning type-query builtins (`@sizeOf` / `@alignOf`) fold as comptime
+// CONSTANTS — usable as an `inline for` bound, an array dimension, and inside a
+// composed dimension expression, exactly like a plain `K :: 3` const.
 @import "modules/std.sx";
 
-S :: struct { a: i64; b: bool; c: f64; }
-E :: enum { X; Y; Z; W; }
-
 main :: () -> i32 {
-    // structFieldCount as an inline-for bound
+    // @sizeOf as an inline-for bound
     s := 0;
-    inline for i in 0..structFieldCount(S) { s = s + i; }   // 0+1+2 = 3
-    print("structFieldCount(S) loop sum = {}\n", s);
+    inline for i in 0..@sizeOf(i32) { s = s + i; }   // 0+1+2+3 = 6
+    print("@sizeOf(i32) loop sum = {}\n", s);
 
-    // structFieldCount as an array dimension; fill it in a folded loop
-    xs : [structFieldCount(S)]i64 = ---;
-    inline for i in 0..structFieldCount(S) { xs[i] = i * 10; }
-    print("array[structFieldCount(S)] len = {}  xs[2] = {}\n", xs.len, xs[2]);
+    // @sizeOf as an array dimension; fill it in a folded loop
+    xs : [@sizeOf(i64)]i64 = ---;
+    inline for i in 0..@sizeOf(i64) { xs[i] = i * 10; }
+    print("array[@sizeOf(i64)] len = {}  xs[2] = {}\n", xs.len, xs[2]);
 
-    // structFieldCount of an enum (4 variants) driving a loop
-    e := 0;
-    inline for i in 0..variantCount(E) { e = e + 1; }
-    print("variantCount(E) = {}\n", e);
-
-    // @sizeOf / @alignOf fold too
-    bytes : [@sizeOf(i64)]u8 = ---;
-    print("@sizeOf(i64) array len = {}\n", bytes.len);
     print("@alignOf(f64) = {}\n", @alignOf(f64));
 
     // composed const expression as a dim
-    ys : [structFieldCount(S) + 1]i64 = ---;
-    print("[structFieldCount(S) + 1] len = {}\n", ys.len);
+    ys : [@alignOf(f64) + 1]i64 = ---;
+    print("[@alignOf(f64) + 1] len = {}\n", ys.len);
 
     return 0;
 }

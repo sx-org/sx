@@ -1,30 +1,18 @@
-// Comptime reflection: `structFieldType($T, i) -> Type` — the type-only field
-// projection, which the value-level reflection (`structFieldValue` / `@typeOf`)
-// cannot express.
-// Reflect a struct's fields by name (`structFieldName`) AND by type (`structFieldType`),
-// and a tagged-union's variant payloads. It folds at lower time, so it composes
-// inside `@typeEq` / `@typeName` / any type-arg slot.
+// A reflected member's `.type` — and a variant's `.payload` — folds at lower
+// time, so the projection composes wherever a type is spelled: inside
+// `@typeEq`, `@typeName`, or any other type-arg slot.
 @import "modules/std.sx";
-@import "modules/std/meta.sx";
 
 Point :: struct { x: i64; y: f64; on: bool; }
 
 Msg :: enum { num: i64; tag: bool; quit; }
 
 main :: () -> i32 {
-    // Struct fields: name + type, position by position.
-    print("Point has {} fields\n", structFieldCount(Point));
-    print("  0: {} : {}\n", structFieldName(Point, 0), @typeName(structFieldType(Point, 0)));
-    print("  1: {} : {}\n", structFieldName(Point, 1), @typeName(structFieldType(Point, 1)));
-    print("  2: {} : {}\n", structFieldName(Point, 2), @typeName(structFieldType(Point, 2)));
+    print("field 0 is i64: {}\n", @typeEq(@typeInfo(Point).struct.fields[0].type, i64));
+    print("field 1 is f64: {}\n", @typeEq(@typeInfo(Point).struct.fields[1].type, f64));
+    print("field 2: {}\n", @typeName(@typeInfo(Point).struct.fields[2].type));
 
-    // structFieldType composes in a type-arg slot (@typeEq folds at comptime).
-    print("field 0 is i64: {}\n", @typeEq(structFieldType(Point, 0), i64));
-    print("field 1 is f64: {}\n", @typeEq(structFieldType(Point, 1), f64));
-
-    // Tagged-union variant payloads (the tagless `quit` → void).
-    print("Msg.num  payload: {}\n", @typeName(structFieldType(Msg, 0)));
-    print("Msg.tag  payload: {}\n", @typeName(structFieldType(Msg, 1)));
-    print("Msg.quit payload: {}\n", @typeName(structFieldType(Msg, 2)));
+    slot : @typeInfo(Msg).enum.fields[0].payload = 7;
+    print("Msg.num payload: {} = {}\n", @typeName(@typeOf(slot)), slot);
     return 0;
 }

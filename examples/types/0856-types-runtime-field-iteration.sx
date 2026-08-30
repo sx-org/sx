@@ -1,10 +1,7 @@
-// The field family accepts RUNTIME Type values: structFieldName/type/offset
-// and variantName/type read master-index tables ([N x ptr] by tag → per-type
-// arrays) — a full metadata walk from a Type value obtained at runtime (incl.
-// via an any's tag). Layout matches the comptime folds by construction (same
-// TypeTable queries), pinned by the parity lines. An index >= the member count
-// is undefined behavior (the caller gates on the counts, exactly like the
-// static forms).
+// `@typeInfo` accepts a RUNTIME Type value: its record carries the member list,
+// so a full metadata walk runs off a Type obtained at runtime (incl. via an
+// any's tag). The record is built from the same TypeTable queries the comptime
+// folds answer from, pinned by the parity lines.
 @import "modules/std.sx";
 
 Header  :: struct { magic: u16; flags: u8; }
@@ -13,15 +10,22 @@ Color   :: enum { red; green; blue; }
 
 describe :: (tp: Type) {
     print("{} (size {}, align {})\n", @typeName(tp), @sizeOf(tp), @alignOf(tp));
-    i := 0;
-    while i < structFieldCount(tp) {
-        print("  +{} {}: {}\n", structFieldOffset(tp, i), structFieldName(tp, i), @typeName(structFieldType(tp, i)));
-        i += 1;
-    }
-    j := 0;
-    while j < variantCount(tp) {
-        print("  .{}\n", variantName(tp, j));
-        j += 1;
+    match @typeInfo(tp) {
+        case .struct: |si| {
+            i := 0;
+            while i < si.fields.len {
+                print("  +{} {}: {}\n", si.fields[i].offset, si.fields[i].name, @typeName(si.fields[i].type));
+                i += 1;
+            }
+        }
+        case .enum: |ei| {
+            j := 0;
+            while j < ei.fields.len {
+                print("  .{}\n", ei.fields[j].name);
+                j += 1;
+            }
+        }
+        else: {}
     }
 }
 
@@ -32,8 +36,13 @@ main :: () {
     describe(@typeOf(av));
     // parity: runtime answers == comptime folds
     tp : Type = Packet;
-    print("parity: {} {} {}\n",
-        structFieldOffset(tp, 1) == structFieldOffset(Packet, 1),
-        structFieldName(tp, 2) == structFieldName(Packet, 2),
-        @typeEq(structFieldType(tp, 0), structFieldType(Packet, 0)));
+    match @typeInfo(tp) {
+        case .struct: |si| {
+            print("parity: {} {} {}\n",
+                si.fields[1].offset == @typeInfo(Packet).struct.fields[1].offset,
+                si.fields[2].name == @typeInfo(Packet).struct.fields[2].name,
+                @typeEq(si.fields[0].type, @typeInfo(Packet).struct.fields[0].type));
+        }
+        else: {}
+    }
 }

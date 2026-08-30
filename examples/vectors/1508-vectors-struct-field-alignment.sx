@@ -1,9 +1,9 @@
 // Vector-typed struct fields align to the VECTOR's ABI alignment (its
 // pow2-rounded size), matching LLVM's natural vector alignment — not to
 // the element alignment. The `xx @a.v - xx @a` pointer arithmetic reads
-// LLVM's real layout, so each line pins walk == codegen; the reflection
-// offset (structFieldOffset) must agree because interior `any` views
-// (structFieldValue) GEP with it.
+// LLVM's real layout, so each line pins walk == codegen; the reflected
+// `.offset` must agree because interior `any` views (structFieldValue) GEP
+// with it.
 //
 // An sx layout walk that uses element alignment diverges silently from LLVM for
 // every vector field: wrong reflection offsets, and total-size mismatches that
@@ -24,15 +24,15 @@ check :: (name: string, base: i64, field: i64, walk: i64, sz: i64) {
 
 main :: () {
     a := V3{ pre = 1, v = .[1.0, 2.0, 3.0], post = 2 };
-    check("V3", (*a).(i64), (*a.v).(i64), structFieldOffset(V3, 1), @sizeOf(V3));
+    check("V3", (*a).(i64), (*a.v).(i64), @typeInfo(V3).struct.fields[1].offset, @sizeOf(V3));
     b := V2{ pre = 1, v = .[1.0, 2.0] };
-    check("V2", (*b).(i64), (*b.v).(i64), structFieldOffset(V2, 1), @sizeOf(V2));
+    check("V2", (*b).(i64), (*b.v).(i64), @typeInfo(V2).struct.fields[1].offset, @sizeOf(V2));
     c := V4d{ pre = 1, v = .[1.0, 2.0, 3.0, 4.0] };
-    check("V4d", (*c).(i64), (*c.v).(i64), structFieldOffset(V4d, 1), @sizeOf(V4d));
+    check("V4d", (*c).(i64), (*c.v).(i64), @typeInfo(V4d).struct.fields[1].offset, @sizeOf(V4d));
     d := V8{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8] };
-    check("V8", (*d).(i64), (*d.v).(i64), structFieldOffset(V8, 1), @sizeOf(V8));
+    check("V8", (*d).(i64), (*d.v).(i64), @typeInfo(V8).struct.fields[1].offset, @sizeOf(V8));
     e := V16i{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] };
-    check("V16i", (*e).(i64), (*e.v).(i64), structFieldOffset(V16i, 1), @sizeOf(V16i));
+    check("V16i", (*e).(i64), (*e.v).(i64), @typeInfo(V16i).struct.fields[1].offset, @sizeOf(V16i));
 
     // The interior view reads the right lanes through the same offsets.
     av : any = a;

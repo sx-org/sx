@@ -80,9 +80,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         // pack-fn caller boxes the value with the right type.
         .{ .name = "@typeName", .want = .string },
         .{ .name = "@typeEq", .want = .bool },
-        .{ .name = "structFieldCount", .want = .i64 },
         .{ .name = "variantIndex", .want = .i64 },
-        .{ .name = "structFieldName", .want = .string },
         .{ .name = "@errorName", .want = .string },
         .{ .name = "@isComptime", .want = .bool },
         .{ .name = "isFlags", .want = .bool },

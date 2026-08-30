@@ -1,16 +1,14 @@
-// Runtime variant reflection: `variantValue(t, i)` with a runtime Type
-// reads the `__sx_member_value_ptrs` tables (explicit values, explicit
-// tags, ordinal default — enums AND tagged unions, from the single
-// `memberValue` source the static fold uses); `variantIndex(t, av)` with
-// a runtime Type takes the value as an `any` VIEW and scans value → the
-// sequential ordinal (the tag word reads `__sx_variant_tag_width` wide —
-// a signed backing sign-extends, a layout-struct union loads its narrow
-// tag slot, never the wider header); `isFlags(t)` answers at runtime;
-// `variantPayload(av, i)` composes with runtime indices. Static answers
-// == runtime answers by construction (parity lines). Also pins
-// static `variantValue` for tagged unions with EXPLICIT tags — it answers
-// the declared tag, not the ordinal, matching the inverse `variantIndex`
-// which reverse-maps them.
+// Runtime variant reflection: a reflected `.value` off a runtime Type carries
+// explicit values, explicit tags and the ordinal default — enums AND tagged
+// unions, from the single `memberValue` source the static fold uses;
+// `variantIndex(t, av)` with a runtime Type takes the value as an `any` VIEW
+// and scans value → the sequential ordinal (the tag word reads
+// `__sx_variant_tag_width` wide — a signed backing sign-extends, a
+// layout-struct union loads its narrow tag slot, never the wider header);
+// `isFlags(t)` answers at runtime; `variantPayload(av, i)` composes with
+// runtime indices. Static answers == runtime answers by construction (parity
+// lines). A tagged union with EXPLICIT tags reflects the declared tag, not the
+// ordinal, matching the inverse `variantIndex` which reverse-maps them.
 @import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
@@ -22,19 +20,19 @@ Wire :: enum { ping :: 0x10; pong :: 0x20; data :: 0x100: i64; }
 Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
 
 main :: () {
-    // static variantValue on a tagged union with explicit tags
-    print("static wire: {} {} {}\n", variantValue(Wire, 0), variantValue(Wire, 1), variantValue(Wire, 2));
+    // static `.value` on a tagged union with explicit tags
+    print("static wire: {} {} {}\n", @typeInfo(Wire).enum.fields[0].value, @typeInfo(Wire).enum.fields[1].value, @typeInfo(Wire).enum.fields[2].value);
 
-    // runtime variantValue: ordinals, explicit values, flags
+    // runtime `.value`: ordinals, explicit values, flags
     cv : any = Color.green;
     ct := @typeOf(cv);
-    print("rt vv color: {} {} {}\n", variantValue(ct, 0), variantValue(ct, 1), variantValue(ct, 2));
+    print("rt vv color: {} {} {}\n", @typeInfo(ct).enum.fields[0].value, @typeInfo(ct).enum.fields[1].value, @typeInfo(ct).enum.fields[2].value);
     pv : any = Prio.mid;
     pt := @typeOf(pv);
-    print("rt vv prio: {} {} {}\n", variantValue(pt, 0), variantValue(pt, 1), variantValue(pt, 2));
+    print("rt vv prio: {} {} {}\n", @typeInfo(pt).enum.fields[0].value, @typeInfo(pt).enum.fields[1].value, @typeInfo(pt).enum.fields[2].value);
     fv : any = Flag.B;
     ft := @typeOf(fv);
-    print("rt vv flags: {} {} {} {}\n", variantValue(ft, 0), variantValue(ft, 1), variantValue(ft, 2), variantValue(ft, 3));
+    print("rt vv flags: {} {} {} {}\n", @typeInfo(ft).enum.fields[0].value, @typeInfo(ft).enum.fields[1].value, @typeInfo(ft).enum.fields[2].value, @typeInfo(ft).enum.fields[3].value);
     print("rt isFlags: {} {}\n", isFlags(ft), isFlags(ct));
 
     // runtime variantIndex: the value travels as an any view
@@ -42,21 +40,21 @@ main :: () {
     print("rt vi prio: {}\n", variantIndex(pt, pv));
     nv : any = Neg.minus;
     nt := @typeOf(nv);
-    print("rt vi neg: {} (vv {})\n", variantIndex(nt, nv), variantValue(nt, 0));
+    print("rt vi neg: {} (vv {})\n", variantIndex(nt, nv), @typeInfo(nt).enum.fields[0].value);
 
     // tagged union with payload + explicit tags
     w : Wire = .data(42);
     wv : any = w;
     wt := @typeOf(wv);
     print("rt vi wire: {}\n", variantIndex(wt, wv));
-    print("rt vn wire: {}\n", variantName(wt, variantIndex(wt, wv)));
+    print("rt vn wire: {}\n", @typeInfo(wt).enum.fields[variantIndex(wt, wv)].name);
 
     // variantPayload composes with a runtime index
     s : Shape = .circle(2.5);
     sv : any = s;
     st := @typeOf(sv);
     si := variantIndex(st, sv);
-    print("shape idx: {} name: {}\n", si, variantName(st, si));
+    print("shape idx: {} name: {}\n", si, @typeInfo(st).enum.fields[si].name);
     pl := variantPayload(sv, si);
     print("payload: {}\n", pl);
 
@@ -65,10 +63,10 @@ main :: () {
     ev : any = e;
     et := @typeOf(ev);
     ei := variantIndex(et, ev);
-    print("ev idx: {} name: {} payload: {}\n", ei, variantName(et, ei), variantPayload(ev, ei));
+    print("ev idx: {} name: {} payload: {}\n", ei, @typeInfo(et).enum.fields[ei].name, variantPayload(ev, ei));
 
     // static/runtime parity
     print("parity: {} {}\n",
-        variantValue(pt, 2) == variantValue(Prio, 2),
+        @typeInfo(pt).enum.fields[2].value == @typeInfo(Prio).enum.fields[2].value,
         variantIndex(ct, cv) == variantIndex(Color, Color.green));
 }
