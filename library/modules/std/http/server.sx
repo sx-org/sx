@@ -3605,7 +3605,7 @@ Server :: struct {
         if self.ps != null or self.cfg.fibers != null {
             // 0.1: the job OWNS a copy of the raw request bytes. The worker
             // must never read the conn's readBuf after dispatch — a handler
-            // timeout (handler_timeout_sweep) frees the slot mid-run, and a
+            // timeout (sweepDeadlines) frees the slot mid-run, and a
             // reusing connection rewrites or reallocs the buffer under the
             // worker's views. One allocation carries the job header + the
             // bytes tail; runHandlerJob frees them together. The request
@@ -4037,7 +4037,7 @@ Server :: struct {
         }
         c.streamOff += produced;
         // header: hex(produced) + CRLF, right-aligned so it butts against
-        // DATA_OFF. hdr_digits in [1..16].
+        // DATA_OFF. hdig is in [1..16].
         hbuf : [16]u8 = ---;
         hdig := hexLenInto(produced, *hbuf[0]);
         hstart := DATA_OFF - 2 - hdig;   // header begins here

@@ -12,9 +12,9 @@ wrapped around them. A function that can fail adds a trailing `!` to its
 return type:
 
 ```sx
-parse_digit :: (s: string) -> (i32, !ParseErr) {
+parseDigit :: (s: string) -> (i32, !ParseErr) {
   if s.len == 0 raise .Empty;
-  if !is_digit(s[0]) raise .BadDigit{s[0]};
+  if !isDigit(s[0]) raise .BadDigit{s[0]};
   return s[0] - '0';
 }
 ```
@@ -55,7 +55,7 @@ ParseErr :: error {
 Use the set in the signature and the contract is fixed:
 
 ```sx
-parse_int :: (s: string) -> (i32, !ParseErr) { ... }
+parseInt :: (s: string) -> (i32, !ParseErr) { ... }
 ```
 
 A member that isn't in `ParseErr` is a compile error at the `raise`, so a
@@ -67,12 +67,12 @@ A named function may leave its channel to the compiler. Bare `!` is the
 merge of the sets its body `try`s and `raise`s that reach that function:
 
 ```sx
-read_line :: (r: *Reader) -> (string, !) {
-  b := try read_byte(r);            // read_byte is `!IoErr` → merges IoErr
+readLine :: (r: *Reader) -> (string, !) {
+  b := try readByte(r);            // readByte is `!IoErr` → merges IoErr
   if b == 0 raise ParseErr.Empty;   // static type ParseErr  → merges ParseErr
   return collect(r, b);
 }
-// read_line's channel is IoErr | ParseErr
+// readLine's channel is IoErr | ParseErr
 ```
 
 There is no minting: every member comes from a declared set. The
@@ -111,7 +111,7 @@ Where the destination channel is already known, the `.Member` shorthand
 names it:
 
 ```sx
-parse_int :: (s: string) -> (i32, !ParseErr) {
+parseInt :: (s: string) -> (i32, !ParseErr) {
   if s.len == 0 raise .Empty;    // resolves in ParseErr
   ...
 }
@@ -162,7 +162,7 @@ carry one out of the function that raised it.
 Read a payload by capturing it in a `match` arm:
 
 ```sx
-v := parse_int(s) catch |e| match e {
+v := parseInt(s) catch |e| match e {
   case .BadDigit: |c| { log.warn("bad byte {}", c); -1 }
   case .Empty:    0;
   else:           raise e;
@@ -177,31 +177,31 @@ When you call a failable function and want its error to bubble up to
 *your* caller, prefix the call with `try`:
 
 ```sx
-two_digits :: (s: string) -> (i32, !) {
-  a := try parse_digit(s);        // if this fails, two_digits fails
-  b := try parse_digit(s[1..]);
+twoDigits :: (s: string) -> (i32, !) {
+  a := try parseDigit(s);        // if this fails, twoDigits fails
+  b := try parseDigit(s[1..]);
   return a * 10 + b;
 }
 ```
 
-`try parse_digit(s)` means: run it; on success, `a` gets the value; on
-failure, `two_digits` returns immediately with that error.
+`try parseDigit(s)` means: run it; on success, `a` gets the value; on
+failure, `twoDigits` returns immediately with that error.
 
 `try` works anywhere a value is expected — arguments, struct fields,
 conditions:
 
 ```sx
 v := combine(try parse(a), try parse(b));      // short-circuits on first failure
-cfg := Config{ port = try parse_port(s), host = try parse_host(s) };
-if try is_ready(conn) { ... }
+cfg := Config{ port = try parsePort(s), host = try parseHost(s) };
+if try isReady(conn) { ... }
 ```
 
 **The rule:** a failable call must be marked. If you write a bare
 failable call with nowhere for its error to go, it's a compile error:
 
 ```sx
-v := parse_digit(s);          // ERROR: parse_digit can fail — handle it
-v := try parse_digit(s);      // OK: propagate
+v := parseDigit(s);          // ERROR: parseDigit can fail — handle it
+v := try parseDigit(s);      // OK: propagate
 ```
 
 This is the heart of sx error handling: **every escape point is a
@@ -221,8 +221,8 @@ expression is its success value:
 cfg := try {
   f    := try open(path);
   defer close(f);
-  text := try read_all(f);
-  try parse_config(text)
+  text := try readAll(f);
+  try parseConfig(text)
 } catch |e| {
   log.warn("config unreadable ({}), using defaults", e);
   Config.default
@@ -242,7 +242,7 @@ attempt.
 ### Fall back to a default value
 
 ```sx
-port := parse_port(s) ?? 8080;     // if parsing fails, port = 8080
+port := parsePort(s) ?? 8080;     // if parsing fails, port = 8080
 ```
 
 The error is absorbed; `port` is a plain `i32`.
@@ -250,7 +250,7 @@ The error is absorbed; `port` is a plain `i32`.
 ### Chain attempts — first success wins
 
 ```sx
-v := try fetch_local(key) ?? try fetch_remote(key);
+v := try fetchLocal(key) ?? try fetchRemote(key);
 // try local; if it fails, try remote; if both fail, propagate
 ```
 
@@ -258,7 +258,7 @@ Each attempt is a `try`; if all fail, the last error propagates (and the
 trace records every attempt). Mix in a terminator to never fail:
 
 ```sx
-v := try fetch_local(key) ?? try fetch_remote(key) ?? default_value;
+v := try fetchLocal(key) ?? try fetchRemote(key) ?? defaultValue;
 // try both; fall back to default if both fail — never propagates
 ```
 
@@ -273,7 +273,7 @@ v := try fetch_local(key) ?? try fetch_remote(key) ?? default_value;
 control). The bound name (`catch |e|`) is the error:
 
 ```sx
-v := parse_int(s) catch |e| {
+v := parseInt(s) catch |e| {
   log.warn("bad input '{}': {}", s, e);
   return -1;                       // bail out of the enclosing function
 };
@@ -297,7 +297,7 @@ flush(buf) catch { };              // attempt it; ignore any failure
 ### Dispatch on the member — `catch |e| match e { }`
 
 ```sx
-v := parse_int(s) catch |e| match e {
+v := parseInt(s) catch |e| match e {
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;         // forward the rest
@@ -313,7 +313,7 @@ If the function returns multiple values, the catch body produces a
 tuple:
 
 ```sx
-v, n := parse_pair(s) catch |e| {
+v, n := parsePair(s) catch |e| {
   log.warn("parse failed: {}", e);
   .{0, 0}
 };
@@ -390,10 +390,10 @@ a composition's `BadDigit` and `ParseErr`'s own carry one tag. `m.owner`,
 exit, success or failure.
 
 ```sx
-process_file :: (path: string) -> ! {
+processFile :: (path: string) -> ! {
   f := try open(path);
   defer close(f);                  // always close, success or fail
-  try process(try read_all(f));
+  try process(try readAll(f));
 }
 ```
 
@@ -403,10 +403,10 @@ A constructor hands its resource to the caller on success, but must
 clean up if a later step fails. Guard the `defer` with an ordinary `if`:
 
 ```sx
-make_handle :: () -> (Handle, !) {
-  h := try sys_open();
+makeHandle :: () -> (Handle, !) {
+  h := try sysOpen();
   keep := false;
-  defer if !keep sys_close(h);     // close unless the handle is handed out
+  defer if !keep sysClose(h);     // close unless the handle is handed out
 
   try configure(h);
   try register(h);
@@ -415,7 +415,7 @@ make_handle :: () -> (Handle, !) {
 }
 ```
 
-If `configure` or `register` fails, `sys_close(h)` runs and the error
+If `configure` or `register` fails, `sysClose(h)` runs and the error
 propagates. A plain `defer close(h)` here would be a bug: it'd close the
 handle you just handed out.
 
@@ -498,14 +498,14 @@ v := parse(s) catch |e| {
 
 ```
 error return trace (most recent call last):
-  parse_digit at parse.sx:12:25
-        if !is_digit(c) raise ParseErr.BadDigit{c};
-                        ^
-  parse_int at parse.sx:34:13
-        try parse_digit(s);
+  parseDigit at parse.sx:12:25
+        if !isDigit(c) raise ParseErr.BadDigit{c};
+                       ^
+  parseInt at parse.sx:34:13
+        try parseDigit(s);
         ^
-  handle_line at main.sx:21:8
-        try parse_int(line);
+  handleLine at main.sx:21:8
+        try parseInt(line);
         ^
 ```
 
@@ -538,7 +538,7 @@ For explicit, shell-friendly exit codes anywhere in the program, call
 process :: @import "modules/process.sx";
 
 main :: () -> ! {
-  if bad_args process.exit(64);    // EX_USAGE — immediate, bypasses the error system
+  if badArgs process.exit(64);    // EX_USAGE — immediate, bypasses the error system
   try run();
 }
 ```
@@ -573,12 +573,12 @@ v := try await(f);
 ### Resource acquisition
 
 ```sx
-open_db :: (url: string) -> (Conn, !DbErr) {
+openDb :: (url: string) -> (Conn, !DbErr) {
   c := try connect(url);
   live := false;
   defer if !live disconnect(c);
   try authenticate(c);
-  try select_schema(c);
+  try selectSchema(c);
   live = true;
   return c;                        // caller owns the live connection
 }
@@ -589,7 +589,7 @@ open_db :: (url: string) -> (Conn, !DbErr) {
 ```sx
 load :: (path: string) -> (Data, !) {
   return read(path) catch |e| match e {
-    case .NotFound: try read(fallback_path);   // recover one case
+    case .NotFound: try read(fallbackPath);   // recover one case
     else:           raise e;                   // forward the rest
   };
 }
@@ -605,10 +605,10 @@ n := try normalize(try validate(try parse(s)));
 ### Validate-and-collect
 
 ```sx
-parse_config :: (src: string) -> (Config, !ParseErr) {
+parseConfig :: (src: string) -> (Config, !ParseErr) {
   return Config{
     name = try field(src, "name"),
-    port = try field_int(src, "port"),
+    port = try fieldInt(src, "port"),
     host = try field(src, "host"),
   };
   // first failing field short-circuits — no partial Config escapes

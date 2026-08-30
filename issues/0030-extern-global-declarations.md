@@ -13,19 +13,19 @@ place, defined elsewhere, resolved at link time).
 
 ```sx
 // game/main.sx
-g_metal_gpu : *MetalGPU = null;
+gMetalGpu : *MetalGPU = null;
 
 // game/chess/pieces.sx
-extern g_metal_gpu : *MetalGPU;          // ← the compiler rejects this form
+extern gMetalGpu : *MetalGPU;          // ← the compiler rejects this form
 
 load :: (self: *ChessPieces, path: [:0]u8) {
     inline if @host.os == .ios {
-        tex := g_metal_gpu.createTexture(w, h, .rgba8, xx pixels);
+        tex := gMetalGpu.createTexture(w, h, .rgba8, xx pixels);
     }
 }
 ```
 
-`pieces.load` takes `has_gpu: bool, gpu: GPU` params and `main.sx` threads them
+`pieces.load` takes `hasGpu: bool, gpu: GPU` params and `main.sx` threads them
 through; cross-file `extern` globals would drop that ceremony. Distinct from the
 `name : T extern;` form (an *external C* data symbol from libsystem etc. — see
 `examples/ffi/1205-ffi-extern-global.sx`); this request is for sx-defined globals

@@ -7,7 +7,7 @@
 //
 // The connection's buffer is not stable for the worker's lifetime: when a
 // handler overruns handlerTimeoutMs the loop 504s and frees the slot
-// (handlerTimeoutSweep) while the worker is still running, a NEW
+// (sweepDeadlines) while the worker is still running, a NEW
 // connection reuses the slot and overwrites the read buffer, and (past
 // READ_BUF_INITIAL) growReadBuf deallocs the buffer entirely. The gen
 // check protects only the completion, never the worker's live reads.
@@ -41,8 +41,8 @@ B_BODY_LEN :: 24576;        // connection B's body — forces growReadBuf past 1
 // slot was recycled). Read by main only after srv.close() joins the pool.
 Observed :: struct {
     sum: i64 = 0;        // checksum over req.body as the worker saw it
-    bodyLen: i64 = 0;   // req.body.len as the worker saw it
-    pathOk: i64 = 0;    // 1 if req.path still read "/slow"
+    bodyLen: i64 = 0;    // req.body.len as the worker saw it
+    pathOk: i64 = 0;     // 1 if req.path still read "/slow"
     ran: i64 = 0;        // the slow handler completed
 }
 

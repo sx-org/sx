@@ -102,8 +102,8 @@ main :: () -> ! {
 
     report("max-round-trips",        roundTrips(f64.max, arena));
     report("min-round-trips",        roundTrips(f64.min, arena));
-    report("min-normal-round-trips", roundTrips(f64.min_positive, arena));
-    report("true-min-round-trips",   roundTrips(f64.true_min, arena));
+    report("min-normal-round-trips", roundTrips(f64.minPositive, arena));
+    report("true-min-round-trips",   roundTrips(f64.trueMin, arena));
     report("epsilon-round-trips",    roundTrips(f64.epsilon, arena));
     report("negative-zero-round-trips", roundTrips(negZero(), arena));
 

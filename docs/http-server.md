@@ -200,7 +200,7 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
   `Request.body == ""`; the handler pulls the decoded body incrementally —
 
   ```sx
-  n := req.readBody(@scratch[0], scratch_cap);   // > 0 bytes; 0 end; -1 fault
+  n := req.readBody(@scratch[0], scratchCap);   // > 0 bytes; 0 end; -1 fault
   ```
 
   `readBody` BLOCKS the pool worker until the loop thread feeds more bytes
@@ -414,7 +414,7 @@ main :: () -> i32 {
   through a `CONN_TLS_HANDSHAKE` state before its first request; a per-session
   setup failure drops the connection — **it is never served in the clear**.
 - `setupFiles(cert, key, alloc)` loads a PEM cert chain + private key from disk;
-  `setup(cert_bytes, key_bytes, alloc)` takes the bytes directly. A bad cert/key
+  `setup(certPem, keyPem, alloc)` takes the bytes directly. A bad cert/key
   makes the server accept **no** TLS (loud `false`), never plaintext.
 - The minimum version defaults to TLS 1.2 (preferring 1.3). The crypto is
   vendored + cross-compiled (no system mbedTLS); a `--self-contained` build

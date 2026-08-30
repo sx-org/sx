@@ -4,7 +4,7 @@ fixed sx=24 c=24
 borrowed sx=24
 throughType zero=15 doubles=4.250000 counted=24
 throughReader sx=24
-sum_all_type=(..) -> i64 abi(.c)
+sumAllType=(..) -> i64 abi(.c)
 tallyType=(i32, ..) -> i64 abi(.c)
 relayType=(i32, @VaList) -> i64 abi(.c)
 tallyIsFixed=false

@@ -1449,13 +1449,13 @@ pub fn limitReceiverType(self: *Lowering, receiver: *const Node) ?TypeId {
 }
 
 /// Numeric-limit accessor intercept (`<Type>.min`/`.max`/`.epsilon`/
-/// `.min_positive`/`.true_min`/`.inf`/`.nan`), a sibling of the `Set.X` /
+/// `.minPositive`/`.trueMin`/`.inf`/`.nan`), a sibling of the `Set.X` /
 /// `Struct.CONST` / pack-arity identifier-receiver intercepts in
 /// `lowerFieldAccess`. Folds the limit to a comptime const of the queried
 /// type via the shared `TypeResolver` logic (no second computor) + the
 /// existing `constInt` / `constFloat` const paths:
 ///   - integer `.min`/`.max` → `constInt` (via `TypeTable.integerLimit`);
-///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
+///   - float `.min`/`.max`/`.epsilon`/`.minPositive`/`.trueMin`/`.inf`/
 ///     `.nan` → `constFloat` (via `floatLimitOf`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
 /// a type spelling (a user struct → ordinary field lowering reports

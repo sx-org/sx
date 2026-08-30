@@ -529,13 +529,13 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
     // A builtin FLOAT numeric-limit accessor is a compile-time float leaf — the
     // twin of `evalConstIntExpr`'s `<IntType>.min`/`.max` arm, via the shared
     // `type_resolver.floatLimitFor`. It folds as a direct leaf AND inside an
-    // expression: `f64.max - f64.max` = 0.0 (integral → folds), `f64.true_min +
+    // expression: `f64.max - f64.max` = 0.0 (integral → folds), `f64.trueMin +
     // 0.5` = 0.5 (non-integral → the narrowing rule rejects it). A non-limit
     // field on a float type is not a leaf → null.
     var f64ty = nIdent("f64");
     var f32ty = nIdent("f32");
     var fmax = nField(&f64ty, "max");
-    var ftmin = nField(&f64ty, "true_min");
+    var ftmin = nField(&f64ty, "trueMin");
     var feps = nField(&f32ty, "epsilon");
     var fbogus = nField(&f64ty, "bogus");
     try std.testing.expectEqual(@as(?f64, std.math.floatMax(f64)), eval(&fmax, ctx));

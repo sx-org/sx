@@ -11,7 +11,7 @@
 //
 //     payload   = max(@sizeOf(member))          — never more than `max`
 //     alignment = the DECLARED align            — not a max over members
-//     @sizeOf(P) = align_up(align_up(tag, align) + payload, align)
+//     @sizeOf(P) = alignUp(alignUp(tag, align) + payload, align)
 //
 // so a set whose largest member is 24 bytes is 32 (8 tag + 24), whatever `max`
 // says. A member is checked at its OWN declaration, which is why a type that
