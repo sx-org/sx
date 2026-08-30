@@ -1891,9 +1891,7 @@ fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
     return switch (table.get(t)) {
         .@"struct" => .{ .kind = "struct", .member = "type" },
         .tagged_union => .{ .kind = "enum", .member = "payload" },
-        // An error set is stored as an enum; it reflects as `.error`, whose
-        // list is `members`.
-        .@"enum" => if (table.reflectedErrorMembers(t) != null) null else .{ .kind = "enum", .member = "payload" },
+        .@"enum" => .{ .kind = "enum", .member = "payload" },
         else => null,
     };
 }

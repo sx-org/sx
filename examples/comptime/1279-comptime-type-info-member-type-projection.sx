@@ -20,6 +20,10 @@ firstResult :: ($T: Type) -> i64 {
     return total;
 }
 
+holderTag :: () -> @typeInfo(Holder).struct.fields[1].type {
+    return 7;
+}
+
 main :: () {
     v : @typeInfo(Holder).struct.fields[1].type = 7;
     a : @typeInfo(Shape).enum.fields[0].payload = 1.5;
@@ -30,4 +34,5 @@ main :: () {
         nameOf(@typeInfo(Holder).struct.fields[0].type));
 
     print("peeled={}\n", firstResult(Holder));
+    print("got={}\n", holderTag());
 }

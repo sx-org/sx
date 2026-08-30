@@ -4911,7 +4911,7 @@ pub const Parser = struct {
                 self.tokens.tag(self.tok) == .kw_enum)
             {
                 self.advance(); // the keyword
-                if (self.tokens.tag(self.tok) != .l_brace) return false;
+                if (self.tokens.tag(self.tok) != .l_brace) continue;
                 // On an unterminated type brace group, park at `.eof` so the
                 // outer scan ends without finding a body.
                 if (self.tokens.scanBalanced(self.tok, .l_brace, .r_brace)) |brace_close| {
