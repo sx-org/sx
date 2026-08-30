@@ -2024,6 +2024,7 @@ pub const Lowering = struct {
         }
         // Expression-form dotted type (`m.Cfg{...}`).
         if (node.data == .field_access) {
+            if (self.resolveTypeInfoMemberType(node)) |t| return t;
             if (self.qualifiedTypeName(node)) |qname| {
                 defer self.alloc.free(qname);
                 if (self.resolveDottedType(qname, false, node.span)) |t| return t;
@@ -3848,6 +3849,7 @@ pub const Lowering = struct {
     pub const probeFormedType = lower_generic.probeFormedType;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
+    pub const resolveTypeInfoMemberType = lower_generic.resolveTypeInfoMemberType;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
     pub const formatSourceTypeName = lower_generic.formatSourceTypeName;

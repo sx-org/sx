@@ -623,6 +623,9 @@ pub const Parser = struct {
             if (isCompilerFormedTypeName(at_name)) {
                 return self.parseCompilerFormedType(start);
             }
+            if (std.mem.eql(u8, at_name, "@typeInfo") and self.peekTag(1) == .l_paren) {
+                return self.parseTypeInfoProjection(start);
+            }
             const at_idx = self.tok;
             self.advance();
             // A type-argument list is what a compiler-formed type takes; a
@@ -1178,6 +1181,32 @@ pub const Parser = struct {
         }
         try self.expect(.r_paren);
         return try args.toOwnedSlice(self.allocator);
+    }
+
+    /// `@typeInfo(T)` and the projection trailing it, in a type position. The
+    /// chain is carried in the nodes the value grammar builds for the same
+    /// spelling, so one resolver answers both positions.
+    fn parseTypeInfoProjection(self: *Parser, start: u32) anyerror!*Node {
+        const callee = try self.createNode(start, .{ .identifier = .{ .name = self.tokens.slice(self.tok) } });
+        self.advance(); // skip '@typeInfo'
+        self.advance(); // skip '('
+        const args = try self.allocator.alloc(*Node, 1);
+        args[0] = try self.parseTypeExpr();
+        try self.expect(.r_paren);
+        var node = try self.createNode(start, .{ .call = .{ .callee = callee, .args = args } });
+        while (true) {
+            if (self.tokens.tag(self.tok) == .dot) {
+                self.advance(); // skip '.'
+                const field = self.dotMemberName() orelse return self.fail("expected a member name after '.'");
+                node = try self.createNode(start, .{ .field_access = .{ .object = node, .field = field } });
+            } else if (self.tokens.tag(self.tok) == .l_bracket) {
+                self.advance(); // skip '['
+                const index = try self.parseExpr();
+                try self.expect(.r_bracket);
+                node = try self.createNode(start, .{ .index_expr = .{ .object = node, .index = index } });
+            } else break;
+        }
+        return node;
     }
 
     fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
