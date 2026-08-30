@@ -76,7 +76,7 @@ main :: () -> i32 {
     print("inf>max          {}\n", f64.inf > f64.max);                 // true
     // f64.min = -max (the 0xFFEF… bit pattern overflows the i64 literal parser).
     print("min==-max        {}\n", f64.min == -f64.max);              // true
-    print("trueMin<minPos   {}\n", f64.trueMin < f64.minPositive);   // true
+    print("trueMin<minPos   {}\n", f64.trueMin < f64.minPositive);    // true
     print("trueMin>0        {}\n", f64.trueMin > 0.0);                // true
     // Quiet NaN: unequal to everything, itself included (mantissa bits not pinned).
     print("nan!=nan         {}\n", f64.nan != f64.nan);               // true

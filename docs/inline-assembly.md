@@ -230,7 +230,7 @@ ASM,
         [m] "=r" -> i64,        // value output → returned into mainVal
         [o] "=r" -> @other,     // place output → stored through @other
     };
-    return mainVal + other;    // 5 + 37 = 42
+    return mainVal + other;     // 5 + 37 = 42
 }
 ```
 

@@ -19,7 +19,7 @@ error: cannot implicitly narrow non-integral float '2.75' to 'i64'; use an expli
 error: cannot implicitly narrow non-integral float '0.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
   --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:34:16
    |
-34 |     yn : i64 = f64.trueMin + 0.5;  // non-integral numeric-limit float expr → error
+34 |     yn : i64 = f64.trueMin + 0.5;   // non-integral numeric-limit float expr → error
    |                ^^^^^^^^^^^^^^^^^
 
 error: cannot implicitly narrow non-integral float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)

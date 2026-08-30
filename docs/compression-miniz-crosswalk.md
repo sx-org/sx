@@ -112,7 +112,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_writer_init_from_reader` | True in-place file conversion/append maps to `zip.Writer.appendFile(path)`; `Writer.fromReader(reader)` instead creates a separate memory copy and is not the same storage transition |
 | `mz_zip_writer_init_from_reader_v2` | `zip.Writer.appendFile(path, forceZip64, ...)` is the true file-append mapping; `fromReader` is the separate memory-copy alternative |
 | `mz_zip_writer_init_heap` | Memory output maps to `zip.Writer.init()` plus `reservePrefix(size)`; the C initial-allocation-capacity hint has no public equivalent |
-| `mz_zip_writer_init_heap_v2` | `zip.Writer.init(zip64)` plus `reservePrefix(size)`; there is no initial-capacity hint |
+| `mz_zip_writer_init_heap_v2` | `zip.Writer.init(.{ zip64 = z })` plus `reservePrefix(size)`; there is no initial-capacity hint |
 | `mz_zip_writer_init_v2` | `zip.Writer.initSink(target, zip64)` maps only zero `existing_size`; typed operations replace supported flags, but no public operation adopts a pre-existing callback-output prefix |
 | `mz_zip_zero_struct` | By-value constructors produce valid initialized `Reader`/`Writer` values; zeroed invalid C state has no spelling |
 | `tdefl_compress` | Internal. `std.internal.compress.Deflater.stepFlush` is the resumable state machine behind the public encoders |

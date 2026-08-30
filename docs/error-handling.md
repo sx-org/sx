@@ -68,7 +68,7 @@ merge of the sets its body `try`s and `raise`s that reach that function:
 
 ```sx
 readLine :: (r: *Reader) -> (string, !) {
-  b := try readByte(r);            // readByte is `!IoErr` → merges IoErr
+  b := try readByte(r);             // readByte is `!IoErr` → merges IoErr
   if b == 0 raise ParseErr.Empty;   // static type ParseErr  → merges ParseErr
   return collect(r, b);
 }
@@ -406,7 +406,7 @@ clean up if a later step fails. Guard the `defer` with an ordinary `if`:
 makeHandle :: () -> (Handle, !) {
   h := try sysOpen();
   keep := false;
-  defer if !keep sysClose(h);     // close unless the handle is handed out
+  defer if !keep sysClose(h);      // close unless the handle is handed out
 
   try configure(h);
   try register(h);
@@ -589,7 +589,7 @@ openDb :: (url: string) -> (Conn, !DbErr) {
 ```sx
 load :: (path: string) -> (Data, !) {
   return read(path) catch |e| match e {
-    case .NotFound: try read(fallbackPath);   // recover one case
+    case .NotFound: try read(fallbackPath);    // recover one case
     else:           raise e;                   // forward the rest
   };
 }

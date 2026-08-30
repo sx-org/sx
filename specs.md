@@ -697,8 +697,8 @@ float type (the same `lowerNumericLimit` intercept, via `builder.constFloat`):
 hi  := f64.max;           // largest finite double
 lo  := f64.min;           // most-NEGATIVE finite = -max  (NOT C's DBL_MIN)
 eps := f64.epsilon;       // ULP of 1.0  (f64 = 2^-52, f32 = 2^-23)
-mp  := f64.minPositive;  // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
-tm  := f64.trueMin;      // smallest positive SUBNORMAL (next value above 0.0)
+mp  := f64.minPositive;   // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
+tm  := f64.trueMin;       // smallest positive SUBNORMAL (next value above 0.0)
 pin := f64.inf;           // +infinity
 qn  := f64.nan;           // a quiet NaN
 ```
@@ -2524,7 +2524,7 @@ comptime-pack (`..$args`, e.g. `print` / `format`):
 
 ```sx
 s :: @import "modules/std.sx";
-myPrint :: s.print;           // comptime-pack fn through a namespace
+myPrint  :: s.print;          // comptime-pack fn through a namespace
 helper2  :: r.helper;         // renamed plain fn
 myPrint("x = {}\n", helper2());
 ```
@@ -2565,7 +2565,7 @@ FnType       := '(' [ TypeExpr { ',' TypeExpr } ] ')' '->' TypeExpr
 
 ```sx
 largest   :: (xs: []$T/Ord) -> T { … }                  // one bound
-areEqual :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
+areEqual  :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 apply     :: (f: $F/(i64) -> i64, x: i64) -> i64 { f(x) }   // function-type head
 ```
@@ -4914,7 +4914,7 @@ likewise snapshotted into a fresh temp rather than written back.)
 ```sx
 events := plat.pollEvents();        // []Event
 for *ev in events {                  // ev : *Event — no copy
-    pipeline.dispatchEvent(ev);     // passes the pointer
+    pipeline.dispatchEvent(ev);      // passes the pointer
 }
 ```
 
@@ -6492,9 +6492,9 @@ control to the nearest enclosing fallback target:
 - otherwise → the enclosing failable boundary (propagation).
 
 ```sx
-v       := try parseDigit(s);          // propagate on failure
+v       := try parseDigit(s);           // propagate on failure
 v2, n   := try parse(s);                // multi-value
-try mustInit();                        // statement form, discard values
+try mustInit();                         // statement form, discard values
 v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
@@ -6596,10 +6596,10 @@ also defaults a failable. On a failable LHS the RHS shape decides the result:
 short-circuit.
 
 ```sx
-v := parseDigit(s) ?? 0;                        // value terminator → non-failable
+v := parseDigit(s) ?? 0;                         // value terminator → non-failable
 v := try foo() ?? try boo();                     // chain, propagate if both fail
 v := foo() ?? boo() ?? 0;                        // bare operands, 0 absorbs all
-v, n := parsePair(s) ?? .{0, 0};                // tuple terminator (multi-value)
+v, n := parsePair(s) ?? .{0, 0};                 // tuple terminator (multi-value)
 ```
 
 A **void** failable (`-> !`) rejects a plain-value RHS (no success type to
@@ -6650,12 +6650,12 @@ identity, named functions included:
 
 ```sx
 slot    : Closure(() -> (i32, !Both));
-ioSlot : Closure(() -> (i32, !IoErr));
+ioSlot  : Closure(() -> (i32, !IoErr));
 
 slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
 slot    = inner;   // OK — inner's inferred channel IS Both
 slot    = ok;      // ERROR — a non-failable function is not a failable slot
-ioSlot = inner;   // ERROR — Both is not IoErr
+ioSlot  = inner;   // ERROR — Both is not IoErr
 ```
 
 No dest-typed thunk, environment stash, or hidden allocation stands behind a slot

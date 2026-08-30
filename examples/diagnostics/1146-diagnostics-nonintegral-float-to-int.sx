@@ -31,7 +31,7 @@ main :: () {
     y  : i64 = 1.5;       // non-integral float LITERAL local → error
     ye : i64 = M + 0.5;   // non-integral int-const-EXPRESSION local → error
     yf : i64 = F + 0.25;  // non-integral float-const-LEAF local → error
-    yn : i64 = f64.trueMin + 0.5;  // non-integral numeric-limit float expr → error
+    yn : i64 = f64.trueMin + 0.5;   // non-integral numeric-limit float expr → error
     ym : i64 = 5.5 % 2.0;           // non-integral float `%` remainder (1.5) → error
     ad : [F + 0.25]i64 = ---;  // non-integral float-const-LEAF array DIMENSION → error
     b := Bad{};
