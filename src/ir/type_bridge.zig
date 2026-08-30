@@ -116,6 +116,9 @@ const StatelessInner = struct {
     pub fn evalConstCallInt(_: StatelessInner, _: *const Node) ?i64 {
         return null;
     }
+    pub fn evalConstFieldAccessInt(_: StatelessInner, _: *const Node) ?i64 {
+        return null;
+    }
     // The registration-time path holds only the flat global const map — no
     // namespace-import facts (`namespace_edges` / per-source cache) — so a
     // qualified-member const `m.CAP` is not a compile-time leaf here.

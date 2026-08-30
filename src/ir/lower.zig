@@ -207,6 +207,9 @@ pub const SourceConstCtx = struct {
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstCallInt(node);
     }
+    pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
+        return self.lowering.evalConstFieldAccessInt(node);
+    }
     pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i64 {
         return self.lowering.foldQualifiedConstInt(ns, field, self.frame);
     }
@@ -1784,6 +1787,49 @@ pub const Lowering = struct {
         }
         if (is_sz) return @intCast(self.typeSizeBytes(ty));
         return @intCast(self.typeAlignBytes(ty));
+    }
+
+    fn fieldAccessNamed(node: *const Node, field: []const u8) ?ast.FieldAccess {
+        const fa = switch (node.data) {
+            .field_access => |f| f,
+            else => return null,
+        };
+        return if (std.mem.eql(u8, fa.field, field)) fa else null;
+    }
+
+    /// Fold `@typeInfo(T).struct.fields.len` / `.enum.fields.len` to the
+    /// reflected member count. The projected variant must be the one
+    /// `@typeInfo` reflects `T` into: a mismatched kind is a wrong-variant
+    /// read, not a count, so it stays unfolded and takes the ordinary error path.
+    pub fn evalConstFieldAccessInt(self: *Lowering, node: *const Node) ?i64 {
+        const count = fieldAccessNamed(node, "len") orelse return null;
+        const list = fieldAccessNamed(count.object, "fields") orelse return null;
+        const kind = switch (list.object.data) {
+            .field_access => |fa| fa,
+            else => return null,
+        };
+        const c = switch (kind.object.data) {
+            .call => |call| call,
+            else => return null,
+        };
+        const callee = switch (c.callee.data) {
+            .identifier => |id| id.name,
+            else => return null,
+        };
+        if (!std.mem.eql(u8, callee, "@typeInfo") or c.args.len != 1) return null;
+        // A runtime Type arg is no compile-time integer, and `resolveTypeArg`
+        // would emit a spurious "unresolved type" from this SPECULATIVE fold.
+        if (!self.isStaticTypeArg(c.args[0])) return null;
+        const ty = self.resolveTypeArg(c.args[0]);
+        if (ty == .unresolved) return null;
+        const n = self.module.types.memberCount(ty) orelse return null;
+        const reflected_kind: []const u8 = switch (self.module.types.get(ty)) {
+            .@"struct" => "struct",
+            .@"enum", .tagged_union => "enum",
+            else => return null,
+        };
+        if (!std.mem.eql(u8, kind.field, reflected_kind)) return null;
+        return n;
     }
 
     /// Pack-length leaf for the shared integer-expression evaluator: a pack
