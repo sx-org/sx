@@ -106,7 +106,6 @@ pub const entries = [_]Contract{
     .{ .name = "@errorPayload", .module = "modules/std/core.sx" },
     .{ .name = "@len", .module = "modules/std/core.sx" },
     .{ .name = "@field", .module = "modules/std/core.sx" },
-    .{ .name = "@elementAt", .module = "modules/std/core.sx" },
     .{ .name = "@inner", .module = "modules/std/core.sx" },
     .{ .name = "@typeEq", .module = "modules/std/core.sx" },
     .{ .name = "@unbox", .module = "modules/std/core.sx" },
