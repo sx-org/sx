@@ -1,7 +1,7 @@
 // `@typeInfo` is kind-first and EXHAUSTIVE: every type-table
 // kind reflects into its TypeInfo variant, not just enum/
-// struct/tuple. Also pins FieldInfo.offset (from the same layout
-// walk the field accessors use) and the union arm.
+// struct/tuple. Also pins FieldInfo.offset/index (from the same
+// layout walk the field accessors use) and the union arm.
 @import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }
@@ -12,7 +12,7 @@ describe :: ($T: Type) -> string {
     ti := @typeInfo(T);
     match ti {
         case .struct: |si| {
-            return format("struct fields={} f1.name={} f1.off={}", si.fields.len, si.fields[1].name, si.fields[1].offset);
+            return format("struct fields={} f1.name={} f1.off={} f1.idx={}", si.fields.len, si.fields[1].name, si.fields[1].offset, si.fields[1].index);
         }
         case .union: |ui| {
             return format("union arms={} a1={}", ui.arms.len, ui.arms[1].name);

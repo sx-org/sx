@@ -551,10 +551,12 @@ pub const Reflection = struct {
                 buf[0] = .{ .text = tt.getString(tt.memberName(tid, @intCast(m)) orelse StringId.empty) };
                 buf[1] = .{ .ty = tt.memberType(tid, @intCast(m)) orelse TypeId.void };
                 if (std.mem.eql(u8, family, "union")) break :blk buf[0..2];
-                buf[2] = .{ .num = if (std.mem.eql(u8, family, "struct"))
-                    @intCast(tt.memberOffsetBytes(tid, @intCast(m)) orelse 0)
-                else
-                    tt.memberValue(tid, @intCast(m)) orelse @intCast(m) };
+                if (std.mem.eql(u8, family, "struct")) {
+                    buf[2] = .{ .num = @intCast(tt.memberOffsetBytes(tid, @intCast(m)) orelse 0) };
+                    buf[3] = .{ .num = @intCast(m) };
+                    break :blk buf[0..4];
+                }
+                buf[2] = .{ .num = tt.memberValue(tid, @intCast(m)) orelse @intCast(m) };
                 break :blk buf[0..3];
             };
 

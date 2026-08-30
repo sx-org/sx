@@ -48,7 +48,7 @@ KIND_TAGGED_UNION :: 3; // a payload-carrying enum
 //                          for `rawDeclareType` (both mint the same forward slot).
 //   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
 //                          RETURN the handle so the one-shot form chains:
-//                              List :: define(declare("List"), .enum(.{ variants = .[
+//                              List :: define(declare("List"), .enum(.{ fields = .[
 //                                  VariantInfo{ name = "cons", payload = *List },
 //                                  VariantInfo{ name = "nil",  payload = void } ] }));
 
@@ -69,7 +69,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
         case .enum: |e| {
             mems : List(Member) = .{};
             allVoid := true;
-            for v in e.variants {
+            for v in e.fields {
                 mems.append(Member{ name = v.name, ty = v.payload });
                 if v.payload != void { allVoid = false; }
             }
@@ -115,12 +115,12 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // its return EXPRESSION, so build the list inline in the return there, not in a
 // preceding local.
 makeEnum :: (name: string, variants: []VariantInfo) -> Type {
-    return define(declare(name), .enum(.{ variants = variants }));
+    return define(declare(name), .enum(.{ fields = variants }));
 }
 
 // A blocking recv: a value, or the channel was closed (drained).
 RecvResult :: ($T: Type) -> Type {
-    return define(declare("RecvResult"), .enum(.{ variants = .[
+    return define(declare("RecvResult"), .enum(.{ fields = .[
         VariantInfo{ name = "value",  payload = T    },
         VariantInfo{ name = "closed", payload = void },
     ] }));
@@ -129,7 +129,7 @@ RecvResult :: ($T: Type) -> Type {
 // A non-blocking try-recv: a value, currently empty, or closed — three states
 // a bool can't express.
 TryResult :: ($T: Type) -> Type {
-    return define(declare("TryResult"), .enum(.{ variants = .[
+    return define(declare("TryResult"), .enum(.{ fields = .[
         VariantInfo{ name = "value",  payload = T    },
         VariantInfo{ name = "empty",  payload = void },
         VariantInfo{ name = "closed", payload = void },

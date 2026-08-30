@@ -2737,6 +2737,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     .{ .text = table.getString(f.name) },
                     .{ .ty = f.ty },
                     .{ .num = @intCast(fieldOffset(table, tid, @intCast(i))) },
+                    .{ .num = @intCast(i) },
                 });
                 payload = .{ .rows = rows.items };
             },

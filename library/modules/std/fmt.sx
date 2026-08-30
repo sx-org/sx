@@ -344,8 +344,8 @@ writeAny :: (w: Writer, val: any) {
                 bits := __sx_any_tag_word(t, val);
                 empty := true;
                 fi := 0;
-                while fi < ei.variants.len {
-                    flag := ei.variants[fi];
+                while fi < ei.fields.len {
+                    flag := ei.fields[fi];
                     if bits & flag.value {
                         if !empty { w.write(" | "); }
                         w.write(".");
@@ -357,7 +357,7 @@ writeAny :: (w: Writer, val: any) {
                 if empty { w.write("0"); }
             } else {
                 idx := variantIndex(t, val);
-                live := ei.variants[idx];
+                live := ei.fields[idx];
                 w.write(".");
                 w.write(live.name);
                 if !@typeEq(live.payload, void) {

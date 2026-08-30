@@ -8,7 +8,7 @@
 @import "modules/std/meta.sx";
 
 Box :: ($T: Type) -> Type {
-    return define(declare("Box"), .enum(.{ variants = .[
+    return define(declare("Box"), .enum(.{ fields = .[
         VariantInfo{ name = "some", payload = T    },
         VariantInfo{ name = "none", payload = void },
     ] }));
