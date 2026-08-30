@@ -455,6 +455,24 @@ pub fn typeInfoProjection(node: *const Node) ?TypeInfoProjection {
     };
 }
 
+/// Whether `node` grows from a `@typeInfo` call through member / index links,
+/// whatever the chain spells. Arity is no part of the root: `@typeInfo` takes
+/// one argument, so a chain over any other count names no type either.
+pub fn typeInfoRooted(node: *const Node) bool {
+    var cur = node;
+    while (true) {
+        switch (cur.data) {
+            .field_access => |fa| cur = fa.object,
+            .index_expr => |ix| cur = ix.object,
+            .call => |c| return switch (c.callee.data) {
+                .identifier => |id| std.mem.eql(u8, id.name, "@typeInfo"),
+                else => false,
+            },
+            else => return false,
+        }
+    }
+}
+
 /// Comptime builtins whose call result IS a `Type` (so a call to one is
 /// type-shaped). The type-CONSTRUCTOR builtins `@Vector`/generic-struct heads are
 /// already covered by `.parameterized_type_expr`; this names the type-QUERY /

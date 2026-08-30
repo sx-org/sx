@@ -1890,8 +1890,7 @@ const ReflectedFields = struct { kind: []const u8, member: []const u8 };
 fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
     return switch (table.get(t)) {
         .@"struct" => .{ .kind = "struct", .member = "type" },
-        .tagged_union => .{ .kind = "enum", .member = "payload" },
-        .@"enum" => .{ .kind = "enum", .member = "payload" },
+        .tagged_union, .@"enum" => .{ .kind = "enum", .member = "payload" },
         else => null,
     };
 }
@@ -1907,7 +1906,7 @@ pub fn resolveTypeInfoMemberType(self: *Lowering, node: *const Node) ?TypeId {
     const table = &self.module.types;
     const reflected = reflectedFields(table, t) orelse {
         if (self.diagnostics) |d|
-            d.addFmt(.err, node.span, "'{s}' does not reflect as '.{s}'", .{ self.formatTypeName(t), p.kind });
+            d.addFmt(.err, node.span, "a reflected member projection reads a '.struct' or '.enum' member; '{s}' reflects as neither", .{self.formatTypeName(t)});
         return .unresolved;
     };
     if (!std.mem.eql(u8, p.kind, reflected.kind)) {
@@ -1937,6 +1936,12 @@ pub fn resolveTypeInfoMemberType(self: *Lowering, node: *const Node) ?TypeId {
         return .unresolved;
     }
     return table.memberType(t, @intCast(idx)) orelse .void;
+}
+
+pub fn refuseTypeInfoProjection(self: *Lowering, node: *const Node) TypeId {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, node.span, "a reflected member projection reads '@typeInfo(T).struct.fields[i].type' or '@typeInfo(T).enum.fields[i].payload'", .{});
+    return .unresolved;
 }
 
 /// Resolve a .call node that represents a type constructor (e.g., List(T), @Vector(N, T)).

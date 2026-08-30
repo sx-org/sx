@@ -4906,7 +4906,9 @@ pub const Parser = struct {
             // not the body — skip it balanced and keep scanning for the real
             // body `{`. The bodyless alias edge still holds:
             // `F :: () -> struct { x: i64; };` resumes the scan at `;`,
-            // finds no body, and classifies as a type alias.
+            // finds no body, and classifies as a type alias. The keyword also
+            // spells a dotted member (`-> @typeInfo(T).struct.fields[i].type
+            // { … }`), so with no `{` after it the scan reads on.
             if (self.tokens.tag(self.tok) == .kw_struct or self.tokens.tag(self.tok) == .kw_union or
                 self.tokens.tag(self.tok) == .kw_enum)
             {
