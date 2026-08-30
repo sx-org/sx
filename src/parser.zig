@@ -1183,9 +1183,9 @@ pub const Parser = struct {
         return try args.toOwnedSlice(self.allocator);
     }
 
-    /// `@typeInfo(T)` and the projection trailing it, in a type position. The
-    /// chain is carried in the nodes the value grammar builds for the same
-    /// spelling, so one resolver answers both positions.
+    /// `@typeInfo(T)` plus a trailing `.kind.fields[i].member` chain, in a type
+    /// position — the same call / field_access / index_expr nodes the value
+    /// grammar builds for that spelling.
     fn parseTypeInfoProjection(self: *Parser, start: u32) anyerror!*Node {
         const callee = try self.createNode(start, .{ .identifier = .{ .name = self.tokens.slice(self.tok) } });
         self.advance(); // skip '@typeInfo'
