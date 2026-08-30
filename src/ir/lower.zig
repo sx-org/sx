@@ -1852,6 +1852,57 @@ pub const Lowering = struct {
         return self.qualifiedConstNodeIsFloatTyped(node, null);
     }
 
+    /// A DOTTED type reference, in either spelling: a dotted `type_expr` name
+    /// (`x : m.Cfg`) or the `field_access` chain a literal head carries
+    /// (`m.Cfg{...}`). Proves every namespace edge and pins the leaf to the exact
+    /// terminal target — `resolveNominalLeaf("m.Cfg")` treats the whole dotted
+    /// string as a bare leaf and fabricates an empty `{}` stub named "m.Cfg".
+    /// Null means the prefix is an alias this source cannot select; the caller
+    /// falls back to bare-leaf resolution of the whole dotted name, which is how
+    /// a c_import- or library-qualified type registered under exactly that
+    /// dotted name resolves.
+    fn resolveDottedType(self: *Lowering, name: []const u8, is_raw: bool, span: ast.Span) ?TypeId {
+        const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+        switch (self.qualifiedMemberVerdict(name)) {
+            .selected => |sel| {
+                const saved = self.current_source_file;
+                self.setCurrentSourceFile(sel.target.target_module_path);
+                const ty = self.resolveNominalLeaf(sel.member, is_raw, span);
+                self.setCurrentSourceFile(saved);
+                return ty;
+            },
+            .missing => |m| {
+                if (self.namespaceMissWaits(m)) return .unresolved;
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                return .unresolved;
+            },
+            .ambiguous => |alias| {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                return .unresolved;
+            },
+            .not_qualified => {},
+        }
+        // A dotted reference whose prefix is NOT a namespace alias is the only
+        // remaining qualified form, and sx has no `Type.NestedType` access: this
+        // is a VALUE field access (`g.a` where `g` is a value, `Holder.Missing`
+        // where `Holder` is a type) sitting in a type position. Rejecting it here
+        // is what keeps `resolveNominalLeaf` from fabricating a zero-field `{}`
+        // stub that ships to codegen as a real type. A registered dotted type is
+        // honored first, so a name that resolves to a real type is never rejected.
+        if (self.aliasDeclaredAnywhere(name[0..dot])) return null;
+        const sid = self.module.types.internString(name);
+        if (self.module.types.findByName(sid)) |tid| {
+            const info = self.module.types.get(tid);
+            const is_empty_stub = info == .@"struct" and info.@"struct".fields.len == 0;
+            if (!is_empty_stub) return tid;
+        }
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "expected a type, found a value '{s}' in type position", .{name});
+        return .unresolved;
+    }
+
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
         // Prefix `*` in a type position: the value grammar parses `*T` as an
@@ -1925,38 +1976,15 @@ pub const Lowering = struct {
                 }
             }
         }
-        // A qualified type reference reaching type position as an EXPRESSION
-        // `field_access` node — e.g. `m.Cfg` written as a struct-literal prefix
-        // (`m.Cfg{...}`). Resolve it the SAME way a dotted
-        // `type_expr` annotation (`x : m.Cfg`) does (see the `.type_expr` arm
-        // below): the prefix is a namespace alias — pin the source to its target
-        // module and resolve the leaf there. NOT `resolveNominalLeaf("m.Cfg")`,
-        // which treats the whole dotted string as a bare leaf, fails, and
-        // fabricates an empty `{}` stub literally named "m.Cfg".
+        // A dotted type reference reaching type position as an EXPRESSION
+        // `field_access` chain — `m.Cfg` written as a struct-literal head
+        // (`m.Cfg{...}`) — resolves through the same dotted-name path as the
+        // `x : m.Cfg` annotation spelling.
         if (node.data == .field_access) {
             if (self.qualifiedTypeName(node)) |qname| {
                 defer self.alloc.free(qname);
-                switch (self.qualifiedMemberVerdict(qname)) {
-                    .selected => |sel| {
-                        const saved = self.current_source_file;
-                        self.setCurrentSourceFile(sel.target.target_module_path);
-                        const ty = self.resolveNominalLeaf(sel.member, false, node.span);
-                        self.setCurrentSourceFile(saved);
-                        return ty;
-                    },
-                    .missing => |m| {
-                        if (self.namespaceMissWaits(m)) return .unresolved;
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
-                        return .unresolved;
-                    },
-                    .ambiguous => |alias| {
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
-                        return .unresolved;
-                    },
-                    .not_qualified => {},
-                }
+                if (self.resolveDottedType(qname, false, node.span)) |t| return t;
+                return self.resolveNominalLeaf(qname, false, node.span);
             }
         }
         // A parenthesized type-list element (`-> (T, !)`, `-> (A, B)`) must
@@ -2070,54 +2098,7 @@ pub const Lowering = struct {
         // global compat maps.
         switch (node.data) {
             .type_expr => |te| {
-                // Qualified namespace type (including nested aliases): prove
-                // every namespace edge and pin the leaf to the exact terminal
-                // target before nominal resolution.
-                if (std.mem.lastIndexOfScalar(u8, te.name, '.')) |dot| {
-                    switch (self.qualifiedMemberVerdict(te.name)) {
-                        .selected => |sel| {
-                            const saved = self.current_source_file;
-                            self.setCurrentSourceFile(sel.target.target_module_path);
-                            const ty = self.resolveNominalLeaf(sel.member, te.is_raw, node.span);
-                            self.setCurrentSourceFile(saved);
-                            return ty;
-                        },
-                        .missing => |m| {
-                            if (self.namespaceMissWaits(m)) return .unresolved;
-                            if (self.diagnostics) |d|
-                                d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
-                            return .unresolved;
-                        },
-                        .ambiguous => |alias| {
-                            if (self.diagnostics) |d|
-                                d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
-                            return .unresolved;
-                        },
-                        .not_qualified => {},
-                    }
-                    // A dotted `type_expr` whose prefix is NOT a namespace alias
-                    // is the only remaining qualified form — and sx has no
-                    // `Type.NestedType` access, so this is a VALUE field access
-                    // (`g.a` where `g` is a value) sitting in a type position.
-                    // Without this guard `resolveNominalLeaf("g.a")` would
-                    // fabricate a zero-field empty-struct stub (`{}`) and ship it
-                    // to codegen as a real type — a silent-default
-                    // miscompile. Reject loudly and poison with `.unresolved`.
-                    // A genuinely registered dotted type (a forward-declared
-                    // stub, say) is still honored before we reject, so we never
-                    // reject a name that resolves to a real type.
-                    if (!self.aliasDeclaredAnywhere(te.name[0..dot])) {
-                        const sid = self.module.types.internString(te.name);
-                        if (self.module.types.findByName(sid)) |tid| {
-                            const info = self.module.types.get(tid);
-                            const is_empty_stub = info == .@"struct" and info.@"struct".fields.len == 0;
-                            if (!is_empty_stub) return tid;
-                        }
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "expected a type, found a value '{s}' in type position", .{te.name});
-                        return .unresolved;
-                    }
-                }
+                if (self.resolveDottedType(te.name, te.is_raw, node.span)) |t| return t;
                 return self.resolveNominalLeaf(te.name, te.is_raw, node.span);
             },
             .identifier => |id| return self.resolveNominalLeaf(id.name, id.is_raw, node.span),

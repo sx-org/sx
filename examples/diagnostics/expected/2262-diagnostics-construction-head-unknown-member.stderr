@@ -1,0 +1,5 @@
+error: expected a type, found a value 'Holder.Missing' in type position
+  --> examples/diagnostics/2262-diagnostics-construction-head-unknown-member.sx:9:10
+   |
+ 9 |     x := Holder.Missing{ v = 1 };
+   |          ^^^^^^^^^^^^^^
