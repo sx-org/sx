@@ -22,7 +22,7 @@ inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T) {
             inline for field in @typeInfo(T).struct.fields {
-                print("{}={} ", field.name, structFieldValue(self.*, field.index));
+                print("{}={} ", field.name, @field(self.*, field.index));
             }
             print("\n");
         }

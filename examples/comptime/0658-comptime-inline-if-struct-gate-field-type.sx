@@ -14,7 +14,7 @@ leafCount :: (v: $T) -> i64 {
     inline if T is struct {
         n := 0;
         inline for field in @typeInfo(T).struct.fields {
-            n = n + leafCount(structFieldValue(v, field.index).(field.type));
+            n = n + leafCount(@field(v, field.index).(field.type));
         }
         return n;
     }

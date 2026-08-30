@@ -95,7 +95,7 @@ mapHashInto :: (v: $T, h: u64) -> u64 {
     inline if T is struct {
         hh := h;
         inline for field in @typeInfo(T).struct.fields {
-            hh = mapHashInto(structFieldValue(v, field.index).(field.type), hh);
+            hh = mapHashInto(@field(v, field.index).(field.type), hh);
         }
         return hh;
     }

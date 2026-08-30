@@ -14,12 +14,11 @@
 // needs that type in scope.
 
 P :: struct { a: i64; b: f32; }
-E :: enum { X; Y; }
 
 // Layout + reflection — folded at lowering.
 SIZE  :: @run @sizeOf(P);        // 16
 ALIGN :: @run @alignOf(i64);     //  8
-IDX   :: @run variantIndex(E, E.Y); // 1
+LANES :: @run vectorLanes(@Vector(3, f32)); // 3
 CT_SQRT :: @run @sqrt(16.0);
 
 check :: (label: string, got: i64, want: i64) -> i64 {
@@ -35,7 +34,7 @@ main :: () -> i64 {
     bad = bad + check("@alignOf", @alignOf(i64), 8);
     bad = bad + check("comptime @sizeOf", SIZE, 16);
     bad = bad + check("comptime @alignOf", ALIGN, 8);
-    bad = bad + check("comptime variantIndex", IDX, 1);
+    bad = bad + check("comptime vectorLanes", LANES, 3);
 
     // Math — lowered to a builtin call; `@run` evaluates the same ops.
     bad = bad + check("@sqrt", @sqrt(16.0).(i64), 4);

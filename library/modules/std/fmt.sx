@@ -222,7 +222,7 @@ structToString :: (s: $T) -> string {
         if field.index > 0 { result = concat(result, ", "); }
         result = concat(result, field.name);
         result = concat(result, ": ");
-        result = concat(result, anyToString(structFieldValue(s, field.index)));
+        result = concat(result, anyToString(@field(s, field.index)));
     }
     concat(result, "}")
 }
@@ -285,10 +285,10 @@ flagsToString :: (val: $T) -> string {
 
 enumToString :: (u: $T) -> string {
     if isFlags(T) { return flagsToString(u); }
-    idx := variantIndex(T, u);
+    av : any = u;
+    idx := __sx_variant_index(T, av);
     result := concat(".", @typeInfo(T).enum.fields[idx].name);
-    payload := variantPayload(u, idx);
-    pstr := anyToString(payload);
+    pstr := anyToString(@field(av, idx));
     if pstr.len > 0 {
         result = concat(result, concat("(", concat(pstr, ")")));
     }
@@ -351,7 +351,7 @@ writeAny :: (w: Writer, val: any) {
                 }
                 if empty { w.write("0"); }
             } else {
-                idx := variantIndex(t, val);
+                idx := __sx_variant_index(t, val);
                 live := ei.fields[idx];
                 w.write(".");
                 w.write(live.name);
@@ -606,9 +606,9 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
     v
 }
 
-// `variantIndex(t, av)` with a RUNTIME t lowers to this scan: value → the
-// sequential ordinal, over the reflected variant values (explicit values and
-// explicit tags included). A tag no variant carries names none.
+// A variant value's SEQUENTIAL ordinal: scan the reflected variant values
+// (explicit values and explicit tags included) for the one the tag word
+// carries.
 __sx_variant_index :: (t: Type, av: any) -> i64 {
     v := __sx_any_tag_word(t, av);
     n := @typeInfo(t).enum.fields.len;

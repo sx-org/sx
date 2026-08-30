@@ -349,7 +349,7 @@ describe :: (tp: Type) {
     }
 }
 describe(@typeOf(av));
-printAny(pkt);   // walk with structFieldValue / anyElement — no copies
+printAny(pkt);   // walk with @field / anyElement — no copies
 ```
 
 `xx av` is an unchecked load. `==` on `any` is an error — unbox or compare `@typeOf`.
