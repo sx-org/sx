@@ -1028,7 +1028,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // An `inline for` element capture as the receiver: re-enter with the
     // synthesized `<iterable>[<i>]` as the object, so every element rule below
     // (interface-only constraint check, projection, substitution) sees the
-    // canonical `xs[i].<field>` shape.
+    // canonical `<iterable>[<i>].<field>` shape.
     if (fa.object.data == .identifier) {
         if (self.scope) |scope| {
             if (scope.lookup(fa.object.data.identifier.name)) |binding| {
