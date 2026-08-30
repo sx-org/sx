@@ -2064,17 +2064,17 @@ pub const Lowering = struct {
         // Return `.unresolved` so callers (e.g. lambda return-type inference,
         // call-site `$R` inference) treat it as not-yet-known.
         if (node.data == .type_expr and node.data.type_expr.is_generic) {
-            // A VALUE param (`$N: u32`) named in a TYPE position (`x: N`) is bound
-            // to a compile-time integer, not a type, so `resolveBinding` above
-            // found no TYPE binding and it lands here. In the MAIN file the
+            // A VALUE param (`$N: u32`) named in a TYPE position is bound to a
+            // compile-time integer, not a type, so `resolveBinding` above found no
+            // TYPE binding and it lands here. In the MAIN file the
             // `UnknownTypeChecker` owns this diagnostic (and halts before codegen);
-            // an imported template's fields are resolved in the template's source
-            // context (see `instantiateGenericStruct`) and are checker-trusted, so
-            // this leaf is the sole guard — emit the tailored hint, mirroring the
-            // imported `.undeclared` leaf. A genuinely-unbound type param (`$R`,
-            // no value binding) stays a silent `.unresolved`.
+            // an IMPORTED declaration is checker-trusted and resolves in its own
+            // source context, so this leaf is its sole guard — emit the tailored
+            // hint. A genuinely-unbound type param (`$R`, no value binding) stays
+            // a silent `.unresolved`.
             const nm = node.data.type_expr.name;
-            const bound_value = if (self.comptime_value_bindings) |cvb| cvb.contains(nm) else false;
+            const bound_value = (if (self.comptime_value_bindings) |cvb| cvb.contains(nm) else false) or
+                (if (self.comptime_param_nodes) |cpn| cpn.contains(nm) else false);
             if (bound_value) {
                 const is_main = if (self.main_file) |mf|
                     (if (self.current_source_file) |csf| std.mem.eql(u8, csf, mf) else true)

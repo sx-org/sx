@@ -1,0 +1,4 @@
+// `nth` returns the element of `xs` at the comptime index `N`.
+nth :: (xs: []i64, $N: u32) -> $N {
+    return xs[N];
+}
