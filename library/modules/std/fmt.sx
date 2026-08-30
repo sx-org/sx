@@ -608,7 +608,7 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
 
 // A variant value's SEQUENTIAL ordinal: scan the reflected variant values
 // (explicit values and explicit tags included) for the one the tag word
-// carries. A tag no variant carries names none.
+// carries.
 __sx_variant_index :: (t: Type, av: any) -> i64 {
     v := __sx_any_tag_word(t, av);
     n := @typeInfo(t).enum.fields.len;

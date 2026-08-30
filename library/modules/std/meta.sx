@@ -139,7 +139,7 @@ TryResult :: ($T: Type) -> Type {
 // ── Constructing a minted tagged-union VALUE by variant index ─────────────────
 //
 // The read side reflects a type's members (`@typeInfo(T).struct.fields`) and a
-// value's active payload (`@field`); `makeVariant` is the missing WRITE side.
+// value's active payload (`@field`); `makeVariant` is the WRITE side.
 // It builds a value of a MINTED tagged-union `E` (one made by `makeEnum` /
 // `define(declare, .enum(...))`) whose active variant is `idx`, carrying
 // `payload`. Needed when the variant is selected at RUNTIME but

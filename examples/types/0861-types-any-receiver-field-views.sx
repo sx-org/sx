@@ -1,10 +1,9 @@
 // `@field` reads THROUGH the boxed view via the runtime reflection tables —
 // the result is
 //   { the tag's i-th member type,  av.data + that member's offset }
-// so member access composes by repeated calls with no copies (the walker's
-// recursion pattern), aliasing the boxed value's storage. For a tagged union
-// the offset table answers the payload offset, so a variant's payload composes
-// the same way. The comptime VM mirrors the whole composition (the @run below).
+// so member access composes by repeated calls with no copies, aliasing the
+// boxed value's storage. For a tagged union the offset table answers the
+// payload offset, so a variant's payload composes the same way.
 
 @import "modules/std.sx";
 
