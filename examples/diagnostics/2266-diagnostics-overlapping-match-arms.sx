@@ -1,0 +1,26 @@
+// A value belongs to the first arm that matches it: a later arm matching the
+// same value is refused, whether or not the two arms spell it alike.
+@import "modules/std.sx";
+
+Color :: enum { red; green; blue; }
+
+repeated :: (c: Color) -> i32 {
+    match c {
+        case .green: 1;
+        case .green: 2;
+        else: 0;
+    }
+}
+
+respelled :: (c: Color) -> i32 {
+    match c {
+        case Color.green: 1;
+        case .green: 2;
+        else: 0;
+    }
+}
+
+main :: () -> i32 {
+    print("{} {}\n", repeated(.green), respelled(.green));
+    return 0;
+}
