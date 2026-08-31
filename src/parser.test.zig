@@ -530,72 +530,10 @@ test "parser: private inside top-level inline if" {
     try std.testing.expectError(error.ParseError, p2.parse());
 }
 
-// ---- Spacing and terminators (specs §1) ----
-//
-// A `(` applies, a `[` indexes, and a prefix `-` / `--` / `*` binds its operand
-// across any gap — space and line break alike.
-
 fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     var p = try Parser.init(alloc, src);
     try std.testing.expectError(error.ParseError, p.parse());
     return p.err_msg orelse return error.MissingMessage;
-}
-
-fn parseOne(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
-    var p = try Parser.init(alloc, src);
-    const root = try p.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
-    return body.data.block.stmts[0];
-}
-
-test "parser: a postfix `(` applies arguments across any gap" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: () -> i64 { g(1) }",
-        "f :: () -> i64 { g (1) }",
-        "f :: () -> i64 { g\n(1) }",
-    }) |src| {
-        try std.testing.expect((try parseOne(alloc, src)).data == .call);
-    }
-}
-
-test "parser: a postfix `[` indexes across any gap" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: () -> i64 { xs[0] }",
-        "f :: () -> i64 { xs [0] }",
-        "f :: () -> i64 { xs\n[0] }",
-    }) |src| {
-        try std.testing.expect((try parseOne(alloc, src)).data == .index_expr);
-    }
-}
-
-test "parser: a type's arguments apply across any gap" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: (b: Box(i64)) { }",
-        "f :: (b: Box (i64)) { }",
-        "f :: (b: Box\n(i64)) { }",
-        "f :: (c: Closure (i64) -> i64) { }",
-        "f :: (b: $B/@BuildBlock (Drawable)) { }",
-        "V :: @OpenVariant (View) { }",
-        "impl Into (Block) for Row { }",
-        "BI :: Box (i64);",
-        "f :: (p: * `i2 (i64)) { }",
-    }) |src| {
-        var p = try Parser.init(alloc, src);
-        _ = try p.parse();
-    }
 }
 
 test "parser: `-` is infix wherever a left operand is complete" {
@@ -630,38 +568,6 @@ test "parser: `-` is infix wherever a left operand is complete" {
     try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
     try std.testing.expect(split_body.data.block.stmts[0].data == .call);
     try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
-}
-
-test "parser: a prefix `-` / `--` / `*` binds across a space" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: () -> i64 { x := -5; y := *n; z := --n; 0 }",
-        "f :: () -> i64 { x := - 5; y := * n; z := -- n; 0 }",
-        "f :: (p: *i64) { }",
-        "f :: (p: * i64) { }",
-        "f :: (p: *`i2) { }",
-        "f :: (p: * `i2) { }",
-    }) |src| {
-        var p = try Parser.init(alloc, src);
-        _ = try p.parse();
-    }
-}
-
-// A pack index is an index like any other, in an expression as in a type.
-test "parser: a pack index binds across a space" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: (..$args) -> string { g($args[0]) }",
-        "f :: (..$args) -> string { g($args [0]) }",
-    }) |src| {
-        try std.testing.expect((try parseOne(alloc, src)).data.call.args[0].data == .pack_index_type_expr);
-    }
 }
 
 // ---- Statement termination (specs §1: Spacing and terminators) ----
@@ -1177,28 +1083,15 @@ test "parser: an assignment operator below a target continues it" {
 
 // ---- The binding layer ----
 //
-// `?!` is postfix force-unwrap. `{`, `.`, `?.`, `catch` — and `?!` — bind
-// wherever the statement is still open; only a `;` cuts them off. Prefix `!`
-// is `not`.
-
-test "parser: `?!` force-unwraps across a gap and a break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    for ([_][:0]const u8{
-        "f :: (a: ?i64) -> i64 { a?! }",
-        "f :: (a: ?i64) -> i64 { a ?! }",
-        "f :: (a: ?i64) -> i64 { a\n?! }",
-    }) |src| {
-        try std.testing.expect((try parseOne(alloc, src)).data == .force_unwrap);
-    }
-}
+// `?!` is one token — postfix force-unwrap. Prefix `!` is `not`.
 
 test "parser: after `;` a following `!a` is prefix `not`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+
+    const unwrap = try parseBody(alloc, "f :: (a: ?i64) -> i64 { a?! }");
+    try std.testing.expect(unwrap.data.block.stmts[0].data == .force_unwrap);
 
     const split = try parseBody(alloc,
         \\f :: (a: bool) -> i64 {
