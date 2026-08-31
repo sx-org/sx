@@ -1,8 +1,7 @@
 // The scalar reflection family accepts RUNTIME `Type` values: @sizeOf /
-// @alignOf / structFieldCount / variantCount / isFlags read tag-indexed
-// tables; @typeEq compares tags. Includes the parity pins: for each shape the
-// RUNTIME answer equals the COMPTIME fold (padded, nested, union — the layouts
-// most likely to diverge).
+// @alignOf / isFlags read tag-indexed tables; @typeEq compares tags. Includes
+// the parity pins: for each shape the RUNTIME answer equals the COMPTIME fold
+// (padded, nested, union — the layouts most likely to diverge).
 @import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding
@@ -27,13 +26,10 @@ main :: () {
     check("padded-align", @alignOf(tp), @alignOf(Padded));
     check("nested-size", @sizeOf(tn), @sizeOf(Nested));
     check("union-size", @sizeOf(to), @sizeOf(Overlay));
-    check("padded-sfc", structFieldCount(tp), structFieldCount(Padded));
-    check("union-sfc", structFieldCount(to), structFieldCount(Overlay));
-    check("color-vc", variantCount(tc), variantCount(Color));
 
     print("eq={} neq={}\n", @typeEq(tp, Padded), @typeEq(tp, Nested));
     print("flags: color={} flags={}\n", isFlags(tc), isFlags(tf));
 
     av : any = Color.green;
-    print("any-tag: vc={} size={}\n", variantCount(@typeOf(av)), @sizeOf(@typeOf(av)));
+    print("any-tag: size={}\n", @sizeOf(@typeOf(av)));
 }

@@ -518,7 +518,7 @@ pub fn isByValueBindingIdent(self: *Lowering, node: *const Node) bool {
     if (node.data != .identifier) return false;
     const scope = self.scope orelse return false;
     const binding = scope.lookup(node.data.identifier.name) orelse return false;
-    return !binding.is_alloca and !binding.is_ref_capture and binding.pack_elem == null;
+    return !binding.is_alloca and !binding.is_ref_capture and binding.alias_node == null;
 }
 
 /// Build a protocol value from a concrete value via xx conversion.
@@ -630,8 +630,7 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     // position funnels through here, so they all agree with `v.(any)`.
     if (self.isOpenSet(src_ty)) return self.openSetAnyView(src_ty, val, node);
     if (src_ty == .void) {
-        // A void has no storage; the view is `{void, null}` (matches the
-        // fieldless arm of field_value_get).
+        // A void has no storage; the view is `{void, null}`.
         return self.builder.boxAnyAt(self.builder.constNull(self.module.types.ptrTo(.void)), .void);
     }
     // Tag-normalize arbitrary-width ints (the tag space only has the

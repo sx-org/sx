@@ -1,0 +1,14 @@
+// A `case` arm may qualify its variant with the enum a `@host` field belongs
+// to, which is declared in a module the arm need not import.
+@import "modules/std.sx";
+
+inline match @host.os {
+    case OperatingSystem.macos: POSIX :: true;
+    case OperatingSystem.linux: POSIX :: true;
+    case OperatingSystem.windows: POSIX :: false;
+    else: @error("no qualified arm names this host's os");
+}
+
+main :: () {
+    print("posix: {}\n", POSIX);
+}

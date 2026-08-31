@@ -2505,29 +2505,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return switch (bi.builtin) {
                     .@"rt_@sizeOf" => @as(Reg, @intCast(table.typeSizeBytes(tid))),
                     .@"rt_@alignOf" => @as(Reg, @intCast(table.typeAlignBytes(tid))),
-                    .rt_struct_field_count => blk: {
-                        if (!tid.isBuiltin()) switch (table.get(tid)) {
-                            .@"struct" => |st| break :blk @as(Reg, @intCast(st.fields.len)),
-                            .@"union" => |u| break :blk @as(Reg, @intCast(u.fields.len)),
-                            else => {},
-                        };
-                        break :blk 0;
-                    },
-                    .rt_variant_count => blk: {
-                        if (!tid.isBuiltin()) switch (table.get(tid)) {
-                            .@"enum" => |e| break :blk @as(Reg, @intCast(e.variants.len)),
-                            .tagged_union => |u| break :blk @as(Reg, @intCast(u.fields.len)),
-                            else => {},
-                        };
-                        break :blk 0;
-                    },
                     .rt_is_flags => blk: {
                         if (!tid.isBuiltin()) {
                             const i = table.get(tid);
@@ -2549,16 +2533,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     else => unreachable,
                 };
             },
-            .rt_member_name, .rt_member_type, .rt_field_offset, .rt_variant_value => {
+            .rt_member_type, .rt_field_offset => {
                 const table = try self.requireTable();
                 if (bi.args.len < 2) return self.failMsg("comptime reflection: missing arguments");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 const idx: i64 = @bitCast(frame.get(bi.args[1].index()));
                 return switch (bi.builtin) {
-                    .rt_member_name => try self.makeStringValue(table, table.getString(table.memberName(tid, idx) orelse types.StringId.empty)),
                     .rt_member_type => @as(Reg, (table.memberType(tid, idx) orelse TypeId.void).index()),
                     .rt_field_offset => @as(Reg, @intCast(table.memberOffsetBytes(tid, idx) orelse 0)),
-                    .rt_variant_value => @as(Reg, @bitCast(table.memberValue(tid, idx) orelse 0)),
                     else => unreachable,
                 };
             },
@@ -2737,6 +2719,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     .{ .text = table.getString(f.name) },
                     .{ .ty = f.ty },
                     .{ .num = @intCast(fieldOffset(table, tid, @intCast(i))) },
+                    .{ .num = @intCast(i) },
                 });
                 payload = .{ .rows = rows.items };
             },

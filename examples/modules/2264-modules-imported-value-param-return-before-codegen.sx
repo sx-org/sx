@@ -1,0 +1,10 @@
+// A body that names no unbound type leaves the return-type leaf as the only
+// diagnostic between an imported `-> $N` and LLVM emission.
+@import "modules/std.sx";
+@import "2264-modules-imported-value-param-return-before-codegen/lib.sx";
+
+main :: () -> i32 {
+    xs : []i64 = .{ 1, 2, 3 };
+    print("{}\n", nth(xs, 1));
+    return 0;
+}

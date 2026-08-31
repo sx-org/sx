@@ -230,6 +230,9 @@ const ModuleConstCtx = struct {
     pub fn evalConstCallInt(_: ModuleConstCtx, _: *const Node) ?i64 {
         return null;
     }
+    pub fn evalConstFieldAccessInt(_: ModuleConstCtx, _: *const Node) ?i64 {
+        return null;
+    }
     // The GLOBAL-map fold carries no namespace-import facts (no `namespace_edges`
     // / per-source const cache), so a qualified-member const `m.CAP` can only be
     // resolved by the SOURCE-AWARE path (`SourceConstCtx` / `Lowering`). Null
@@ -523,6 +526,9 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 if (ctx.lookupQualifiedConst(on, fa.field)) |v| break :blk v;
             }
             if (ctx.lookupQualifiedConstNode(node)) |v| break :blk v;
+            // A member-count projection off a type-query builtin call
+            // (`@typeInfo(T).struct.fields.len`); the ctx resolves the type.
+            if (ctx.evalConstFieldAccessInt(node)) |v| break :blk v;
             // Any other field access is not a compile-time integer leaf.
             break :blk null;
         },

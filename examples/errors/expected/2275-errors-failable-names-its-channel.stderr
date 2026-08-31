@@ -1,0 +1,16 @@
+error: '() -> (i32, !B)' does not satisfy the bound '() -> (i32, !A)' on '$F'
+  --> examples/errors/2275-errors-failable-names-its-channel.sx:10:17
+   |
+10 | runA :: (fn: $F/() -> (i32, !A)) -> (i32, !A) { return try fn(); }
+   |                 ^^^^^^^^^^^^^^^
+
+help: it returns '(i32, !B)', and the bound asks for '(i32, !A)'
+   |
+10 | runA :: (fn: $F/() -> (i32, !A)) -> (i32, !A) { return try fn(); }
+   |                 ^^^^^^^^^^^^^^^
+
+error: error member 'Y' is not in caller's error set 'A'
+  --> examples/errors/2275-errors-failable-names-its-channel.sx:10:56
+   |
+10 | runA :: (fn: $F/() -> (i32, !A)) -> (i32, !A) { return try fn(); }
+   |                                                        ^^^^^^^^

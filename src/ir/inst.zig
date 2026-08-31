@@ -298,8 +298,6 @@ pub const Op = union(enum) {
     make_any: MakeAny, // {tag, data} → any (assemble a view; tag is runtime)
 
     // ── Reflection ─────────────────────────────────────────────────
-    field_name_get: FieldReflect, // field_name(T, i) → string (runtime index)
-    field_value_get: FieldReflect, // field_value(s, i) → Any (runtime struct + index)
     error_member_name_get: UnaryOp, // the member spelling a live error carries (member id → the always-linked member-name table)
     error_name_get: UnaryOp, // `Owner.Member` — the spelling a live error renders as (member id → the qualified-name table)
     error_owner_get: UnaryOp, // the error that declares the live member, as a Type (member id → the owner-type table)
@@ -603,11 +601,9 @@ pub const BuiltinId = enum(u16) {
     type_name,
     is_unsigned,
     // Runtime-Type scalar reflection: tag-indexed table reads
-    // (sizes/aligns/counts/flag-bits); rt_type_eq is a plain tag compare.
+    // (sizes/aligns/flag-bits); rt_type_eq is a plain tag compare.
     @"rt_@sizeOf",
     @"rt_@alignOf",
-    rt_struct_field_count,
-    rt_variant_count,
     rt_is_flags,
     rt_vector_lanes,
     // The parts the type table counts for a tag: struct/union fields,
@@ -625,14 +621,10 @@ pub const BuiltinId = enum(u16) {
     // state is the leading pointer word. Serves `@inner`'s presence probe.
     rt_optional_flag,
     rt_type_eq,
-    // Field-family runtime paths: master-index [N x ptr] tables →
-    // per-type arrays (names reuse the per-type name arrays; type tags,
-    // offsets, and variant values get their own). variant* shares the same
-    // member arrays.
-    rt_member_name,
+    // Member-view runtime paths: master-index [N x ptr] tables → per-type
+    // arrays of member type tags and byte offsets.
     rt_member_type,
     rt_field_offset,
-    rt_variant_value,
     // Reflect a type INTO the prelude's `TypeInfo` value: read its shape out
     // of the type table and construct the same value `define` decodes, so the
     // two round-trip. A runtime `Type` loads the matching const record.
@@ -662,12 +654,6 @@ pub const BoxAny = struct {
 pub const MakeAny = struct {
     tag: Ref, // runtime Type value (i64 tag word)
     data: Ref, // address of the viewed value
-};
-
-pub const FieldReflect = struct {
-    base: Ref, // struct value (for field_value_get) or Ref.none (for field_name_get)
-    index: Ref, // runtime field index
-    struct_type: TypeId, // compile-time resolved struct type
 };
 
 pub const Branch = struct {

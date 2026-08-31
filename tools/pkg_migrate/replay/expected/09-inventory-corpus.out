@@ -61,34 +61,23 @@ library/modules/std/atomic.sx:37:65: intrinsic [use] | atomicSwap :: ($T: Type, 
 library/modules/std/atomic.sx:41:30: intrinsic [use] | atomicFence :: (o: Ordering) intrinsic;
 library/modules/std/atomic.sx:51:111: intrinsic [use] | atomicCmpxchg     :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
 library/modules/std/atomic.sx:52:111: intrinsic [use] | atomicCmpxchgWeak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
-library/modules/std/core.sx:26:39: intrinsic [use] | structFieldCount :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:27:51: intrinsic [use] | structFieldName :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:31:49: intrinsic [use] | structFieldType :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:33:50: intrinsic [use] | structFieldOffset :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:37:35: intrinsic [use] | pointeeType :: ($P: Type) -> Type intrinsic;
-library/modules/std/core.sx:38:46: intrinsic [use] | structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:41:35: intrinsic [use] | variantCount :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:42:47: intrinsic [use] | variantName :: ($T: Type, idx: i64) -> string intrinsic;
-library/modules/std/core.sx:43:45: intrinsic [use] | variantType :: ($T: Type, idx: i64) -> Type intrinsic;
-library/modules/std/core.sx:44:44: intrinsic [use] | variantPayload :: (u: $T, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:45:31: intrinsic [use] | isFlags :: ($T: Type) -> bool intrinsic;
-library/modules/std/core.sx:46:45: intrinsic [use] | variantValue :: ($T: Type, idx: i64) -> i64 intrinsic;
-library/modules/std/core.sx:47:43: intrinsic [use] | variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
-library/modules/std/core.sx:59:34: intrinsic [use] | vectorLanes :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:66:45: intrinsic [use] | __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
-library/modules/std/core.sx:70:54: intrinsic [use] | anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
-library/modules/std/core.sx:103:34: intrinsic [use] | rawAnyData :: (av: any) -> *void intrinsic;
-library/modules/std/core.sx:104:46: intrinsic [use] | rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
-library/modules/std/core.sx:334:39: intrinsic [use] | rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
-library/modules/std/core.sx:335:40: intrinsic [use] | rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
-library/modules/std/core.sx:336:39: intrinsic [use] | rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-library/modules/std/core.sx:337:36: intrinsic [use] | rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged-union
-library/modules/std/core.sx:339:36: intrinsic [use] | rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-library/modules/std/core.sx:340:36: intrinsic [use] | rawFieldCount   :: (t: u32) -> i64 intrinsic;
-library/modules/std/core.sx:341:46: intrinsic [use] | rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-library/modules/std/core.sx:342:46: intrinsic [use] | rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-library/modules/std/core.sx:343:46: intrinsic [use] | rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-library/modules/std/core.sx:344:38: intrinsic [use] | rawPointerTo    :: (t: Type) -> Type intrinsic;
+library/modules/std/core.sx:26:35: intrinsic [use] | pointeeType :: ($P: Type) -> Type intrinsic;
+library/modules/std/core.sx:27:31: intrinsic [use] | isFlags :: ($T: Type) -> bool intrinsic;
+library/modules/std/core.sx:39:34: intrinsic [use] | vectorLanes :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:46:45: intrinsic [use] | __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
+library/modules/std/core.sx:50:54: intrinsic [use] | anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+library/modules/std/core.sx:82:34: intrinsic [use] | rawAnyData :: (av: any) -> *void intrinsic;
+library/modules/std/core.sx:83:46: intrinsic [use] | rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
+library/modules/std/core.sx:313:39: intrinsic [use] | rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
+library/modules/std/core.sx:314:40: intrinsic [use] | rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
+library/modules/std/core.sx:315:39: intrinsic [use] | rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+library/modules/std/core.sx:316:36: intrinsic [use] | rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged-union
+library/modules/std/core.sx:318:36: intrinsic [use] | rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+library/modules/std/core.sx:319:36: intrinsic [use] | rawFieldCount   :: (t: u32) -> i64 intrinsic;
+library/modules/std/core.sx:320:46: intrinsic [use] | rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+library/modules/std/core.sx:321:46: intrinsic [use] | rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+library/modules/std/core.sx:322:46: intrinsic [use] | rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+library/modules/std/core.sx:323:38: intrinsic [use] | rawPointerTo    :: (t: Type) -> Type intrinsic;
 library/modules/std/internal/compress.sx:13:1: private [use] | private DeflatePath :: enum { fastest; portable; }
 library/modules/std/internal/compress.sx:15:1: private [use] | private TDEFL_PROBES : [11]i64 = .[0, 1, 6, 32, 16, 32, 128, 256, 512, 768, 1500];
 library/modules/std/internal/compress.sx:17:1: private [use] | private TDEFL_LESS_MEMORY_RAW_BLOCK_LIMIT : i64 = 21839;
@@ -237,6 +226,6 @@ package: 2
 import: 0
 private: 138
   use: 138
-intrinsic: 88
-  use: 88
-total identifier hits: 228 in 11 file(s) (scanned 137 .sx file(s))
+intrinsic: 77
+  use: 77
+total identifier hits: 217 in 11 file(s) (scanned 137 .sx file(s))

@@ -20,36 +20,16 @@ out :: (str: string) -> void {
 @alignOf :: ($T: Type) -> i64;
 @typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
-// Struct/tuple field reads (structs, tuples, untagged unions). The enum
-// duals are the variant* family below; arrays/vectors use `.len` and
-// native indexing instead.
-structFieldCount :: ($T: Type) -> i64 intrinsic;
-structFieldName :: ($T: Type, idx: i64) -> string intrinsic;
-// The i-th field type of a struct/tuple. A comptime reflection builtin that
-// folds at LOWER time, so it composes inside `@typeEq` / `@typeName` / any
-// type-arg slot.
-structFieldType :: ($T: Type, idx: i64) -> Type intrinsic;
-// The i-th field's byte offset within the struct (tuples: element offset).
-structFieldOffset :: ($T: Type, idx: i64) -> i64 intrinsic;
 // The target type of a pointer: `pointeeType(*X)` -> `X`. Comptime reflection,
-// folded at lower time like `structFieldType` (so it composes in any type-arg
-// slot). A non-pointer argument is a loud compile error, not a silent fallthrough.
+// folded at lower time, so it composes in any type-arg slot. A non-pointer
+// argument is a loud compile error, not a silent fallthrough.
 pointeeType :: ($P: Type) -> Type intrinsic;
-structFieldValue :: (s: $T, idx: i64) -> any intrinsic;
-// Enum / tagged-union variant reads — the kind-specific duals of the
-// structField* family above.
-variantCount :: ($T: Type) -> i64 intrinsic;
-variantName :: ($T: Type, idx: i64) -> string intrinsic;
-variantType :: ($T: Type, idx: i64) -> Type intrinsic;
-variantPayload :: (u: $T, idx: i64) -> any intrinsic;
 isFlags :: ($T: Type) -> bool intrinsic;
-variantValue :: ($T: Type, idx: i64) -> i64 intrinsic;
-variantIndex :: ($T: Type, val: T) -> i64 intrinsic;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
-// An error value's live payload as an `any` view — the `variantPayload`
-// sibling for error channels. A payload-free member views as `void`.
+// An error value's live payload as an `any` view. A payload-free member
+// views as `void`.
 @errorPayload :: (e: $T) -> any;
 // A vector's lane COUNT (`vectorLanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
@@ -73,15 +53,14 @@ anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
 // struct and union fields, enum and tagged-union variants, array elements,
 // vector lanes, and the count a slice's or string's header carries. `@field`
-// views the i-th member at its offset — a tagged union's members share the
-// payload offset. `@elementAt` views the i-th element of an array, vector,
-// slice, or string, striding from the buffer a fat pointer names. `@inner`
-// views an optional's payload, null when it is absent. Each result borrows the
-// boxed storage, so it aliases later writes and copies nothing. An index past
-// the count is UB.
+// views the i-th of those parts: a member at its layout offset — a tagged
+// union's members share the payload offset — or an element striding from the
+// in-place storage or from the buffer a fat pointer names. `@inner` views an
+// optional's payload, null when it is absent. Each result borrows the boxed
+// storage, so it aliases later writes and copies nothing. An index past the
+// count is UB.
 @len :: (v: any) -> i64;
 @field :: (v: any, idx: i64) -> any;
-@elementAt :: (v: any, idx: i64) -> any;
 @inner :: (v: any) -> ?any;
 
 // ── Type identity, and the typed read of boxed storage ─────────────────────
@@ -350,13 +329,15 @@ rawPointerTo    :: (t: Type) -> Type intrinsic;
 // nominal type FROM it. Sizes are not stored — `@sizeOf(tp)` answers for any
 // kind.
 
-// One field of a struct or tuple: its name, its type, and its byte offset,
-// from the same layout walk the field accessors take. `define` ignores the
-// offset — a construction literal omits it.
+// One field of a struct or tuple: its name, its type, its byte offset, and its
+// member ordinal — offset and index come from the same layout walk the field
+// accessors take. `define` reads name and type; a construction literal omits
+// the rest.
 FieldInfo :: struct {
     name: string;
     type: Type;
     offset: i64 = 0;
+    index: i64 = 0;
 }
 
 // One variant of an enum or tagged union. `payload = void` is a tagless
@@ -386,7 +367,7 @@ MemberInfo :: struct {
 // The per-kind shapes. The type's NAME travels in `declare(name)` rather than
 // in the shape, so `define` can register a forward type whose body references
 // itself.
-EnumInfo     :: struct { variants: []VariantInfo; }
+EnumInfo     :: struct { fields: []VariantInfo; }
 StructInfo   :: struct { fields: []FieldInfo; }
 UnionInfo    :: struct { arms: []ArmInfo; }
 ErrorInfo    :: struct { members: []MemberInfo; }

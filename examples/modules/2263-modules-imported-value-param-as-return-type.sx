@@ -1,0 +1,11 @@
+// A comptime VALUE param (`$N: u32`) named as the RETURN type (`-> $N`) is a
+// compile-time integer, not a type. The IMPORTED declaration is checker-trusted,
+// so the return-type leaf is what rejects it.
+@import "modules/std.sx";
+@import "2263-modules-imported-value-param-as-return-type/lib.sx";
+
+main :: () -> i32 {
+    xs : []i64 = .{ 1, 2, 3 };
+    print("{}\n", nth(xs, 1));
+    return 0;
+}

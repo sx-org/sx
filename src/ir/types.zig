@@ -442,6 +442,8 @@ pub const TagRegistry = struct {
     owner_names: std.ArrayList(StringId),
     /// owner → the error its declaration interns to, parallel to `owner_names`.
     owner_types: std.ArrayList(TypeId),
+    /// owner → the source file that declared the owner, parallel to `owner_names`.
+    owner_sources: std.ArrayList(StringId),
     /// owning declaration pointer → owner.
     owner_ids: std.AutoHashMap(*const anyopaque, u32),
     next_id: u32,
@@ -454,6 +456,7 @@ pub const TagRegistry = struct {
             .payloads = std.ArrayList(TypeId).empty,
             .owner_names = std.ArrayList(StringId).empty,
             .owner_types = std.ArrayList(TypeId).empty,
+            .owner_sources = std.ArrayList(StringId).empty,
             .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
@@ -462,6 +465,7 @@ pub const TagRegistry = struct {
         reg.payloads.append(alloc, .void) catch unreachable;
         reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
         reg.owner_types.append(alloc, .void) catch unreachable;
+        reg.owner_sources.append(alloc, .empty) catch unreachable;
         return reg;
     }
 
@@ -472,6 +476,7 @@ pub const TagRegistry = struct {
         self.payloads.deinit(alloc);
         self.owner_names.deinit(alloc);
         self.owner_types.deinit(alloc);
+        self.owner_sources.deinit(alloc);
         self.owner_ids.deinit();
         self.map.deinit();
     }
@@ -484,6 +489,7 @@ pub const TagRegistry = struct {
             gop.value_ptr.* = @intCast(self.owner_names.items.len);
             self.owner_names.append(alloc, name) catch unreachable;
             self.owner_types.append(alloc, .void) catch unreachable;
+            self.owner_sources.append(alloc, .empty) catch unreachable;
         }
         self.owner_names.items[gop.value_ptr.*] = name;
         return gop.value_ptr.*;
@@ -533,6 +539,16 @@ pub const TagRegistry = struct {
     pub fn ownerType(self: *const TagRegistry, owner: u32) TypeId {
         if (owner >= self.owner_types.items.len) return .void;
         return self.owner_types.items[owner];
+    }
+
+    pub fn setOwnerSource(self: *TagRegistry, owner: u32, source: StringId) void {
+        if (owner >= self.owner_sources.items.len) return;
+        self.owner_sources.items[owner] = source;
+    }
+
+    pub fn ownerSource(self: *const TagRegistry, owner: u32) StringId {
+        if (owner >= self.owner_sources.items.len) return .empty;
+        return self.owner_sources.items[owner];
     }
 };
 
@@ -1084,13 +1100,14 @@ pub const TypeTable = struct {
     }
 
     /// Byte offset of member `idx` inside a value of type `id` — the single
-    /// source of truth behind `structFieldOffset` (static fold, the runtime
+    /// source of truth behind the reflected `.offset` (static fold, the runtime
     /// `__sx_field_offset_ptrs` tables, and the VM's `rt_field_offset`), so
     /// the three can never drift. Struct members use the same aligned
     /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
     /// offset (the header size — identical for every variant); an untagged
-    /// union's arms all overlay at 0. Null for a type without addressable
-    /// members or an out-of-range `idx`.
+    /// union's arms all overlay at 0; array elements and vector lanes stride
+    /// by their element size. Null for a type without addressable members or
+    /// an out-of-range `idx`.
     pub fn memberOffsetBytes(self: *const TypeTable, id: TypeId, idx: i64) ?usize {
         if (idx < 0 or id.index() >= self.infos.items.len or id.isBuiltin()) return null;
         const i: usize = @intCast(idx);
@@ -1124,6 +1141,8 @@ pub const TypeTable = struct {
                 }
                 return self.typeSizeBytes(u.tag_type);
             },
+            .array => |a| return if (i < a.length) i * self.typeSizeBytes(a.element) else null,
+            .vector => |v| return if (i < v.length) i * self.typeSizeBytes(v.element) else null,
             else => return null,
         }
     }
@@ -1153,10 +1172,10 @@ pub const TypeTable = struct {
     /// Integer value of variant `idx`: its explicit value when the enum /
     /// tagged union declares one (custom values, flags, explicit tags), else
     /// its ordinal. Null for a non-variant type, a negative / out-of-range
-    /// `idx`, or an out-of-range id. The single value source behind
-    /// `variantValue` (static fold, the runtime `__sx_member_value_ptrs`
-    /// tables, and the VM's `rt_variant_value`), so the three can never
-    /// drift. Backs the `type_field_value` reader too.
+    /// `idx`, or an out-of-range id. The single value source behind the
+    /// reflected `.value` — the static fold, the `__sx_type_infos` records,
+    /// and the comptime VM's record builder — so the three can never drift.
+    /// Backs the `type_field_value` reader too.
     pub fn memberValue(self: *const TypeTable, id: TypeId, idx: i64) ?i64 {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -1531,6 +1550,10 @@ pub const TypeTable = struct {
     /// The owner id of the error-set declaration at `decl`, spelled `name`.
     pub fn internErrorOwner(self: *TypeTable, decl: *const anyopaque, name: StringId) u32 {
         return self.tags.internOwner(self.alloc, decl, name);
+    }
+
+    pub fn setOwnerSource(self: *TypeTable, owner: u32, source: StringId) void {
+        self.tags.setOwnerSource(owner, source);
     }
 
     pub fn internMember(self: *TypeTable, owner: u32, name: []const u8) u32 {
@@ -1999,11 +2022,54 @@ pub const TypeTable = struct {
         };
     }
 
+    /// The name a diagnostic sentence quotes for the channel `id`: its
+    /// spelling, and — when another interned set renders under that same
+    /// spelling — the file that declares this one, so a reader knows which
+    /// declaration is meant. The qualified form is freshly allocated via
+    /// `alloc`; every other answer is a borrowed slice.
+    pub fn errorSetDiagnosticName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
+        if (id.isBuiltin()) return self.formatTypeName(alloc, id);
+        const info = self.get(id);
+        if (info != .@"error") return self.formatTypeName(alloc, id);
+        const e = info.@"error";
+        const name = self.getString(e.name);
+        if (e.tags.len == 0 or !self.errorNameIsShared(e)) return name;
+        const src = self.tags.ownerSource(self.tags.ownerOf(e.tags[0]));
+        if (src == .empty) return name;
+        return std.fmt.allocPrint(alloc, "{s} ({s})", .{ name, self.getString(src) }) catch name;
+    }
+
+    /// True when a second declaration renders under `e`'s spelling, so that
+    /// spelling alone does not say which one is meant. A merge over part of one
+    /// declaration's members renders under its spelling too, and is that same
+    /// declaration — sharing is a difference of owner, not of member list.
+    fn errorNameIsShared(self: *const TypeTable, e: TypeInfo.ErrorSetInfo) bool {
+        const owner = self.tags.ownerOf(e.tags[0]);
+        for (self.infos.items) |info| {
+            if (info != .@"error") continue;
+            const other = info.@"error";
+            if (other.name != e.name or other.tags.len == 0) continue;
+            if (self.tags.ownerOf(other.tags[0]) != owner) return true;
+        }
+        return false;
+    }
+
+    /// The channel `id` as a type writes it: `!Set`. A `|` spelling groups as
+    /// `!(A | B)` so the bang binds the whole channel. A member-less channel is
+    /// identified by a spelling that is not a legal type name and already
+    /// carries its own `!`.
+    pub fn channelName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
+        const name = self.formatTypeName(alloc, id);
+        if (name.len > 0 and name[0] == '!') return name;
+        if (std.mem.indexOfScalar(u8, name, '|') != null)
+            return std.fmt.allocPrint(alloc, "!({s})", .{name}) catch "!";
+        return std.fmt.allocPrint(alloc, "!{s}", .{name}) catch "!";
+    }
+
     /// Like `typeName` but produces structural names for compound
     /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function types)
-    /// instead of returning `"?"`. Compound names are
-    /// freshly allocated via `alloc`; builtin and named user types
-    /// return borrowed slices.
+    /// instead of returning `"?"`. Compound names are freshly allocated via
+    /// `alloc`; every builtin and named user type returns a borrowed slice.
     pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
         if (id.isBuiltin()) return self.typeName(id);
         const info = self.get(id);
@@ -2092,7 +2158,7 @@ pub const TypeTable = struct {
                     buf.appendSlice(alloc, self.formatTypeName(alloc, self.failableValueSlotType(f, i))) catch break :blk "(?)";
                 }
                 if (n > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                buf.appendSlice(alloc, "!") catch break :blk "(?)";
+                buf.appendSlice(alloc, self.channelName(alloc, f.err)) catch break :blk "(?)";
                 buf.append(alloc, ')') catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },

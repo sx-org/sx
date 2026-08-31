@@ -1,11 +1,9 @@
-// structFieldValue / variantPayload on an `any` RECEIVER: reads go
-// THROUGH the view via the runtime reflection tables — the result is
-//   { structFieldType(tag, i),  av.data + structFieldOffset(tag, i) }
-// so field access composes by repeated calls with no copies (the
-// walker's recursion pattern), aliasing the boxed value's storage.
-// For a tagged union the offset table answers the payload offset, so
-// variantPayload composes the same way. The comptime VM mirrors the
-// whole composition (the @run below).
+// `@field` reads THROUGH the boxed view via the runtime reflection tables —
+// the result is
+//   { the tag's i-th member type,  av.data + that member's offset }
+// so member access composes by repeated calls with no copies, aliasing the
+// boxed value's storage. For a tagged union the offset table answers the
+// payload offset, so a variant's payload composes the same way.
 
 @import "modules/std.sx";
 
@@ -16,28 +14,28 @@ Pair :: struct { a: i64; b: i64; }
 
 readB :: (p: Pair) -> i64 {
     av : any = p;
-    structFieldValue(av, 1).(i64)
+    @field(av, 1).(i64)
 }
 
 main :: () -> i64 {
     pkt := Packet{ header = .{ magic = 0x1234, flags = 255 }, name = "hello", kind = -2 };
     av : any = pkt;
 
-    print("{}\n", structFieldValue(av, 1));    // hello
-    print("{}\n", structFieldValue(av, 2));    // -2
+    print("{}\n", @field(av, 1));    // hello
+    print("{}\n", @field(av, 2));    // -2
 
     // Nested composition: field 0's view is Header-tagged; read through it.
-    hv := structFieldValue(av, 0);
-    print("{} {}\n", structFieldValue(hv, 0), structFieldValue(hv, 1));  // 4660 255
+    hv := @field(av, 0);
+    print("{} {}\n", @field(hv, 0), @field(hv, 1));  // 4660 255
 
     // The whole chain aliases pkt (av borrows its storage).
     pkt.kind = 77;
-    print("{}\n", structFieldValue(av, 2));    // 77
+    print("{}\n", @field(av, 2));    // 77
 
     // Tagged-union live payload through an any view.
     s := Shape.square(42);
     sv : any = s;
-    print("{}\n", variantPayload(sv, variantIndex(Shape, s)));  // 42
+    print("{}\n", @field(sv, 1));    // 42
 
     // Comptime parity: the same composition on the comptime VM.
     K :: @run readB(Pair{ a = 1, b = 41 });

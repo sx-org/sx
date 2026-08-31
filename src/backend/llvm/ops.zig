@@ -43,7 +43,6 @@ const BoxAny = ir_inst.BoxAny;
 const MakeAny = ir_inst.MakeAny;
 const ClosureCreate = ir_inst.ClosureCreate;
 const BlockParam = ir_inst.BlockParam;
-const FieldReflect = ir_inst.FieldReflect;
 const TypeId = ir_types.TypeId;
 const StringId = ir_types.StringId;
 const Ref = ir_inst.Ref;
@@ -1880,15 +1879,13 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, self.e.cached_i1, gep, "tiu.load");
                 self.e.mapRef(result);
             },
-            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
+            .@"rt_@sizeOf", .@"rt_@alignOf", .rt_is_flags, .rt_vector_lanes, .rt_member_count, .rt_variant_tag_width, .rt_slice_len_info, .rt_optional_flag => {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
                 const kind: @import("reflection.zig").Reflection.ScalarTableKind = switch (bi.builtin) {
                     .@"rt_@sizeOf" => .size,
                     .@"rt_@alignOf" => .alignment,
-                    .rt_struct_field_count => .sf_count,
-                    .rt_variant_count => .var_count,
                     .rt_is_flags => .flags,
                     .rt_vector_lanes => .lanes,
                     .rt_member_count => .member_count,
@@ -1903,8 +1900,6 @@ pub const Ops = struct {
                 const arr_len = switch (kind) {
                     .size => self.e.type_size_array_len,
                     .alignment => self.e.type_align_array_len,
-                    .sf_count => self.e.sf_count_array_len,
-                    .var_count => self.e.variant_count_array_len,
                     .flags => self.e.is_flags_array_len,
                     .lanes => self.e.vector_lanes_array_len,
                     .member_count => self.e.member_count_array_len,
@@ -1918,16 +1913,14 @@ pub const Ops = struct {
                 const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, arr_ty, arr_global, &indices, 2, "rts.gep");
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, gep, "rts.load"));
             },
-            .rt_member_name, .rt_member_type, .rt_field_offset, .rt_variant_value => {
-                // Field-family runtime reads: master [N x ptr] by
-                // tag → per-type array → [idx]. OOB idx is documented UB
-                // (inbounds GEP), same as the static per-type name arrays.
+            .rt_member_type, .rt_field_offset => {
+                // Member-view runtime reads: master [N x ptr] by tag →
+                // per-type array → [idx]. OOB idx is documented UB
+                // (inbounds GEP).
                 const refl = self.e.reflection();
                 const kind: @import("reflection.zig").Reflection.MemberTableKind = switch (bi.builtin) {
-                    .rt_member_name => .names,
                     .rt_member_type => .types,
                     .rt_field_offset => .offsets,
-                    .rt_variant_value => .values,
                     else => unreachable,
                 };
                 const tag = self.reflectArgTypeId(bi.args[0], "runtime reflection");
@@ -1936,17 +1929,15 @@ pub const Ops = struct {
                     idx = c.LLVMBuildZExt(self.e.builder, idx, self.e.cached_i64, "mi.z");
                 const master = refl.getOrBuildMemberPtrs(kind);
                 const master_len = switch (kind) {
-                    .names => self.e.member_name_ptrs_len,
                     .types => self.e.member_type_ptrs_len,
                     .offsets => self.e.field_offset_ptrs_len,
-                    .values => self.e.member_value_ptrs_len,
                 };
                 const master_ty = c.LLVMArrayType(self.e.cached_ptr, master_len);
                 const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
                 var mindices = [2]c.LLVMValueRef{ zero, tag };
                 const slot_gep = c.LLVMBuildInBoundsGEP2(self.e.builder, master_ty, master, &mindices, 2, "mi.slot");
                 const per_type = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, slot_gep, "mi.arr");
-                const elem_ty = if (kind == .names) self.e.getStringStructType() else self.e.cached_i64;
+                const elem_ty = self.e.cached_i64;
                 var eindices = [1]c.LLVMValueRef{idx};
                 const egep = c.LLVMBuildInBoundsGEP2(self.e.builder, elem_ty, per_type, &eindices, 1, "mi.gep");
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, egep, "mi.load"));
@@ -2832,29 +2823,6 @@ pub const Ops = struct {
     }
 
     // ── Reflection ops ─────────────────────────────────────
-    pub fn emitFieldNameGet(self: Ops, fr: FieldReflect) void {
-        // Build global string array for this struct's field names, then GEP at runtime index
-        const global = self.e.reflection().getOrBuildFieldNameArray(fr.struct_type);
-        const idx = self.e.resolveRef(fr.index);
-        const string_ty = self.e.getStringStructType();
-        // Size the GEP's array type from the SAME single source of truth
-        // (`memberTableLen`) that `getOrBuildFieldNameArray` uses to build the
-        // name array, so the two can never disagree: a zero-length name array
-        // against a count of N is an out-of-bounds GEP → segfault.
-        const field_count: u32 = @intCast(self.e.ir_mod.types.memberTableLen(fr.struct_type) orelse 0);
-        const array_ty = c.LLVMArrayType(string_ty, field_count);
-        const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
-        var indices = [2]c.LLVMValueRef{ zero, idx };
-        const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, array_ty, global, &indices, 2, "fn.gep");
-        const result = c.LLVMBuildLoad2(self.e.builder, string_ty, gep, "fn.load");
-        self.e.mapRef(result);
-    }
-
-    pub fn emitFieldValueGet(self: Ops, fr: FieldReflect, func_idx: u32) void {
-        // Switch on index, each case: extractvalue field k → box as Any
-        self.e.emitFieldValueGet(fr, func_idx);
-    }
-
     /// The live member id an error operand carries, widened to the index a
     /// registry table is GEPed at. Out-of-range ids can't occur — ids come from
     /// the same registry the tables are built from — so no bounds branch.

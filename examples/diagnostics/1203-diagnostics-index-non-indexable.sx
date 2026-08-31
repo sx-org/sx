@@ -5,7 +5,7 @@
 //
 // A COMPTIME-constant index into a struct value (`s[0]`) is the field itself
 // (tuple parity), so the struct arm below pins the RUNTIME-index rejection —
-// there is no runtime `[ ]` on structs (use `structFieldValue(s, j)`).
+// there is no runtime `[ ]` on structs (use `@field(s, j)`).
 //
 // For a single pointer `*T` the message hints at the indexable alternatives (a
 // many-pointer `[*]T`, or dereference first); other non-indexable types get the

@@ -394,8 +394,6 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .make_any => |ma| try writer.print("make_any %{d}, %{d} : ", .{ ma.tag.index(), ma.data.index() }),
 
         // ── Reflection ──────────────────────────────────────────
-        .field_name_get => |fr| try writer.print("field_name_get T{d}[%{d}] : ", .{ fr.struct_type.index(), fr.index.index() }),
-        .field_value_get => |fr| try writer.print("field_value_get %{d}, T{d}[%{d}] : ", .{ fr.base.index(), fr.struct_type.index(), fr.index.index() }),
         .error_member_name_get => |u| try writer.print("error_member_name_get %{d} : ", .{u.operand.index()}),
         .error_name_get => |u| try writer.print("error_name_get %{d} : ", .{u.operand.index()}),
         .error_owner_get => |u| try writer.print("error_owner_get %{d} : ", .{u.operand.index()}),

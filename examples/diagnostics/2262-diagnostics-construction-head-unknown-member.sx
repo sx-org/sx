@@ -1,0 +1,11 @@
+// A dotted construction head whose prefix is a type, not a namespace, names no
+// type: sx has no `Type.NestedType` access. The binding is unread: diagnosis is
+// at the construction head.
+@import "modules/std.sx";
+
+Holder :: struct { v: i32 }
+
+main :: () -> i32 {
+    x := Holder.Missing{ v = 1 };
+    return 0;
+}

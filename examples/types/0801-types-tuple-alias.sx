@@ -1,6 +1,6 @@
 // Structural product aliases: a `::` alias of an anonymous named struct
 // behaves like the inline `struct { … }` form — field access, comptime
-// reflection (structFieldCount / structFieldName), use as a fn param /
+// reflection (`.fields.len` / `.fields[i].name`), use as a fn param /
 // return type, alias-of-alias, forward-declared element aliases, and
 // generic-instantiation elements all resolve to the same structural TypeId.
 @import "modules/std.sx";
@@ -44,7 +44,8 @@ main :: () -> i32 {
     print("x.a={} x.b={}\n", x.a, x.b);
 
     // Reflection through the named alias.
-    print("fcNT={} n0={} n1={}\n", structFieldCount(NT), structFieldName(NT, 0), structFieldName(NT, 1));
+    print("fcNT={} n0={} n1={}\n", @typeInfo(NT).struct.fields.len,
+        @typeInfo(NT).struct.fields[0].name, @typeInfo(NT).struct.fields[1].name);
 
     // Alias as fn param / return type.
     print("sum={}\n", sumNt(x));
@@ -53,12 +54,12 @@ main :: () -> i32 {
 
     // Alias-of-alias resolves to the same structural product.
     y : NT2 = .{a = 9, b = false};
-    print("y.a={} fcNT2={}\n", y.a, structFieldCount(NT2));
+    print("y.a={} fcNT2={}\n", y.a, @typeInfo(NT2).struct.fields.len);
 
     // Forward element alias: FwdB (declared after FwdT) is i64, not a stub —
     // the alias layout matches the direct spelling exactly.
     f : FwdT = .{a = 5, c = true};
-    print("f.a={} fcFwd={} fwdSoEq={}\n", f.a, structFieldCount(FwdT), @sizeOf(FwdT) == @sizeOf(FwdDirect));
+    print("f.a={} fcFwd={} fwdSoEq={}\n", f.a, @typeInfo(FwdT).struct.fields.len, @sizeOf(FwdT) == @sizeOf(FwdDirect));
 
     // Generic-instantiation element: field access through the instantiated
     // List works and @sizeOf matches the direct spelling (no stub layout).
@@ -66,10 +67,10 @@ main :: () -> i32 {
     t.a = .{};
     t.a.append(4);
     t.b = "hi";
-    print("t.a0={} t.b={} fcTL={} tlSoEq={}\n", t.a.items[0], t.b, structFieldCount(TL), @sizeOf(TL) == @sizeOf(TLDirect));
+    print("t.a0={} t.b={} fcTL={} tlSoEq={}\n", t.a.items[0], t.b, @typeInfo(TL).struct.fields.len, @sizeOf(TL) == @sizeOf(TLDirect));
 
     // Forward product-in-product chain.
     n : Outer = .{a = .{d = 3}, c = true};
-    print("n.a.d={} fcOuter={}\n", n.a.d, structFieldCount(Outer));
+    print("n.a.d={} fcOuter={}\n", n.a.d, @typeInfo(Outer).struct.fields.len);
     return 0;
 }

@@ -207,6 +207,9 @@ pub const SourceConstCtx = struct {
     pub fn evalConstCallInt(self: SourceConstCtx, node: *const Node) ?i64 {
         return self.lowering.evalConstCallInt(node);
     }
+    pub fn evalConstFieldAccessInt(self: SourceConstCtx, node: *const Node) ?i64 {
+        return self.lowering.evalConstFieldAccessInt(node);
+    }
     pub fn lookupQualifiedConst(self: SourceConstCtx, ns: []const u8, field: []const u8) ?i64 {
         return self.lowering.foldQualifiedConstInt(ns, field, self.frame);
     }
@@ -251,20 +254,23 @@ pub const Binding = struct {
         match_payload,
         /// `catch |e|` error binding.
         catch_err,
-        /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
+        /// `inline for x in xs` pack-element alias (`alias_node` is also set).
         pack_elem_alias,
+        /// `inline for field in @typeInfo(T).<kind>.fields` member alias
+        /// (`alias_node` is also set).
+        reflected_member_alias,
     };
 
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
     is_ref_capture: bool = false, // `for *x in xs` — `ref` is `*elem`; auto-deref in value positions
-    /// `inline for x in xs` element capture: `x` is an AST ALIAS for the
-    /// synthesized `xs[<i>]` of the current unroll iteration (`ref` is
-    /// `.none`). Identifier consumers substitute this node, so the capture
-    /// inherits the full pack-element semantics — concrete-arg substitution,
-    /// typing, and the interface-only constraint check.
-    pack_elem: ?*ast.Node = null,
+    /// An `inline for` element capture is an AST ALIAS for the synthesized
+    /// `<iterable>[<i>]` of the current unroll iteration (`ref` is `.none`).
+    /// Identifier consumers substitute this node, so the capture inherits the
+    /// element's full semantics — concrete-arg substitution, typing, and the
+    /// interface-only constraint check.
+    alias_node: ?*ast.Node = null,
     origin: Origin = .other,
     /// The binding names a C `va_list` this frame BORROWS — an incoming
     /// boundary parameter. Its caller opened it and ends it, so `@vaStart` /
@@ -940,11 +946,11 @@ pub const Lowering = struct {
         bool_val: bool,
         enum_tag: struct { ty: TypeId, tag: u32 },
         /// A `@host` enum field in a program that does not declare the enum it
-        /// is a variant of: the variant NAME the target selects. It compares
-        /// against an enum literal at comptime and has no runtime reading — the
-        /// declaration a runtime read needs is exactly the one that would have
-        /// given it a tag.
-        target_variant: []const u8,
+        /// is a variant of: that enum's NAME and the variant NAME the target
+        /// selects. It compares against a variant spelling at comptime and has
+        /// no runtime reading — the declaration a runtime read needs is exactly
+        /// the one that would have given it a tag.
+        target_variant: struct { enum_name: []const u8, variant: []const u8 },
         struct_val: []const Field,
 
         pub const Field = struct {
@@ -1637,16 +1643,23 @@ pub const Lowering = struct {
         return self.packResolver().packTypeElems(node.data.spread_expr.operand);
     }
 
-    /// Bare TYPE-NAME twin of `resolveInner` for callers holding a name rather
-    /// than an AST node (e.g. an error-set reference `!Named`) — routed through
-    /// the visibility-aware `resolveNominalLeaf`, so a same-name-shadowed set
-    /// resolves to the querying module's own author.
+    /// TYPE-NAME twin of `resolveInner` for callers holding a name rather than
+    /// an AST node (e.g. an error-set reference `!Named`) — routed through the
+    /// visibility-aware `resolveNominalLeaf`, so a same-name-shadowed set
+    /// resolves to the querying module's own author. A namespaced spelling
+    /// (`ns.Set`) pins its leaf in the module the prefix selects; any other
+    /// dotted spelling stays a bare leaf.
     pub fn resolveName(self: *Lowering, name: []const u8) TypeId {
+        if (self.namespacedLeafType(name)) |leaf| return leaf;
         return self.resolveNominalLeaf(name, false, null);
     }
 
     pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
         return self.program_index.type_alias_map.get(name);
+    }
+
+    pub fn errorOwnerSource(self: *Lowering) StringId {
+        return self.module.types.internString(self.current_source_file orelse "");
     }
 
     /// Fixed-array dimension hook for `TypeResolver.resolveCompound`. A literal
@@ -1739,13 +1752,11 @@ pub const Lowering = struct {
     }
 
     /// Fold a pure int-returning type-query builtin CALL to its compile-time
-    /// constant: `field_count(T)` / `@sizeOf(T)` / `@alignOf(T)`. This is what
-    /// lets a reflection-derived count drive an `inline for` bound / array dim
-    /// exactly like a plain `K :: 3` const — e.g. a `($T) -> Type` builder that
-    /// loops `inline for 0..field_count(T)` to assemble a variant list (the
-    /// `race` result synthesis). (Reaches the self-ctx fold paths — array dim,
-    /// inline-for bound; a `@Vector` LANE in a plain type annotation resolves through
-    /// the stateless type-bridge ctx, which stubs this to null.) Resolves the type
+    /// constant: `@sizeOf(T)` / `@alignOf(T)`. This is what lets a layout
+    /// measurement drive an `inline for` bound / array dim exactly like a plain
+    /// `K :: 3` const. (Reaches the self-ctx fold paths — array dim, inline-for
+    /// bound; a `@Vector` LANE in a plain type annotation resolves through the
+    /// stateless type-bridge ctx, which stubs this to null.) Resolves the type
     /// arg through the same `resolveTypeArg` + accessors the value path uses, so
     /// the folded constant always matches the call's runtime value. Returns null
     /// for any non-type-query call, a wrong arg count, or an unresolved type arg
@@ -1760,19 +1771,15 @@ pub const Lowering = struct {
             else => return null,
         };
         if (c.args.len != 1) return null;
-        const is_fc = std.mem.eql(u8, name, "structFieldCount") or std.mem.eql(u8, name, "variantCount");
         const is_sz = std.mem.eql(u8, name, "@sizeOf");
         const is_al = std.mem.eql(u8, name, "@alignOf");
-        if (!is_fc and !is_sz and !is_al) return null;
+        if (!is_sz and !is_al) return null;
         // A runtime Type arg is not a compile-time integer — and resolveTypeArg
         // would emit a spurious "unresolved type" diagnostic from this
         // SPECULATIVE fold context. Bail to the normal (dynamic) lowering.
         if (!self.isStaticTypeArg(c.args[0])) return null;
         const ty = self.resolveTypeArg(c.args[0]);
         if (ty == .unresolved) return null;
-        // `field_count` of a resolved non-aggregate is 0 (matches the value path
-        // in lower/call.zig), NOT a fold failure.
-        if (is_fc) return self.module.types.memberCount(ty) orelse 0;
         // An open set's layout is not a number yet unless nothing can still grow
         // it: a folded position is fixed WHERE IT IS WRITTEN, so answering it here
         // would bake a size a member declared later contradicts.
@@ -1784,6 +1791,59 @@ pub const Lowering = struct {
         }
         if (is_sz) return @intCast(self.typeSizeBytes(ty));
         return @intCast(self.typeAlignBytes(ty));
+    }
+
+    /// An `inline for` capture's aliased element re-rooted under a member read,
+    /// so `field.type` reads as `@typeInfo(T).<kind>.fields[<i>].type` wherever
+    /// a name-rooted chain would otherwise be looked up. The value grammar
+    /// builds a field access and the type grammar joins the path into one
+    /// dotted name; both spell the same read. Null when the root names no
+    /// aliasing capture.
+    pub fn aliasedFieldAccess(self: *Lowering, node: *const Node) ?*const Node {
+        var root: []const u8 = undefined;
+        var member: []const u8 = undefined;
+        switch (node.data) {
+            .field_access => |fa| {
+                if (fa.object.data != .identifier) return null;
+                root = fa.object.data.identifier.name;
+                member = fa.field;
+            },
+            .type_expr => |te| {
+                const dot = std.mem.indexOfScalar(u8, te.name, '.') orelse return null;
+                root = te.name[0..dot];
+                member = te.name[dot + 1 ..];
+                if (std.mem.indexOfScalar(u8, member, '.') != null) return null;
+            },
+            else => return null,
+        }
+        const scope = self.scope orelse return null;
+        const binding = scope.lookup(root) orelse return null;
+        const alias = binding.alias_node orelse return null;
+        const rerooted = self.alloc.create(Node) catch return null;
+        rerooted.* = .{ .span = node.span, .data = .{ .field_access = .{ .object = alias, .field = member } } };
+        return rerooted;
+    }
+
+    /// Fold `@typeInfo(T).struct.fields.len` / `.enum.fields.len` to the
+    /// reflected member count. The projected variant must be the one
+    /// `@typeInfo` reflects `T` into: a mismatched kind is a wrong-variant
+    /// read, not a count, so it stays unfolded and takes the ordinary error path.
+    pub fn evalConstFieldAccessInt(self: *Lowering, node: *const Node) ?i64 {
+        const count = switch (node.data) {
+            .field_access => |f| f,
+            else => return null,
+        };
+        if (!std.mem.eql(u8, count.field, "len")) return null;
+        const list = type_bridge.typeInfoFields(count.object) orelse return null;
+        // A runtime Type arg is no compile-time integer, and `resolveTypeArg`
+        // would emit a spurious "unresolved type" from this SPECULATIVE fold.
+        if (!self.isStaticTypeArg(list.type_arg)) return null;
+        const ty = self.resolveTypeArg(list.type_arg);
+        if (ty == .unresolved) return null;
+        const n = self.module.types.memberCount(ty) orelse return null;
+        const reflected = lower_generic.reflectedFields(&self.module.types, ty) orelse return null;
+        if (!std.mem.eql(u8, list.kind, reflected.kind)) return null;
+        return n;
     }
 
     /// Pack-length leaf for the shared integer-expression evaluator: a pack
@@ -1850,6 +1910,89 @@ pub const Lowering = struct {
     }
     pub fn qualifiedNodeIsFloatTyped(self: *Lowering, node: *const Node) bool {
         return self.qualifiedConstNodeIsFloatTyped(node, null);
+    }
+
+    /// The type a proved namespace selection names, resolved in the TARGET
+    /// module's own visibility context so the leaf is judged by that module.
+    fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
+        const saved = self.current_source_file;
+        self.setCurrentSourceFile(sel.target.target_module_path);
+        defer self.setCurrentSourceFile(saved);
+        return self.resolveNominalLeaf(sel.member, is_raw, span);
+    }
+
+    /// The type a namespaced spelling (`ns.Leaf`) names, selected without
+    /// resolving it, so a miss mints no type and diagnoses nothing.
+    pub fn namespacedLeafTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
+        const sel = switch (self.qualifiedMemberVerdictFrom(name, from)) {
+            .selected => |s| s,
+            else => return null,
+        };
+        const leaf = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+            .resolved => |t| t,
+            else => return null,
+        };
+        return if (leaf.isBuiltin()) null else leaf;
+    }
+
+    pub fn namespacedLeafType(self: *Lowering, name: []const u8) ?TypeId {
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        return self.namespacedLeafTypeFrom(name, from);
+    }
+
+    pub fn namespacedErrorSetTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
+        const leaf = self.namespacedLeafTypeFrom(name, from) orelse return null;
+        return if (self.module.types.get(leaf) == .@"error") leaf else null;
+    }
+
+    pub fn namespacedErrorSetType(self: *Lowering, name: []const u8) ?TypeId {
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        return self.namespacedErrorSetTypeFrom(name, from);
+    }
+
+    /// A DOTTED type reference, in either spelling: a dotted `type_expr` name
+    /// (`x : m.Cfg`) or the `field_access` chain a literal head carries
+    /// (`m.Cfg{...}`). Proves every namespace edge and pins the leaf to the exact
+    /// terminal target — `resolveNominalLeaf("m.Cfg")` treats the whole dotted
+    /// string as a bare leaf and fabricates an empty `{}` stub named "m.Cfg".
+    /// Null means the prefix is an alias this source cannot select; the caller
+    /// falls back to bare-leaf resolution of the whole dotted name, which is how
+    /// a c_import- or library-qualified type registered under exactly that
+    /// dotted name resolves.
+    fn resolveDottedType(self: *Lowering, name: []const u8, is_raw: bool, span: ast.Span) ?TypeId {
+        const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+        switch (self.qualifiedMemberVerdict(name)) {
+            .selected => |sel| return self.selectedMemberType(sel, is_raw, span),
+            .missing => |m| {
+                if (self.namespaceMissWaits(m)) return .unresolved;
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                return .unresolved;
+            },
+            .ambiguous => |alias| {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                return .unresolved;
+            },
+            .not_qualified => {},
+        }
+        // A dotted reference whose prefix is NOT a namespace alias is the only
+        // remaining qualified form, and sx has no `Type.NestedType` access: this
+        // is a VALUE field access (`g.a` where `g` is a value, `Holder.Missing`
+        // where `Holder` is a type) sitting in a type position. Rejecting it here
+        // is what keeps `resolveNominalLeaf` from fabricating a zero-field `{}`
+        // stub that ships to codegen as a real type. A registered dotted type is
+        // honored first, so a name that resolves to a real type is never rejected.
+        if (self.aliasDeclaredAnywhere(name[0..dot])) return null;
+        const sid = self.module.types.internString(name);
+        if (self.module.types.findByName(sid)) |tid| {
+            const info = self.module.types.get(tid);
+            const is_empty_stub = info == .@"struct" and info.@"struct".fields.len == 0;
+            if (!is_empty_stub) return tid;
+        }
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "expected a type, found a value '{s}' in type position", .{name});
+        return .unresolved;
     }
 
     /// Resolve a type node, checking type_bindings first for generic type params.
@@ -1925,38 +2068,18 @@ pub const Lowering = struct {
                 }
             }
         }
-        // A qualified type reference reaching type position as an EXPRESSION
-        // `field_access` node — e.g. `m.Cfg` written as a struct-literal prefix
-        // (`m.Cfg{...}`). Resolve it the SAME way a dotted
-        // `type_expr` annotation (`x : m.Cfg`) does (see the `.type_expr` arm
-        // below): the prefix is a namespace alias — pin the source to its target
-        // module and resolve the leaf there. NOT `resolveNominalLeaf("m.Cfg")`,
-        // which treats the whole dotted string as a bare leaf, fails, and
-        // fabricates an empty `{}` stub literally named "m.Cfg".
+        if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeWithBindings(aliased);
+        // A `@typeInfo`-rooted chain either spells the reflected member
+        // projection or names no type; every other shape would fall through to
+        // `type_bridge`'s silent `.unresolved` and panic at LLVM emission.
+        if (type_bridge.typeInfoRooted(node))
+            return self.resolveTypeInfoMemberType(node) orelse self.refuseTypeInfoProjection(node);
+        // Expression-form dotted type (`m.Cfg{...}`).
         if (node.data == .field_access) {
             if (self.qualifiedTypeName(node)) |qname| {
                 defer self.alloc.free(qname);
-                switch (self.qualifiedMemberVerdict(qname)) {
-                    .selected => |sel| {
-                        const saved = self.current_source_file;
-                        self.setCurrentSourceFile(sel.target.target_module_path);
-                        const ty = self.resolveNominalLeaf(sel.member, false, node.span);
-                        self.setCurrentSourceFile(saved);
-                        return ty;
-                    },
-                    .missing => |m| {
-                        if (self.namespaceMissWaits(m)) return .unresolved;
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
-                        return .unresolved;
-                    },
-                    .ambiguous => |alias| {
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
-                        return .unresolved;
-                    },
-                    .not_qualified => {},
-                }
+                if (self.resolveDottedType(qname, false, node.span)) |t| return t;
+                return self.resolveNominalLeaf(qname, false, node.span);
             }
         }
         // A parenthesized type-list element (`-> (T, !)`, `-> (A, B)`) must
@@ -2039,17 +2162,16 @@ pub const Lowering = struct {
         // Return `.unresolved` so callers (e.g. lambda return-type inference,
         // call-site `$R` inference) treat it as not-yet-known.
         if (node.data == .type_expr and node.data.type_expr.is_generic) {
-            // A VALUE param (`$N: u32`) named in a TYPE position (`x: N`) is bound
-            // to a compile-time integer, not a type, so `resolveBinding` above
-            // found no TYPE binding and it lands here. In the MAIN file the
-            // `UnknownTypeChecker` owns this diagnostic (and halts before codegen);
-            // an imported template's fields are resolved in the template's source
-            // context (see `instantiateGenericStruct`) and are checker-trusted, so
-            // this leaf is the sole guard — emit the tailored hint, mirroring the
-            // imported `.undeclared` leaf. A genuinely-unbound type param (`$R`,
-            // no value binding) stays a silent `.unresolved`.
+            // A VALUE param (`$N: u32`) named in a TYPE position is a
+            // compile-time integer, so `resolveBinding` above found no TYPE
+            // binding. In the MAIN file `UnknownTypeChecker` owns this
+            // diagnostic and halts before codegen; an IMPORTED declaration is
+            // checker-trusted and resolves in its own source context, so this
+            // leaf is its sole guard. A genuinely-unbound type param (`$R`, no
+            // value binding) stays a silent `.unresolved`.
             const nm = node.data.type_expr.name;
-            const bound_value = if (self.comptime_value_bindings) |cvb| cvb.contains(nm) else false;
+            const bound_value = (if (self.comptime_value_bindings) |cvb| cvb.contains(nm) else false) or
+                (if (self.comptime_param_nodes) |cpn| cpn.contains(nm) else false);
             if (bound_value) {
                 const is_main = if (self.main_file) |mf|
                     (if (self.current_source_file) |csf| std.mem.eql(u8, csf, mf) else true)
@@ -2057,7 +2179,7 @@ pub const Lowering = struct {
                     true;
                 if (!is_main) {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ nm, nm });
+                        d.addFmt(.err, node.span, "'{s}' is a value parameter, not a type", .{nm});
                 }
             }
             return .unresolved;
@@ -2070,54 +2192,7 @@ pub const Lowering = struct {
         // global compat maps.
         switch (node.data) {
             .type_expr => |te| {
-                // Qualified namespace type (including nested aliases): prove
-                // every namespace edge and pin the leaf to the exact terminal
-                // target before nominal resolution.
-                if (std.mem.lastIndexOfScalar(u8, te.name, '.')) |dot| {
-                    switch (self.qualifiedMemberVerdict(te.name)) {
-                        .selected => |sel| {
-                            const saved = self.current_source_file;
-                            self.setCurrentSourceFile(sel.target.target_module_path);
-                            const ty = self.resolveNominalLeaf(sel.member, te.is_raw, node.span);
-                            self.setCurrentSourceFile(saved);
-                            return ty;
-                        },
-                        .missing => |m| {
-                            if (self.namespaceMissWaits(m)) return .unresolved;
-                            if (self.diagnostics) |d|
-                                d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
-                            return .unresolved;
-                        },
-                        .ambiguous => |alias| {
-                            if (self.diagnostics) |d|
-                                d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
-                            return .unresolved;
-                        },
-                        .not_qualified => {},
-                    }
-                    // A dotted `type_expr` whose prefix is NOT a namespace alias
-                    // is the only remaining qualified form — and sx has no
-                    // `Type.NestedType` access, so this is a VALUE field access
-                    // (`g.a` where `g` is a value) sitting in a type position.
-                    // Without this guard `resolveNominalLeaf("g.a")` would
-                    // fabricate a zero-field empty-struct stub (`{}`) and ship it
-                    // to codegen as a real type — a silent-default
-                    // miscompile. Reject loudly and poison with `.unresolved`.
-                    // A genuinely registered dotted type (a forward-declared
-                    // stub, say) is still honored before we reject, so we never
-                    // reject a name that resolves to a real type.
-                    if (!self.aliasDeclaredAnywhere(te.name[0..dot])) {
-                        const sid = self.module.types.internString(te.name);
-                        if (self.module.types.findByName(sid)) |tid| {
-                            const info = self.module.types.get(tid);
-                            const is_empty_stub = info == .@"struct" and info.@"struct".fields.len == 0;
-                            if (!is_empty_stub) return tid;
-                        }
-                        if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "expected a type, found a value '{s}' in type position", .{te.name});
-                        return .unresolved;
-                    }
-                }
+                if (self.resolveDottedType(te.name, te.is_raw, node.span)) |t| return t;
                 return self.resolveNominalLeaf(te.name, te.is_raw, node.span);
             },
             .identifier => |id| return self.resolveNominalLeaf(id.name, id.is_raw, node.span),
@@ -3825,6 +3900,9 @@ pub const Lowering = struct {
     pub const probeFormedType = lower_generic.probeFormedType;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
+    pub const resolveTypeInfoMemberType = lower_generic.resolveTypeInfoMemberType;
+    pub const resolveTypeInfoFields = lower_generic.resolveTypeInfoFields;
+    pub const refuseTypeInfoProjection = lower_generic.refuseTypeInfoProjection;
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
     pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
@@ -3850,7 +3928,6 @@ pub const Lowering = struct {
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;
     pub const visibleTypeFnHead = lower_generic.visibleTypeFnHead;
     pub const resolveTypeCallWithBindings = lower_generic.resolveTypeCallWithBindings;
-    pub const fieldTypeOf = lower_generic.fieldTypeOf;
     pub const resolveParameterizedWithBindings = lower_generic.resolveParameterizedWithBindings;
     pub const resolveValueParamArg = lower_generic.resolveValueParamArg;
     pub const canonicalIntConstraintName = lower_generic.canonicalIntConstraintName;

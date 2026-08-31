@@ -218,13 +218,11 @@ structToString :: (s: $T) -> string {
     // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a TYPE
     // value prints its name.
     result := "{";
-    i := 0;
-    while i < structFieldCount(T) {
-        if i > 0 { result = concat(result, ", "); }
-        result = concat(result, structFieldName(T, i));
+    inline for field in @typeInfo(T).struct.fields {
+        if field.index > 0 { result = concat(result, ", "); }
+        result = concat(result, field.name);
         result = concat(result, ": ");
-        result = concat(result, anyToString(structFieldValue(s, i)));
-        i += 1;
+        result = concat(result, anyToString(@field(s, field.index)));
     }
     concat(result, "}")
 }
@@ -275,14 +273,11 @@ pointerToString :: (p: $T) -> string {
 flagsToString :: (val: $T) -> string {
     v := val.(i64);
     result := "";
-    i := 0;
-    while i < variantCount(T) {
-        fv := variantValue(T, i);
-        if v & fv {
+    inline for variant in @typeInfo(T).enum.fields {
+        if v & variant.value {
             if result.len > 0 { result = concat(result, " | "); }
-            result = concat(result, concat(".", variantName(T, i)));
+            result = concat(result, concat(".", variant.name));
         }
-        i += 1;
     }
     if result.len == 0 { result = "0"; }
     result
@@ -290,10 +285,10 @@ flagsToString :: (val: $T) -> string {
 
 enumToString :: (u: $T) -> string {
     if isFlags(T) { return flagsToString(u); }
-    idx := variantIndex(T, u);
-    result := concat(".", variantName(T, idx));
-    payload := variantPayload(u, idx);
-    pstr := anyToString(payload);
+    av : any = u;
+    idx := __sx_variant_index(T, av);
+    result := concat(".", @typeInfo(T).enum.fields[idx].name);
+    pstr := anyToString(@field(av, idx));
     if pstr.len > 0 {
         result = concat(result, concat("(", concat(pstr, ")")));
     }
@@ -344,8 +339,8 @@ writeAny :: (w: Writer, val: any) {
                 bits := __sx_any_tag_word(t, val);
                 empty := true;
                 fi := 0;
-                while fi < ei.variants.len {
-                    flag := ei.variants[fi];
+                while fi < ei.fields.len {
+                    flag := ei.fields[fi];
                     if bits & flag.value {
                         if !empty { w.write(" | "); }
                         w.write(".");
@@ -356,8 +351,8 @@ writeAny :: (w: Writer, val: any) {
                 }
                 if empty { w.write("0"); }
             } else {
-                idx := variantIndex(t, val);
-                live := ei.variants[idx];
+                idx := __sx_variant_index(t, val);
+                live := ei.fields[idx];
                 w.write(".");
                 w.write(live.name);
                 if !@typeEq(live.payload, void) {
@@ -405,7 +400,7 @@ writeElements :: (w: Writer, val: any) {
     i := 0;
     while i < n {
         if i > 0 { w.write(", "); }
-        writeAny(w, @elementAt(val, i));
+        writeAny(w, @field(val, i));
         i += 1;
     }
     w.write("]");
@@ -611,15 +606,15 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
     v
 }
 
-// `variantIndex(t, av)` with a RUNTIME t lowers to this scan: value → the
-// sequential ordinal, over the runtime variant-value table (explicit values
-// and explicit tags included). A tag the table does not list names no variant.
+// A variant value's SEQUENTIAL ordinal: scan the reflected variant values
+// (explicit values and explicit tags included) for the one the tag word
+// carries.
 __sx_variant_index :: (t: Type, av: any) -> i64 {
     v := __sx_any_tag_word(t, av);
-    n := variantCount(t);
+    n := @typeInfo(t).enum.fields.len;
     i := 0;
     while i < n {
-        if variantValue(t, i) == v { return i; }
+        if @typeInfo(t).enum.fields[i].value == v { return i; }
         i += 1;
     }
     @panic(format("{} has no variant for tag {}", @typeName(t), v), @SourceSite{})

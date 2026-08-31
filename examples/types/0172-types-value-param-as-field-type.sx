@@ -6,8 +6,8 @@
 // `x: T` for a real `$T: Type` resolves without a `$`), and that marking is the
 // same for a value param. The checker distinguishes TYPE params (`$T: Type`,
 // `$T: SomeProtocol`, the `..$Ts` pack) from VALUE params (`$N: u32`) using the
-// binder's own rule: a value param named in a type position gets the tailored
-// hint. A value param in a VALUE position (a `[N]u8` array dimension, a
+// binder's own rule: a value param named in a type position is rejected. A
+// value param in a VALUE position (a `[N]u8` array dimension, a
 // `@Vector` lane count) still works (see 0147 / 0201).
 @import "modules/std.sx";
 

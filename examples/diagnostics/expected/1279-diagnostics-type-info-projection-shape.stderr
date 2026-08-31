@@ -1,0 +1,11 @@
+error: a reflected member projection reads '@typeInfo(T).struct.fields[i].type' or '@typeInfo(T).enum.fields[i].payload'
+  --> examples/diagnostics/1279-diagnostics-type-info-projection-shape.sx:10:31
+   |
+10 |     print("{}\n", @sizeOf(Box(@typeInfo(U).union.arms[0].type)));
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: reflected members are read off a '.struct' or '.enum'; 'U' reflects as neither
+  --> examples/diagnostics/1279-diagnostics-type-info-projection-shape.sx:11:9
+   |
+11 |     w : @typeInfo(U).union.fields[0].type = 1;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

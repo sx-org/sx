@@ -13,8 +13,8 @@ const StringId = ir_types.StringId;
 
 /// Reflection metadata + trace-frame emission. A backend `*LLVMEmitter`
 /// facade (field `e`):
-/// the type/field/tag reflection NAME-ARRAY builders (memoized into
-/// `type_name_array`/`field_name_arrays`/`tag_name_array` on `LLVMEmitter`) and
+/// the type/tag reflection NAME-ARRAY builders (memoized into
+/// `type_name_array`/`tag_name_array` on `LLVMEmitter`) and
 /// the error-trace `Frame` builders. Reads cached LLVM handles / the IR type
 /// table / the module via `self.e.*`; the memoizing composite getters
 /// (`getStringStructType`/`getFrameStructType`) + `emitFieldValueGet` stay on
@@ -94,14 +94,12 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { size, alignment, sf_count, var_count, flags, lanes, member_count, tag_width, slice_len_info, optional_flag };
+    pub const ScalarTableKind = enum { size, alignment, flags, lanes, member_count, tag_width, slice_len_info, optional_flag };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
             .size => .{ &self.e.type_size_array, &self.e.type_size_array_len },
             .alignment => .{ &self.e.type_align_array, &self.e.type_align_array_len },
-            .sf_count => .{ &self.e.sf_count_array, &self.e.sf_count_array_len },
-            .var_count => .{ &self.e.variant_count_array, &self.e.variant_count_array_len },
             .flags => .{ &self.e.is_flags_array, &self.e.is_flags_array_len },
             .lanes => .{ &self.e.vector_lanes_array, &self.e.vector_lanes_array_len },
             .member_count => .{ &self.e.member_count_array, &self.e.member_count_array_len },
@@ -122,22 +120,6 @@ pub const Reflection = struct {
             const v: u64 = switch (kind) {
                 .size => @intCast(tt.typeSizeBytes(tid)),
                 .alignment => @intCast(tt.typeAlignBytes(tid)),
-                .sf_count => blk: {
-                    if (!tid.isBuiltin()) switch (tt.get(tid)) {
-                        .@"struct" => |st| break :blk @intCast(st.fields.len),
-                        .@"union" => |u| break :blk @intCast(u.fields.len),
-                        else => {},
-                    };
-                    break :blk 0;
-                },
-                .var_count => blk: {
-                    if (!tid.isBuiltin()) switch (tt.get(tid)) {
-                        .@"enum" => |e| break :blk @intCast(e.variants.len),
-                        .tagged_union => |u| break :blk @intCast(u.fields.len),
-                        else => {},
-                    };
-                    break :blk 0;
-                },
                 .flags => blk: {
                     if (!tid.isBuiltin()) {
                         const info = tt.get(tid);
@@ -166,8 +148,6 @@ pub const Reflection = struct {
         const gname = switch (kind) {
             .size => "__sx_type_sizes",
             .alignment => "__sx_type_aligns",
-            .sf_count => "__sx_struct_field_counts",
-            .var_count => "__sx_variant_counts",
             .flags => "__sx_type_flag_bits",
             .lanes => "__sx_vector_lanes",
             .member_count => "__sx_member_counts",
@@ -185,19 +165,17 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// Field-family master-index tables: `[N x ptr]` keyed by TypeId, each slot the
-    /// per-type member array (names / member-type tags / field offsets /
-    /// variant values), or null for memberless types. Values from the same
-    /// TypeTable queries the comptime folds use. Per-type arrays are built
-    /// eagerly when the master is first demanded (the master itself is lazy).
-    pub const MemberTableKind = enum { names, types, offsets, values };
+    /// Member-view master-index tables: `[N x ptr]` keyed by TypeId, each slot
+    /// the per-type member array (member-type tags / field offsets), or null
+    /// for memberless types. Values from the same TypeTable queries the
+    /// comptime folds use. Per-type arrays are built eagerly when the master
+    /// is first demanded (the master itself is lazy).
+    pub const MemberTableKind = enum { types, offsets };
 
     pub fn getOrBuildMemberPtrs(self: Reflection, kind: MemberTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
-            .names => .{ &self.e.member_name_ptrs, &self.e.member_name_ptrs_len },
             .types => .{ &self.e.member_type_ptrs, &self.e.member_type_ptrs_len },
             .offsets => .{ &self.e.field_offset_ptrs, &self.e.field_offset_ptrs_len },
-            .values => .{ &self.e.member_value_ptrs, &self.e.member_value_ptrs_len },
         };
         if (slot.*) |g| return g;
 
@@ -214,7 +192,6 @@ pub const Reflection = struct {
                 continue;
             }
             const per_type: c.LLVMValueRef = switch (kind) {
-                .names => self.getOrBuildFieldNameArray(tid),
                 .types => blk: {
                     var vals = std.ArrayList(c.LLVMValueRef).empty;
                     defer vals.deinit(self.e.alloc);
@@ -240,19 +217,6 @@ pub const Reflection = struct {
                     }
                     break :blk self.makeI64Array(vals.items, "__sx_field_offsets");
                 },
-                .values => blk: {
-                    // Variant values from `memberValue` (explicit values /
-                    // explicit tags / ordinal default). Non-variant kinds
-                    // table 0 — kind gating is the caller's job.
-                    var vals = std.ArrayList(c.LLVMValueRef).empty;
-                    defer vals.deinit(self.e.alloc);
-                    var m: i64 = 0;
-                    while (m < count) : (m += 1) {
-                        const v: u64 = @bitCast(tt.memberValue(tid, m) orelse 0);
-                        vals.append(self.e.alloc, c.LLVMConstInt(self.e.cached_i64, v, 0)) catch unreachable;
-                    }
-                    break :blk self.makeI64Array(vals.items, "__sx_member_values");
-                },
             };
             ptrs.append(self.e.alloc, per_type) catch unreachable;
         }
@@ -260,10 +224,8 @@ pub const Reflection = struct {
         const arr_ty = c.LLVMArrayType(self.e.cached_ptr, n);
         const arr_init = c.LLVMConstArray(self.e.cached_ptr, ptrs.items.ptr, n);
         const gname = switch (kind) {
-            .names => "__sx_member_name_ptrs",
             .types => "__sx_member_type_ptrs",
             .offsets => "__sx_field_offset_ptrs",
-            .values => "__sx_member_value_ptrs",
         };
         const global = c.LLVMAddGlobal(self.e.llvm_module, arr_ty, gname);
         c.LLVMSetInitializer(global, arr_init);
@@ -551,10 +513,12 @@ pub const Reflection = struct {
                 buf[0] = .{ .text = tt.getString(tt.memberName(tid, @intCast(m)) orelse StringId.empty) };
                 buf[1] = .{ .ty = tt.memberType(tid, @intCast(m)) orelse TypeId.void };
                 if (std.mem.eql(u8, family, "union")) break :blk buf[0..2];
-                buf[2] = .{ .num = if (std.mem.eql(u8, family, "struct"))
-                    @intCast(tt.memberOffsetBytes(tid, @intCast(m)) orelse 0)
-                else
-                    tt.memberValue(tid, @intCast(m)) orelse @intCast(m) };
+                if (std.mem.eql(u8, family, "struct")) {
+                    buf[2] = .{ .num = @intCast(tt.memberOffsetBytes(tid, @intCast(m)) orelse 0) };
+                    buf[3] = .{ .num = @intCast(m) };
+                    break :blk buf[0..4];
+                }
+                buf[2] = .{ .num = tt.memberValue(tid, @intCast(m)) orelse @intCast(m) };
                 break :blk buf[0..3];
             };
 
@@ -588,63 +552,6 @@ pub const Reflection = struct {
         c.LLVMSetGlobalConstant(g, 1);
         c.LLVMSetLinkage(g, c.LLVMPrivateLinkage);
         return g;
-    }
-
-    /// Build (or return cached) a global constant array of {ptr, i64} string values
-    /// for the field names of a struct type.
-    pub fn getOrBuildFieldNameArray(self: Reflection, struct_type: TypeId) c.LLVMValueRef {
-        if (self.e.field_name_arrays.get(struct_type.index())) |g| return g;
-
-        // Collect one name StringId per member, driven by the SINGLE source of
-        // truth `memberTableLen`/`memberName` (types.zig) — NOT a per-kind switch
-        // here. This guarantees the array length always matches `emitFieldNameGet`'s
-        // GEP sizing (which also derives from `memberTableLen`), so a kind covered
-        // by one but not the other cannot exist: N counted members against a
-        // zero-length name array is an out-of-bounds GEP → segfault. A member
-        // with no name (positional tuple element, array/vector/slice element,
-        // optional child) yields `.empty` →
-        // "", keeping one slot per member so `field_name(T, i)` is always
-        // in-bounds.
-        const n_members: i64 = self.e.ir_mod.types.memberTableLen(struct_type) orelse 0;
-        var name_ids = std.ArrayList(StringId).empty;
-        defer name_ids.deinit(self.e.alloc);
-        var mi: i64 = 0;
-        while (mi < n_members) : (mi += 1) {
-            const nid: StringId = self.e.ir_mod.types.memberName(struct_type, mi) orelse .empty;
-            name_ids.append(self.e.alloc, nid) catch unreachable;
-        }
-
-        const string_ty = self.e.getStringStructType();
-        const n: u32 = @intCast(name_ids.items.len);
-
-        // Build constant initializer: [N x {ptr, i64}]
-        var field_vals = std.ArrayList(c.LLVMValueRef).empty;
-        defer field_vals.deinit(self.e.alloc);
-        for (name_ids.items) |name_id| {
-            const name_str = self.e.ir_mod.types.getString(name_id);
-            const str_z = self.e.alloc.dupeZ(u8, name_str) catch unreachable;
-            defer self.e.alloc.free(str_z);
-            const global_str = c.LLVMAddGlobal(self.e.llvm_module, c.LLVMArrayType(self.e.cached_i8, @intCast(name_str.len + 1)), "fld.str");
-            c.LLVMSetInitializer(global_str, c.LLVMConstStringInContext(self.e.context, str_z.ptr, @intCast(name_str.len + 1), 1));
-            c.LLVMSetGlobalConstant(global_str, 1);
-            c.LLVMSetLinkage(global_str, c.LLVMPrivateLinkage);
-            // Build fat pointer {ptr, len} as constant struct
-            const len_val = c.LLVMConstInt(self.e.cached_i64, name_str.len, 0);
-            var struct_fields = [2]c.LLVMValueRef{ global_str, len_val };
-            const const_struct = c.LLVMConstStructInContext(self.e.context, &struct_fields, 2, 0);
-            field_vals.append(self.e.alloc, const_struct) catch unreachable;
-        }
-
-        // Create global array [N x {ptr, i64}]
-        const array_ty = c.LLVMArrayType(string_ty, n);
-        const array_init = c.LLVMConstArray(string_ty, field_vals.items.ptr, n);
-        const global = c.LLVMAddGlobal(self.e.llvm_module, array_ty, "field_names");
-        c.LLVMSetInitializer(global, array_init);
-        c.LLVMSetGlobalConstant(global, 1);
-        c.LLVMSetLinkage(global, c.LLVMPrivateLinkage);
-
-        self.e.field_name_arrays.put(struct_type.index(), global) catch unreachable;
-        return global;
     }
 
     /// The always-linked member-name table: a `[N x {ptr, i64}]` global of

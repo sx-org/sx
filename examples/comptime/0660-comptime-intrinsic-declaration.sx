@@ -2,7 +2,7 @@
 // word `intrinsic`, in body position; an `@` name spells the same thing with
 // the sigil alone:
 //
-//     structFieldCount :: ($T: Type) -> i64 intrinsic;
+//     isFlags :: ($T: Type) -> bool intrinsic;
 //     @sizeOf :: ($T: Type) -> i64;
 //
 // The declaration binds to the intrinsic registry by (module, name): `@sizeOf`
@@ -21,9 +21,9 @@ main :: () {
     print("@sizeOf(P)     = {}\n", @sizeOf(P));
 
     // Reflection — same fold.
-    print("structFieldCount(P)  = {}\n", structFieldCount(P));
-    print("structFieldName(P,0) = {}\n", structFieldName(P, 0));
+    print("fields(P)      = {}\n", @typeInfo(P).struct.fields.len);
+    print("field 0 name   = {}\n", @typeInfo(P).struct.fields[0].name);
     print("@typeName(P)   = {}\n", @typeName(P));
     print("isFlags(E)     = {}\n", isFlags(E));
-    print("variantIndex   = {}\n", variantIndex(E, E.Y));
+    print("vectorLanes    = {}\n", vectorLanes(@Vector(3, f32)));
 }

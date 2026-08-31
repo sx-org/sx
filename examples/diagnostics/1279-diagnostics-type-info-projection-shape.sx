@@ -1,0 +1,13 @@
+// A `@typeInfo` chain in a type position either spells the member projection
+// or is refused by name — including inside a generic type argument, which
+// lowering resolves as a type though the value grammar parsed it.
+@import "modules/std.sx";
+
+Box :: struct($T: Type) { v: $T; }
+U :: union { a: i64; b: f64; }
+
+main :: () {
+    print("{}\n", @sizeOf(Box(@typeInfo(U).union.arms[0].type)));
+    w : @typeInfo(U).union.fields[0].type = 1;
+    print("{}\n", w);
+}

@@ -1,4 +1,4 @@
-error: 'N' is a value parameter, not a type; introduce a generic type parameter with `$N: Type`
+error: 'N' is a value parameter, not a type
   --> examples/types/0172-types-value-param-as-field-type.sx:15:8
    |
 15 |     x: N;

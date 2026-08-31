@@ -1,0 +1,21 @@
+error: the error channel 'Disk' does not carry '.Nope' — this arm can never match
+  --> examples/errors/1116-errors-match-arm-outside-channel.sx:17:14
+   |
+17 |         case .Nope:      1;
+   |              ^^^^^
+
+help: it carries: Disk.Busy, Disk.Gone
+   |
+17 |         case .Nope:      1;
+   |              ^^^^^
+
+error: the error channel 'Disk' does not carry 'Other.Busy' — this arm can never match
+  --> examples/errors/1116-errors-match-arm-outside-channel.sx:18:14
+   |
+18 |         case Other.Busy: 2;
+   |              ^^^^^^^^^^
+
+help: it carries: Disk.Busy, Disk.Gone
+   |
+18 |         case Other.Busy: 2;
+   |              ^^^^^^^^^^

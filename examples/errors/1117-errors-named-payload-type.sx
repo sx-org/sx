@@ -1,0 +1,27 @@
+// A member's payload type may be a name the declaring module owns: the set
+// resolves it where the set is written, so the channel carries that struct
+// and a `match` arm binds it back.
+
+@import "modules/std.sx";
+
+Site :: struct { line: i32; at: i64 }
+
+PayErr :: error { Bare; Boxed: Site }
+
+boom :: (n: i64) -> (i64, !PayErr) {
+    if n < 0 { raise PayErr.Boxed{ line = 3, at = 77 }; }
+    if n == 0 { raise PayErr.Bare; }
+    return n * 2;
+}
+
+main :: () -> i32 {
+    print("ok={}\n", boom(5) catch { -1 });
+    print("boxed={}\n", boom(-1) catch |e| {
+        match e {
+            case .Bare:  -1;
+            case .Boxed: |b| b.at * 100 + b.line;
+        }
+    });
+    print("bare={}\n", boom(0) catch |e| { if e == PayErr.Bare 1 else 0 });
+    return 0;
+}

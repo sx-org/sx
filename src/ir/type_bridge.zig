@@ -54,6 +54,12 @@ const StatelessInner = struct {
         const map = self.alias_map orelse return null;
         return map.get(name);
     }
+    pub fn namespacedErrorSetType(_: StatelessInner, _: []const u8) ?TypeId {
+        return null;
+    }
+    pub fn errorOwnerSource(_: StatelessInner) StringId {
+        return .empty;
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -114,6 +120,9 @@ const StatelessInner = struct {
     // which the registration-time path lacks. Folded on the body-lowering path
     // (`Lowering`); null here → the clean unresolved-dim diagnostic.
     pub fn evalConstCallInt(_: StatelessInner, _: *const Node) ?i64 {
+        return null;
+    }
+    pub fn evalConstFieldAccessInt(_: StatelessInner, _: *const Node) ?i64 {
         return null;
     }
     // The registration-time path holds only the flat global const map — no
@@ -392,6 +401,10 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
             .identifier => |id| isTypeReturningBuiltinName(id.name),
             else => false,
         },
+        // A reflected member projection (`@typeInfo(T).struct.fields[i].type`)
+        // is a Type, so a `$T: Type` argument slot spelled with one binds
+        // through `resolveTypeArg`, not through value inference.
+        .field_access => typeInfoProjection(node) != null,
         .tuple_literal => |tl| blk: {
             for (tl.elements) |el| {
                 if (!isTypeShapedAstNode(el.value, table)) break :blk false;
@@ -402,14 +415,89 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
     };
 }
 
+/// The parts of a reflected member list — `@typeInfo(T).<kind>.fields`. `kind`
+/// travels as spelled; which kind `T` reflects into is resolution's.
+pub const TypeInfoFields = struct {
+    type_arg: *const Node,
+    kind: []const u8,
+};
+
+/// The member list `node` spells, or null when it spells none.
+pub fn typeInfoFields(node: *const Node) ?TypeInfoFields {
+    const list = switch (node.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    if (!std.mem.eql(u8, list.field, "fields")) return null;
+    const kind = switch (list.object.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    const call = switch (kind.object.data) {
+        .call => |c| c,
+        else => return null,
+    };
+    switch (call.callee.data) {
+        .identifier => |id| if (!std.mem.eql(u8, id.name, "@typeInfo")) return null,
+        else => return null,
+    }
+    if (call.args.len != 1) return null;
+    return .{ .type_arg = call.args[0], .kind = kind.field };
+}
+
+/// The parts of a reflected member projection —
+/// `@typeInfo(T).<kind>.fields[<index>].<member>`. `kind` and `member` travel
+/// as spelled; which pairing names a type is resolution's.
+pub const TypeInfoProjection = struct {
+    type_arg: *const Node,
+    kind: []const u8,
+    index: *const Node,
+    member: []const u8,
+};
+
+/// The projection `node` spells, or null when it spells none.
+pub fn typeInfoProjection(node: *const Node) ?TypeInfoProjection {
+    const member = switch (node.data) {
+        .field_access => |fa| fa,
+        else => return null,
+    };
+    const element = switch (member.object.data) {
+        .index_expr => |ix| ix,
+        else => return null,
+    };
+    const list = typeInfoFields(element.object) orelse return null;
+    return .{
+        .type_arg = list.type_arg,
+        .kind = list.kind,
+        .index = element.index,
+        .member = member.field,
+    };
+}
+
+/// Whether `node` grows from a `@typeInfo` call through member / index links,
+/// whatever the chain spells. Arity is no part of the root: `@typeInfo` takes
+/// one argument, so a chain over any other count names no type either.
+pub fn typeInfoRooted(node: *const Node) bool {
+    var cur = node;
+    while (true) {
+        switch (cur.data) {
+            .field_access => |fa| cur = fa.object,
+            .index_expr => |ix| cur = ix.object,
+            .call => |c| return switch (c.callee.data) {
+                .identifier => |id| std.mem.eql(u8, id.name, "@typeInfo"),
+                else => false,
+            },
+            else => return false,
+        }
+    }
+}
+
 /// Comptime builtins whose call result IS a `Type` (so a call to one is
 /// type-shaped). The type-CONSTRUCTOR builtins `@Vector`/generic-struct heads are
 /// already covered by `.parameterized_type_expr`; this names the type-QUERY /
 /// projection builtins that parse as a plain `.call`.
 pub fn isTypeReturningBuiltinName(name: []const u8) bool {
-    return std.mem.eql(u8, name, "structFieldType") or
-        std.mem.eql(u8, name, "variantType") or
-        std.mem.eql(u8, name, "pointeeType") or
+    return std.mem.eql(u8, name, "pointeeType") or
         std.mem.eql(u8, name, "@typeOf");
 }
 
@@ -783,6 +871,7 @@ pub fn errorSetDeclInfoOwned(esd: *const ast.ErrorSetDecl, table: *TypeTable, in
     const alloc = table.alloc;
     const name_id = table.internString(owner_name);
     const owner = table.internErrorOwner(@ptrCast(esd), name_id);
+    table.setOwnerSource(owner, inner.errorOwnerSource());
 
     var member_ids = std.ArrayList(u32).empty;
     defer member_ids.deinit(alloc);
@@ -806,6 +895,10 @@ pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner
 /// set contributes every member it declares, `Set.Member` the one it names.
 /// False when the spelling names no error set.
 pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
+    if (inner.namespacedErrorSetType(name)) |set| {
+        out.appendSlice(table.alloc, table.get(set).@"error".tags) catch unreachable;
+        return true;
+    }
     if (qualifiedChannelMember(name, table, inner)) |member| {
         out.append(table.alloc, member) catch unreachable;
         return true;
@@ -822,9 +915,8 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
 }
 
 /// The member id `Set.Member` names, or null when the head is not an error
-/// set (declared or aliased) or the head carries no single member of that
-/// name. The head is probed in the type table and the alias map before
-/// resolveName, which mints a stub for an unregistered name.
+/// set (declared, aliased, or namespaced) or the head carries no single member
+/// of that name.
 fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     const head = name[0..dot];
@@ -842,9 +934,16 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
         if (probe.isBuiltin() or table.get(probe) != .@"error") return null;
         return probe;
     }
-    const aliased = inner.aliasType(head) orelse return null;
-    if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
-    return aliased;
+    if (inner.aliasType(head)) |aliased| {
+        if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
+        return aliased;
+    }
+    // A namespaced head (`ns.Set`) is not in the name table or the alias map.
+    if (inner.namespacedErrorSetType(head)) |set| {
+        if (set.isBuiltin() or table.get(set) != .@"error") return null;
+        return set;
+    }
+    return null;
 }
 
 /// The error channel of a failable signature: `!Set` → that declared set
@@ -855,6 +954,9 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
 /// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
     if (ete.namedSet()) |name| {
+        if (inner.namespacedErrorSetType(name)) |set| {
+            return set;
+        }
         if (qualifiedChannelMember(name, table, inner)) |member| {
             return table.errorSetType(.empty, &.{member});
         }

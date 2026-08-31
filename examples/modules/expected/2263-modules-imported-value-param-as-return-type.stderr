@@ -1,0 +1,11 @@
+error: 'N' is a value parameter, not a type
+  --> examples/modules/2263-modules-imported-value-param-as-return-type/lib.sx:3:32
+   |
+ 3 | nth :: (xs: []i64, $N: u32) -> $N {
+   |                                ^^
+
+error: unresolved 'N' (in examples/modules/2263-modules-imported-value-param-as-return-type/lib.sx fn main)
+  --> examples/modules/2263-modules-imported-value-param-as-return-type/lib.sx:4:15
+   |
+ 4 |     return xs[N];
+   |               ^

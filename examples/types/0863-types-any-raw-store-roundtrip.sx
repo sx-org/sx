@@ -61,6 +61,6 @@ main :: () -> i64 {
     print("{}\n", restored.(Point).y);           // 9
 
     // Field views compose over the reassembled view too.
-    print("{}\n", structFieldValue(restored, 0));   // 7
+    print("{}\n", @field(restored, 0));   // 7
     return 0;
 }

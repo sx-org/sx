@@ -1,0 +1,26 @@
+// `@typeInfo(T).struct.fields.len` / `.enum.fields.len` is a compile-time integer.
+@import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; z: i64; }
+Colour :: enum { red; green; }
+Shape :: enum { circle: f64; rect: i64; empty; }
+
+sum :: ($T: Type) -> i64 {
+    total := 0;
+    inline for i in 0..@typeInfo(T).struct.fields.len {
+        total = total + i;
+    }
+    return total;
+}
+
+main :: () {
+    inline for i in 0..@typeInfo(Colour).enum.fields.len {
+        print("colour {}\n", i);
+    }
+
+    slots : [@typeInfo(Shape).enum.fields.len]i64 = .[10, 20, 30];
+    print("slots={} second={}\n", slots.len, slots[1]);
+
+    N :: @typeInfo(Point).struct.fields.len;
+    print("N={} sum={}\n", N, sum(Point));
+}

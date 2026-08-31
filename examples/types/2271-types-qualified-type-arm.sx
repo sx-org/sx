@@ -1,0 +1,29 @@
+// A `Type` subject dispatches on the type each arm names, and a dotted path
+// names one: `case ns.Widget:` claims that type, alone or beside a bare-named arm.
+@import "modules/std.sx";
+ns :: @import "2271-types-qualified-type-arm/widget.sx";
+
+Gadget :: struct { m: i64; }
+
+dotted :: (t: Type) -> i64 {
+    return match t {
+        case ns.Widget: 1;
+        else: 0;
+    };
+}
+
+beside :: (t: Type) -> i64 {
+    return match t {
+        case Gadget: 2;
+        case ns.Widget: 1;
+        else: 0;
+    };
+}
+
+main :: () -> i32 {
+    print("{} {}\n", dotted(ns.Widget), dotted(Gadget));
+    //stdout: 1 0
+    print("{} {} {}\n", beside(ns.Widget), beside(Gadget), beside(i64));
+    //stdout: 1 2 0
+    0
+}

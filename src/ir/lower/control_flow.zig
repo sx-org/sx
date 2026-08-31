@@ -5,6 +5,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const errors = @import("../../errors.zig");
 const contracts = @import("../../contracts.zig");
+const type_bridge = @import("../type_bridge.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -770,15 +771,20 @@ fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId
     return false;
 }
 
+/// The `<iterable>[<index>]` node one unrolled iteration binds as its element.
+fn elementNode(self: *Lowering, iterable: *Node, span: ast.Span, index: i64) ?*Node {
+    const idx_node = self.alloc.create(Node) catch return null;
+    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
+    const elem_node = self.alloc.create(Node) catch return null;
+    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = iterable, .index = idx_node } } };
+    return elem_node;
+}
+
 /// The `xs[<index>]` node one unrolled pack iteration binds as its element.
 fn packElementNode(self: *Lowering, pack_name: []const u8, span: ast.Span, index: i64) ?*Node {
     const id_node = self.alloc.create(Node) catch return null;
     id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
-    const idx_node = self.alloc.create(Node) catch return null;
-    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
-    const elem_node = self.alloc.create(Node) catch return null;
-    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
-    return elem_node;
+    return elementNode(self, id_node, span, index);
 }
 
 /// A range position binds the i64 cursor whatever its bounds are spelled as.
@@ -974,26 +980,30 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS, and
-/// comptime `[N]Type` lists, mirroring the runtime multi-iterable contract:
-/// position 0 drives the iteration count (a pack's arity, a list's length, or
-/// a bounded range's span) and trailing range bounds are ignored. Per
-/// iteration the body is lowered once; a range capture binds as an `int_val`
-/// comptime constant (so `xs[i]` substitutes the concrete per-position
-/// argument), a pack capture binds as an AST alias for the synthesized
-/// `xs[<i>]` (`Binding.pack_elem`), inheriting full pack-element semantics —
-/// substitution, typing, and the interface-only constraint check — and a
-/// type-list capture binds as a type param, legal in type position.
+/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS,
+/// comptime `[N]Type` lists, and reflected member lists
+/// (`@typeInfo(T).<kind>.fields`), mirroring the runtime multi-iterable
+/// contract: position 0 drives the iteration count (a pack's arity, a list's
+/// length, a type's member count, or a bounded range's span) and trailing range
+/// bounds are ignored. Per iteration the body is lowered once; a range capture
+/// binds as an `int_val` comptime constant (so `xs[i]` substitutes the concrete
+/// per-position argument), a pack or member capture binds as an AST alias for
+/// the synthesized `<iterable>[<i>]` (`Binding.alias_node`), inheriting the
+/// element's full semantics — substitution, typing, and the interface-only
+/// constraint check — and a type-list capture binds as a type param, legal in
+/// type position.
 ///
 ///   inline for i in 0..xs.len { xs[i].show(); }      // index form
 ///   inline for x in xs { x.show(); }                 // element form
 ///   inline for x, i in xs, 0.. { ... }               // element + index
 ///   inline for T in TYPES { v : T = ---; }           // type-list form
+///   inline for f in @typeInfo(T).struct.fields { }   // member form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
         pack: []const u8, // pack name
         type_list: []const TypeId,
+        members: *Node, // the `@typeInfo(T).<kind>.fields` node
     };
     var classes = std.ArrayList(IterClass).empty;
     defer classes.deinit(self.alloc);
@@ -1042,25 +1052,37 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 return self.builder.constInt(0, .void);
             }
             classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
+        } else if (type_bridge.typeInfoFields(it.expr)) |spelled| {
+            const list = self.resolveTypeInfoFields(spelled, it.expr.span) orelse return self.builder.constInt(0, .void);
+            const len = self.module.types.memberCount(list.owner) orelse 0;
+            if (idx == 0) {
+                count = len;
+            } else if (len < count) {
+                if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: '{s}' has {} reflected member{s} but the unroll is {} iterations", .{
+                    self.formatTypeName(list.owner), len, if (len == 1) @as([]const u8, "") else @as([]const u8, "s"), count,
+                });
+                return self.builder.constInt(0, .void);
+            }
+            classes.append(self.alloc, .{ .members = it.expr }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, a type list, or a reflected member list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}` / `inline for f in @typeInfo(T).struct.fields {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
 
-    // `*x` on a pack element: there is no storage to borrow — an element
-    // is an AST-substituted call argument.
+    // Only a range cursor has storage to borrow; every other class is an
+    // AST-substituted comptime element.
     for (fe.captures, 0..) |cap, ci| {
-        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .pack) {
-            const sp = cap.span orelse fe.iterables[ci].expr.span;
-            if (self.diagnostics) |d| d.addFmt(.err, sp, "a pack element cannot be captured by reference", .{});
-            return self.builder.constInt(0, .void);
-        }
-        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .type_list) {
-            const sp = cap.span orelse fe.iterables[ci].expr.span;
-            if (self.diagnostics) |d| d.addFmt(.err, sp, "a type cannot be captured by reference", .{});
-            return self.builder.constInt(0, .void);
-        }
+        if (!cap.by_ref or ci >= classes.items.len) continue;
+        const borrowed: []const u8 = switch (classes.items[ci]) {
+            .range => continue,
+            .pack => "a pack element",
+            .type_list => "a type",
+            .members => "a reflected member",
+        };
+        const sp = cap.span orelse fe.iterables[ci].expr.span;
+        if (self.diagnostics) |d| d.addFmt(.err, sp, "{s} cannot be captured by reference", .{borrowed});
+        return self.builder.constInt(0, .void);
     }
 
     for (fe.captures, 0..) |cap, ci| {
@@ -1079,6 +1101,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             .type_list => {
                 if (self.diagnostics) |d| d.addFmt(.err, ta.span, "a type-list cursor binds a type, not a value — it takes no type annotation", .{});
                 return self.builder.constInt(0, .void);
+            },
+            .members => |list| {
+                const elem = elementNode(self, list, fe.iterables[ci].expr.span, 0) orelse continue;
+                _ = checkElementCaptureType(self, cap, self.inferExprType(elem));
             },
         }
     }
@@ -1129,11 +1155,16 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 .pack => |pack_name| {
                     const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
                     const elem_ty = self.inferExprType(elem_node);
-                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
+                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .alias_node = elem_node, .origin = .pack_elem_alias });
                 },
                 .type_list => |list| {
                     type_scope.?.put(cap.name, list[@intCast(i)]) catch {};
                     self.type_bindings = type_scope.?;
+                },
+                .members => |list| {
+                    const elem_node = elementNode(self, list, fe.iterables[ci].expr.span, i) orelse break;
+                    const elem_ty = self.inferExprType(elem_node);
+                    body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .alias_node = elem_node, .origin = .reflected_member_alias });
                 },
             }
         }
@@ -1178,6 +1209,32 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         return .{ .ref = self.builder.emit(.{ .unbox_any = .{ .operand = subject } }, void_ptr_ty), .ty = void_ptr_ty };
     }
     return .{ .ref = subject, .ty = .any };
+}
+
+/// Append the switch case dispatching `value` to `target`, unless an earlier
+/// arm already claims that value — the second arm can never run, and one
+/// integer carrying two cases is invalid IR.
+fn claimCase(
+    self: *Lowering,
+    claimed: *std.AutoHashMap(u64, ast.Span),
+    cases: *std.ArrayList(inst_mod.SwitchBranch.Case),
+    value: u64,
+    target: BlockId,
+    span: ast.Span,
+) void {
+    if (claimed.get(value)) |first| {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "duplicate match arm: an earlier arm already matches this value", .{});
+            d.addNote(id, first, "first matched here");
+        }
+        return;
+    }
+    claimed.put(value, span) catch unreachable;
+    cases.append(self.alloc, .{
+        .value = @intCast(value),
+        .target = target,
+        .args = &.{},
+    }) catch unreachable;
 }
 
 pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
@@ -1255,6 +1312,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         subject = self.openSetAnyView(subject_ty, subject, me.subject);
         subject_ty = .any;
     }
+    // The subject decides the kind: an integer or bool dispatches on its value,
+    // a `Type` on the type each arm names.
+    if (subject_ty == .bool or self.module.types.isIntegerType(subject_ty)) is_type_match = false;
+    if (subject_ty == .type_value) is_type_match = true;
     const is_any_switch = subject_ty == .any;
     if (is_any_switch) is_type_match = true;
     const is_optional_match = blk: {
@@ -1430,15 +1491,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var arm_tag_values = std.ArrayList([]const u64).empty;
     defer arm_tag_values.deinit(self.alloc);
     // Type switch: the CONCRETE type an arm names (null for category arms /
-    // the default) — the capture phase binds `|v|` as this type; and the
-    // first-wins claim set — a tag belongs to the first arm that names it,
-    // and an arm left with no tags is a LOUD unreachable-arm error (the
-    // overlap `case int:` / `case i64:` would otherwise resolve silently
-    // by order).
+    // the default) — the capture phase binds `|v|` as this type.
     var arm_concrete = std.ArrayList(?TypeId).empty;
     defer arm_concrete.deinit(self.alloc);
     for (me.arms) |_| arm_concrete.append(self.alloc, null) catch unreachable;
-    var claimed = std.AutoHashMap(u64, void).init(self.alloc);
+    // First-wins claim set: a case value belongs to the first arm that names
+    // it, keyed to that arm's span. A type-match arm left with no tags is a
+    // LOUD unreachable-arm error (the overlap `case int:` / `case i64:` would
+    // otherwise resolve silently by order).
+    var claimed = std.AutoHashMap(u64, ast.Span).init(self.alloc);
     defer claimed.deinit();
     // An error or qualified arm's verdict; null on every other spelling.
     var arm_verdicts = std.ArrayList(?lower_error.ArmVerdict).empty;
@@ -1510,7 +1571,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             var eff = std.ArrayList(u64).empty;
             for (raw_tags) |t| {
                 if (claimed.contains(t)) continue;
-                claimed.put(t, {}) catch unreachable;
+                claimed.put(t, pat.span) catch unreachable;
                 eff.append(self.alloc, t) catch unreachable;
             }
             if (raw_tags.len > 0 and eff.items.len == 0) {
@@ -1550,7 +1611,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 // refuse pointedly (mirrors the any switch), never a
                 // silently dead arm.
                 switch (pat.data) {
-                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
+                    .identifier, .type_expr, .field_access, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
                     else => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, pat.span, "a type-category match arm names a type or a category — value patterns don't apply to a 'Type' subject", .{});
@@ -1598,7 +1659,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             var eff_tv = std.ArrayList(u64).empty;
             for (raw_tv) |t| {
                 if (claimed.contains(t)) continue;
-                claimed.put(t, {}) catch unreachable;
+                claimed.put(t, pat.span) catch unreachable;
                 eff_tv.append(self.alloc, t) catch unreachable;
             }
             if (raw_tv.len > 0 and eff_tv.items.len == 0) {
@@ -1621,11 +1682,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             const verdict = lower_error.qualifyMatchArm(self, subject_ty, pat);
             arm_verdicts.items[i] = verdict;
             switch (verdict) {
-                .ok => |ok| cases.append(self.alloc, .{
-                    .value = @intCast(ok.case_value),
-                    .target = arm_blocks.items[i],
-                    .args = &.{},
-                }) catch unreachable,
+                .ok => |ok| claimCase(self, &claimed, &cases, ok.case_value, arm_blocks.items[i], pat.span),
                 else => lower_error.refuseQualifiedArm(self, verdict, subject_ty, pat),
             }
         } else if (is_error_set_match) {
@@ -1636,21 +1693,23 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             const leaf = lower_error.shorthandArmName(pat) orelse "";
             const member: u32 = switch (self.module.types.errorSetMember(subject_ty, leaf)) {
                 .one => |m| m,
-                // A spelling the channel does not carry takes the anonymous
-                // owner's member, which no case value can equal; the bind
-                // reports it.
-                .none => self.anonymousErrorMember(leaf),
+                // An open channel has no static member set, so a shorthand arm
+                // there takes the anonymous owner's member — what the raise
+                // side interns for that spelling.
+                .none => blk: {
+                    if (!self.channelIsOpen(subject_ty)) {
+                        lower_error.emitMemberNotInChannel(self, subject_ty, "", leaf, pat.span);
+                        continue;
+                    }
+                    break :blk self.anonymousErrorMember(leaf);
+                },
                 .ambiguous => {
                     arm_verdicts.items[i] = .{ .ambiguous = subject_ty };
                     lower_error.emitAmbiguousMember(self, subject_ty, leaf, pat.span);
                     continue;
                 },
             };
-            cases.append(self.alloc, .{
-                .value = member,
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            claimCase(self, &claimed, &cases, member, arm_blocks.items[i], pat.span);
         } else if (is_optional_match) {
             // Optional match: .some → 1 (has_value=true), .none → 0
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
@@ -1660,22 +1719,19 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 else => "",
             };
             const case_val: u64 = if (std.mem.eql(u8, pat_name, "some")) 1 else 0;
-            cases.append(self.alloc, .{
-                .value = @intCast(case_val),
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            claimCase(self, &claimed, &cases, case_val, arm_blocks.items[i], pat.span);
         } else {
             // Enum/value match: resolve variant name to actual tag value
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
-            const case_val: u64 = blk: {
+            // A pattern that names no value of the subject registers no case.
+            const resolved: union(enum) { value: u64, no_variant, unnamed } = blk: {
                 const pat_name = switch (pat.data) {
                     .enum_literal => |el| el.name,
                     .identifier => |id| id.name,
-                    .int_literal => |il| break :blk @intCast(il.value),
-                    .char_literal => |cl| break :blk @intCast(cl.value),
-                    .bool_literal => |bl| break :blk @as(u64, if (bl.value) 1 else 0),
-                    else => break :blk @as(u64, @intCast(i)),
+                    .int_literal => |il| break :blk .{ .value = @as(u64, @intCast(il.value)) },
+                    .char_literal => |cl| break :blk .{ .value = @as(u64, @intCast(cl.value)) },
+                    .bool_literal => |bl| break :blk .{ .value = @as(u64, if (bl.value) 1 else 0) },
+                    else => break :blk .unnamed,
                 };
                 // Look up variant value in the subject's type
                 if (!subject_ty.isBuiltin()) {
@@ -1685,38 +1741,44 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                             const vname = self.module.types.strings.get(f.name);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.tagged_union.explicit_tag_values) |vals| {
-                                    if (vi < vals.len) break :blk @intCast(@as(u64, @bitCast(vals[vi])));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @intCast(vi);
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     } else if (ty_info == .@"enum") {
                         for (ty_info.@"enum".variants, 0..) |v, vi| {
                             const vname = self.module.types.strings.get(v);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 if (ty_info.@"enum".explicit_values) |vals| {
-                                    if (vi < vals.len) break :blk @intCast(@as(u64, @bitCast(vals[vi])));
+                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
-                                break :blk @intCast(vi);
+                                break :blk .{ .value = @as(u64, @intCast(vi)) };
                             }
                         }
                         if (self.diagnostics) |diags| {
                             const ty_name = self.formatTypeName(subject_ty);
                             diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
                         }
+                        break :blk .no_variant;
                     }
                 }
-                break :blk @intCast(i);
+                break :blk .unnamed;
             };
-            cases.append(self.alloc, .{
-                .value = @intCast(case_val),
-                .target = arm_blocks.items[i],
-                .args = &.{},
-            }) catch unreachable;
+            switch (resolved) {
+                .value => |cv| claimCase(self, &claimed, &cases, cv, arm_blocks.items[i], pat.span),
+                .no_variant => {},
+                .unnamed => {
+                    if (self.diagnostics) |diags| {
+                        diags.addFmt(.err, pat.span, "this match arm does not name a value of type '{s}'", .{self.formatTypeName(subject_ty)});
+                    }
+                },
+            }
         }
     }
 
@@ -1765,19 +1827,24 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
 
-        // An arm no switch case targets is unreachable: a type-match arm whose
-        // tags are all claimed, or a refused qualified arm. Lowering it emits
-        // invalid IR — a runtime cast with no matching type, a payload read in
-        // a block with no predecessor.
-        const refused_arm = if (arm_verdicts.items[i]) |v| switch (v) {
-            .ok => false,
-            else => true,
-        } else false;
-        if (arm.pattern != null and (refused_arm or
-            (is_type_match and arm_tag_values.items[i].len == 0)))
-        {
-            self.builder.emitUnreachable();
-            continue;
+        // A patterned arm no switch case targets is unreachable. Lowering it
+        // emits invalid IR — a runtime cast with no matching type, a payload
+        // read in a block with no predecessor.
+        if (arm.pattern != null) {
+            const bb = arm_blocks.items[i];
+            var targeted = default_bb.? == bb;
+            if (!targeted) {
+                for (cases.items) |c| {
+                    if (c.target == bb) {
+                        targeted = true;
+                        break;
+                    }
+                }
+            }
+            if (!targeted) {
+                self.builder.emitUnreachable();
+                continue;
+            }
         }
 
         var arm_scope = Scope.init(self.alloc, self.scope);

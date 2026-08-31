@@ -3,7 +3,7 @@
 // `UnknownTypeChecker` trusts it and never walks it — so the field type leaf is
 // the sole guard. `instantiateGenericStruct` resolves the template's field nodes
 // in THIS source context, so the leaf classifies the value-param misuse as
-// imported and emits the tailored hint.
+// imported and rejects it.
 Bad :: struct($N: u32) {
     x: N;
 }

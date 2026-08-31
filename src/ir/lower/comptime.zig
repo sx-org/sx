@@ -304,7 +304,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
                 .enum_literal => |el| el.name,
                 else => return null,
             };
-            const result = std.mem.eql(u8, tv, variant_name);
+            const result = std.mem.eql(u8, tv.variant, variant_name);
             return if (bo.op == .eq) result else !result;
         },
         .int_val => |iv| {
@@ -431,6 +431,22 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     return false;
 }
 
+/// The variant a `case` arm names against `enum_name`, the enum a `@host` field
+/// is a variant of: `.leaf`, or `Enum.leaf` spelling that enum. The prefix is
+/// judged on the spelling, since the enum's declaration need not be reachable
+/// from the arm; it is judged at all because `unknown` is a variant of both
+/// target enums.
+fn targetArmVariant(pattern: *const Node, enum_name: []const u8) ?[]const u8 {
+    return switch (pattern.data) {
+        .enum_literal => |el| el.name,
+        .field_access => |fa| switch (fa.object.data) {
+            .identifier => |id| if (std.mem.eql(u8, id.name, enum_name)) fa.field else null,
+            else => null,
+        },
+        else => null,
+    };
+}
+
 pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node {
     const cv = evalComptimeValue(self, me.subject) orelse return null;
 
@@ -438,14 +454,11 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
         .enum_tag => |et| {
             const enum_info = self.module.types.get(et.ty);
             if (enum_info != .@"enum") return null;
+            const enum_name = self.module.types.typeName(et.ty);
             for (me.arms) |arm| {
-                if (arm.pattern == null) continue; // default arm
-                const variant_name = switch (arm.pattern.?.data) {
-                    .enum_literal => |el| el.name,
-                    else => continue,
-                };
-                const variant_idx = self.findVariantIndex(enum_info.@"enum".variants, variant_name);
-                if (et.tag == variant_idx) return arm.body;
+                const pattern = arm.pattern orelse continue; // default arm
+                const name = targetArmVariant(pattern, enum_name) orelse continue;
+                if (et.tag == self.findVariantIndex(enum_info.@"enum".variants, name)) return arm.body;
             }
             // No match — try default arm
             for (me.arms) |arm| {
@@ -471,11 +484,8 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
         .target_variant => |tv| {
             for (me.arms) |arm| {
                 const pattern = arm.pattern orelse continue;
-                const variant_name = switch (pattern.data) {
-                    .enum_literal => |el| el.name,
-                    else => continue,
-                };
-                if (std.mem.eql(u8, tv, variant_name)) return arm.body;
+                const name = targetArmVariant(pattern, tv.enum_name) orelse continue;
+                if (std.mem.eql(u8, tv.variant, name)) return arm.body;
             }
             for (me.arms) |arm| {
                 if (arm.pattern == null) return arm.body;

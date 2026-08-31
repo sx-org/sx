@@ -1,25 +1,20 @@
-// A comptime-dead `inline if T is struct` branch that
-// reflects with `structFieldType(T, i)` must be ELIDED from type resolution when T is
-// a non-indexable type (an enum), so `structFieldType(enum)` never lowers `.unresolved`
-// to the backend. The `$T is struct` comptime predicate gates the branch, and a
-// direct `Enum.variant` value (`E.A`) is a first-class generic-call argument
-// (its type infers to the enum). Compiles + runs for BOTH a struct and an enum
+// A comptime-dead `inline if T is struct` branch that walks
+// `@typeInfo(T).struct.fields` must be ELIDED from type resolution when T is an
+// enum, so the `.struct` projection never lowers `.unresolved` to the backend.
+// The `$T is struct` comptime predicate gates the branch, and a direct
+// `Enum.variant` value (`E.A`) is a first-class generic-call argument (its type
+// infers to the enum). Compiles + runs for BOTH a struct and an enum
 // instantiation of the same generic.
 @import "modules/std.sx";
 
-// (`structFieldType` needs no declaration or import here — it is an intrinsic, and
-// the compiler dispatches it from its registry. Its source identity lives in
-// std/core.sx.)
-
-// Field-wise fold: recurse struct fields, leaf-count everything else. The
-// `inline if T is struct` branch (containing `structFieldType(T,i)`) must not resolve
-// when T is an enum — `structFieldCount(enum)` is the variant count, so a naive path
-// would enter the field loop and trip `structFieldType(enum)` → `.unresolved` panic.
+// Field-wise fold: recurse struct fields, leaf-count everything else. An enum
+// reflects as `.enum`, so entering the walk on one would spell a wrong-variant
+// projection.
 leafCount :: (v: $T) -> i64 {
     inline if T is struct {
         n := 0;
-        inline for i in 0..structFieldCount(T) {
-            n = n + leafCount(structFieldValue(v, i).(structFieldType(T, i)));
+        inline for field in @typeInfo(T).struct.fields {
+            n = n + leafCount(@field(v, field.index).(field.type));
         }
         return n;
     }

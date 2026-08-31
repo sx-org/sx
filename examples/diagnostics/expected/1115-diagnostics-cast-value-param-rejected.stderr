@@ -1,4 +1,4 @@
-error: 'T' is a value parameter, not a type; introduce a generic type parameter with `$T: Type`
+error: 'T' is a value parameter, not a type
   --> examples/diagnostics/1115-diagnostics-cast-value-param-rejected.sx:4:15
    |
  4 |     return x.(T);

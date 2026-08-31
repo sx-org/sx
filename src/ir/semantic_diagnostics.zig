@@ -143,6 +143,7 @@ pub const UnknownTypeChecker = struct {
             switch (decl.data) {
                 .fn_decl => decl_checker.checkFnSignatureTypes(&decl.data.fn_decl, &declared),
                 .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
+                .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
                 .impl_block => |ib| for (ib.methods) |method| {
                     if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
@@ -150,6 +151,7 @@ pub const UnknownTypeChecker = struct {
                 .const_decl => |cd| switch (cd.value.data) {
                     .fn_decl => decl_checker.checkFnSignatureTypes(&cd.value.data.fn_decl, &declared),
                     .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
+                    .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
                     // A COMPOSITE type alias — tuple / array / slice / optional
                     // / pointer / many-pointer / function / closure RHS
                     // (`NT :: Tuple(a: i64, b: bool)`, `Bad :: [3]T`,
@@ -650,6 +652,16 @@ pub const UnknownTypeChecker = struct {
         for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, sd.type_params, &.{}, true);
     }
 
+    fn checkErrorPayloadTypes(self: UnknownTypeChecker, esd: *const ast.ErrorSetDecl, declared: *std.StringHashMap(void)) void {
+        for (esd.tag_types) |maybe_payload| {
+            const payload = maybe_payload orelse continue;
+            if (payload.data == .struct_decl)
+                self.checkStructFieldTypes(&payload.data.struct_decl, declared)
+            else
+                self.checkTypeNodeForUnknown(payload, declared, &.{}, &.{}, false);
+        }
+    }
+
     fn checkTopLevelValue(self: UnknownTypeChecker, value: *const Node, declared: *std.StringHashMap(void)) void {
         var in_scope = std.ArrayList(ast.StructTypeParam).empty;
         defer in_scope.deinit(self.alloc);
@@ -703,7 +715,8 @@ pub const UnknownTypeChecker = struct {
         defer type_vals.shrinkRetainingCapacity(save_v);
         for (type_params) |tp| in_scope.append(self.alloc, tp) catch {};
         // Value params declared `: Type` (no `$`) — using one in a type position
-        // is the $-prefix-in-cast-position misuse; track them for the tailored hint.
+        // is the $-prefix-in-cast-position misuse; track them so
+        // `checkTypeNodeForUnknown` rejects the reference.
         for (params) |p| {
             if (p.type_expr.data == .type_expr) {
                 const cn = p.type_expr.data.type_expr.name;
@@ -952,13 +965,13 @@ pub const UnknownTypeChecker = struct {
     /// (`$N: u32`) in a TYPE position is invalid — the name is a compile-time
     /// integer, not a type. The parser marks such a reference `is_generic`
     /// (same as a real type param), so the unknown-type walk would otherwise skip
-    /// it and let it reach the `.unresolved` sentinel. Emit the tailored hint; a
-    /// genuine type-param reference (or a fresh inline `$R`, not in scope) passes.
+    /// it and let it reach the `.unresolved` sentinel. A genuine type-param
+    /// reference (or a fresh inline `$R`, not in scope) passes.
     fn reportIfValueParamInTypePosition(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span, in_scope: []const ast.StructTypeParam, struct_field: bool) void {
         for (in_scope) |tp| {
             if (!std.mem.eql(u8, tp.name, name)) continue;
             if (self.isTypeParam(tp)) return;
-            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
             return;
         }
         // Not in scope. In a struct FIELD position, an `is_generic` name can
@@ -984,7 +997,7 @@ pub const UnknownTypeChecker = struct {
     /// Type-returning reflection builtins legal in a type position with
     /// VALUE arguments. Mirrors the lowering's comptime type-fn set.
     fn isTypeFnName(name: []const u8) bool {
-        const type_fns = [_][]const u8{ "@typeOf", "structFieldType", "variantType", "pointeeType" };
+        const type_fns = [_][]const u8{ "@typeOf", "pointeeType" };
         for (type_fns) |tf| if (std.mem.eql(u8, name, tf)) return true;
         return false;
     }
@@ -1065,9 +1078,8 @@ pub const UnknownTypeChecker = struct {
             .parameterized_type_expr => |pt| {
                 const base = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
                 // A Type-returning reflection builtin in type position
-                // (`x.(structFieldType(T, i))`) takes VALUE args (indices,
-                // comptime cursors) — never walk them as type names; the
-                // lowering fold diagnoses a bad arg precisely.
+                // (`x.(pointeeType(T))`) takes VALUE args — never walk them as
+                // type names; the lowering fold diagnoses a bad arg precisely.
                 if (isTypeFnName(base)) return;
                 for (pt.args, 0..) |a, i| {
                     if (self.isValueParamPosition(base, i)) continue;
@@ -1087,7 +1099,29 @@ pub const UnknownTypeChecker = struct {
         }
     }
 
-    /// Validate the `E` in an `!E` type. `E` must be a declared error set.
+    /// TRUE when the spelling reaches an error set over a namespace edge
+    /// (`ns.Set`), whose head names the namespace rather than a set. The leaf
+    /// is selected without resolving it, so probing mints no type.
+    fn namespacedErrorSet(self: UnknownTypeChecker, name: []const u8) bool {
+        const low = self.lowering orelse return false;
+        const from = self.author_source orelse self.main_file orelse return false;
+        return low.namespacedErrorSetTypeFrom(name, from) != null;
+    }
+
+    /// TRUE when the whole dotted spelling proves a member of a namespace this
+    /// source can select.
+    fn namespaceSelects(self: UnknownTypeChecker, name: []const u8) bool {
+        const low = self.lowering orelse return false;
+        const from = self.author_source orelse self.main_file orelse return false;
+        return switch (low.qualifiedMemberVerdictFrom(name, from)) {
+            .selected => true,
+            else => false,
+        };
+    }
+
+    /// Validate the `E` in an `!E` type. A bare `E` is a declared error set; a
+    /// dotted `Set.Member` names one member of the set its head names, so the
+    /// head carries the whole classification.
     /// Distinguishes three failure shapes so the user gets an actionable
     /// message: an undeclared name (`unknown error set`), and a declared name
     /// that is NOT an error set — a value or a non-error-set type (`expected an
@@ -1095,30 +1129,38 @@ pub const UnknownTypeChecker = struct {
     /// `resolveTypeWithBindings`: never let a non-error-set name
     /// after `!` reach the lowering stub.
     fn reportIfNotErrorSet(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span) void {
-        // Inline-spelled / qualified spellings (`mod.E`) carry non-identifier
-        // characters — trust them, matching `reportIfUnknownType`.
-        if (!isIdentLike(name)) return;
+        if (self.namespacedErrorSet(name)) return;
+        // The head of a proved namespace member is a known import, so the
+        // classification belongs to the whole spelling, not to a last-dot head.
+        if (self.namespaceSelects(name)) {
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+            return;
+        }
+        // Last-dot split, as `qualifiedChannelMember`. Compound heads carry
+        // non-identifier characters — trust them, matching `reportIfUnknownType`.
+        const head = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| name[0..dot] else name;
+        if (!isIdentLike(head)) return;
         const sets = self.error_sets orelse return;
-        if (sets.contains(name)) return;
+        if (sets.contains(head)) return;
         // A composition (`Both :: FooError | BooError`) authors no set of its
         // own — it binds a name to the channel its operands merge into.
-        if (self.index.type_alias_map.get(name)) |aliased| {
+        if (self.index.type_alias_map.get(head)) |aliased| {
             if (!aliased.isBuiltin() and self.types.get(aliased) == .@"error") return;
         }
         // A name that names a real (non-error-set) TYPE — a struct/enum/union,
         // a builtin, or a fabricated stub — is a type-in-error-position misuse.
-        if (isBuiltinTypeName(name)) {
-            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+        if (isBuiltinTypeName(head)) {
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{head});
             return;
         }
-        const sid = self.types.internString(name);
+        const sid = self.types.internString(head);
         if (self.types.findByName(sid)) |_| {
-            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{head});
             return;
         }
         // Otherwise the name is undeclared (or names a value): no error-set
         // author anywhere. Either way it is not a usable error set.
-        self.diagnostics.addFmt(.err, span, "unknown error set '{s}'", .{name});
+        self.diagnostics.addFmt(.err, span, "unknown error set '{s}'", .{head});
     }
 
     fn reportIfUnknownType(
@@ -1145,9 +1187,9 @@ pub const UnknownTypeChecker = struct {
             // names a type and is valid in this position. A VALUE param
             // (`$N: u32`) is a compile-time integer, NOT a type — accepting it
             // would let the field's type leaf resolve to the `.unresolved`
-            // sentinel and panic at LLVM emission. Emit the tailored hint.
+            // sentinel and panic at LLVM emission.
             if (self.isTypeParam(tp)) return;
-            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+            self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
             return;
         }
         if (declared.contains(name)) return;
@@ -1163,7 +1205,7 @@ pub const UnknownTypeChecker = struct {
         }
         for (type_vals) |tv| {
             if (std.mem.eql(u8, tv, name)) {
-                self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type; introduce a generic type parameter with `${s}: Type`", .{ name, name });
+                self.diagnostics.addFmt(.err, span, "'{s}' is a value parameter, not a type", .{name});
                 return;
             }
         }

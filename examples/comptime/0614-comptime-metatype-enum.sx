@@ -9,7 +9,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-E :: define(declare("E"), .enum(.{ variants = .[
+E :: define(declare("E"), .enum(.{ fields = .[
     VariantInfo{ name = "value",  payload = i64  },
     VariantInfo{ name = "closed", payload = void },
 ] }));
