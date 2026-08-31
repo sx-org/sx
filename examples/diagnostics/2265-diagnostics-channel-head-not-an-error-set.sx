@@ -1,6 +1,6 @@
 // A dotted channel operand names one member of the error set its head names.
 // A head naming no error set is diagnosed where it is written. A head naming a
-// known import is not unknown: the whole spelling carries the classification.
+// known import classifies the whole spelling.
 @import "modules/std.sx";
 ns :: @import "2265-diagnostics-channel-head-not-an-error-set/net.sx";
 
