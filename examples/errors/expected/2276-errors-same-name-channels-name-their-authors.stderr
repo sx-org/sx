@@ -1,0 +1,5 @@
+error: a callable with the error channel 'IoErr (examples/errors/2276-errors-same-name-channels-name-their-authors/lib.sx)' does not fill a slot with the error channel 'IoErr (examples/errors/2276-errors-same-name-channels-name-their-authors.sx)' — a `Closure` or function-pointer slot takes exactly its own channel
+  --> examples/errors/2276-errors-same-name-channels-name-their-authors.sx:10:44
+   |
+10 |     slot : Closure(i32) -> (i32, !IoErr) = boom;
+   |                                            ^^^^

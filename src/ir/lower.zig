@@ -1658,6 +1658,10 @@ pub const Lowering = struct {
         return self.program_index.type_alias_map.get(name);
     }
 
+    pub fn errorOwnerSource(self: *Lowering) StringId {
+        return self.module.types.internString(self.current_source_file orelse "");
+    }
+
     /// Fixed-array dimension hook for `TypeResolver.resolveCompound`. A literal
     /// `[16]T` and a named-const `N :: 16; [N]T` must resolve to the SAME length:
     /// the dimension folds to a compile-time integer (looked up in the comptime /

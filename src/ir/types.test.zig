@@ -851,6 +851,25 @@ test "formatTypeName: a width without a reserved spelling names its constructor"
     try std.testing.expectEqualStrings("i8", table.formatTypeName(a, table.internInteger(8, true)));
 }
 
+test "channelName groups a composed | spelling under the bang" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const a_name = table.internString("A");
+    const b_name = table.internString("B");
+    const a_owner = table.internErrorOwner(&a_name, a_name);
+    const b_owner = table.internErrorOwner(&b_name, b_name);
+    const ax = table.internMember(a_owner, "X");
+    const by = table.internMember(b_owner, "Y");
+    const composed = table.errorSetType(.empty, &[_]u32{ ax, by });
+    const fail = table.internFailable(.i32, composed);
+    try std.testing.expectEqualStrings("(i32, !(A.X | B.Y))", table.formatTypeName(a, fail));
+}
+
 test "intern: a builtin's structural info answers its builtin slot" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

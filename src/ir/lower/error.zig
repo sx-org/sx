@@ -530,7 +530,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     if (l.set) |lc| if (r.set) |rc| {
         if (!errorSetValueRetypeIsLegal(self, lc, rc) and !errorSetValueRetypeIsLegal(self, rc, lc)) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.formatTypeName(lc), self.formatTypeName(rc) });
+                diags.addFmt(.err, bop.lhs.span, "error channels '{s}' and '{s}' do not compare — one channel must hold the other's members", .{ self.module.types.errorSetDiagnosticName(self.alloc, lc), self.module.types.errorSetDiagnosticName(self.alloc, rc) });
             }
             return self.builder.constBool(false);
         }
@@ -616,19 +616,8 @@ fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
     const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
     if (channelIsPlaceholder(self, c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
     if (channelIsDyn(self, c)) return self.alloc.dupe(u8, "a dynamic error channel") catch unreachable;
-    const members = channelMembers(self, c);
-    if (members.len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
-    // A merge over one owner's members renders as that owner's spelling, which
-    // is another channel's name; the member list tells the two apart.
-    const name = self.module.types.get(c).@"error".name;
-    if (self.module.types.findByName(name)) |other| {
-        if (other != c) {
-            const list = memberList(self, members);
-            defer self.alloc.free(list);
-            return std.fmt.allocPrint(self.alloc, "the error channel '{s}' ({s})", .{ self.module.types.getString(name), list }) catch unreachable;
-        }
-    }
-    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
+    if (channelMembers(self, c).len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
+    return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.module.types.errorSetDiagnosticName(self.alloc, c)}) catch unreachable;
 }
 
 /// The members `set` carries, empty when `set` is not an error channel.
@@ -642,7 +631,7 @@ fn channelMembers(self: *Lowering, set: TypeId) []const u32 {
 /// `prefix` is the set the arm qualifies with, empty for a `.Leaf` shorthand.
 pub fn emitMemberNotInChannel(self: *Lowering, chan: TypeId, prefix: []const u8, leaf: []const u8, span: ast.Span) void {
     const d = self.diagnostics orelse return;
-    const id = d.addFmtId(.err, span, "the error channel '{s}' does not carry '{s}.{s}' — this arm can never match", .{ self.formatTypeName(chan), prefix, leaf });
+    const id = d.addFmtId(.err, span, "the error channel '{s}' does not carry '{s}.{s}' — this arm can never match", .{ self.module.types.errorSetDiagnosticName(self.alloc, chan), prefix, leaf });
     const members = channelMembers(self, chan);
     if (members.len == 0) return;
     const list = memberList(self, members);
