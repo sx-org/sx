@@ -1,0 +1,11 @@
+error: unknown type 'Nope'
+  --> examples/diagnostics/2272-diagnostics-error-payload-unknown-type.sx:7:32
+   |
+ 7 | PayErr :: error { Bare; Boxed: Nope }
+   |                                ^^^^
+
+error: unknown type 'Missing'
+  --> examples/diagnostics/2272-diagnostics-error-payload-unknown-type.sx:9:43
+   |
+ 9 | InlineErr :: error { Wrapped: struct { v: Missing } }
+   |                                           ^^^^^^^

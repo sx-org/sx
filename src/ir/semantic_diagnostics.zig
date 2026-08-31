@@ -143,6 +143,7 @@ pub const UnknownTypeChecker = struct {
             switch (decl.data) {
                 .fn_decl => decl_checker.checkFnSignatureTypes(&decl.data.fn_decl, &declared),
                 .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
+                .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
                 .impl_block => |ib| for (ib.methods) |method| {
                     if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
@@ -150,6 +151,7 @@ pub const UnknownTypeChecker = struct {
                 .const_decl => |cd| switch (cd.value.data) {
                     .fn_decl => decl_checker.checkFnSignatureTypes(&cd.value.data.fn_decl, &declared),
                     .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
+                    .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
                     // A COMPOSITE type alias — tuple / array / slice / optional
                     // / pointer / many-pointer / function / closure RHS
                     // (`NT :: Tuple(a: i64, b: bool)`, `Bad :: [3]T`,
@@ -648,6 +650,16 @@ pub const UnknownTypeChecker = struct {
         // position (a `@Vector` lane count, a `$N: u32` arg) is still skipped
         // inside `checkTypeNodeForUnknown` / `isValueParamPosition`.
         for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, sd.type_params, &.{}, true);
+    }
+
+    fn checkErrorPayloadTypes(self: UnknownTypeChecker, esd: *const ast.ErrorSetDecl, declared: *std.StringHashMap(void)) void {
+        for (esd.tag_types) |maybe_payload| {
+            const payload = maybe_payload orelse continue;
+            if (payload.data == .struct_decl)
+                self.checkStructFieldTypes(&payload.data.struct_decl, declared)
+            else
+                self.checkTypeNodeForUnknown(payload, declared, &.{}, &.{}, false);
+        }
     }
 
     fn checkTopLevelValue(self: UnknownTypeChecker, value: *const Node, declared: *std.StringHashMap(void)) void {

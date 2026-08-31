@@ -888,6 +888,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             .@"error" => |e| e,
             else => continue,
         };
+        self.setCurrentSourceFile(decl.source_file);
         self.reserveShadowErrorSetSlot(esd);
     }
     self.resolveForwardIdentifierAliases(decls);
