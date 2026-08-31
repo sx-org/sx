@@ -4,8 +4,8 @@ error: unknown error set 'Nope'
  7 | lost :: (n: i32) -> (i32, !Nope.Bad) { return n; }
    |                           ^^^^^^^^^
 
-error: unknown error set 'ns'
+error: expected an error set after '!', found type 'ns.helper'
   --> examples/diagnostics/2265-diagnostics-channel-head-not-an-error-set.sx:9:29
    |
- 9 | routed :: (n: i32) -> (i32, !ns.Net) { return n; }
-   |                             ^^^^^^^
+ 9 | routed :: (n: i32) -> (i32, !ns.helper) { return n; }
+   |                             ^^^^^^^^^^

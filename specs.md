@@ -6370,8 +6370,8 @@ belongs to the composition that names it (`Extended.Extra`).
 
 ### Channels
 
-`!` takes a type expression: a named set, a qualified member, or a parenthesized
-composition.
+`!` takes a type expression: a named set — bare or reached through a namespace
+— a qualified member, or a parenthesized composition.
 
 ```sx
 divide :: (a: i32, b: i32) -> (i32, !MathErr);   // named set

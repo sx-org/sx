@@ -1099,6 +1099,26 @@ pub const UnknownTypeChecker = struct {
         }
     }
 
+    /// TRUE when the spelling reaches an error set over a namespace edge
+    /// (`ns.Set`), whose head names the namespace rather than a set. The leaf
+    /// is selected without resolving it, so probing mints no type.
+    fn namespacedErrorSet(self: UnknownTypeChecker, name: []const u8) bool {
+        const low = self.lowering orelse return false;
+        const from = self.author_source orelse self.main_file orelse return false;
+        return low.namespacedErrorSetTypeFrom(name, from) != null;
+    }
+
+    /// TRUE when the whole dotted spelling proves a member of a namespace this
+    /// source can select.
+    fn namespaceSelects(self: UnknownTypeChecker, name: []const u8) bool {
+        const low = self.lowering orelse return false;
+        const from = self.author_source orelse self.main_file orelse return false;
+        return switch (low.qualifiedMemberVerdictFrom(name, from)) {
+            .selected => true,
+            else => false,
+        };
+    }
+
     /// Validate the `E` in an `!E` type. A bare `E` is a declared error set; a
     /// dotted `Set.Member` names one member of the set its head names, so the
     /// head carries the whole classification.
@@ -1109,6 +1129,13 @@ pub const UnknownTypeChecker = struct {
     /// `resolveTypeWithBindings`: never let a non-error-set name
     /// after `!` reach the lowering stub.
     fn reportIfNotErrorSet(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span) void {
+        if (self.namespacedErrorSet(name)) return;
+        // The head of a proved namespace member is a known import, so the
+        // classification belongs to the whole spelling, not to a last-dot head.
+        if (self.namespaceSelects(name)) {
+            self.diagnostics.addFmt(.err, span, "expected an error set after '!', found type '{s}'", .{name});
+            return;
+        }
         // Last-dot split, as `qualifiedChannelMember`. Compound heads carry
         // non-identifier characters — trust them, matching `reportIfUnknownType`.
         const head = if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| name[0..dot] else name;
