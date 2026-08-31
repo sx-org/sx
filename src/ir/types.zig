@@ -2022,64 +2022,36 @@ pub const TypeTable = struct {
         };
     }
 
-    /// How an error set names itself: its display spelling, and — when some
-    /// other interned set renders under that same spelling — the member names
-    /// that tell the two authors apart, then the intern owner's source when
-    /// those members also collide.
-    fn errorSetName(self: *const TypeTable, alloc: std.mem.Allocator, e: TypeInfo.ErrorSetInfo) []const u8 {
+    /// The name a diagnostic sentence quotes for the channel `id`: its
+    /// spelling, and — when another interned set renders under that same
+    /// spelling — the file that declares this one, so a reader knows which
+    /// declaration is meant. The qualified form is freshly allocated via
+    /// `alloc`; every other answer is a borrowed slice.
+    pub fn errorSetDiagnosticName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
+        if (id.isBuiltin()) return self.formatTypeName(alloc, id);
+        const info = self.get(id);
+        if (info != .@"error") return self.formatTypeName(alloc, id);
+        const e = info.@"error";
         const name = self.getString(e.name);
-        if (!self.errorNameIsShared(e)) return name;
-        var buf = std.ArrayList(u8).empty;
-        defer buf.deinit(alloc);
-        buf.appendSlice(alloc, name) catch return name;
-        buf.append(alloc, '{') catch return name;
-        for (e.tags, 0..) |m, i| {
-            if (i > 0) buf.appendSlice(alloc, ", ") catch return name;
-            buf.appendSlice(alloc, self.getTagName(m)) catch return name;
-        }
-        buf.append(alloc, '}') catch return name;
-        if (self.errorMemberNamesCollide(e)) {
-            const src = self.tags.ownerSource(self.tags.ownerOf(e.tags[0]));
-            if (src != .empty) {
-                buf.appendSlice(alloc, " (") catch return name;
-                buf.appendSlice(alloc, self.getString(src)) catch return name;
-                buf.append(alloc, ')') catch return name;
-            }
-        }
-        return buf.toOwnedSlice(alloc) catch name;
+        if (e.tags.len == 0 or !self.errorNameIsShared(e)) return name;
+        const src = self.tags.ownerSource(self.tags.ownerOf(e.tags[0]));
+        if (src == .empty) return name;
+        return std.fmt.allocPrint(alloc, "{s} ({s})", .{ name, self.getString(src) }) catch name;
     }
 
-    /// True when another interned error set carries different members under
-    /// `e`'s spelling, so that spelling alone does not identify `e`.
+    /// True when a second declaration renders under `e`'s spelling, so that
+    /// spelling alone does not say which one is meant. A merge over part of one
+    /// declaration's members renders under its spelling too, and is that same
+    /// declaration — sharing is a difference of owner, not of member list.
     fn errorNameIsShared(self: *const TypeTable, e: TypeInfo.ErrorSetInfo) bool {
+        const owner = self.tags.ownerOf(e.tags[0]);
         for (self.infos.items) |info| {
             if (info != .@"error") continue;
             const other = info.@"error";
-            if (other.name != e.name) continue;
-            if (!std.mem.eql(u32, other.tags, e.tags)) return true;
+            if (other.name != e.name or other.tags.len == 0) continue;
+            if (self.tags.ownerOf(other.tags[0]) != owner) return true;
         }
         return false;
-    }
-
-    /// True when another interned error set carries the same member names under
-    /// `e`'s spelling, so the member list does not identify `e`.
-    fn errorMemberNamesCollide(self: *const TypeTable, e: TypeInfo.ErrorSetInfo) bool {
-        for (self.infos.items) |info| {
-            if (info != .@"error") continue;
-            const other = info.@"error";
-            if (other.name != e.name) continue;
-            if (std.mem.eql(u32, other.tags, e.tags)) continue;
-            if (self.tagNameSeqEql(other.tags, e.tags)) return true;
-        }
-        return false;
-    }
-
-    fn tagNameSeqEql(self: *const TypeTable, a: []const u32, b: []const u32) bool {
-        if (a.len != b.len) return false;
-        for (a, b) |x, y| {
-            if (!std.mem.eql(u8, self.getTagName(x), self.getTagName(y))) return false;
-        }
-        return true;
     }
 
     /// The channel `id` as a type writes it: `!Set`. A `|` spelling groups as
@@ -2096,9 +2068,8 @@ pub const TypeTable = struct {
 
     /// Like `typeName` but produces structural names for compound
     /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function types)
-    /// instead of returning `"?"`. Compound names — and an error set whose
-    /// spelling another set shares — are freshly allocated via `alloc`; every
-    /// other builtin and named user type returns a borrowed slice.
+    /// instead of returning `"?"`. Compound names are freshly allocated via
+    /// `alloc`; every builtin and named user type returns a borrowed slice.
     pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
         if (id.isBuiltin()) return self.typeName(id);
         const info = self.get(id);
@@ -2108,7 +2079,7 @@ pub const TypeTable = struct {
             .@"union" => |u| self.getString(u.name),
             .tagged_union => |u| self.getString(u.name),
             .protocol => |p| self.getString(p.name),
-            .@"error" => |e| self.errorSetName(alloc, e),
+            .@"error" => |e| self.getString(e.name),
             .pointer => |p| blk: {
                 const inner = self.formatTypeName(alloc, p.pointee);
                 break :blk std.fmt.allocPrint(alloc, "*{s}", .{inner}) catch "*?";

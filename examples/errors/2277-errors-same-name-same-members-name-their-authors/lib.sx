@@ -1,3 +1,0 @@
-IoErr :: error { Down }
-
-boom :: (n: i32) -> (i32, !IoErr) { if n < 0 { raise IoErr.Down; } return n; }

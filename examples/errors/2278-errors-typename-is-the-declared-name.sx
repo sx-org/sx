@@ -1,0 +1,17 @@
+// A type names itself by its declaration, so `@typeName` answers the name the
+// program writes — for the set, through a `Type` local, and through the channel
+// of a failable an `any` boxes — while another module declares that spelling.
+@import "modules/std.sx";
+@import "2278-errors-typename-is-the-declared-name/lib.sx";
+
+ZigZagErr :: error { Kink }
+
+zag :: (n: i32) -> (i32, !ZigZagErr) { if n < 0 { raise ZigZagErr.Kink; } return n; }
+
+main :: () {
+    print("set:   {}\n", @typeName(ZigZagErr));
+    tp : Type = ZigZagErr;
+    print("local: {}\n", @typeName(tp));
+    box : any = zag(1);
+    print("box:   {}\n", @typeName(@typeOf(box)));
+}

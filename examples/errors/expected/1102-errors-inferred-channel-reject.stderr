@@ -1,4 +1,4 @@
-error: a callable with the error channel 'FooError.A | IoErr.Failed | IoErr.Canceled' does not fill a slot with the error channel 'IoErr{Failed, Canceled} (examples/errors/1102-errors-inferred-channel-reject.sx)' — a `Closure` or function-pointer slot takes exactly its own channel
+error: a callable with the error channel 'FooError.A | IoErr.Failed | IoErr.Canceled' does not fill a slot with the error channel 'IoErr (examples/errors/1102-errors-inferred-channel-reject.sx)' — a `Closure` or function-pointer slot takes exactly its own channel
   --> examples/errors/1102-errors-inferred-channel-reject.sx:61:45
    |
 61 |     canal : Closure(i32) -> (i32, !IoErr) = inner;
@@ -16,7 +16,7 @@ error: error member 'Other.Nope' is not in caller's error set 'IoErr'
 30 |     if n < 0 { raise Other.Nope; }
    |                ^^^^^^^^^^^^^^^^^
 
-error: a callable with the error channel 'IoErr{Failed, Canceled} (examples/errors/1102-errors-inferred-channel-reject.sx)' does not fill a slot with an inferred error channel — a `Closure` or function-pointer slot takes exactly its own channel
+error: a callable with the error channel 'IoErr (examples/errors/1102-errors-inferred-channel-reject.sx)' does not fill a slot with an inferred error channel — a `Closure` or function-pointer slot takes exactly its own channel
   --> examples/errors/1102-errors-inferred-channel-reject.sx:63:44
    |
 63 |     slotNamed : Closure(i32) -> (i32, !) = stray;

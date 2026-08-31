@@ -1,0 +1,3 @@
+set:   ZigZagErr
+local: ZigZagErr
+box:   (i32, !ZigZagErr)
