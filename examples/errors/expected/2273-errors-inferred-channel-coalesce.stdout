@@ -6,3 +6,5 @@ nestedOk=6
 nestedEsc=5
 handled=-1
 handledRaise=7
+viaSlotOk=3
+viaSlotEsc=9

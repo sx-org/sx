@@ -59,6 +59,11 @@ handledFwd :: (n: i32) -> (i32, !IoErr) {
     return handled(n);
 }
 
+viaSlot :: (n: i32, f: (i32) -> (i32, !IoErr)) -> (i32, !) {
+    v := ga(n) ?? f(n);
+    return v;
+}
+
 main :: () -> i32 {
     print("markedOk={}\n", markedFwd(0) catch { -1 });
     print("markedEsc={}\n", markedFwd(-1) catch |e| { if e == IoErr.Failed { 1 } else { 2 } });
@@ -68,5 +73,7 @@ main :: () -> i32 {
     print("nestedEsc={}\n", nestedFwd(-1) catch |e| { if e == FooError.A { 5 } else { 6 } });
     print("handled={}\n", handledFwd(-1) catch { -2 });
     print("handledRaise={}\n", handledFwd(99) catch |e| { if e == IoErr.Canceled { 7 } else { 8 } });
+    print("viaSlotOk={}\n", viaSlot(3, hb) catch { -1 });
+    print("viaSlotEsc={}\n", viaSlot(-1, hb) catch { 9 });
     return 0;
 }

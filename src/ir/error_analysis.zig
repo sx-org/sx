@@ -76,46 +76,90 @@ pub const ErrorAnalysis = struct {
         }
     }
 
-    /// The call a failable body hands back with no `return` keyword. A `while`
-    /// or `for` body is not that position.
-    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    /// Visit the callee of every call `node` hands back with no `return`
+    /// keyword. A `while` or `for` body is not that position.
+    fn eachTailCallee(node: *const Node, visitor: anytype) void {
         switch (node.data) {
             .block => |b| {
                 if (!b.produces_value or b.stmts.len == 0) return;
-                self.contributeTailCall(b.stmts[b.stmts.len - 1], edges, dyn, enclosing_fd);
+                eachTailCallee(b.stmts[b.stmts.len - 1], visitor);
             },
             .if_expr => |ie| {
-                self.contributeTailCall(ie.then_branch, edges, dyn, enclosing_fd);
-                if (ie.else_branch) |eb| self.contributeTailCall(eb, edges, dyn, enclosing_fd);
+                eachTailCallee(ie.then_branch, visitor);
+                if (ie.else_branch) |eb| eachTailCallee(eb, visitor);
             },
-            .match_expr => |me| for (me.arms) |arm| self.contributeTailCall(arm.body, edges, dyn, enclosing_fd),
-            .call => |c| self.contributeCallee(c.callee, enclosing_fd, edges, dyn),
+            .match_expr => |me| for (me.arms) |arm| eachTailCallee(arm.body, visitor),
+            .call => |c| visitor.visit(c.callee),
             else => {},
         }
     }
 
-    /// The last operand of a propagating `??`. A tail call is an edge only
-    /// when it names a failable declaration.
-    fn contributeFailableTail(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), enclosing_fd: ?*const ast.FnDecl) void {
+    /// The call a failable body hands back with no `return` keyword.
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        var visitor = struct {
+            a: ErrorAnalysis,
+            edges: *std.ArrayList([]const u8),
+            dyn: *bool,
+            fd: ?*const ast.FnDecl,
+            fn visit(v: *@This(), callee: *const Node) void {
+                v.a.contributeCallee(callee, v.fd, v.edges, v.dyn);
+            }
+        }{ .a = self, .edges = edges, .dyn = dyn, .fd = enclosing_fd };
+        eachTailCallee(node, &visitor);
+    }
+
+    /// Does this `??` operand hand back a failure rather than an optional?
+    /// The collect-time reading of `operandIsFailableLike`: this pass runs
+    /// before body lowering, so no local carries a type yet.
+    fn operandFails(self: ErrorAnalysis, node: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
         switch (node.data) {
-            .block => |b| {
-                if (!b.produces_value or b.stmts.len == 0) return;
-                self.contributeFailableTail(b.stmts[b.stmts.len - 1], edges, enclosing_fd);
-            },
-            .if_expr => |ie| {
-                self.contributeFailableTail(ie.then_branch, edges, enclosing_fd);
-                if (ie.else_branch) |eb| self.contributeFailableTail(eb, edges, enclosing_fd);
-            },
-            .match_expr => |me| for (me.arms) |arm| self.contributeFailableTail(arm.body, edges, enclosing_fd),
-            .call => |c| {
-                if (self.calleeEdge(c.callee, enclosing_fd)) |edge| {
-                    if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd| {
-                        if (Lowering.astChannelNode(fd.return_type) != null) edges.append(self.l.alloc, edge) catch {};
-                    }
-                }
-            },
+            .try_expr => return true,
+            .null_coalesce => |inner| return self.operandFails(inner.lhs, enclosing_fd),
+            // A checked assertion is failable by shape; `.(?T)` is the soft
+            // form, a plain optional value.
+            .postfix_cast => |pc| return pc.type_expr.data != .optional_type_expr,
             else => {},
         }
+        var visitor = struct {
+            a: ErrorAnalysis,
+            fd: ?*const ast.FnDecl,
+            fails: bool,
+            fn visit(v: *@This(), callee: *const Node) void {
+                if (v.a.calleeIsFailable(callee, v.fd)) v.fails = true;
+            }
+        }{ .a = self, .fd = enclosing_fd, .fails = false };
+        eachTailCallee(node, &visitor);
+        return visitor.fails;
+    }
+
+    /// Does a call through this callee spelling carry an error channel? Read
+    /// from what the source WROTE — a lambda's return, the callee
+    /// declaration's return, a callable parameter's return. A spelling collect
+    /// cannot read fails: the extra contribution then routes it through
+    /// `contributeCallee`, which the fix-point turns into `dyn`.
+    fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
+        if (callee.data == .lambda)
+            return Lowering.astChannelNode(callee.data.lambda.return_type) != null;
+        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+            if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd|
+                return Lowering.astChannelNode(fd.return_type) != null;
+        }
+        if (callee.data == .identifier) {
+            if (self.slotChannel(enclosing_fd, callee.data.identifier.name)) |has| return has;
+        }
+        return true;
+    }
+
+    /// Null when `name` is not a callable parameter of `fd`; else whether that
+    /// slot's written return carries an error channel.
+    fn slotChannel(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?bool {
+        const decl = fd orelse return null;
+        for (decl.params) |p| {
+            if (!std.mem.eql(u8, p.name, name)) continue;
+            const ret = self.l.slotReturnType(self.l.resolveType(p.type_expr)) orelse return null;
+            return self.l.errorChannelOf(ret) != null;
+        }
+        return null;
     }
 
     /// `"<head>.<method>"` when that names a declaration, else null.
@@ -266,11 +310,11 @@ pub const ErrorAnalysis = struct {
             return;
         }
         self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
-        // The last operand propagates, so each tail call that names a failable
-        // declaration is an escape edge — a bare call has no `try` to
-        // contribute it. Optional `??` uses this node, so only a named
-        // failable declaration qualifies.
-        self.contributeFailableTail(nc.rhs, edges, enclosing_fd);
+        // The last operand of a chain that routes failure is a tail: its calls
+        // escape with or without a `try` marker. An optional `??` routes no
+        // failure, and a value terminator ends the chain, so neither adds one.
+        if (self.operandFails(nc.lhs, enclosing_fd) and self.operandFails(nc.rhs, enclosing_fd))
+            self.contributeTailCall(nc.rhs, edges, dyn, enclosing_fd);
     }
 
     /// An operand whose failure a fallback absorbs: its own attempt goes
