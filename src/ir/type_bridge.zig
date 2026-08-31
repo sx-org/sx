@@ -904,9 +904,8 @@ pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype
 }
 
 /// The member id `Set.Member` names, or null when the head is not an error
-/// set (declared or aliased) or the head carries no single member of that
-/// name. The head is probed in the type table and the alias map before
-/// resolveName, which mints a stub for an unregistered name.
+/// set (declared, aliased, or namespaced) or the head carries no single member
+/// of that name.
 fn qualifiedChannelMember(name: []const u8, table: *TypeTable, inner: anytype) ?u32 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     const head = name[0..dot];
@@ -924,9 +923,17 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
         if (probe.isBuiltin() or table.get(probe) != .@"error") return null;
         return probe;
     }
-    const aliased = inner.aliasType(head) orelse return null;
-    if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
-    return aliased;
+    if (inner.aliasType(head)) |aliased| {
+        if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
+        return aliased;
+    }
+    // A namespaced head (`ns.Set.Member`) names its set across the import edge,
+    // which neither the name table nor the alias map carries. Only a DOTTED
+    // head resolves: `resolveName` mints a stub for an unregistered bare name.
+    if (std.mem.indexOfScalar(u8, head, '.') == null) return null;
+    const set = inner.resolveName(head);
+    if (set.isBuiltin() or table.get(set) != .@"error") return null;
+    return set;
 }
 
 /// The error channel of a failable signature: `!Set` → that declared set

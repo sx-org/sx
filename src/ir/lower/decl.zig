@@ -883,14 +883,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     }
     // The signatures below resolve their `!` channels against these bindings; a
     // channel resolved before its operands bind keeps a member-less placeholder.
-    for (decls) |decl| {
-        const esd = switch (topLevelTypeDecl(decl) orelse continue) {
-            .@"error" => |e| e,
-            else => continue,
-        };
-        self.setCurrentSourceFile(decl.source_file);
-        self.reserveShadowErrorSetSlot(esd);
-    }
+    reserveErrorSetSlots(self, decls);
     self.resolveForwardIdentifierAliases(decls);
     resolveErrorCompositionAliases(self, decls);
     for (decls) |decl| {
@@ -1858,6 +1851,26 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     if (self.diagnostics) |d|
         d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant", .{vd.name});
     return null;
+}
+
+/// Reserve the TypeId of every error set the program declares, a namespaced
+/// module's own sets included — a channel that names a set before it interns
+/// keeps a member-less placeholder. Each level's own declarations reserve
+/// before the namespaces it carries, so a same-name namespaced set never takes
+/// a nearer author's slot.
+fn reserveErrorSetSlots(self: *Lowering, decls: []const *const Node) void {
+    for (decls) |decl| {
+        const esd = switch (topLevelTypeDecl(decl) orelse continue) {
+            .@"error" => |e| e,
+            else => continue,
+        };
+        self.setCurrentSourceFile(decl.source_file);
+        self.reserveShadowErrorSetSlot(esd);
+    }
+    for (decls) |decl| {
+        if (decl.data != .namespace_decl) continue;
+        reserveErrorSetSlots(self, decl.data.namespace_decl.decls);
+    }
 }
 
 /// Bind each `Name :: A | B` error composition to the interned member set of

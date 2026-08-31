@@ -1643,12 +1643,17 @@ pub const Lowering = struct {
         return self.packResolver().packTypeElems(node.data.spread_expr.operand);
     }
 
-    /// Bare TYPE-NAME twin of `resolveInner` for callers holding a name rather
-    /// than an AST node (e.g. an error-set reference `!Named`) — routed through
-    /// the visibility-aware `resolveNominalLeaf`, so a same-name-shadowed set
-    /// resolves to the querying module's own author.
+    /// TYPE-NAME twin of `resolveInner` for callers holding a name rather than
+    /// an AST node (e.g. an error-set reference `!Named`) — routed through the
+    /// visibility-aware `resolveNominalLeaf`, so a same-name-shadowed set
+    /// resolves to the querying module's own author. A namespaced spelling
+    /// (`ns.Set`) pins its leaf in the module the prefix selects; any other
+    /// dotted spelling stays a bare leaf.
     pub fn resolveName(self: *Lowering, name: []const u8) TypeId {
-        return self.resolveNominalLeaf(name, false, null);
+        switch (self.qualifiedMemberVerdict(name)) {
+            .selected => |sel| return self.selectedMemberType(sel, false, null),
+            else => return self.resolveNominalLeaf(name, false, null),
+        }
     }
 
     pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
@@ -1905,6 +1910,15 @@ pub const Lowering = struct {
         return self.qualifiedConstNodeIsFloatTyped(node, null);
     }
 
+    /// The type a proved namespace selection names, resolved in the TARGET
+    /// module's own visibility context so the leaf is judged by that module.
+    fn selectedMemberType(self: *Lowering, sel: QualifiedMember, is_raw: bool, span: ?ast.Span) TypeId {
+        const saved = self.current_source_file;
+        self.setCurrentSourceFile(sel.target.target_module_path);
+        defer self.setCurrentSourceFile(saved);
+        return self.resolveNominalLeaf(sel.member, is_raw, span);
+    }
+
     /// A DOTTED type reference, in either spelling: a dotted `type_expr` name
     /// (`x : m.Cfg`) or the `field_access` chain a literal head carries
     /// (`m.Cfg{...}`). Proves every namespace edge and pins the leaf to the exact
@@ -1917,13 +1931,7 @@ pub const Lowering = struct {
     fn resolveDottedType(self: *Lowering, name: []const u8, is_raw: bool, span: ast.Span) ?TypeId {
         const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
         switch (self.qualifiedMemberVerdict(name)) {
-            .selected => |sel| {
-                const saved = self.current_source_file;
-                self.setCurrentSourceFile(sel.target.target_module_path);
-                const ty = self.resolveNominalLeaf(sel.member, is_raw, span);
-                self.setCurrentSourceFile(saved);
-                return ty;
-            },
+            .selected => |sel| return self.selectedMemberType(sel, is_raw, span),
             .missing => |m| {
                 if (self.namespaceMissWaits(m)) return .unresolved;
                 if (self.diagnostics) |d|
