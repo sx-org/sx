@@ -94,6 +94,30 @@ pub const ErrorAnalysis = struct {
         }
     }
 
+    /// The last operand of a propagating `??`. A tail call is an edge only
+    /// when it names a failable declaration.
+    fn contributeFailableTail(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .block => |b| {
+                if (!b.produces_value or b.stmts.len == 0) return;
+                self.contributeFailableTail(b.stmts[b.stmts.len - 1], edges, enclosing_fd);
+            },
+            .if_expr => |ie| {
+                self.contributeFailableTail(ie.then_branch, edges, enclosing_fd);
+                if (ie.else_branch) |eb| self.contributeFailableTail(eb, edges, enclosing_fd);
+            },
+            .match_expr => |me| for (me.arms) |arm| self.contributeFailableTail(arm.body, edges, enclosing_fd),
+            .call => |c| {
+                if (self.calleeEdge(c.callee, enclosing_fd)) |edge| {
+                    if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd| {
+                        if (Lowering.astChannelNode(fd.return_type) != null) edges.append(self.l.alloc, edge) catch {};
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
     /// `"<head>.<method>"` when that names a declaration, else null.
     fn qualifiedEdge(self: ErrorAnalysis, head: []const u8, method: []const u8) ?[]const u8 {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
@@ -242,17 +266,11 @@ pub const ErrorAnalysis = struct {
             return;
         }
         self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
-        // The last operand propagates, so its callee is an escape edge — a
-        // bare one carries no `try` to contribute it. Only a named failable
-        // declaration qualifies: an optional `??` defaults through this same
-        // node, and its rhs escapes nothing.
-        if (nc.rhs.data == .call) {
-            if (self.calleeEdge(nc.rhs.data.call.callee, enclosing_fd)) |edge| {
-                if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd| {
-                    if (Lowering.astChannelNode(fd.return_type) != null) edges.append(self.l.alloc, edge) catch {};
-                }
-            }
-        }
+        // The last operand propagates, so each tail call that names a failable
+        // declaration is an escape edge — a bare call has no `try` to
+        // contribute it. Optional `??` uses this node, so only a named
+        // failable declaration qualifies.
+        self.contributeFailableTail(nc.rhs, edges, enclosing_fd);
     }
 
     /// An operand whose failure a fallback absorbs: its own attempt goes
