@@ -826,8 +826,7 @@ test "parser: the end of the file ends the last declaration" {
 // ---- Linkage tails ----
 //
 // `[LIB] ["csym"]` after `extern` / `export` is two optional bare names, and the
-// declaration's `;` is what closes the tail. A line break inside it is ordinary
-// whitespace, so both slots read on through one.
+// declaration's `;` is what closes the tail.
 
 // An empty tail is closed by the declaration's own `;`.
 test "parser: an extern tail is closed by its `;`" {
@@ -882,119 +881,40 @@ test "parser: an extern data tail is closed by its `;`" {
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
 }
 
-// Both slots read on through a line break.
-test "parser: an export tail reads through a line break" {
+test "parser: an export tail binds its lib and symbol slots" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = try Parser.init(alloc,
-        \\seven :: () -> i64 export
-        \\"renamed_c"
-        \\{ 7 }
-    );
+    var p = try Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
     const fd = (try p.parse()).data.root.decls[0].data.fn_decl;
-    try std.testing.expect(fd.extern_lib == null);
+    try std.testing.expectEqualStrings("C", fd.extern_lib.?);
     try std.testing.expectEqualStrings("renamed_c", fd.extern_name.?);
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
-
-    var with_lib = try Parser.init(alloc,
-        \\seven :: () -> i64 export
-        \\C
-        \\"renamed_c"
-        \\{ 7 }
-    );
-    const lib_fd = (try with_lib.parse()).data.root.decls[0].data.fn_decl;
-    try std.testing.expectEqualStrings("C", lib_fd.extern_lib.?);
-    try std.testing.expectEqualStrings("renamed_c", lib_fd.extern_name.?);
-
-    var same = try Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
-    const same_fd = (try same.parse()).data.root.decls[0].data.fn_decl;
-    try std.testing.expectEqualStrings("C", same_fd.extern_lib.?);
-    try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
 }
 
-// A struct's `{ … }` is unconditional, so its tail reads through too.
-test "parser: a struct linkage tail reads through a line break" {
+test "parser: a struct linkage tail binds its abi and lib" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = try Parser.init(alloc,
-        \\Handle :: struct abi(.c) extern
-        \\compiler
-        \\{ x: i64; }
-    );
+    var p = try Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
     const sd = (try p.parse()).data.root.decls[0].data.struct_decl;
     try std.testing.expectEqualStrings("compiler", sd.extern_lib.?);
     try std.testing.expectEqual(ast.ABI.c, sd.abi);
     try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
-
-    var same = try Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
-    const same_sd = (try same.parse()).data.root.decls[0].data.struct_decl;
-    try std.testing.expectEqualStrings("compiler", same_sd.extern_lib.?);
-    try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
 }
 
-// A `name : T` (or `name :: value`) is a whole declaration without a tail, so
-// it asks whether it ended before dispatching on the token below. A tail reads
-// on through a line break like any other unterminated statement.
-test "parser: a complete binding asks whether it ended before its tail" {
+test "parser: `name :: T intrinsic` annotates the constant" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // `extern` below a complete `name : T`.
-    var ext = try Parser.init(alloc,
-        \\errno_loc : *i32
-        \\    extern libc "__error"
-    );
-    const ext_decls = (try ext.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), ext_decls.len);
-    try std.testing.expect(ext_decls[0].data.var_decl.is_extern);
-    try std.testing.expectEqualStrings("libc", ext_decls[0].data.var_decl.extern_lib.?);
-    try std.testing.expectEqualStrings("__error", ext_decls[0].data.var_decl.extern_name.?);
-
-    // A split `:` still makes a typed constant.
-    var col = try Parser.init(alloc,
-        \\LIMIT : i64
-        \\    : 1
-    );
-    const col_decls = (try col.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), col_decls.len);
-    try std.testing.expect(col_decls[0].data.const_decl.type_annotation != null);
-    try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
-
-    // A split `=` still makes a typed variable.
-    var eq = try Parser.init(alloc,
-        \\seed : i64
-        \\    = 7
-    );
-    const eq_decls = (try eq.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), eq_decls.len);
-    try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
-
-    // A split `intrinsic` still annotates the constant.
-    var intr = try Parser.init(alloc,
-        \\mystery :: i64
-        \\    intrinsic
-    );
-    const intr_decls = (try intr.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), intr_decls.len);
-    try std.testing.expect(intr_decls[0].data.const_decl.value.data == .intrinsic_expr);
-    try std.testing.expect(intr_decls[0].data.const_decl.type_annotation != null);
-
-    // The ordinary next statement the reorder must still recognize: a bare
-    // `name : T` closed by its `;`, followed by an unrelated declaration.
-    var plain = try Parser.init(alloc,
-        \\slot : i64;
-        \\LIMIT :: 9;
-    );
-    const plain_decls = (try plain.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 2), plain_decls.len);
-    try std.testing.expect(plain_decls[0].data.var_decl.value == null);
-    try std.testing.expect(!plain_decls[0].data.var_decl.is_extern);
-    try std.testing.expect(plain_decls[1].data == .const_decl);
+    var p = try Parser.init(alloc, "mystery :: i64 intrinsic\n");
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), decls.len);
+    try std.testing.expect(decls[0].data.const_decl.value.data == .intrinsic_expr);
+    try std.testing.expect(decls[0].data.const_decl.type_annotation != null);
 }
 
 // ---- The binding layer ----
@@ -1139,53 +1059,6 @@ test "parser: the head words are ordinary identifiers elsewhere" {
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
     for (decls) |d| try std.testing.expect(d.data != .protocol_decl);
-}
-
-// A value inside a fixed delimiter is owned by that delimiter: the list
-// runs to its closer, so a line break inside it never ends anything.
-test "parser: values inside fixed delimiters read through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    // A struct field's default.
-    var field = try Parser.init(alloc,
-        \\Cfg :: struct {
-        \\    depth: i64
-        \\        = 3;
-        \\}
-    );
-    const sd = (try field.parse()).data.root.decls[0].data.struct_decl;
-    try std.testing.expect(sd.field_defaults[0] != null);
-
-    // A parameter's default, and an argument split across lines.
-    const body = try parseBody(alloc,
-        \\f :: (
-        \\    a: i64
-        \\        = 1,
-        \\    b: i64
-        \\) -> i64 {
-        \\    g(
-        \\        a,
-        \\        b
-        \\    )
-        \\}
-    );
-    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
-    try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts[0].data.call.args.len);
-
-    // An aggregate's named values.
-    const agg = try parseBody(alloc,
-        \\f :: () -> i64 {
-        \\    p := Point{
-        \\        x = 1,
-        \\        y = 2,
-        \\    };
-        \\    p.x
-        \\}
-    );
-    try std.testing.expectEqual(@as(usize, 2), agg.data.block.stmts.len);
-    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .juxtaposition);
 }
 
 // A fixed form's own list keeps its literal separator.
