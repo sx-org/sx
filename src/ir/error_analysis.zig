@@ -35,61 +35,131 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, or `dyn` when the callee spelling names none. A
-    /// resolved non-failable callee contributes an edge whose declared channel
-    /// is empty. `enclosing_fd` types a receiver written as one of its
-    /// parameters; a receiver that is anything else is not typed here.
-    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
+    /// The EDGE a callee spelling names — the key its declaration is
+    /// registered under — or null when the spelling names none.
+    /// `enclosing_fd` types a receiver written as one of its parameters; a
+    /// receiver that is anything else is not typed here.
+    fn calleeEdge(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?[]const u8 {
         switch (callee.data) {
-            .identifier => |id| edges.append(self.l.alloc, id.name) catch {},
+            .identifier => |id| return id.name,
             .field_access => |fa| {
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
                     // A namespace- or type-qualified callee is spelled exactly as
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
-                    if (self.qualifiedEdge(obj, fa.field)) |q| {
-                        edges.append(self.l.alloc, q) catch {};
-                        return;
-                    }
+                    if (self.qualifiedEdge(obj, fa.field)) |q| return q;
                     // A typed Type.method outranks the bare name: a free function
                     // may share it (libc `read`).
                     if (self.paramTypeName(enclosing_fd, obj)) |tn| {
-                        if (self.qualifiedEdge(tn, fa.field)) |q| {
-                            edges.append(self.l.alloc, q) catch {};
-                            return;
-                        }
+                        if (self.qualifiedEdge(tn, fa.field)) |q| return q;
                     }
                 }
                 // A UFCS free function lives under the BARE method name.
                 const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) {
-                    edges.append(self.l.alloc, bare) catch {};
-                    return;
-                }
-                dyn.* = true;
+                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) return bare;
+                return null;
             },
-            else => dyn.* = true,
+            else => return null,
         }
     }
 
-    /// The call a failable body hands back with no `return` keyword. A `while`
-    /// or `for` body is not that position.
-    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
+    /// callee's declaration, or `dyn` when the callee spelling names none. A
+    /// resolved non-failable callee contributes an edge whose declared channel
+    /// is empty.
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
+        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+            edges.append(self.l.alloc, edge) catch {};
+        } else {
+            dyn.* = true;
+        }
+    }
+
+    /// Visit the callee of every call `node` hands back with no `return`
+    /// keyword. A `while` or `for` body is not that position.
+    fn eachTailCallee(node: *const Node, visitor: anytype) void {
         switch (node.data) {
             .block => |b| {
                 if (!b.produces_value or b.stmts.len == 0) return;
-                self.contributeTailCall(b.stmts[b.stmts.len - 1], edges, dyn, enclosing_fd);
+                eachTailCallee(b.stmts[b.stmts.len - 1], visitor);
             },
             .if_expr => |ie| {
-                self.contributeTailCall(ie.then_branch, edges, dyn, enclosing_fd);
-                if (ie.else_branch) |eb| self.contributeTailCall(eb, edges, dyn, enclosing_fd);
+                eachTailCallee(ie.then_branch, visitor);
+                if (ie.else_branch) |eb| eachTailCallee(eb, visitor);
             },
-            .match_expr => |me| for (me.arms) |arm| self.contributeTailCall(arm.body, edges, dyn, enclosing_fd),
-            .call => |c| self.contributeCallee(c.callee, enclosing_fd, edges, dyn),
+            .match_expr => |me| for (me.arms) |arm| eachTailCallee(arm.body, visitor),
+            .call => |c| visitor.visit(c.callee),
             else => {},
         }
+    }
+
+    /// The call a failable body hands back with no `return` keyword.
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        var visitor = struct {
+            a: ErrorAnalysis,
+            edges: *std.ArrayList([]const u8),
+            dyn: *bool,
+            fd: ?*const ast.FnDecl,
+            fn visit(v: *@This(), callee: *const Node) void {
+                v.a.contributeCallee(callee, v.fd, v.edges, v.dyn);
+            }
+        }{ .a = self, .edges = edges, .dyn = dyn, .fd = enclosing_fd };
+        eachTailCallee(node, &visitor);
+    }
+
+    /// Does this `??` operand hand back a failure rather than an optional?
+    /// The collect-time reading of `operandIsFailableLike`: this pass runs
+    /// before body lowering, so no local carries a type yet.
+    fn operandFails(self: ErrorAnalysis, node: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
+        switch (node.data) {
+            .try_expr => return true,
+            .null_coalesce => |inner| return self.operandFails(inner.lhs, enclosing_fd),
+            // A checked assertion is failable by shape; `.(?T)` is the soft
+            // form, a plain optional value.
+            .postfix_cast => |pc| return pc.type_expr.data != .optional_type_expr,
+            else => {},
+        }
+        var visitor = struct {
+            a: ErrorAnalysis,
+            fd: ?*const ast.FnDecl,
+            fails: bool,
+            fn visit(v: *@This(), callee: *const Node) void {
+                if (v.a.calleeIsFailable(callee, v.fd)) v.fails = true;
+            }
+        }{ .a = self, .fd = enclosing_fd, .fails = false };
+        eachTailCallee(node, &visitor);
+        return visitor.fails;
+    }
+
+    /// Does a call through this callee spelling carry an error channel? Read
+    /// from what the source WROTE — a lambda's return, the callee
+    /// declaration's return, a callable parameter's return. A spelling collect
+    /// cannot read fails: the extra contribution then routes it through
+    /// `contributeCallee`, which the fix-point turns into `dyn`.
+    fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
+        if (callee.data == .lambda)
+            return Lowering.astChannelNode(callee.data.lambda.return_type) != null;
+        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+            if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd|
+                return Lowering.astChannelNode(fd.return_type) != null;
+        }
+        if (callee.data == .identifier) {
+            if (self.slotChannel(enclosing_fd, callee.data.identifier.name)) |has| return has;
+        }
+        return true;
+    }
+
+    /// Null when `name` is not a callable parameter of `fd`; else whether that
+    /// slot's written return carries an error channel.
+    fn slotChannel(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?bool {
+        const decl = fd orelse return null;
+        for (decl.params) |p| {
+            if (!std.mem.eql(u8, p.name, name)) continue;
+            const ret = self.l.slotReturnType(self.l.resolveType(p.type_expr)) orelse return null;
+            return self.l.errorChannelOf(ret) != null;
+        }
+        return null;
     }
 
     /// `"<head>.<method>"` when that names a declaration, else null.
@@ -200,22 +270,17 @@ pub const ErrorAnalysis = struct {
             .unary_op => |u| self.collectErrorSites(u.operand, tags, edges, dyn, enclosing_fd),
             .deref_expr => |d| self.collectErrorSites(d.operand, tags, edges, dyn, enclosing_fd),
             .force_unwrap => |fu| self.collectErrorSites(fu.operand, tags, edges, dyn, enclosing_fd),
-            .null_coalesce => |nc| {
-                self.collectErrorSites(nc.lhs, tags, edges, dyn, enclosing_fd);
-                self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
-            },
+            .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, false),
             .field_access => |fa| self.collectErrorSites(fa.object, tags, edges, dyn, enclosing_fd),
             .index_expr => |ix| {
                 self.collectErrorSites(ix.object, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ix.index, tags, edges, dyn, enclosing_fd);
             },
             .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn, enclosing_fd),
-            // A fallback absorbs exactly what it attempts: a boundary block
-            // owns every escape inside it, while a plain operand still leaks
-            // the `try`s nested in it. The handler body's own escapes forward.
+            // The handler body's own escapes forward; what the fallback
+            // attempts is absorbed.
             .catch_expr => |ce| {
-                const attempted = Lowering.catchAttempted(&ce);
-                if (!attempted.boundary) self.collectErrorSites(attempted.node, tags, edges, dyn, enclosing_fd);
+                self.collectAbsorbed(ce.operand, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
             },
             .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),
@@ -227,6 +292,40 @@ pub const ErrorAnalysis = struct {
             .tuple_literal => |tl| for (tl.elements) |el| self.collectErrorSites(el.value, tags, edges, dyn, enclosing_fd),
             // Stop at nested function boundaries; leaves contribute nothing.
             else => {},
+        }
+    }
+
+    /// A `??` chain routes each operand's failure to the operand that follows,
+    /// so every operand but the last is absorbed. The last one propagates,
+    /// unless `absorbed` — a `catch` over the chain takes its total failure.
+    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
+        self.collectAbsorbed(nc.lhs, tags, edges, dyn, enclosing_fd);
+        // `??` is right-associative, so the chain continues down the rhs.
+        if (nc.rhs.data == .null_coalesce) {
+            self.collectCoalesce(&nc.rhs.data.null_coalesce, tags, edges, dyn, enclosing_fd, absorbed);
+            return;
+        }
+        if (absorbed) {
+            self.collectAbsorbed(nc.rhs, tags, edges, dyn, enclosing_fd);
+            return;
+        }
+        self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
+        // The last operand of a chain that routes failure is a tail: its calls
+        // escape with or without a `try` marker. An optional `??` routes no
+        // failure, and a value terminator ends the chain, so neither adds one.
+        if (self.operandFails(nc.lhs, enclosing_fd) and self.operandFails(nc.rhs, enclosing_fd))
+            self.contributeTailCall(nc.rhs, edges, dyn, enclosing_fd);
+    }
+
+    /// An operand whose failure a fallback absorbs: its own attempt goes
+    /// nowhere, while a `try` nested inside it re-raises before the fallback
+    /// runs and still escapes. A `try { … }` boundary owns every escape
+    /// inside it.
+    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, true),
+            .try_expr => |te| if (te.operand.data != .block) self.collectAbsorbed(te.operand, tags, edges, dyn, enclosing_fd),
+            else => self.collectErrorSites(node, tags, edges, dyn, enclosing_fd),
         }
     }
 
