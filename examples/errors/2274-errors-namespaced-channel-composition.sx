@@ -1,9 +1,11 @@
 // A channel names its error set across an import edge. `!wire.Wire` is the
-// imported set, `!wire.Wire.Write` the singleton its member carries, and a
-// composition merges the imported set's members with a local set's — spelled
-// through the namespace or through an alias of it.
+// imported set, `!pack.wire.Wire` the same set through a nested namespace,
+// `!wire.Wire.Write` the singleton its member carries, and a composition
+// merges the imported set's members with a local set's — spelled through the
+// namespace or through an alias of it.
 @import "modules/std.sx";
 wire :: @import "2274-errors-namespaced-channel-composition/wire.sx";
+pack :: @import "2274-errors-namespaced-channel-composition/pack.sx";
 
 Disk :: error { Full }
 
@@ -32,11 +34,17 @@ member :: (n: i32) -> (i32, !wire.Wire.Write) {
     return n;
 }
 
+nested :: (n: i32) -> (i32, !pack.wire.Wire) {
+    if n == 0 { raise pack.wire.Wire.Read; }
+    return n;
+}
+
 main :: () -> i32 {
     print("merged read: {}\n", merged(0) catch |e| { if e == wire.Wire.Read { 1 } else { 0 } });
     print("merged full: {}\n", merged(1) catch |e| { if e == Disk.Full { 2 } else { 0 } });
     print("alias write: {}\n", aliased(0) catch |e| { if e == wire.Wire.Write { 3 } else { 0 } });
     print("whole: {}\n", whole(0) catch |e| { if e == wire.Wire.Read { 4 } else { 0 } });
     print("member: {}\n", member(0) catch |e| { if e == wire.Wire.Write { 5 } else { 0 } });
+    print("nested: {}\n", nested(0) catch |e| { if e == pack.wire.Wire.Read { 6 } else { 0 } });
     return 0;
 }

@@ -1105,15 +1105,7 @@ pub const UnknownTypeChecker = struct {
     fn namespacedErrorSet(self: UnknownTypeChecker, name: []const u8) bool {
         const low = self.lowering orelse return false;
         const from = self.author_source orelse self.main_file orelse return false;
-        const sel = switch (low.qualifiedMemberVerdictFrom(name, from)) {
-            .selected => |s| s,
-            else => return false,
-        };
-        const leaf = switch (low.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
-            .resolved => |t| t,
-            else => return false,
-        };
-        return !leaf.isBuiltin() and self.types.get(leaf) == .@"error";
+        return low.namespacedErrorSetTypeFrom(name, from) != null;
     }
 
     /// Validate the `E` in an `!E` type. A bare `E` is a declared error set; a

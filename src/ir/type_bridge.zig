@@ -54,6 +54,9 @@ const StatelessInner = struct {
         const map = self.alias_map orelse return null;
         return map.get(name);
     }
+    pub fn namespacedErrorSetType(_: StatelessInner, _: []const u8) ?TypeId {
+        return null;
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -888,6 +891,10 @@ pub fn internErrorSetDecl(esd: *const ast.ErrorSetDecl, table: *TypeTable, inner
 /// set contributes every member it declares, `Set.Member` the one it names.
 /// False when the spelling names no error set.
 pub fn channelOperandMembers(name: []const u8, table: *TypeTable, inner: anytype, out: *std.ArrayList(u32)) bool {
+    if (inner.namespacedErrorSetType(name)) |set| {
+        out.appendSlice(table.alloc, table.get(set).@"error".tags) catch unreachable;
+        return true;
+    }
     if (qualifiedChannelMember(name, table, inner)) |member| {
         out.append(table.alloc, member) catch unreachable;
         return true;
@@ -927,13 +934,12 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
         if (aliased.isBuiltin() or table.get(aliased) != .@"error") return null;
         return aliased;
     }
-    // A namespaced head (`ns.Set.Member`) names its set across the import edge,
-    // which neither the name table nor the alias map carries. Only a DOTTED
-    // head resolves: `resolveName` mints a stub for an unregistered bare name.
-    if (std.mem.indexOfScalar(u8, head, '.') == null) return null;
-    const set = inner.resolveName(head);
-    if (set.isBuiltin() or table.get(set) != .@"error") return null;
-    return set;
+    // A namespaced head (`ns.Set`) is not in the name table or the alias map.
+    if (inner.namespacedErrorSetType(head)) |set| {
+        if (set.isBuiltin() or table.get(set) != .@"error") return null;
+        return set;
+    }
+    return null;
 }
 
 /// The error channel of a failable signature: `!Set` → that declared set
@@ -944,6 +950,9 @@ fn channelHeadErrorSet(head: []const u8, table: *TypeTable, inner: anytype) ?Typ
 /// function by the whole-program SCC pass.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
     if (ete.namedSet()) |name| {
+        if (inner.namespacedErrorSetType(name)) |set| {
+            return set;
+        }
         if (qualifiedChannelMember(name, table, inner)) |member| {
             return table.errorSetType(.empty, &.{member});
         }

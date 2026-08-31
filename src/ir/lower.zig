@@ -1919,6 +1919,26 @@ pub const Lowering = struct {
         return self.resolveNominalLeaf(sel.member, is_raw, span);
     }
 
+    /// Selects the leaf without resolving it, so a miss mints no type and
+    /// diagnoses nothing.
+    pub fn namespacedErrorSetTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
+        const sel = switch (self.qualifiedMemberVerdictFrom(name, from)) {
+            .selected => |s| s,
+            else => return null,
+        };
+        const leaf = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+            .resolved => |t| t,
+            else => return null,
+        };
+        if (leaf.isBuiltin() or self.module.types.get(leaf) != .@"error") return null;
+        return leaf;
+    }
+
+    pub fn namespacedErrorSetType(self: *Lowering, name: []const u8) ?TypeId {
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        return self.namespacedErrorSetTypeFrom(name, from);
+    }
+
     /// A DOTTED type reference, in either spelling: a dotted `type_expr` name
     /// (`x : m.Cfg`) or the `field_access` chain a literal head carries
     /// (`m.Cfg{...}`). Proves every namespace edge and pins the leaf to the exact
