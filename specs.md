@@ -4786,8 +4786,7 @@ a function body.
 **The iterables are ordinary expressions.** Nothing in the header is
 reserved for captures, so a call iterable is written as it is anywhere else
 (`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
-no intermediate binding. A `(` applies arguments across any gap, so
-`for x in f (n) { }` is the same call and `for xs (x) { }` iterates `xs(x)`.
+no intermediate binding.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
@@ -5197,8 +5196,7 @@ scaffold() { chatList(); };                    // defaults skipped, block binds 
   `-> Type` function — constructs (`Label { text = "x" }`, `List(Move){}`,
   `Buf(16){}`, `p.Slot(i64){}`); every other call fuses its block onto the last
   declared parameter (`vstack(8.0) { … }`, `run(2) {}`, `render(*screen) {}`).
-  Body shape, the gap before the `{`, and a line break between them decide
-  nothing. Anything else takes no block at all.
+  Body shape decides nothing. Anything else takes no block at all.
 - **Header on a construction**: a construction takes no `|…|` header — that
   header belongs to a block that becomes a closure. A positional aggregate
   element that is a closure is parenthesized: `Box(Closure(i64)){ (|x| x), }`.
@@ -6776,8 +6774,8 @@ value channel — no coupling to the implicit `context`.
 
 ```
 program         = top_level*
-end             = ';' | EOF   // §1 Spacing and terminators: a line break is
-                  // ordinary space; EOF ends the last declaration of a file
+end             = ';' | EOF   // §1 Spacing and terminators: EOF ends the last
+                  // declaration of a file
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
