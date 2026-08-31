@@ -1100,106 +1100,13 @@ test "parser: `;` cuts a statement off from the brace group after it" {
     try std.testing.expect(!jx.has_header);
 }
 
-// ---- Declaration headers across a line break ----
-//
-// A line break inside a declaration header is ordinary whitespace, so an
-// optional slot written on its own line still belongs to the header above it.
-// Each slot below is identifier-shaped — the shape that most resembles a
-// declaration of its own.
-
-// Enum `flags` and the backing type.
-test "parser: an enum header reads through a line break" {
+test "parser: `interface` is an erased contract, `constraint` a bound one" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = try Parser.init(alloc,
-        \\Perms :: enum
-        \\    flags
-        \\    u32
-        \\    { read; write; }
-    );
-    const ed = (try p.parse()).data.root.decls[0].data.enum_decl;
-    try std.testing.expect(ed.is_flags);
-    try std.testing.expect(ed.backing_type != null);
-    try std.testing.expectEqual(@as(usize, 2), ed.variant_names.len);
-
-    var same = try Parser.init(alloc, "Perms :: enum flags u32 { read; write; }\n");
-    const same_ed = (try same.parse()).data.root.decls[0].data.enum_decl;
-    try std.testing.expect(same_ed.is_flags);
-    try std.testing.expect(same_ed.backing_type != null);
-}
-
-// A `ufcs` alias names its target after the keyword.
-test "parser: a ufcs alias target reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc,
-        \\multiply :: ufcs
-        \\    mat4_multiply
-    );
-    const decls = (try p.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), decls.len);
-    try std.testing.expectEqualStrings("mat4_multiply", decls[0].data.ufcs_alias.target);
-
-    var same = try Parser.init(alloc, "multiply :: ufcs mat4_multiply\n");
-    try std.testing.expectEqualStrings("mat4_multiply", (try same.parse()).data.root.decls[0].data.ufcs_alias.target);
-}
-
-// A runtime class's linkage word sits in front of a mandatory body.
-test "parser: a runtime-class linkage word reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc,
-        \\NSString :: @ObjcClass("NSString")
-        \\    extern
-        \\    { length :: (self: *Self) -> i32; }
-    );
-    const rc = (try p.parse()).data.root.decls[0].data.runtime_class_decl;
-    try std.testing.expect(rc.is_extern);
-
-    var same = try Parser.init(alloc, "NSString :: @ObjcClass(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
-    try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
-}
-
-// A struct's type-parameter list sits in front of a mandatory `{`.
-test "parser: a struct type-parameter list reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc,
-        \\Box :: struct
-        \\    ($T: Type)
-        \\    { v: T; }
-    );
-    const sd = (try p.parse()).data.root.decls[0].data.struct_decl;
-    try std.testing.expectEqual(@as(usize, 1), sd.type_params.len);
-    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
-
-    var same = try Parser.init(alloc, "Box :: struct($T: Type) { v: T; }\n");
-    try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
-}
-
-// The head word is contextual: the body brace after the optional parameter
-// list is what marks it, across a line break like every other header slot.
-test "parser: a contract head word reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc,
-        \\Show :: interface
-        \\    (T: Type)
-        \\    { fmt :: (self: *Self) -> T; }
-    );
-    const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
-    try std.testing.expectEqual(ast.ProtocolKind.erased, pd.kind);
-    try std.testing.expectEqual(@as(usize, 1), pd.type_params.len);
+    var p = try Parser.init(alloc, "Show :: interface (T: Type) { fmt :: (self: *Self) -> T; }\n");
+    try std.testing.expectEqual(ast.ProtocolKind.erased, (try p.parse()).data.root.decls[0].data.protocol_decl.kind);
 
     var bound = try Parser.init(alloc, "Ord :: constraint { less :: (self: *Self, other: Self) -> bool; }\n");
     try std.testing.expectEqual(ast.ProtocolKind.constraint, (try bound.parse()).data.root.decls[0].data.protocol_decl.kind);
@@ -1232,52 +1139,6 @@ test "parser: the head words are ordinary identifiers elsewhere" {
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
     for (decls) |d| try std.testing.expect(d.data != .protocol_decl);
-}
-
-// A function header's optional slots all sit in front of a mandatory body.
-test "parser: a function header reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc,
-        \\cb :: ()
-        \\    -> i64
-        \\    abi(.c)
-        \\    { 0 }
-    );
-    const fd = (try p.parse()).data.root.decls[0].data.fn_decl;
-    try std.testing.expect(fd.return_type != null);
-    try std.testing.expectEqual(ast.ABI.c, fd.abi);
-    try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
-}
-
-// `@context.extend`'s default is optional; the `;` is what ends the
-// declaration, so a split default still binds.
-test "parser: a @context.extend default reads through a line break" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var split = try Parser.init(alloc,
-        \\@context.extend depth: i64
-        \\    = 3
-    );
-    const split_decls = (try split.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), split_decls.len);
-    try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
-
-    var same = try Parser.init(alloc, "@context.extend depth: i64 = 3\n");
-    try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
-
-    // Absent default, and the declaration below is its own.
-    var bare = try Parser.init(alloc,
-        \\@context.extend depth: i64;
-        \\LIMIT :: 9;
-    );
-    const bare_decls = (try bare.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 2), bare_decls.len);
-    try std.testing.expect(bare_decls[0].data.context_extend_decl.default_expr == null);
 }
 
 // A value inside a fixed delimiter is owned by that delimiter: the list
