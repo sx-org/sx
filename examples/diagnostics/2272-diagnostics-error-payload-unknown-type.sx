@@ -1,0 +1,15 @@
+// A member's payload type is a type reference like any other: an undeclared
+// name reports at the member that writes it, spelled directly or inside an
+// inline payload struct.
+
+@import "modules/std.sx";
+
+PayErr :: error { Bare; Boxed: Nope }
+
+InlineErr :: error { Wrapped: struct { v: Missing } }
+
+main :: () -> i32 {
+    e : PayErr = .Bare;
+    print("e={}\n", e);
+    return 0;
+}
