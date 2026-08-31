@@ -1,0 +1,26 @@
+// A `case` arm dispatches on a member the channel in hand carries. A `.Leaf`
+// the channel does not spell, and a `Set.Leaf` another set interns — even where
+// the channel carries that spelling — leave the arm no value to match.
+
+@import "modules/std.sx";
+
+Disk  :: error { Busy: i64; Gone };
+Other :: error { Busy: i32 };
+
+fail :: (n: i64) -> (i64, !Disk) {
+    if n < 0 { raise Disk.Busy{7}; }
+    return n;
+}
+
+read :: (e: Disk) -> i64 {
+    return match e {
+        case .Nope:      1;
+        case Other.Busy: 2;
+        else:            9;
+    };
+}
+
+main :: () -> i32 {
+    print("r={}\n", fail(-1) catch |e| read(e));
+    return 0;
+}
