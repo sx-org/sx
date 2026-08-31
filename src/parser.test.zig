@@ -852,8 +852,8 @@ test "parser: an extern tail is closed by its `;`" {
     );
     try std.testing.expect(std.mem.indexOf(u8, merged, "expected ';'") != null);
 
-    var same = try Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\";\n");
-    const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
+    var filled = try Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\";\n");
+    const bound = (try filled.parse()).data.root.decls[0].data.fn_decl;
     try std.testing.expectEqualStrings("C", bound.extern_lib.?);
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
 }
@@ -875,8 +875,8 @@ test "parser: an extern data tail is closed by its `;`" {
     try std.testing.expect(decls[0].data.var_decl.extern_name == null);
     try std.testing.expect(decls[1].data == .const_decl);
 
-    var same = try Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\";\n");
-    const bound = (try same.parse()).data.root.decls[0].data.var_decl;
+    var filled = try Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\";\n");
+    const bound = (try filled.parse()).data.root.decls[0].data.var_decl;
     try std.testing.expectEqualStrings("libc", bound.extern_lib.?);
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
 }
