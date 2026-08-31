@@ -2002,11 +2002,50 @@ pub const TypeTable = struct {
         };
     }
 
+    /// How an error set names itself: its display spelling, and — when some
+    /// other interned set renders under that same spelling — the member names
+    /// that tell the two authors apart.
+    fn errorSetName(self: *const TypeTable, alloc: std.mem.Allocator, e: TypeInfo.ErrorSetInfo) []const u8 {
+        const name = self.getString(e.name);
+        if (!self.errorNameIsShared(e)) return name;
+        var buf = std.ArrayList(u8).empty;
+        defer buf.deinit(alloc);
+        buf.appendSlice(alloc, name) catch return name;
+        buf.append(alloc, '{') catch return name;
+        for (e.tags, 0..) |m, i| {
+            if (i > 0) buf.appendSlice(alloc, ", ") catch return name;
+            buf.appendSlice(alloc, self.getTagName(m)) catch return name;
+        }
+        buf.append(alloc, '}') catch return name;
+        return buf.toOwnedSlice(alloc) catch name;
+    }
+
+    /// True when another interned error set carries different members under
+    /// `e`'s spelling, so that spelling alone does not identify `e`.
+    fn errorNameIsShared(self: *const TypeTable, e: TypeInfo.ErrorSetInfo) bool {
+        for (self.infos.items) |info| {
+            if (info != .@"error") continue;
+            const other = info.@"error";
+            if (other.name != e.name) continue;
+            if (!std.mem.eql(u32, other.tags, e.tags)) return true;
+        }
+        return false;
+    }
+
+    /// The channel `id` as a type writes it: `!Set`. A member-less channel is
+    /// identified by a spelling that is not a legal type name and already
+    /// carries its own `!`.
+    pub fn channelName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
+        const name = self.formatTypeName(alloc, id);
+        if (name.len > 0 and name[0] == '!') return name;
+        return std.fmt.allocPrint(alloc, "!{s}", .{name}) catch "!";
+    }
+
     /// Like `typeName` but produces structural names for compound
     /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function types)
-    /// instead of returning `"?"`. Compound names are
-    /// freshly allocated via `alloc`; builtin and named user types
-    /// return borrowed slices.
+    /// instead of returning `"?"`. Compound names — and an error set whose
+    /// spelling another set shares — are freshly allocated via `alloc`; every
+    /// other builtin and named user type returns a borrowed slice.
     pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
         if (id.isBuiltin()) return self.typeName(id);
         const info = self.get(id);
@@ -2016,7 +2055,7 @@ pub const TypeTable = struct {
             .@"union" => |u| self.getString(u.name),
             .tagged_union => |u| self.getString(u.name),
             .protocol => |p| self.getString(p.name),
-            .@"error" => |e| self.getString(e.name),
+            .@"error" => |e| self.errorSetName(alloc, e),
             .pointer => |p| blk: {
                 const inner = self.formatTypeName(alloc, p.pointee);
                 break :blk std.fmt.allocPrint(alloc, "*{s}", .{inner}) catch "*?";
@@ -2095,7 +2134,7 @@ pub const TypeTable = struct {
                     buf.appendSlice(alloc, self.formatTypeName(alloc, self.failableValueSlotType(f, i))) catch break :blk "(?)";
                 }
                 if (n > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                buf.appendSlice(alloc, "!") catch break :blk "(?)";
+                buf.appendSlice(alloc, self.channelName(alloc, f.err)) catch break :blk "(?)";
                 buf.append(alloc, ')') catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },

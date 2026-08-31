@@ -1,0 +1,12 @@
+// A failable type names the error channel it carries, so a rejection against a
+// named-channel bound names the callable's channel and the bound's apart.
+@import "modules/std.sx";
+
+A :: error { X }
+B :: error { Y }
+
+fb :: () -> (i32, !B) { raise .Y; }
+
+runA :: (fn: $F/() -> (i32, !A)) -> (i32, !A) { return try fn(); }
+
+main :: () -> i32 { return runA(fb) catch { 0 }; }

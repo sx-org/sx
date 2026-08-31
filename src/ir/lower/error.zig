@@ -616,18 +616,7 @@ fn channelPhrase(self: *Lowering, channel: ?TypeId) []const u8 {
     const c = channel orelse return self.alloc.dupe(u8, "no error channel") catch unreachable;
     if (channelIsPlaceholder(self, c)) return self.alloc.dupe(u8, "an inferred error channel") catch unreachable;
     if (channelIsDyn(self, c)) return self.alloc.dupe(u8, "a dynamic error channel") catch unreachable;
-    const members = channelMembers(self, c);
-    if (members.len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
-    // A merge over one owner's members renders as that owner's spelling, which
-    // is another channel's name; the member list tells the two apart.
-    const name = self.module.types.get(c).@"error".name;
-    if (self.module.types.findByName(name)) |other| {
-        if (other != c) {
-            const list = memberList(self, members);
-            defer self.alloc.free(list);
-            return std.fmt.allocPrint(self.alloc, "the error channel '{s}' ({s})", .{ self.module.types.getString(name), list }) catch unreachable;
-        }
-    }
+    if (channelMembers(self, c).len == 0) return self.alloc.dupe(u8, "an empty error channel") catch unreachable;
     return std.fmt.allocPrint(self.alloc, "the error channel '{s}'", .{self.formatTypeName(c)}) catch unreachable;
 }
 
