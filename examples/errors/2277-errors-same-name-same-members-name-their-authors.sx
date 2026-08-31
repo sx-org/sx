@@ -1,0 +1,12 @@
+// Two declarations of one name with the same members author two error
+// channels. A callable carrying one does not fill a slot naming the other,
+// and the refusal names each channel by the source that declares it.
+@import "modules/std.sx";
+@import "2277-errors-same-name-same-members-name-their-authors/lib.sx";
+
+IoErr :: error { Down }
+
+main :: () -> i32 {
+    slot : Closure(i32) -> (i32, !IoErr) = boom;
+    return slot(1) catch |e| -1;
+}

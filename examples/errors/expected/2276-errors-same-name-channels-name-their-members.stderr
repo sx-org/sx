@@ -1,4 +1,4 @@
-error: a callable with the error channel 'IoErr{Down}' does not fill a slot with the error channel 'IoErr{Failed, Canceled}' — a `Closure` or function-pointer slot takes exactly its own channel
+error: a callable with the error channel 'IoErr{Down}' does not fill a slot with the error channel 'IoErr{Failed, Canceled} (examples/errors/2276-errors-same-name-channels-name-their-members.sx)' — a `Closure` or function-pointer slot takes exactly its own channel
   --> examples/errors/2276-errors-same-name-channels-name-their-members.sx:10:44
    |
 10 |     slot : Closure(i32) -> (i32, !IoErr) = boom;

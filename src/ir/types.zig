@@ -442,6 +442,8 @@ pub const TagRegistry = struct {
     owner_names: std.ArrayList(StringId),
     /// owner → the error its declaration interns to, parallel to `owner_names`.
     owner_types: std.ArrayList(TypeId),
+    /// owner → the source file that declared the owner, parallel to `owner_names`.
+    owner_sources: std.ArrayList(StringId),
     /// owning declaration pointer → owner.
     owner_ids: std.AutoHashMap(*const anyopaque, u32),
     next_id: u32,
@@ -454,6 +456,7 @@ pub const TagRegistry = struct {
             .payloads = std.ArrayList(TypeId).empty,
             .owner_names = std.ArrayList(StringId).empty,
             .owner_types = std.ArrayList(TypeId).empty,
+            .owner_sources = std.ArrayList(StringId).empty,
             .owner_ids = std.AutoHashMap(*const anyopaque, u32).init(alloc),
             .next_id = 1, // 0 reserved for "no error"
         };
@@ -462,6 +465,7 @@ pub const TagRegistry = struct {
         reg.payloads.append(alloc, .void) catch unreachable;
         reg.owner_names.append(alloc, .empty) catch unreachable; // anonymous owner
         reg.owner_types.append(alloc, .void) catch unreachable;
+        reg.owner_sources.append(alloc, .empty) catch unreachable;
         return reg;
     }
 
@@ -472,6 +476,7 @@ pub const TagRegistry = struct {
         self.payloads.deinit(alloc);
         self.owner_names.deinit(alloc);
         self.owner_types.deinit(alloc);
+        self.owner_sources.deinit(alloc);
         self.owner_ids.deinit();
         self.map.deinit();
     }
@@ -484,6 +489,7 @@ pub const TagRegistry = struct {
             gop.value_ptr.* = @intCast(self.owner_names.items.len);
             self.owner_names.append(alloc, name) catch unreachable;
             self.owner_types.append(alloc, .void) catch unreachable;
+            self.owner_sources.append(alloc, .empty) catch unreachable;
         }
         self.owner_names.items[gop.value_ptr.*] = name;
         return gop.value_ptr.*;
@@ -533,6 +539,16 @@ pub const TagRegistry = struct {
     pub fn ownerType(self: *const TagRegistry, owner: u32) TypeId {
         if (owner >= self.owner_types.items.len) return .void;
         return self.owner_types.items[owner];
+    }
+
+    pub fn setOwnerSource(self: *TagRegistry, owner: u32, source: StringId) void {
+        if (owner >= self.owner_sources.items.len) return;
+        self.owner_sources.items[owner] = source;
+    }
+
+    pub fn ownerSource(self: *const TagRegistry, owner: u32) StringId {
+        if (owner >= self.owner_sources.items.len) return .empty;
+        return self.owner_sources.items[owner];
     }
 };
 
@@ -1536,6 +1552,10 @@ pub const TypeTable = struct {
         return self.tags.internOwner(self.alloc, decl, name);
     }
 
+    pub fn setOwnerSource(self: *TypeTable, owner: u32, source: StringId) void {
+        self.tags.setOwnerSource(owner, source);
+    }
+
     pub fn internMember(self: *TypeTable, owner: u32, name: []const u8) u32 {
         return self.tags.intern(self.alloc, owner, name);
     }
@@ -2004,7 +2024,8 @@ pub const TypeTable = struct {
 
     /// How an error set names itself: its display spelling, and — when some
     /// other interned set renders under that same spelling — the member names
-    /// that tell the two authors apart.
+    /// that tell the two authors apart, then the intern owner's source when
+    /// those members also collide.
     fn errorSetName(self: *const TypeTable, alloc: std.mem.Allocator, e: TypeInfo.ErrorSetInfo) []const u8 {
         const name = self.getString(e.name);
         if (!self.errorNameIsShared(e)) return name;
@@ -2017,6 +2038,14 @@ pub const TypeTable = struct {
             buf.appendSlice(alloc, self.getTagName(m)) catch return name;
         }
         buf.append(alloc, '}') catch return name;
+        if (self.errorMemberNamesCollide(e)) {
+            const src = self.tags.ownerSource(self.tags.ownerOf(e.tags[0]));
+            if (src != .empty) {
+                buf.appendSlice(alloc, " (") catch return name;
+                buf.appendSlice(alloc, self.getString(src)) catch return name;
+                buf.append(alloc, ')') catch return name;
+            }
+        }
         return buf.toOwnedSlice(alloc) catch name;
     }
 
@@ -2032,12 +2061,36 @@ pub const TypeTable = struct {
         return false;
     }
 
-    /// The channel `id` as a type writes it: `!Set`. A member-less channel is
+    /// True when another interned error set carries the same member names under
+    /// `e`'s spelling, so the member list does not identify `e`.
+    fn errorMemberNamesCollide(self: *const TypeTable, e: TypeInfo.ErrorSetInfo) bool {
+        for (self.infos.items) |info| {
+            if (info != .@"error") continue;
+            const other = info.@"error";
+            if (other.name != e.name) continue;
+            if (std.mem.eql(u32, other.tags, e.tags)) continue;
+            if (self.tagNameSeqEql(other.tags, e.tags)) return true;
+        }
+        return false;
+    }
+
+    fn tagNameSeqEql(self: *const TypeTable, a: []const u32, b: []const u32) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |x, y| {
+            if (!std.mem.eql(u8, self.getTagName(x), self.getTagName(y))) return false;
+        }
+        return true;
+    }
+
+    /// The channel `id` as a type writes it: `!Set`. A `|` spelling groups as
+    /// `!(A | B)` so the bang binds the whole channel. A member-less channel is
     /// identified by a spelling that is not a legal type name and already
     /// carries its own `!`.
     pub fn channelName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
         const name = self.formatTypeName(alloc, id);
         if (name.len > 0 and name[0] == '!') return name;
+        if (std.mem.indexOfScalar(u8, name, '|') != null)
+            return std.fmt.allocPrint(alloc, "!({s})", .{name}) catch "!";
         return std.fmt.allocPrint(alloc, "!{s}", .{name}) catch "!";
     }
 

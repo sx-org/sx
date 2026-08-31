@@ -57,6 +57,9 @@ const StatelessInner = struct {
     pub fn namespacedErrorSetType(_: StatelessInner, _: []const u8) ?TypeId {
         return null;
     }
+    pub fn errorOwnerSource(_: StatelessInner) StringId {
+        return .empty;
+    }
     /// Fixed-array dimension at registration time: a literal `[16]T`, a named
     /// module-global const `N :: 16; [N]T` (typed `N : i64 : 16` too), or a
     /// constant-foldable expression over those (`[M + 1]`, `[(M + 1) * 2]`).
@@ -868,6 +871,7 @@ pub fn errorSetDeclInfoOwned(esd: *const ast.ErrorSetDecl, table: *TypeTable, in
     const alloc = table.alloc;
     const name_id = table.internString(owner_name);
     const owner = table.internErrorOwner(@ptrCast(esd), name_id);
+    table.setOwnerSource(owner, inner.errorOwnerSource());
 
     var member_ids = std.ArrayList(u32).empty;
     defer member_ids.deinit(alloc);
