@@ -362,111 +362,53 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 ### Spacing and terminators
 
-`!` is prefix `not`. `?!` is postfix force-unwrap. `{` juxtaposes with the
-expression before it wherever that statement is open. `_{` is one token — the
-closure-literal env — so `_ {` with a space is an identifier and a brace
-instead. Everywhere else whitespace is free. `;` is what ends a statement, and a
-line break is ordinary space.
+A line break is ordinary space; `;` is what ends a statement.
 
-**Free — `(`, `[`, and a prefix `-` / `--` / `*` take any spacing.** A `(`
-applies arguments and a `[` indexes however much space stands between it and
-what precedes it, and a prefix operator binds its operand across a gap the same
-way:
-
-```sx
-foo(2)      foo (2)      // both a call
-Box(i64)    Box (i64)    // both a type application
-xs[0]       xs [0]       // both an index
--b          - b          // both a negation
-*p          * p          // both an address-of
-```
-
-The same holds in every type position that applies arguments (annotation, return
-type, parameter type, struct field type, type alias, constant annotation, `.(T)`
-cast target, type argument to a builtin, match-arm type pattern, an `impl`'s
-constraint or interface arguments) and in the fixed forms whose argument list
-the grammar
-mandates — `Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a
-bound, `$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A
-bracket that opens something *new* is free in the same way — grouping
-(`(a + b)`), parameter and capture lists, array and slice types (`[3]i64`,
-`[]u8`), and the `(…)` of a declaration form:
-
-```sx
-add    :: (a: i64, b: i64) -> i64 => a + b;   // fn declaration
-scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
-Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
-Show   :: interface (T) { render :: (self: *Self) -> T; }
-Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
-v := risky() catch |e| -1;                    // catch binding
-```
+Two glyph pairs are one token each: `_{`, the closure-literal env — `_ {` with
+a space is an identifier and a brace instead — and `?!`, the postfix
+force-unwrap, which `? !` does not spell.
 
 **Position — `-` and `*` are infix wherever a left operand is complete.** Both
 glyphs also have a prefix reading (negation, address-of), and position decides
-between the two: after a completed operand the glyph is infix, whatever the gaps
-around it are, and a slot with no left operand takes the prefix reading. A line
-break changes nothing — the operand above it is still complete:
+between the two: after a completed operand the glyph is infix, and a slot with
+no left operand takes the prefix reading:
 
 ```sx
 a - b       // infix subtraction
-a-b         // infix subtraction
-a -b        // infix subtraction
-a- b        // infix subtraction
-a - -b      // infix `-`, then a prefix `-b`
-a
--b          // infix subtraction — the operand above is complete
+-b          // prefix negation
 g();
 -b          // the `;` cut the operand — a prefix `-b`
 ```
 
 `--` is a lexeme of its own with one reading, the prefix pre-decrement: `--b`
-and `-- b` both decrement `b` and yield the new value, while `a--b` and `a --b`
-have no reading at all — the operand `a` is complete and `--` is no infix
-operator.
+decrements `b` and yields the new value, while `a--b` has no reading at all —
+the operand `a` is complete and `--` is no infix operator.
 
-**Postfix — `?!` is force-unwrap.** It is one token (`? !` is not the symbol)
-and binds wherever the statement is still open, across a gap or a break; the
-`;` is what cuts. Prefix `!` is `not`:
+**Postfix — `?!` is force-unwrap.** It binds wherever the statement is still
+open; the `;` is what cuts. Prefix `!` is `not`:
 
 ```sx
 print("{}\n", maybe?!);
-print("{}\n", maybe ?!);
-ready;
 !ready;                       // prefix `not`
 ```
 
 A `{` juxtaposes with the expression before it wherever that statement is still
-open, across a break included; the `;` is what cuts:
+open; the `;` is what cuts:
 
 ```sx
-p := Pair
-{ a = 1, b = 2 };             // still open — the aggregate
+p := Pair{ a = 1, b = 2 };    // the juxtaposed aggregate
 
 Pair;
 { setup() }                   // the `;` cut — an expression and a block
 ```
 
-The dot-led postfixes are the other camp. `.`, `?.`, and `catch` have no second
-reading for a break to pick up, so each reads on down the page, and a leading
-`.` chains whenever what it follows is an expression rather than a statement —
-the line **Statements break, expressions chain** draws at the end of this
-section.
-
-**Terminators — `;` ends a statement.** A line break is ordinary space, so a
-statement runs until its `;`:
-
-```sx
-a := 1;
-b := compute(a);
-print("{}\n", b);
-```
-
-One rule, applied wherever a statement or a declaration ENDS: top-level and
-local bindings, expression statements, assignments, `return` / `raise` /
-`break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
+**Terminators — one rule, applied wherever a statement or a declaration ENDS.**
+Top-level and local bindings, expression statements, assignments, `return` /
+`raise` / `break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
-body. The value-less spellings take it the same way — a `return` with nothing to
-return, and a `name : Type` declaration with no initializer:
+body all take the `;`. The value-less spellings take it the same way — a
+`return` with nothing to return, and a `name : Type` declaration with no
+initializer:
 
 ```sx
 counter : i64;
@@ -533,33 +475,6 @@ what a block's value is, and never decides whether a build body's child
 publishes. Wherever a value can flow, it flows the same with the `;` written and
 with it left out — see [Block values](#block-values) and
 [`@BuildBlock(P)`](#buildblockp).
-
-An unterminated statement reads straight on through a line break, so an
-expression spread over several lines is one statement:
-
-```sx
-mask := (hi << 16)
-    | lo;
-ok := ready
-    and loaded
-    or forced;
-```
-
-The same holds for the tails a declaration may still take, and for a form that
-is simply still open — an unclosed `(`, an argument list, a `{` with no `}` yet:
-
-```sx
-LIMIT : i64
-    : 9;                      // a typed constant
-errnoLoc : *i32
-    extern libc "__error";    // an extern data global
-mystery :: i64
-    intrinsic;                // a typed intrinsic
-
-sxDouble :: (n: i32) -> i32 export
-    "double_c"
-    { n * 2 }                 // the linkage tail reads on to the body
-```
 
 An expression or a declaration written last before a `}` may leave its
 terminator out; every other statement form takes its `;` there as anywhere
@@ -4871,8 +4786,7 @@ a function body.
 **The iterables are ordinary expressions.** Nothing in the header is
 reserved for captures, so a call iterable is written as it is anywhere else
 (`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
-no intermediate binding. A `(` applies arguments across any gap, so
-`for x in f (n) { }` is the same call and `for xs (x) { }` iterates `xs(x)`.
+no intermediate binding.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
@@ -5282,8 +5196,7 @@ scaffold() { chatList(); };                    // defaults skipped, block binds 
   `-> Type` function — constructs (`Label { text = "x" }`, `List(Move){}`,
   `Buf(16){}`, `p.Slot(i64){}`); every other call fuses its block onto the last
   declared parameter (`vstack(8.0) { … }`, `run(2) {}`, `render(*screen) {}`).
-  Body shape, the gap before the `{`, and a line break between them decide
-  nothing. Anything else takes no block at all.
+  Body shape decides nothing. Anything else takes no block at all.
 - **Header on a construction**: a construction takes no `|…|` header — that
   header belongs to a block that becomes a closure. A positional aggregate
   element that is a closure is parenthesized: `Box(Closure(i64)){ (|x| x), }`.
@@ -6861,8 +6774,8 @@ value channel — no coupling to the implicit `context`.
 
 ```
 program         = top_level*
-end             = ';' | EOF   // §1 Spacing and terminators: a line break is
-                  // ordinary space; EOF ends the last declaration of a file
+end             = ';' | EOF   // §1 Spacing and terminators: EOF ends the last
+                  // declaration of a file
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
