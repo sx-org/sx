@@ -274,6 +274,9 @@ pub const ArmVerdict = union(enum) {
     bad_prefix,
     /// The prefix is an owner and declares no such leaf.
     bad_leaf,
+    /// The prefix declares the leaf, but the subject channel does not carry
+    /// that member.
+    not_in_channel,
     /// More than one member of the set this carries answers to the leaf.
     ambiguous: TypeId,
 };
@@ -297,6 +300,7 @@ pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) Ar
                 .none => return .bad_leaf,
                 .ambiguous => return .{ .ambiguous = set },
             };
+            if (!channelIsOpen(self, subject_ty) and !channelCarries(self, subject_ty, id)) return .not_in_channel;
             return .{ .ok = .{ .case_value = id, .field_index = id, .payload = table.memberPayload(id) } };
         },
         .@"enum" => |e| {
@@ -366,6 +370,7 @@ pub fn refuseQualifiedArm(self: *Lowering, verdict: ArmVerdict, subject_ty: Type
             d.addFmt(.err, pat.span, "error set '{s}' has no member '{s}'", .{ prefix, fa.field })
         else
             d.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ fa.field, prefix }),
+        .not_in_channel => emitMemberNotInChannel(self, subject_ty, prefix, fa.field, pat.span),
         .bad_prefix => if (on_channel) {
             const id = d.addFmtId(.err, pat.span, "'{s}' names no error set", .{prefix});
             d.addHelpFmt(id, pat.span, null, "a qualified arm names the set that declares the member — write `Set.{s}`, or `.{s}` where the channel already carries it", .{ fa.field, fa.field });
@@ -631,6 +636,18 @@ fn channelMembers(self: *Lowering, set: TypeId) []const u32 {
     if (set.isBuiltin()) return &.{};
     const info = self.module.types.get(set);
     return if (info == .@"error") info.@"error".tags else &.{};
+}
+
+/// Report a `case` arm naming a member the subject channel does not carry.
+/// `prefix` is the set the arm qualifies with, empty for a `.Leaf` shorthand.
+pub fn emitMemberNotInChannel(self: *Lowering, chan: TypeId, prefix: []const u8, leaf: []const u8, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, span, "the error channel '{s}' does not carry '{s}.{s}' — this arm can never match", .{ self.formatTypeName(chan), prefix, leaf });
+    const members = channelMembers(self, chan);
+    if (members.len == 0) return;
+    const list = memberList(self, members);
+    defer self.alloc.free(list);
+    d.addHelpFmt(id, span, null, "it carries: {s}", .{list});
 }
 
 /// The `Owner.Member` spellings of `members`, comma-joined. Owned by the caller.

@@ -1691,10 +1691,16 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             const leaf = lower_error.shorthandArmName(pat) orelse "";
             const member: u32 = switch (self.module.types.errorSetMember(subject_ty, leaf)) {
                 .one => |m| m,
-                // A spelling the channel does not carry takes the anonymous
-                // owner's member, which no case value can equal; the bind
-                // reports it.
-                .none => self.anonymousErrorMember(leaf),
+                // An open channel has no static member set, so a shorthand arm
+                // there takes the anonymous owner's member — what the raise
+                // side interns for that spelling.
+                .none => blk: {
+                    if (!self.channelIsOpen(subject_ty)) {
+                        lower_error.emitMemberNotInChannel(self, subject_ty, "", leaf, pat.span);
+                        continue;
+                    }
+                    break :blk self.anonymousErrorMember(leaf);
+                },
                 .ambiguous => {
                     arm_verdicts.items[i] = .{ .ambiguous = subject_ty };
                     lower_error.emitAmbiguousMember(self, subject_ty, leaf, pat.span);
