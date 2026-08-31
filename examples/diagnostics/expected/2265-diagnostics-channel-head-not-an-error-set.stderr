@@ -1,5 +1,11 @@
 error: unknown error set 'Nope'
-  --> examples/diagnostics/2265-diagnostics-channel-head-not-an-error-set.sx:5:27
+  --> examples/diagnostics/2265-diagnostics-channel-head-not-an-error-set.sx:7:27
    |
- 5 | lost :: (n: i32) -> (i32, !Nope.Bad) { return n; }
+ 7 | lost :: (n: i32) -> (i32, !Nope.Bad) { return n; }
    |                           ^^^^^^^^^
+
+error: expected an error set after '!', found type 'ns.helper'
+  --> examples/diagnostics/2265-diagnostics-channel-head-not-an-error-set.sx:9:29
+   |
+ 9 | routed :: (n: i32) -> (i32, !ns.helper) { return n; }
+   |                             ^^^^^^^^^^

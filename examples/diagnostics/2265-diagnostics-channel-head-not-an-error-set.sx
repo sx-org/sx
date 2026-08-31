@@ -1,10 +1,15 @@
 // A dotted channel operand names one member of the error set its head names.
-// A head naming no error set is diagnosed where it is written.
+// A head naming no error set is diagnosed where it is written. A head naming a
+// known import is not unknown: the whole spelling carries the classification.
 @import "modules/std.sx";
+ns :: @import "2265-diagnostics-channel-head-not-an-error-set/net.sx";
 
 lost :: (n: i32) -> (i32, !Nope.Bad) { return n; }
 
+routed :: (n: i32) -> (i32, !ns.helper) { return n; }
+
 main :: () -> i32 {
     _ = lost(0);
+    _ = routed(0);
     return 0;
 }

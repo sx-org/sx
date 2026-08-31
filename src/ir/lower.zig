@@ -1650,10 +1650,8 @@ pub const Lowering = struct {
     /// (`ns.Set`) pins its leaf in the module the prefix selects; any other
     /// dotted spelling stays a bare leaf.
     pub fn resolveName(self: *Lowering, name: []const u8) TypeId {
-        switch (self.qualifiedMemberVerdict(name)) {
-            .selected => |sel| return self.selectedMemberType(sel, false, null),
-            else => return self.resolveNominalLeaf(name, false, null),
-        }
+        if (self.namespacedLeafType(name)) |leaf| return leaf;
+        return self.resolveNominalLeaf(name, false, null);
     }
 
     pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
@@ -1919,9 +1917,9 @@ pub const Lowering = struct {
         return self.resolveNominalLeaf(sel.member, is_raw, span);
     }
 
-    /// Selects the leaf without resolving it, so a miss mints no type and
-    /// diagnoses nothing.
-    pub fn namespacedErrorSetTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
+    /// The type a namespaced spelling (`ns.Leaf`) names, selected without
+    /// resolving it, so a miss mints no type and diagnoses nothing.
+    pub fn namespacedLeafTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
         const sel = switch (self.qualifiedMemberVerdictFrom(name, from)) {
             .selected => |s| s,
             else => return null,
@@ -1930,8 +1928,17 @@ pub const Lowering = struct {
             .resolved => |t| t,
             else => return null,
         };
-        if (leaf.isBuiltin() or self.module.types.get(leaf) != .@"error") return null;
-        return leaf;
+        return if (leaf.isBuiltin()) null else leaf;
+    }
+
+    pub fn namespacedLeafType(self: *Lowering, name: []const u8) ?TypeId {
+        const from = self.current_source_file orelse self.main_file orelse return null;
+        return self.namespacedLeafTypeFrom(name, from);
+    }
+
+    pub fn namespacedErrorSetTypeFrom(self: *Lowering, name: []const u8, from: []const u8) ?TypeId {
+        const leaf = self.namespacedLeafTypeFrom(name, from) orelse return null;
+        return if (self.module.types.get(leaf) == .@"error") leaf else null;
     }
 
     pub fn namespacedErrorSetType(self: *Lowering, name: []const u8) ?TypeId {
