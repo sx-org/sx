@@ -81,8 +81,8 @@ contribution is the **static type** of what you tried or raised, so
 
 > **Tip:** Use a named set when the error contract is part of your API.
 > Use bare `!` for internal helpers where the errors are an
-> implementation detail. A function-type slot — a parameter, a field, a
-> `Closure`, a lambda — always writes its channel out.
+> implementation detail. A function-type slot takes bare `!` too; see
+> [Passing failable functions around](#passing-failable-functions-around).
 
 ### Composing sets
 
@@ -476,6 +476,20 @@ channel when you need to bridge:
 slot = |s: string| -> (i32, !Both) try parse(s);
 ```
 
+A slot is written bare `!` as well, and then its channel belongs to the
+**shape** — the param types plus the value return. Every bare-`!` closure
+literal of that shape contributes the members its body raises to the one
+set the shape carries program-wide, and a `try` through the slot widens
+against that set:
+
+```sx
+run :: (h: Closure(string) -> (i32, !), s: string) -> (i32, !Both) {
+  return try h(s);
+}
+
+run(|s: string| -> (i32, !) try parse(s), "12");   // ParseErr joins the shape's set
+```
+
 A generic bound written `$F/(string) -> ($R, !)` accepts any failable
 callee — it asks for callability, not for a particular set. Naming the
 set (`$F/(string) -> ($R, !Both)`) is exact, like a slot.
@@ -558,8 +572,8 @@ IoErr :: error { Failed; Canceled }
 
 `Io.suspendRaw` is `-> !IoErr.Canceled` — it fails only by cancellation,
 and its channel says so. `await` is `-> ($R, !IoErr)`: a cancelled future
-raises `.Canceled`, a failed one `.Failed`. An async worker is a lambda,
-so it writes its channel out:
+raises `.Canceled`, a failed one `.Failed`. An async worker is a failable
+nullary callable:
 
 ```sx
 f := context.io.async(|| -> (i64, !IoErr) try compute(a, b));
@@ -620,8 +634,7 @@ parseConfig :: (src: string) -> (Config, !ParseErr) {
 ## Rules of thumb
 
 - **Add `!` when a function can fail.** Use a named set for public
-  contracts, bare `!` for internal helpers; a function-type slot always
-  names its channel.
+  contracts, bare `!` for internal helpers.
 - **`raise` to fail, `try` to propagate, `catch` to handle, `??` to
   fall back.**
 - **Every failable call needs a marker** (`try` / `catch` / `??` /

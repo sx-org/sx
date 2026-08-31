@@ -6383,8 +6383,8 @@ quick  :: () -> (i32, !);                        // inferred
 `IoErr.Failed` in type position is the singleton channel; in value position it is
 the member.
 
-Bare `!` is a named function declaration's spelling only. A function-type slot —
-parameter, field, alias, `Closure`, lambda — writes its channel out.
+Bare `!` spells a channel in a named function declaration and in a function
+type — a `Closure`, a function pointer, a lambda annotation.
 
 ### Inferred channels
 
@@ -6405,6 +6405,21 @@ The contribution is the **static type** of the tried or raised value, so
 `raise FooError.X` merges all of `FooError`, not just `X`. Mutually recursive
 inferred channels converge by fix-point over the call graph; callers see the
 merged set, never a bare `!`.
+
+A function type's bare `!` converges by **shape** rather than by declaration:
+the param types plus the value part of the return, with `Closure` and
+function-pointer spellings of one signature sharing a node. Every bare-`!`
+closure literal of that shape merges the members escaping its body into that
+one program-wide node, and a `try` through any slot of the shape widens
+against it. A shape whose literals raise nothing carries the empty set.
+
+```sx
+run :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !Both) {
+  return try h(x);                                            // widens against the node
+}
+run(|x: i32| -> (i32, !) { if x < 0 { raise FooError.A; } x }, 1);   // merges FooError
+run(|x: i32| -> (i32, !) { if x == 0 { raise BooError.A; } x }, 0);  // merges BooError
+```
 
 ### Members as values
 
@@ -6827,7 +6842,7 @@ IoErr :: error { Failed; Canceled }
 ```
 
 `Io.suspendRaw` is `-> !IoErr.Canceled`; `await` is `-> ($R, !IoErr)`. An async
-worker is a lambda, so it writes its channel out
+worker is a failable nullary callable
 (`context.io.async(|| -> (i64, !IoErr) try compute(a, b))`).
 
 ### ABI
