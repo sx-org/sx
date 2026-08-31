@@ -1,0 +1,1 @@
+Widget :: struct { n: i64; }

@@ -1312,8 +1312,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         subject = self.openSetAnyView(subject_ty, subject, me.subject);
         subject_ty = .any;
     }
-    // The subject decides the kind: an integer or bool dispatches on its value.
+    // The subject decides the kind: an integer or bool dispatches on its value,
+    // a `Type` on the type each arm names.
     if (subject_ty == .bool or self.module.types.isIntegerType(subject_ty)) is_type_match = false;
+    if (subject_ty == .type_value) is_type_match = true;
     const is_any_switch = subject_ty == .any;
     if (is_any_switch) is_type_match = true;
     const is_optional_match = blk: {
@@ -1609,7 +1611,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 // refuse pointedly (mirrors the any switch), never a
                 // silently dead arm.
                 switch (pat.data) {
-                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
+                    .identifier, .type_expr, .field_access, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
                     else => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, pat.span, "a type-category match arm names a type or a category — value patterns don't apply to a 'Type' subject", .{});
