@@ -6872,9 +6872,9 @@ linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
                   // `end` closes the tail
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
-ret_type        = type ('!' chan?)?     // trailing `!` = failable; channel as last `-> (…, !)` slot
+ret_type        = type      // the multi-return signature `(A, B)` is a return type only
 chan            = set_ref
-                | '(' chan ('|' chan)+ ')'    // a composition is parenthesized under `!`
+                | '(' set_ref ('|' set_ref)+ ')'   // a composition is parenthesized under `!`
 enum_decl       = IDENT '::' 'enum' '{' set_members '}'
 set_members     = set_member (';' set_member)* ';'?
 set_member      = IDENT (':' type)?           // the type is the member's payload
@@ -6953,20 +6953,24 @@ arm_body        = 'break' end
                 | stmt*                 // every form ends as a statement does
 else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | set_ref
-closure         = '|' params? '|' env? ('->' type)? (expr | block)
+closure         = '|' params? '|' env? ('->' ret_type)? (expr | block)
 env             = '_{' (env_field (',' env_field)* ','?)? '}'
                   // one token '_{': `_ {` with a space is not it
 env_field       = IDENT ('=' expr)?           // bare IDENT is `n = n`
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
+                | '(' ')'                                    // the void type
                 | '(' type ')'                               // grouping (bare parens never form a product)
-                | '(' fn_type_list? ')' '->' type ('!' chan)?  // function type (params optional; optional error channel)
-                | '!' chan?                                   // pure failable (`!` / `!Chan`)
+                | '(' fn_type_list? ')' '->' ret_type        // function type (params optional)
+                | result_list
+                | '!' chan?                                  // pure failable (`!` / `!Chan`)
 fn_type_list    = type (',' type)* (',' c_tail)? ','?
                 | c_tail ','?       // a C-variadic function type needs `abi(.c)`
-tuple_type_list = tuple_type_elem (',' tuple_type_elem)* ','?
-tuple_type_elem = IDENT ':' type | '..' type | type
+result_list     = '(' tuple_type_elem ',' '!' chan? ','? ')'                            // one value + channel
+                | '(' tuple_type_elem (',' tuple_type_elem)+ (',' '!' chan?)? ','? ')'  // multi-return signature
+                  // `!` is the last slot, never an interior one
+tuple_type_elem = (IDENT ':')? type ('=' expr)? | '..' type
 ```
 
 ---
