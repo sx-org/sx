@@ -1,0 +1,72 @@
+// A bare `!` collects what a `??` chain LEAVES, not what it attempts. Each
+// operand's failure routes to the operand that follows it, so only the last
+// operand escapes — with or without a `try` marker on it. A `try` nested
+// inside an operand re-raises before the chain routes anything, so it escapes
+// too. A `catch` over the chain takes the total failure, so none of it
+// escapes. Every `Fwd` here forwards its inferred channel into a DECLARED one
+// that carries exactly the escaping members.
+
+@import "modules/std.sx";
+
+FooError :: error { A }
+IoErr    :: error { Failed; Canceled }
+Both     :: FooError | IoErr;
+
+ga :: (n: i32) -> (i32, !FooError) {
+    if n <= 0 { raise .A; }
+    return n;
+}
+
+hb :: (n: i32) -> (i32, !IoErr) {
+    if n < 0 { raise .Failed; }
+    return n * 2;
+}
+
+marked :: (n: i32) -> (i32, !) {
+    v := try ga(n) ?? try hb(n);
+    return v;
+}
+
+markedFwd :: (n: i32) -> (i32, !IoErr) {
+    return marked(n);
+}
+
+bare :: (n: i32) -> (i32, !) {
+    v := ga(n) ?? hb(n);
+    return v;
+}
+
+bareFwd :: (n: i32) -> (i32, !IoErr) {
+    return bare(n);
+}
+
+nested :: (n: i32) -> (i32, !) {
+    v := hb(try ga(n)) ?? try hb(n);
+    return v;
+}
+
+nestedFwd :: (n: i32) -> (i32, !Both) {
+    return nested(n);
+}
+
+handled :: (n: i32) -> (i32, !) {
+    if n > 90 { raise IoErr.Canceled; }
+    v := (try ga(n) ?? try hb(n)) catch { -1 };
+    return v;
+}
+
+handledFwd :: (n: i32) -> (i32, !IoErr) {
+    return handled(n);
+}
+
+main :: () -> i32 {
+    print("markedOk={}\n", markedFwd(0) catch { -1 });
+    print("markedEsc={}\n", markedFwd(-1) catch |e| { if e == IoErr.Failed { 1 } else { 2 } });
+    print("bareOk={}\n", bareFwd(0) catch { -1 });
+    print("bareEsc={}\n", bareFwd(-1) catch |e| { if e == IoErr.Failed { 3 } else { 4 } });
+    print("nestedOk={}\n", nestedFwd(3) catch { -1 });
+    print("nestedEsc={}\n", nestedFwd(-1) catch |e| { if e == FooError.A { 5 } else { 6 } });
+    print("handled={}\n", handledFwd(-1) catch { -2 });
+    print("handledRaise={}\n", handledFwd(99) catch |e| { if e == IoErr.Canceled { 7 } else { 8 } });
+    return 0;
+}

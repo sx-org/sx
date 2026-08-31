@@ -35,42 +35,44 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, or `dyn` when the callee spelling names none. A
-    /// resolved non-failable callee contributes an edge whose declared channel
-    /// is empty. `enclosing_fd` types a receiver written as one of its
-    /// parameters; a receiver that is anything else is not typed here.
-    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
+    /// The EDGE a callee spelling names — the key its declaration is
+    /// registered under — or null when the spelling names none.
+    /// `enclosing_fd` types a receiver written as one of its parameters; a
+    /// receiver that is anything else is not typed here.
+    fn calleeEdge(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?[]const u8 {
         switch (callee.data) {
-            .identifier => |id| edges.append(self.l.alloc, id.name) catch {},
+            .identifier => |id| return id.name,
             .field_access => |fa| {
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
                     // A namespace- or type-qualified callee is spelled exactly as
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
-                    if (self.qualifiedEdge(obj, fa.field)) |q| {
-                        edges.append(self.l.alloc, q) catch {};
-                        return;
-                    }
+                    if (self.qualifiedEdge(obj, fa.field)) |q| return q;
                     // A typed Type.method outranks the bare name: a free function
                     // may share it (libc `read`).
                     if (self.paramTypeName(enclosing_fd, obj)) |tn| {
-                        if (self.qualifiedEdge(tn, fa.field)) |q| {
-                            edges.append(self.l.alloc, q) catch {};
-                            return;
-                        }
+                        if (self.qualifiedEdge(tn, fa.field)) |q| return q;
                     }
                 }
                 // A UFCS free function lives under the BARE method name.
                 const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) {
-                    edges.append(self.l.alloc, bare) catch {};
-                    return;
-                }
-                dyn.* = true;
+                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) return bare;
+                return null;
             },
-            else => dyn.* = true,
+            else => return null,
+        }
+    }
+
+    /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
+    /// callee's declaration, or `dyn` when the callee spelling names none. A
+    /// resolved non-failable callee contributes an edge whose declared channel
+    /// is empty.
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
+        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+            edges.append(self.l.alloc, edge) catch {};
+        } else {
+            dyn.* = true;
         }
     }
 
@@ -200,22 +202,17 @@ pub const ErrorAnalysis = struct {
             .unary_op => |u| self.collectErrorSites(u.operand, tags, edges, dyn, enclosing_fd),
             .deref_expr => |d| self.collectErrorSites(d.operand, tags, edges, dyn, enclosing_fd),
             .force_unwrap => |fu| self.collectErrorSites(fu.operand, tags, edges, dyn, enclosing_fd),
-            .null_coalesce => |nc| {
-                self.collectErrorSites(nc.lhs, tags, edges, dyn, enclosing_fd);
-                self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
-            },
+            .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, false),
             .field_access => |fa| self.collectErrorSites(fa.object, tags, edges, dyn, enclosing_fd),
             .index_expr => |ix| {
                 self.collectErrorSites(ix.object, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ix.index, tags, edges, dyn, enclosing_fd);
             },
             .spread_expr => |s| self.collectErrorSites(s.operand, tags, edges, dyn, enclosing_fd),
-            // A fallback absorbs exactly what it attempts: a boundary block
-            // owns every escape inside it, while a plain operand still leaks
-            // the `try`s nested in it. The handler body's own escapes forward.
+            // The handler body's own escapes forward; what the fallback
+            // attempts is absorbed.
             .catch_expr => |ce| {
-                const attempted = Lowering.catchAttempted(&ce);
-                if (!attempted.boundary) self.collectErrorSites(attempted.node, tags, edges, dyn, enclosing_fd);
+                self.collectAbsorbed(ce.operand, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ce.body, tags, edges, dyn, enclosing_fd);
             },
             .defer_stmt => |d| self.collectErrorSites(d.expr, tags, edges, dyn, enclosing_fd),
@@ -227,6 +224,46 @@ pub const ErrorAnalysis = struct {
             .tuple_literal => |tl| for (tl.elements) |el| self.collectErrorSites(el.value, tags, edges, dyn, enclosing_fd),
             // Stop at nested function boundaries; leaves contribute nothing.
             else => {},
+        }
+    }
+
+    /// A `??` chain routes each operand's failure to the operand that follows,
+    /// so every operand but the last is absorbed. The last one propagates,
+    /// unless `absorbed` — a `catch` over the chain takes its total failure.
+    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
+        self.collectAbsorbed(nc.lhs, tags, edges, dyn, enclosing_fd);
+        // `??` is right-associative, so the chain continues down the rhs.
+        if (nc.rhs.data == .null_coalesce) {
+            self.collectCoalesce(&nc.rhs.data.null_coalesce, tags, edges, dyn, enclosing_fd, absorbed);
+            return;
+        }
+        if (absorbed) {
+            self.collectAbsorbed(nc.rhs, tags, edges, dyn, enclosing_fd);
+            return;
+        }
+        self.collectErrorSites(nc.rhs, tags, edges, dyn, enclosing_fd);
+        // The last operand propagates, so its callee is an escape edge — a
+        // bare one carries no `try` to contribute it. Only a named failable
+        // declaration qualifies: an optional `??` defaults through this same
+        // node, and its rhs escapes nothing.
+        if (nc.rhs.data == .call) {
+            if (self.calleeEdge(nc.rhs.data.call.callee, enclosing_fd)) |edge| {
+                if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd| {
+                    if (Lowering.astChannelNode(fd.return_type) != null) edges.append(self.l.alloc, edge) catch {};
+                }
+            }
+        }
+    }
+
+    /// An operand whose failure a fallback absorbs: its own attempt goes
+    /// nowhere, while a `try` nested inside it re-raises before the fallback
+    /// runs and still escapes. A `try { … }` boundary owns every escape
+    /// inside it.
+    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+        switch (node.data) {
+            .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, true),
+            .try_expr => |te| if (te.operand.data != .block) self.collectAbsorbed(te.operand, tags, edges, dyn, enclosing_fd),
+            else => self.collectErrorSites(node, tags, edges, dyn, enclosing_fd),
         }
     }
 
