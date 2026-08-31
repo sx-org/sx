@@ -1312,6 +1312,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         subject = self.openSetAnyView(subject_ty, subject, me.subject);
         subject_ty = .any;
     }
+    // The subject decides the kind: an integer or bool dispatches on its value.
+    if (subject_ty == .bool or self.module.types.isIntegerType(subject_ty)) is_type_match = false;
     const is_any_switch = subject_ty == .any;
     if (is_any_switch) is_type_match = true;
     const is_optional_match = blk: {

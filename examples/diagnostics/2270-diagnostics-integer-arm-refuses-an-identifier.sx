@@ -1,0 +1,12 @@
+// An identifier arm names no value of an integer subject, and its capitalized
+// spelling leaves the match a value match: the literal arm beside it stands.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    n: i32 = 0;
+    return match n {
+        case 0: 2;
+        case Foo: 1;
+        else: 0;
+    };
+}
