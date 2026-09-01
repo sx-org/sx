@@ -42,11 +42,8 @@ KEYBOARD_FLICK_VELOCITY :: 100.0;
 
 // Who is placing the keyboard.
 KeyboardGrip :: enum {
-    // The live keyboard alone.
     free;
-    // A finger, holding it below where it grabbed it.
     held;
-    // The finger is up and the hold is springing to `settleTo`.
     settling;
     // The dismissal is out and the hold stands until the keyboard clears.
     dismissed;
@@ -84,7 +81,6 @@ KeyboardOverlap :: struct {
         self.settleTo = 0.0;
     }
 
-    // The pan takes the keyboard where it stands.
     grab :: (self: *KeyboardOverlap) {
         self.grip = .held;
         self.grabbed = self.height;
@@ -92,7 +88,6 @@ KeyboardOverlap :: struct {
         self.settleTo = 0.0;
     }
 
-    // The finger carries the keyboard's top edge.
     track :: (self: *KeyboardOverlap, y: f32, viewHeight: f32) {
         if self.grip != .held { return; }
         o := y - (viewHeight - self.grabbed);

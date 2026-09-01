@@ -266,8 +266,6 @@ UIKitPlatform :: struct {
     safeBottom: f32 = 0.0;
     safeRight: f32 = 0.0;
 
-    // The keyboard's overlap of the view, sampled off the keyboard's own
-    // view every tick.
     kb: KeyboardOverlap = .{};
 
     savedTitle: [*]u8 = null;
