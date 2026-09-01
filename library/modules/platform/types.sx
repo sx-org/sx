@@ -19,11 +19,10 @@ FrameContext :: struct {
     pixelH: i32;
     dpiScale: f32;
     deltaTime: f32;
-    // The host clock time at which the next vsync will present the frame
-    // we're about to render. On iOS this is CADisplayLink.targetTimestamp;
-    // forward it to MetalGPU.endFrame() to schedule presentDrawable:atTime:
-    // so our drawable hits the same vsync as UIKit's compositor. Other
-    // platforms leave it 0 (Metal then falls back to immediate present).
+    // Host vsync the frame is drawn for (CADisplayLink.targetTimestamp on
+    // iOS). Metal with presentsWithTransaction presents in the current
+    // CATransaction and does not consume this; other paths pass it to
+    // MetalGPU.endFrame for presentDrawable:atTime:. 0 is immediate present.
     targetPresentTime: f64;
 }
 

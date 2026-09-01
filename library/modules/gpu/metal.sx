@@ -247,6 +247,9 @@ MetalGPU :: struct {
     drawable:   *CAMetalDrawable = null;
     cmdBuffer: *MTLCommandBuffer = null;
     encoder:    *MTLRenderCommandEncoder = null;
+    // Layer presents inside the current CATransaction (IME keyboard
+    // animation) instead of presentDrawable:atTime:.
+    presentsWithTransaction: bool = false;
 
     // Every render pass carries a depth attachment and every pipeline
     // declares MTL_PIXEL_FORMAT_DEPTH32_FLOAT: Metal rejects a draw whose
@@ -455,6 +458,9 @@ impl GPU for MetalGPU {
             if self.pixelW > 0 and self.pixelH > 0 {
                 self.layer.setDrawableSize(.{ width = self.pixelW, height = self.pixelH });
             }
+            self.layer.setMaximumDrawableCount(2);
+            self.layer.setPresentsWithTransaction(1);
+            self.presentsWithTransaction = true;
         }
 
         true
@@ -524,12 +530,12 @@ impl GPU for MetalGPU {
         self.encoder.endEncoding();
 
         if self.drawable != null {
-            // targetTime > 0 → presentDrawable:atTime: (lockstep path).
-            // targetTime == 0 → fall back to presentDrawable: (immediate).
-            if targetTime > 0.0 {
-                self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
-            } else {
+            // presentsWithTransaction: the drawable joins this CATransaction
+            // (the IME's). presentDrawable:atTime: is a separate timeline.
+            if self.presentsWithTransaction or targetTime <= 0.0 {
                 self.cmdBuffer.presentDrawable(self.drawable);
+            } else {
+                self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
             }
         }
 

@@ -90,6 +90,7 @@ CADisplayLink :: @ObjcClass("CADisplayLink", extends = NSObject) extern {
     addToRunLoop_forMode :: (self: *Self, runloop: *NSRunLoop, mode: *NSString);
     targetTimestamp :: (self: *Self) -> f64;
     duration :: (self: *Self) -> f64;
+    setPreferredFramesPerSecond :: (self: *Self, fps: i64);
 }
 
 // ── View tree + GL drawables ────────────────────────────
@@ -111,6 +112,7 @@ EAGLContext :: @ObjcClass("EAGLContext", extends = NSObject) extern {
 UIScreen :: @ObjcClass("UIScreen", extends = NSObject) extern {
     mainScreen  :: () -> *UIScreen;
     nativeScale :: (self: *Self) -> f64;
+    maximumFramesPerSecond :: (self: *Self) -> i64;
 }
 
 // UIResponder is the root for keyboard / touch / focus dispatch.
@@ -242,8 +244,7 @@ UIKitPlatform :: struct {
     dpiScale: f32 = 1.0;
 
     deltaTime: f32 = 0.016;
-    // Latest CADisplayLink.targetTimestamp captured each tick — forwarded
-    // through FrameContext to MetalGPU.endFrame() for presentDrawable:atTime:.
+    // Latest CADisplayLink.targetTimestamp captured each tick.
     lastTargetTs: f64 = 0.0;
 
     frameClosure: Closure() = ---;
@@ -489,8 +490,10 @@ impl Platform for UIKitPlatform {
 
     // The keyboard's overlap of the view for the frame about to draw. The
     // presentation layer is where the keyboard IS mid-animation; the model
-    // frame is already parked at the end of it. The keyboard's view is read
-    // fresh — UIKit builds one and tears it down with the keyboard.
+    // frame is already parked at the end of it. Called after the drawable
+    // is acquired so the sample and the present share this CATransaction.
+    // The keyboard's view is read fresh — UIKit builds one and tears it
+    // down with the keyboard.
     sampleKeyboard :: (self: *UIKitPlatform) {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
@@ -614,8 +617,13 @@ impl Platform for UIKitPlatform {
         selTick := sel_registerName("sxTick:".ptr);
         link := CADisplayLink.displayLinkWithTarget_selector(glView, selTick);
         self.displayLink = link;
+        fps := screen2.maximumFramesPerSecond();
+        if fps < 60 { fps = 60; }
+        // The IME keyboard's CAAnimation runs at the display's max Hz
+        // (120 on ProMotion); the link has to match or the sample is coarse.
+        link.setPreferredFramesPerSecond(fps);
         runloop := NSRunLoop.currentRunLoop();
-        link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopDefaultMode"));
+        link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopCommonModes"));
 
         // `cancelsTouchesInView = NO` is what keeps the view's own touches
         // flowing once the pan recognizes.
@@ -627,15 +635,14 @@ impl Platform for UIKitPlatform {
         NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
 
-    // CADisplayLink callback (vsync-paced). Reads the keyboard's overlap
-    // for the frame it is about to draw, then calls the user's frame
-    // closure.
+    // CADisplayLink callback (vsync-paced). The frame closure acquires the
+    // drawable, then samples the keyboard, then draws, so the overlap is
+    // the one this CATransaction will composite.
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
         self.deltaTime = link.duration();
         self.lastTargetTs = link.targetTimestamp();
 
         if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
-        self.sampleKeyboard();
 
         if !self.hasFrameClosure { return; }
         if !self.glInitialized { return; }

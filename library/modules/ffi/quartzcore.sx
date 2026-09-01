@@ -46,4 +46,10 @@ CAMetalLayer :: @ObjcClass("CAMetalLayer", extends = CALayer) extern {
     setFramebufferOnly :: (self: *Self, on: BOOL);
     setDrawableSize :: (self: *Self, size: CGSize);
     nextDrawable :: (self: *Self) -> *void;
+    // Two drawables: the GPU holds one, we write the other. Three adds a
+    // frame of present latency.
+    setMaximumDrawableCount :: (self: *Self, n: u64);
+    // The drawable commits in the current CATransaction, with the IME
+    // keyboard's animation, instead of on a separate present timeline.
+    setPresentsWithTransaction :: (self: *Self, on: BOOL);
 }

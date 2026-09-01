@@ -76,6 +76,7 @@ tapFrame :: () {
     glClearColor(r, g, b, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    gUikitPlat.sampleKeyboard();
     insets := gUikitPlat.safeInsets();
     barHPx : i32 = xx (insets.bottom * fc.dpiScale);
     if barHPx > 0 {
