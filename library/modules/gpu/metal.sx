@@ -191,6 +191,7 @@ MTLBlitCommandEncoder :: @ObjcClass("MTLBlitCommandEncoder") extern {
 
 CAMetalDrawable :: @ObjcClass("CAMetalDrawable") extern {
     texture :: (self: *Self) -> *MTLTexture;
+    present :: (self: *Self);
 }
 
 MTLCommandBuffer :: @ObjcClass("MTLCommandBuffer") extern {
@@ -199,6 +200,7 @@ MTLCommandBuffer :: @ObjcClass("MTLCommandBuffer") extern {
     presentDrawable :: (self: *Self, drawable: *CAMetalDrawable);
     presentDrawable_atTime :: (self: *Self, drawable: *CAMetalDrawable, t: f64);
     commit :: (self: *Self);
+    waitUntilScheduled :: (self: *Self);
     waitUntilCompleted :: (self: *Self);
 }
 
@@ -529,17 +531,24 @@ impl GPU for MetalGPU {
 
         self.encoder.endEncoding();
 
-        if self.drawable != null {
-            // presentsWithTransaction: the drawable joins this CATransaction
-            // (the IME's). presentDrawable:atTime: is a separate timeline.
-            if self.presentsWithTransaction or targetTime <= 0.0 {
-                self.cmdBuffer.presentDrawable(self.drawable);
-            } else {
-                self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
+        if self.drawable != null and self.presentsWithTransaction {
+            // The present has to land inside the current CATransaction:
+            // commit, wait until the buffer is scheduled, then present the
+            // drawable directly. A present queued on the command buffer
+            // fires after the transaction flushes, and the layer drops it.
+            self.cmdBuffer.commit();
+            self.cmdBuffer.waitUntilScheduled();
+            self.drawable.present();
+        } else {
+            if self.drawable != null {
+                if targetTime > 0.0 {
+                    self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
+                } else {
+                    self.cmdBuffer.presentDrawable(self.drawable);
+                }
             }
+            self.cmdBuffer.commit();
         }
-
-        self.cmdBuffer.commit();
 
         // Offscreen mode has no vsync to hide behind: the caller reads the
         // texture right after endFrame, so drain the GPU here.

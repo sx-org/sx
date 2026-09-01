@@ -85,6 +85,11 @@ NSRunLoop :: @ObjcClass("NSRunLoop", extends = NSObject) extern {
     currentRunLoop :: () -> *NSRunLoop;
 }
 
+// CFRunLoop recognizes the common-modes pseudo-mode by pointer identity
+// with this constant; an NSString with the same characters names an
+// ordinary mode the loop never runs.
+kCFRunLoopCommonModes : *NSString extern;
+
 CADisplayLink :: @ObjcClass("CADisplayLink", extends = NSObject) extern {
     displayLinkWithTarget_selector :: (target: *void, sel: *void) -> *CADisplayLink;
     addToRunLoop_forMode :: (self: *Self, runloop: *NSRunLoop, mode: *NSString);
@@ -623,7 +628,7 @@ impl Platform for UIKitPlatform {
         // (120 on ProMotion); the link has to match or the sample is coarse.
         link.setPreferredFramesPerSecond(fps);
         runloop := NSRunLoop.currentRunLoop();
-        link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopCommonModes"));
+        link.addToRunLoop_forMode(runloop, kCFRunLoopCommonModes);
 
         // `cancelsTouchesInView = NO` is what keeps the view's own touches
         // flowing once the pan recognizes.
