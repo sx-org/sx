@@ -81,7 +81,7 @@ main :: () -> i32 {
 
         proto := objc_getProtocol("NSCopying".ptr);
         if proto == null { print("FAIL: NSCopying not on this runtime\n"); return 1; }
-        print("conforms: {}\n", class_conformsToProtocol(baseCls, proto));
+        print("conforms: {}\n", class_conformsToProtocol(object_getClass(a), proto));
 
         selRelease : SEL = sel_registerName("release".ptr);
         releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;

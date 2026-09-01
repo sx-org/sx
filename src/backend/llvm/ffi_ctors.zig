@@ -222,7 +222,7 @@ pub const FfiCtors = struct {
     ///   cls       = objc_allocateClassPair(super_cls, "<ClassName>", 0)
     ///   class_addIvar(cls, "__sx_state", 8, 3, "^v")   // unless inherited
     ///   class_addMethod(cls | metaclass, ...)          // IMPs, +alloc, -dealloc
-    ///   class_addProtocol(cls, ...)                    // `implements =`
+    ///   class_addProtocol(cls, ...)                    // own + ancestor `implements =`
     ///   objc_registerClassPair(cls)
     ///   g_<ClassName>_state_ivar = class_getInstanceVariable(cls, "__sx_state")
     pub fn emitObjcDefinedClassInit(self: FfiCtors) void {
@@ -248,6 +248,33 @@ pub const FfiCtors = struct {
         const register_fn, const register_ty = self.e.lazyDeclareCRuntime("objc_registerClassPair", &[_]c.LLVMTypeRef{ptr_ty}, self.e.cached_void, 0);
         // class_getInstanceVariable(cls: *void, name: *u8) -> *Ivar.
         const get_iv_fn, const get_iv_ty = self.e.lazyDeclareCRuntime("class_getInstanceVariable", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, ptr_ty, 0);
+        // objc_getProtocol(name: *u8) -> *void.
+        const get_proto_fn, const get_proto_ty = self.e.lazyDeclareCRuntime("objc_getProtocol", &[_]c.LLVMTypeRef{ptr_ty}, ptr_ty, 0);
+        // class_addProtocol(cls: *void, proto: *void) -> bool.
+        const add_proto_fn, const add_proto_ty = self.e.lazyDeclareCRuntime("class_addProtocol", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, i8_ty, 0);
+
+        const AddProtocol = struct {
+            e: *LLVMEmitter,
+            get_fn: c.LLVMValueRef,
+            get_ty: c.LLVMTypeRef,
+            add_fn: c.LLVMValueRef,
+            add_ty: c.LLVMTypeRef,
+
+            fn emit(p: @This(), cls_val: c.LLVMValueRef, alias: []const u8) void {
+                const proto_str_global = p.e.emitPrivateCString(alias, "OBJC_PROTOCOL_NAME_");
+                var gp_args: [1]c.LLVMValueRef = .{proto_str_global};
+                const proto_val = c.LLVMBuildCall2(p.e.builder, p.get_ty, p.get_fn, &gp_args, 1, "proto");
+                var ap_args: [2]c.LLVMValueRef = .{ cls_val, proto_val };
+                _ = c.LLVMBuildCall2(p.e.builder, p.add_ty, p.add_fn, &ap_args, 2, "");
+            }
+        };
+        const add_protocol = AddProtocol{
+            .e = self.e,
+            .get_fn = get_proto_fn,
+            .get_ty = get_proto_ty,
+            .add_fn = add_proto_fn,
+            .add_ty = add_proto_ty,
+        };
 
         // Constructor: void __sx_objc_defined_class_init().
         var no_params: [0]c.LLVMTypeRef = .{};
@@ -355,18 +382,29 @@ pub const FfiCtors = struct {
             // The protocol may not be present on every SDK / runtime
             // (dead-strip pruning, version skew), so `objc_getProtocol`
             // returning null is non-fatal — skip the addProtocol call.
-            const get_proto_fn, const get_proto_ty = self.e.lazyDeclareCRuntime("objc_getProtocol", &[_]c.LLVMTypeRef{ptr_ty}, ptr_ty, 0);
-            const add_proto_fn, const add_proto_ty = self.e.lazyDeclareCRuntime("class_addProtocol", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, i8_ty, 0);
             for (fcd.members) |m| switch (m) {
-                .implements => |proto_alias| {
-                    const proto_str_global = self.e.emitPrivateCString(proto_alias, "OBJC_PROTOCOL_NAME_");
-                    var gp_args: [1]c.LLVMValueRef = .{proto_str_global};
-                    const proto_val = c.LLVMBuildCall2(self.e.builder, get_proto_ty, get_proto_fn, &gp_args, 1, "proto");
-                    var ap_args: [2]c.LLVMValueRef = .{ cls_val, proto_val };
-                    _ = c.LLVMBuildCall2(self.e.builder, add_proto_ty, add_proto_fn, &ap_args, 2, "");
-                },
+                .implements => |proto_alias| add_protocol.emit(cls_val, proto_alias),
                 else => {},
             };
+
+            // class_conformsToProtocol is class-local: a leaf pair does
+            // not see an ancestor's `implements =` unless those
+            // protocols are added here. Stop at an extern parent.
+            var walk: []const u8 = parent_name;
+            while (self.e.ir_mod.lookupObjcDefinedClass(walk)) |ancestor_decl| {
+                for (ancestor_decl.members) |m| switch (m) {
+                    .implements => |proto_alias| add_protocol.emit(cls_val, proto_alias),
+                    else => {},
+                };
+                var next_parent: ?[]const u8 = null;
+                for (cache) |cand| {
+                    if (std.mem.eql(u8, cand.name, walk)) {
+                        next_parent = cand.parent_objc_name;
+                        break;
+                    }
+                }
+                walk = next_parent orelse break;
+            }
 
             // objc_registerClassPair(cls)
             var reg_args: [1]c.LLVMValueRef = .{cls_val};
