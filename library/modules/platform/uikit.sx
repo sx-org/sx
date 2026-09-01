@@ -52,10 +52,31 @@ _NSRange :: struct { location: u64; length: u64; }
 NSNumber :: @ObjcClass("NSNumber", extends = NSObject) extern {
     // Class method (no `self: *Self` first param → static dispatch).
     numberWithBool :: (b: i8) -> *NSNumber;
+    doubleValue    :: (self: *Self) -> f64;
+    integerValue   :: (self: *Self) -> i64;
+}
+
+NSValue :: @ObjcClass("NSValue", extends = NSObject) extern {
+    CGRectValue :: (self: *Self) -> CGRect;
 }
 
 NSDictionary :: @ObjcClass("NSDictionary", extends = NSObject) extern {
+    objectForKey :: (self: *Self, key: *void) -> *void;
 }
+
+NSNotification :: @ObjcClass("NSNotification", extends = NSObject) extern {
+    userInfo :: (self: *Self) -> *NSDictionary;
+}
+
+NSNotificationCenter :: @ObjcClass("NSNotificationCenter", extends = NSObject) extern {
+    defaultCenter :: () -> *NSNotificationCenter;
+    addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
+}
+
+UIKeyboardWillChangeFrameNotification  : *NSString extern;
+UIKeyboardFrameEndUserInfoKey          : *NSString extern;
+UIKeyboardAnimationDurationUserInfoKey : *NSString extern;
+UIKeyboardAnimationCurveUserInfoKey    : *NSString extern;
 
 NSMutableDictionary :: @ObjcClass("NSMutableDictionary", extends = NSDictionary) extern {
     dictionary         :: () -> *NSMutableDictionary;
@@ -85,11 +106,17 @@ NSRunLoop :: @ObjcClass("NSRunLoop", extends = NSObject) extern {
     currentRunLoop :: () -> *NSRunLoop;
 }
 
+// CFRunLoop recognizes the common-modes pseudo-mode by pointer identity
+// with this constant; an NSString with the same characters names an
+// ordinary mode the loop never runs.
+kCFRunLoopCommonModes : *NSString extern;
+
 CADisplayLink :: @ObjcClass("CADisplayLink", extends = NSObject) extern {
     displayLinkWithTarget_selector :: (target: *void, sel: *void) -> *CADisplayLink;
     addToRunLoop_forMode :: (self: *Self, runloop: *NSRunLoop, mode: *NSString);
     targetTimestamp :: (self: *Self) -> f64;
     duration :: (self: *Self) -> f64;
+    setPreferredFramesPerSecond :: (self: *Self, fps: i64);
 }
 
 // ── View tree + GL drawables ────────────────────────────
@@ -111,6 +138,7 @@ EAGLContext :: @ObjcClass("EAGLContext", extends = NSObject) extern {
 UIScreen :: @ObjcClass("UIScreen", extends = NSObject) extern {
     mainScreen  :: () -> *UIScreen;
     nativeScale :: (self: *Self) -> f64;
+    maximumFramesPerSecond :: (self: *Self) -> i64;
 }
 
 // UIResponder is the root for keyboard / touch / focus dispatch.
@@ -214,6 +242,13 @@ GpuMode :: enum {
     metal;
 }
 
+// A responder flip parked by show/hideKeyboard for the next tick.
+PendingResponder :: enum {
+    none;
+    show;
+    hide;
+}
+
 UIKitPlatform :: struct {
     window: ?*UIWindow = null;
     rootVc: ?*UIViewController = null;
@@ -242,8 +277,7 @@ UIKitPlatform :: struct {
     dpiScale: f32 = 1.0;
 
     deltaTime: f32 = 0.016;
-    // Latest CADisplayLink.targetTimestamp captured each tick — forwarded
-    // through FrameContext to MetalGPU.endFrame() for presentDrawable:atTime:.
+    // Latest CADisplayLink.targetTimestamp captured each tick.
     lastTargetTs: f64 = 0.0;
 
     frameClosure: Closure() = ---;
@@ -267,8 +301,45 @@ UIKitPlatform :: struct {
     safeRight: f32 = 0.0;
 
     kb: KeyboardOverlap = .{};
+    kbSpring: KeyboardSpring = .{};
+    kbInset: f32 = 0.0;
+    pendingResponder: PendingResponder = .none;
 
     savedTitle: [*]u8 = null;
+}
+
+// The keyboard's show/hide spring, armed by the will-change-frame
+// notification and evaluated at each frame's target timestamp, so the
+// overlap is where the keyboard will be when the drawable reaches the
+// glass, not where its presentation layer was a frame earlier. `start`
+// is the arm time — the notification is when UIKit starts the
+// keyboard's own animation, so both springs share a clock origin. A
+// retarget re-arms from the current position and velocity.
+KeyboardSpring :: struct {
+    active: bool = false;
+    start: f64 = 0.0;
+    duration: f64 = 0.0;
+    from: f32 = 0.0;
+    to: f32 = 0.0;
+    v0: f32 = 0.0;
+    // Published bottom-inset endpoints: max(overlap, safe-area) at the
+    // spring's from and to, interpolated by the spring's own progress.
+    insetFrom: f32 = 0.0;
+    insetTo: f32 = 0.0;
+
+    // Overlap `t` seconds into the spring:
+    // x(t) = to + (A + Bt)·e^(−ωt), A = from−to, B = v0 + ωA.
+    at :: (self: *KeyboardSpring, t: f64) -> f32 {
+        a : f64 = self.from.(f64) - self.to.(f64);
+        b := self.v0.(f64) + KB_SPRING_OMEGA * a;
+        (self.to.(f64) + (a + b * t) * exp(0.0 - KB_SPRING_OMEGA * t)).(f32)
+    }
+
+    velocityAt :: (self: *KeyboardSpring, t: f64) -> f32 {
+        a : f64 = self.from.(f64) - self.to.(f64);
+        b := self.v0.(f64) + KB_SPRING_OMEGA * a;
+        ((b - KB_SPRING_OMEGA * (a + b * t)) * exp(0.0 - KB_SPRING_OMEGA * t)).(f32)
+    }
 }
 
 impl Platform for UIKitPlatform {
@@ -278,6 +349,8 @@ impl Platform for UIKitPlatform {
         self.hasFrameClosure = false;
         self.glInitialized = false;
         self.kb = .{};
+        self.kbSpring = .{};
+        self.pendingResponder = .none;
         self.savedTitle = title.ptr;
         self.events = .{};
         self.batch = .{};
@@ -347,6 +420,7 @@ impl Platform for UIKitPlatform {
     safeInsets :: (self: *UIKitPlatform) -> EdgeInsets {
         bottom := self.safeBottom;
         if self.kb.height > bottom { bottom = self.kb.height; }
+        if self.kbSpring.active { bottom = self.kbInset; }
         EdgeInsets{
             top = self.safeTop,
             left = self.safeLeft,
@@ -362,20 +436,19 @@ impl Platform for UIKitPlatform {
         }
     }
 
+    // The responder flip is deferred to the next display-link tick: the
+    // frame closure runs in the layer's display phase, and a keyboard
+    // raised or dismissed inside the commit sets its animation up late.
     showKeyboard :: (self: *UIKitPlatform) {
         self.kb.restore();
-        if view := self.glView {
-            view.becomeFirstResponder();
-        }
+        self.pendingResponder = .show;
     }
 
     hideKeyboard :: (self: *UIKitPlatform) {
         if session := self.session {
             session.abandon();
         }
-        if view := self.glView {
-            view.resignFirstResponder();
-        }
+        self.pendingResponder = .hide;
     }
 
     stop :: (self: *UIKitPlatform) { }
@@ -489,23 +562,56 @@ impl Platform for UIKitPlatform {
 
     // The keyboard's overlap of the view for the frame about to draw. The
     // presentation layer is where the keyboard IS mid-animation; the model
-    // frame is already parked at the end of it. The keyboard's view is read
-    // fresh — UIKit builds one and tears it down with the keyboard.
+    // frame is already parked at the end of it. Called after the drawable
+    // is acquired so the sample and the present share this CATransaction.
+    // The keyboard's view is read fresh — UIKit builds one and tears it
+    // down with the keyboard.
     sampleKeyboard :: (self: *UIKitPlatform) {
         view : *UIView = ---;
         if v := self.glView { view = v; } else { return; }
         viewBounds := view.bounds();
         viewH : f32 = viewBounds.height;
 
-        top := viewH;
-        layer : *CALayer = null;
-        if kbView := uikitKeyboardView() {
-            layer = kbView.layer();
-            live := layer.presentationLayer();
-            if live == null { live = layer; }
-            inView := view.convertRect_fromView(live.frame(), kbView.superview());
-            top = inView.y;
+        // The spring is evaluated at the frame's target timestamp, one
+        // vsync ahead of the presentation layer.
+        springTop : ?f32 = null;
+        if self.kbSpring.active {
+            t := self.lastTargetTs - self.kbSpring.start;
+            if t < 0.0 { t = 0.0; }
+            if t >= self.kbSpring.duration {
+                self.kbSpring.active = false;
+            } else {
+                x := self.kbSpring.at(t);
+                springTop = viewH - x;
+                // The inset rides the spring's own progress between its
+                // endpoints — the panel and the keys share one curve, so
+                // the safe-area gap fades as 1 - p(t).
+                q : f32 = 1.0;
+                span := self.kbSpring.to - self.kbSpring.from;
+                if span > 0.5 or span < -0.5 { q = (x - self.kbSpring.from) / span; }
+                self.kbInset = self.kbSpring.insetFrom + (self.kbSpring.insetTo - self.kbSpring.insetFrom) * q;
+            }
         }
+
+        // Spring frames skip the remote-keyboard view-tree walk; it
+        // stalls during bring-up. The layer is fetched while a pan is live.
+        top : ?f32 = viewH;
+        layer : *CALayer = null;
+        needLayer := self.kb.offset != 0.0 or self.kb.grip != .free;
+        if springTop == null or needLayer {
+            if kbView := uikitKeyboardView() {
+                layer = kbView.layer();
+                if springTop == null {
+                    top = null;
+                    live := layer.presentationLayer();
+                    if live != null {
+                        inView := view.convertRect_fromView(live.frame(), kbView.superview());
+                        top = inView.y;
+                    }
+                }
+            }
+        }
+        if st := springTop { top = st; }
         self.kb.sample(top, viewH);
 
         // The pan's offset is the keyboard's own displacement, so the keys
@@ -517,6 +623,85 @@ impl Platform for UIKitPlatform {
                 layer.setBounds(CGRect{ x = b.x, y = y, width = b.width, height = b.height });
             }
         }
+    }
+
+    // UIKeyboardWillChangeFrame: arms the spring from the current overlap
+    // toward the notification's end frame. Curve 7 is the keyboard spring;
+    // any other curve, or a zero duration, leaves presentation sampling in
+    // charge.
+    keyboardWillChangeFrame :: (self: *UIKitPlatform, note: *NSNotification) {
+        view : *UIView = ---;
+        if v := self.glView { view = v; } else { return; }
+        info := note.userInfo();
+        if info == null { return; }
+        endObj := info.objectForKey(UIKeyboardFrameEndUserInfoKey);
+        if endObj == null { return; }
+
+        dur : f64 = 0.0;
+        durObj := info.objectForKey(UIKeyboardAnimationDurationUserInfoKey);
+        if durObj != null { dur = durObj.(*NSNumber).doubleValue(); }
+        curve : i64 = 7;
+        curveObj := info.objectForKey(UIKeyboardAnimationCurveUserInfoKey);
+        if curveObj != null { curve = curveObj.(*NSNumber).integerValue(); }
+        if curve != 7 or dur <= 0.001 { self.kbSpring.active = false; return; }
+
+        end := endObj.(*NSValue).CGRectValue();
+        // The keyboard view's model frame is already parked at the end of
+        // the animation; when it agrees with the notification's size it is
+        // the more accurate end position.
+        if kbView := uikitKeyboardView() {
+            kf := kbView.layer().frame();
+            dw := kf.width - end.width; if dw < 0.0 { dw = 0.0 - dw; }
+            dh := kf.height - end.height; if dh < 0.0 { dh = 0.0 - dh; }
+            dx := kf.x - end.x; if dx < 0.0 { dx = 0.0 - dx; }
+            if dw < 0.5 and dh < 0.5 and dx < 0.5 { end.y = kf.y; }
+        }
+
+        bounds := view.bounds();
+        viewH : f32 = bounds.height;
+        inView := view.convertRect_fromView(end, null);
+        overlap : f32 = viewH - inView.y;
+        if overlap < 0.0 { overlap = 0.0; }
+        if overlap > viewH { overlap = viewH; }
+
+        from : f32 = self.kb.height + self.kb.offset;
+        v0 : f32 = 0.0;
+        insetFrom : f32 = self.safeBottom;
+        if self.kb.height > insetFrom { insetFrom = self.kb.height; }
+        if self.kbSpring.active {
+            t := CACurrentMediaTime() - self.kbSpring.start;
+            if t < 0.0 { t = 0.0; }
+            from = self.kbSpring.at(t);
+            v0 = self.kbSpring.velocityAt(t);
+            insetFrom = self.kbInset;
+        }
+        insetTo : f32 = overlap;
+        if insetTo < self.safeBottom { insetTo = self.safeBottom; }
+
+        // A small hop of a shown keyboard is the QuickType bar toggling:
+        // the field pins to the end height while the bar animates.
+        hop := overlap - from;
+        if hop < 0.0 { hop = 0.0 - hop; }
+        if !self.kbSpring.active and self.kb.height > 0.5 and hop <= 44.1 {
+            from = overlap;
+            v0 = 0.0;
+        }
+
+        self.kbSpring = .{
+            active = true,
+            start = CACurrentMediaTime(),
+            duration = dur,
+            from = from,
+            to = overlap,
+            v0 = v0,
+            insetFrom = insetFrom,
+            insetTo = insetTo,
+        };
+        self.kbInset = insetFrom;
+
+        // A display this commit paints the first spring frame without
+        // waiting for the next tick.
+        if self.gpuMode == .metal { view.layer().setNeedsDisplay(); }
     }
 
     // The pan takes the keyboard only where the swipe starts on the content
@@ -612,8 +797,13 @@ impl Platform for UIKitPlatform {
         selTick := sel_registerName("sxTick:".ptr);
         link := CADisplayLink.displayLinkWithTarget_selector(glView, selTick);
         self.displayLink = link;
+        fps := screen2.maximumFramesPerSecond();
+        if fps < 60 { fps = 60; }
+        // The IME keyboard's CAAnimation runs at the display's max Hz
+        // (120 on ProMotion); the link has to match or the sample is coarse.
+        link.setPreferredFramesPerSecond(fps);
         runloop := NSRunLoop.currentRunLoop();
-        link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopDefaultMode"));
+        link.addToRunLoop_forMode(runloop, kCFRunLoopCommonModes);
 
         // `cancelsTouchesInView = NO` is what keeps the view's own touches
         // flowing once the pan recognizes.
@@ -622,19 +812,47 @@ impl Platform for UIKitPlatform {
         pan.setCancelsTouchesInView(0);
         glView.addGestureRecognizer(pan);
 
+        center := NSNotificationCenter.defaultCenter();
+        center.addObserver_selector_name_object(
+            glView, sel_registerName("sxKeyboardFrame:".ptr),
+            UIKeyboardWillChangeFrameNotification, null);
+
         NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
 
-    // CADisplayLink callback (vsync-paced). Reads the keyboard's overlap
-    // for the frame it is about to draw, then calls the user's frame
-    // closure.
+    // CADisplayLink callback (vsync-paced). Metal is marked for display
+    // and draws in the layer's commit-phase -display, after this cycle's
+    // touches and notifications; GLES has no display phase and draws here.
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
         self.deltaTime = link.duration();
         self.lastTargetTs = link.targetTimestamp();
 
-        if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
-        self.sampleKeyboard();
+        if self.pendingResponder != .none {
+            flip := self.pendingResponder;
+            self.pendingResponder = .none;
+            if view := self.glView {
+                if flip == .show { view.becomeFirstResponder(); }
+                else { view.resignFirstResponder(); }
+            }
+        }
 
+        if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
+
+        if !self.hasFrameClosure { return; }
+        if !self.glInitialized { return; }
+
+        if self.gpuMode == .metal {
+            if view := self.glView { view.layer().setNeedsDisplay(); }
+            return;
+        }
+
+        fn := self.frameClosure;
+        fn();
+    }
+
+    // SxMetalLayer -display: the frame closure acquires the drawable,
+    // samples the keyboard, draws and presents inside this commit.
+    metalLayerDisplay :: (self: *UIKitPlatform) {
         if !self.hasFrameClosure { return; }
         if !self.glInitialized { return; }
 

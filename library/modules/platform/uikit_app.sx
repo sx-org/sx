@@ -219,6 +219,11 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         gUikitPlat.keyboardPan(recognizer.(*UIPanGestureRecognizer));
     }
 
+    sxKeyboardFrame :: (self: *Self, note: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.keyboardWillChangeFrame(note.(*NSNotification));
+    }
+
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
         if gUikitPlat == null { return; }
         gUikitPlat.pushTouchDown(self, touches);
@@ -423,4 +428,13 @@ SxMetalView :: @ObjcClass("SxMetalView", extends = SxView) export {
     init  :: (self: *Self) -> *SxMetalView;
 
     layerClass :: () => CAMetalLayer.class();
+
+    // The layer's -display forwards here (the view is the layer's
+    // delegate). Core Animation calls it during the commit, after the
+    // cycle's touches, gestures and notifications, so the frame reads
+    // this cycle's input and its drawable joins this transaction.
+    displayLayer :: (self: *Self, layer: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.metalLayerDisplay();
+    }
 }

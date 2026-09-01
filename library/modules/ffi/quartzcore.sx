@@ -12,6 +12,10 @@
 
 @framework "QuartzCore";
 
+// The Core Animation clock — the timebase of CADisplayLink timestamps
+// and CAAnimation begin times.
+CACurrentMediaTime :: () -> f64 extern;
+
 // CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
 CGSize :: struct { width: f64; height: f64; }
 
@@ -29,6 +33,9 @@ CALayer :: @ObjcClass("CALayer", extends = NSObject) extern {
     frame     :: (self: *Self) -> CGRect;
     bounds    :: (self: *Self) -> CGRect;
     setBounds :: (self: *Self, bounds: CGRect);
+    setNeedsDisplay :: (self: *Self);
+    setNeedsLayout :: (self: *Self);
+    layoutIfNeeded :: (self: *Self);
     // The layer's on-screen geometry for the frame being composited; nil
     // where the layer has no presentation yet.
     presentationLayer :: (self: *Self) -> *CALayer;
@@ -46,4 +53,11 @@ CAMetalLayer :: @ObjcClass("CAMetalLayer", extends = CALayer) extern {
     setFramebufferOnly :: (self: *Self, on: BOOL);
     setDrawableSize :: (self: *Self, size: CGSize);
     nextDrawable :: (self: *Self) -> *void;
+    // Three drawables with presentsWithTransaction: the present is tied
+    // to the commit, so the third is stall headroom. Two lets
+    // nextDrawable block while the compositor still holds one.
+    setMaximumDrawableCount :: (self: *Self, n: u64);
+    // The drawable commits in the current CATransaction, with the IME
+    // keyboard's animation, instead of on a separate present timeline.
+    setPresentsWithTransaction :: (self: *Self, on: BOOL);
 }

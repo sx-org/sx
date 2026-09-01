@@ -101,6 +101,9 @@ frame :: () {
         i += 1;
     }
 
+    bg : ClearColor = .{ r = 0.07, g = 0.09, b = 0.13, a = 1.0 };
+    if !gGpu.beginFrame(bg) { return; }
+    gPlat.sampleKeyboard();
     gInsetBottom = gPlat.safeInsets().bottom;
     gRoot.viewport = Size{ width = fc.viewportW, height = fc.viewportH };
     gLoop.frame();
@@ -127,13 +130,11 @@ frame :: () {
     gPlat.session = null;
     if gRoot.focus.current() != null { gPlat.session = gSession; }
 
-    bg : ClearColor = .{ r = 0.07, g = 0.09, b = 0.13, a = 1.0 };
-    if !gGpu.beginFrame(bg) { return; }
     gRenderer.begin(fc.viewportW, fc.viewportH, gGlyphs.textureId);
     gRenderer.process(*gRoot.snapshot.scene);
     gGlyphs.uploadAtlasToGpu();
     gRenderer.flush();
-    gGpu.endFrame(fc.targetPresentTime);
+    gGpu.endFrame(0);
     gPlat.endFrame();
 }
 
