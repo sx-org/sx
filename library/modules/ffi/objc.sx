@@ -41,6 +41,7 @@ objc_lookUpClass      :: (name: [*]u8)                  -> *void  extern objc;
 sel_registerName      :: (name: [*]u8)                  -> *void  extern objc;
 class_createInstance  :: (cls: *void, extra: usize)     -> *void  extern objc;
 object_getClass       :: (obj: *void)                   -> *void  extern objc;
+class_getName         :: (cls: *void)                   -> [*]u8  extern objc;
 object_getIvar        :: (obj: *void, ivar: *void)      -> *void  extern objc;
 object_setIvar        :: (obj: *void, ivar: *void, val: *void)    extern objc;
 

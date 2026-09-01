@@ -37,21 +37,7 @@ uikitAppRun :: (plat: *UIKitPlatform, frameFn: Closure()) {
 SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
 
     application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
-        if gUikitPlat != null {
-            center := NSNotificationCenter.defaultCenter();
-            center.addObserver_selector_name_object(
-                self,
-                sel_registerName("sxKeyboardWillChangeFrame:".ptr),
-                nsstring("UIKeyboardWillChangeFrameNotification"),
-                null);
-        }
         return 1;
-    }
-
-    sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
-        if gUikitPlat == null { return; }
-        notif : *NSNotification = notification.(*NSNotification);
-        gUikitPlat.keyboardWillChangeFrame(notif);
     }
 
     alloc :: () -> *SxAppDelegate;
@@ -226,6 +212,11 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
     layoutSubviews :: (self: *Self) {
         if gUikitPlat == null { return; }
         gUikitPlat.glViewDidLayout();
+    }
+
+    sxKeyboardPan :: (self: *Self, recognizer: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.keyboardPan(recognizer.(*UIPanGestureRecognizer));
     }
 
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
