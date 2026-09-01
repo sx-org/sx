@@ -1,0 +1,48 @@
+// A shaped run is identified by its BYTES: a session's text is inline
+// storage, so the address and the length outlive the edits that rewrite it.
+//
+// Run:
+//     sx run examples/ui/2285-ui-shape-cache-content-identity.sx
+// Other desktops go GL over a hidden SDL window (bare externs):
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/2285-ui-shape-cache-content-identity.sx
+//
+// The corpus compiles this file but does not run it: measuring needs a real
+// font and a GPU-backed atlas, so the measurement stays a manual host gate
+// and a host without a display/GPU reports a clean skip.
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/surface.sx";
+@import "modules/ui/surface_select.sx";
+
+main :: () {
+    surface := openPixelSurface(64, 32);
+    if surface == null {
+        print("shape cache skipped: no display/GPU on this host\n");
+        return;
+    }
+
+    buf: [2]u8 = ---;
+    run : string = ---;
+    run.ptr = *buf[0];
+    run.len = 2;
+
+    buf[0] = 'i';
+    buf[1] = 'i';
+    narrow := measureText(run, 20.0).width;
+    buf[0] = 'W';
+    buf[1] = 'W';
+    wide := measureText(run, 20.0).width;
+    process.assert(wide > narrow, "a rewritten buffer measures the bytes now in it");
+
+    // A field measures its empty marked run between two measures of the
+    // committed one.
+    buf[0] = 'i';
+    buf[1] = 'i';
+    before := measureText(run, 20.0).width;
+    measureText("", 20.0);
+    after := measureText(run, 20.0).width;
+    process.assert(after == before, "an empty run between two measures leaves the second whole");
+
+    print("ok\n");
+}

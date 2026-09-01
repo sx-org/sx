@@ -180,14 +180,15 @@ GlyphCache :: struct {
     fontDataSize: i32;
     shapedBuf: List(ShapedGlyph);
 
-    // Shape cache: skip reshaping if same text + size as last call
-    lastShapePtr: [*]u8;
-    lastShapeLen: i64;
+    // Shape cache: the bytes and size shapedBuf holds the shape of. A text
+    // buffer keeps one address as its contents change, so the identity of a
+    // shaped run is its bytes.
+    lastShapeText: List(u8);
     lastShapeSizeQ: u16;
 
     // Allocator that owns every dynamically-grown buffer on this cache —
-    // entries list, hash table, shapedBuf. Captured at init time so growth
-    // never accidentally lands in a transient per-frame arena.
+    // entries list, hash table, shapedBuf, lastShapeText. Captured at init
+    // time so growth never accidentally lands in a transient per-frame arena.
     parentAllocator: Allocator;
 
     // GPU protocol backend. When set, atlas creation + dirty uploads route
@@ -573,25 +574,34 @@ GlyphCache :: struct {
     // full kb_text_shape pipeline for Unicode/complex scripts.
     // Results stored in self.shapedBuf (reused across calls).
     shapeText :: (self: *GlyphCache, text: string, fontSize: f32) {
-        // Check shape cache: skip if same text + size as last call
         sizeQ := quantizeSize(fontSize);
-        if text.len > 0 and text.ptr == self.lastShapePtr and text.len == self.lastShapeLen and sizeQ == self.lastShapeSizeQ {
-            return;  // shapedBuf already has the result
-        }
+        if sizeQ == self.lastShapeSizeQ and self.shapedTextIs(text) { return; }
 
         self.shapedBuf.len = 0;
-        if text.len == 0 { return; }
-
-        if isAscii(text) {
-            self.shapeAscii(text, fontSize);
-        } else {
-            self.shapeWithKb(text, fontSize);
+        if text.len > 0 {
+            if isAscii(text) {
+                self.shapeAscii(text, fontSize);
+            } else {
+                self.shapeWithKb(text, fontSize);
+            }
         }
 
-        // Update shape cache
-        self.lastShapePtr = text.ptr;
-        self.lastShapeLen = text.len;
+        self.lastShapeText.ensureCapacity(text.len, self.parentAllocator);
+        self.lastShapeText.len = text.len;
+        if text.len > 0 {
+            c.memcpy(self.lastShapeText.items.ptr, text.ptr, text.len);
+        }
         self.lastShapeSizeQ = sizeQ;
+    }
+
+    shapedTextIs :: (self: *GlyphCache, text: string) -> bool {
+        if text.len != self.lastShapeText.len { return false; }
+        i : i64 = 0;
+        while i < text.len {
+            if text[i] != self.lastShapeText.items[i] { return false; }
+            i += 1;
+        }
+        true
     }
 
     shapeAscii :: (self: *GlyphCache, text: string, fontSize: f32) {
