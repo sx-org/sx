@@ -102,6 +102,8 @@ View :: view.View;
 Label :: components.Label;
 Rect :: components.Rect;
 Button :: components.Button;
+TextField :: components.TextField;
+textField :: components.textField;
 VStack :: containers.VStack;
 HStack :: containers.HStack;
 ZStack :: containers.ZStack;
