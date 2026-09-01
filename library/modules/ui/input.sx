@@ -7,7 +7,8 @@
 // Separations the contract pins:
 // - physical key (position on the board) / logical key (meaning) / TEXT
 //   are three different things; text is never synthesized from key
-//   events, and IME rides TextInputSession, never key events.
+//   events, IME rides the composition arm, and deleteBackward is an
+//   editing intent rather than a key.
 // - hover (no button/contact) is not a move.
 // - every pointer arm carries its pointer id — that continuity is what
 //   the router's capture routes by.
@@ -95,6 +96,17 @@ TextEvent :: struct {
     text: string;
 }
 
+// The text an IME is composing, replaced in full by each update; an
+// empty `marked` is the composition abandoned. Commits arrive as text.
+CompositionEvent :: struct {
+    header: InputHeader = .{};
+    // Owned by the queue on TextEvent.text's terms.
+    marked: string;
+    // The selection inside `marked`, in UTF-8 bytes.
+    selectionStart: i64 = 0;
+    selectionEnd: i64 = 0;
+}
+
 InputEvent :: enum {
     pointerDown: PointerEvent;
     pointerMove: PointerEvent;
@@ -105,14 +117,16 @@ InputEvent :: enum {
     keyDown: KeyEvent;
     keyUp: KeyEvent;
     text: TextEvent;
+    composition: CompositionEvent;
+    deleteBackward: InputHeader;
 }
 
 // --- InputQueue — per UiRoot, persistent; push-side normalization ---
 //
 // Coalescing touches ONLY the immediately-last queued event, so any
 // other event is an ordering barrier by construction: move·down·move
-// never merges, and terminal-class events (down/up/cancel/key/text) are
-// never coalesced and never dropped. Moves and hovers replace a
+// never merges, and every event that is not a move, a hover or a scroll
+// is neither coalesced nor dropped. Moves and hovers replace a
 // same-arm/same-pointer/same-root predecessor (latest position wins);
 // scrolls additionally ACCUMULATE their deltas.
 InputQueue :: struct {
@@ -130,6 +144,10 @@ InputQueue :: struct {
         match ev {
             case .text: |t| {
                 self.events.append(.text(self.copyText(t)), self.gpa);
+                return;
+            }
+            case .composition: |cp| {
+                self.events.append(.composition(self.copyComposition(cp)), self.gpa);
                 return;
             }
             else: {}
@@ -176,18 +194,28 @@ InputQueue :: struct {
     }
 
     copyText :: (self: *InputQueue, t: TextEvent) -> TextEvent {
-        raw : [*]u8 = (self.gpa.allocBytes(t.text.len)).([*]u8);
-        c.memcpy(raw, t.text.ptr, t.text.len);
-        owned : string = ---;
-        owned.ptr = raw;
-        owned.len = t.text.len;
         te := t;
-        te.text = owned;
+        te.text = self.copyString(t.text);
         te
     }
 
+    copyComposition :: (self: *InputQueue, ce: CompositionEvent) -> CompositionEvent {
+        e := ce;
+        e.marked = self.copyString(ce.marked);
+        e
+    }
+
+    copyString :: (self: *InputQueue, s: string) -> string {
+        raw : [*]u8 = (self.gpa.allocBytes(s.len)).([*]u8);
+        c.memcpy(raw, s.ptr, s.len);
+        owned : string = ---;
+        owned.ptr = raw;
+        owned.len = s.len;
+        owned
+    }
+
     // Deliver every queued event in order — payloads are borrowed for
-    // the call — then clear, releasing owned text.
+    // the call — then clear, releasing owned strings.
     drain :: (self: *InputQueue, f: $F/(*InputEvent) -> void) {
         for *e in self.events { f(e); }
         self.clear();
@@ -197,6 +225,7 @@ InputQueue :: struct {
         for e in self.events {
             match e {
                 case .text: |t| { self.gpa.deallocBytes(t.text.ptr); true }
+                case .composition: |cp| { self.gpa.deallocBytes(cp.marked.ptr); true }
                 else: false
             } { }
         }
