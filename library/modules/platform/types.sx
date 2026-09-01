@@ -54,6 +54,34 @@ kbSpringAt :: (t: f64) -> f64 {
     1.0 - (1.0 + wt) * exp(0.0 - wt)
 }
 
+// The keyboard-paced layout curve: everything that rides a keyboard
+// change of any duration but the dismiss settle follows this unit
+// bezier — a fast start with a long decelerating tail.
+KB_LAYOUT_C1X :: 0.380;
+KB_LAYOUT_C1Y :: 0.700;
+KB_LAYOUT_C2X :: 0.125;
+KB_LAYOUT_C2Y :: 1.000;
+
+// Unit cubic bezier y at time fraction `x` (CAMediaTimingFunction
+// semantics): endpoints (0,0)-(1,1), control points (x1,y1),(x2,y2).
+bezierAt :: (x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
+    if x <= 0.0 { return 0.0; }
+    if x >= 1.0 { return 1.0; }
+    lo : f64 = 0.0;
+    hi : f64 = 1.0;
+    s := x;
+    i := 0;
+    while i < 24 {
+        u := 1.0 - s;
+        bx := 3.0 * u * u * s * x1 + 3.0 * u * s * s * x2 + s * s * s;
+        if bx < x { lo = s; } else { hi = s; }
+        s = (lo + hi) * 0.5;
+        i += 1;
+    }
+    u := 1.0 - s;
+    3.0 * u * u * s * y1 + 3.0 * u * s * s * y2 + s * s * s
+}
+
 // Who is placing the keyboard.
 KeyboardGrip :: enum {
     free;
@@ -142,7 +170,15 @@ KeyboardOverlap :: struct {
         if self.grip != .settling { return false; }
         self.settleT += dt;
         if self.settleT < self.settleDur {
-            p : f32 = kbSpringAt(self.settleT.(f64)).(f32);
+            // The dismiss settle is the keyboard spring; the return
+            // settle is the keyboard-paced layout bezier.
+            p : f32 = ---;
+            if self.settleTo > 0.0 {
+                p = kbSpringAt(self.settleT.(f64)).(f32);
+            } else {
+                frac := self.settleT.(f64) / self.settleDur.(f64);
+                p = bezierAt(KB_LAYOUT_C1X, KB_LAYOUT_C1Y, KB_LAYOUT_C2X, KB_LAYOUT_C2Y, frac).(f32);
+            }
             self.offset = self.settleFrom + (self.settleTo - self.settleFrom) * p;
             return false;
         }

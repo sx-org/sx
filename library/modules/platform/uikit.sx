@@ -302,6 +302,7 @@ UIKitPlatform :: struct {
 
     kb: KeyboardOverlap = .{};
     kbSpring: KeyboardSpring = .{};
+    kbInset: f32 = 0.0;
     pendingResponder: PendingResponder = .none;
 
     savedTitle: [*]u8 = null;
@@ -322,6 +323,12 @@ KeyboardSpring :: struct {
     from: f32 = 0.0;
     to: f32 = 0.0;
     v0: f32 = 0.0;
+    // The published bottom inset animates between these with the
+    // keyboard-paced layout bezier, so the safe-area gap fades as the
+    // keyboard approaches instead of stepping at the
+    // max(overlap, safe-area) crossover.
+    insetFrom: f32 = 0.0;
+    insetTo: f32 = 0.0;
 
     // Overlap `t` seconds into the spring:
     // x(t) = to + (A + Bt)·e^(−ωt), A = from−to, B = v0 + ωA.
@@ -416,6 +423,7 @@ impl Platform for UIKitPlatform {
     safeInsets :: (self: *UIKitPlatform) -> EdgeInsets {
         bottom := self.safeBottom;
         if self.kb.height > bottom { bottom = self.kb.height; }
+        if self.kbSpring.active { bottom = self.kbInset; }
         EdgeInsets{
             top = self.safeTop,
             left = self.safeLeft,
@@ -567,20 +575,9 @@ impl Platform for UIKitPlatform {
         viewBounds := view.bounds();
         viewH : f32 = viewBounds.height;
 
-        top : ?f32 = viewH;
-        layer : *CALayer = null;
-        if kbView := uikitKeyboardView() {
-            layer = kbView.layer();
-            top = null;
-            live := layer.presentationLayer();
-            if live != null {
-                inView := view.convertRect_fromView(live.frame(), kbView.superview());
-                top = inView.y;
-            }
-        }
-
-        // A live spring outranks the presentation sample: it is evaluated
-        // at the frame's target timestamp, one vsync ahead of the layer.
+        // The spring is evaluated at the frame's target timestamp, one
+        // vsync ahead of the presentation layer.
+        springTop : ?f32 = null;
         if self.kbSpring.active {
             if self.kbSpring.start <= 0.0 { self.kbSpring.start = CACurrentMediaTime(); }
             t := self.lastTargetTs - self.kbSpring.start;
@@ -588,9 +585,40 @@ impl Platform for UIKitPlatform {
             if t >= self.kbSpring.duration {
                 self.kbSpring.active = false;
             } else {
-                top = viewH - self.kbSpring.at(t);
+                x := self.kbSpring.at(t);
+                springTop = viewH - x;
+                // The inset rides the spring's own progress between its
+                // endpoints — the panel and the keys share one curve, so
+                // the safe-area gap fades as 1 - p(t).
+                q : f32 = 1.0;
+                span := self.kbSpring.to - self.kbSpring.from;
+                if span > 0.5 or span < -0.5 { q = (x - self.kbSpring.from) / span; }
+                self.kbInset = self.kbSpring.insetFrom + (self.kbSpring.insetTo - self.kbSpring.insetFrom) * q;
             }
         }
+
+        // A spring frame doesn't read the keyboard window: the lookup
+        // walks the remote keyboard's view tree, which stalls while the
+        // keyboard is being brought up — dropped frames right when the
+        // rise starts. The layer is still fetched when the pan holds a
+        // displacement.
+        top : ?f32 = viewH;
+        layer : *CALayer = null;
+        needLayer := self.kb.offset != 0.0 or self.kb.grip != .free;
+        if springTop == null or needLayer {
+            if kbView := uikitKeyboardView() {
+                layer = kbView.layer();
+                if springTop == null {
+                    top = null;
+                    live := layer.presentationLayer();
+                    if live != null {
+                        inView := view.convertRect_fromView(live.frame(), kbView.superview());
+                        top = inView.y;
+                    }
+                }
+            }
+        }
+        if st := springTop { top = st; }
         self.kb.sample(top, viewH);
 
         // The pan's offset is the keyboard's own displacement, so the keys
@@ -645,12 +673,17 @@ impl Platform for UIKitPlatform {
 
         from : f32 = self.kb.height + self.kb.offset;
         v0 : f32 = 0.0;
+        insetFrom : f32 = self.safeBottom;
+        if self.kb.height > insetFrom { insetFrom = self.kb.height; }
         if self.kbSpring.active and self.kbSpring.start > 0.0 {
             t := CACurrentMediaTime() - self.kbSpring.start;
             if t < 0.0 { t = 0.0; }
             from = self.kbSpring.at(t);
             v0 = self.kbSpring.velocityAt(t);
+            insetFrom = self.kbInset;
         }
+        insetTo : f32 = overlap;
+        if insetTo < self.safeBottom { insetTo = self.safeBottom; }
 
         // A small hop of a shown keyboard is the QuickType bar toggling:
         // the field pins to the end height while the bar animates.
@@ -668,7 +701,10 @@ impl Platform for UIKitPlatform {
             from = from,
             to = overlap,
             v0 = v0,
+            insetFrom = insetFrom,
+            insetTo = insetTo,
         };
+        self.kbInset = insetFrom;
 
         // A display this commit anchors the spring's clock in the same
         // transaction the keyboard's animation begins in.
