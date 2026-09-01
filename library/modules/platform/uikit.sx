@@ -265,6 +265,10 @@ impl Platform for UIKitPlatform {
         self.keyboardVisible = false;
         self.keyboardHeight = 0.0;
         self.savedTitle = title.ptr;
+        self.events = .{};
+        self.batch = .{};
+        self.imeQueue = InputQueue.init(context.allocator);
+        self.session = null;
 
         // iOS apps start with CWD=/. chdir to the bundle's resourcePath so the
         // game's relative `fopen("assets/...")` calls find their data — must
