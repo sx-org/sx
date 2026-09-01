@@ -12,6 +12,10 @@
 
 @framework "QuartzCore";
 
+// The Core Animation clock — the timebase of CADisplayLink timestamps
+// and CAAnimation begin times.
+CACurrentMediaTime :: () -> f64 extern;
+
 // CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
 CGSize :: struct { width: f64; height: f64; }
 

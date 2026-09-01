@@ -19,6 +19,7 @@
 UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
 chdir             :: (path: [*]u8) -> i32 extern;
+exp               :: (x: f64) -> f64 extern;
 
 // kEAGLRenderingAPIOpenGLES3 = 3
 EAGL_API_GLES3 :: 3;
@@ -52,10 +53,31 @@ _NSRange :: struct { location: u64; length: u64; }
 NSNumber :: @ObjcClass("NSNumber", extends = NSObject) extern {
     // Class method (no `self: *Self` first param → static dispatch).
     numberWithBool :: (b: i8) -> *NSNumber;
+    doubleValue    :: (self: *Self) -> f64;
+    integerValue   :: (self: *Self) -> i64;
+}
+
+NSValue :: @ObjcClass("NSValue", extends = NSObject) extern {
+    CGRectValue :: (self: *Self) -> CGRect;
 }
 
 NSDictionary :: @ObjcClass("NSDictionary", extends = NSObject) extern {
+    objectForKey :: (self: *Self, key: *void) -> *void;
 }
+
+NSNotification :: @ObjcClass("NSNotification", extends = NSObject) extern {
+    userInfo :: (self: *Self) -> *NSDictionary;
+}
+
+NSNotificationCenter :: @ObjcClass("NSNotificationCenter", extends = NSObject) extern {
+    defaultCenter :: () -> *NSNotificationCenter;
+    addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
+}
+
+UIKeyboardWillChangeFrameNotification  : *NSString extern;
+UIKeyboardFrameEndUserInfoKey          : *NSString extern;
+UIKeyboardAnimationDurationUserInfoKey : *NSString extern;
+UIKeyboardAnimationCurveUserInfoKey    : *NSString extern;
 
 NSMutableDictionary :: @ObjcClass("NSMutableDictionary", extends = NSDictionary) extern {
     dictionary         :: () -> *NSMutableDictionary;
@@ -273,8 +295,32 @@ UIKitPlatform :: struct {
     safeRight: f32 = 0.0;
 
     kb: KeyboardOverlap = .{};
+    kbSpring: KeyboardSpring = .{};
 
     savedTitle: [*]u8 = null;
+}
+
+// The UIKit keyboard spring (curve 7): mass 1, stiffness 555.027,
+// damping 47.118 — critically damped, ω = √555.027. Armed by the
+// will-change-frame notification and evaluated at each frame's target
+// timestamp, so the overlap is where the keyboard will be when the
+// drawable reaches the glass, not where its presentation layer was a
+// frame earlier.
+KB_SPRING_OMEGA :: 23.559;
+
+KeyboardSpring :: struct {
+    active: bool = false;
+    start: f64 = 0.0;
+    duration: f64 = 0.0;
+    from: f32 = 0.0;
+    to: f32 = 0.0;
+
+    // The keyboard's overlap `t` seconds into the spring.
+    at :: (self: *KeyboardSpring, t: f64) -> f32 {
+        wt := KB_SPRING_OMEGA * t;
+        p := 1.0 - (1.0 + wt) * exp(0.0 - wt);
+        self.from + (self.to - self.from) * p.(f32)
+    }
 }
 
 impl Platform for UIKitPlatform {
@@ -284,6 +330,7 @@ impl Platform for UIKitPlatform {
         self.hasFrameClosure = false;
         self.glInitialized = false;
         self.kb = .{};
+        self.kbSpring = .{};
         self.savedTitle = title.ptr;
         self.events = .{};
         self.batch = .{};
@@ -516,6 +563,18 @@ impl Platform for UIKitPlatform {
                 top = inView.y;
             }
         }
+
+        // A live spring outranks the presentation sample: it is evaluated
+        // at the frame's target timestamp, one vsync ahead of the layer.
+        if self.kbSpring.active {
+            t := self.lastTargetTs - self.kbSpring.start;
+            if t < 0.0 { t = 0.0; }
+            if t >= self.kbSpring.duration {
+                self.kbSpring.active = false;
+            } else {
+                top = viewH - self.kbSpring.at(t);
+            }
+        }
         self.kb.sample(top, viewH);
 
         // The pan's offset is the keyboard's own displacement, so the keys
@@ -527,6 +586,43 @@ impl Platform for UIKitPlatform {
                 layer.setBounds(CGRect{ x = b.x, y = y, width = b.width, height = b.height });
             }
         }
+    }
+
+    // UIKeyboardWillChangeFrame: arms the spring from the current overlap
+    // toward the notification's end frame. Curve 7 is the keyboard spring;
+    // any other curve, or a zero duration, leaves presentation sampling in
+    // charge.
+    keyboardWillChangeFrame :: (self: *UIKitPlatform, note: *NSNotification) {
+        view : *UIView = ---;
+        if v := self.glView { view = v; } else { return; }
+        info := note.userInfo();
+        if info == null { return; }
+        endObj := info.objectForKey(UIKeyboardFrameEndUserInfoKey);
+        if endObj == null { return; }
+
+        dur : f64 = 0.0;
+        durObj := info.objectForKey(UIKeyboardAnimationDurationUserInfoKey);
+        if durObj != null { dur = durObj.(*NSNumber).doubleValue(); }
+        curve : i64 = 7;
+        curveObj := info.objectForKey(UIKeyboardAnimationCurveUserInfoKey);
+        if curveObj != null { curve = curveObj.(*NSNumber).integerValue(); }
+        if curve != 7 or dur <= 0.001 { self.kbSpring.active = false; return; }
+
+        bounds := view.bounds();
+        viewH : f32 = bounds.height;
+        end := endObj.(*NSValue).CGRectValue();
+        inView := view.convertRect_fromView(end, null);
+        overlap : f32 = viewH - inView.y;
+        if overlap < 0.0 { overlap = 0.0; }
+        if overlap > viewH { overlap = viewH; }
+
+        self.kbSpring = .{
+            active = true,
+            start = CACurrentMediaTime(),
+            duration = dur,
+            from = self.kb.height + self.kb.offset,
+            to = overlap,
+        };
     }
 
     // The pan takes the keyboard only where the swipe starts on the content
@@ -636,6 +732,11 @@ impl Platform for UIKitPlatform {
             glView, sel_registerName("sxKeyboardPan:".ptr));
         pan.setCancelsTouchesInView(0);
         glView.addGestureRecognizer(pan);
+
+        center := NSNotificationCenter.defaultCenter();
+        center.addObserver_selector_name_object(
+            glView, sel_registerName("sxKeyboardFrame:".ptr),
+            UIKeyboardWillChangeFrameNotification, null);
 
         NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
