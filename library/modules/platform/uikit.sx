@@ -323,10 +323,8 @@ KeyboardSpring :: struct {
     from: f32 = 0.0;
     to: f32 = 0.0;
     v0: f32 = 0.0;
-    // The published bottom inset animates between these with the
-    // keyboard-paced layout bezier, so the safe-area gap fades as the
-    // keyboard approaches instead of stepping at the
-    // max(overlap, safe-area) crossover.
+    // Published bottom-inset endpoints: max(overlap, safe-area) at the
+    // spring's from and to, interpolated by the spring's own progress.
     insetFrom: f32 = 0.0;
     insetTo: f32 = 0.0;
 
@@ -597,11 +595,8 @@ impl Platform for UIKitPlatform {
             }
         }
 
-        // A spring frame doesn't read the keyboard window: the lookup
-        // walks the remote keyboard's view tree, which stalls while the
-        // keyboard is being brought up — dropped frames right when the
-        // rise starts. The layer is still fetched when the pan holds a
-        // displacement.
+        // Spring frames skip the remote-keyboard view-tree walk; it
+        // stalls during bring-up. The layer is fetched while a pan is live.
         top : ?f32 = viewH;
         layer : *CALayer = null;
         needLayer := self.kb.offset != 0.0 or self.kb.grip != .free;

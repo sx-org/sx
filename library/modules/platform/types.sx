@@ -54,9 +54,7 @@ kbSpringAt :: (t: f64) -> f64 {
     1.0 - (1.0 + wt) * exp(0.0 - wt)
 }
 
-// The keyboard-paced layout curve: everything that rides a keyboard
-// change of any duration but the dismiss settle follows this unit
-// bezier — a fast start with a long decelerating tail.
+// Cubic-bezier control points for the pan return settle.
 KB_LAYOUT_C1X :: 0.380;
 KB_LAYOUT_C1Y :: 0.700;
 KB_LAYOUT_C2X :: 0.125;
