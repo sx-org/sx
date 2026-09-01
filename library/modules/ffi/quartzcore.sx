@@ -53,10 +53,9 @@ CAMetalLayer :: @ObjcClass("CAMetalLayer", extends = CALayer) extern {
     setFramebufferOnly :: (self: *Self, on: BOOL);
     setDrawableSize :: (self: *Self, size: CGSize);
     nextDrawable :: (self: *Self) -> *void;
-    // Three drawables: with presentsWithTransaction the present is tied
-    // to the commit, so the third buys stall headroom, not latency —
-    // two makes nextDrawable block whenever the compositor still holds
-    // one, and the blocked frame reads as a judder tick.
+    // Three drawables with presentsWithTransaction: the present is tied
+    // to the commit, so the third is stall headroom. Two lets
+    // nextDrawable block while the compositor still holds one.
     setMaximumDrawableCount :: (self: *Self, n: u64);
     // The drawable commits in the current CATransaction, with the IME
     // keyboard's animation, instead of on a separate present timeline.

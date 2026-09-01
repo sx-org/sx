@@ -312,10 +312,9 @@ UIKitPlatform :: struct {
 // notification and evaluated at each frame's target timestamp, so the
 // overlap is where the keyboard will be when the drawable reaches the
 // glass, not where its presentation layer was a frame earlier. `start`
-// stays 0 until the first evaluation anchors it — that evaluation runs
-// in the display phase of the commit the keyboard's own animation
-// begins in, so both springs share a clock origin. A retarget re-arms
-// from the current position and velocity.
+// is the arm time — the notification is when UIKit starts the
+// keyboard's own animation, so both springs share a clock origin. A
+// retarget re-arms from the current position and velocity.
 KeyboardSpring :: struct {
     active: bool = false;
     start: f64 = 0.0;
@@ -577,11 +576,6 @@ impl Platform for UIKitPlatform {
         // vsync ahead of the presentation layer.
         springTop : ?f32 = null;
         if self.kbSpring.active {
-            // The keyboard's own animation begins ~20 ms before the
-            // commit that follows the responder flip (measured frame by
-            // frame against the on-glass keyboard); the spring's clock
-            // backdates to it so the field and the keys share an anchor.
-            if self.kbSpring.start <= 0.0 { self.kbSpring.start = CACurrentMediaTime() - 0.020; }
             t := self.lastTargetTs - self.kbSpring.start;
             if t < 0.0 { t = 0.0; }
             if t >= self.kbSpring.duration {
@@ -674,7 +668,7 @@ impl Platform for UIKitPlatform {
         v0 : f32 = 0.0;
         insetFrom : f32 = self.safeBottom;
         if self.kb.height > insetFrom { insetFrom = self.kb.height; }
-        if self.kbSpring.active and self.kbSpring.start > 0.0 {
+        if self.kbSpring.active {
             t := CACurrentMediaTime() - self.kbSpring.start;
             if t < 0.0 { t = 0.0; }
             from = self.kbSpring.at(t);
@@ -695,7 +689,7 @@ impl Platform for UIKitPlatform {
 
         self.kbSpring = .{
             active = true,
-            start = 0.0,
+            start = CACurrentMediaTime(),
             duration = dur,
             from = from,
             to = overlap,
@@ -705,8 +699,8 @@ impl Platform for UIKitPlatform {
         };
         self.kbInset = insetFrom;
 
-        // A display this commit anchors the spring's clock in the same
-        // transaction the keyboard's animation begins in.
+        // A display this commit paints the first spring frame without
+        // waiting for the next tick.
         if self.gpuMode == .metal { view.layer().setNeedsDisplay(); }
     }
 
