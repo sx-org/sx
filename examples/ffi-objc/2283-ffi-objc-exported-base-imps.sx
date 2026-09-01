@@ -10,8 +10,9 @@
 // `kind` is a class method: the base declares one, each leaf overrides it on
 // its own metaclass, and each answers its own value.
 //
-// `implements = .[NSCopying]` registers on the base's pair before
-// `objc_registerClassPair`, and the leaves inherit it.
+// `implements = .[NSCopying]` is declared on the base and registered on every pair
+// in the chain: `class_conformsToProtocol` is class-local, so the query against a
+// leaf's own class answers true.
 //
 // SxImpLeafA is declared ABOVE the base it extends: class-pair registration
 // follows the `extends =` chain, not declaration order — a leaf whose base

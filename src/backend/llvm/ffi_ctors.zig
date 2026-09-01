@@ -296,6 +296,9 @@ pub const FfiCtors = struct {
         @memset(marks, .unplaced);
         for (cache, 0..) |_, i| self.placeAfterParent(cache, i, marks, &order);
 
+        const ancestor_buf = self.e.alloc.alloc(mod_mod.Module.ObjcDefinedClassEntry, cache.len) catch return;
+        defer self.e.alloc.free(ancestor_buf);
+
         for (order.items) |idx| {
             const entry_kv = cache[idx];
             const fcd = entry_kv.decl;
@@ -389,21 +392,13 @@ pub const FfiCtors = struct {
 
             // class_conformsToProtocol is class-local: a leaf pair does
             // not see an ancestor's `implements =` unless those
-            // protocols are added here. Stop at an extern parent.
-            var walk: []const u8 = parent_name;
-            while (self.e.ir_mod.lookupObjcDefinedClass(walk)) |ancestor_decl| {
-                for (ancestor_decl.members) |m| switch (m) {
+            // protocols are added here.
+            const ancestor_n = self.e.ir_mod.objcDefinedAncestors(parent_name, ancestor_buf);
+            for (ancestor_buf[0..ancestor_n]) |ancestor| {
+                for (ancestor.decl.members) |m| switch (m) {
                     .implements => |proto_alias| add_protocol.emit(cls_val, proto_alias),
                     else => {},
                 };
-                var next_parent: ?[]const u8 = null;
-                for (cache) |cand| {
-                    if (std.mem.eql(u8, cand.name, walk)) {
-                        next_parent = cand.parent_objc_name;
-                        break;
-                    }
-                }
-                walk = next_parent orelse break;
             }
 
             // objc_registerClassPair(cls)
