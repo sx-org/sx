@@ -874,12 +874,55 @@ pub fn emitObjcDefinedAllocAndInit(
 ) ?Ref {
     const ptr_void = self.module.types.ptrTo(.void);
 
-    // (1) instance = class_createInstance(cls, 0)
-    const create_fid = self.ensureCRuntimeDecl("class_createInstance", &.{ ptr_void, .u64 }, ptr_void);
-    const create_args = self.alloc.alloc(Ref, 2) catch return null;
-    create_args[0] = cls_ref;
-    create_args[1] = self.builder.constInt(0, .u64);
-    const instance = self.builder.emit(.{ .call = .{ .callee = create_fid, .args = create_args } }, ptr_void);
+    // (1) instance = [super alloc]: objc_msgSendSuper with the lookup
+    // rooted at the metaclass of the chain's extern runtime parent.
+    // class_createInstance would skip a superclass +allocWithZone:
+    // override (CALayer allocates its render-side backing there), and
+    // the sx-defined ancestors' own +alloc IMPs are skipped so the
+    // shared __sx_state slot binds once, with the receiver's layout.
+    var top = fcd;
+    while (self.objc().objcDefinedSuperclass(top)) |p| top = p;
+    const parent_name = if (self.module.lookupObjcDefinedClassEntry(top.name)) |e| e.parent_objc_name else "NSObject";
+
+    const get_class_fid = self.ensureCRuntimeDecl("objc_getClass", &.{ptr_void}, ptr_void);
+    const parent_str_gid = self.internStringConstantGlobal(parent_name);
+    const parent_str = self.builder.emit(.{ .global_addr = parent_str_gid }, ptr_void);
+    const gc_args = self.alloc.alloc(Ref, 1) catch return null;
+    gc_args[0] = parent_str;
+    const parent_cls = self.builder.emit(.{ .call = .{ .callee = get_class_fid, .args = gc_args } }, ptr_void);
+
+    const obj_get_class_fid = self.ensureCRuntimeDecl("object_getClass", &.{ptr_void}, ptr_void);
+    const ogc_args = self.alloc.alloc(Ref, 1) catch return null;
+    ogc_args[0] = parent_cls;
+    const parent_meta = self.builder.emit(.{ .call = .{ .callee = obj_get_class_fid, .args = ogc_args } }, ptr_void);
+
+    const super_struct_ty = self.module.types.intern(.{ .@"struct" = .{
+        .name = self.module.types.internString("__sx_objc_super"),
+        .fields = blk: {
+            var f = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+            f.append(self.alloc, .{ .name = self.module.types.internString("receiver"), .ty = ptr_void }) catch unreachable;
+            f.append(self.alloc, .{ .name = self.module.types.internString("super_class"), .ty = ptr_void }) catch unreachable;
+            break :blk f.toOwnedSlice(self.alloc) catch unreachable;
+        },
+    } });
+    const super_alloca = self.builder.alloca(super_struct_ty);
+    const recv_gep = self.builder.emit(.{ .struct_gep = .{ .base = super_alloca, .field_index = 0, .base_type = super_struct_ty } }, ptr_void);
+    self.builder.store(recv_gep, cls_ref);
+    const scls_gep = self.builder.emit(.{ .struct_gep = .{ .base = super_alloca, .field_index = 1, .base_type = super_struct_ty } }, ptr_void);
+    self.builder.store(scls_gep, parent_meta);
+
+    const sel_reg_fid = self.ensureCRuntimeDecl("sel_registerName", &.{ptr_void}, ptr_void);
+    const sel_str_gid = self.internStringConstantGlobal("alloc");
+    const sel_str_addr = self.builder.emit(.{ .global_addr = sel_str_gid }, ptr_void);
+    const sel_args = self.alloc.alloc(Ref, 1) catch return null;
+    sel_args[0] = sel_str_addr;
+    const sel_alloc = self.builder.emit(.{ .call = .{ .callee = sel_reg_fid, .args = sel_args } }, ptr_void);
+
+    const send_super_fid = self.ensureCRuntimeDecl("objc_msgSendSuper", &.{ ptr_void, ptr_void }, ptr_void);
+    const send_args = self.alloc.alloc(Ref, 2) catch return null;
+    send_args[0] = super_alloca;
+    send_args[1] = sel_alloc;
+    const instance = self.builder.emit(.{ .call = .{ .callee = send_super_fid, .args = send_args } }, ptr_void);
 
     // STATE_SIZE = max(typeSizeBytes(__<Cls>State), 1).
     const state_struct_ty = self.objc().objcDefinedStateStructType(fcd);

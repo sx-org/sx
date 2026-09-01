@@ -1,0 +1,27 @@
+// An sx-defined CALayer subclass is a full Core Animation citizen: the
+// synthesized +alloc allocates through [super alloc], so CALayer's
+// +allocWithZone: override runs and the layout machinery sees the
+// instance — setNeedsLayout + layoutIfNeeded reaches the subclass's
+// layoutSublayers.
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/ffi/quartzcore.sx";
+
+gLayoutCalls : i64 = 0;
+
+SxLayoutLayer :: @ObjcClass("SxLayoutLayer", extends = CALayer) export {
+    alloc :: () -> *SxLayoutLayer;
+    init  :: (self: *Self) -> *SxLayoutLayer;
+
+    layoutSublayers :: (self: *Self) {
+        gLayoutCalls += 1;
+    }
+}
+
+main :: () -> i32 {
+    layer := SxLayoutLayer.alloc().init();
+    layer.setNeedsLayout();
+    layer.layoutIfNeeded();
+    print("layoutSublayers calls {}\n", gLayoutCalls);
+    0
+}
