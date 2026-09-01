@@ -1,0 +1,7 @@
+@import "modules/std.sx";
+
+main :: () {
+    inline for f in @typeInfo(42).struct.fields {
+        print("f={}\n", f.name);
+    }
+}

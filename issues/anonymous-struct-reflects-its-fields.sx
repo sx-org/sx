@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+
+main :: () {
+    print("A\n");
+    inline for f in @typeInfo(struct { q: i64; w: f64; }).struct.fields {
+        print("f={}\n", f.name);
+    }
+    print("B\n");
+}

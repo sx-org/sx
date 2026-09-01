@@ -311,6 +311,10 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         .function_type_expr,
         .tuple_literal,
         .tuple_type_expr,
+        .struct_decl,
+        .enum_decl,
+        .union_decl,
+        .error_set_decl,
         => return true,
         // Prefix `*` parses as address_of in the value grammar; over a
         // static type operand it IS the pointer type (`@sizeOf(*T)`).
@@ -614,6 +618,14 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // resolves through the gated path, which delegates builtins to
         // `resolveTypeCallWithBindings`.
         .parameterized_type_expr,
+        // An inline type declaration (`@typeInfo(struct { q: i64; })`) interns
+        // through the gated path, which passes THIS lowering as the body
+        // recursion hook, so a field / payload type name resolves in the
+        // enclosing module's visibility context.
+        .struct_decl,
+        .enum_decl,
+        .union_decl,
+        .error_set_decl,
         => return self.resolveTypeWithBindings(node),
         // A module-alias-qualified type name in a type-arg slot
         // (`@sizeOf(sel.Selection)`) parses as a field-access EXPRESSION — unlike
@@ -1898,10 +1910,19 @@ pub const ReflectedList = struct { owner: TypeId, element: ReflectedFields };
 
 /// The type whose reflected members `@typeInfo(T).<kind>.fields` lists, paired
 /// with the element record that lists them. Null after a diagnosed refusal: `T`
-/// reflects into no member list, or into a kind other than the one spelled.
+/// names no type, reflects into no member list, or reflects into a kind other
+/// than the one spelled. Callers read null as already-reported, so an
+/// `.unresolved` `T` that `resolveTypeArg` left silent is diagnosed here.
 pub fn resolveTypeInfoFields(self: *Lowering, list: type_bridge.TypeInfoFields, span: ast.Span) ?ReflectedList {
+    const before = if (self.diagnostics) |d| d.items.items.len else 0;
     const t = self.resolveTypeArg(list.type_arg);
-    if (t == .unresolved) return null;
+    if (t == .unresolved) {
+        if (self.diagnostics) |d| {
+            if (d.items.items.len == before)
+                d.addFmt(.err, list.type_arg.span, "reflected members are read off a type; this argument names none", .{});
+        }
+        return null;
+    }
     const reflected = reflectedFields(&self.module.types, t) orelse {
         if (self.diagnostics) |d|
             d.addFmt(.err, span, "reflected members are read off a '.struct' or '.enum'; '{s}' reflects as neither", .{self.formatTypeName(t)});
