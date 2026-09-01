@@ -5,8 +5,8 @@
 // field rides `safeInsets().bottom`, so the keyboard's own animation is
 // what lifts it.
 //
-// The session reports its edits on a queue of the example's own, never
-// the root's intake.
+// The session reports its edits on the platform's IME queue, which the
+// event batch carries out — never the root's intake.
 //
 // Build + run:
 //   sx build --target ios-sim examples/platform/2282-platform-uikit-text-field.sx \
@@ -80,11 +80,20 @@ frame :: () {
         gRenderer.dpiScale = fc.dpiScale;
     }
 
+    // The session already applied the edits it reports, so its own arms
+    // stop here; the intake would apply them a second time.
     events := gPlat.pollEvents();
     i : i64 = 0;
     while i < events.len {
         match events.ptr[i] {
-            case .input: |ie| { gRoot.queue.push(ie); }
+            case .input: |ie| {
+                match ie {
+                    case .text: |_| {}
+                    case .composition: |_| {}
+                    case .deleteBackward: |_| {}
+                    else: { gRoot.queue.push(ie); }
+                }
+            }
             else: {}
         }
         i += 1;
@@ -99,6 +108,12 @@ frame :: () {
         if wants { gPlat.showKeyboard(); } else { gPlat.hideKeyboard(); }
         gKeyboardUp = wants;
     }
+
+    // Published after the dismissal, which abandons the run the session
+    // is still holding. This vehicle declares one field, so a live focus
+    // is that field's.
+    gPlat.session = null;
+    if gRoot.focus.current() != null { gPlat.session = gSession; }
 
     bg : ClearColor = .{ r = 0.07, g = 0.09, b = 0.13, a = 1.0 };
     if !gGpu.beginFrame(bg) { return; }
@@ -132,8 +147,7 @@ main :: () -> i32 {
     if !gGlyphs.init(BUNDLE_FACE, FONT_SIZE) { return 1; }
     setGlobalFont(gGlyphs);
 
-    reports := context.allocator.make(InputQueue.init(context.allocator));
-    gSession = context.allocator.make(TextInputSession.init(reports));
+    gSession = context.allocator.make(TextInputSession.init(*plat.imeQueue));
     gRoot = context.allocator.make(UiRoot.init(Size{ width = 0.0, height = 0.0 }, context.allocator));
 
     doc := gSession;

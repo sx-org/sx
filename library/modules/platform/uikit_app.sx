@@ -88,85 +88,71 @@ SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implemen
     }
 }
 
-// ── SxGLView class ─────────────────────────────────────────────────────────
-// UIView subclass overriding `+layerClass` to return [CAEAGLLayer class].
-// Instance method `sxTick:` is what CADisplayLink calls.
-SxGLView :: @ObjcClass("SxGLView", extends = UIView) export {
+// ── The view base ──────────────────────────────────────────────────────────
+// One exported UIView subclass carries the IMPs the platform needs from its
+// view; the leaves differ in `+layerClass` alone. `implements = .[UIKeyInput]`
+// is what makes the soft keyboard send `insertText:` / `deleteBackward` here,
+// and `canBecomeFirstResponder` is what raises the keyboard at all.
+SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UIKeyInput]) export {
 
+    sxTick :: (self: *Self, link: *CADisplayLink) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewTick(link);
+    }
+
+    layoutSubviews :: (self: *Self) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.glViewDidLayout();
+    }
+
+    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchDown(self, touches);
+    }
+
+    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchMoved(self, touches);
+    }
+
+    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchUp(self, touches);
+    }
+
+    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.pushTouchCancel(self, touches);
+    }
+
+    canBecomeFirstResponder :: (self: *Self) -> BOOL { return 1; }
+
+    hasText :: (self: *Self) -> BOOL {
+        if gUikitPlat == null { return 0; }
+        return if gUikitPlat.hasText() then 1 else 0;
+    }
+
+    insertText :: (self: *Self, text: *NSString) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.insertText(text);
+    }
+
+    deleteBackward :: (self: *Self) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.deleteBackward();
+    }
+}
+
+SxGLView :: @ObjcClass("SxGLView", extends = SxView) export {
     alloc :: () -> *SxGLView;
     init  :: (self: *Self) -> *SxGLView;
 
     layerClass :: () => CAEAGLLayer.class();
-
-    sxTick :: (self: *Self, link: *CADisplayLink) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.glViewTick(link);
-    }
-
-    layoutSubviews :: (self: *Self) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.glViewDidLayout();
-    }
-
-    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchDown(self, touches);
-    }
-
-    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchMoved(self, touches);
-    }
-
-    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchUp(self, touches);
-    }
-
-    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchCancel(self, touches);
-    }
 }
 
-// SxMetalView reuses the same tick/layout/touch IMPs as SxGLView. The IMPs
-// already branch on `plat.gpuMode` for the GL-specific bits (renderbuffer
-// setup, etc.), so a single set of IMPs serves both view classes. Only
-// `+layerClass` differs (returns CAMetalLayer instead of CAEAGLLayer).
-SxMetalView :: @ObjcClass("SxMetalView", extends = UIView) export {
-
+SxMetalView :: @ObjcClass("SxMetalView", extends = SxView) export {
     alloc :: () -> *SxMetalView;
     init  :: (self: *Self) -> *SxMetalView;
 
     layerClass :: () => CAMetalLayer.class();
-
-    sxTick :: (self: *Self, link: *CADisplayLink) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.glViewTick(link);
-    }
-
-    layoutSubviews :: (self: *Self) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.glViewDidLayout();
-    }
-
-    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchDown(self, touches);
-    }
-
-    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchMoved(self, touches);
-    }
-
-    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchUp(self, touches);
-    }
-
-    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if gUikitPlat == null { return; }
-        gUikitPlat.pushTouchCancel(self, touches);
-    }
 }
