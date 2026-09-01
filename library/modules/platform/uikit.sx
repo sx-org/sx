@@ -497,14 +497,16 @@ impl Platform for UIKitPlatform {
         viewBounds := view.bounds();
         viewH : f32 = viewBounds.height;
 
-        top := viewH;
+        top : ?f32 = viewH;
         layer : *CALayer = null;
         if kbView := uikitKeyboardView() {
             layer = kbView.layer();
+            top = null;
             live := layer.presentationLayer();
-            if live == null { live = layer; }
-            inView := view.convertRect_fromView(live.frame(), kbView.superview());
-            top = inView.y;
+            if live != null {
+                inView := view.convertRect_fromView(live.frame(), kbView.superview());
+                top = inView.y;
+            }
         }
         self.kb.sample(top, viewH);
 

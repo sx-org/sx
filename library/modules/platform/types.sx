@@ -63,9 +63,11 @@ KeyboardOverlap :: struct {
     settleTo: f32 = 0.0;
 
     // `top` is the keyboard's live top edge in the view's coordinates; a
-    // view no keyboard reaches passes its own height.
-    sample :: (self: *KeyboardOverlap, top: f32, viewHeight: f32) {
-        live := viewHeight - top;
+    // view no keyboard reaches passes its own height, and a keyboard with
+    // no live edge this tick passes null, on which the last overlap stands.
+    sample :: (self: *KeyboardOverlap, top: ?f32, viewHeight: f32) {
+        live : f32 = ---;
+        if t := top { live = viewHeight - t; } else { return; }
         if live < 0.0 { live = 0.0; }
         if live > viewHeight { live = viewHeight; }
         h := live - self.offset;

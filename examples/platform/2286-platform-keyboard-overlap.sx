@@ -21,13 +21,18 @@ main :: () -> i32 {
     kb : KeyboardOverlap = .{};
 
     // The keyboard rises: each presented frame carries its own top edge, and
-    // the first one already reads the edge it presents at.
+    // the first one already reads the edge it presents at. A tick that
+    // carries no edge leaves the overlap where the last edge put it.
     kb.sample(VIEW_H, VIEW_H);
     show("rest", *kb);
+    kb.sample(null, VIEW_H);
+    show("rest unpresented", *kb);
     kb.sample(VIEW_H - 10.0, VIEW_H);
     show("first", *kb);
     kb.sample(VIEW_H - KEYBOARD_H * 0.5, VIEW_H);
     show("mid", *kb);
+    kb.sample(null, VIEW_H);
+    show("mid unpresented", *kb);
     kb.sample(VIEW_H - KEYBOARD_H, VIEW_H);
     show("up", *kb);
 
