@@ -237,3 +237,172 @@ InputQueue :: struct {
         self.events.deinit(self.gpa);
     }
 }
+
+SESSION_COMMITTED_CAP :: 1024;
+SESSION_MARKED_CAP :: 256;
+
+// --- TextInputSession — the editable document ---
+//
+// Committed text, the caret and the IME's marked (preedit) run in
+// inline storage: POD, no allocator, owned by value. The marked run is
+// NOT part of committed, and markedLen == 0 is "not composing". Every
+// offset is a UTF-8 byte offset — `caret` into committed,
+// markedSelStart/markedSelEnd into marked.
+//
+// The session is the SOLE author of the events it publishes on
+// `queue`: that queue is its REPORT channel to everyone else, never a
+// channel it takes intents from. An op that would exceed capacity
+// changes no byte and publishes nothing.
+TextInputSession :: struct {
+    committed: [SESSION_COMMITTED_CAP]u8 = .{};
+    committedLen: i64 = 0;
+    caret: i64 = 0;
+    marked: [SESSION_MARKED_CAP]u8 = .{};
+    markedLen: i64 = 0;
+    markedSelStart: i64 = 0;
+    markedSelEnd: i64 = 0;
+    queue: *InputQueue;
+    // Written by whatever renders the session, read by the host's caret
+    // and first-rect selectors.
+    fieldFrame: Frame = .{ origin = .{ x = 0.0, y = 0.0 }, size = .{ width = 0.0, height = 0.0 } };
+    caretFrame: Frame = .{ origin = .{ x = 0.0, y = 0.0 }, size = .{ width = 0.0, height = 0.0 } };
+
+    init :: (queue: *InputQueue) -> TextInputSession {
+        TextInputSession{ queue = queue }
+    }
+
+    committedText :: (self: *TextInputSession) -> string {
+        s : string = ---;
+        s.ptr = *self.committed[0];
+        s.len = self.committedLen;
+        s
+    }
+
+    markedText :: (self: *TextInputSession) -> string {
+        s : string = ---;
+        s.ptr = *self.marked[0];
+        s.len = self.markedLen;
+        s
+    }
+
+    isComposing :: (self: *TextInputSession) -> bool => self.markedLen > 0;
+
+    // Replaces the live marked run whole; empty text is the abandon.
+    setMarked :: (self: *TextInputSession, text: string, selStart: i64, selEnd: i64) {
+        if text.len > SESSION_MARKED_CAP { return; }
+        if text.len > 0 { c.memcpy(*self.marked[0], text.ptr, text.len); }
+        self.markedLen = text.len;
+        self.markedSelStart = selStart;
+        self.markedSelEnd = selEnd;
+        self.publishMarked();
+    }
+
+    abandon :: (self: *TextInputSession) {
+        self.setMarked("", 0, 0);
+    }
+
+    // The marked run gives way to `text` — one text report, no
+    // composition report.
+    insert :: (self: *TextInputSession, text: string) {
+        if self.committedLen + text.len > SESSION_COMMITTED_CAP { return; }
+        self.clearMark();
+        self.spliceAtCaret(text.ptr, text.len);
+        self.queue.push(.text(.{ text = text }));
+    }
+
+    // The marked bytes become committed text at the caret — the host's
+    // unmarkText.
+    commitMarked :: (self: *TextInputSession) {
+        if self.markedLen == 0 { return; }
+        n := self.markedLen;
+        if self.committedLen + n > SESSION_COMMITTED_CAP { return; }
+        at := self.caret;
+        self.spliceAtCaret(*self.marked[0], n);
+        self.clearMark();
+        run : string = ---;
+        run.ptr = *self.committed[at];
+        run.len = n;
+        self.queue.push(.text(.{ text = run }));
+    }
+
+    // A whole UTF-8 scalar goes, never a byte.
+    deleteBackward :: (self: *TextInputSession) {
+        if self.markedLen > 0 {
+            self.markedLen = utf8ScalarStart(self.markedText(), self.markedLen);
+            self.markedSelStart = self.markedLen;
+            self.markedSelEnd = self.markedLen;
+            self.publishMarked();
+            return;
+        }
+        if self.caret == 0 { return; }
+        at := utf8ScalarStart(self.committedText(), self.caret);
+        tail := self.committedLen - self.caret;
+        if tail > 0 { c.memmove(*self.committed[at], *self.committed[self.caret], tail); }
+        self.committedLen -= self.caret - at;
+        self.caret = at;
+        self.queue.push(.deleteBackward(.{}));
+    }
+
+    publishMarked :: (self: *TextInputSession) {
+        self.queue.push(.composition(.{
+            marked = self.markedText(),
+            selectionStart = self.markedSelStart,
+            selectionEnd = self.markedSelEnd,
+        }));
+    }
+
+    clearMark :: (self: *TextInputSession) {
+        self.markedLen = 0;
+        self.markedSelStart = 0;
+        self.markedSelEnd = 0;
+    }
+
+    spliceAtCaret :: (self: *TextInputSession, src: [*]u8, n: i64) {
+        tail := self.committedLen - self.caret;
+        if tail > 0 { c.memmove(*self.committed[self.caret + n], *self.committed[self.caret], tail); }
+        if n > 0 { c.memcpy(*self.committed[self.caret], src, n); }
+        self.committedLen += n;
+        self.caret += n;
+    }
+}
+
+// The byte index at which the UTF-8 scalar ending at `at` begins.
+private utf8ScalarStart :: (s: string, at: i64) -> i64 {
+    i := at - 1;
+    while i > 0 and (s[i] & 0xC0) == 0x80 { i -= 1; }
+    i
+}
+
+// Bytes of the UTF-8 sequence a lead byte opens.
+private utf8SeqLen :: (b: u8) -> i64 {
+    if b < 0x80 then 1
+    else if (b & 0xE0) == 0xC0 then 2
+    else if (b & 0xF0) == 0xE0 then 3
+    else if (b & 0xF8) == 0xF0 then 4
+    else 1
+}
+
+// The IMP-boundary translation: UIKit indexes a string in UTF-16 code
+// units, the session in UTF-8 bytes. A scalar above the BMP takes two
+// UTF-16 units, every other scalar one.
+utf16OffsetToBytes :: (s: string, offset: i64) -> i64 {
+    units := 0;
+    i := 0;
+    while i < s.len and units < offset {
+        n := utf8SeqLen(s[i]);
+        units += if n == 4 then 2 else 1;
+        i += n;
+    }
+    i
+}
+
+bytesToUtf16Offset :: (s: string, byteOffset: i64) -> i64 {
+    units := 0;
+    i := 0;
+    while i < s.len and i < byteOffset {
+        n := utf8SeqLen(s[i]);
+        units += if n == 4 then 2 else 1;
+        i += n;
+    }
+    units
+}

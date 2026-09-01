@@ -1,0 +1,26 @@
+  .text "ab"
+typed committed "ab" caret 2 marked "" [0 0]
+  .composition "ㄱ" [3 3]
+  .composition "가" [3 3]
+composing committed "ab" caret 2 marked "가" [3 3]
+  .text "가"
+committed committed "ab가" caret 5 marked "" [0 0]
+nothing to commit: queued 0
+  .deleteBackward
+deleted committed "ab" caret 2 marked "" [0 0]
+  .composition "한글" [6 6]
+  .composition "한" [3 3]
+shortened committed "ab" caret 2 marked "한" [3 3]
+  .text "!"
+inserted committed "ab!" caret 3 marked "" [0 0]
+  .composition "가" [3 3]
+  .composition "" [0 0]
+composing false
+abandoned committed "ab!" caret 3 marked "" [0 0]
+  .text "-"
+spliced committed "a-b!" caret 2 marked "" [0 0]
+  .deleteBackward
+unspliced committed "ab!" caret 1 marked "" [0 0]
+overrun committed "ab!" queued 0
+filled 1024 queued 0
+utf16 가 3 1 | a 1 1
