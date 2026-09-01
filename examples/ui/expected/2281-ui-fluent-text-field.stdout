@@ -1,0 +1,31 @@
+empty
+  .rect "" at 0,12 2x16
+regions hit 1 focus 1 keyboard false
+tapped keyboard true
+typed
+  .text "ab" at 0,12 16x16
+  .rect "" at 16,12 2x16
+  reported .text "ab"
+rebuilt "ab" caret 2
+composing
+  .text "ab" at 0,12 16x16
+  .text "xy" at 16,12 16x16
+  .rect "" at 16,27 16x1
+  .rect "" at 24,12 2x16
+  reported .composition "xy"
+committed "ab" marked "xy"
+field 0,0 120x40 caret 24,12 2x16
+split
+  .text "a" at 0,12 8x16
+  .text "xy" at 8,12 16x16
+  .rect "" at 8,27 16x1
+  .text "b" at 24,12 8x16
+  .rect "" at 24,12 2x16
+  reported .composition "xy"
+deleted
+  .text "a" at 0,12 8x16
+  .text "x" at 8,12 8x16
+  .rect "" at 8,27 8x1
+  .text "b" at 16,12 8x16
+  .rect "" at 16,12 2x16
+  reported .composition "x"
