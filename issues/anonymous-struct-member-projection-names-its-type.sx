@@ -1,0 +1,6 @@
+@import "modules/std.sx";
+
+main :: () {
+    w : @typeInfo(struct { q: i64; }).struct.fields[0].type = 7;
+    print("{}\n", w);
+}
