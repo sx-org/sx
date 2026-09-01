@@ -28,6 +28,8 @@ Focusable :: @OpenVariant(View) ($V: Type) {
     id: ElementId = .{};
     onKey: ?Closure(*KeyEvent) = null;
     onText: ?Closure(string) = null;
+    onComposition: ?Closure(*CompositionEvent) = null;
+    onDeleteBackward: ?Closure() = null;
     wantsKeyboard: bool = false;
 
     sizeThatFits :: (self: *Focusable(V), proposal: ProposedSize) -> Size {
@@ -39,15 +41,17 @@ Focusable :: @OpenVariant(View) ($V: Type) {
     }
 
     render :: (self: *Focusable(V), rc: *RenderContext, frame: Frame) {
-        rc.focusRegion(self.id.value, frame, self.onKey, self.onText, self.wantsKeyboard);
+        rc.focusRegion(self.id.value, frame, self.onKey, self.onText, self.wantsKeyboard,
+            self.onComposition, self.onDeleteBackward);
         self.child.render(rc, frame)
     }
 }
 
 // The one way a component becomes focusable: the result is itself a member, so
 // it goes wherever a `View` goes. The id is minted at THIS call site.
-focusable :: (v: $V/View, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false, site: SiteId = siteOf(@caller)) -> Focusable(V) {
-    Focusable(V){ child = v, id = elementId(site), onKey = onKey, onText = onText, wantsKeyboard = wantsKeyboard }
+focusable :: (v: $V/View, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false, onComposition: ?Closure(*CompositionEvent) = null, onDeleteBackward: ?Closure() = null, site: SiteId = siteOf(@caller)) -> Focusable(V) {
+    Focusable(V){ child = v, id = elementId(site), onKey = onKey, onText = onText,
+        onComposition = onComposition, onDeleteBackward = onDeleteBackward, wantsKeyboard = wantsKeyboard }
 }
 
 // One id and the frame it resolves against: this router owns no allocation, so
@@ -134,8 +138,8 @@ FocusRouter :: struct {
 
     // Tab steps the traversal and stops there — it is consumed whether or not
     // anything is focused. Every other key DOWN is what the focused region
-    // hears; an up is not a focus event. Text rides its own channel, never
-    // synthesized from keys.
+    // hears; an up is not a focus event. Text, composition and the delete
+    // intent ride their own channels, never synthesized from keys.
     dispatch :: (self: *FocusRouter, ev: *InputEvent) {
         match ev.* {
             case .keyDown: |k| {
@@ -154,6 +158,21 @@ FocusRouter :: struct {
                 if r := self.current() {
                     if h := r.onText {
                         h(t.text)
+                    }
+                }
+            }
+            case .composition: |cp| {
+                if r := self.current() {
+                    if h := r.onComposition {
+                        e := cp;
+                        h(*e)
+                    }
+                }
+            }
+            case .deleteBackward: |_| {
+                if r := self.current() {
+                    if h := r.onDeleteBackward {
+                        h()
                     }
                 }
             }

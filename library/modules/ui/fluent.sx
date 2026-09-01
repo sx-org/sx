@@ -60,6 +60,7 @@ HitRegion :: render.HitRegion;
 HitPolicy :: render.HitPolicy;
 FocusRegion :: render.FocusRegion;
 KeyEvent :: input.KeyEvent;
+CompositionEvent :: input.CompositionEvent;
 LogicalKey :: input.LogicalKey;
 
 measureText :: font.measureText;

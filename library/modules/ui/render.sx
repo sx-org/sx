@@ -84,7 +84,7 @@ HitPolicy :: enum {
 
 // A focus declaration: focusable elements declare beside their hit regions;
 // DECLARATION order is the tab-traversal order — no
-// registry. onKey/onText fire at delivery from the CURRENT
+// registry. The handlers fire at delivery from the CURRENT
 // committed snapshot, re-supplied each frame like hit-region
 // closures; wantsKeyboard is what the platform shell polls to drive
 // the soft keyboard.
@@ -93,6 +93,8 @@ FocusRegion :: struct {
     frame: Frame;
     onKey: ?Closure(*KeyEvent) = null;
     onText: ?Closure(string) = null;
+    onComposition: ?Closure(*CompositionEvent) = null;
+    onDeleteBackward: ?Closure() = null;
     wantsKeyboard: bool = false;
 }
 
@@ -137,9 +139,10 @@ RenderContext :: struct {
         }
     }
 
-    focusRegion :: (self: *RenderContext, id: u64, frame: Frame, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false) {
+    focusRegion :: (self: *RenderContext, id: u64, frame: Frame, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false, onComposition: ?Closure(*CompositionEvent) = null, onDeleteBackward: ?Closure() = null) {
         if self.focuses != null {
-            self.focuses.append(.{ id = id, frame = frame, onKey = onKey, onText = onText, wantsKeyboard = wantsKeyboard });
+            self.focuses.append(.{ id = id, frame = frame, onKey = onKey, onText = onText,
+                onComposition = onComposition, onDeleteBackward = onDeleteBackward, wantsKeyboard = wantsKeyboard });
         }
     }
 
