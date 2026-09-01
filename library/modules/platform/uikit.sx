@@ -242,6 +242,13 @@ GpuMode :: enum {
     metal;
 }
 
+// A responder flip parked by show/hideKeyboard for the next tick.
+PendingResponder :: enum {
+    none;
+    show;
+    hide;
+}
+
 UIKitPlatform :: struct {
     window: ?*UIWindow = null;
     rootVc: ?*UIViewController = null;
@@ -295,6 +302,7 @@ UIKitPlatform :: struct {
 
     kb: KeyboardOverlap = .{};
     kbSpring: KeyboardSpring = .{};
+    pendingResponder: PendingResponder = .none;
 
     savedTitle: [*]u8 = null;
 }
@@ -338,6 +346,7 @@ impl Platform for UIKitPlatform {
         self.glInitialized = false;
         self.kb = .{};
         self.kbSpring = .{};
+        self.pendingResponder = .none;
         self.savedTitle = title.ptr;
         self.events = .{};
         self.batch = .{};
@@ -422,20 +431,19 @@ impl Platform for UIKitPlatform {
         }
     }
 
+    // The responder flip is deferred to the next display-link tick: the
+    // frame closure runs in the layer's display phase, and a keyboard
+    // raised or dismissed inside the commit sets its animation up late.
     showKeyboard :: (self: *UIKitPlatform) {
         self.kb.restore();
-        if view := self.glView {
-            view.becomeFirstResponder();
-        }
+        self.pendingResponder = .show;
     }
 
     hideKeyboard :: (self: *UIKitPlatform) {
         if session := self.session {
             session.abandon();
         }
-        if view := self.glView {
-            view.resignFirstResponder();
-        }
+        self.pendingResponder = .hide;
     }
 
     stop :: (self: *UIKitPlatform) { }
@@ -789,6 +797,15 @@ impl Platform for UIKitPlatform {
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
         self.deltaTime = link.duration();
         self.lastTargetTs = link.targetTimestamp();
+
+        if self.pendingResponder != .none {
+            flip := self.pendingResponder;
+            self.pendingResponder = .none;
+            if view := self.glView {
+                if flip == .show { view.becomeFirstResponder(); }
+                else { view.resignFirstResponder(); }
+            }
+        }
 
         if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
 
