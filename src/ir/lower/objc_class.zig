@@ -1051,6 +1051,11 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 /// The state struct's first field is the allocator captured at +alloc time.
 /// Reading it back lets -dealloc free through the same allocator the
 /// instance was constructed with.
+///
+/// A subclass of an sx-defined class releases its own property ivars and
+/// then chains straight to `[super dealloc]`: the shared state struct is
+/// freed by the class that owns the `__sx_state` slot, at the end of the
+/// chain.
 pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
@@ -1162,6 +1167,17 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     //       allocator.dealloc(state)                 ← via protocol dispatch
     // `push Context{ allocator = arena }` round-trips: arena.alloc on
     // construction, arena.dealloc here.
+    //
+    // Only the class that owns the `__sx_state` ivar frees it. A subclass
+    // of an sx-defined class shares the slot, and its `-dealloc` runs
+    // first: freeing there would leave the base's own teardown reading
+    // released memory.
+    if (self.objc().objcDefinedSuperclass(fcd) != null) {
+        emitSuperDealloc(self, fcd, self_ref, ptr_void);
+        self.builder.retVoid();
+        self.builder.finalize();
+        return;
+    }
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: Context type not found for class '{s}' (compiler bug)", .{fcd.name});
@@ -1207,7 +1223,15 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     _ = self.builder.emit(.{ .call = .{ .callee = set_ivar_fid, .args = set_args } }, .void);
 
     // (4) [super dealloc]
-    //
+    emitSuperDealloc(self, fcd, self_ref, ptr_void);
+
+    self.builder.retVoid();
+    self.builder.finalize();
+}
+
+/// `objc_msgSendSuper2(&objc_super{self, __<Cls>_class}, @selector(dealloc))`
+/// — the `[super dealloc]` tail every sx-defined `-dealloc` IMP ends on.
+fn emitSuperDealloc(self: *Lowering, fcd: *const ast.RuntimeClassDecl, self_ref: Ref, ptr_void: TypeId) void {
     // objc_super = struct { receiver: id, super_class: Class }
     const super_struct_ty = self.module.types.intern(.{ .@"struct" = .{
         .name = self.module.types.internString("__sx_objc_super"),
@@ -1247,9 +1271,6 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     send_args[0] = super_alloca;
     send_args[1] = sel_dealloc;
     _ = self.builder.emit(.{ .call = .{ .callee = send_super_fid, .args = send_args } }, .void);
-
-    self.builder.retVoid();
-    self.builder.finalize();
 }
 
 /// Intern a C-string constant as a `[N:0]u8` global and return
