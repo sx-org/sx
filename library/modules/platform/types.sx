@@ -34,6 +34,106 @@ KeyboardState :: struct {
     zero :: () -> KeyboardState => .{ visible = false, height = 0.0 };
 }
 
+// The rate a released pan settles the keyboard at, per second, and the
+// downward flick, in points per second, that dismisses it whatever the
+// distance travelled.
+KEYBOARD_SETTLE_RATE :: 20.0;
+KEYBOARD_FLICK_VELOCITY :: 100.0;
+
+// Who is placing the keyboard.
+KeyboardGrip :: enum {
+    // The live keyboard alone.
+    free;
+    // A finger, holding it below where it grabbed it.
+    held;
+    // The finger is up and the hold is springing to `settleTo`.
+    settling;
+    // The dismissal is out and the hold stands until the keyboard clears.
+    dismissed;
+}
+
+// The soft keyboard's overlap of the view, in points, for the frame about
+// to draw. The host samples where the keyboard IS every tick and passes
+// `offset` to the keyboard itself, so one number moves the keyboard and
+// the inset together.
+KeyboardOverlap :: struct {
+    height: f32 = 0.0;
+    grip: KeyboardGrip = .free;
+    // The overlap the pan grabbed, which `offset` measures down from and a
+    // dismissing settle drives to.
+    grabbed: f32 = 0.0;
+    offset: f32 = 0.0;
+    settleTo: f32 = 0.0;
+
+    // `top` is the keyboard's live top edge in the view's coordinates; a
+    // view no keyboard reaches passes its own height.
+    sample :: (self: *KeyboardOverlap, top: f32, viewHeight: f32) {
+        live := viewHeight - top;
+        if live < 0.0 { live = 0.0; }
+        if live > viewHeight { live = viewHeight; }
+        h := live - self.offset;
+        if h < 0.0 { h = 0.0; }
+        self.height = h;
+        if self.grip == .dismissed and live <= 0.0 { self.restore(); }
+    }
+
+    // The keyboard comes back to where its own frame puts it.
+    restore :: (self: *KeyboardOverlap) {
+        self.grip = .free;
+        self.offset = 0.0;
+        self.settleTo = 0.0;
+    }
+
+    // The pan takes the keyboard where it stands.
+    grab :: (self: *KeyboardOverlap) {
+        self.grip = .held;
+        self.grabbed = self.height;
+        self.offset = 0.0;
+        self.settleTo = 0.0;
+    }
+
+    // The finger carries the keyboard's top edge.
+    track :: (self: *KeyboardOverlap, y: f32, viewHeight: f32) {
+        if self.grip != .held { return; }
+        o := y - (viewHeight - self.grabbed);
+        if o < 0.0 { o = 0.0; }
+        if o > self.grabbed { o = self.grabbed; }
+        self.offset = o;
+    }
+
+    // A release with the keyboard pushed to its bottom, or a downward
+    // flick, settles it away; anything else settles it back.
+    letGo :: (self: *KeyboardOverlap, velocityY: f32) {
+        if self.grip != .held { return; }
+        self.grip = .settling;
+        self.settleTo = 0.0;
+        if self.offset > 0.0 {
+            if self.offset >= self.grabbed or velocityY > KEYBOARD_FLICK_VELOCITY {
+                self.settleTo = self.grabbed;
+            }
+        }
+    }
+
+    // Steps a settle; true on the tick it lands the keyboard away, which is
+    // when the dismissal goes out.
+    advance :: (self: *KeyboardOverlap, dt: f32) -> bool {
+        if self.grip != .settling { return false; }
+        k := dt * KEYBOARD_SETTLE_RATE;
+        if k > 1.0 { k = 1.0; }
+        self.offset += (self.settleTo - self.offset) * k;
+        d := self.settleTo - self.offset;
+        if d < 0.0 { d = -d; }
+        if d > 0.5 { return false; }
+        self.offset = self.settleTo;
+        if self.settleTo > 0.0 {
+            self.grip = .dismissed;
+            return true;
+        }
+        self.grip = .free;
+        false
+    }
+}
+
 // Compose the batch a caller reads: `live` is where the host's callbacks
 // append and `ime` is where the focused session reports; both empty into
 // `batch`, whose storage and payload copies are the queue allocator's.

@@ -15,8 +15,23 @@
 // CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
 CGSize :: struct { width: f64; height: f64; }
 
+// CGRect is 32 bytes: it crosses a return slot through the x8
+// indirect-result pointer and an argument slot as a 4-element f64 HFA.
+CGRect :: struct {
+    x: f64;
+    y: f64;
+    width: f64;
+    height: f64;
+}
+
 CALayer :: @ObjcClass("CALayer", extends = NSObject) extern {
     setOpaque :: (self: *Self, opaque: i8);
+    frame     :: (self: *Self) -> CGRect;
+    bounds    :: (self: *Self) -> CGRect;
+    setBounds :: (self: *Self, bounds: CGRect);
+    // The layer's on-screen geometry for the frame being composited; nil
+    // where the layer has no presentation yet.
+    presentationLayer :: (self: *Self) -> *CALayer;
 }
 
 CAEAGLLayer :: @ObjcClass("CAEAGLLayer", extends = CALayer) extern {

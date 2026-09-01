@@ -20,12 +20,6 @@ UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegat
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
 chdir             :: (path: [*]u8) -> i32 extern;
 
-// QuartzCore's wall-clock helper used by CoreAnimation. Seconds since boot,
-// monotonic. We use it as the timebase for keyboard-inset lockstep so the
-// per-frame interpolation lines up with UIKit's own animation timestamp.
-CACurrentMediaTime :: () -> f64 extern;
-
-
 // kEAGLRenderingAPIOpenGLES3 = 3
 EAGL_API_GLES3 :: 3;
 
@@ -44,15 +38,6 @@ UIEdgeInsets :: struct {
     right: f64;
 }
 
-// CGRect for unwrapping NSValue-wrapped rects (e.g. keyboard end frame). Same
-// 32-byte indirect-return shape as UIEdgeInsets.
-CGRect :: struct {
-    x: f64;
-    y: f64;
-    width: f64;
-    height: f64;
-}
-
 // NSRange = {NSUInteger location; NSUInteger length}. The Obj-C type
 // encoding carries the struct's NAME, and UIKit declares its text-input
 // selectors against `{_NSRange=QQ}` — hence the leading underscore.
@@ -64,21 +49,12 @@ _NSRange :: struct { location: u64; length: u64; }
 // side name maps to its Obj-C selector via the default mangling rule
 // (split on `_`; each piece becomes a keyword with `:`).
 
-NSValue :: @ObjcClass("NSValue", extends = NSObject) extern {
-    // CGRect unboxing — returns by value via the sret/HFA path.
-    CGRectValue :: (self: *Self) -> CGRect;
-}
-
 NSNumber :: @ObjcClass("NSNumber", extends = NSObject) extern {
     // Class method (no `self: *Self` first param → static dispatch).
     numberWithBool :: (b: i8) -> *NSNumber;
-    // Instance value extractors.
-    doubleValue        :: (self: *Self) -> f64;
-    unsignedLongValue  :: (self: *Self) -> u64;
 }
 
 NSDictionary :: @ObjcClass("NSDictionary", extends = NSObject) extern {
-    objectForKey :: (self: *Self, key: *NSString) -> *void;
 }
 
 NSMutableDictionary :: @ObjcClass("NSMutableDictionary", extends = NSDictionary) extern {
@@ -91,23 +67,16 @@ NSSet :: @ObjcClass("NSSet", extends = NSObject) extern {
 }
 
 NSArray :: @ObjcClass("NSArray", extends = NSObject) extern {
-    array :: () -> *NSArray;
+    array         :: () -> *NSArray;
+    count         :: (self: *Self) -> u64;
+    objectAtIndex :: (self: *Self, index: u64) -> *void;
 }
 
-// ── Notifications + Bundle ──────────────────────────────
-
-NSNotification :: @ObjcClass("NSNotification", extends = NSObject) extern {
-    userInfo :: (self: *Self) -> *NSDictionary;
-}
+// ── Bundle ─────────────────────────────────────────────
 
 NSBundle :: @ObjcClass("NSBundle", extends = NSObject) extern {
     mainBundle   :: () -> *NSBundle;
     resourcePath :: (self: *Self) -> *NSString;
-}
-
-NSNotificationCenter :: @ObjcClass("NSNotificationCenter", extends = NSObject) extern {
-    defaultCenter :: () -> *NSNotificationCenter;
-    addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
 }
 
 // ── RunLoop + display timing ────────────────────────────
@@ -142,7 +111,6 @@ EAGLContext :: @ObjcClass("EAGLContext", extends = NSObject) extern {
 UIScreen :: @ObjcClass("UIScreen", extends = NSObject) extern {
     mainScreen  :: () -> *UIScreen;
     nativeScale :: (self: *Self) -> f64;
-    bounds      :: (self: *Self) -> CGRect;
 }
 
 // UIResponder is the root for keyboard / touch / focus dispatch.
@@ -159,6 +127,36 @@ UIView :: @ObjcClass("UIView", extends = UIResponder) extern {
     layer                 :: (self: *Self) -> *CALayer;
     setContentScaleFactor :: (self: *Self, scale: f64);
     bounds                :: (self: *Self) -> CGRect;
+    subviews              :: (self: *Self) -> *NSArray;
+    superview             :: (self: *Self) -> *UIView;
+    isFirstResponder      :: (self: *Self) -> BOOL;
+    addGestureRecognizer  :: (self: *Self, recognizer: *void);
+    convertRect_fromView  :: (self: *Self, rect: CGRect, view: *void) -> CGRect;
+}
+
+// The keyboard's own window. It is private and outside the app's window
+// list, and the class vends the live one.
+UIRemoteKeyboardWindow :: @ObjcClass("UIRemoteKeyboardWindow", extends = UIWindow) extern {
+    remoteKeyboardWindowForScreen_create :: (screen: *UIScreen, create: BOOL) -> *UIRemoteKeyboardWindow;
+}
+
+// UIGestureRecognizerState values the keyboard pan reads.
+UI_GESTURE_BEGAN     :: 1;
+UI_GESTURE_CHANGED   :: 2;
+UI_GESTURE_ENDED     :: 3;
+UI_GESTURE_CANCELLED :: 4;
+UI_GESTURE_FAILED    :: 5;
+
+UIGestureRecognizer :: @ObjcClass("UIGestureRecognizer", extends = NSObject) extern {
+    state                   :: (self: *Self) -> i64;
+    setCancelsTouchesInView :: (self: *Self, cancels: BOOL);
+    locationInView          :: (self: *Self, view: *void) -> CGPoint;
+}
+
+UIPanGestureRecognizer :: @ObjcClass("UIPanGestureRecognizer", extends = UIGestureRecognizer) extern {
+    alloc                 :: () -> *UIPanGestureRecognizer;
+    initWithTarget_action :: (self: *Self, target: *void, action: *void) -> *UIPanGestureRecognizer;
+    velocityInView        :: (self: *Self, view: *void) -> CGPoint;
 }
 
 UIWindow :: @ObjcClass("UIWindow", extends = UIView) extern {
@@ -268,24 +266,9 @@ UIKitPlatform :: struct {
     safeBottom: f32 = 0.0;
     safeRight: f32 = 0.0;
 
-    keyboardVisible: bool = false;
-    keyboardHeight: f32 = 0.0;
-
-    // Keyboard inset lockstep: when willChangeFrame fires we read the
-    // animation duration from the notification's userInfo and interpolate
-    // `keyboardHeight` over that window on each display-link tick. Each
-    // animation has a fresh start time and target — if a second event
-    // arrives mid-animation, the next interpolation starts from the
-    // currently-interpolated value (not from the previous animation's
-    // origin). The easing is `smoothstep` (cubic Hermite) which closely
-    // approximates UIKit's keyboard curve to within a frame at the
-    // standard 0.25s slide duration.
-    kbAnimFrom: f32 = 0.0;
-    kbAnimTo: f32 = 0.0;
-    kbAnimStart: f64 = 0.0;
-    kbAnimDur: f64 = 0.0;
-    kbAnimCurve: u64 = 0;
-    kbAnimating: bool = false;
+    // The keyboard's overlap of the view, sampled off the keyboard's own
+    // view every tick.
+    kb: KeyboardOverlap = .{};
 
     savedTitle: [*]u8 = null;
 }
@@ -296,8 +279,7 @@ impl Platform for UIKitPlatform {
         self.deltaTime = 0.016;
         self.hasFrameClosure = false;
         self.glInitialized = false;
-        self.keyboardVisible = false;
-        self.keyboardHeight = 0.0;
+        self.kb = .{};
         self.savedTitle = title.ptr;
         self.events = .{};
         self.batch = .{};
@@ -366,9 +348,7 @@ impl Platform for UIKitPlatform {
 
     safeInsets :: (self: *UIKitPlatform) -> EdgeInsets {
         bottom := self.safeBottom;
-        if self.keyboardVisible {
-            if self.keyboardHeight > bottom { bottom = self.keyboardHeight; }
-        }
+        if self.kb.height > bottom { bottom = self.kb.height; }
         EdgeInsets{
             top = self.safeTop,
             left = self.safeLeft,
@@ -379,12 +359,13 @@ impl Platform for UIKitPlatform {
 
     keyboard :: (self: *UIKitPlatform) -> KeyboardState {
         KeyboardState{
-            visible = self.keyboardVisible,
-            height = self.keyboardHeight,
+            visible = self.kb.height > 0.5,
+            height = self.kb.height,
         }
     }
 
     showKeyboard :: (self: *UIKitPlatform) {
+        self.kb.restore();
         if view := self.glView {
             view.becomeFirstResponder();
         }
@@ -508,64 +489,61 @@ impl Platform for UIKitPlatform {
     // to these through the shell's bridge global so the
     // tick/layout/touch/scene/keyboard paths share one implementation.
 
-    // NSNotification callback. The notification's userInfo dict has the
-    // keyboard's end-frame and animation curve/duration.
-    //   UIKeyboardFrameEndUserInfoKey       → NSValue wrapping CGRect (screen coords)
-    //   UIKeyboardAnimationDurationUserInfoKey → NSNumber wrapping double
-    // Keyboard height = how much of the screen the keyboard covers from the bottom.
-    // If the keyboard's end Y >= screen.height, the keyboard is offscreen (hiding).
-    keyboardWillChangeFrame :: (self: *UIKitPlatform, notification: *NSNotification) {
+    // The keyboard's overlap of the view for the frame about to draw. The
+    // presentation layer is where the keyboard IS mid-animation; the model
+    // frame is already parked at the end of it. The keyboard's view is read
+    // fresh — UIKit builds one and tears it down with the keyboard.
+    sampleKeyboard :: (self: *UIKitPlatform) {
+        view : *UIView = ---;
+        if v := self.glView { view = v; } else { return; }
+        viewBounds := view.bounds();
+        viewH : f32 = viewBounds.height;
 
-        userInfo := notification.userInfo();
-        if userInfo == null { return; }
-
-        endValueRaw := userInfo.objectForKey(nsstring("UIKeyboardFrameEndUserInfoKey"));
-        if endValueRaw == null { return; }
-        endValue : *NSValue = endValueRaw.(*NSValue);
-        endRect := endValue.CGRectValue();
-
-        durValueRaw := userInfo.objectForKey(nsstring("UIKeyboardAnimationDurationUserInfoKey"));
-        animDur : f64 = 0.0;
-        if durValueRaw != null {
-            durValue : *NSNumber = durValueRaw.(*NSNumber);
-            animDur = durValue.doubleValue();
+        top := viewH;
+        layer : *CALayer = null;
+        if kbView := uikitKeyboardView() {
+            layer = kbView.layer();
+            live := layer.presentationLayer();
+            if live == null { live = layer; }
+            inView := view.convertRect_fromView(live.frame(), kbView.superview());
+            top = inView.y;
         }
+        self.kb.sample(top, viewH);
 
-        curveValueRaw := userInfo.objectForKey(nsstring("UIKeyboardAnimationCurveUserInfoKey"));
-        curveInt : u64 = 0;
-        if curveValueRaw != null {
-            curveValue : *NSNumber = curveValueRaw.(*NSNumber);
-            curveInt = curveValue.unsignedLongValue();
-        }
-
-        if win := self.window {
-            winScreen := win.screen();
-            screenBounds := winScreen.bounds();
-
-            // Keyboard height = how much of the screen the keyboard covers from the
-            // bottom. When the keyboard is hiding, its end-frame.y == screen.height,
-            // so the height comes out 0 and visible becomes false.
-            kbTop : f64 = endRect.y;
-            sh     : f64 = screenBounds.height;
-            h := sh - kbTop;
-            if h < 0.0 { h = 0.0; }
-            if h > sh  { h = sh;  }
-            targetH : f32 = h.(f32);
-
-            self.keyboardVisible = h > 0.5;
-
-            if animDur <= 0.0 {
-                self.keyboardHeight = targetH;
-                self.kbAnimating = false;
-                return;
+        // The pan's offset is the keyboard's own displacement, so the keys
+        // and the inset move as one.
+        if layer != null {
+            b := layer.bounds();
+            y : f64 = -self.kb.offset.(f64);
+            if b.y != y {
+                layer.setBounds(CGRect{ x = b.x, y = y, width = b.width, height = b.height });
             }
+        }
+    }
 
-            self.kbAnimFrom = self.keyboardHeight;
-            self.kbAnimTo = targetH;
-            self.kbAnimStart = CACurrentMediaTime();
-            self.kbAnimDur = animDur;
-            self.kbAnimCurve = curveInt;
-            self.kbAnimating = true;
+    // The pan takes the keyboard only where the swipe starts on the content
+    // above it with a field live; from there the finger carries the keys and
+    // the inset together.
+    keyboardPan :: (self: *UIKitPlatform, recognizer: *UIPanGestureRecognizer) {
+        view : *UIView = ---;
+        if v := self.glView { view = v; } else { return; }
+        bounds := view.bounds();
+        viewH : f32 = bounds.height;
+        location := recognizer.locationInView(view);
+        y : f32 = location.y;
+        state := recognizer.state();
+        if state == UI_GESTURE_BEGAN {
+            if view.isFirstResponder() == 0 { return; }
+            if self.kb.height <= 0.5 { return; }
+            if y >= viewH - self.kb.height { return; }
+            self.kb.grab();
+        } else if state == UI_GESTURE_CHANGED {
+            self.kb.track(y, viewH);
+        } else if state == UI_GESTURE_ENDED {
+            velocity := recognizer.velocityInView(view);
+            self.kb.letGo(velocity.y);
+        } else if state == UI_GESTURE_CANCELLED or state == UI_GESTURE_FAILED {
+            self.kb.letGo(0.0);
         }
     }
 
@@ -639,41 +617,28 @@ impl Platform for UIKitPlatform {
         runloop := NSRunLoop.currentRunLoop();
         link.addToRunLoop_forMode(runloop, nsstring("kCFRunLoopDefaultMode"));
 
+        // `cancelsTouchesInView = NO` is what keeps the view's own touches
+        // flowing once the pan recognizes.
+        pan := UIPanGestureRecognizer.alloc().initWithTarget_action(
+            glView, sel_registerName("sxKeyboardPan:".ptr));
+        pan.setCancelsTouchesInView(0);
+        glView.addGestureRecognizer(pan);
+
         NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
 
-    // CADisplayLink callback (vsync-paced). Drives keyboard-inset
-    // interpolation and calls the user's frame closure.
+    // CADisplayLink callback (vsync-paced). Reads the keyboard's overlap
+    // for the frame it is about to draw, then calls the user's frame
+    // closure.
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
+        self.deltaTime = link.duration();
+        self.lastTargetTs = link.targetTimestamp();
 
-        // Keyboard-inset lockstep — sx-side cubic ease-out approximation of
-        // UIKit's private keyboard curve. Sample targetTimestamp so we
-        // interpolate at the time this frame will be visible.
-        if self.kbAnimating {
-            targetTs := link.targetTimestamp();
-            elapsed := targetTs - self.kbAnimStart;
-            // Negative elapsed can happen if a just-fired willChangeFrame set
-            // kbAnimStart to a wall time AFTER this tick already captured
-            // its targetTimestamp. Without the clamp, t < 0 makes the cubic
-            // ease-out overshoot in the opposite direction.
-            if elapsed < 0.0 { elapsed = 0.0; }
-            if elapsed >= self.kbAnimDur or self.kbAnimDur <= 0.0 {
-                self.keyboardHeight = self.kbAnimTo;
-                self.kbAnimating = false;
-            } else {
-                t : f32 = (elapsed / self.kbAnimDur).(f32);
-                inv := 1.0 - t;
-                eased := 1.0 - inv * inv * inv;
-                self.keyboardHeight = self.kbAnimFrom + (self.kbAnimTo - self.kbAnimFrom) * eased;
-            }
-        }
+        if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
+        self.sampleKeyboard();
 
         if !self.hasFrameClosure { return; }
         if !self.glInitialized { return; }
-
-        durD := link.duration();
-        self.deltaTime = durD;
-        self.lastTargetTs = link.targetTimestamp();
 
         fn := self.frameClosure;
         fn();
@@ -846,3 +811,43 @@ uikitFirstTouch :: (touches: *void) -> *void {
     touchesSet.anyObject()
 }
 
+// The keyboard's own view — the one the keys are drawn in, whose live
+// frame is the keyboard's position on screen. Apple ships the views
+// inside the keyboard window as private classes; each is named `UI` + a
+// stable suffix, so the prefix with the suffix is what identifies one.
+uikitKeyboardView :: () -> ?*UIView {
+    screen := UIScreen.mainScreen();
+    window := UIRemoteKeyboardWindow.remoteKeyboardWindowForScreen_create(screen, 0);
+    if window == null { return null; }
+    if container := uikitSubviewWithSuffix(window.(*UIView), "InputSetContainerView") {
+        if host := uikitSubviewWithSuffix(container, "InputSetHostView") { return host; }
+    }
+    null
+}
+
+uikitClassNameHasSuffix :: (obj: *void, suffix: string) -> bool {
+    if obj == null { return false; }
+    name := class_getName(object_getClass(obj));
+    n : i64 = 0;
+    while name[n] != '\0' { n += 1; }
+    if n < suffix.len + 2 { return false; }
+    if name[0] != 'U' or name[1] != 'I' { return false; }
+    i : i64 = 0;
+    while i < suffix.len {
+        if name[n - suffix.len + i] != suffix[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+uikitSubviewWithSuffix :: (view: *UIView, suffix: string) -> ?*UIView {
+    subviews := view.subviews();
+    n := subviews.count();
+    i : u64 = 0;
+    while i < n {
+        sub := subviews.objectAtIndex(i);
+        i += 1;
+        if uikitClassNameHasSuffix(sub, suffix) { return sub.(*UIView); }
+    }
+    null
+}

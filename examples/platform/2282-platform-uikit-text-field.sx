@@ -65,7 +65,9 @@ gRoot     : *UiRoot             = null;
 gLoop     : *FrameLoop          = null;
 gSession  : *TextInputSession   = null;
 gInsetBottom : f32  = 0.0;
-gKeyboardUp  : bool = false;
+// The keyboard this vehicle asked for, and the keyboard on screen.
+gKeyboardUp   : bool = false;
+gKeyboardSeen : bool = false;
 
 frame :: () {
     fc := gPlat.beginFrame();
@@ -102,6 +104,16 @@ frame :: () {
     gInsetBottom = gPlat.safeInsets().bottom;
     gRoot.viewport = Size{ width = fc.viewportW, height = fc.viewportH };
     gLoop.frame();
+
+    // A swipe dismisses the keyboard without passing through the focus
+    // router, so the field lets its focus go with it.
+    if gPlat.keyboard().visible {
+        gKeyboardSeen = true;
+    } else if gKeyboardSeen {
+        gKeyboardSeen = false;
+        gKeyboardUp = false;
+        gRoot.focus.clearFocus();
+    }
 
     wants := gRoot.focus.wantsKeyboard();
     if wants != gKeyboardUp {
