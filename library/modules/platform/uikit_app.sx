@@ -12,6 +12,8 @@
 @import "modules/ffi/objc.sx";
 @import "modules/ffi/quartzcore.sx";
 @import "modules/platform/uikit.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
 
 // The objc-callback → platform bridge. UIKit invokes the exported
 // classes' IMPs with (self, _cmd, ...) only — there is no slot to
@@ -88,12 +90,133 @@ SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implemen
     }
 }
 
+// ── The text-input document ────────────────────────────────────────────────
+// UIKit reaches the field's text through UITextInput, and the session the
+// platform publishes IS that text. Every offset UIKit carries is a UTF-8
+// byte offset into the committed run with the marked run spliced at the
+// caret, so a query answers with the bytes the field renders.
+
+// The spliced document, staged for `textInRange:` — the one selector that
+// hands UIKit bytes. UIKit calls the text IMPs on the main thread alone.
+gSxDoc : [SESSION_COMMITTED_CAP + SESSION_MARKED_CAP]u8 = ---;
+
+// UITextStorageDirection is {forward 0, backward 1}, UITextLayoutDirection
+// {right 2, left 3, up 4, down 5}; both cross the same slot.
+SX_TEXT_BACKWARD :: 1;
+SX_TEXT_LEFT     :: 3;
+SX_TEXT_UP       :: 4;
+
+// The pair UIKit carries offsets in and hands back untouched. `-start` and
+// `-end` are what UITextRange leaves abstract.
+SxTextPosition :: @ObjcClass("SxTextPosition", extends = UITextPosition) export {
+    offset: i64;
+
+    alloc :: () -> *SxTextPosition;
+
+    sxOffset :: (self: *Self) -> i64 { self.offset }
+}
+
+SxTextRange :: @ObjcClass("SxTextRange", extends = UITextRange) export {
+    lo: i64;
+    hi: i64;
+
+    alloc :: () -> *SxTextRange;
+
+    start   :: (self: *Self) -> ?*UITextPosition { sxPosition(self.lo) }
+    end     :: (self: *Self) -> ?*UITextPosition { sxPosition(self.hi) }
+    isEmpty :: (self: *Self) -> BOOL { if self.lo == self.hi then 1 else 0 }
+
+    sxLo :: (self: *Self) -> i64 { self.lo }
+    sxHi :: (self: *Self) -> i64 { self.hi }
+}
+
+sxPosition :: (offset: i64) -> ?*UITextPosition {
+    p := SxTextPosition.alloc();
+    p.offset = offset;
+    _ = p.autorelease();
+    p.(*UITextPosition)
+}
+
+sxRange :: (lo: i64, hi: i64) -> ?*UITextRange {
+    r := SxTextRange.alloc();
+    r.lo = lo;
+    r.hi = hi;
+    _ = r.autorelease();
+    r.(*UITextRange)
+}
+
+// nil crosses every object slot in Obj-C; at a position slot it is the
+// document's start, at a range slot the empty range there.
+sxOffsetOf :: (position: *void) -> i64 {
+    if position == null { return 0; }
+    position.(*SxTextPosition).sxOffset()
+}
+
+sxLoOf :: (range: *void) -> i64 {
+    if range == null { return 0; }
+    range.(*SxTextRange).sxLo()
+}
+
+sxHiOf :: (range: *void) -> i64 {
+    if range == null { return 0; }
+    range.(*SxTextRange).sxHi()
+}
+
+sxSession :: () -> ?*TextInputSession {
+    if gUikitPlat == null { return null; }
+    gUikitPlat.session
+}
+
+sxDocument :: (doc: *TextInputSession) -> string {
+    committed := doc.committedText();
+    marked := doc.markedText();
+    at := doc.caret;
+    if at > 0 { c.memcpy(*gSxDoc[0], committed.ptr, at); }
+    if marked.len > 0 { c.memcpy(*gSxDoc[at], marked.ptr, marked.len); }
+    tail := committed.len - at;
+    if tail > 0 { c.memcpy(*gSxDoc[at + marked.len], *doc.committed[at], tail); }
+    s : string = ---;
+    s.ptr = *gSxDoc[0];
+    s.len = committed.len + marked.len;
+    s
+}
+
+sxClamp :: (v: i64, lo: i64, hi: i64) -> i64 {
+    if v < lo then lo else if v > hi then hi else v
+}
+
+// The selection, which sits inside the marked run while one is live.
+sxSelStart :: (doc: *TextInputSession) -> i64 => doc.caret + doc.markedSelStart;
+sxSelEnd   :: (doc: *TextInputSession) -> i64 => doc.caret + doc.markedSelEnd;
+
+sxIsBackward :: (direction: i64) -> bool =>
+    direction == SX_TEXT_BACKWARD or direction == SX_TEXT_LEFT or direction == SX_TEXT_UP;
+
+// `units` is UTF-16 code units — the unit UIKit counts positions in.
+// Outside the document there is no position, which is how UIKit reads nil.
+sxStep :: (doc: *TextInputSession, at: i64, units: i64) -> ?*UITextPosition {
+    s := sxDocument(doc);
+    target := bytesToUtf16Offset(s, at) + units;
+    if target < 0 { return null; }
+    if target > bytesToUtf16Offset(s, s.len) { return null; }
+    sxPosition(utf16OffsetToBytes(s, target))
+}
+
+sxCgRect :: (f: Frame) -> CGRect {
+    CGRect{
+        x = f.origin.x.(f64),
+        y = f.origin.y.(f64),
+        width = f.size.width.(f64),
+        height = f.size.height.(f64),
+    }
+}
+
 // ── The view base ──────────────────────────────────────────────────────────
 // One exported UIView subclass carries the IMPs the platform needs from its
-// view; the leaves differ in `+layerClass` alone. `implements = .[UIKeyInput]`
-// is what makes the soft keyboard send `insertText:` / `deleteBackward` here,
-// and `canBecomeFirstResponder` is what raises the keyboard at all.
-SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UIKeyInput]) export {
+// view; the leaves differ in `+layerClass` alone. `implements = .[UITextInput]`
+// is what routes the soft keyboard's composition, text and deletes here, and
+// `canBecomeFirstResponder` is what raises the keyboard at all.
+SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) export {
 
     sxTick :: (self: *Self, link: *CADisplayLink) {
         if gUikitPlat == null { return; }
@@ -140,6 +263,160 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UIKeyInput]) exp
     deleteBackward :: (self: *Self) {
         if gUikitPlat == null { return; }
         gUikitPlat.deleteBackward();
+    }
+
+    // ── UITextInput ────────────────────────────────────────────────────
+    // A projection of the published session: the queries read it, the
+    // mutations call its ops.
+
+    textInRange :: (self: *Self, range: *void) -> ?*NSString {
+        if doc := sxSession() {
+            s := sxDocument(doc);
+            lo := sxClamp(sxLoOf(range), 0, s.len);
+            hi := sxClamp(sxHiOf(range), lo, s.len);
+            return nsstring(s[lo..hi]);
+        }
+        null
+    }
+
+    replaceRange_withText :: (self: *Self, range: *void, text: *NSString) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.insertText(text);
+    }
+
+    selectedTextRange :: (self: *Self) -> ?*UITextRange {
+        if doc := sxSession() { return sxRange(sxSelStart(doc), sxSelEnd(doc)); }
+        null
+    }
+
+    // The session's ops carry the caret; UIKit's selection is a read of it.
+    setSelectedTextRange :: (self: *Self, range: *void) { }
+
+    markedTextRange :: (self: *Self) -> ?*UITextRange {
+        if doc := sxSession() {
+            if doc.markedLen > 0 { return sxRange(doc.caret, doc.caret + doc.markedLen); }
+        }
+        null
+    }
+
+    markedTextStyle :: (self: *Self) -> ?*NSDictionary { null }
+
+    setMarkedTextStyle :: (self: *Self, style: *void) { }
+
+    setMarkedText_selectedRange :: (self: *Self, markedText: ?*NSString, selectedRange: _NSRange) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.setMarkedText(markedText, selectedRange);
+    }
+
+    unmarkText :: (self: *Self) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.commitMarked();
+    }
+
+    beginningOfDocument :: (self: *Self) -> ?*UITextPosition { sxPosition(0) }
+
+    endOfDocument :: (self: *Self) -> ?*UITextPosition {
+        if doc := sxSession() { return sxPosition(doc.committedLen + doc.markedLen); }
+        sxPosition(0)
+    }
+
+    textRangeFromPosition_toPosition :: (self: *Self, fromPosition: *void, toPosition: *void) -> ?*UITextRange {
+        a := sxOffsetOf(fromPosition);
+        b := sxOffsetOf(toPosition);
+        if a <= b then sxRange(a, b) else sxRange(b, a)
+    }
+
+    positionFromPosition_offset :: (self: *Self, position: *void, offset: i64) -> ?*UITextPosition {
+        if doc := sxSession() { return sxStep(doc, sxOffsetOf(position), offset); }
+        null
+    }
+
+    positionFromPosition_inDirection_offset :: (self: *Self, position: *void, direction: i64, offset: i64) -> ?*UITextPosition {
+        if doc := sxSession() {
+            step := if sxIsBackward(direction) then -offset else offset;
+            return sxStep(doc, sxOffsetOf(position), step);
+        }
+        null
+    }
+
+    comparePosition_toPosition :: (self: *Self, position: *void, other: *void) -> i64 {
+        a := sxOffsetOf(position);
+        b := sxOffsetOf(other);
+        if a < b then -1 else if a > b then 1 else 0
+    }
+
+    offsetFromPosition_toPosition :: (self: *Self, fromPosition: *void, toPosition: *void) -> i64 {
+        if doc := sxSession() {
+            s := sxDocument(doc);
+            return bytesToUtf16Offset(s, sxOffsetOf(toPosition)) - bytesToUtf16Offset(s, sxOffsetOf(fromPosition));
+        }
+        0
+    }
+
+    inputDelegate :: (self: *Self) -> ?*UITextInputDelegate {
+        if gUikitPlat == null { return null; }
+        gUikitPlat.inputDelegate
+    }
+
+    setInputDelegate :: (self: *Self, delegate: ?*UITextInputDelegate) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.inputDelegate = delegate;
+    }
+
+    tokenizer :: (self: *Self) -> ?*UITextInputStringTokenizer {
+        if gUikitPlat == null { return null; }
+        gUikitPlat.textTokenizer()
+    }
+
+    positionWithinRange_farthestInDirection :: (self: *Self, range: *void, direction: i64) -> ?*UITextPosition {
+        if sxIsBackward(direction) then sxPosition(sxLoOf(range)) else sxPosition(sxHiOf(range))
+    }
+
+    characterRangeByExtendingPosition_inDirection :: (self: *Self, position: *void, direction: i64) -> ?*UITextRange {
+        if doc := sxSession() {
+            at := sxOffsetOf(position);
+            s := sxDocument(doc);
+            units := bytesToUtf16Offset(s, at);
+            if sxIsBackward(direction) {
+                return sxRange(utf16OffsetToBytes(s, if units > 0 then units - 1 else 0), at);
+            }
+            return sxRange(at, utf16OffsetToBytes(s, units + 1));
+        }
+        null
+    }
+
+    baseWritingDirectionForPosition_inDirection :: (self: *Self, position: *void, direction: i64) -> i64 { 0 }
+
+    setBaseWritingDirection_forRange :: (self: *Self, writingDirection: i64, range: *void) { }
+
+    // Both frames are the field's own, in the view's points.
+    firstRectForRange :: (self: *Self, range: *void) -> CGRect {
+        if doc := sxSession() { return sxCgRect(doc.fieldFrame); }
+        sxCgRect(Frame.zero())
+    }
+
+    caretRectForPosition :: (self: *Self, position: *void) -> CGRect {
+        if doc := sxSession() { return sxCgRect(doc.caretFrame); }
+        sxCgRect(Frame.zero())
+    }
+
+    selectionRectsForRange :: (self: *Self, range: *void) -> ?*NSArray { NSArray.array() }
+
+    closestPositionToPoint :: (self: *Self, point: CGPoint) -> ?*UITextPosition {
+        if doc := sxSession() { return sxPosition(sxSelEnd(doc)); }
+        null
+    }
+
+    closestPositionToPoint_withinRange :: (self: *Self, point: CGPoint, range: *void) -> ?*UITextPosition {
+        sxPosition(sxHiOf(range))
+    }
+
+    characterRangeAtPoint :: (self: *Self, point: CGPoint) -> ?*UITextRange {
+        if doc := sxSession() {
+            at := sxSelEnd(doc);
+            return sxRange(at, at);
+        }
+        null
     }
 }
 

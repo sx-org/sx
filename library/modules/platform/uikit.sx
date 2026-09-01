@@ -53,6 +53,11 @@ CGRect :: struct {
     height: f64;
 }
 
+// NSRange = {NSUInteger location; NSUInteger length}. The Obj-C type
+// encoding carries the struct's NAME, and UIKit declares its text-input
+// selectors against `{_NSRange=QQ}` — hence the leading underscore.
+_NSRange :: struct { location: u64; length: u64; }
+
 // ── Foundation utility classes ─────────────────────────
 // Declarative `@ObjcClass` bindings replace the previous
 // `objc_getClass(...) + @ObjcCall(T, ...)` pattern. Each method's sx-
@@ -83,6 +88,10 @@ NSMutableDictionary :: @ObjcClass("NSMutableDictionary", extends = NSDictionary)
 
 NSSet :: @ObjcClass("NSSet", extends = NSObject) extern {
     anyObject :: (self: *Self) -> *void;
+}
+
+NSArray :: @ObjcClass("NSArray", extends = NSObject) extern {
+    array :: () -> *NSArray;
 }
 
 // ── Notifications + Bundle ──────────────────────────────
@@ -170,6 +179,27 @@ UITouch :: @ObjcClass("UITouch", extends = NSObject) extern {
     locationInView :: (self: *Self, view: *void) -> CGPoint;
 }
 
+// ── Text input ──────────────────────────────────────────
+// UITextPosition and UITextRange are abstract — a conforming view mints
+// its own subclasses and UIKit hands them straight back, so the concrete
+// pair lives in the app shell (platform/uikit_app.sx).
+
+UITextPosition :: @ObjcClass("UITextPosition", extends = NSObject) extern {
+}
+
+UITextRange :: @ObjcClass("UITextRange", extends = NSObject) extern {
+}
+
+UITextInputStringTokenizer :: @ObjcClass("UITextInputStringTokenizer", extends = NSObject) extern {
+    alloc             :: () -> *UITextInputStringTokenizer;
+    initWithTextInput :: (self: *Self, textInput: *void) -> *UITextInputStringTokenizer;
+}
+
+UITextInputDelegate :: @ObjcProtocol("UITextInputDelegate") extern {
+    textWillChange :: (self: *Self, textInput: *void);
+    textDidChange  :: (self: *Self, textInput: *void);
+}
+
 // GLenum constants for renderbuffer/framebuffer setup that aren't in opengl.sx's
 // loader path (they live on the framework's symbol table directly).
 GL_RENDERBUFFER          :u32: 0x8D41;
@@ -228,6 +258,10 @@ UIKitPlatform :: struct {
     batch: List(PlatformEvent) = .{};
     imeQueue: InputQueue = .{ gpa = context.allocator };
     session: ?*TextInputSession = null;
+    // UIKit's text-input delegate, set through -setInputDelegate:, and
+    // the tokenizer it reads back. Neither is the document's.
+    inputDelegate: ?*UITextInputDelegate = null;
+    tokenizer: ?*UITextInputStringTokenizer = null;
 
     safeTop: f32 = 0.0;
     safeLeft: f32 = 0.0;
@@ -269,6 +303,8 @@ impl Platform for UIKitPlatform {
         self.batch = .{};
         self.imeQueue = InputQueue.init(context.allocator);
         self.session = null;
+        self.inputDelegate = null;
+        self.tokenizer = null;
 
         // iOS apps start with CWD=/. chdir to the bundle's resourcePath so the
         // game's relative `fopen("assets/...")` calls find their data — must
@@ -695,13 +731,63 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
+            self.notifyTextWillChange();
             session.insert(fromCstring(text.UTF8String().(cstring)));
+            self.notifyTextDidChange();
         }
     }
 
     deleteBackward :: (self: *UIKitPlatform) {
         if session := self.session {
+            self.notifyTextWillChange();
             session.deleteBackward();
+            self.notifyTextDidChange();
+        }
+    }
+
+    // `selectedRange` indexes the marked NSString in UTF-16 code units;
+    // the session indexes it in UTF-8 bytes. A nil `text` is the abandon.
+    setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
+        if session := self.session {
+            run : string = "";
+            if t := text { run = fromCstring(t.UTF8String().(cstring)); }
+            selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
+            selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
+            self.notifyTextWillChange();
+            session.setMarked(run, selStart, selEnd);
+            self.notifyTextDidChange();
+        }
+    }
+
+    commitMarked :: (self: *UIKitPlatform) {
+        if session := self.session {
+            self.notifyTextWillChange();
+            session.commitMarked();
+            self.notifyTextDidChange();
+        }
+    }
+
+    // Minted over the view on first read and kept: UIKit reads
+    // `tokenizer` on every word-boundary query.
+    textTokenizer :: (self: *UIKitPlatform) -> ?*UITextInputStringTokenizer {
+        if tok := self.tokenizer { return tok; }
+        if view := self.glView {
+            tok := UITextInputStringTokenizer.alloc().initWithTextInput(view);
+            self.tokenizer = tok;
+            return tok;
+        }
+        null
+    }
+
+    notifyTextWillChange :: (self: *UIKitPlatform) {
+        if d := self.inputDelegate {
+            if view := self.glView { d.textWillChange(view); }
+        }
+    }
+
+    notifyTextDidChange :: (self: *UIKitPlatform) {
+        if d := self.inputDelegate {
+            if view := self.glView { d.textDidChange(view); }
         }
     }
 }
