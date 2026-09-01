@@ -1,0 +1,98 @@
+// An exported sx-defined class used as a BASE: it carries IMP bodies and an
+// `implements =` conformance, and two exported leaves extend it.
+//
+// `tag` is declared only on the base. It reaches both leaves through the
+// Obj-C class hierarchy — one IMP on the base's pair, found by objc_msgSend
+// via the receiver's isa — and reads a field the base declares: the whole
+// chain shares one `__sx_state` ivar, and a leaf's state struct extends the
+// base's layout rather than replacing it.
+//
+// `kind` is a class method: the base declares one, each leaf overrides it on
+// its own metaclass, and each answers its own value.
+//
+// `implements = .[NSCopying]` registers on the base's pair before
+// `objc_registerClassPair`, and the leaves inherit it.
+//
+// SxImpLeafA is declared ABOVE the base it extends: class-pair registration
+// follows the `extends =` chain, not declaration order — a leaf whose base
+// pair is unregistered would allocate against a null superclass and silently
+// become a root class.
+
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
+
+class_getSuperclass      :: (cls: *void)                 -> *void extern objc;
+class_conformsToProtocol :: (cls: *void, proto: *void)   -> bool  extern objc;
+
+SxImpLeafA :: @ObjcClass("SxImpLeafA", extends = SxImpBase) export {
+    alloc :: () -> *SxImpLeafA;
+    kind  :: () -> i32 { return 1; }
+}
+
+SxImpBase :: @ObjcClass("SxImpBase", extends = NSObject, implements = .[NSCopying]) export {
+    ticks: i32;
+
+    alloc :: () -> *SxImpBase;
+
+    tag :: (self: *Self) -> i32 {
+        self.ticks += 1;
+        return 40 + self.ticks;
+    }
+
+    kind :: () -> i32 { return 0; }
+}
+
+SxImpLeafB :: @ObjcClass("SxImpLeafB", extends = SxImpBase) export {
+    // Sits after the base's `ticks` in the shared state struct.
+    marks: i32;
+
+    alloc :: () -> *SxImpLeafB;
+    kind  :: () -> i32 { return 2; }
+
+    mark :: (self: *Self) -> i32 {
+        self.marks += 10;
+        return self.marks;
+    }
+}
+
+main :: () -> i32 {
+    inline if @host.os == .macos {
+        a := SxImpLeafA.alloc();
+        if a == null { print("FAIL: SxImpLeafA.alloc returned null\n"); return 1; }
+        b := SxImpLeafB.alloc();
+        if b == null { print("FAIL: SxImpLeafB.alloc returned null\n"); return 1; }
+
+        // Each instance carries its own state, so each counts from zero.
+        a1 : i32 = a.tag();
+        a2 : i32 = a.tag();
+        b1 : i32 = b.tag();
+        bm : i32 = b.mark();
+        b2 : i32 = b.tag();
+        print("tag: a={} a={} b={} b={}\n", a1, a2, b1, b2);
+        print("mark: b={}\n", bm);
+        print("kind: base={} a={} b={}\n", SxImpBase.kind(), SxImpLeafA.kind(), SxImpLeafB.kind());
+
+        baseCls : Class = class_getSuperclass(object_getClass(a));
+        if baseCls != objc_getClass("SxImpBase".ptr) {
+            print("FAIL: SxImpLeafA is not rooted at SxImpBase\n");
+            return 1;
+        }
+
+        proto := objc_getProtocol("NSCopying".ptr);
+        if proto == null { print("FAIL: NSCopying not on this runtime\n"); return 1; }
+        print("conforms: {}\n", class_conformsToProtocol(baseCls, proto));
+
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(a, selRelease);
+        releaseFn(b, selRelease);
+    }
+    inline if @host.os != .macos {
+        print("tag: a=41 a=42 b=41 b=42\n");
+        print("mark: b=10\n");
+        print("kind: base=0 a=1 b=2\n");
+        print("conforms: true\n");
+    }
+    0
+}

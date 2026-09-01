@@ -248,6 +248,8 @@ pub const ObjcLowering = struct {
     ///
     ///   __<ClassName>State {
     ///       __sx_allocator,   // present only when `objcStateAllocatorType()` resolves
+    ///       ancestor_field_0, // fields of the sx-defined `extends =` chain
+    ///       ...
     ///       user_field_0,
     ///       user_field_1,
     ///       ...
@@ -257,6 +259,11 @@ pub const ObjcLowering = struct {
     /// per-instance allocator and method bodies can reach `self.allocator`.
     /// The user-declared fields follow at the shifted indices; every consumer
     /// resolves them by NAME, so the shift is invisible to callers.
+    ///
+    /// The sx-defined ancestors' fields sit between them, outermost first, so
+    /// a subclass's state struct is a layout extension of its base's: one
+    /// `__sx_state` ivar serves the whole chain, and a base IMP reaches its
+    /// own fields at the same offsets on a subclass instance.
     ///
     /// Runtime-class members other than `.field` are ignored here —
     /// methods / `extends =` / `implements =` don't contribute to the
@@ -281,6 +288,31 @@ pub const ObjcLowering = struct {
                 .ty = allocator_ty,
             }) catch unreachable;
         }
+        var chain: [16]*const ast.RuntimeClassDecl = undefined;
+        var depth: usize = 0;
+        var current = fcd;
+        while (depth < chain.len) : (depth += 1) {
+            const parent = self.objcDefinedSuperclass(current) orelse break;
+            chain[depth] = parent;
+            current = parent;
+        }
+        while (depth > 0) {
+            depth -= 1;
+            self.appendStateFields(&fields, field_alloc, chain[depth]);
+        }
+        self.appendStateFields(&fields, field_alloc, fcd);
+        return self.l.module.types.intern(.{ .@"struct" = .{
+            .name = name_id,
+            .fields = fields.toOwnedSlice(field_alloc) catch unreachable,
+        } });
+    }
+
+    fn appendStateFields(
+        self: ObjcLowering,
+        fields: *std.ArrayList(types.TypeInfo.StructInfo.Field),
+        field_alloc: std.mem.Allocator,
+        fcd: *const ast.RuntimeClassDecl,
+    ) void {
         for (fcd.members) |m| {
             switch (m) {
                 .field => |f| {
@@ -291,10 +323,20 @@ pub const ObjcLowering = struct {
                 else => {},
             }
         }
-        return self.l.module.types.intern(.{ .@"struct" = .{
-            .name = name_id,
-            .fields = fields.toOwnedSlice(field_alloc) catch unreachable,
-        } });
+    }
+
+    /// The nearest sx-defined `@ObjcClass` ancestor, or null when the
+    /// `extends =` chain roots at an extern runtime class.
+    pub fn objcDefinedSuperclass(self: ObjcLowering, fcd: *const ast.RuntimeClassDecl) ?*const ast.RuntimeClassDecl {
+        for (fcd.members) |m| switch (m) {
+            .extends => |alias| {
+                const parent = self.l.program_index.runtime_class_map.get(alias) orelse return null;
+                if (parent.is_extern or parent.runtime != .objc_class) return null;
+                return parent;
+            },
+            else => {},
+        };
+        return null;
     }
 
     /// Return the `Allocator` protocol TypeId (the value-shape used in
