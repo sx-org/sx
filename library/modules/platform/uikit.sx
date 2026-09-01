@@ -577,7 +577,11 @@ impl Platform for UIKitPlatform {
         // vsync ahead of the presentation layer.
         springTop : ?f32 = null;
         if self.kbSpring.active {
-            if self.kbSpring.start <= 0.0 { self.kbSpring.start = CACurrentMediaTime(); }
+            // The keyboard's own animation begins ~20 ms before the
+            // commit that follows the responder flip (measured frame by
+            // frame against the on-glass keyboard); the spring's clock
+            // backdates to it so the field and the keys share an anchor.
+            if self.kbSpring.start <= 0.0 { self.kbSpring.start = CACurrentMediaTime() - 0.020; }
             t := self.lastTargetTs - self.kbSpring.start;
             if t < 0.0 { t = 0.0; }
             if t >= self.kbSpring.duration {

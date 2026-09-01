@@ -460,7 +460,7 @@ impl GPU for MetalGPU {
             if self.pixelW > 0 and self.pixelH > 0 {
                 self.layer.setDrawableSize(.{ width = self.pixelW, height = self.pixelH });
             }
-            self.layer.setMaximumDrawableCount(2);
+            self.layer.setMaximumDrawableCount(3);
             self.layer.setPresentsWithTransaction(1);
             self.presentsWithTransaction = true;
         }
