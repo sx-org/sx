@@ -56,6 +56,7 @@ main :: () -> i32 {
     kb.track(VIEW_H, VIEW_H);
     kb.sample(top, VIEW_H);
     show("bottom", *kb);
+    print("bottom visible {}\n", kb.visible());
     kb.letGo(0.0);
     dismissals : i64 = 0;
     steps = 0;
@@ -66,8 +67,10 @@ main :: () -> i32 {
     }
     print("dismissals {}\n", dismissals);
     show("held", *kb);
+    print("held visible {}\n", kb.visible());
     kb.sample(VIEW_H, VIEW_H);
     show("cleared", *kb);
+    print("cleared visible {}\n", kb.visible());
 
     // A flick down dismisses from anywhere below the keyboard's top edge.
     kb.sample(top, VIEW_H);

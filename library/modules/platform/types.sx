@@ -81,6 +81,10 @@ KeyboardOverlap :: struct {
         self.settleTo = 0.0;
     }
 
+    visible :: (self: *KeyboardOverlap) -> bool {
+        self.grip != .free or self.height > 0.5
+    }
+
     grab :: (self: *KeyboardOverlap) {
         self.grip = .held;
         self.grabbed = self.height;

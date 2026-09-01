@@ -357,7 +357,7 @@ impl Platform for UIKitPlatform {
 
     keyboard :: (self: *UIKitPlatform) -> KeyboardState {
         KeyboardState{
-            visible = self.kb.height > 0.5,
+            visible = self.kb.visible(),
             height = self.kb.height,
         }
     }
