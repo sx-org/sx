@@ -194,7 +194,7 @@ GlyphCache :: struct {
     // through `gpu` instead of raw GL.
     gpu: ?GPU = null;
 
-    init :: (self: *GlyphCache, path: [:0]u8, defaultSize: f32) {
+    init :: (self: *GlyphCache, path: [:0]u8, defaultSize: f32) -> bool {
         // Preserve any pre-set GPU dispatch across the zero-out — the
         // surrounding struct c.memset would otherwise wipe it.
         savedGpu := self.gpu;
@@ -210,7 +210,7 @@ GlyphCache :: struct {
             out("Failed to load font: ");
             out(path);
             out("\n");
-            return;
+            return false;
         }
         self.fontData = fontData;
         self.fontDataSize = fileSize;
@@ -291,6 +291,7 @@ GlyphCache :: struct {
         out("GlyphCache initialized: ");
         out(path);
         out("\n");
+        true
     }
 
     // Look up or rasterize a glyph, returning a pointer to its cached entry.

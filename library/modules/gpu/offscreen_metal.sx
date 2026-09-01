@@ -34,8 +34,7 @@ MetalOffscreen :: struct {
         self.renderer.gpu = self.gpu.(GPU);
         self.font.gpu = self.gpu.(GPU);
         self.renderer.init();
-        self.font.init(fontPath, fontSize);
-        true
+        self.font.init(fontPath, fontSize)
     }
 }
 
