@@ -33,11 +33,26 @@ KeyboardState :: struct {
     zero :: () -> KeyboardState => .{ visible = false, height = 0.0 };
 }
 
-// The rate a released pan settles the keyboard at, per second, and the
-// downward flick, in points per second, that dismisses it whatever the
-// distance travelled.
-KEYBOARD_SETTLE_RATE :: 20.0;
+// The UIKit keyboard spring (curve 7): mass 1, stiffness 555.027,
+// damping 47.118 — critically damped, ω = √555.027.
+KB_SPRING_OMEGA :: 23.559;
+
+// A released pan settles the keyboard with the keyboard's own spring:
+// away over the keyboard's dismiss duration, back over its return one.
+KB_SETTLE_AWAY_SECONDS :: 0.3832;
+KB_SETTLE_BACK_SECONDS :: 0.25;
+
+// The downward flick, in points per second, that dismisses the keyboard
+// whatever the distance travelled.
 KEYBOARD_FLICK_VELOCITY :: 100.0;
+
+exp :: (x: f64) -> f64 extern;
+
+// Critically damped spring position at `t` seconds: 0 at rest, 1 settled.
+kbSpringAt :: (t: f64) -> f64 {
+    wt := KB_SPRING_OMEGA * t;
+    1.0 - (1.0 + wt) * exp(0.0 - wt)
+}
 
 // Who is placing the keyboard.
 KeyboardGrip :: enum {
@@ -60,6 +75,9 @@ KeyboardOverlap :: struct {
     grabbed: f32 = 0.0;
     offset: f32 = 0.0;
     settleTo: f32 = 0.0;
+    settleFrom: f32 = 0.0;
+    settleT: f32 = 0.0;
+    settleDur: f32 = 0.0;
 
     // `top` is the keyboard's live top edge in the view's coordinates; a
     // view no keyboard reaches passes its own height, and a keyboard with
@@ -112,18 +130,22 @@ KeyboardOverlap :: struct {
                 self.settleTo = self.grabbed;
             }
         }
+        self.settleFrom = self.offset;
+        self.settleT = 0.0;
+        self.settleDur = KB_SETTLE_BACK_SECONDS;
+        if self.settleTo > 0.0 { self.settleDur = KB_SETTLE_AWAY_SECONDS; }
     }
 
     // Steps a settle; true on the tick it lands the keyboard away, which is
     // when the dismissal goes out.
     advance :: (self: *KeyboardOverlap, dt: f32) -> bool {
         if self.grip != .settling { return false; }
-        k := dt * KEYBOARD_SETTLE_RATE;
-        if k > 1.0 { k = 1.0; }
-        self.offset += (self.settleTo - self.offset) * k;
-        d := self.settleTo - self.offset;
-        if d < 0.0 { d = -d; }
-        if d > 0.5 { return false; }
+        self.settleT += dt;
+        if self.settleT < self.settleDur {
+            p : f32 = kbSpringAt(self.settleT.(f64)).(f32);
+            self.offset = self.settleFrom + (self.settleTo - self.settleFrom) * p;
+            return false;
+        }
         self.offset = self.settleTo;
         if self.settleTo > 0.0 {
             self.grip = .dismissed;

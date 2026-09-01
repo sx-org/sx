@@ -33,6 +33,7 @@ CALayer :: @ObjcClass("CALayer", extends = NSObject) extern {
     frame     :: (self: *Self) -> CGRect;
     bounds    :: (self: *Self) -> CGRect;
     setBounds :: (self: *Self, bounds: CGRect);
+    setNeedsDisplay :: (self: *Self);
     // The layer's on-screen geometry for the frame being composited; nil
     // where the layer has no presentation yet.
     presentationLayer :: (self: *Self) -> *CALayer;

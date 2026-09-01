@@ -19,7 +19,6 @@
 UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegateClass: *NSString) -> i32 extern;
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
 chdir             :: (path: [*]u8) -> i32 extern;
-exp               :: (x: f64) -> f64 extern;
 
 // kEAGLRenderingAPIOpenGLES3 = 3
 EAGL_API_GLES3 :: 3;
@@ -300,26 +299,34 @@ UIKitPlatform :: struct {
     savedTitle: [*]u8 = null;
 }
 
-// The UIKit keyboard spring (curve 7): mass 1, stiffness 555.027,
-// damping 47.118 — critically damped, ω = √555.027. Armed by the
-// will-change-frame notification and evaluated at each frame's target
-// timestamp, so the overlap is where the keyboard will be when the
-// drawable reaches the glass, not where its presentation layer was a
-// frame earlier.
-KB_SPRING_OMEGA :: 23.559;
-
+// The keyboard's show/hide spring, armed by the will-change-frame
+// notification and evaluated at each frame's target timestamp, so the
+// overlap is where the keyboard will be when the drawable reaches the
+// glass, not where its presentation layer was a frame earlier. `start`
+// stays 0 until the first evaluation anchors it — that evaluation runs
+// in the display phase of the commit the keyboard's own animation
+// begins in, so both springs share a clock origin. A retarget re-arms
+// from the current position and velocity.
 KeyboardSpring :: struct {
     active: bool = false;
     start: f64 = 0.0;
     duration: f64 = 0.0;
     from: f32 = 0.0;
     to: f32 = 0.0;
+    v0: f32 = 0.0;
 
-    // The keyboard's overlap `t` seconds into the spring.
+    // Overlap `t` seconds into the spring:
+    // x(t) = to + (A + Bt)·e^(−ωt), A = from−to, B = v0 + ωA.
     at :: (self: *KeyboardSpring, t: f64) -> f32 {
-        wt := KB_SPRING_OMEGA * t;
-        p := 1.0 - (1.0 + wt) * exp(0.0 - wt);
-        self.from + (self.to - self.from) * p.(f32)
+        a : f64 = self.from.(f64) - self.to.(f64);
+        b := self.v0.(f64) + KB_SPRING_OMEGA * a;
+        (self.to.(f64) + (a + b * t) * exp(0.0 - KB_SPRING_OMEGA * t)).(f32)
+    }
+
+    velocityAt :: (self: *KeyboardSpring, t: f64) -> f32 {
+        a : f64 = self.from.(f64) - self.to.(f64);
+        b := self.v0.(f64) + KB_SPRING_OMEGA * a;
+        ((b - KB_SPRING_OMEGA * (a + b * t)) * exp(0.0 - KB_SPRING_OMEGA * t)).(f32)
     }
 }
 
@@ -567,6 +574,7 @@ impl Platform for UIKitPlatform {
         // A live spring outranks the presentation sample: it is evaluated
         // at the frame's target timestamp, one vsync ahead of the layer.
         if self.kbSpring.active {
+            if self.kbSpring.start <= 0.0 { self.kbSpring.start = CACurrentMediaTime(); }
             t := self.lastTargetTs - self.kbSpring.start;
             if t < 0.0 { t = 0.0; }
             if t >= self.kbSpring.duration {
@@ -608,21 +616,55 @@ impl Platform for UIKitPlatform {
         if curveObj != null { curve = curveObj.(*NSNumber).integerValue(); }
         if curve != 7 or dur <= 0.001 { self.kbSpring.active = false; return; }
 
+        end := endObj.(*NSValue).CGRectValue();
+        // The keyboard view's model frame is already parked at the end of
+        // the animation; when it agrees with the notification's size it is
+        // the more accurate end position.
+        if kbView := uikitKeyboardView() {
+            kf := kbView.layer().frame();
+            dw := kf.width - end.width; if dw < 0.0 { dw = 0.0 - dw; }
+            dh := kf.height - end.height; if dh < 0.0 { dh = 0.0 - dh; }
+            dx := kf.x - end.x; if dx < 0.0 { dx = 0.0 - dx; }
+            if dw < 0.5 and dh < 0.5 and dx < 0.5 { end.y = kf.y; }
+        }
+
         bounds := view.bounds();
         viewH : f32 = bounds.height;
-        end := endObj.(*NSValue).CGRectValue();
         inView := view.convertRect_fromView(end, null);
         overlap : f32 = viewH - inView.y;
         if overlap < 0.0 { overlap = 0.0; }
         if overlap > viewH { overlap = viewH; }
 
+        from : f32 = self.kb.height + self.kb.offset;
+        v0 : f32 = 0.0;
+        if self.kbSpring.active and self.kbSpring.start > 0.0 {
+            t := CACurrentMediaTime() - self.kbSpring.start;
+            if t < 0.0 { t = 0.0; }
+            from = self.kbSpring.at(t);
+            v0 = self.kbSpring.velocityAt(t);
+        }
+
+        // A small hop of a shown keyboard is the QuickType bar toggling:
+        // the field pins to the end height while the bar animates.
+        hop := overlap - from;
+        if hop < 0.0 { hop = 0.0 - hop; }
+        if !self.kbSpring.active and self.kb.height > 0.5 and hop <= 44.1 {
+            from = overlap;
+            v0 = 0.0;
+        }
+
         self.kbSpring = .{
             active = true,
-            start = CACurrentMediaTime(),
+            start = 0.0,
             duration = dur,
-            from = self.kb.height + self.kb.offset,
+            from = from,
             to = overlap,
+            v0 = v0,
         };
+
+        // A display this commit anchors the spring's clock in the same
+        // transaction the keyboard's animation begins in.
+        if self.gpuMode == .metal { view.layer().setNeedsDisplay(); }
     }
 
     // The pan takes the keyboard only where the swipe starts on the content
@@ -741,15 +783,30 @@ impl Platform for UIKitPlatform {
         NSLog(nsstring("[sx] UIKitPlatform booted\n"));
     }
 
-    // CADisplayLink callback (vsync-paced). The frame closure acquires the
-    // drawable, then samples the keyboard, then draws, so the overlap is
-    // the one this CATransaction will composite.
+    // CADisplayLink callback (vsync-paced). Metal is marked for display
+    // and draws in the layer's commit-phase -display, after this cycle's
+    // touches and notifications; GLES has no display phase and draws here.
     glViewTick :: (self: *UIKitPlatform, link: *CADisplayLink) {
         self.deltaTime = link.duration();
         self.lastTargetTs = link.targetTimestamp();
 
         if self.kb.advance(self.deltaTime) { self.hideKeyboard(); }
 
+        if !self.hasFrameClosure { return; }
+        if !self.glInitialized { return; }
+
+        if self.gpuMode == .metal {
+            if view := self.glView { view.layer().setNeedsDisplay(); }
+            return;
+        }
+
+        fn := self.frameClosure;
+        fn();
+    }
+
+    // SxMetalLayer -display: the frame closure acquires the drawable,
+    // samples the keyboard, draws and presents inside this commit.
+    metalLayerDisplay :: (self: *UIKitPlatform) {
         if !self.hasFrameClosure { return; }
         if !self.glInitialized { return; }
 

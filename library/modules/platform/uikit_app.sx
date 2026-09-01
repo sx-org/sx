@@ -428,4 +428,13 @@ SxMetalView :: @ObjcClass("SxMetalView", extends = SxView) export {
     init  :: (self: *Self) -> *SxMetalView;
 
     layerClass :: () => CAMetalLayer.class();
+
+    // The layer's -display forwards here (the view is the layer's
+    // delegate). Core Animation calls it during the commit, after the
+    // cycle's touches, gestures and notifications, so the frame reads
+    // this cycle's input and its drawable joins this transaction.
+    displayLayer :: (self: *Self, layer: *void) {
+        if gUikitPlat == null { return; }
+        gUikitPlat.metalLayerDisplay();
+    }
 }
