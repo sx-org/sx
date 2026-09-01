@@ -33,3 +33,42 @@ KeyboardState :: struct {
 
     zero :: () -> KeyboardState => .{ visible = false, height = 0.0 };
 }
+
+// Compose the batch a caller reads: `live` is where the host's callbacks
+// append and `ime` is where the focused session reports; both empty into
+// `batch`, whose storage and payload copies are the queue allocator's.
+// The copies go at the NEXT composition, so a slice handed out stays
+// readable until then and a callback re-entered meanwhile appends to
+// `live`, out of the batch's reach.
+composeEventBatch :: (batch: *List(PlatformEvent), live: *List(PlatformEvent), ime: *InputQueue) -> []PlatformEvent {
+    for e in batch.items {
+        match e {
+            case .input: |ie| {
+                match ie {
+                    case .text: |t| { ime.gpa.deallocBytes(t.text.ptr); }
+                    case .composition: |cp| { ime.gpa.deallocBytes(cp.marked.ptr); }
+                    else: {}
+                }
+            }
+            else: {}
+        }
+    }
+    batch.len = 0;
+
+    for e in live.items { batch.append(e, ime.gpa); }
+    live.len = 0;
+
+    for e in ime.events.items {
+        match e {
+            case .text: |t| { batch.append(.input(.text(ime.copyText(t))), ime.gpa); }
+            case .composition: |cp| { batch.append(.input(.composition(ime.copyComposition(cp))), ime.gpa); }
+            else: { batch.append(.input(e), ime.gpa); }
+        }
+    }
+    ime.clear();
+
+    out : []PlatformEvent = ---;
+    out.ptr = batch.items.ptr;
+    out.len = batch.len;
+    out
+}

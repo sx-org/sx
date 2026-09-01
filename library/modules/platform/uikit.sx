@@ -147,7 +147,6 @@ UIResponder :: @ObjcClass("UIResponder", extends = NSObject) extern {
 
 UIView :: @ObjcClass("UIView", extends = UIResponder) extern {
     safeAreaInsets        :: (self: *Self) -> UIEdgeInsets;
-    addSubview            :: (self: *Self, view: *void);
     layer                 :: (self: *Self) -> *CALayer;
     setContentScaleFactor :: (self: *Self, scale: f64);
     bounds                :: (self: *Self) -> CGRect;
@@ -165,11 +164,6 @@ UIViewController :: @ObjcClass("UIViewController", extends = UIResponder) extern
     alloc   :: () -> *UIViewController;
     init    :: (self: *Self) -> *UIViewController;
     setView :: (self: *Self, view: *void);
-}
-
-UITextField :: @ObjcClass("UITextField", extends = UIResponder) extern {
-    alloc :: () -> *UITextField;
-    init  :: (self: *Self) -> *UITextField;
 }
 
 UITouch :: @ObjcClass("UITouch", extends = NSObject) extern {
@@ -213,9 +207,6 @@ UIKitPlatform :: struct {
     // Must be a NUL-terminated string (a literal is).
     delegateClassName: string = "";
 
-    // Hidden UITextField; firstResponder ⇆ keyboard visibility.
-    textField: ?*UITextField = null;
-
     viewportW: f32 = 0.0;
     viewportH: f32 = 0.0;
     pixelW: i32 = 0;
@@ -231,6 +222,12 @@ UIKitPlatform :: struct {
     hasFrameClosure: bool = false;
 
     events: List(PlatformEvent) = .{};
+    // `pollEvents` composes the batch out of `events` and `imeQueue`.
+    // `session` is borrowed from whoever owns the focused field, and the
+    // frame republishes it — the text IMPs edit through it alone.
+    batch: List(PlatformEvent) = .{};
+    imeQueue: InputQueue = .{ gpa = context.allocator };
+    session: ?*TextInputSession = null;
 
     safeTop: f32 = 0.0;
     safeLeft: f32 = 0.0;
@@ -304,11 +301,7 @@ impl Platform for UIKitPlatform {
     }
 
     pollEvents :: (self: *UIKitPlatform) -> []PlatformEvent {
-        result : []PlatformEvent = ---;
-        result.ptr = self.events.items.ptr;
-        result.len = self.events.len;
-        self.events.len = 0;
-        result
+        composeEventBatch(*self.batch, *self.events, *self.imeQueue)
     }
 
     beginFrame :: (self: *UIKitPlatform) -> FrameContext {
@@ -352,14 +345,17 @@ impl Platform for UIKitPlatform {
     }
 
     showKeyboard :: (self: *UIKitPlatform) {
-        if tf := self.textField {
-            tf.becomeFirstResponder();
+        if view := self.glView {
+            view.becomeFirstResponder();
         }
     }
 
     hideKeyboard :: (self: *UIKitPlatform) {
-        if tf := self.textField {
-            tf.resignFirstResponder();
+        if session := self.session {
+            session.abandon();
+        }
+        if view := self.glView {
+            view.resignFirstResponder();
         }
     }
 
@@ -534,13 +530,12 @@ impl Platform for UIKitPlatform {
     }
 
     // First scene-connect: builds the window, root VC, layer, EAGL props
-    // (if gles), display link, and hidden text-field around the app
-    // shell's view. Called from the scene delegate
-    // (platform/uikit_app.sx), which allocates the GL/Metal view — the
-    // shell owns the view classes; the view's +layerClass override
-    // supplies the right CAEAGLLayer / CAMetalLayer subclass. iOS reads
-    // the window back through the delegate's `-window`
-    // (`self.window` here backs it).
+    // (if gles) and display link around the app shell's view. Called
+    // from the scene delegate (platform/uikit_app.sx), which allocates
+    // the GL/Metal view — the shell owns the view classes; the view's
+    // +layerClass override supplies the right CAEAGLLayer / CAMetalLayer
+    // subclass. iOS reads the window back through the delegate's
+    // `-window` (`self.window` here backs it).
     sceneWillConnect :: (self: *UIKitPlatform, scene: *void, glView: *UIView) {
 
         win := UIWindow.alloc().initWithWindowScene(scene);
@@ -594,13 +589,6 @@ impl Platform for UIKitPlatform {
         // the layer has its real on-screen bounds. makeKeyAndVisible triggers
         // a layout pass; layoutSubviews calls setupRenderbuffer.
         win.makeKeyAndVisible();
-
-        // Hidden UITextField as the firstResponder source for showKeyboard /
-        // hideKeyboard. Lives as a subview of the GL view so it's in the
-        // responder chain but is sized 0×0 so it can't be tapped.
-        tf := UITextField.alloc().init();
-        self.textField = tf;
-        glView.addSubview(tf);
 
         // CADisplayLink: vsync-driven tick into our SxGLView. The second arg
         // is a SEL value (not a dispatch selector), so it still goes through
@@ -692,6 +680,25 @@ impl Platform for UIKitPlatform {
         if touch == null { return; }
         pos := uikitTouchLocation(touch, view);
         self.events.append(.input(.pointerCancel(uikitPointer(pos))));
+    }
+
+    hasText :: (self: *UIKitPlatform) -> bool {
+        if session := self.session {
+            return session.committedLen > 0 or session.markedLen > 0;
+        }
+        false
+    }
+
+    insertText :: (self: *UIKitPlatform, text: *NSString) {
+        if session := self.session {
+            session.insert(fromCstring(text.UTF8String().(cstring)));
+        }
+    }
+
+    deleteBackward :: (self: *UIKitPlatform) {
+        if session := self.session {
+            session.deleteBackward();
+        }
     }
 }
 
