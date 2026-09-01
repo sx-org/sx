@@ -1,0 +1,5 @@
+error: reflected members are read off a type; this argument names none
+  --> issues/a-reflected-member-list-refuses-a-non-type.sx:4:31
+   |
+ 4 |     inline for f in @typeInfo(42).struct.fields {
+   |                               ^^
