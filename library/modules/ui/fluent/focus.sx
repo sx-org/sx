@@ -32,8 +32,8 @@ Focusable :: @OpenVariant(View) ($V: Type) {
     onDeleteBackward: ?Closure() = null;
     wantsKeyboard: bool = false;
 
-    sizeThatFits :: (self: *Focusable(V), proposal: ProposedSize) -> Size {
-        self.child.sizeThatFits(proposal)
+    fit :: (self: *Focusable(V), proposal: ProposedSize) -> Size {
+        self.child.fit(proposal)
     }
 
     layout :: (self: *Focusable(V), bounds: Frame) {

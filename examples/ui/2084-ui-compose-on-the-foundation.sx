@@ -46,7 +46,7 @@ main :: () -> i32 {
 
     // Geometry the foundation owns, applied to what compose measured.
     bounds : ui.Frame = Frame.make(0.0, 0.0, 120.0, 60.0);
-    measured := root.sizeThatFits(ProposedSize.fixed(120.0, 60.0));
+    measured := root.fit(ProposedSize.fixed(120.0, 60.0));
     print("measured {}x{} inside {}\n", measured.width, measured.height,
         bounds.contains(ui.Point{ x = measured.width, y = measured.height }));
     0

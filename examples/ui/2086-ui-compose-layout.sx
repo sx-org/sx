@@ -37,7 +37,7 @@ main :: () -> i32 {
         Label{ text = "bb", fontSize = 8.0 };
         Label{ text = "ccc" };
     };
-    rowSize := row.sizeThatFits(ProposedSize.flexible());
+    rowSize := row.fit(ProposedSize.flexible());
     print("row {}x{}\n", rowSize.width.(i64), rowSize.height.(i64));
     draw(*row, Frame.make(0.0, 0.0, 200.0, 16.0));
 
@@ -59,7 +59,7 @@ main :: () -> i32 {
         Spacer{ minLength = 20.0 };
         Label{ text = "b", fontSize = 8.0 };
     };
-    minRowSize := minRow.sizeThatFits(ProposedSize.flexible());
+    minRowSize := minRow.fit(ProposedSize.flexible());
     print("min row {}x{}\n", minRowSize.width.(i64), minRowSize.height.(i64));
     draw(*minRow, Frame.make(0.0, 0.0, 28.0, 8.0));
 
@@ -68,7 +68,7 @@ main :: () -> i32 {
         Spacer{ minLength = 20.0 };
         Label{ text = "b", fontSize = 8.0 };
     };
-    minColSize := minCol.sizeThatFits(ProposedSize.flexible());
+    minColSize := minCol.fit(ProposedSize.flexible());
     print("min col {}x{}\n", minColSize.width.(i64), minColSize.height.(i64));
     // Slack lands ON TOP of the minimum: the spacer grows to 32 and the second
     // label follows it down.
@@ -96,7 +96,7 @@ main :: () -> i32 {
         Label{ text = "yy" };
     };
     folded := foldHstack(kids.items, 6.0);
-    foldedSize := folded.sizeThatFits(ProposedSize.flexible());
+    foldedSize := folded.fit(ProposedSize.flexible());
     print("folded {} wide {}\n", folded.children.len, foldedSize.width.(i64));
     root : View = folded;
     draw(*root, Frame.make(0.0, 0.0, 60.0, 16.0));

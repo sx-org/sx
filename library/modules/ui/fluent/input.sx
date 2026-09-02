@@ -29,8 +29,8 @@ Tappable :: @OpenVariant(View) ($V: Type) {
     onTap: ?Closure() = null;
     policy: ?Closure(Point) -> HitPolicy = null;
 
-    sizeThatFits :: (self: *Tappable(V), proposal: ProposedSize) -> Size {
-        self.child.sizeThatFits(proposal)
+    fit :: (self: *Tappable(V), proposal: ProposedSize) -> Size {
+        self.child.fit(proposal)
     }
 
     layout :: (self: *Tappable(V), bounds: Frame) {

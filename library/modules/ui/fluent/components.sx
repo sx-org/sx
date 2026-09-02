@@ -37,7 +37,7 @@ Label :: @OpenVariant(View) {
     fontSize: f32 = 16.0;
     color: Color = COLOR_WHITE;
 
-    sizeThatFits :: (self: *Label, proposal: ProposedSize) -> Size {
+    fit :: (self: *Label, proposal: ProposedSize) -> Size {
         measureText(self.text, self.fontSize)
     }
 
@@ -57,7 +57,7 @@ Rect :: @OpenVariant(View) {
     width: f32 = 0.0;
     height: f32 = 0.0;
 
-    sizeThatFits :: (self: *Rect, proposal: ProposedSize) -> Size {
+    fit :: (self: *Rect, proposal: ProposedSize) -> Size {
         Size{
             width = proposal.width ?? self.width,
             height = proposal.height ?? self.height,
@@ -81,7 +81,7 @@ Button :: @OpenVariant(View) {
     padding: EdgeInsets = EdgeInsets.symmetric(12.0, 6.0);
     modifier: Modifier = .{};
 
-    sizeThatFits :: (self: *Button, proposal: ProposedSize) -> Size {
+    fit :: (self: *Button, proposal: ProposedSize) -> Size {
         text := measureText(self.label, self.fontSize);
         pad := self.padding.horizontal() + self.modifier.padding.horizontal();
         vpad := self.padding.vertical() + self.modifier.padding.vertical();
@@ -124,7 +124,7 @@ TextField :: @OpenVariant(View) {
     fontSize: f32 = 16.0;
     color: Color = COLOR_WHITE;
 
-    sizeThatFits :: (self: *TextField, proposal: ProposedSize) -> Size {
+    fit :: (self: *TextField, proposal: ProposedSize) -> Size {
         committed := measureText(self.session.committedText(), self.fontSize);
         marked := measureText(self.session.markedText(), self.fontSize);
         Size{
