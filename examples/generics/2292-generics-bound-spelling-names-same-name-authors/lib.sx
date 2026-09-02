@@ -1,0 +1,5 @@
+Box :: struct { n: i32 }
+IoErr :: error { Down }
+
+makeBox :: () -> Box { return .{ n = 1 }; }
+mayFail :: () -> (i32, !IoErr) { return 1; }
