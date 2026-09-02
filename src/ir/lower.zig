@@ -3939,6 +3939,7 @@ pub const Lowering = struct {
     pub const refuseVoidElement = lower_expr.refuseVoidElement;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
+    pub const lowerSelfBlock = lower_expr.lowerSelfBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const structDeclaringSource = lower_expr.structDeclaringSource;
     pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;

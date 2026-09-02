@@ -852,14 +852,15 @@ Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
 its leading-dot form.
 
-A block after a completed aggregate is **dot-led**: it stores the value, binds
-a pointer to it, runs the block, and yields the (possibly mutated) value. The
-same form writes into a contextual `.{ … }` literal.
+A **dot-led** block after a value stores the value, binds a pointer to it,
+runs the block, and yields the (possibly mutated) value. The value is any
+postfix expression.
 
 ```sx
 b := Button{ label = "Play" }.{
     self.label = "Go";
 };
+c := make_button().{ self.label = "Go"; };
 
 // A `|name|` header names that pointer instead of `self`; it binds exactly
 // one name, and `*T` is its type.

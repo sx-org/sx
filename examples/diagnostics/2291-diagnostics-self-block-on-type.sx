@@ -1,0 +1,12 @@
+// A self-trailing `.{ … }` writes into a value; on a type designator it is
+// refused, with a pointer to constructing the value first.
+@import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+}
+
+main :: () {
+    b := Button.{ self.label = "Play"; };
+    _ := b;
+}

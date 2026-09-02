@@ -3011,7 +3011,7 @@ pub const Parser = struct {
     /// own brace group never juxtaposes, and a juxtaposition does not stack.
     fn juxtaposes(self: *Parser, expr: *const Node) bool {
         switch (expr.data) {
-            .if_expr, .match_expr, .while_expr, .for_expr, .block, .juxtaposition, .struct_literal => return false,
+            .if_expr, .match_expr, .while_expr, .for_expr, .block, .juxtaposition, .struct_literal, .self_block => return false,
             else => {},
         }
         // A header reserves the brace group written at its own depth for the
@@ -3644,11 +3644,12 @@ pub const Parser = struct {
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
                 } else if (self.tokens.tag(self.tok) == .l_brace) {
-                    // `T{ fields }.{ stmts }` — self-trailing after a completed
-                    // aggregate, binding the value pointer to the header name or
-                    // to `self`. It attaches to a juxtaposition (settling copies
-                    // it onto the aggregate) or to a `.{ … }` primary.
-                    // Separator-dot `Type.{…}` on a type designator is a hard error.
+                    // `expr.{ |s| stmts }` — a self-trailing block binding the
+                    // value's pointer to the header name or to `self`. It rides
+                    // on a juxtaposition (settling copies it onto the aggregate)
+                    // or a `.{ … }` primary; any other value gets its own node.
+                    // A type designator followed by a field list is the
+                    // separator-dot `Type.{…}` error.
                     if (expr.data == .juxtaposition or expr.data == .struct_literal) {
                         const attached = switch (expr.data) {
                             .juxtaposition => |jx| jx.init_block != null,
@@ -3674,10 +3675,14 @@ pub const Parser = struct {
                             else => unreachable,
                         }
                         expr.span.end = block.span.end;
-                    } else if (isNamedAggregatePrefix(expr)) {
+                    } else if (isNamedAggregatePrefix(expr) and self.braceOpensAsFieldList()) {
                         return self.failNamedAggregateDot();
                     } else {
-                        return self.fail(named_aggregate_dot_msg);
+                        const start = self.tokens.start(self.tok);
+                        try self.expect(.l_brace);
+                        const name = try self.parseSelfBinder();
+                        const block = try self.parseBlockBody(start);
+                        expr = try self.createNode(expr.span.start, .{ .self_block = .{ .operand = expr, .block = block, .binder = name } });
                     }
                 } else if (self.tokens.tag(self.tok) == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
@@ -5400,6 +5405,16 @@ pub const Parser = struct {
             .identifier, .field_access, .parameterized_type_expr, .call, .type_expr, .tuple_type_expr, .enum_literal => true,
             else => false,
         };
+    }
+
+    /// Whether the brace group at the cursor opens as a field list — empty,
+    /// `name = …`, or comma-separated elements — rather than as statements.
+    fn braceOpensAsFieldList(self: *Parser) bool {
+        if (self.braceIsEmpty()) return true;
+        const first = self.tokens.next(self.tok);
+        if (self.tokens.tag(first) == .identifier and self.tokens.tag(self.tokens.next(first)) == .equal) return true;
+        const shape = self.scanBraceShape();
+        return shape.comma and !shape.semi;
     }
 
     fn braceIsEmpty(self: *Parser) bool {

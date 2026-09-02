@@ -116,6 +116,11 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeByte(' ');
             try printExpr(jx.block, writer);
         },
+        .self_block => |sb| {
+            try printExpr(sb.operand, writer);
+            try writer.writeByte('.');
+            try printExpr(sb.block, writer);
+        },
         .block => |blk| {
             try writer.writeByte('{');
             for (blk.stmts) |stmt| {

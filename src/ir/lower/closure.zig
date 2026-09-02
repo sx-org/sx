@@ -1212,6 +1212,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 collectCapturesNested(self, ib, param_names, captures, bound);
             }
         },
+        .self_block => |sb| {
+            self.collectCaptures(sb.operand, param_names, captures);
+            collectCapturesNested(self, sb.block, param_names, captures, &.{sb.binder});
+        },
         .asm_expr => |ae| {
             self.collectCaptures(ae.template, param_names, captures);
             for (ae.operands) |op| {

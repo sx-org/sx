@@ -263,6 +263,10 @@ fn walk(self: *Lowering, node: *const Node) void {
             for (sl.field_inits) |fi| walk(self, fi.value);
             if (sl.init_block) |ib| walk(self, ib);
         },
+        .self_block => |sb| {
+            walk(self, sb.operand);
+            walk(self, sb.block);
+        },
         .tuple_literal => |t| {
             if (t.type_expr) |te| walk(self, te);
             for (t.elements) |e| walk(self, e.value);

@@ -1,0 +1,31 @@
+// A self-trailing `.{ … }` attaches to any value: the value is stored, `self`
+// (or the `|name|` header) is a pointer to it, and the written value is the
+// result. A bare name followed by a statement-shaped body is a self block on
+// that value; a name followed by a field list is the separator-dot `Type.{…}`
+// error.
+
+@import "modules/std.sx";
+
+Vec :: struct {
+    x: i64 = 0;
+    y: i64 = 0;
+
+    zero :: () -> Vec { Vec{} }
+}
+
+main :: () -> i64 {
+    v := Vec.zero().{
+        self.x = 3;
+        self.y = self.x * 2;
+    };
+    print("{} {}\n", v.x, v.y); // 3 6
+
+    w := v.{ self.x = self.x + 1; };
+    print("{} {} {}\n", w.x, w.y, v.x); // 4 6 3
+
+    k := 10;
+    f := ||_{ k } Vec.zero().{ |p| p.y = k; };
+    print("{}\n", f().y); // 10
+
+    return 0;
+}

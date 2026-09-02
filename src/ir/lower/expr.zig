@@ -625,8 +625,21 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     return result;
 }
 
-/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `binder` to a
-/// pointer to it, execute block, reload.
+pub fn lowerSelfBlock(self: *Lowering, sb: *const ast.SelfBlock) Ref {
+    const ty = self.inferExprType(sb.operand);
+    if (ty == .type_value) {
+        if (self.diagnostics) |d| {
+            const id = d.addId(.err, "a self-trailing block writes into a value; this operand is a type", sb.operand.span);
+            d.addHelp(id, null, "construct the value first: `T{ … }.{ … }`", null);
+        }
+        return self.builder.constUndef(.unresolved);
+    }
+    const value = self.lowerExpr(sb.operand);
+    return self.lowerInitBlock(value, ty, sb.block, sb.binder);
+}
+
+/// Store the value to an alloca, bind `binder` to a pointer to it, run the
+/// block, reload.
 pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node, binder: []const u8) Ref {
     // Store struct value to a temporary alloca
     const ptr_ty = self.module.types.ptrTo(ty);
@@ -4044,6 +4057,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .ffi_intrinsic_call => |fic| self.lowerFfiIntrinsicCall(&fic, node.span),
         .field_access => |fa| self.lowerFieldAccess(&fa, node.span),
         .struct_literal => |sl| self.lowerStructLiteral(&sl, node.span),
+        .self_block => |sb| self.lowerSelfBlock(&sb),
         // `expr { … }` settles here, where the local scope holds the types a
         // function-local declaration registered.
         .juxtaposition => blk: {
