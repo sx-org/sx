@@ -1264,7 +1264,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var subject_ty = self.inferExprType(me.subject);
     // A pointer subject (e.g. a `for *x in xs` element capture) matches
     // through the deref (specs §for, by-reference capture): deref to the
-    // pointed-to tagged union/enum so tag/payload extraction works, and to
+    // pointed-to enum so tag/payload extraction works, and to
     // an integer/bool pointee so the value drives the switch directly.
     if (!subject_ty.isBuiltin()) {
         const sinfo = self.module.types.get(subject_ty);
@@ -1276,7 +1276,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     else => false,
                 };
                 break :blk switch (self.module.types.get(pointee)) {
-                    .signed, .unsigned, .tagged_union, .@"enum" => true,
+                    .signed, .unsigned, .@"enum" => true,
                     else => false,
                 };
             };
@@ -1335,7 +1335,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     };
 
     // Subject-type gate: a case-style match dispatches on
-    // a discriminant — an enum / tagged-union tag, an error tag, an optional's
+    // a discriminant — an enum tag, an error tag, an optional's
     // has_value bit, an integer/bool value, or a type id. Any other subject has
     // no valid switch scrutinee, and letting it through hands the backend
     // invalid IR (a raw `[8 x i8]` union scrutinee, `switch ptr`, or
@@ -1362,13 +1362,13 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 else => false,
             };
             break :blk switch (self.module.types.get(subject_ty)) {
-                .signed, .unsigned, .@"enum", .tagged_union => true,
+                .signed, .unsigned, .@"enum" => true,
                 else => false,
             };
         };
         if (!dispatchable) {
-            // An untagged union (directly, or through a pointer — the deref
-            // above never fires for untagged unions) gets its own wording:
+            // A union (directly, or through a pointer — the deref
+            // above never fires for unions) gets its own wording:
             // the type EXISTS but carries no discriminant to match on. Same
             // family as the arm-level payload-binding rejection,
             // which this subject-level gate subsumes for union subjects.
@@ -1383,7 +1383,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             };
             if (self.diagnostics) |diags| {
                 if (union_ty) |uty| {
-                    diags.addFmt(.err, me.subject.span, "cannot match on untagged union '{s}' — it has no discriminant; use a tagged union (enum with payloads) instead", .{self.formatTypeName(uty)});
+                    diags.addFmt(.err, me.subject.span, "cannot match on union '{s}' — it has no discriminant; use an enum with payloads instead", .{self.formatTypeName(uty)});
                 } else if (subject_ty == .unresolved) {
                     // The subject's own lowering usually diagnosed already
                     // (undefined identifier, failed lookup, …) — don't stack a
@@ -1393,7 +1393,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                         diags.addFmt(.err, me.subject.span, "cannot determine the type of this match subject", .{});
                     }
                 } else {
-                    diags.addFmt(.err, me.subject.span, "cannot match on '{s}' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values", .{self.formatTypeName(subject_ty)});
+                    diags.addFmt(.err, me.subject.span, "cannot match on '{s}' — match subjects must be enums, error sets, optionals, integers, bools, or Type values", .{self.formatTypeName(subject_ty)});
                 }
             }
             // Bail with an inert placeholder — compilation aborts on the
@@ -1653,7 +1653,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             };
             // First-wins, mirroring the any-subject type switch: a tag
             // belongs to the first arm that names it. Categories overlap
-            // (`enum`/`union` share tagged unions, `int` contains `i64`),
+            // (`int` contains `i64`),
             // and a duplicate switch case is invalid IR — before the
             // claim set, an overlap was an LLVM verifier crash.
             var eff_tv = std.ArrayList(u64).empty;
@@ -1736,26 +1736,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 // Look up variant value in the subject's type
                 if (!subject_ty.isBuiltin()) {
                     const ty_info = self.module.types.get(subject_ty);
-                    if (ty_info == .tagged_union) {
-                        for (ty_info.tagged_union.fields, 0..) |f, vi| {
+                    if (ty_info == .@"enum") {
+                        for (ty_info.@"enum".variants, 0..) |f, vi| {
                             const vname = self.module.types.strings.get(f.name);
                             if (std.mem.eql(u8, vname, pat_name)) {
-                                if (ty_info.tagged_union.explicit_tag_values) |vals| {
-                                    if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
-                                }
-                                break :blk .{ .value = @as(u64, @intCast(vi)) };
-                            }
-                        }
-                        if (self.diagnostics) |diags| {
-                            const ty_name = self.formatTypeName(subject_ty);
-                            diags.addFmt(.err, pat.span, "no variant '{s}' on type '{s}'", .{ pat_name, ty_name });
-                        }
-                        break :blk .no_variant;
-                    } else if (ty_info == .@"enum") {
-                        for (ty_info.@"enum".variants, 0..) |v, vi| {
-                            const vname = self.module.types.strings.get(v);
-                            if (std.mem.eql(u8, vname, pat_name)) {
-                                if (ty_info.@"enum".explicit_values) |vals| {
+                                if (ty_info.@"enum".values) |vals| {
                                     if (vi < vals.len) break :blk .{ .value = @as(u64, @bitCast(vals[vi])) };
                                 }
                                 break :blk .{ .value = @as(u64, @intCast(vi)) };
@@ -1815,7 +1800,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         const tag_ty: TypeId = tt: {
             if (!subject_ty.isBuiltin()) {
                 const ty_info = self.module.types.get(subject_ty);
-                if (ty_info == .tagged_union) break :tt ty_info.tagged_union.tag_type;
+                if (ty_info == .@"enum" and ty_info.@"enum".hasPayload()) break :tt ty_info.@"enum".tag_type;
             }
             break :tt .i32;
         };
@@ -1928,37 +1913,43 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 } else "";
                 if (!subject_ty.isBuiltin()) {
                     const ty_info = self.module.types.get(subject_ty);
-                    if (ty_info == .tagged_union) {
-                        for (ty_info.tagged_union.fields, 0..) |f, vi| {
+                    if (ty_info == .@"enum") {
+                        for (ty_info.@"enum".variants, 0..) |f, vi| {
                             const vname = self.module.types.strings.get(f.name);
                             if (std.mem.eql(u8, vname, pat_name)) {
                                 variant_idx = @intCast(vi);
-                                payload_ty = f.ty;
+                                payload_ty = f.payload;
                                 break;
                             }
                         }
                     }
                 }
-                if (payload_ty == .unresolved) {
-                    // Non-bindable subject: only a tagged-union (enum with
-                    // payloads) variant can supply a case payload binding
-                    // `|v|`. Reject everything else — payload-less enum,
-                    // unknown tagged-union variant, integer/bool subjects —
-                    // with a diagnostic instead of letting the binding's type
-                    // leak out as .unresolved and panic at LLVM emission.
-                    // Untagged-union subjects (with or without
-                    // a binding) never reach the arms: the subject-type gate
-                    // above rejects the whole match up front.
-                    const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
-                    const is_tagged_union_subject = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .tagged_union;
+                if (payload_ty == .void) {
                     if (self.diagnostics) |diags| {
-                        if (is_tagged_union_subject) {
-                            // Unknown variant on a tagged union — the case-value
-                            // pass already emitted "no variant '<name>' on type
-                            // '<T>'"; don't stack a second diagnostic.
+                        const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
+                        diags.addFmt(.err, bind_span, "'{s}' carries no payload to bind", .{pat_name});
+                    }
+                    payload_ty = .unresolved;
+                }
+                if (payload_ty == .unresolved) {
+                    // Non-bindable subject: only a variant with a payload can
+                    // supply a case payload binding `|v|`. Reject everything
+                    // else — an unknown variant, integer/bool subjects — with
+                    // a diagnostic instead of letting the binding's type leak
+                    // out as .unresolved and panic at LLVM emission.
+                    // Union subjects (with or without a binding) never reach
+                    // the arms: the subject-type gate above rejects the whole
+                    // match up front.
+                    const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
+                    const is_enum_subject = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .@"enum";
+                    if (self.diagnostics) |diags| {
+                        if (is_enum_subject) {
+                            // A void or unknown variant on an enum is already
+                            // diagnosed above or by the case-value pass;
+                            // don't stack a second diagnostic.
                         } else {
                             const ty_name = self.formatTypeName(subject_ty);
-                            diags.addFmt(.err, bind_span, "this case pattern cannot bind a payload from subject type '{s}' — only tagged union (enum with payload) variants are bindable", .{ty_name});
+                            diags.addFmt(.err, bind_span, "this case pattern cannot bind a payload from subject type '{s}' — only a variant with a payload is bindable", .{ty_name});
                         }
                     }
                     // Bind the capture to an inert undef so the arm body
@@ -2067,9 +2058,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 const is_exhaustive = blk: {
                     if (!subject_ty.isBuiltin()) {
                         const ty_info = self.module.types.get(subject_ty);
-                        if (ty_info == .tagged_union) {
-                            break :blk cases.items.len >= ty_info.tagged_union.fields.len;
-                        } else if (ty_info == .@"enum") {
+                        if (ty_info == .@"enum") {
                             break :blk cases.items.len >= ty_info.@"enum".variants.len;
                         }
                     }

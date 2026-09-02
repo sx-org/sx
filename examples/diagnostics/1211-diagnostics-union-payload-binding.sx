@@ -1,7 +1,7 @@
 // A match-style `match x { case .variant: |v| { ... } }` payload binding is valid
-// only on a tagged union (an enum with payloads). Two non-bindable subjects are
+// only on a payload enum (an enum with payloads). Two non-bindable subjects are
 // rejected at lowering:
-// - a plain UNTAGGED `union` (no discriminant) and a POINTER to one, where the
+// - a plain `union` (no discriminant) and a POINTER to one, where the
 // subject-level match gate rejects the whole match up front (1220 covers the
 // no-binding forms);
 // - a payload-less enum, where the arm-level binding rejection fires with the

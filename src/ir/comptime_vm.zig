@@ -441,12 +441,11 @@ fn isFloat(ty: TypeId) bool {
 }
 
 /// The nominal identity (`name` + stable `nominal_id`) of a `declare_type`'d slot —
-/// from the forward `tagged_union` OR an already-completed nominal (so a re-fill
+/// from the forward enum placeholder OR an already-completed nominal (so a re-fill
 /// preserves identity). Mirrors `compiler_lib.nominalIdent`. Null for a non-nominal
 /// handle (not a `declare_type` result).
 fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_id: u32 } {
     return switch (info) {
-        .tagged_union => |u| .{ .name = u.name, .nominal_id = u.nominal_id },
         .@"enum" => |e| .{ .name = e.name, .nominal_id = e.nominal_id },
         .@"struct" => |s| .{ .name = s.name, .nominal_id = s.nominal_id },
         else => null,
@@ -1273,13 +1272,13 @@ pub const Vm = struct {
                 return .{ .value = frame.get(b.rhs.index()) };
             },
 
-            // ── Enums: a payloadless enum's value IS its tag; a tagged union's
+            // ── Enums: a payloadless enum's value IS its tag; a payload enum's
             // value is the address of its `{ tag, payload }` bytes ───────
             .enum_init => |ei| {
                 const uty = ins.ty;
-                const is_union = !uty.isBuiltin() and (try self.requireTable()).get(uty) == .tagged_union;
+                const is_union = !uty.isBuiltin() and (try self.requireTable()).get(uty) == .@"enum" and (try self.requireTable()).get(uty).@"enum".hasPayload();
                 if (ei.payload.isNone() and !is_union) return .{ .value = @as(Reg, ei.tag) };
-                // Tagged union { tag@0, payload@tag_size } — `{ header, [N x i8] }`
+                // Payload enum { tag@0, payload@tag_size } — `{ header, [N x i8] }`
                 // in the LLVM layout (see backend/llvm/types.zig). Allocate the
                 // whole value (zeroed: the payload area is max-payload sized, so a
                 // smaller variant leaves the tail zero), write the tag at offset 0,
@@ -1287,15 +1286,15 @@ pub const Vm = struct {
                 // variant leaves the area zero.
                 const table = try self.requireTable();
                 if (!is_union)
-                    return self.failMsg("comptime VM: enum_init-with-payload on a non-tagged-union result type not supported");
-                const tu = table.get(uty).tagged_union;
+                    return self.failMsg("comptime VM: enum_init-with-payload on a payload-free result type not supported");
+                const tu = table.get(uty).@"enum";
                 // The simple `{ header(tag)@0, [N x i8] payload@tag_size }` layout
-                // assumed below holds ONLY for a tag_type-headed tagged union. A
-                // `backing_type` union is laid out as the backing STRUCT (header from
-                // all-but-last fields, payload = last field) — different offsets — so
-                // bail loudly rather than write the payload to the wrong place.
-                if (tu.backing_type != null)
-                    return self.failMsg("comptime VM: enum_init on a backing_type tagged union not yet ported (layout differs)");
+                // assumed below holds ONLY for a tag-headed enum. A stated layout
+                // is the layout STRUCT (header from all-but-last fields, payload =
+                // last field) — different offsets — so bail loudly rather than
+                // write the payload to the wrong place.
+                if (tu.layout != null)
+                    return self.failMsg("comptime VM: enum_init on an enum with a stated layout not yet ported (layout differs)");
                 const size = table.typeSizeBytes(uty);
                 const addr = self.machine.allocBytes(size, table.typeAlignBytes(uty));
                 @memset(try self.machine.bytes(addr, size), 0);
@@ -1312,15 +1311,15 @@ pub const Vm = struct {
                 const v = frame.get(u.operand.index());
                 if (oty.isBuiltin()) return .{ .value = v }; // already an integer tag
                 const table = try self.requireTable();
-                if (table.get(oty) == .@"enum") return .{ .value = v }; // payloadless: word IS the tag
-                if (table.get(oty) == .tagged_union) {
+                if (table.get(oty) == .@"enum") {
+                    const tu = table.get(oty).@"enum";
+                    if (!tu.hasPayload()) return .{ .value = v }; // the word IS the tag
                     // `{ tag@0, payload@tag_size }` — read the tag word from the
-                    // value's address. A `backing_type` union lays the tag out
-                    // differently (it's a field of the backing struct), so bail
+                    // value's address. A stated layout lays the tag out
+                    // differently (it's a field of the layout struct), so bail
                     // rather than read the wrong bytes.
-                    const tu = table.get(oty).tagged_union;
-                    if (tu.backing_type != null) {
-                        self.detail = "comptime VM: enum_tag on a backing_type tagged union not yet ported (layout differs)";
+                    if (tu.layout != null) {
+                        self.detail = "comptime VM: enum_tag on an enum with a stated layout not yet ported (layout differs)";
                         return error.Unsupported;
                     }
                     return .{ .value = try self.readField(table, v, tu.tag_type) };
@@ -1328,26 +1327,26 @@ pub const Vm = struct {
                 self.detail = "comptime VM: enum_tag on an unexpected operand type";
                 return error.Unsupported;
             },
-            // Extract a tagged union's active payload — the bytes at `tag_size`,
-            // read as the variant's payload type. Mirrors the `enum_init` write
+            // Extract an enum's active payload — the bytes at `tag_size`, read
+            // as the variant's payload type. Mirrors the `enum_init` write
             // layout (`{ tag@0, [N x i8] payload@tag_size }`). The match-arm
             // capture binding (`case .v: |x|`) uses this.
             .enum_payload => |fa| {
                 const oty = (try self.refTy(ref_types, fa.base));
                 const base = frame.get(fa.base.index());
                 const table = try self.requireTable();
-                if (oty.isBuiltin() or table.get(oty) != .tagged_union) {
-                    self.detail = "comptime VM: enum_payload on a non-tagged-union operand";
+                if (oty.isBuiltin() or table.get(oty) != .@"enum" or !table.get(oty).@"enum".hasPayload()) {
+                    self.detail = "comptime VM: enum_payload on a payload-free operand";
                     return error.Unsupported;
                 }
-                const tu = table.get(oty).tagged_union;
-                if (tu.backing_type != null) {
-                    self.detail = "comptime VM: enum_payload on a backing_type tagged union not yet ported (layout differs)";
+                const tu = table.get(oty).@"enum";
+                if (tu.layout != null) {
+                    self.detail = "comptime VM: enum_payload on an enum with a stated layout not yet ported (layout differs)";
                     return error.Unsupported;
                 }
-                if (fa.field_index >= tu.fields.len)
+                if (fa.field_index >= tu.variants.len)
                     return self.failMsg("comptime VM: enum_payload variant index out of range");
-                const payload_ty = tu.fields[fa.field_index].ty;
+                const payload_ty = tu.variants[fa.field_index].payload;
                 const tag_size: Addr = @intCast(table.typeSizeBytes(tu.tag_type));
                 return .{ .value = try self.readField(table, base + tag_size, payload_ty) };
             },
@@ -2366,14 +2365,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         defer members.deinit(self.gpa);
         try self.decodeMemberSlice(table, members_word, slice_ty, &members);
         // A comptime-constructed type with NO members is VALID for every kind
-        // (empty struct / tuple / enum / tagged_union). The per-kind loops below
+        // (empty struct / tuple / enum). The per-kind loops below
         // are vacuous for an empty member list and the dup-name checks stay
         // correct. The completion always sets `defined = true`, so the result is
         // distinguishable from a never-completed `declare(...)` placeholder
         // (which carries `defined = false`).
 
         const tbl = @constCast(table);
-        // The slot's nominal identity — accept the forward `tagged_union` from
+        // The slot's nominal identity — accept the forward enum placeholder from
         // `declare_type` AND an already-completed nominal of the same name (so a
         // re-fill via two import edges is idempotent). A non-nominal handle (not a
         // `declare_type`'d slot) is rejected.
@@ -2381,26 +2380,21 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.failMsg("comptime register_type: handle is not a declare_type'd nominal slot");
 
         switch (kind) {
-            2 => { // actual (payloadless) enum — members are variant NAMES; payload must be void
-                const names = self.gpa.alloc(types.StringId, members.items.len) catch return self.failMsg("comptime register_type: out of memory");
+            2 => { // enum — members are variants, `ty` the payload (`void` for none)
+                const variants = self.gpa.alloc(types.TypeInfo.EnumInfo.Variant, members.items.len) catch return self.failMsg("comptime register_type: out of memory");
                 for (members.items, 0..) |m, i| {
-                    if (m.ty != .void) return self.failMsg("comptime register_type: payload variant — use kind 3 (tagged_union)");
-                    for (names[0..i]) |prev| if (prev == m.name) return self.failFmt("comptime register_type: duplicate variant name '{s}'", .{tbl.getString(m.name)});
-                    names[i] = m.name;
+                    for (variants[0..i]) |prev| if (prev.name == m.name) return self.failFmt("comptime register_type: duplicate variant name '{s}'", .{tbl.getString(m.name)});
+                    variants[i] = .{ .name = m.name, .payload = m.ty };
                 }
-                tbl.replaceKeyedInfo(handle, .{ .@"enum" = .{ .name = ident.name, .variants = names, .nominal_id = ident.nominal_id } });
+                tbl.replaceKeyedInfo(handle, .{ .@"enum" = .{ .name = ident.name, .variants = variants, .nominal_id = ident.nominal_id } });
             },
-            1, 3 => { // struct / tagged_union — `{ name, ty }` fields (dup names rejected)
+            1 => { // struct — `{ name, ty }` fields (dup names rejected)
                 const flds = self.gpa.alloc(types.TypeInfo.StructInfo.Field, members.items.len) catch return self.failMsg("comptime register_type: out of memory");
                 for (members.items, 0..) |m, i| {
                     for (flds[0..i]) |prev| if (prev.name == m.name) return self.failFmt("comptime register_type: duplicate member name '{s}'", .{tbl.getString(m.name)});
                     flds[i] = .{ .name = m.name, .ty = m.ty };
                 }
-                const full: types.TypeInfo = if (kind == 1)
-                    .{ .@"struct" = .{ .name = ident.name, .fields = flds, .nominal_id = ident.nominal_id } }
-                else
-                    .{ .tagged_union = .{ .name = ident.name, .fields = flds, .tag_type = .i64, .nominal_id = ident.nominal_id } };
-                tbl.replaceKeyedInfo(handle, full);
+                tbl.replaceKeyedInfo(handle, .{ .@"struct" = .{ .name = ident.name, .fields = flds, .nominal_id = ident.nominal_id } });
             },
             else => return self.failMsg("comptime register_type: unknown kind code"),
         }
@@ -2408,7 +2402,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// Mint (or find) a forward `declare`'d nominal slot named `text`: an empty
-    /// `tagged_union` placeholder a later `define`/`register_type` completes in
+    /// enum placeholder a later `define`/`register_type` completes in
     /// place. Idempotent — lowering already registered the named forward slot (so a
     /// `*Name` self-reference in the body resolved), so return THAT slot. Shared by
     /// the compiler-API `declare_type` and the metatype `declare` builtin.
@@ -2417,7 +2411,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const tbl = @constCast(table);
         const name_id = tbl.internString(text);
         if (tbl.findByName(name_id)) |existing| return existing;
-        return tbl.internNominal(.{ .tagged_union = .{ .name = name_id, .fields = &.{}, .tag_type = .i64, .defined = false } }, 0);
+        return tbl.internNominal(.{ .@"enum" = .{ .name = name_id, .variants = &.{}, .defined = false } }, 0);
     }
 
     /// Decode a `[]{ name: string, ty: Type }` slice from comptime memory into interned
@@ -2601,11 +2595,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// the element struct's own field order. `define(declare(n), @typeInfo(T))`
     /// round-trips to a byte-identical nominal copy.
     fn buildTypeInfo(self: *Vm, table: *const types.TypeTable, result_ty: TypeId, tid: TypeId) Error!Reg {
-        if (result_ty.isBuiltin() or table.get(result_ty) != .tagged_union)
-            return self.failMsg("comptime @typeInfo: result type is not the TypeInfo tagged union");
-        const ti = table.get(result_ty).tagged_union;
-        if (ti.backing_type != null)
-            return self.failMsg("comptime @typeInfo: TypeInfo result is a backing_type tagged union (unexpected layout)");
+        if (result_ty.isBuiltin() or table.get(result_ty) != .@"enum")
+            return self.failMsg("comptime @typeInfo: result type is not the TypeInfo enum");
+        const ti = table.get(result_ty).@"enum";
+        if (ti.layout != null)
+            return self.failMsg("comptime @typeInfo: TypeInfo result has a stated layout (unexpected layout)");
         if (tid == .unresolved)
             return self.failMsg("comptime @typeInfo: unresolved type");
 
@@ -2619,6 +2613,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             elem_len: struct { elem: TypeId, len: i64 }, // array/vector
             one_type: TypeId, // slice/pointer/many_pointer/optional
             rows: []const []const Word, // one element struct per member
+            variants: struct { rows: []const []const Word, tag: TypeId }, // an enum: its variants, then `tag`/`tagOffset`
         };
         var rows = std.ArrayList([]const Word).empty;
         defer {
@@ -2695,15 +2690,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .any => vname = "any",
             .noreturn => vname = "noreturn",
             .type_value, .unresolved => vname = "typeValue",
-            .tagged_union => |u| {
-                vname = "enum";
-                for (u.fields, 0..) |f, i| try Row.push(self, &rows, &.{
-                    .{ .text = table.getString(f.name) },
-                    .{ .ty = f.ty },
-                    .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
-                });
-                payload = .{ .rows = rows.items };
-            },
             .@"enum" => |e| {
                 if (table.reflectedErrorMembers(tid)) |members| {
                     vname = "error";
@@ -2711,12 +2697,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 } else {
                     vname = "enum";
                     for (e.variants, 0..) |v, i| try Row.push(self, &rows, &.{
-                        .{ .text = table.getString(v) },
-                        .{ .ty = .void },
+                        .{ .text = table.getString(v.name) },
+                        .{ .ty = v.payload },
                         .{ .num = table.memberValue(tid, @intCast(i)) orelse @intCast(i) },
                     });
+                    payload = .{ .variants = .{ .rows = rows.items, .tag = e.tag_type } };
                 }
-                payload = .{ .rows = rows.items };
+                if (payload == .none) payload = .{ .rows = rows.items };
             },
             .@"struct" => |st| {
                 vname = "struct";
@@ -2772,14 +2759,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .pack => vname = "pack",
         }
 
-        // Find the variant ordinal by NAME in the result TypeInfo union.
+        // Find the variant ordinal by NAME in the result TypeInfo enum.
         const tag: u32 = blk: {
-            for (ti.fields, 0..) |f, i| {
+            for (ti.variants, 0..) |f, i| {
                 if (std.mem.eql(u8, table.getString(f.name), vname)) break :blk @intCast(i);
             }
             return self.failMsg("comptime @typeInfo: TypeInfo has no variant for this kind");
         };
-        const payload_ty = ti.fields[tag].ty;
+        const payload_ty = ti.variants[tag].payload;
 
         // Materialize the payload (if any) into comptime memory.
         var pinfo: Addr = 0;
@@ -2804,7 +2791,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 pinfo = try self.allocZeroed(table, payload_ty);
                 try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, t.index()));
             },
-            .rows => |rs| pinfo = try self.buildMembersPayload(table, payload_ty, rs),
+            .rows => |rs| pinfo = try self.buildMembersPayload(table, payload_ty, rs, null),
+            .variants => |vs| pinfo = try self.buildMembersPayload(table, payload_ty, vs.rows, vs.tag),
         }
 
         // TypeInfo { tag, payload }.
@@ -2836,10 +2824,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// Build a `{ <slice> }` info payload from one word row per member. A row
     /// fills the element struct's fields in declaration order, so the element
     /// shape and the row width must agree.
-    fn buildMembersPayload(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, rows: []const []const Word) Error!Addr {
-        if (payload_ty.isBuiltin() or table.get(payload_ty) != .@"struct" or table.get(payload_ty).@"struct".fields.len != 1)
-            return self.failMsg("comptime @typeInfo: TypeInfo payload is not a single-slice info struct");
-        const slice_field_ty = table.get(payload_ty).@"struct".fields[0].ty;
+    /// `tag` is an enum's tag type, written after the member slice with the
+    /// tag's offset (0: the tag is the value's first word).
+    fn buildMembersPayload(self: *Vm, table: *const types.TypeTable, payload_ty: TypeId, rows: []const []const Word, tag: ?TypeId) Error!Addr {
+        const want_fields: usize = if (tag != null) 3 else 1;
+        if (payload_ty.isBuiltin() or table.get(payload_ty) != .@"struct" or table.get(payload_ty).@"struct".fields.len != want_fields)
+            return self.failMsg("comptime @typeInfo: TypeInfo payload is not the expected info struct");
+        const pfields = table.get(payload_ty).@"struct".fields;
+        const slice_field_ty = pfields[0].ty;
         if (slice_field_ty.isBuiltin() or table.get(slice_field_ty) != .slice)
             return self.failMsg("comptime @typeInfo: info struct field is not a slice");
         const elem_ty = table.get(slice_field_ty).slice.element;
@@ -2868,6 +2860,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const slice = try self.makeSlice(table, slice_field_ty, data, @intCast(rows.len));
         const pinfo = try self.allocZeroed(table, payload_ty);
         try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 0), slice_field_ty, slice);
+        if (tag) |t| {
+            try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 1), pfields[1].ty, @as(Reg, t.index()));
+            try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 2), pfields[2].ty, 0);
+        }
         return pinfo;
     }
 
@@ -3071,8 +3067,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// How a value of type `ty` is held: a register word (scalar, pointer,
     /// func-ref, enum tag, error tag, pointer-child optional) or by-address in
-    /// comptime memory (struct, array, tuple, slice, string, `any`, tagged
-    /// union, non-pointer optional). Everything else — `void`, `noreturn`,
+    /// comptime memory (struct, array, tuple, slice, string, `any`, payload
+    /// enum, non-pointer optional). Everything else — `void`, `noreturn`,
     /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
@@ -3097,11 +3093,12 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (ty.isBuiltin()) return .unsupported; // void, noreturn, unresolved
         return switch (table.get(ty)) {
             .pointer, .many_pointer, .function => .word,
-            .@"enum" => .word, // payloadless enum: i64 (or its backing) — a word
+            // A payload-free enum's word IS its tag; a payload-carrying enum is a
+            // `{ tag@0, [N x i8] payload@tag_size }` value held by-address (like
+            // a struct) — same as the `enum_init` write path.
+            .@"enum" => |e| if (e.hasPayload()) .aggregate else .word,
             .@"error" => .word, // the error channel is a u32 tag id — a word
-            // A tagged union is a `{ tag@0, [N x i8] payload@tag_size }` value held
-            // by-address (like a struct) — same as the `enum_init` write path.
-            .@"struct", .array, .slice, .tagged_union, .failable => .aggregate,
+            .@"struct", .array, .slice, .failable => .aggregate,
             // `?T`: a one-word sentinel child is null-as-0 (word); else `{T, i1}` by-address.
             .optional => |o| if (optChildIsPtr(table, o.child)) .word else .aggregate,
             else => .unsupported,
@@ -3269,8 +3266,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// the payload at the same offsets.
     fn structFields(table: *const types.TypeTable, sty: TypeId) []const types.TypeInfo.StructInfo.Field {
         const info = table.get(sty);
-        if (info == .tagged_union) {
-            if (info.tagged_union.backing_type) |bt| return table.get(bt).@"struct".fields;
+        if (info == .@"enum") {
+            if (info.@"enum".layout) |bt| return table.get(bt).@"struct".fields;
         }
         return info.@"struct".fields;
     }

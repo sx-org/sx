@@ -1,4 +1,4 @@
-// An untagged union is a nominal conformer: `impl Show for U` is the impl,
+// A union is a nominal conformer: `impl Show for U` is the impl,
 // and `$T/Show` asks that question.
 @import "modules/std.sx";
 

@@ -301,7 +301,6 @@ pub fn nominalIdOf(info: types.TypeInfo) u32 {
         .@"struct" => |s| s.nominal_id,
         .@"enum" => |e| e.nominal_id,
         .@"union" => |u| u.nominal_id,
-        .tagged_union => |u| u.nominal_id,
         else => 0,
     };
 }
@@ -315,7 +314,6 @@ pub fn stampNominalId(info: types.TypeInfo, nid: u32) types.TypeInfo {
         .@"struct" => |*s| s.nominal_id = nid,
         .@"enum" => |*e| e.nominal_id = nid,
         .@"union" => |*u| u.nominal_id = nid,
-        .tagged_union => |*u| u.nominal_id = nid,
         else => {},
     }
     return out;
@@ -346,22 +344,18 @@ pub fn reserveShadowStructSlot(self: *Lowering, sd: *const ast.StructDecl) void 
 
 /// Reserve a GENUINE same-name ENUM shadow author's DISTINCT nominal slot
 /// up-front — the enum twin of `reserveShadowStructSlot`. The reserved
-/// slot's KIND MUST match what `buildEnumInfo` will produce (a payload enum →
-/// `.tagged_union`, a payload-less enum → `.enum`), because `internNamedTypeDecl`
-/// later refreshes the body via `updatePreservingKey`, whose key-stability
-/// assert compares the FULL info tag — a struct/enum/tagged_union mismatch would
-/// trip it. The empty body and placeholder `tag_type` are not part of the intern
-/// key (name + nominal id only), so the real body fills in freely.
+/// slot's KIND is `.enum`, what `buildEnumInfo` produces, because
+/// `internNamedTypeDecl` later refreshes the body via `updatePreservingKey`,
+/// whose key-stability assert compares the FULL info tag. The empty body is
+/// not part of the intern key (name + nominal id only), so the real body
+/// fills in freely.
 pub fn reserveShadowEnumSlot(self: *Lowering, ed: *const ast.EnumDecl) void {
     const table = &self.module.types;
     const decl_key: *const anyopaque = @ptrCast(ed);
     if (table.type_decl_tids.contains(decl_key)) return;
     const name_id = table.internString(ed.name);
     const nominal_id = self.shadowNominalId(name_id);
-    const empty: types.TypeInfo = if (ed.variant_types.len > 0)
-        .{ .tagged_union = .{ .name = name_id, .fields = &.{}, .tag_type = .i64 } }
-    else
-        .{ .@"enum" = .{ .name = name_id, .variants = &.{} } };
+    const empty: types.TypeInfo = .{ .@"enum" = .{ .name = name_id, .variants = &.{} } };
     const reserved = table.internNominal(empty, nominal_id);
     table.type_decl_tids.put(decl_key, reserved) catch {};
 }
@@ -508,15 +502,15 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
 
 /// TRUE when `existing` is a forward-reference STRUCT placeholder (empty
 /// fields — the stateless resolver's stub for an as-yet-unregistered name) and
-/// `incoming` is a NON-struct nominal (enum / union / tagged_union /
-/// error): the one case where `internNamedTypeDecl` must re-key the slot
+/// `incoming` is a NON-struct nominal (enum / union / error): the one case
+/// where `internNamedTypeDecl` must re-key the slot
 /// rather than fill its body in place. A struct adopting its own struct stub
 /// is same-kind and stays on `updatePreservingKey`; a fresh-interned slot has
 /// no stub to adopt.
 pub fn adoptsForwardStructStub(existing: types.TypeInfo, incoming: types.TypeInfo) bool {
     if (existing != .@"struct" or existing.@"struct".fields.len != 0) return false;
     return switch (incoming) {
-        .@"enum", .@"union", .tagged_union, .@"error" => true,
+        .@"enum", .@"union", .@"error" => true,
         else => false,
     };
 }
@@ -1209,34 +1203,29 @@ pub fn qualifyAnonType(self: *Lowering, table: *types.TypeTable, ty: TypeId, par
             const qname_id = table.internString(qualified);
             table.replaceKeyedInfo(ty, .{ .@"union" = .{ .name = qname_id, .fields = u.fields } });
         },
-        .tagged_union => |u| {
-            const old_name = table.getString(u.name);
+        .@"enum" => |e| {
+            const old_name = table.getString(e.name);
             if (!std.mem.eql(u8, old_name, "__anon")) return;
             const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ parent_name, field_name }) catch return;
             const qname_id = table.internString(qualified);
             // Rename variant payload structs: __anon.X → ParentStruct.field.X
-            for (u.fields) |f| {
-                if (!f.ty.isBuiltin()) {
-                    const finfo = table.get(f.ty);
+            for (e.variants) |v| {
+                if (!v.payload.isBuiltin()) {
+                    const finfo = table.get(v.payload);
                     if (finfo == .@"struct") {
                         const sname = table.getString(finfo.@"struct".name);
                         if (std.mem.startsWith(u8, sname, "__anon.")) {
                             const suffix = sname["__anon".len..]; // .VariantName
                             const sq = std.fmt.allocPrint(self.alloc, "{s}{s}", .{ qualified, suffix }) catch continue;
                             const sq_id = table.internString(sq);
-                            table.replaceKeyedInfo(f.ty, .{ .@"struct" = .{ .name = sq_id, .fields = finfo.@"struct".fields } });
+                            table.replaceKeyedInfo(v.payload, .{ .@"struct" = .{ .name = sq_id, .fields = finfo.@"struct".fields } });
                         }
                     }
                 }
             }
-            table.replaceKeyedInfo(ty, .{ .tagged_union = .{ .name = qname_id, .fields = u.fields, .tag_type = u.tag_type, .backing_type = u.backing_type, .explicit_tag_values = u.explicit_tag_values } });
-        },
-        .@"enum" => |e| {
-            const old_name = table.getString(e.name);
-            if (!std.mem.eql(u8, old_name, "__anon")) return;
-            const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ parent_name, field_name }) catch return;
-            const qname_id = table.internString(qualified);
-            table.replaceKeyedInfo(ty, .{ .@"enum" = .{ .name = qname_id, .variants = e.variants, .explicit_values = e.explicit_values } });
+            var renamed = e;
+            renamed.name = qname_id;
+            table.replaceKeyedInfo(ty, .{ .@"enum" = renamed });
         },
         .@"struct" => |s| {
             const old_name = table.getString(s.name);

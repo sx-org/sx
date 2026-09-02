@@ -1218,10 +1218,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         var target = self.target_type orelse .unresolved;
         while (!target.isBuiltin()) {
             const info = self.module.types.get(target);
-            if (info == .tagged_union) {
+            if (info == .@"enum" and info.@"enum".hasPayload()) {
                 const tag = self.resolveVariantIndex(target, c.callee.data.enum_literal.name);
-                if (tag < info.tagged_union.fields.len) {
-                    enum_payload_ty = info.tagged_union.fields[tag].ty;
+                if (tag < info.@"enum".variants.len) {
+                    enum_payload_ty = info.@"enum".variants[tag].payload;
                 }
                 break;
             }
@@ -1759,22 +1759,22 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // Try instantiate as type function
                             if (self.instantiateTypeFunction(inner_name, inner_name, fd, inner_call.args)) |result_ty| {
                                 const type_info = self.module.types.get(result_ty);
-                                if (type_info == .tagged_union) {
+                                if (type_info == .@"enum") {
                                     // Qualified enum construction: Type.variant(payload)
                                     if (!self.hasVariant(result_ty, fa.field)) {
-                                        self.emitBadVariant(result_ty, type_info.tagged_union, fa.field, c.callee.span);
+                                        self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
                                         return self.builder.enumInit(0, Ref.none, result_ty);
                                     }
-                                    // ORDINAL indexes `fields[]` (payload-type
+                                    // ORDINAL indexes `variants[]` (payload-type
                                     // lookup); the EXPLICIT tag value is what's
                                     // stored at runtime so match/C-interop agree.
                                     const ord = self.resolveVariantIndex(result_ty, fa.field);
                                     const tag = self.resolveVariantValue(result_ty, fa.field);
                                     var payload = if (args.items.len > 0) args.items[0] else Ref.none;
                                     if (!payload.isNone()) {
-                                        const fields = type_info.tagged_union.fields;
-                                        if (ord < fields.len) {
-                                            const field_ty = fields[ord].ty;
+                                        const variants = type_info.@"enum".variants;
+                                        if (ord < variants.len) {
+                                            const field_ty = variants[ord].payload;
                                             if (field_ty != .void) {
                                                 const payload_ty = self.inferExprType(c.args[0]);
                                                 if (field_ty != payload_ty) {
@@ -1784,14 +1784,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                         }
                                     }
                                     return self.builder.enumInit(tag, payload, result_ty);
-                                }
-                                if (type_info == .@"enum") {
-                                    if (!self.hasVariant(result_ty, fa.field)) {
-                                        self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
-                                        return self.builder.enumInit(0, Ref.none, result_ty);
-                                    }
-                                    const tag = self.resolveVariantIndex(result_ty, fa.field);
-                                    return self.builder.enumInit(tag, Ref.none, result_ty);
                                 }
                             }
                         }
@@ -1995,9 +1987,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const type_name_id = self.module.types.internString(type_name);
                     if (self.module.types.findByName(type_name_id)) |union_ty| {
                         const type_info = self.module.types.get(union_ty);
-                        if (type_info == .tagged_union) {
+                        if (type_info == .@"enum") {
                             if (!self.hasVariant(union_ty, func_name)) {
-                                self.emitBadVariant(union_ty, type_info.tagged_union, func_name, c.callee.span);
+                                self.emitBadEnumVariant(union_ty, type_info.@"enum", func_name, c.callee.span);
                                 return self.builder.enumInit(0, Ref.none, union_ty);
                             }
                             // ORDINAL indexes `fields[]`; the EXPLICIT tag value
@@ -2005,11 +1997,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             const ord = self.resolveVariantIndex(union_ty, func_name);
                             const tag = self.resolveVariantValue(union_ty, func_name);
                             var payload = if (args.items.len > 0) args.items[0] else Ref.none;
-                            // Coerce payload to match field type
+                            // Coerce payload to match the variant's payload type
                             if (!payload.isNone()) {
-                                const fields = type_info.tagged_union.fields;
-                                if (ord < fields.len) {
-                                    const field_ty = fields[ord].ty;
+                                const variants = type_info.@"enum".variants;
+                                if (ord < variants.len and variants[ord].payload != .void) {
+                                    const field_ty = variants[ord].payload;
                                     const payload_ty = self.inferExprType(c.args[0]);
                                     if (field_ty != payload_ty) {
                                         payload = self.coerceToType(payload, payload_ty, field_ty);
@@ -2017,14 +2009,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 }
                             }
                             return self.builder.enumInit(tag, payload, union_ty);
-                        }
-                        if (type_info == .@"enum") {
-                            if (!self.hasVariant(union_ty, func_name)) {
-                                self.emitBadEnumVariant(union_ty, type_info.@"enum", func_name, c.callee.span);
-                                return self.builder.enumInit(0, Ref.none, union_ty);
-                            }
-                            const tag = self.resolveVariantIndex(union_ty, func_name);
-                            return self.builder.enumInit(tag, Ref.none, union_ty);
                         }
                     }
                 }
@@ -2584,7 +2568,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
 
-            // .Variant(payload) — tagged enum construction. Requires target to be a tagged union.
+            // .Variant(payload) — payload enum construction. Requires target to be a payload enum.
             const target = blk: {
                 if (target_opt) |tgt| {
                     // A `?E` destination constructs the E and wraps at the
@@ -2593,7 +2577,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     var t = tgt;
                     while (!t.isBuiltin()) {
                         const info = self.module.types.get(t);
-                        if (info == .tagged_union) break :blk t;
+                        if (info == .@"enum" and info.@"enum".hasPayload()) break :blk t;
                         if (info != .optional) break;
                         t = info.optional.child;
                     }
@@ -2606,9 +2590,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Validate the variant EXISTS before resolving its index —
             // `resolveVariantIndex` returns 0 for an unknown name, which would
             // silently build the zeroth variant (`.int_(7)` on a renamed enum
-            // constructing `.null`). `target` is a tagged_union per the blk above.
+            // constructing `.null`). `target` is a payload enum per the blk above.
             if (!self.hasVariant(target, el.name)) {
-                self.emitBadVariant(target, self.module.types.get(target).tagged_union, el.name, c.callee.span);
+                self.emitBadEnumVariant(target, self.module.types.get(target).@"enum", el.name, c.callee.span);
                 return self.builder.enumInit(0, Ref.none, target);
             }
             // ORDINAL indexes `fields[]`; the EXPLICIT tag value is stored at
@@ -2625,10 +2609,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // lowered ref's type is authoritative.
             if (!payload.isNone() and !target.isBuiltin()) {
                 const info = self.module.types.get(target);
-                if (info == .tagged_union) {
-                    const fields = info.tagged_union.fields;
-                    if (ord < fields.len) {
-                        const field_ty = fields[ord].ty;
+                if (info == .@"enum") {
+                    const variants = info.@"enum".variants;
+                    if (ord < variants.len and variants[ord].payload != .void) {
+                        const field_ty = variants[ord].payload;
                         const payload_ty = self.builder.getRefType(payload);
                         if (field_ty != payload_ty) {
                             payload = self.coerceToType(payload, payload_ty, field_ty);

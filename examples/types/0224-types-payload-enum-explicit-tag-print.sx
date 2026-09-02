@@ -1,26 +1,26 @@
-// Printing a PAYLOAD-LESS variant of a TAGGED UNION (an enum that also has
+// Printing a PAYLOAD-LESS variant of a PAYLOAD ENUM (an enum that also has
 // payload-carrying variants) whose variants carry EXPLICIT tag values.
 //
-// A payload-less variant of a tagged union stores its EXPLICIT tag value at
+// A payload-less variant of a payload enum stores its EXPLICIT tag value at
 // runtime (`quit` stores 0x100), so the formatter's scan of the reflected
 // `.fields[i].value` reverse-maps 0x100 to ordinal 0 before reading the name.
 
 @import "modules/std.sx";
 
-// A tagged union: `key` carries an i64 payload, so `Ev` is a tagged_union
+// A payload enum: `key` carries an i64 payload, so `Ev` is a payload enum
 // (not a plain enum). Every variant has an explicit tag value.
 Ev :: enum { quit :: 0x100; key :: 0x300: i64; resize :: 0x400: i64; }
 
-// A tagged union whose payload-less variants are NOT the zeroth ordinal, so a
+// A payload enum whose payload-less variants are NOT the zeroth ordinal, so a
 // raw-tag mis-index could never coincide with the right name by luck.
 Sig :: enum { term :: 0x0F; interrupt :: 0x02; halt :: 0x1A: i64; }
 
 main :: () {
-    // Print a payload-less variant of an explicit-tag tagged union by name.
+    // Print a payload-less variant of an explicit-tag payload enum by name.
     print("{}\n", Ev.quit);          // .quit
     print("{} {}\n", Sig.term, Sig.interrupt);   // .term .interrupt
 
-    // The explicit tag value is the tagged-union `.tag` word.
+    // The explicit tag value is the payload enum `.tag` word.
     q : i64 = Ev.quit.tag;
     t : i64 = Sig.term.tag;
     print("{} {}\n", q, t);          // 256 15

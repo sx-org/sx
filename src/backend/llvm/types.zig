@@ -126,13 +126,8 @@ pub const TypeLowering = struct {
                 }
                 return c.LLVMStructTypeInContext(self.e.context, field_llvm_types.ptr, n, 0);
             },
-            .@"enum" => |e| {
-                // Use backing type if declared (e.g. enum u32 → i32), else i64
-                if (e.backing_type) |bt| return self.toLLVMType(bt);
-                return self.e.cached_i64;
-            },
             .@"union" => |u| {
-                // Untagged union — just [N x i8]
+                // Union — just [N x i8]
                 var max_size: usize = 0;
                 for (u.fields) |field| {
                     const sz = self.e.ir_mod.types.typeSizeBytes(field.ty);
@@ -141,21 +136,22 @@ pub const TypeLowering = struct {
                 if (max_size == 0) max_size = 8;
                 return c.LLVMArrayType2(self.e.cached_i8, @intCast(max_size));
             },
-            .tagged_union => |u| {
-                // Tagged union — { header, [N x i8] }, or the union's own backing
-                // struct when it states one.
+            .@"enum" => |u| {
+                // A payload-free enum is its tag word. A payload-carrying one is
+                // { header, [N x i8] }, or its own layout struct when it states one.
+                if (!u.hasPayload() and u.layout == null) return self.toLLVMType(u.tag_type);
                 var max_size: usize = 0;
-                for (u.fields) |field| {
-                    const sz = self.e.ir_mod.types.typeSizeBytes(field.ty);
+                for (u.variants) |v| {
+                    const sz = self.e.ir_mod.types.typeSizeBytes(v.payload);
                     if (sz > max_size) max_size = sz;
                 }
 
                 var header_size: usize = self.e.ir_mod.types.typeSizeBytes(u.tag_type);
-                if (u.backing_type) |bt| {
+                if (u.layout) |bt| {
                     const bi = self.e.ir_mod.types.get(bt);
                     if (bi == .@"struct" and bi.@"struct".fields.len > 1) {
                         const bfields = bi.@"struct".fields;
-                        // `{ tag, payload }` over the union's OWN tag word is a
+                        // `{ tag, payload }` over the enum's OWN tag word is a
                         // stated LAYOUT — an open set's — and is lowered as
                         // written, so the payload's element type (and therefore the
                         // value's alignment) is delivered rather than assumed.
@@ -173,9 +169,9 @@ pub const TypeLowering = struct {
                         if (backing_payload > max_size) max_size = backing_payload;
                     }
                 }
-                // The default shape. An all-void / memberless union has no payload
-                // bytes of its own, and the 8-byte floor keeps that case a
-                // nonempty aggregate.
+                // The default shape. A memberless enum with a stated layout has
+                // no payload bytes of its own, and the 8-byte floor keeps that
+                // case a nonempty aggregate.
                 if (max_size == 0) max_size = 8;
 
                 const header_llvm = c.LLVMIntTypeInContext(self.e.context, @intCast(header_size * 8));

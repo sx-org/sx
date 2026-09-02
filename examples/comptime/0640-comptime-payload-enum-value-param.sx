@@ -1,4 +1,4 @@
-// Comptime TAGGED-UNION value parameter: `$s: <TaggedUnion>` generalizes the
+// Comptime PAYLOAD ENUM value parameter: `$s: <PayloadEnum>` generalizes the
 // enum value-param mechanism (examples/0627) to a payload-bearing enum. The
 // argument is a constant variant literal — either bare (`.point`) or with a
 // payload (`.circle(5.0)`) — and binds the param so it resolves in the body:
@@ -24,7 +24,7 @@ classify :: ($s: Shape) -> i64 {
 
 // Variant tag read as a compile-time integer in a TYPE position (the array
 // dimension), exercising the `comptime_value_bindings` / `comptimeIntNamed`
-// integration contract for a tagged union.
+// integration contract for a payload enum.
 tagDim :: ($s: Shape) -> i64 {
     arr : [s]i64 = ---;
     return arr.len;

@@ -895,7 +895,8 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .failable, .@"error" => {},
+                .@"struct", .@"union", .failable, .@"error" => {},
+                .@"enum" => |e| if (!e.hasPayload()) continue,
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -2250,7 +2251,7 @@ pub const LLVMEmitter = struct {
             }
         }
 
-        // Struct types (strings, slices, tagged unions): compare fields individually
+        // Struct types (strings, slices, payload enums): compare fields individually
         if (kind == c.LLVMStructTypeKind and rhs_kind == c.LLVMStructTypeKind) {
             const n_fields = c.LLVMCountStructElementTypes(lhs_ty);
             if (n_fields >= 2) {
@@ -2259,12 +2260,12 @@ pub const LLVMEmitter = struct {
                 const f0_r = c.LLVMBuildExtractValue(self.builder, rhs, 0, "sc.r0");
                 const cmp0 = c.LLVMBuildICmp(self.builder, @intCast(int_pred), f0_l, f0_r, "sc.c0");
 
-                // Check if field 1 is an array (tagged union payload) — skip comparison
-                // For tagged unions {tag, [N x i8]}, the tag comparison alone is sufficient
+                // Check if field 1 is an array (payload enum payload) — skip comparison
+                // For payload enums {tag, [N x i8]}, the tag comparison alone is sufficient
                 const f1_ty = c.LLVMStructGetTypeAtIndex(lhs_ty, 1);
                 const f1_kind = c.LLVMGetTypeKind(f1_ty);
                 if (f1_kind == c.LLVMArrayTypeKind) {
-                    // Tagged union: compare tag only
+                    // Payload enum: compare tag only
                     self.mapRef(cmp0);
                     return;
                 }

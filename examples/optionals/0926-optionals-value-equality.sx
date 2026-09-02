@@ -45,7 +45,7 @@ main :: () {
     s := Style{ width = 2.0 };
     print("field {} {} {}\n", Style{} == STYLE_DEFAULT, s == STYLE_DEFAULT, s != STYLE_DEFAULT);
 
-    // Tagged-union payloads keep the bare rule: tag-only compare.
+    // Payload enum payloads keep the bare rule: tag-only compare.
     ua : ?U = U.a(1);
     ub : ?U = U.a(2);
     uc : ?U = U.b("x");

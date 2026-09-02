@@ -1,0 +1,12 @@
+// A payload-free enum has no member to write through: a variant name after
+// the dot is not a field of the value.
+@import "modules/std.sx";
+
+Color :: enum { red; green; }
+
+main :: () -> i32 {
+    c := Color.red;
+    c.red = 1;
+    _ = c;
+    return 0;
+}

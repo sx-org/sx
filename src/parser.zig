@@ -1344,7 +1344,7 @@ pub const Parser = struct {
         try self.expect(.l_brace);
         const members = try self.parseSetMembers(if (is_flags) .enum_flag else .enum_variant);
         try self.expect(.r_brace);
-        // Always produce enum_decl; variant_types distinguishes payload-less from tagged
+        // Always produce enum_decl; variant_types distinguishes payload-less from payload-bearing
         return try self.createNode(start_pos, .{ .enum_decl = .{
             .name = name,
             .variant_names = members.names,

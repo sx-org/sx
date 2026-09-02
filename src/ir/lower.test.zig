@@ -2120,7 +2120,7 @@ test "struct literal: untyped shapes SELF-TYPE — global const, inferred return
     }
 }
 
-test "lower: match on untagged union subject (payload binding) is diagnosed, not .unresolved" {
+test "lower: match on union subject (payload binding) is diagnosed, not .unresolved" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2130,7 +2130,7 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
     defer diags.deinit();
 
     // Register `Shape :: union { circle: i64; rect: i64; }` — a plain
-    // UNTAGGED union (no discriminant).
+    // union (no discriminant).
     const fields = [_]ir_mod.types.TypeInfo.StructInfo.Field{
         .{ .name = module.types.internString("circle"), .ty = .i64 },
         .{ .name = module.types.internString("rect"), .ty = .i64 },
@@ -2158,19 +2158,19 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
     // The subject-type gate subsumes the arm-level union rejection: the
-    // whole match on an untagged-union subject is refused up front — binding or
+    // whole match on a union subject is refused up front — binding or
     // not. Ungated, the capture's payload type leaks out as .unresolved and
     // panics at LLVM emission (declareFunction → toLLVMType).
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;
     for (diags.items.items) |d| {
-        if (d.level == .err and std.mem.indexOf(u8, d.message, "cannot match on untagged union 'Shape'") != null) found = true;
+        if (d.level == .err and std.mem.indexOf(u8, d.message, "cannot match on union 'Shape'") != null) found = true;
     }
     try std.testing.expect(found);
 }
 
-test "lower: match on untagged union subject (no binding) is diagnosed, not invalid IR" {
+test "lower: match on union subject (no binding) is diagnosed, not invalid IR" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2180,7 +2180,7 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
     defer diags.deinit();
 
     // Register `Shape :: union { circle: i64; rect: i64; }` — a plain
-    // UNTAGGED union (no discriminant).
+    // union (no discriminant).
     const fields = [_]ir_mod.types.TypeInfo.StructInfo.Field{
         .{ .name = module.types.internString("circle"), .ty = .i64 },
         .{ .name = module.types.internString("rect"), .ty = .i64 },
@@ -2217,7 +2217,7 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
 
     var found = false;
     for (diags.items.items) |d| {
-        if (d.level == .err and std.mem.indexOf(u8, d.message, "cannot match on untagged union 'Shape'") != null) found = true;
+        if (d.level == .err and std.mem.indexOf(u8, d.message, "cannot match on union 'Shape'") != null) found = true;
     }
     try std.testing.expect(found);
 }
@@ -2323,9 +2323,9 @@ test "lower: payload binding on a payload-less enum match is diagnosed, not .unr
     defer diags.deinit();
 
     // Register `Color :: enum { red; green; }` — a plain enum, no payloads.
-    const variants = [_]ir_mod.types.StringId{
-        module.types.internString("red"),
-        module.types.internString("green"),
+    const variants = [_]ir_mod.types.TypeInfo.EnumInfo.Variant{
+        .{ .name = module.types.internString("red") },
+        .{ .name = module.types.internString("green") },
     };
     _ = module.types.intern(.{ .@"enum" = .{ .name = module.types.internString("Color"), .variants = &variants } });
 
@@ -2350,13 +2350,13 @@ test "lower: payload binding on a payload-less enum match is diagnosed, not .unr
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
     // Pre-fold this leaked .unresolved through enum_payload just like the
-    // untagged-union shape; the generic guard rejects any binding whose
+    // union shape; the generic guard rejects any binding whose
     // payload type fails to resolve.
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;
     for (diags.items.items) |d| {
-        if (d.level == .err and std.mem.indexOf(u8, d.message, "cannot bind a payload from subject type 'Color'") != null) found = true;
+        if (d.level == .err and std.mem.indexOf(u8, d.message, "'red' carries no payload to bind") != null) found = true;
     }
     try std.testing.expect(found);
 }

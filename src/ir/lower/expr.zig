@@ -68,7 +68,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             }
         }
     }
-    // Check for tagged enum construction: .Variant{ payload_fields }
+    // Check for payload enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
         // An error member's brace group holds its payload, so a head naming one
@@ -82,14 +82,14 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             if (!target.isBuiltin()) {
                 switch (self.module.types.get(target)) {
                     .@"error" => return self.lowerErrorMemberConstruction(sl, target, variant_name, span),
-                    .tagged_union => |tu| return self.lowerTaggedEnumLiteral(sl, variant_name, target, tu, span),
+                    .@"enum" => |e| if (e.hasPayload()) return self.lowerTaggedEnumLiteral(sl, variant_name, target, e, span),
                     else => {},
                 }
             }
         }
         // Qualified variant construction: `Ev.key{ ... }`. Here `type_expr`
         // is a field_access (`Ev.key`), not an `enum_literal` — `Ev` names the
-        // tagged union and `key` the variant. Route it through the same path
+        // payload enum and `key` the variant. Route it through the same path
         // as the inferred `.key{ ... }` form; without this the
         // field_access falls to `resolveTypeWithBindings`, which cannot place
         // `Ev.key` in type position and returns `.unresolved` → LLVM panic.
@@ -113,7 +113,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     else => null,
                 };
                 // Diagnostic-free PROBE: this pass only decides whether the
-                // head is a tagged union (`Ev.key{...}` variant construction).
+                // head is a payload enum (`Ev.key{...}` variant construction).
                 // The object may equally be a namespace alias (`m.Cfg{...}`)
                 // — the real head resolution below owns the
                 // diagnostics, so a loud `resolveNominalLeaf` here would blast
@@ -134,8 +134,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             }
             if (!resolved.isBuiltin() and resolved != .unresolved) {
                 const info = self.module.types.get(resolved);
-                if (info == .tagged_union) {
-                    return self.lowerTaggedEnumLiteral(sl, fa.field, resolved, info.tagged_union, span);
+                if (info == .@"enum" and info.@"enum".hasPayload()) {
+                    return self.lowerTaggedEnumLiteral(sl, fa.field, resolved, info.@"enum", span);
                 }
             }
         }
@@ -144,7 +144,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // A contextual literal against an OPEN SET target. A set slot's contents are
     // whichever MEMBER it carries, and a contextual literal names no type at all —
     // so there is nothing for the expected type to lift (spec: Open Sets —
-    // formation). Refused before the tagged-union arms below, whose "variant"
+    // formation). Refused before the payload enum arms below, whose "variant"
     // vocabulary is not the set's.
     if (sl.type_expr == null and sl.struct_name == null) {
         if (self.target_type) |target| {
@@ -158,7 +158,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
-    // `.{ name = ... }` against a tagged-union target_type. Reject:
+    // `.{ name = ... }` against a payload enum target_type. Reject:
     // the only valid construction forms are `.variant(payload)` and
     // `.variant{ field, ... }`. Falling through would lower the
     // user's values straight into the `(tag, payload_bytes)` slot
@@ -167,20 +167,20 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const tu_ty = self.target_type orelse .unresolved;
         if (!tu_ty.isBuiltin()) {
             const tu_info = self.module.types.get(tu_ty);
-            if (tu_info == .tagged_union) {
+            if (tu_info == .@"enum" and tu_info.@"enum".hasPayload()) {
                 if (sl.field_inits.len > 0 and sl.field_inits[0].name != null) {
                     const first_name = sl.field_inits[0].name.?;
                     if (self.diagnostics) |diags| {
                         const ty_name = self.formatTypeName(tu_ty);
-                        if (self.findTaggedVariant(tu_info.tagged_union, first_name) != null) {
+                        if (self.findTaggedVariant(tu_info.@"enum", first_name) != null) {
                             diags.addFmt(
                                 .err,
                                 span,
-                                "cannot construct tagged union '{s}' from `.{{ {s} = ... }}`; use `.{s}(...)` or `.{s}.{{ ... }}`",
+                                "cannot construct payload enum '{s}' from `.{{ {s} = ... }}`; use `.{s}(...)` or `.{s}.{{ ... }}`",
                                 .{ ty_name, first_name, first_name, first_name },
                             );
                         } else {
-                            self.emitBadVariant(tu_ty, tu_info.tagged_union, first_name, span);
+                            self.emitBadEnumVariant(tu_ty, tu_info.@"enum", first_name, span);
                         }
                     }
                     return self.builder.enumInit(0, Ref.none, tu_ty);
@@ -202,7 +202,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     else
         self.target_type orelse .unresolved;
 
-    // Plain (untagged) union target: build by writing each named member into a
+    // Plain union target: build by writing each named member into a
     // union-sized slot. `getStructFields` returns empty for a union, so the
     // generic struct path below would emit a malformed `structInit` whose
     // overlapping zero-fill clobbers the named member. Tagged
@@ -297,7 +297,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     if (self.refuseCursorValue(ty, span, "construct")) return self.builder.constUndef(ty);
 
     // A `.{ ... }` literal can only build an AGGREGATE. After the
-    // tagged-union / union / optional intercepts above, the named and
+    // payload enum / union / optional intercepts above, the named and
     // positional paths below handle exactly: struct, tuple, array, vector,
     // the two {ptr, len} fat pointers — a slice (`sl : []T = .{ ptr = …,
     // len = … }`, used throughout the stdlib/corpus) and the builtin `string`
@@ -744,17 +744,18 @@ pub fn mentionField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Sp
 fn promotedUnionMemberRead(
     self: *Lowering,
     obj: Ref,
-    union_fields: []const types.TypeInfo.StructInfo.Field,
+    obj_ty: TypeId,
     field: []const u8,
     span: ast.Span,
 ) ?Ref {
-    for (union_fields) |f| {
-        if (!self.payloadPromotes(f.ty)) continue;
-        switch (self.mentionField(f.ty, field, span)) {
+    var m: usize = 0;
+    while (self.module.types.memberType(obj_ty, @intCast(m))) |mty| : (m += 1) {
+        if (!self.payloadPromotes(mty)) continue;
+        switch (self.mentionField(mty, field, span)) {
             .missing => {},
             .private => return self.emitPlaceholder(field),
             .hit => |h| {
-                const reinterpreted = self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = 0 } }, f.ty);
+                const reinterpreted = self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = 0 } }, mty);
                 return self.builder.structGet(reinterpreted, h.index, h.ty);
             },
         }
@@ -985,17 +986,14 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     // Check union fields + promoted fields
     if (!ty.isBuiltin()) {
         const info = self.module.types.get(ty);
-        const u_fields: ?[]const types.TypeInfo.StructInfo.Field = switch (info) {
-            .@"union" => |u| u.fields,
-            .tagged_union => |u| u.fields,
-            else => null,
-        };
-        if (u_fields) |ufields| {
-            for (ufields) |f| {
-                if (f.name == field_name_id) return f.ty;
-                if (!self.payloadPromotes(f.ty)) continue;
+        var m: usize = 0;
+        if (info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload())) {
+            while (self.module.types.memberName(ty, @intCast(m))) |mname| : (m += 1) {
+                const mty = self.module.types.memberType(ty, @intCast(m)) orelse break;
+                if (mname == field_name_id) return mty;
+                if (!self.payloadPromotes(mty)) continue;
                 // Members promoted out of a struct variant
-                switch (self.lookupField(f.ty, field)) {
+                switch (self.lookupField(mty, field)) {
                     .hit, .private => |h| return h.ty,
                     .missing => {},
                 }
@@ -1151,7 +1149,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     self.setCurrentSourceFile(saved_src);
                     if (ty != .unresolved and !ty.isBuiltin()) {
                         const info = self.module.types.get(ty);
-                        if (info == .@"enum" or info == .tagged_union) {
+                        if (info == .@"enum") {
                             const synth = self.alloc.create(Node) catch null;
                             if (synth) |n| {
                                 n.* = .{ .span = span, .data = .{ .enum_literal = .{ .name = fa.field } } };
@@ -1191,7 +1189,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     // Bare `Enum.variant` — a qualified enum literal. When the object is a type
-    // NAME resolving to an enum / tagged-union (not shadowed by a value binding /
+    // NAME resolving to an enum (not shadowed by a value binding /
     // global value) and `field` is a PAYLOADLESS variant, construct it like the
     // leading-dot `.variant` in a typed context. Mirrors the `alias.Enum.variant`
     // namespace path above. Restricted to payloadless variants so a payload-
@@ -1977,29 +1975,28 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
     if (!obj_ty.isBuiltin()) {
         const info = self.module.types.get(obj_ty);
         switch (info) {
-            .tagged_union => |u| {
+            .@"enum" => |u| if (u.hasPayload()) {
                 // .tag → extract the enum tag value with the correct tag type
                 if (std.mem.eql(u8, field, "tag")) {
                     return self.builder.emit(.{ .enum_tag = .{ .operand = obj } }, u.tag_type);
                 }
-                // Tagged union — use enum_payload
-                for (u.fields, 0..) |f, i| {
-                    if (f.name == field_name_id) {
-                        return self.builder.emit(.{ .enum_payload = .{ .base = obj, .field_index = @intCast(i) } }, f.ty);
+                for (u.variants, 0..) |v, i| {
+                    if (v.name == field_name_id) {
+                        return self.builder.emit(.{ .enum_payload = .{ .base = obj, .field_index = @intCast(i) } }, v.payload);
                     }
                 }
                 // Promoted members of a struct variant
-                if (promotedUnionMemberRead(self, obj, u.fields, field, span)) |r| return r;
+                if (promotedUnionMemberRead(self, obj, obj_ty, field, span)) |r| return r;
             },
             .@"union" => |u| {
-                // Untagged union — use union_get to reinterpret bytes
+                // Union — use union_get to reinterpret bytes
                 for (u.fields, 0..) |f, i| {
                     if (f.name == field_name_id) {
                         return self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = @intCast(i) } }, f.ty);
                     }
                 }
                 // Promoted members of a struct variant
-                if (promotedUnionMemberRead(self, obj, u.fields, field, span)) |r| return r;
+                if (promotedUnionMemberRead(self, obj, obj_ty, field, span)) |r| return r;
             },
             else => {},
         }
@@ -2074,7 +2071,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
         return self.lowerErrorMemberShorthand(el.name, span);
     }
 
-    // The destination must be a known enum / tagged union that carries the
+    // The destination must be a known enum that carries the
     // named variant; any other shape would lower to a silent 0.
     if (target == .unresolved) {
         // Cascade guard: an unresolved destination usually means the slot's
@@ -2094,21 +2091,12 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
         switch (info) {
             .@"enum" => |e| {
                 for (e.variants) |v| {
-                    if (v == name_id) {
+                    if (v.name == name_id) {
                         known_variant = true;
                         break;
                     }
                 }
                 if (!known_variant) self.emitBadEnumVariant(target, e, el.name, span);
-            },
-            .tagged_union => |u| {
-                for (u.fields) |f| {
-                    if (f.name == name_id) {
-                        known_variant = true;
-                        break;
-                    }
-                }
-                if (!known_variant) self.emitBadVariant(target, u, el.name, span);
             },
             else => {},
         }
@@ -2116,7 +2104,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     if (!known_variant) {
         if (self.diagnostics) |d| {
             const builtin_or_non_enum = target.isBuiltin() or switch (self.module.types.get(target)) {
-                .@"enum", .tagged_union => false,
+                .@"enum" => false,
                 else => true,
             };
             if (builtin_or_non_enum) {
@@ -2130,19 +2118,14 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     return self.builder.enumInit(tag, Ref.none, target);
 }
 
-/// Is `field` a PAYLOADLESS variant of enum/tagged-union `ty`? A plain `.@"enum"`
-/// variant is always payloadless; a `tagged_union` variant is payloadless iff its
-/// payload is `void`. Used by `lowerFieldAccess` to recognise a bare
+/// Is `field` a variant of enum `ty` whose payload is `void`? Used by
+/// `lowerFieldAccess` to recognise a bare
 /// `Enum.variant` qualified literal (payload-carrying variants stay on the call
 /// path, which supplies the payload). False for any non-enum type / unknown field.
 pub fn isPayloadlessVariant(self: *Lowering, ty: TypeId, field: []const u8) bool {
     return switch (self.module.types.get(ty)) {
         .@"enum" => |e| blk: {
-            for (e.variants) |v| if (std.mem.eql(u8, self.module.types.getString(v), field)) break :blk true;
-            break :blk false;
-        },
-        .tagged_union => |u| blk: {
-            for (u.fields) |f| if (std.mem.eql(u8, self.module.types.getString(f.name), field)) break :blk (f.ty == .void);
+            for (e.variants) |v| if (std.mem.eql(u8, self.module.types.getString(v.name), field)) break :blk (v.payload == .void);
             break :blk false;
         },
         else => false,
@@ -2163,7 +2146,7 @@ pub fn emitBadEnumVariant(
     var list: std.ArrayList(u8) = .empty;
     for (enum_info.variants, 0..) |v, i| {
         if (i > 0) list.appendSlice(self.alloc, ", ") catch return;
-        list.appendSlice(self.alloc, self.module.types.getString(v)) catch return;
+        list.appendSlice(self.alloc, self.module.types.getString(v.name)) catch return;
     }
     diags.addFmt(
         .err,
@@ -2229,18 +2212,18 @@ pub fn lowerQualifiedErrorMember(self: *Lowering, set_ty: TypeId, member: []cons
     return self.builder.constInt(@as(i64, @intCast(id)), set_ty);
 }
 
-/// Lower a tagged enum construction: .Variant{ field_inits }
+/// Lower a payload enum construction: .Variant{ field_inits }
 /// The struct literal provides the payload fields; we wrap them in an enum_init.
 pub fn lowerTaggedEnumLiteral(
     self: *Lowering,
     sl: *const ast.StructLiteral,
     variant_name: []const u8,
     union_ty: TypeId,
-    union_info: types.TypeInfo.TaggedUnionInfo,
+    union_info: types.TypeInfo.EnumInfo,
     span: ast.Span,
 ) Ref {
     if (self.findTaggedVariant(union_info, variant_name) == null) {
-        self.emitBadVariant(union_ty, union_info, variant_name, span);
+        self.emitBadEnumVariant(union_ty, union_info, variant_name, span);
         return self.builder.enumInit(0, Ref.none, union_ty);
     }
 
@@ -2249,9 +2232,9 @@ pub fn lowerTaggedEnumLiteral(
 
     // Find the payload type for this variant
     var payload_ty: TypeId = .void;
-    for (union_info.fields) |f| {
-        if (f.name == name_id) {
-            payload_ty = f.ty;
+    for (union_info.variants) |v| {
+        if (v.name == name_id) {
+            payload_ty = v.payload;
             break;
         }
     }
@@ -2337,37 +2320,16 @@ pub fn lowerTaggedEnumLiteral(
 
 pub fn findTaggedVariant(
     self: *Lowering,
-    union_info: types.TypeInfo.TaggedUnionInfo,
+    union_info: types.TypeInfo.EnumInfo,
     variant_name: []const u8,
 ) ?usize {
     const name_id = self.module.types.internString(variant_name);
-    for (union_info.fields, 0..) |f, i| {
-        if (f.name == name_id) return i;
+    for (union_info.variants, 0..) |v, i| {
+        if (v.name == name_id) return i;
     }
     return null;
 }
 
-pub fn emitBadVariant(
-    self: *Lowering,
-    union_ty: TypeId,
-    union_info: types.TypeInfo.TaggedUnionInfo,
-    variant_name: []const u8,
-    span: ast.Span,
-) void {
-    const diags = self.diagnostics orelse return;
-    const ty_name = self.formatTypeName(union_ty);
-    var list: std.ArrayList(u8) = .empty;
-    for (union_info.fields, 0..) |f, i| {
-        if (i > 0) list.appendSlice(self.alloc, ", ") catch return;
-        list.appendSlice(self.alloc, self.module.types.getString(f.name)) catch return;
-    }
-    diags.addFmt(
-        .err,
-        span,
-        "'{s}' is not a variant of '{s}' (variants are: {s})",
-        .{ variant_name, ty_name, list.items },
-    );
-}
 
 /// Resolve a variant name to its runtime value (flags: power-of-2, regular: index).
 pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8) u32 {
@@ -2377,18 +2339,8 @@ pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8
     switch (info) {
         .@"enum" => |e| {
             for (e.variants, 0..) |v, i| {
-                if (v == name_id) {
-                    if (e.explicit_values) |vals| {
-                        if (i < vals.len) return @intCast(@as(u64, @bitCast(vals[i])));
-                    }
-                    return @intCast(i);
-                }
-            }
-        },
-        .tagged_union => |u| {
-            for (u.fields, 0..) |f, i| {
-                if (f.name == name_id) {
-                    if (u.explicit_tag_values) |vals| {
+                if (v.name == name_id) {
+                    if (e.values) |vals| {
                         if (i < vals.len) return @intCast(@as(u64, @bitCast(vals[i])));
                     }
                     return @intCast(i);
@@ -2400,7 +2352,7 @@ pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8
     return 0;
 }
 
-/// True iff `variant_name` is a declared variant of the enum / tagged-union
+/// True iff `variant_name` is a declared variant of the enum
 /// `ty`. The call-shaped construction paths (`.Variant(payload)` /
 /// `Type.Variant(payload)`) must gate on this BEFORE `resolveVariantIndex`,
 /// which returns 0 (the zeroth variant) for an unknown name — silently
@@ -2411,11 +2363,7 @@ pub fn hasVariant(self: *Lowering, ty: TypeId, variant_name: []const u8) bool {
     const name_id = self.module.types.internString(variant_name);
     return switch (self.module.types.get(ty)) {
         .@"enum" => |e| blk: {
-            for (e.variants) |v| if (v == name_id) break :blk true;
-            break :blk false;
-        },
-        .tagged_union => |u| blk: {
-            for (u.fields) |f| if (f.name == name_id) break :blk true;
+            for (e.variants) |v| if (v.name == name_id) break :blk true;
             break :blk false;
         },
         else => false,
@@ -2428,14 +2376,9 @@ pub fn resolveVariantIndex(self: *Lowering, ty: TypeId, variant_name: []const u8
     const info = self.module.types.get(ty);
     const name_id = self.module.types.internString(variant_name);
     switch (info) {
-        .tagged_union => |u| {
-            for (u.fields, 0..) |f, i| {
-                if (f.name == name_id) return @intCast(i);
-            }
-        },
         .@"enum" => |e| {
             for (e.variants, 0..) |v, i| {
-                if (v == name_id) return @intCast(i);
+                if (v.name == name_id) return @intCast(i);
             }
         },
         else => {},
@@ -5215,7 +5158,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     if (lhs_ty != .void and lhs_ty != .unresolved) {
         if (!lhs_ty.isBuiltin()) {
             const lhs_info = self.module.types.get(lhs_ty);
-            if (lhs_info == .@"enum" or lhs_info == .@"union" or lhs_info == .tagged_union) {
+            if (lhs_info == .@"enum" or lhs_info == .@"union") {
                 self.target_type = lhs_ty;
             } else if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) {
                 // `?T == <rhs>`: type the RHS at the payload so a literal
@@ -5342,14 +5285,14 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // Non-comparable aggregate `==` / `!=` guard.
     //
-    // An untagged `union { ... }` and a fixed `[N]T` array are raw byte /
+    // A `union { ... }` and a fixed `[N]T` array are raw byte /
     // element aggregates with NO defined value-equality: a union's inactive-
     // variant + padding bytes are unspecified, so a byte-wise `icmp` over the
     // `[N x i8]` union storage (or `[N x T]` array storage) is both semantically
     // wrong AND rejected by the LLVM verifier ("Invalid operand types for ICmp").
     // Reject at lower time — where the span and the named type are available —
     // with a located diagnostic + a hint to compare a specific variant/element
-    // instead, rather than emitting invalid IR downstream. Tagged unions (compare
+    // instead, rather than emitting invalid IR downstream. Payload enums (compare
     // by tag), payload-less enums, tuples, strings, slices, and optionals all have
     // their own valid compare paths and are unaffected.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
@@ -5377,13 +5320,13 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // unspecified pad between an `i8` and an `i64`). Do it at LOWER time, where
     // each field's TypeId + the operand span are available: emit a per-field
     // `cmp_eq`/`cmp_ne` against the field's OWN type (so a float field gets
-    // fcmp, a string field str_eq, a nested struct recurses, a tagged-union
+    // fcmp, a string field str_eq, a nested struct recurses, a payload enum
     // field tag-compares) and AND-reduce (`==`) / OR-reduce (`!=`). This keeps
     // the `emit_llvm` struct arm (which handles only a 2-scalar-field shape,
     // silently drops fields 2+, and mis-ICMPs non-int fields) from ever seeing
-    // a user struct — it sees only the string/slice/tagged-union `{ptr,len}` /
+    // a user struct — it sees only the string/slice/payload enum `{ptr,len}` /
     // `{tag,payload}` reductions it is written for.
-    // Non-comparable sub-fields (untagged union, fixed array) are rejected with
+    // Non-comparable sub-fields (union, fixed array) are rejected with
     // a located diagnostic, consistent with rejecting those shapes bare.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
         const eq_info = self.module.types.get(ty);
@@ -5615,11 +5558,11 @@ fn lowerPointerDistance(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, span:
 /// natural "two structs are equal iff every field is equal" semantics. Padding
 /// bytes are never read (that is exactly why field-wise beats a byte-compare).
 ///
-/// A field that is not itself comparable — an untagged `union`, a fixed `[N]T`
+/// A field that is not itself comparable — a `union`, a fixed `[N]T`
 /// array, or an `?T` optional — is rejected with a located diagnostic, mirroring
 /// how those shapes are rejected as bare `==` operands (and by the
 /// optional-operand guard). The reduced per-field comparisons that DO get built
-/// are scalar / pointer / string / slice / tagged-union / nested-struct — each
+/// are scalar / pointer / string / slice / payload enum / nested-struct — each
 /// with its own valid lowering — so `emit_llvm`'s narrow struct arm never sees a
 /// user struct.
 pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, ty: TypeId) Ref {
@@ -5739,19 +5682,17 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
             if (bad) break :blk null;
             break :blk acc.?;
         },
-        // Tagged union: tag-only compare, matching bare tagged-union `==`. A
-        // `cmp_eq` on the `{tag,[N x i8]}` value reaches emit_llvm's tag-only arm.
-        .tagged_union => self.builder.cmpEq(lf, rf),
         // Slice (`{ptr,len}` fat pointer): pointer+len identity, same as bare
         // slice `==`. emit_llvm's 2-scalar-field arm handles it.
         .slice => self.builder.cmpEq(lf, rf),
-        // Enum (payload-less, i-backed) and pointers-by-info: scalar identity.
+        // Enum and pointers-by-info: scalar identity; a payload-carrying enum
+        // compares its tag only (emit_llvm's tag-only arm).
         .@"enum", .pointer, .many_pointer => self.builder.cmpEq(lf, rf),
         // Optional field: both-null equal, one-null unequal, both-present →
         // payload compare — the same rule as bare `?T == ?T`.
         .optional => self.lowerOptionalEquality(lf, rf, fi.optional.child, span),
         // Non-comparable field types — rejected. An
-        // untagged union's inactive bytes are unspecified; a fixed array has no
+        // union's inactive bytes are unspecified; a fixed array has no
         // defined value-equality (compare elements). Each mirrors how the bare
         // shape is rejected as a top-level `==` operand.
         .@"union", .array => blk: {

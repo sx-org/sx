@@ -8,7 +8,7 @@
 // The lexer has no exponent notation and the default float formatter is crude
 // so these limits can be pinned NEITHER by literal comparison NOR
 // by printing. Every accessor is asserted instead by reinterpreting its bits
-// through an untagged union and comparing against the exact IEEE-754 hex
+// through a union and comparing against the exact IEEE-754 hex
 // pattern — plus the defining-property checks that no other value could satisfy.
 //
 // Semantics (Agra-ruled, consistent with the integer accessors):

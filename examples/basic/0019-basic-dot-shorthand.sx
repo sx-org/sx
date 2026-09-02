@@ -1,7 +1,7 @@
 @import "modules/std.sx";
 
 // Dot-shorthand `.identifier(args)` resolves against the expected type, both
-// for tagged-enum payload construction and for struct static methods.
+// for payload-enum construction and for struct static methods.
 
 // --- Type declarations ---
 
@@ -51,7 +51,7 @@ Result :: enum {
 }
 
 main :: () {
-    print("--- tagged enum compat ---\n");
+    print("--- payload enum compat ---\n");
 
     // T1: .variant(payload) in typed variable declaration
     {
@@ -128,7 +128,7 @@ main :: () {
         print("T8c: {}\n", describe(.none));
     }
 
-    // T9: Tagged enum with string payload
+    // T9: Payload enum with string payload
     {
         r : Result = .ok(42);
         ms := match r {
@@ -138,7 +138,7 @@ main :: () {
         print("T9: {}\n", ms);
     }
 
-    // T10: Match as expression returning tagged enum
+    // T10: Match as expression returning payload enum
     {
         select :: (n: i32) -> Shape {
             match n {

@@ -266,22 +266,19 @@ pub const ExprTyper = struct {
                 if (self.l.errorViewFieldType(obj_ty, fa.field)) |t| return t;
                 if (!obj_ty.isBuiltin()) {
                     const field_name_id = self.l.module.types.internString(fa.field);
-                    // Check union fields (tagged enum payloads) + promoted struct fields
+                    // Check union fields (payload enum payloads) + promoted struct fields
                     const info = self.l.module.types.get(obj_ty);
-                    const u_fields2: ?[]const types.TypeInfo.StructInfo.Field = switch (info) {
-                        .@"union" => |u| u.fields,
-                        .tagged_union => |u| u.fields,
-                        else => null,
-                    };
-                    if (u_fields2) |ufields| {
-                        for (ufields) |f| {
-                            if (f.name == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(f.ty) else f.ty;
-                            if (!self.l.payloadPromotes(f.ty)) continue;
-                            // Members promoted out of a struct variant
-                            switch (self.l.lookupField(f.ty, fa.field)) {
-                                .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
-                                .missing => {},
-                            }
+                    var m: usize = 0;
+                    const overlay = info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload());
+                    while (self.l.module.types.memberName(obj_ty, @intCast(m))) |mname| : (m += 1) {
+                        if (!overlay) break;
+                        const mty = self.l.module.types.memberType(obj_ty, @intCast(m)) orelse break;
+                        if (mname == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(mty) else mty;
+                        if (!self.l.payloadPromotes(mty)) continue;
+                        // Members promoted out of a struct variant
+                        switch (self.l.lookupField(mty, fa.field)) {
+                            .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
+                            .missing => {},
                         }
                     }
                     // Letter-swizzle on a vector, array, or slice. One letter
@@ -329,7 +326,7 @@ pub const ExprTyper = struct {
                 // Bare `Enum.variant` — a qualified enum literal read as a VALUE
                 // (its type is the enum). Mirrors the `lowerFieldAccess`
                 // qualified-enum-literal path: object is a type NAME resolving to
-                // an enum / tagged-union (not shadowed by a value binding / global
+                // an enum (not shadowed by a value binding / global
                 // value) and `field` is a PAYLOADLESS variant. Without this, a
                 // direct `go(E.x)` generic-arg inference (and a `hash_val(E.A)`
                 // key) yielded `.unresolved` for the value's type.
@@ -488,8 +485,8 @@ pub const ExprTyper = struct {
                     // An error member's brace group holds its payload, so the
                     // literal IS a channel value of the set the head names.
                     if (self.l.qualifiedErrorMember(te)) |qm| return qm.set;
-                    // `Ev.key{ ... }` — qualified tagged-union variant
-                    // construction: the literal's TYPE is the tagged union
+                    // `Ev.key{ ... }` — qualified payload enum variant
+                    // construction: the literal's TYPE is the payload enum
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
                     // (side-effect-free `findByName`) so inference doesn't fall
                     // to the type_bridge "field_access in type position"
@@ -500,7 +497,7 @@ pub const ExprTyper = struct {
                             defer self.l.alloc.free(path);
                             switch (self.l.qualifiedMemberVerdict(path)) {
                                 .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
-                                    .resolved => |oty| if (!oty.isBuiltin() and self.l.module.types.get(oty) == .tagged_union) return oty,
+                                    .resolved => |oty| if (!oty.isBuiltin() and self.l.module.types.get(oty) == .@"enum" and self.l.module.types.get(oty).@"enum".hasPayload()) return oty,
                                     else => {},
                                 },
                                 .not_qualified, .missing, .ambiguous => {},
@@ -514,7 +511,7 @@ pub const ExprTyper = struct {
                         if (obj_name) |on| {
                             const oid = self.l.module.types.internString(on);
                             if (self.l.module.types.findByName(oid)) |oty| {
-                                if (self.l.module.types.get(oty) == .tagged_union) return oty;
+                                if (self.l.module.types.get(oty) == .@"enum" and self.l.module.types.get(oty).@"enum".hasPayload()) return oty;
                             }
                         }
                     }
@@ -536,7 +533,8 @@ pub const ExprTyper = struct {
                     const usable = if (tt.isBuiltin())
                         tt == .string
                     else switch (self.l.module.types.get(tt)) {
-                        .@"struct", .array, .vector, .slice, .closure, .@"union", .tagged_union, .optional, .failable => true,
+                        .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
+                        .@"enum" => |e| e.hasPayload(),
                         else => false,
                     };
                     if (usable) return tt;

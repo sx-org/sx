@@ -5,7 +5,7 @@
 //
 // The compare lowers field-wise in src/ir/lower/expr.zig (lowerStructEquality)
 // so every field participates and each field is compared against its own type
-// (float→fcmp, string→strEq, nested struct→recurse, tagged-union field→
+// (float→fcmp, string→strEq, nested struct→recurse, payload enum field→
 // tag-only).
 @import "modules/std.sx";
 
@@ -76,7 +76,7 @@ main :: () -> i32 {
     report("pad eq", p1 == p2);         // true
     report("pad differs", p1 == p3);    // false
 
-    // Tagged-union field: tag-only, matching bare tagged-union `==`.
+    // Payload enum field: tag-only, matching bare payload enum `==`.
     t1 : WithTU = .{ a = 1, e = .circle(1.0) };
     t2 : WithTU = .{ a = 1, e = .circle(2.0) };  // same tag, differing payload
     t3 : WithTU = .{ a = 1, e = .rect(1) };      // different tag

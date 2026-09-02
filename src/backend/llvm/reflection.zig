@@ -205,8 +205,8 @@ pub const Reflection = struct {
                 .offsets => blk: {
                     // Member offsets from the single source of truth
                     // (`memberOffsetBytes`): struct/tuple field offsets,
-                    // tagged-union PAYLOAD offset (same for every variant),
-                    // untagged-union arms at 0. Kinds without addressable
+                    // payload enum PAYLOAD offset (same for every variant),
+                    // union arms at 0. Kinds without addressable
                     // members table 0.
                     var vals = std.ArrayList(c.LLVMValueRef).empty;
                     defer vals.deinit(self.e.alloc);
@@ -238,8 +238,8 @@ pub const Reflection = struct {
 
     // ── Runtime `@typeInfo(tp)` const records ────────────────
     //
-    // One constant per TypeId whose BYTES match the sx `TypeInfo` tagged
-    // union (tag word at 0, payload at tag_size — buildTypeInfo's layout
+    // One constant per TypeId whose BYTES match the sx `TypeInfo` payload
+    // enum (tag word at 0, payload at tag_size — buildTypeInfo's layout
     // convention), reached through a master `[N x ptr]`. Each record is its
     // own global typed per its kind's payload shape (padding arrays place
     // members at exact offsets); the runtime arm loads the record THROUGH
@@ -306,7 +306,7 @@ pub const Reflection = struct {
     pub fn getOrBuildTypeInfoRecords(self: Reflection, ti_ty: TypeId) c.LLVMValueRef {
         if (self.e.type_info_records) |g| return g;
         const tt = &self.e.ir_mod.types;
-        const ti = tt.get(ti_ty).tagged_union;
+        const ti = tt.get(ti_ty).@"enum";
         const tag_size: usize = tt.typeSizeBytes(ti.tag_type);
         const rec_size: usize = tt.typeSizeBytes(ti_ty);
         const n: u32 = @intCast(tt.infos.items.len);
@@ -314,7 +314,7 @@ pub const Reflection = struct {
         // variant name -> ordinal, from the MODULE's TypeInfo declaration.
         var ordinals = std.StringHashMap(u32).init(self.e.alloc);
         defer ordinals.deinit();
-        for (ti.fields, 0..) |f, i| ordinals.put(tt.getString(f.name), @intCast(i)) catch unreachable;
+        for (ti.variants, 0..) |v, i| ordinals.put(tt.getString(v.name), @intCast(i)) catch unreachable;
 
         var recs = std.ArrayList(c.LLVMValueRef).empty;
         defer recs.deinit(self.e.alloc);
@@ -444,12 +444,11 @@ pub const Reflection = struct {
                 const arr = self.memberElems(tt, ti, vname, tid, count);
                 placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
                 placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(count), 0), .size = 8 }) catch unreachable;
-            },
-            .tagged_union => |u| {
-                vname = "enum";
-                const arr = self.memberElems(tt, ti, "enum", tid, u.fields.len);
-                placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
-                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(u.fields.len), 0), .size = 8 }) catch unreachable;
+                if (members == null) {
+                    // `tag` and `tagOffset`: the tag's type, at the value's first word.
+                    placed.append(self.e.alloc, .{ .off = P + 16, .val = self.tyWord(e.tag_type), .size = 8 }) catch unreachable;
+                    placed.append(self.e.alloc, .{ .off = P + 24, .val = c.LLVMConstInt(self.e.cached_i64, 0, 0), .size = 8 }) catch unreachable;
+                }
             },
             .@"struct" => |st| {
                 vname = "struct";
@@ -487,9 +486,9 @@ pub const Reflection = struct {
     fn memberElems(self: Reflection, tt: anytype, ti: anytype, family: []const u8, tid: TypeId, count: usize) c.LLVMValueRef {
         // Find the payload struct + its slice elem type from the TypeInfo decl.
         var elem_sx: TypeId = .void;
-        for (ti.fields) |f| {
+        for (ti.variants) |f| {
             if (!std.mem.eql(u8, tt.getString(f.name), family)) continue;
-            const pay = tt.get(f.ty).@"struct";
+            const pay = tt.get(f.payload).@"struct";
             elem_sx = tt.get(pay.fields[0].ty).slice.element;
             break;
         }

@@ -1161,8 +1161,8 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 // a struct in the type table, and only the interface word
                 // names it.
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
-                .@"enum" => info == .@"enum" or info == .tagged_union,
-                .@"union" => info == .@"union" or info == .tagged_union,
+                .@"enum" => info == .@"enum",
+                .@"union" => info == .@"union",
                 .slice => info == .slice or TypeId.fromIndex(@intCast(idx)) == .string,
                 .array => info == .array,
                 .pointer => info == .pointer or info == .many_pointer,
@@ -1189,7 +1189,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 }
 
 /// The type a match arm's payload capture (`case .v: |x|`) binds, from the
-/// subject's type: a tagged-union arm captures its variant's payload, an
+/// subject's type: a payload enum arm captures its variant's payload, an
 /// error-set arm captures the payload its member declares, an optional arm
 /// captures the unwrapped child (mirrors `lowerMatch`'s capture lowering).
 /// Null when the subject/pattern supplies no typed payload — the arm-level
@@ -1204,10 +1204,10 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
     }
     switch (self.module.types.get(subject_ty)) {
         .optional => |o| return o.child,
-        .tagged_union => |tu| {
+        .@"enum" => |tu| {
             const pat_name = lower_error.shorthandArmName(pattern) orelse return null;
-            for (tu.fields) |f| {
-                if (std.mem.eql(u8, self.module.types.strings.get(f.name), pat_name)) return f.ty;
+            for (tu.variants) |f| {
+                if (std.mem.eql(u8, self.module.types.strings.get(f.name), pat_name)) return f.payload;
             }
             return null;
         },
@@ -1222,9 +1222,9 @@ fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) 
 
 pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     // Subject type for typing arm captures: payload types come from the
-    // subject's tagged-union/optional info. A pointer subject auto-derefs in
+    // subject's payload enum/optional info. A pointer subject auto-derefs in
     // the lowering (`lowerMatch`), so normalize to the pointee here too —
-    // otherwise a `*TaggedUnion` subject types every capture-using arm
+    // otherwise a `*PayloadEnum` subject types every capture-using arm
     // `.unresolved` and a VALUE-position match leaks an unresolved result
     // type to its consumer.
     var subject_ty = self.inferExprType(me.subject);
@@ -1232,7 +1232,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
         const sinfo = self.module.types.get(subject_ty);
         if (sinfo == .pointer and !sinfo.pointer.pointee.isBuiltin()) {
             const pinfo = self.module.types.get(sinfo.pointer.pointee);
-            if (pinfo == .tagged_union or pinfo == .@"enum") subject_ty = sinfo.pointer.pointee;
+            if (pinfo == .@"enum") subject_ty = sinfo.pointer.pointee;
         }
     }
     // Unify the result type across ALL value-producing arms.
@@ -1905,7 +1905,7 @@ pub const ReflectedFields = struct { kind: []const u8, member: []const u8 };
 pub fn reflectedFields(table: *const types.TypeTable, t: TypeId) ?ReflectedFields {
     return switch (table.get(t)) {
         .@"struct" => .{ .kind = "struct", .member = "type" },
-        .tagged_union, .@"enum" => .{ .kind = "enum", .member = "payload" },
+        .@"enum" => .{ .kind = "enum", .member = "payload" },
         else => null,
     };
 }
@@ -2686,7 +2686,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     const mangled_name_id = table.internString(mangled_name);
     if (table.findByName(mangled_name_id)) |existing| {
         const info = table.get(existing);
-        if ((info == .@"struct" and info.@"struct".fields.len > 0) or info == .@"union" or info == .tagged_union) {
+        if ((info == .@"struct" and info.@"struct".fields.len > 0) or info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload())) {
             return existing;
         }
     }
@@ -2771,7 +2771,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
         return mangled_id;
     }
 
-    // Try tagged enum/union
+    // Try payload enum/union
     if (findUnionInBody(fd.body)) |enum_decl| {
         return self.instantiateTypeUnion(if (has_alias) alias_name else mangled_name, mangled_name, &enum_decl);
     }
@@ -2863,12 +2863,11 @@ pub fn returnExprMintsType(self: *Lowering, ret: *const Node) bool {
     return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
 }
 
-/// Instantiate a tagged enum from a type function body.
+/// Instantiate an enum from a type function body.
 pub fn instantiateTypeUnion(self: *Lowering, alias_name: []const u8, mangled_name: []const u8, ed: *const ast.EnumDecl) ?TypeId {
     const table = &self.module.types;
 
-    // Build variant fields (tagged enum variants stored as StructInfo.Field)
-    var variant_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+    var variant_fields = std.ArrayList(types.TypeInfo.EnumInfo.Variant).empty;
     for (ed.variant_names, 0..) |vname, i| {
         const payload_ty: TypeId = if (i < ed.variant_types.len and ed.variant_types[i] != null)
             self.resolveTypeWithBindings(ed.variant_types[i].?)
@@ -2876,15 +2875,14 @@ pub fn instantiateTypeUnion(self: *Lowering, alias_name: []const u8, mangled_nam
             .void;
         variant_fields.append(self.alloc, .{
             .name = table.internString(vname),
-            .ty = payload_ty,
+            .payload = payload_ty,
         }) catch {};
     }
 
     const alias_name_id = table.internString(alias_name);
-    const info: types.TypeInfo = .{ .tagged_union = .{
+    const info: types.TypeInfo = .{ .@"enum" = .{
         .name = alias_name_id,
-        .fields = variant_fields.items,
-        .tag_type = .i64,
+        .variants = variant_fields.items,
     } };
     const id = if (table.findByName(alias_name_id)) |existing| existing else table.intern(info);
     table.updatePreservingKey(id, info);
@@ -2892,10 +2890,9 @@ pub fn instantiateTypeUnion(self: *Lowering, alias_name: []const u8, mangled_nam
     // Also register under mangled name
     if (!std.mem.eql(u8, alias_name, mangled_name)) {
         const mangled_name_id = table.internString(mangled_name);
-        const mangled_info: types.TypeInfo = .{ .tagged_union = .{
+        const mangled_info: types.TypeInfo = .{ .@"enum" = .{
             .name = mangled_name_id,
-            .fields = variant_fields.items,
-            .tag_type = .i64,
+            .variants = variant_fields.items,
         } };
         const mid = if (table.findByName(mangled_name_id)) |existing| existing else table.intern(mangled_info);
         table.updatePreservingKey(mid, mangled_info);
@@ -2920,7 +2917,7 @@ pub fn findStructInBody(body: *const Node) ?ast.StructDecl {
     return null;
 }
 
-/// Walk an AST body to find a tagged enum declaration.
+/// Walk an AST body to find a payload enum declaration.
 pub fn findUnionInBody(body: *const Node) ?ast.EnumDecl {
     const isTaggedEnum = struct {
         fn check(node: *const Node) ?ast.EnumDecl {

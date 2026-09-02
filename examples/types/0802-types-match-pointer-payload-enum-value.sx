@@ -1,4 +1,4 @@
-// Value-position match over a POINTER-to-tagged-union subject: the subject
+// Value-position match over a POINTER-to-payload enum subject: the subject
 // auto-derefs to the pointee (specs §for by-ref capture — "a pointer subject
 // matches through the deref"), payload captures bind the variant payload, and
 // the match RESULT TYPE is inferred from the arms even when every arm's value

@@ -2,7 +2,7 @@
 // `context.io.race(.(a = fa, b = fb, c = fc))` takes a named tuple of
 // already-spawned `*Future(..)` handles (from `context.io.async`), SUSPENDS the
 // calling fiber until the FIRST is `.ready`, and returns a comptime-SYNTHESIZED
-// tagged-union (`RaceResult`) mirroring the tuple's labels — variant NAME = the
+// payload enum (`RaceResult`) mirroring the tuple's labels — variant NAME = the
 // tuple label, payload = that future's result type. Here the three workers return
 // DIFFERENT types (i64 / bool / f64), so the minted union is
 // `enum { a: i64; b: bool; c: f64 }` and the winner is matched by label.

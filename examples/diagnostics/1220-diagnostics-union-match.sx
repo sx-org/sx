@@ -1,9 +1,9 @@
-// A variant-style match (`match x { case .variant: ... }`) on a plain UNTAGGED
-// `union` subject is rejected up front — an untagged union has no discriminant, so
+// A variant-style match (`match x { case .variant: ... }`) on a plain
+// `union` subject is rejected up front — a union has no discriminant, so
 // there is nothing to dispatch on (specs §Unions, Restrictions: "Pattern matching
 // is not supported on unions"). The gate is subject-level, so it fires with or
 // without payload bindings (1211 covers the binding forms) and for a POINTER to an
-// untagged union.
+// union.
 @import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }
@@ -18,7 +18,7 @@ main :: () {
     // Statement position, no binding.
     match s { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
 
-    // Pointer-to-untagged-union subject (never auto-derefs — same rejection).
+    // Pointer-to-union subject (never auto-derefs — same rejection).
     p := *s;
     q := match p { case .circle: { 1 } else: { 0 } };
     print("{}\n", q);

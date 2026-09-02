@@ -1,4 +1,4 @@
-// A write to a sub-field of a tagged-union variant's payload (`s.rect.w = ...`)
+// A write to a sub-field of a payload enum variant's payload (`s.rect.w = ...`)
 // is NOT rejected: the immediate object is the payload struct, so it mutates a
 // field of the already-active variant in place and leaves the tag alone. This
 // pins the scope of the variant-write guard — only a WHOLE-variant member write

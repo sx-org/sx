@@ -1,0 +1,23 @@
+error: cannot match on union 'Shape' — it has no discriminant; use an enum with payloads instead
+  --> examples/diagnostics/1220-diagnostics-union-match.sx:15:16
+   |
+15 |     r := match s { case .circle: { 1 } case .rect: { 2 } };
+   |                ^
+
+error: cannot match on union 'Shape' — it has no discriminant; use an enum with payloads instead
+  --> examples/diagnostics/1220-diagnostics-union-match.sx:19:11
+   |
+19 |     match s { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
+   |           ^
+
+error: cannot match on union 'Shape' — it has no discriminant; use an enum with payloads instead
+  --> examples/diagnostics/1220-diagnostics-union-match.sx:23:16
+   |
+23 |     q := match p { case .circle: { 1 } else: { 0 } };
+   |                ^
+
+error: cannot match on union 'Shape' — it has no discriminant; use an enum with payloads instead
+  --> examples/diagnostics/1220-diagnostics-union-match.sx:30:16
+   |
+30 |     t := match s { case Shape: { 1 } else: { 0 } };
+   |                ^

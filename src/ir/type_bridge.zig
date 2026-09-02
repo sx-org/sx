@@ -569,8 +569,7 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
 /// shares the body via `buildEnumInfo` but interns under its own nominal id.
 pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype) TypeId {
     const name_id = table.internString(ed.name);
-    // Anonymous inline enums are shape-keyed, same as structs;
-    // buildEnumInfo yields `.enum` or `.tagged_union` — both shape-key.
+    // Anonymous inline enums are shape-keyed, same as structs.
     if (std.mem.eql(u8, ed.name, "__anon")) {
         return table.internAnonShape(buildEnumInfo(ed, table, inner));
     }
@@ -581,12 +580,6 @@ pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anyt
     return id;
 }
 
-/// Build the `TypeInfo` body for an enum decl WITHOUT interning the top-level
-/// nominal slot — the shared body-BUILDER behind both the stateless inline
-/// field-type path (`resolveInlineEnum`) and the stateful per-decl registration
-/// (`Lowering.registerEnumDecl`, which interns it under a per-decl nominal
-/// identity so two same-name top-level enums get DISTINCT TypeIds). A payload
-/// enum builds a `.tagged_union`; a payload-less enum a plain `.enum`. Nested
 /// Decode an explicit enum-variant value node (`esc :: '\x1b'`, `quit :: 0x100`)
 /// to its integer, or `null` if it isn't a constant the enum machinery
 /// understands (the caller supplies the positional / power-of-2 fallback).
@@ -603,16 +596,20 @@ fn enumVariantConst(vv: *const Node) ?i64 {
     };
 }
 
-/// payload structs / variant field types ARE interned here — they are distinct
-/// nested nominals, not the enum's own identity.
+/// Build the `TypeInfo` body for an enum decl WITHOUT interning the top-level
+/// nominal slot — the shared body-BUILDER behind both the stateless inline
+/// field-type path (`resolveInlineEnum`) and the stateful per-decl registration
+/// (`Lowering.registerEnumDecl`, which interns it under a per-decl nominal
+/// identity so two same-name top-level enums get DISTINCT TypeIds). Payload
+/// structs / variant field types ARE interned here — they are distinct nested
+/// nominals, not the enum's own identity.
 pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype) TypeInfo {
     const alloc = table.alloc;
     const name_id = table.internString(ed.name);
 
-    // Enum with payloads → tagged union
     const has_payloads = ed.variant_types.len > 0;
     if (has_payloads) {
-        var fields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
+        var fields = std.ArrayList(TypeInfo.EnumInfo.Variant).empty;
         for (ed.variant_names, 0..) |vn, i| {
             var field_ty: TypeId = .void;
             if (i < ed.variant_types.len) {
@@ -656,7 +653,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
             }
             fields.append(alloc, .{
                 .name = table.internString(vn),
-                .ty = field_ty,
+                .payload = field_ty,
             }) catch unreachable;
         }
         // Resolve backing type and tag type from enum struct
@@ -693,19 +690,19 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
             explicit_tag_vals = vals.items;
         }
 
-        return .{ .tagged_union = .{
+        return .{ .@"enum" = .{
             .name = name_id,
-            .fields = fields.items,
-            .tag_type = tag_type orelse .i64, // enum unions are always tagged (default i64)
-            .backing_type = backing_type,
-            .explicit_tag_values = explicit_tag_vals,
+            .variants = fields.items,
+            .tag_type = tag_type orelse .i64,
+            .layout = backing_type,
+            .values = explicit_tag_vals,
         } };
     }
 
     // Plain enum (no payloads)
-    var variants = std.ArrayList(StringId).empty;
+    var variants = std.ArrayList(TypeInfo.EnumInfo.Variant).empty;
     for (ed.variant_names) |vn| {
-        variants.append(alloc, table.internString(vn)) catch unreachable;
+        variants.append(alloc, .{ .name = table.internString(vn) }) catch unreachable;
     }
     // Build explicit values for flags (power-of-2) or custom values
     var explicit_vals: ?[]const i64 = null;
@@ -752,8 +749,8 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
         .name = name_id,
         .variants = variants.items,
         .is_flags = ed.is_flags,
-        .explicit_values = explicit_vals,
-        .backing_type = enum_backing,
+        .values = explicit_vals,
+        .tag_type = enum_backing orelse .i64,
     } };
 }
 

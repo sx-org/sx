@@ -1,0 +1,20 @@
+// `@typeInfo` of an enum carries its tag: the tag's type and its byte offset
+// in the value. A layout-struct enum reports the layout's tag field; a
+// payload-free enum reports its backing type; both keep the tag first.
+@import "modules/std.sx";
+
+Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
+Color :: enum u8 { red; green; }
+Shape :: enum { none; circle: f64; }
+
+tagOf :: ($T: Type) -> string {
+    inline match @typeInfo(T) {
+        case .enum: |e| { format("{} @{} variants={}", @typeName(e.tag), e.tagOffset, e.fields.len) }
+        else: { "not an enum" }
+    }
+}
+
+main :: () -> i32 {
+    print("{}\n{}\n{}\n", tagOf(Ev), tagOf(Color), tagOf(Shape));
+    0
+}

@@ -1,4 +1,4 @@
-// Companion module for 0847: an enum + a payloadless-variant tagged union,
+// Companion module for 0847: an enum + a payloadless-variant payload enum,
 // both read module-qualified (`lib.Mode.on`) as a generic-fn argument.
 Mode :: enum { on; off; }
 

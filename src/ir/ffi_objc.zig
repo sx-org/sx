@@ -108,7 +108,7 @@ pub const ObjcLowering = struct {
     /// pointer). Other pointers fall to `^v` — the encoding is metadata,
     /// not ABI, so being conservative here is safe. Pass-by-value
     /// structs encode as `{Name=field0field1...}`; nested structs
-    /// recurse with cycle-break via `ObjcEncodingStack`. Tagged-union /
+    /// recurse with cycle-break via `ObjcEncodingStack`. Payload enum /
     /// array / vector / function shapes BAIL loudly via diagnostics
     /// rather than silently mis-encoding
     /// patterns rule).

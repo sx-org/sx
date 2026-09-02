@@ -25,15 +25,14 @@ c :: @import "modules/std/c.sx";
 //
 // `rawRegisterType`'s `Member` is the `{ name, ty }` shape it decodes. The
 // `kind` codes match the read-side `rawTypeKind`:
-//   1 struct · 2 enum (payloadless) · 3 tagged-union.
+//   1 struct · 2 enum.
 Member :: struct { name: string; ty: Type; }
 
 rawDeclareType  :: (name: string) -> Type intrinsic;
 rawRegisterType :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
 
 KIND_STRUCT       :: 1;
-KIND_ENUM         :: 2; // an ACTUAL payloadless enum
-KIND_TAGGED_UNION :: 3; // a payload-carrying enum
+KIND_ENUM         :: 2;
 
 // ── The metatype DSL ─────────────────────────────────────────────────────────
 //
@@ -55,21 +54,14 @@ declare :: (name: string) -> Type {
     return rawDeclareType(name);
 }
 
-// An all-void enum variant set is an ACTUAL enum (kind 2); any payload variant
-// makes it a tagged-union (kind 3) — `rawRegisterType` rejects a payload variant
-// under kind 2, so the kind follows from whether every payload is `void`.
 define :: (handle: Type, info: TypeInfo) -> Type {
     match info {
         case .enum: |e| {
             mems : List(Member) = .{};
-            allVoid := true;
             for v in e.fields {
                 mems.append(Member{ name = v.name, ty = v.payload });
-                if v.payload != void { allVoid = false; }
             }
-            kind := KIND_TAGGED_UNION;
-            if allVoid { kind = KIND_ENUM; }
-            return rawRegisterType(handle, kind, mems.items[0..mems.len]);
+            return rawRegisterType(handle, KIND_ENUM, mems.items[0..mems.len]);
         }
         case .struct: |s| {
             mems : List(Member) = .{};
@@ -114,14 +106,14 @@ TryResult :: ($T: Type) -> Type {
     ] }));
 }
 
-// ── Constructing a minted tagged-union VALUE by variant index ─────────────────
+// ── Constructing a minted payload enum VALUE by variant index ─────────────────
 //
-// Build a value of a MINTED tagged-union `E` (one made by `makeEnum` /
+// Build a value of a MINTED payload enum `E` (one made by `makeEnum` /
 // `define(declare, .enum(...))`) whose active variant is `idx`, carrying
 // `payload`. The variant is selected at RUNTIME while the union was synthesized
 // at comptime, so its labels cannot be spelled as a literal `.label(payload)`.
 //
-// LAYOUT COUPLING — MINTED ENUMS ONLY: a minted tagged-union is laid out
+// LAYOUT COUPLING — MINTED ENUMS ONLY: a minted payload enum is laid out
 // `{ i64 tag @0, payload bytes @ @sizeOf(i64) }` (its tag type is always `i64`
 // — the compiler's `declare`/`define` path fixes it). `makeVariant` writes that
 // layout directly. It is NOT valid for a source `enum { … }` whose tag may be

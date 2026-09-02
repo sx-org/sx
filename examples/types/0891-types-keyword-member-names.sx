@@ -1,7 +1,7 @@
 // Statement keywords are member names: every keyword except
 // `inline` bare-names struct fields, struct methods/constants, protocol
 // methods — impl definitions included, so a keyword-named protocol
-// method is implementable without ceremony — and enum/tagged-union
+// method is implementable without ceremony — and enum/payload enum
 // variants (std/meta.sx's TypeInfo is the canonical case). Access rides
 // dot position bare: field access, optional chaining, enum literals and
 // case patterns. A LITERAL field label is an identifier, so a keyword

@@ -757,7 +757,7 @@ test "same display-name distinct nominal ids" {
 
     // Same disambiguation holds for the enum nominal arm.
     const bar = table.internString("Bar");
-    const variants = [_]types.StringId{ table.internString("a"), table.internString("b") };
+    const variants = [_]TypeInfo.EnumInfo.Variant{ .{ .name = table.internString("a") }, .{ .name = table.internString("b") } };
     const e1 = table.internNominal(.{ .@"enum" = .{ .name = bar, .variants = &variants } }, 1);
     const e2 = table.internNominal(.{ .@"enum" = .{ .name = bar, .variants = &variants } }, 2);
     try std.testing.expect(e1 != e2);
@@ -769,14 +769,13 @@ test "internNominal(.,0) interns identically to intern" {
     defer table.deinit();
 
     const f = [_]TypeInfo.StructInfo.Field{.{ .name = table.internString("x"), .ty = .i64 }};
-    const variants = [_]types.StringId{table.internString("v")};
+    const variants = [_]TypeInfo.EnumInfo.Variant{.{ .name = table.internString("v") }};
     const tags = [_]u32{7};
 
     const cases = [_]TypeInfo{
         .{ .@"struct" = .{ .name = table.internString("S"), .fields = &f } },
         .{ .@"enum" = .{ .name = table.internString("E"), .variants = &variants } },
         .{ .@"union" = .{ .name = table.internString("U"), .fields = &f } },
-        .{ .tagged_union = .{ .name = table.internString("T"), .fields = &f, .tag_type = .i64 } },
         .{ .@"error" = .{ .name = table.internString("Err"), .tags = &tags } },
     };
     for (cases) |info| {

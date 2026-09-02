@@ -1,4 +1,4 @@
-// Dot-shorthand `.Variant(args)` with no tagged-union target type reports
+// Dot-shorthand `.Variant(args)` with no payload enum target type reports
 // `cannot infer enum type for '.X'`.
 
 main :: () -> i32 {
