@@ -1,5 +1,4 @@
-// A `string` spreads into a `..xs: []u8` pack: it is the slice already, so the
-// spread passes it through as any `[]u8` would.
+// A `string` spreads into a `..xs: []u8` pack: it is the slice already.
 @import "modules/std.sx";
 
 sumBytes :: (..xs: []u8) -> i64 {
