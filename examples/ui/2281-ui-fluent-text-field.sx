@@ -1,0 +1,111 @@
+// A fluent field is the VIEW of a session, and holds no text of its own.
+//
+// `textField(session)` mints its element id at the call site and draws what the
+// session says: the committed run split at the caret, the marked run at that
+// split under its preedit rule, and the caret at the selection — inside the mark
+// while one is live. A rebuild reads the document again, so the field carries no
+// state to keep consistent.
+//
+// Text, composition and the delete intent reach it as events on the root's
+// intake and are FORWARDED to the session's ops; the session reports its edits
+// on a queue of its own, which is never that intake. A tap points the focus at
+// the field, and the frames it drew are what the host reads back off the
+// session.
+//
+// Metrics come from the ui font surface, which with no face loaded advances 8
+// per byte at 16pt.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+
+show :: (tag: string, root: *UiRoot) {
+    print("{}\n", tag);
+    for n in root.snapshot.scene.nodes {
+        print("  {} \"{}\" at {},{} {}x{}\n", n.type, n.text,
+            n.frame.origin.x.(i64), n.frame.origin.y.(i64),
+            n.frame.size.width.(i64), n.frame.size.height.(i64));
+    }
+}
+
+reported :: (q: *InputQueue) {
+    q.drain(|e: *InputEvent| {
+        match e.* {
+            case .text: |t| { print("  reported .text \"{}\"\n", t.text); }
+            case .composition: |cp| { print("  reported .composition \"{}\"\n", cp.marked); }
+            case .deleteBackward: |_| { print("  reported .deleteBackward\n"); }
+            else: {}
+        }
+    });
+}
+
+at :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ position = .{ x = x, y = y } });
+lift :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ position = .{ x = x, y = y } });
+typed :: (s: string) -> InputEvent => .text(.{ text = s });
+composing :: (marked: string, at: i64) -> InputEvent =>
+    .composition(.{ marked = marked, selectionStart = at, selectionEnd = at });
+
+main :: () -> i32 {
+    root := UiRoot.init(Size{ width = 120.0, height = 40.0 }, context.allocator);
+    reports := InputQueue.init(context.allocator);
+    session := TextInputSession.init(*reports);
+    doc := *session;
+
+    loop := FrameLoop.init(*root, closure(||_{ doc } -> View {
+        v : View = textField(doc);
+        v
+    }), context.allocator);
+
+    // An empty document draws a caret and nothing else.
+    loop.frame();
+    show("empty", *root);
+    print("regions hit {} focus {} keyboard {}\n",
+        root.snapshot.hitList.len, root.snapshot.focusList.len, root.focus.wantsKeyboard());
+
+    // A tap on the field's hit region focuses it, and the shell's keyboard
+    // question answers from there.
+    root.queue.push(at(20.0, 20.0));
+    root.queue.push(lift(20.0, 20.0));
+    loop.frame();
+    print("tapped keyboard {}\n", root.focus.wantsKeyboard());
+
+    // The text event goes through the session's op once, and the field reads the
+    // same bytes back.
+    root.queue.push(typed("ab"));
+    loop.frame();
+    show("typed", *root);
+    reported(*reports);
+    loop.frame();
+    print("rebuilt \"{}\" caret {}\n", doc.committedText(), doc.caret);
+
+    // Composing adds the marked run and its rule; committed does not move.
+    root.queue.push(composing("xy", 1));
+    loop.frame();
+    show("composing", *root);
+    reported(*reports);
+    print("committed \"{}\" marked \"{}\"\n", doc.committedText(), doc.markedText());
+
+    // The frames the field drew are the host's route to the caret.
+    print("field {},{} {}x{} caret {},{} {}x{}\n",
+        doc.fieldFrame.origin.x.(i64), doc.fieldFrame.origin.y.(i64),
+        doc.fieldFrame.size.width.(i64), doc.fieldFrame.size.height.(i64),
+        doc.caretFrame.origin.x.(i64), doc.caretFrame.origin.y.(i64),
+        doc.caretFrame.size.width.(i64), doc.caretFrame.size.height.(i64));
+
+    // The caret splits the committed run, and the mark lands at the split.
+    doc.select(1, 1);
+    root.queue.push(composing("xy", 2));
+    loop.frame();
+    show("split", *root);
+    reported(*reports);
+
+    // The delete intent reaches the session's op, which shortens the mark.
+    root.queue.push(.deleteBackward(.{}));
+    loop.frame();
+    show("deleted", *root);
+    reported(*reports);
+
+    root.deinit();
+    loop.deinit();
+    reports.deinit();
+    0
+}

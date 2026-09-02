@@ -8,9 +8,8 @@
 //
 // To visualize the safe-area / keyboard inset, the frame draws a red
 // bar at the bottom whose height equals `safeInsets.bottom`. The
-// platform interpolates `keyboardHeight` over the keyboard's own
-// animation duration, so the bar slides in lockstep with iOS's
-// keyboard.
+// platform samples the keyboard's live overlap each tick, so the bar
+// rides the keyboard frame for frame.
 //
 // Build + run:
 //   sx build --target ios-sim examples/platform/1610-platform-uikit-platform.sx \
@@ -77,7 +76,7 @@ tapFrame :: () {
     glClearColor(r, g, b, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Bottom bar = the interpolated safe-area bottom inset.
+    gUikitPlat.sampleKeyboard();
     insets := gUikitPlat.safeInsets();
     barHPx : i32 = xx (insets.bottom * fc.dpiScale);
     if barHPx > 0 {

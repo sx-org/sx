@@ -3,6 +3,8 @@ const llvm = @import("../../llvm_api.zig");
 const c = llvm.c;
 const emit = @import("../../ir/emit_llvm.zig");
 
+const mod_mod = @import("../../ir/module.zig");
+
 const LLVMEmitter = emit.LLVMEmitter;
 const JniSlotPair = LLVMEmitter.JniSlotPair;
 
@@ -215,15 +217,14 @@ pub const FfiCtors = struct {
     /// injected at the top of `main` for the ORC JIT path (which
     /// doesn't honor `@llvm.global_ctors`).
     ///
-    /// For each entry in `objc_defined_class_cache`:
+    /// For each entry in `objc_defined_class_cache`, in `extends =` order:
     ///   super_cls = objc_getClass("<ParentName>")  // default NSObject
     ///   cls       = objc_allocateClassPair(super_cls, "<ClassName>", 0)
-    ///   class_addIvar(cls, "__sx_state", 8, 3, "^v")
+    ///   class_addIvar(cls, "__sx_state", 8, 3, "^v")   // unless inherited
+    ///   class_addMethod(cls | metaclass, ...)          // IMPs, +alloc, -dealloc
+    ///   class_addProtocol(cls, ...)                    // own + ancestor `implements =`
     ///   objc_registerClassPair(cls)
     ///   g_<ClassName>_state_ivar = class_getInstanceVariable(cls, "__sx_state")
-    ///
-    /// Method IMPs (`class_addMethod`) and the `+alloc` / `-dealloc`
-    /// overrides come in A.4b.ii / A.5 / A.6.
     pub fn emitObjcDefinedClassInit(self: FfiCtors) void {
         if (self.e.ir_mod.objc_defined_class_cache.items.len == 0) return;
 
@@ -247,6 +248,33 @@ pub const FfiCtors = struct {
         const register_fn, const register_ty = self.e.lazyDeclareCRuntime("objc_registerClassPair", &[_]c.LLVMTypeRef{ptr_ty}, self.e.cached_void, 0);
         // class_getInstanceVariable(cls: *void, name: *u8) -> *Ivar.
         const get_iv_fn, const get_iv_ty = self.e.lazyDeclareCRuntime("class_getInstanceVariable", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, ptr_ty, 0);
+        // objc_getProtocol(name: *u8) -> *void.
+        const get_proto_fn, const get_proto_ty = self.e.lazyDeclareCRuntime("objc_getProtocol", &[_]c.LLVMTypeRef{ptr_ty}, ptr_ty, 0);
+        // class_addProtocol(cls: *void, proto: *void) -> bool.
+        const add_proto_fn, const add_proto_ty = self.e.lazyDeclareCRuntime("class_addProtocol", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, i8_ty, 0);
+
+        const AddProtocol = struct {
+            e: *LLVMEmitter,
+            get_fn: c.LLVMValueRef,
+            get_ty: c.LLVMTypeRef,
+            add_fn: c.LLVMValueRef,
+            add_ty: c.LLVMTypeRef,
+
+            fn emit(p: @This(), cls_val: c.LLVMValueRef, alias: []const u8) void {
+                const proto_str_global = p.e.emitPrivateCString(alias, "OBJC_PROTOCOL_NAME_");
+                var gp_args: [1]c.LLVMValueRef = .{proto_str_global};
+                const proto_val = c.LLVMBuildCall2(p.e.builder, p.get_ty, p.get_fn, &gp_args, 1, "proto");
+                var ap_args: [2]c.LLVMValueRef = .{ cls_val, proto_val };
+                _ = c.LLVMBuildCall2(p.e.builder, p.add_ty, p.add_fn, &ap_args, 2, "");
+            }
+        };
+        const add_protocol = AddProtocol{
+            .e = self.e,
+            .get_fn = get_proto_fn,
+            .get_ty = get_proto_ty,
+            .add_fn = add_proto_fn,
+            .add_ty = add_proto_ty,
+        };
 
         // Constructor: void __sx_objc_defined_class_init().
         var no_params: [0]c.LLVMTypeRef = .{};
@@ -260,7 +288,19 @@ pub const FfiCtors = struct {
         const sx_state_name_global = self.e.emitPrivateCString("__sx_state", "OBJC_IVAR_NAME_");
         const sx_state_enc_global = self.e.emitPrivateCString("^v", "OBJC_IVAR_TYPE_");
 
-        for (self.e.ir_mod.objc_defined_class_cache.items) |entry_kv| {
+        const cache = self.e.ir_mod.objc_defined_class_cache.items;
+        var order = std.ArrayList(usize).empty;
+        defer order.deinit(self.e.alloc);
+        const marks = self.e.alloc.alloc(HierarchyMark, cache.len) catch return;
+        defer self.e.alloc.free(marks);
+        @memset(marks, .unplaced);
+        for (cache, 0..) |_, i| self.placeAfterParent(cache, i, marks, &order);
+
+        const ancestor_buf = self.e.alloc.alloc(mod_mod.Module.ObjcDefinedClassEntry, cache.len) catch return;
+        defer self.e.alloc.free(ancestor_buf);
+
+        for (order.items) |idx| {
+            const entry_kv = cache[idx];
             const fcd = entry_kv.decl;
             const class_name = fcd.name;
 
@@ -285,14 +325,21 @@ pub const FfiCtors = struct {
             //   size = 8 (pointer)        — sizeof(*void) on 64-bit
             //   log2align = 3             — alignof(*void) = 8 = 2^3
             //   type = "^v" (encoded *void)
-            var ivar_args: [5]c.LLVMValueRef = .{
-                cls_val,
-                sx_state_name_global,
-                c.LLVMConstInt(i64_ty, 8, 0),
-                c.LLVMConstInt(i8_ty, 3, 0),
-                sx_state_enc_global,
-            };
-            _ = c.LLVMBuildCall2(self.e.builder, add_ivar_ty, add_ivar_fn, &ivar_args, 5, "");
+            //
+            // One slot per hierarchy. A subclass of an sx-defined class
+            // inherits it; a second ivar of the same name would sit at its
+            // own offset, leaving the base's IMPs reading a slot no `+alloc`
+            // ever writes.
+            if (self.e.ir_mod.lookupObjcDefinedClass(parent_name) == null) {
+                var ivar_args: [5]c.LLVMValueRef = .{
+                    cls_val,
+                    sx_state_name_global,
+                    c.LLVMConstInt(i64_ty, 8, 0),
+                    c.LLVMConstInt(i8_ty, 3, 0),
+                    sx_state_enc_global,
+                };
+                _ = c.LLVMBuildCall2(self.e.builder, add_ivar_ty, add_ivar_fn, &ivar_args, 5, "");
+            }
 
             // Class-method registration and the +alloc IMP
             // both target the metaclass. Compute it once
@@ -338,18 +385,21 @@ pub const FfiCtors = struct {
             // The protocol may not be present on every SDK / runtime
             // (dead-strip pruning, version skew), so `objc_getProtocol`
             // returning null is non-fatal — skip the addProtocol call.
-            const get_proto_fn, const get_proto_ty = self.e.lazyDeclareCRuntime("objc_getProtocol", &[_]c.LLVMTypeRef{ptr_ty}, ptr_ty, 0);
-            const add_proto_fn, const add_proto_ty = self.e.lazyDeclareCRuntime("class_addProtocol", &[_]c.LLVMTypeRef{ ptr_ty, ptr_ty }, i8_ty, 0);
             for (fcd.members) |m| switch (m) {
-                .implements => |proto_alias| {
-                    const proto_str_global = self.e.emitPrivateCString(proto_alias, "OBJC_PROTOCOL_NAME_");
-                    var gp_args: [1]c.LLVMValueRef = .{proto_str_global};
-                    const proto_val = c.LLVMBuildCall2(self.e.builder, get_proto_ty, get_proto_fn, &gp_args, 1, "proto");
-                    var ap_args: [2]c.LLVMValueRef = .{ cls_val, proto_val };
-                    _ = c.LLVMBuildCall2(self.e.builder, add_proto_ty, add_proto_fn, &ap_args, 2, "");
-                },
+                .implements => |proto_alias| add_protocol.emit(cls_val, proto_alias),
                 else => {},
             };
+
+            // class_conformsToProtocol is class-local: a leaf pair does
+            // not see an ancestor's `implements =` unless those
+            // protocols are added here.
+            const ancestor_n = self.e.ir_mod.objcDefinedAncestors(parent_name, ancestor_buf);
+            for (ancestor_buf[0..ancestor_n]) |ancestor| {
+                for (ancestor.decl.members) |m| switch (m) {
+                    .implements => |proto_alias| add_protocol.emit(cls_val, proto_alias),
+                    else => {},
+                };
+            }
 
             // objc_registerClassPair(cls)
             var reg_args: [1]c.LLVMValueRef = .{cls_val};
@@ -445,6 +495,33 @@ pub const FfiCtors = struct {
         self.e.injectCtorIntoMain(ctor, ctor_ty);
 
         _ = i32_ty;
+    }
+
+    const HierarchyMark = enum { unplaced, walking, placed };
+
+    /// Append `idx` to `order` after its sx-defined superclass, so
+    /// `objc_allocateClassPair` always sees a registered parent pair — a null
+    /// `objc_getClass(parent)` silently makes the subclass a root class
+    /// instead. Declaration order carries no such guarantee. An `extends =`
+    /// cycle stops at the `walking` mark; the classes in it are unorderable
+    /// and land as found.
+    fn placeAfterParent(
+        self: FfiCtors,
+        cache: []const mod_mod.Module.ObjcDefinedClassEntry,
+        idx: usize,
+        marks: []HierarchyMark,
+        order: *std.ArrayList(usize),
+    ) void {
+        if (marks[idx] != .unplaced) return;
+        marks[idx] = .walking;
+        for (cache, 0..) |candidate, j| {
+            if (j != idx and std.mem.eql(u8, candidate.name, cache[idx].parent_objc_name)) {
+                self.placeAfterParent(cache, j, marks, order);
+                break;
+            }
+        }
+        marks[idx] = .placed;
+        order.append(self.e.alloc, idx) catch {};
     }
 
     /// Return `{cls_slot, mid_slot}` global pair for the

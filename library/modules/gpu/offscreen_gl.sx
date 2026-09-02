@@ -40,8 +40,7 @@ GlOffscreen :: struct {
         SDL_GL_SetSwapInterval(0);
         loadGl(SDL_GL_GetProcAddress);
         self.renderer.init();
-        self.font.init(fontPath, fontSize);
-        true
+        self.font.init(fontPath, fontSize)
     }
 }
 

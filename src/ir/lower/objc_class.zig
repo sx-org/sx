@@ -874,12 +874,55 @@ pub fn emitObjcDefinedAllocAndInit(
 ) ?Ref {
     const ptr_void = self.module.types.ptrTo(.void);
 
-    // (1) instance = class_createInstance(cls, 0)
-    const create_fid = self.ensureCRuntimeDecl("class_createInstance", &.{ ptr_void, .u64 }, ptr_void);
-    const create_args = self.alloc.alloc(Ref, 2) catch return null;
-    create_args[0] = cls_ref;
-    create_args[1] = self.builder.constInt(0, .u64);
-    const instance = self.builder.emit(.{ .call = .{ .callee = create_fid, .args = create_args } }, ptr_void);
+    // (1) instance = [super alloc]: objc_msgSendSuper with the lookup
+    // rooted at the metaclass of the chain's extern runtime parent.
+    // CALayer allocates its render-side backing in +allocWithZone:, so
+    // the instance has to come from the runtime parent's +alloc; the
+    // sx-defined ancestors' own +alloc IMPs are skipped so the shared
+    // __sx_state slot binds once, with the receiver's layout.
+    var top = fcd;
+    while (self.objc().objcDefinedSuperclass(top)) |p| top = p;
+    const parent_name = if (self.module.lookupObjcDefinedClassEntry(top.name)) |e| e.parent_objc_name else "NSObject";
+
+    const get_class_fid = self.ensureCRuntimeDecl("objc_getClass", &.{ptr_void}, ptr_void);
+    const parent_str_gid = self.internStringConstantGlobal(parent_name);
+    const parent_str = self.builder.emit(.{ .global_addr = parent_str_gid }, ptr_void);
+    const gc_args = self.alloc.alloc(Ref, 1) catch return null;
+    gc_args[0] = parent_str;
+    const parent_cls = self.builder.emit(.{ .call = .{ .callee = get_class_fid, .args = gc_args } }, ptr_void);
+
+    const obj_get_class_fid = self.ensureCRuntimeDecl("object_getClass", &.{ptr_void}, ptr_void);
+    const ogc_args = self.alloc.alloc(Ref, 1) catch return null;
+    ogc_args[0] = parent_cls;
+    const parent_meta = self.builder.emit(.{ .call = .{ .callee = obj_get_class_fid, .args = ogc_args } }, ptr_void);
+
+    const super_struct_ty = self.module.types.intern(.{ .@"struct" = .{
+        .name = self.module.types.internString("__sx_objc_super"),
+        .fields = blk: {
+            var f = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+            f.append(self.alloc, .{ .name = self.module.types.internString("receiver"), .ty = ptr_void }) catch unreachable;
+            f.append(self.alloc, .{ .name = self.module.types.internString("super_class"), .ty = ptr_void }) catch unreachable;
+            break :blk f.toOwnedSlice(self.alloc) catch unreachable;
+        },
+    } });
+    const super_alloca = self.builder.alloca(super_struct_ty);
+    const recv_gep = self.builder.emit(.{ .struct_gep = .{ .base = super_alloca, .field_index = 0, .base_type = super_struct_ty } }, ptr_void);
+    self.builder.store(recv_gep, cls_ref);
+    const scls_gep = self.builder.emit(.{ .struct_gep = .{ .base = super_alloca, .field_index = 1, .base_type = super_struct_ty } }, ptr_void);
+    self.builder.store(scls_gep, parent_meta);
+
+    const sel_reg_fid = self.ensureCRuntimeDecl("sel_registerName", &.{ptr_void}, ptr_void);
+    const sel_str_gid = self.internStringConstantGlobal("alloc");
+    const sel_str_addr = self.builder.emit(.{ .global_addr = sel_str_gid }, ptr_void);
+    const sel_args = self.alloc.alloc(Ref, 1) catch return null;
+    sel_args[0] = sel_str_addr;
+    const sel_alloc = self.builder.emit(.{ .call = .{ .callee = sel_reg_fid, .args = sel_args } }, ptr_void);
+
+    const send_super_fid = self.ensureCRuntimeDecl("objc_msgSendSuper", &.{ ptr_void, ptr_void }, ptr_void);
+    const send_args = self.alloc.alloc(Ref, 2) catch return null;
+    send_args[0] = super_alloca;
+    send_args[1] = sel_alloc;
+    const instance = self.builder.emit(.{ .call = .{ .callee = send_super_fid, .args = send_args } }, ptr_void);
 
     // STATE_SIZE = max(typeSizeBytes(__<Cls>State), 1).
     const state_struct_ty = self.objc().objcDefinedStateStructType(fcd);
@@ -1051,6 +1094,11 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 /// The state struct's first field is the allocator captured at +alloc time.
 /// Reading it back lets -dealloc free through the same allocator the
 /// instance was constructed with.
+///
+/// A subclass of an sx-defined class releases its own property ivars and
+/// then chains straight to `[super dealloc]`: the shared state struct is
+/// freed by the class that owns the `__sx_state` slot, at the end of the
+/// chain.
 pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
@@ -1162,6 +1210,17 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     //       allocator.dealloc(state)                 ← via protocol dispatch
     // `push Context{ allocator = arena }` round-trips: arena.alloc on
     // construction, arena.dealloc here.
+    //
+    // Only the class that owns the `__sx_state` ivar frees it. A subclass
+    // of an sx-defined class shares the slot, and its `-dealloc` runs
+    // first: freeing there would leave the base's own teardown reading
+    // released memory.
+    if (self.objc().objcDefinedSuperclass(fcd) != null) {
+        emitSuperDealloc(self, fcd, self_ref, ptr_void);
+        self.builder.retVoid();
+        self.builder.finalize();
+        return;
+    }
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: Context type not found for class '{s}' (compiler bug)", .{fcd.name});
@@ -1207,7 +1266,15 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     _ = self.builder.emit(.{ .call = .{ .callee = set_ivar_fid, .args = set_args } }, .void);
 
     // (4) [super dealloc]
-    //
+    emitSuperDealloc(self, fcd, self_ref, ptr_void);
+
+    self.builder.retVoid();
+    self.builder.finalize();
+}
+
+/// `objc_msgSendSuper2(&objc_super{self, __<Cls>_class}, @selector(dealloc))`
+/// — the `[super dealloc]` tail every sx-defined `-dealloc` IMP ends on.
+fn emitSuperDealloc(self: *Lowering, fcd: *const ast.RuntimeClassDecl, self_ref: Ref, ptr_void: TypeId) void {
     // objc_super = struct { receiver: id, super_class: Class }
     const super_struct_ty = self.module.types.intern(.{ .@"struct" = .{
         .name = self.module.types.internString("__sx_objc_super"),
@@ -1247,9 +1314,6 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     send_args[0] = super_alloca;
     send_args[1] = sel_dealloc;
     _ = self.builder.emit(.{ .call = .{ .callee = send_super_fid, .args = send_args } }, .void);
-
-    self.builder.retVoid();
-    self.builder.finalize();
 }
 
 /// Intern a C-string constant as a `[N:0]u8` global and return

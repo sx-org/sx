@@ -60,6 +60,8 @@ HitRegion :: render.HitRegion;
 HitPolicy :: render.HitPolicy;
 FocusRegion :: render.FocusRegion;
 KeyEvent :: input.KeyEvent;
+CompositionEvent :: input.CompositionEvent;
+TextInputSession :: input.TextInputSession;
 LogicalKey :: input.LogicalKey;
 
 measureText :: font.measureText;
@@ -100,6 +102,8 @@ View :: view.View;
 Label :: components.Label;
 Rect :: components.Rect;
 Button :: components.Button;
+TextField :: components.TextField;
+textField :: components.textField;
 VStack :: containers.VStack;
 HStack :: containers.HStack;
 ZStack :: containers.ZStack;

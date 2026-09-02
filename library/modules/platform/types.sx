@@ -19,11 +19,10 @@ FrameContext :: struct {
     pixelH: i32;
     dpiScale: f32;
     deltaTime: f32;
-    // The host clock time at which the next vsync will present the frame
-    // we're about to render. On iOS this is CADisplayLink.targetTimestamp;
-    // forward it to MetalGPU.endFrame() to schedule presentDrawable:atTime:
-    // so our drawable hits the same vsync as UIKit's compositor. Other
-    // platforms leave it 0 (Metal then falls back to immediate present).
+    // Host vsync the frame is drawn for (CADisplayLink.targetTimestamp on
+    // iOS). Metal with presentsWithTransaction presents in the current
+    // CATransaction and does not consume this; other paths pass it to
+    // MetalGPU.endFrame for presentDrawable:atTime:. 0 is immediate present.
     targetPresentTime: f64;
 }
 
@@ -32,4 +31,200 @@ KeyboardState :: struct {
     height: f32;
 
     zero :: () -> KeyboardState => .{ visible = false, height = 0.0 };
+}
+
+// The UIKit keyboard spring (curve 7): mass 1, stiffness 555.027,
+// damping 47.118 — critically damped, ω = √555.027.
+KB_SPRING_OMEGA :: 23.559;
+
+// A released pan settles the keyboard with the keyboard's own spring:
+// away over the keyboard's dismiss duration, back over its return one.
+KB_SETTLE_AWAY_SECONDS :: 0.3832;
+KB_SETTLE_BACK_SECONDS :: 0.25;
+
+// The downward flick, in points per second, that dismisses the keyboard
+// whatever the distance travelled.
+KEYBOARD_FLICK_VELOCITY :: 100.0;
+
+exp :: (x: f64) -> f64 extern;
+
+// Critically damped spring position at `t` seconds: 0 at rest, 1 settled.
+kbSpringAt :: (t: f64) -> f64 {
+    wt := KB_SPRING_OMEGA * t;
+    1.0 - (1.0 + wt) * exp(0.0 - wt)
+}
+
+// Cubic-bezier control points for the pan return settle.
+KB_LAYOUT_C1X :: 0.380;
+KB_LAYOUT_C1Y :: 0.700;
+KB_LAYOUT_C2X :: 0.125;
+KB_LAYOUT_C2Y :: 1.000;
+
+// Unit cubic bezier y at time fraction `x` (CAMediaTimingFunction
+// semantics): endpoints (0,0)-(1,1), control points (x1,y1),(x2,y2).
+bezierAt :: (x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
+    if x <= 0.0 { return 0.0; }
+    if x >= 1.0 { return 1.0; }
+    lo : f64 = 0.0;
+    hi : f64 = 1.0;
+    s := x;
+    i := 0;
+    while i < 24 {
+        u := 1.0 - s;
+        bx := 3.0 * u * u * s * x1 + 3.0 * u * s * s * x2 + s * s * s;
+        if bx < x { lo = s; } else { hi = s; }
+        s = (lo + hi) * 0.5;
+        i += 1;
+    }
+    u := 1.0 - s;
+    3.0 * u * u * s * y1 + 3.0 * u * s * s * y2 + s * s * s
+}
+
+// Who is placing the keyboard.
+KeyboardGrip :: enum {
+    free;
+    held;
+    settling;
+    // The dismissal is out and the hold stands until the keyboard clears.
+    dismissed;
+}
+
+// The soft keyboard's overlap of the view, in points, for the frame about
+// to draw. The host samples where the keyboard IS every tick and passes
+// `offset` to the keyboard itself, so one number moves the keyboard and
+// the inset together.
+KeyboardOverlap :: struct {
+    height: f32 = 0.0;
+    grip: KeyboardGrip = .free;
+    // The overlap the pan grabbed, which `offset` measures down from and a
+    // dismissing settle drives to.
+    grabbed: f32 = 0.0;
+    offset: f32 = 0.0;
+    settleTo: f32 = 0.0;
+    settleFrom: f32 = 0.0;
+    settleT: f32 = 0.0;
+    settleDur: f32 = 0.0;
+
+    // `top` is the keyboard's live top edge in the view's coordinates; a
+    // view no keyboard reaches passes its own height, and a keyboard with
+    // no live edge this tick passes null, on which the last overlap stands.
+    sample :: (self: *KeyboardOverlap, top: ?f32, viewHeight: f32) {
+        live : f32 = ---;
+        if t := top { live = viewHeight - t; } else { return; }
+        if live < 0.0 { live = 0.0; }
+        if live > viewHeight { live = viewHeight; }
+        h := live - self.offset;
+        if h < 0.0 { h = 0.0; }
+        self.height = h;
+        if self.grip == .dismissed and live <= 0.0 { self.restore(); }
+    }
+
+    // The keyboard comes back to where its own frame puts it.
+    restore :: (self: *KeyboardOverlap) {
+        self.grip = .free;
+        self.offset = 0.0;
+        self.settleTo = 0.0;
+    }
+
+    visible :: (self: *KeyboardOverlap) -> bool {
+        self.grip != .free or self.height > 0.5
+    }
+
+    grab :: (self: *KeyboardOverlap) {
+        self.grip = .held;
+        self.grabbed = self.height;
+        self.offset = 0.0;
+        self.settleTo = 0.0;
+    }
+
+    track :: (self: *KeyboardOverlap, y: f32, viewHeight: f32) {
+        if self.grip != .held { return; }
+        o := y - (viewHeight - self.grabbed);
+        if o < 0.0 { o = 0.0; }
+        if o > self.grabbed { o = self.grabbed; }
+        self.offset = o;
+    }
+
+    // A release with the keyboard pushed to its bottom, or a downward
+    // flick, settles it away; anything else settles it back.
+    letGo :: (self: *KeyboardOverlap, velocityY: f32) {
+        if self.grip != .held { return; }
+        self.grip = .settling;
+        self.settleTo = 0.0;
+        if self.offset > 0.0 {
+            if self.offset >= self.grabbed or velocityY > KEYBOARD_FLICK_VELOCITY {
+                self.settleTo = self.grabbed;
+            }
+        }
+        self.settleFrom = self.offset;
+        self.settleT = 0.0;
+        self.settleDur = KB_SETTLE_BACK_SECONDS;
+        if self.settleTo > 0.0 { self.settleDur = KB_SETTLE_AWAY_SECONDS; }
+    }
+
+    // Steps a settle; true on the tick it lands the keyboard away, which is
+    // when the dismissal goes out.
+    advance :: (self: *KeyboardOverlap, dt: f32) -> bool {
+        if self.grip != .settling { return false; }
+        self.settleT += dt;
+        if self.settleT < self.settleDur {
+            // The dismiss settle is the keyboard spring; the return
+            // settle is the keyboard-paced layout bezier.
+            p : f32 = ---;
+            if self.settleTo > 0.0 {
+                p = kbSpringAt(self.settleT.(f64)).(f32);
+            } else {
+                frac := self.settleT.(f64) / self.settleDur.(f64);
+                p = bezierAt(KB_LAYOUT_C1X, KB_LAYOUT_C1Y, KB_LAYOUT_C2X, KB_LAYOUT_C2Y, frac).(f32);
+            }
+            self.offset = self.settleFrom + (self.settleTo - self.settleFrom) * p;
+            return false;
+        }
+        self.offset = self.settleTo;
+        if self.settleTo > 0.0 {
+            self.grip = .dismissed;
+            return true;
+        }
+        self.grip = .free;
+        false
+    }
+}
+
+// Compose the batch a caller reads: `live` is where the host's callbacks
+// append and `ime` is where the focused session reports; both empty into
+// `batch`, whose storage and payload copies are the queue allocator's.
+// The copies go at the NEXT composition, so a slice handed out stays
+// readable until then and a callback re-entered meanwhile appends to
+// `live`, out of the batch's reach.
+composeEventBatch :: (batch: *List(PlatformEvent), live: *List(PlatformEvent), ime: *InputQueue) -> []PlatformEvent {
+    for e in batch.items {
+        match e {
+            case .input: |ie| {
+                match ie {
+                    case .text: |t| { ime.gpa.deallocBytes(t.text.ptr); }
+                    case .composition: |cp| { ime.gpa.deallocBytes(cp.marked.ptr); }
+                    else: {}
+                }
+            }
+            else: {}
+        }
+    }
+    batch.len = 0;
+
+    for e in live.items { batch.append(e, ime.gpa); }
+    live.len = 0;
+
+    for e in ime.events.items {
+        match e {
+            case .text: |t| { batch.append(.input(.text(ime.copyText(t))), ime.gpa); }
+            case .composition: |cp| { batch.append(.input(.composition(ime.copyComposition(cp))), ime.gpa); }
+            else: { batch.append(.input(e), ime.gpa); }
+        }
+    }
+    ime.clear();
+
+    out : []PlatformEvent = ---;
+    out.ptr = batch.items.ptr;
+    out.len = batch.len;
+    out
 }

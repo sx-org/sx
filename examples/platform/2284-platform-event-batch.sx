@@ -1,0 +1,57 @@
+// The platform event batch: one composition empties the host's live
+// appends and the focused session's reports into the buffer a caller
+// reads, and the payloads that buffer copied stay alive until the
+// composition after it.
+//
+// Every copy, batch buffer and queue buffer goes through a
+// TrackingAllocator, whose ledger is the ownership assertion.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/input.sx";
+@import "modules/platform/types.sx";
+
+tap :: (x: f32, y: f32) -> PlatformEvent =>
+    .input(.pointerDown(.{ pointer = .{ value = 1 }, position = .{ x = x, y = y } }));
+
+textAt :: (b: *List(PlatformEvent), i: i64) -> string {
+    s : string = "";
+    match b.items[i] {
+        case .input: |ie| {
+            match ie {
+                case .text: |t| { s = t.text; }
+                else: {}
+            }
+        }
+        else: {}
+    }
+    s
+}
+
+main :: () -> i32 {
+    tracker := TrackingAllocator.init(context.allocator);
+    ime := InputQueue.init(tracker);
+    live : List(PlatformEvent) = .{};
+    batch : List(PlatformEvent) = .{};
+
+    live.append(tap(10.0, 20.0), tracker);
+    src := "hi";
+    ime.push(.text(.{ text = src }));
+    ime.push(.deleteBackward(.{}));
+
+    first := composeEventBatch(*batch, *live, *ime);
+    print("first {} live {} queue {} text {} copied {}\n",
+        first.len, live.len, ime.len, textAt(*batch, 1), textAt(*batch, 1).ptr != src.ptr);
+
+    live.append(tap(30.0, 40.0), tracker);
+    print("held {} text {}\n", first.len, textAt(*batch, 1));
+
+    freedBefore := tracker.deallocCount;
+    second := composeEventBatch(*batch, *live, *ime);
+    print("second {} freed {}\n", second.len, tracker.deallocCount - freedBefore);
+
+    batch.deinit(tracker);
+    live.deinit(tracker);
+    ime.deinit();
+    print("leaks {}\n", tracker.leakCount());
+    0
+}

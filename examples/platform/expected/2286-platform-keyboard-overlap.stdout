@@ -1,0 +1,16 @@
+rest height 0.000000 offset 0.000000 grip .free
+rest unpresented height 0.000000 offset 0.000000 grip .free
+first height 10.000000 offset 0.000000 grip .free
+mid height 150.000000 offset 0.000000 grip .free
+mid unpresented height 150.000000 offset 0.000000 grip .free
+up height 300.000000 offset 0.000000 grip .free
+dragged height 200.000000 offset 100.000000 grip .held
+settled height 300.000000 offset 0.000000 grip .free
+bottom height 0.000000 offset 300.000000 grip .held
+bottom visible true
+dismissals 1
+held height 0.000000 offset 300.000000 grip .dismissed
+held visible true
+cleared height 0.000000 offset 0.000000 grip .free
+cleared visible false
+flick target 300.000000

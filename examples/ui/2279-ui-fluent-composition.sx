@@ -1,0 +1,108 @@
+// A fluent element takes the IME's two channels beside its keys.
+//
+// An update replaces the marked text in full and carries the selection inside
+// it as a UTF-8 byte range; an empty marked text is the composition abandoned,
+// and the commit that ends one arrives on the text channel. Neither channel is
+// a key: backspace reaches the key handler, and the delete intent reaches its
+// own. Both go where the focus points and nowhere else.
+//
+// The queue owns the marked text from push to drain, so a handler reads what
+// was pushed however the caller's buffer moved on.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+ui :: @import "modules/ui/types.sx";
+
+composing :: (marked: string, from: i64, to: i64) -> InputEvent =>
+    .composition(.{ marked = marked, selectionStart = from, selectionEnd = to });
+typed :: (s: string) -> InputEvent => .text(.{ text = s });
+key :: (k: LogicalKey) -> InputEvent => .keyDown(.{ logical = k });
+
+Log :: struct {
+    keys: i64 = 0;
+    texts: i64 = 0;
+    marks: i64 = 0;
+    deletes: i64 = 0;
+    last: LogicalKey = .unknown;
+}
+
+main :: () -> i32 {
+    root := UiRoot.init(Size{ width = 60.0, height = 40.0 }, context.allocator);
+    log := Log{};
+    tally := *log;
+
+    // Two rows; the second one asks for the soft keyboard and takes text,
+    // composition and the delete intent as well as keys.
+    loop := FrameLoop.init(*root, closure(||_{ tally } -> View {
+        v : View = vstack(0.0) {
+            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 });
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 },
+                closure(|e: *KeyEvent|_{ tally } {
+                    tally.keys += 1;
+                    tally.last = e.logical;
+                }),
+                closure(|s: string|_{ tally } {
+                    tally.texts += 1;
+                    print("  text \"{}\"\n", s);
+                }),
+                true,
+                closure(|e: *CompositionEvent|_{ tally } {
+                    tally.marks += 1;
+                    print("  marked \"{}\" [{} {}]\n", e.marked, e.selectionStart, e.selectionEnd);
+                }),
+                closure(||_{ tally } {
+                    tally.deletes += 1;
+                }))
+        };
+        v
+    }), context.allocator);
+
+    loop.frame();
+    print("regions {} keyboard {}\n", root.snapshot.focusList.len, root.focus.wantsKeyboard());
+
+    // With nothing focused both channels reach nobody.
+    root.queue.push(composing("ni", 2, 2));
+    root.queue.push(.deleteBackward(.{}));
+    loop.frame();
+    print("unfocused marks {} deletes {}\n", log.marks, log.deletes);
+
+    // The IME's row takes the focus, and the update lands on its own handler.
+    root.focus.requestFocus(.{ value = root.snapshot.focusList.items[1].id });
+    root.queue.push(composing("にほ", 3, 6));
+    loop.frame();
+    print("composing marks {} texts {} keys {} deletes {} keyboard {}\n",
+        log.marks, log.texts, log.keys, log.deletes, root.focus.wantsKeyboard());
+
+    // Backspace is a key.
+    root.queue.push(key(.backspace));
+    loop.frame();
+    print("backspace keys {} last {} deletes {}\n", log.keys, log.last, log.deletes);
+
+    // The delete intent is not.
+    root.queue.push(.deleteBackward(.{}));
+    loop.frame();
+    print("intent deletes {} keys {}\n", log.deletes, log.keys);
+
+    // An abandoned composition is an empty marked text, delivered like any
+    // other update; a commit is text.
+    root.queue.push(composing("", 0, 0));
+    root.queue.push(typed("に"));
+    loop.frame();
+    print("committed marks {} texts {}\n", log.marks, log.texts);
+
+    // The caller's buffer moves on between the push and the frame that drains
+    // it, and the handler still reads what was pushed.
+    buf : [2]u8 = .['n', 'i'];
+    borrowed : string = ---;
+    borrowed.ptr = buf[0..].ptr;
+    borrowed.len = 2;
+    root.queue.push(composing(borrowed, 2, 2));
+    buf[0] = 'X';
+    buf[1] = 'Y';
+    loop.frame();
+    print("owned marks {} buffer \"{}\"\n", log.marks, borrowed);
+
+    root.deinit();
+    loop.deinit();
+    0
+}

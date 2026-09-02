@@ -1,0 +1,123 @@
+// The session is the document, and the events it publishes are its report.
+//
+// Committed text, the caret and the marked run live in one value; the marked
+// run is never part of committed, so composing and abandoning move no
+// committed byte. Insert over a live mark discards the mark without reporting
+// a composition, while commitMarked splices those same bytes in and reports
+// them as text. Backspace takes a whole UTF-8 scalar wherever it lands and a
+// selection whole, and an op that would overrun the inline capacity leaves
+// both the document and the queue untouched.
+@import "modules/std.sx";
+@import "modules/ui/input.sx";
+
+show :: (tag: string, s: *TextInputSession) {
+    print("{} committed \"{}\" caret {} marked \"{}\" [{} {}]\n",
+        tag, s.committedText(), s.caret, s.markedText(), s.markedSelStart, s.markedSelEnd);
+}
+
+report :: (q: *InputQueue) {
+    q.drain(|e: *InputEvent| {
+        match e.* {
+            case .text: |t| { print("  .text \"{}\"\n", t.text); }
+            case .composition: |cp| {
+                print("  .composition \"{}\" [{} {}]\n", cp.marked, cp.selectionStart, cp.selectionEnd);
+            }
+            case .deleteBackward: |_| { print("  .deleteBackward\n"); }
+            else: {}
+        }
+    });
+}
+
+main :: () -> i32 {
+    queue := InputQueue.init(context.allocator);
+    session := TextInputSession.init(*queue);
+    doc := *session;
+
+    // Unmarked, text lands at the caret.
+    doc.insert("ab");
+    report(*queue);
+    show("typed", doc);
+
+    // Composing replaces the marked run whole and leaves committed alone.
+    doc.setMarked("ㄱ", 3, 3);
+    doc.setMarked("가", 3, 3);
+    report(*queue);
+    show("composing", doc);
+
+    // The commit splices the marked bytes in as text.
+    doc.commitMarked();
+    report(*queue);
+    show("committed", doc);
+
+    // With no mark there is nothing to commit and nothing to say.
+    doc.commitMarked();
+    print("nothing to commit: queued {}\n", queue.len);
+
+    // Backspace takes a scalar, not a byte.
+    doc.deleteBackward();
+    report(*queue);
+    show("deleted", doc);
+
+    // While composing it shortens the mark instead.
+    doc.setMarked("한글", 6, 6);
+    report(*queue);
+    doc.deleteBackward();
+    report(*queue);
+    show("shortened", doc);
+
+    // Insert over a live mark: the mark goes, the text lands, no composition.
+    doc.insert("!");
+    report(*queue);
+    show("inserted", doc);
+
+    // Abandoning drops the mark and reports an empty marked string, over a
+    // document that is byte-identical across it.
+    doc.setMarked("가", 3, 3);
+    report(*queue);
+    doc.abandon();
+    report(*queue);
+    print("composing {}\n", doc.isComposing());
+    show("abandoned", doc);
+
+    // The caret decides where bytes go and which one backspace takes.
+    doc.select(1, 1);
+    doc.insert("-");
+    report(*queue);
+    show("spliced", doc);
+    doc.deleteBackward();
+    report(*queue);
+    show("unspliced", doc);
+
+    // A selection goes whole: backspace takes every scalar in it and says
+    // so once per scalar, and text lands in its place.
+    doc.select(1, 3);
+    doc.deleteBackward();
+    report(*queue);
+    show("cut", doc);
+    doc.select(0, 1);
+    doc.insert("가");
+    report(*queue);
+    show("replaced", doc);
+
+    // An insert past the inline capacity is refused whole; the one that
+    // reaches the last byte exactly is not.
+    zeros : [SESSION_COMMITTED_CAP]u8 = .{};
+    run : string = ---;
+    run.ptr = *zeros[0];
+    run.len = SESSION_COMMITTED_CAP;
+    doc.insert(run);
+    print("overrun committed \"{}\" queued {}\n", doc.committedText(), queue.len);
+    run.len = SESSION_COMMITTED_CAP - doc.committedLen;
+    doc.insert(run);
+    queue.clear();
+    doc.insert("!");
+    print("filled {} queued {}\n", doc.committedLen, queue.len);
+
+    // UTF-16 code units are the host's index; bytes are the session's.
+    print("utf16 가 {} {} | a {} {}\n",
+        utf16OffsetToBytes("가", 1), bytesToUtf16Offset("가", 3),
+        utf16OffsetToBytes("a", 1), bytesToUtf16Offset("a", 1));
+
+    queue.deinit();
+    0
+}

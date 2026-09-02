@@ -176,10 +176,41 @@ pub const Module = struct {
 
     /// Linear scan over sx-defined Obj-C classes.
     pub fn lookupObjcDefinedClass(self: *const Module, name: []const u8) ?*const ast.RuntimeClassDecl {
+        return (self.lookupObjcDefinedClassEntry(name) orelse return null).decl;
+    }
+
+    /// The `objc_defined_class_cache` entry for `name`, or null when `name`
+    /// is not an sx-defined Obj-C class.
+    pub fn lookupObjcDefinedClassEntry(self: *const Module, name: []const u8) ?ObjcDefinedClassEntry {
         for (self.objc_defined_class_cache.items) |entry| {
-            if (std.mem.eql(u8, entry.name, name)) return entry.decl;
+            if (std.mem.eql(u8, entry.name, name)) return entry;
         }
         return null;
+    }
+
+    /// sx-defined classes along `extends =` from `start` (inclusive if
+    /// `start` is in the cache), nearest first, written into `out`; returns
+    /// how many. Stops at a name absent from the cache (extern parent or
+    /// NSObject) or at a name already written. Cache names are unique, so the
+    /// sequence is at most `objc_defined_class_cache.items.len` long — the
+    /// class-pair constructor passes a buffer of that length.
+    pub fn objcDefinedAncestors(
+        self: *const Module,
+        start: []const u8,
+        out: []ObjcDefinedClassEntry,
+    ) usize {
+        var n: usize = 0;
+        var walk = start;
+        while (n < out.len) {
+            const entry = self.lookupObjcDefinedClassEntry(walk) orelse break;
+            for (out[0..n]) |prev| {
+                if (std.mem.eql(u8, prev.name, entry.name)) return n;
+            }
+            out[n] = entry;
+            n += 1;
+            walk = entry.parent_objc_name;
+        }
+        return n;
     }
 
     pub fn appendObjcDefinedClass(self: *Module, name: []const u8, decl: *const ast.RuntimeClassDecl) void {

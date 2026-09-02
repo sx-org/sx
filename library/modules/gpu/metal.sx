@@ -191,6 +191,7 @@ MTLBlitCommandEncoder :: @ObjcClass("MTLBlitCommandEncoder") extern {
 
 CAMetalDrawable :: @ObjcClass("CAMetalDrawable") extern {
     texture :: (self: *Self) -> *MTLTexture;
+    present :: (self: *Self);
 }
 
 MTLCommandBuffer :: @ObjcClass("MTLCommandBuffer") extern {
@@ -199,6 +200,7 @@ MTLCommandBuffer :: @ObjcClass("MTLCommandBuffer") extern {
     presentDrawable :: (self: *Self, drawable: *CAMetalDrawable);
     presentDrawable_atTime :: (self: *Self, drawable: *CAMetalDrawable, t: f64);
     commit :: (self: *Self);
+    waitUntilScheduled :: (self: *Self);
     waitUntilCompleted :: (self: *Self);
 }
 
@@ -247,6 +249,7 @@ MetalGPU :: struct {
     drawable:   *CAMetalDrawable = null;
     cmdBuffer: *MTLCommandBuffer = null;
     encoder:    *MTLRenderCommandEncoder = null;
+    presentsWithTransaction: bool = false;
 
     // Every render pass carries a depth attachment and every pipeline
     // declares MTL_PIXEL_FORMAT_DEPTH32_FLOAT: Metal rejects a draw whose
@@ -455,6 +458,9 @@ impl GPU for MetalGPU {
             if self.pixelW > 0 and self.pixelH > 0 {
                 self.layer.setDrawableSize(.{ width = self.pixelW, height = self.pixelH });
             }
+            self.layer.setMaximumDrawableCount(3);
+            self.layer.setPresentsWithTransaction(1);
+            self.presentsWithTransaction = true;
         }
 
         true
@@ -523,17 +529,24 @@ impl GPU for MetalGPU {
 
         self.encoder.endEncoding();
 
-        if self.drawable != null {
-            // targetTime > 0 → presentDrawable:atTime: (lockstep path).
-            // targetTime == 0 → fall back to presentDrawable: (immediate).
-            if targetTime > 0.0 {
-                self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
-            } else {
-                self.cmdBuffer.presentDrawable(self.drawable);
+        if self.drawable != null and self.presentsWithTransaction {
+            // The present has to land inside the current CATransaction:
+            // commit, wait until the buffer is scheduled, then present the
+            // drawable directly. A present queued on the command buffer
+            // fires after the transaction flushes, and the layer drops it.
+            self.cmdBuffer.commit();
+            self.cmdBuffer.waitUntilScheduled();
+            self.drawable.present();
+        } else {
+            if self.drawable != null {
+                if targetTime > 0.0 {
+                    self.cmdBuffer.presentDrawable_atTime(self.drawable, targetTime);
+                } else {
+                    self.cmdBuffer.presentDrawable(self.drawable);
+                }
             }
+            self.cmdBuffer.commit();
         }
-
-        self.cmdBuffer.commit();
 
         // Offscreen mode has no vsync to hide behind: the caller reads the
         // texture right after endFrame, so drain the GPU here.

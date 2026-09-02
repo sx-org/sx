@@ -1,0 +1,4 @@
+tag: a=41 a=42 b=41 b=42
+mark: b=10
+kind: base=0 a=1 b=2
+conforms: true

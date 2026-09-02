@@ -8,11 +8,15 @@
 // A component that owns a surface owns the padding inside it; what a caller puts
 // around that surface is placement.
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
 @import "modules/ui/font.sx";
+@import "modules/ui/input.sx";
 @import "modules/ui/fluent/view.sx";
 @import "modules/ui/fluent/modifier.sx";
+@import "modules/ui/fluent/identity.sx";
+@import "modules/ui/fluent/focus.sx";
 
 // One box, one command: a stroke rides ON the fill, a radius rounds what is
 // drawn, and a plain fill is the unrounded rect.
@@ -101,4 +105,77 @@ Button :: @OpenVariant(View) {
             ),
             self.label, self.fontSize, self.textColor);
     }
+}
+
+CARET_WIDTH :: 2.0;
+PREEDIT_RULE_HEIGHT :: 1.0;
+
+// The view of a `TextInputSession`. The session is the document and the field
+// holds none of it: it draws the committed run split at the caret, the marked
+// run at that split under its preedit rule, and the caret at the selection —
+// inside the mark while one is live.
+//
+// Its handlers forward to the session's ops, so a host that delivers text as
+// events edits through the same ops a host that calls them directly does; a tap
+// points the focus at the field.
+TextField :: @OpenVariant(View) {
+    session: *TextInputSession;
+    id: ElementId = .{};
+    fontSize: f32 = 16.0;
+    color: Color = COLOR_WHITE;
+
+    sizeThatFits :: (self: *TextField, proposal: ProposedSize) -> Size {
+        committed := measureText(self.session.committedText(), self.fontSize);
+        marked := measureText(self.session.markedText(), self.fontSize);
+        Size{
+            width = proposal.width ?? (committed.width + marked.width + CARET_WIDTH),
+            height = proposal.height ?? committed.height,
+        }
+    }
+
+    layout :: (self: *TextField, bounds: Frame) {}
+
+    render :: (self: *TextField, rc: *RenderContext, frame: Frame) {
+        doc := self.session;
+        rc.hitRegion(self.id.value, frame, null, closure(||_{ id = self.id } {
+            context.fluentFocus.requestFocus(id)
+        }));
+        rc.focusRegion(self.id.value, frame, null,
+            closure(|s: string|_{ doc } { doc.insert(s) }),
+            true,
+            closure(|e: *CompositionEvent|_{ doc } {
+                doc.setMarked(e.marked, e.selectionStart, e.selectionEnd)
+            }),
+            closure(||_{ doc } { doc.deleteBackward() }));
+
+        committed := doc.committedText();
+        head := committed[..doc.caret];
+        tail := committed[doc.caret..];
+        headSize := measureText(head, self.fontSize);
+        markedSize := measureText(doc.markedText(), self.fontSize);
+        line := headSize.height;
+        y := frame.origin.y + alignV(.center, line, frame.size.height);
+        markedX := frame.origin.x + headSize.width;
+        if head.len > 0 {
+            rc.addText(Frame.make(frame.origin.x, y, headSize.width, line), head, self.fontSize, self.color);
+        }
+        if doc.markedLen > 0 {
+            rc.addText(Frame.make(markedX, y, markedSize.width, line), doc.markedText(), self.fontSize, self.color);
+            rc.addRect(Frame.make(markedX, y + line - PREEDIT_RULE_HEIGHT, markedSize.width, PREEDIT_RULE_HEIGHT), self.color);
+        }
+        if tail.len > 0 {
+            tailSize := measureText(tail, self.fontSize);
+            rc.addText(Frame.make(markedX + markedSize.width, y, tailSize.width, line), tail, self.fontSize, self.color);
+        }
+        preCaret := measureText(doc.markedText()[..doc.markedSelStart], self.fontSize);
+        caret := Frame.make(markedX + preCaret.width, y, CARET_WIDTH, line);
+        rc.addRect(caret, self.color);
+        doc.fieldFrame = frame;
+        doc.caretFrame = caret;
+    }
+}
+
+// The one way a session becomes a field. The id is minted at THIS call site.
+textField :: (session: *TextInputSession, fontSize: f32 = 16.0, color: Color = COLOR_WHITE, site: SiteId = siteOf(@caller)) -> TextField {
+    TextField{ session = session, id = elementId(site), fontSize = fontSize, color = color }
 }

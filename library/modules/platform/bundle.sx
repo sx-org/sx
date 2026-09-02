@@ -226,6 +226,9 @@ IOS_MIN_OS : string : "14.0";
 // carry the keys the iOS launcher needs (UIDeviceFamily,
 // LSRequiresIPhoneOS, UIApplicationSceneManifest, DTPlatformName,
 // MinimumOSVersion); macOS doesn't need any of those.
+// CADisableMinimumFrameDurationOnPhone lifts the 60 Hz CADisplayLink cap
+// on ProMotion phones; without it the display link ignores any preferred
+// rate above 60.
 buildInfoPlist :: (opts: BuildOptions, exeName: string, bundleId: string) -> string {
     if opts.isIos() {
         platformKey := if opts.isIosSimulator() then "iPhoneSimulator" else "iPhoneOS";
@@ -253,6 +256,8 @@ buildInfoPlist :: (opts: BuildOptions, exeName: string, bundleId: string) -> str
         <integer>1</integer>
     </array>
     <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
     <key>UILaunchScreen</key>
     <dict/>

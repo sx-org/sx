@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const inst_mod = @import("inst.zig");
 const mod_mod = @import("module.zig");
+const ast = @import("../ast.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -167,4 +168,54 @@ test "Builder.getRefOp returns the defining op, null for params/out-of-range" {
     try std.testing.expect(b.getRefOp(Ref.fromIndex(9999)) == null);
 
     b.finalize();
+}
+
+var walker_decl: ast.RuntimeClassDecl = .{ .name = "W", .runtime_path = "W", .runtime = .objc_class };
+
+fn expectAncestors(mod: *const Module, start: []const u8, expected: []const []const u8) !void {
+    // Larger than any cache below, so `cache.len` is not what bounds the walk.
+    var out: [8]Module.ObjcDefinedClassEntry = undefined;
+    const n = mod.objcDefinedAncestors(start, &out);
+    try std.testing.expectEqual(expected.len, n);
+    for (expected, out[0..n]) |want, got| try std.testing.expectEqualStrings(want, got.name);
+}
+
+test "objcDefinedAncestors starts at the name given, not at its parent" {
+    var mod = Module.init(std.testing.allocator);
+    defer mod.deinit();
+
+    mod.appendObjcDefinedClass("A", &walker_decl);
+    mod.setObjcDefinedClassParent("A", "B");
+    mod.appendObjcDefinedClass("B", &walker_decl);
+    mod.setObjcDefinedClassParent("B", "NSObject");
+
+    try expectAncestors(&mod, "B", &.{"B"});
+}
+
+test "objcDefinedAncestors follows the chain past the first parent" {
+    var mod = Module.init(std.testing.allocator);
+    defer mod.deinit();
+
+    mod.appendObjcDefinedClass("A", &walker_decl);
+    mod.setObjcDefinedClassParent("A", "B");
+    mod.appendObjcDefinedClass("B", &walker_decl);
+    mod.setObjcDefinedClassParent("B", "C");
+    mod.appendObjcDefinedClass("C", &walker_decl);
+    mod.setObjcDefinedClassParent("C", "NSObject");
+
+    try expectAncestors(&mod, "B", &.{ "B", "C" });
+}
+
+test "objcDefinedAncestors visits a cycle's names once, not until the buffer fills" {
+    var mod = Module.init(std.testing.allocator);
+    defer mod.deinit();
+
+    mod.appendObjcDefinedClass("A", &walker_decl);
+    mod.setObjcDefinedClassParent("A", "B");
+    mod.appendObjcDefinedClass("B", &walker_decl);
+    mod.setObjcDefinedClassParent("B", "A");
+    mod.appendObjcDefinedClass("C", &walker_decl);
+    mod.setObjcDefinedClassParent("C", "NSObject");
+
+    try expectAncestors(&mod, "B", &.{ "B", "A" });
 }

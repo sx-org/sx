@@ -1,0 +1,11 @@
+regions 2 keyboard false
+unfocused marks 0 deletes 0
+  marked "にほ" [3 6]
+composing marks 1 texts 0 keys 0 deletes 0 keyboard true
+backspace keys 1 last .backspace deletes 0
+intent deletes 1 keys 1
+  marked "" [0 0]
+  text "に"
+committed marks 2 texts 1
+  marked "ni" [2 2]
+owned marks 3 buffer "XY"

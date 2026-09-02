@@ -1,0 +1,87 @@
+// The keyboard's overlap of the view is where the keyboard IS on the frame
+// being drawn: the host samples the keyboard's live top edge every tick and
+// the overlap is that edge.
+//
+// A pan holds the keyboard below its live edge by one offset, and the same
+// offset is what the host gives the keyboard's own layer, so the inset and
+// the keys move together. The release settles the offset, and a dismissing
+// settle reports the tick to lower the keyboard on.
+@import "modules/std.sx";
+@import "modules/platform/types.sx";
+
+VIEW_H :: 800.0;
+KEYBOARD_H :: 300.0;
+FRAME :: 1.0 / 60.0;
+
+show :: (label: string, kb: *KeyboardOverlap) {
+    print("{} height {} offset {} grip {}\n", label, kb.height, kb.offset, kb.grip);
+}
+
+main :: () -> i32 {
+    kb : KeyboardOverlap = .{};
+
+    // The keyboard rises: each presented frame carries its own top edge, and
+    // the first one already reads the edge it presents at. A tick that
+    // carries no edge leaves the overlap where the last edge put it.
+    kb.sample(VIEW_H, VIEW_H);
+    show("rest", *kb);
+    kb.sample(null, VIEW_H);
+    show("rest unpresented", *kb);
+    kb.sample(VIEW_H - 10.0, VIEW_H);
+    show("first", *kb);
+    kb.sample(VIEW_H - KEYBOARD_H * 0.5, VIEW_H);
+    show("mid", *kb);
+    kb.sample(null, VIEW_H);
+    show("mid unpresented", *kb);
+    kb.sample(VIEW_H - KEYBOARD_H, VIEW_H);
+    show("up", *kb);
+
+    // A pan grabs the keyboard and carries its top edge under the finger.
+    // The live edge stays where the keyboard's own frame parks it.
+    top := VIEW_H - KEYBOARD_H;
+    kb.grab();
+    kb.track(top + 100.0, VIEW_H);
+    kb.sample(top, VIEW_H);
+    show("dragged", *kb);
+
+    // Released short of the bottom, the keyboard settles back up.
+    kb.letGo(0.0);
+    steps : i64 = 0;
+    while kb.grip != .free and steps < 120 {
+        _ = kb.advance(FRAME);
+        kb.sample(top, VIEW_H);
+        steps += 1;
+    }
+    show("settled", *kb);
+
+    // Released at the bottom, the settle lands the keyboard away and the
+    // dismissal goes out on that tick; the hold stands until the keyboard
+    // itself has cleared the view.
+    kb.grab();
+    kb.track(VIEW_H, VIEW_H);
+    kb.sample(top, VIEW_H);
+    show("bottom", *kb);
+    print("bottom visible {}\n", kb.visible());
+    kb.letGo(0.0);
+    dismissals : i64 = 0;
+    steps = 0;
+    while steps < 120 {
+        if kb.advance(FRAME) { dismissals += 1; }
+        kb.sample(top, VIEW_H);
+        steps += 1;
+    }
+    print("dismissals {}\n", dismissals);
+    show("held", *kb);
+    print("held visible {}\n", kb.visible());
+    kb.sample(VIEW_H, VIEW_H);
+    show("cleared", *kb);
+    print("cleared visible {}\n", kb.visible());
+
+    // A flick down dismisses from anywhere below the keyboard's top edge.
+    kb.sample(top, VIEW_H);
+    kb.grab();
+    kb.track(top + 20.0, VIEW_H);
+    kb.letGo(KEYBOARD_FLICK_VELOCITY + 1.0);
+    print("flick target {}\n", kb.settleTo);
+    0
+}
