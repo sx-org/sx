@@ -85,11 +85,12 @@ decodeStatus :: (raw: i32) -> i32 {
 }
 
 // Read an environment variable. Returns null if unset; an empty
-// string if set to "".
+// string if set to "". A later `setenv` overwrites getenv's buffer, so the
+// value is copied out.
 env :: (name: [:0]u8) -> ?string {
     p := getenv(toCstring(name));
     if p == null { return null; }
-    fromCstring(p)
+    format("{}", fromCstring(p))
 }
 
 // Locate an executable by walking `$PATH`. Returns the absolute path
