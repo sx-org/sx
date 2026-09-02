@@ -876,10 +876,10 @@ pub fn emitObjcDefinedAllocAndInit(
 
     // (1) instance = [super alloc]: objc_msgSendSuper with the lookup
     // rooted at the metaclass of the chain's extern runtime parent.
-    // class_createInstance would skip a superclass +allocWithZone:
-    // override (CALayer allocates its render-side backing there), and
-    // the sx-defined ancestors' own +alloc IMPs are skipped so the
-    // shared __sx_state slot binds once, with the receiver's layout.
+    // CALayer allocates its render-side backing in +allocWithZone:, so
+    // the instance has to come from the runtime parent's +alloc; the
+    // sx-defined ancestors' own +alloc IMPs are skipped so the shared
+    // __sx_state slot binds once, with the receiver's layout.
     var top = fcd;
     while (self.objc().objcDefinedSuperclass(top)) |p| top = p;
     const parent_name = if (self.module.lookupObjcDefinedClassEntry(top.name)) |e| e.parent_objc_name else "NSObject";
