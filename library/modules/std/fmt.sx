@@ -506,7 +506,7 @@ CastError :: error { mismatch }
 
 @tryCast :: (av: any, $T: Type) -> (T, !CastError) {
     if !@typeEq(@typeOf(av), T) { raise .mismatch; }
-    return av.(@Any).data.(*T).*;
+    return @unbox(av, T);
 }
 
 @cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
@@ -514,14 +514,14 @@ CastError :: error { mismatch }
         print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
         c.exit(1);
     }
-    return av.(@Any).data.(*T).*;
+    return @unbox(av, T);
 }
 
 // Mismatch is a value (`null`), never a failure — the optional IS the check
 // (comma-ok parity).
 @castOrNull :: (av: any, $T: Type) -> ?T {
     if !@typeEq(@typeOf(av), T) { return null; }
-    v : T = av.(@Any).data.(*T).*;
+    v : T = @unbox(av, T);
     return v;
 }
 
@@ -547,7 +547,7 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
 __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
     if av := o {
         if !@typeEq(@typeOf(av), T) { raise .mismatch; }
-        v : T = av.(@Any).data.(*T).*;
+        v : T = @unbox(av, T);
         r : ?T = v;
         return r;
     }
@@ -561,7 +561,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
             print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
             c.exit(1);
         }
-        v : T = av.(@Any).data.(*T).*;
+        v : T = @unbox(av, T);
         r : ?T = v;
         return r;
     }
@@ -572,7 +572,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
 __sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
     if av := o {
         if !@typeEq(@typeOf(av), T) { return null; }
-        v : T = av.(@Any).data.(*T).*;
+        v : T = @unbox(av, T);
         r : ?T = v;
         return r;
     }
