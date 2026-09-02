@@ -14,7 +14,7 @@ main :: () -> i32 {
     buf := allocString(64);
     got := child.stdoutRead(xx buf);
     if got <= 0 { print("read: {}\n", got); return 1; }
-    print("echoed: {}", substr(buf, 0, xx got));
+    print("echoed: {}", buf[0 .. got.(i64)]);
 
     if child.wait(false) != null { print("cat exited before EOF\n"); return 1; }
 

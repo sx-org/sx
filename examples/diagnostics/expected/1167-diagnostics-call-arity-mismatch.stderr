@@ -10,11 +10,11 @@ error: 'add2' expects 2 arguments, but 1 was given
 17 |     _ = add2(1);                 // plain bare call, too few
    |         ^^^^
 
-error: 'substr' expects 3 arguments, but 4 were given
+error: 'intToString' expects 1 argument, but 2 were given
   --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:18:9
    |
-18 |     _ = substr("abc", 1, 2, 3);  // flat-imported stdlib fn, too many
-   |         ^^^^^^
+18 |     _ = intToString(1, 2);       // flat-imported stdlib fn, too many
+   |         ^^^^^^^^^^^
 
 error: 'Point.scaled' expects 1 argument, but 2 were given
   --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:20:9
