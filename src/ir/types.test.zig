@@ -106,15 +106,15 @@ test "a C-variadic function type spells its tail and its convention" {
 
     try std.testing.expectEqualStrings(
         "(i32, ..) -> i64 abi(.c)",
-        table.formatTypeName(a, table.functionTypeVariadic(&[_]TypeId{.i32}, .i64, .c, true)),
+        table.formatTypeName(a, table.functionTypeVariadic(&[_]TypeId{.i32}, .i64, .c, true), null),
     );
     try std.testing.expectEqualStrings(
         "(..) -> i64 abi(.c)",
-        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, true)),
+        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, true), null),
     );
     try std.testing.expectEqualStrings(
         "() -> i64 abi(.c)",
-        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, false)),
+        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, false), null),
     );
 }
 
@@ -846,9 +846,9 @@ test "formatTypeName: a width without a reserved spelling names its constructor"
     defer arena.deinit();
     const a = arena.allocator();
 
-    try std.testing.expectEqualStrings("@int(3, .signed)", table.formatTypeName(a, table.internInteger(3, true)));
-    try std.testing.expectEqualStrings("@int(4, .unsigned)", table.formatTypeName(a, table.internInteger(4, false)));
-    try std.testing.expectEqualStrings("i8", table.formatTypeName(a, table.internInteger(8, true)));
+    try std.testing.expectEqualStrings("@int(3, .signed)", table.formatTypeName(a, table.internInteger(3, true), null));
+    try std.testing.expectEqualStrings("@int(4, .unsigned)", table.formatTypeName(a, table.internInteger(4, false), null));
+    try std.testing.expectEqualStrings("i8", table.formatTypeName(a, table.internInteger(8, true), null));
 }
 
 test "channelName groups a composed | spelling under the bang" {
@@ -867,7 +867,7 @@ test "channelName groups a composed | spelling under the bang" {
     const by = table.internMember(b_owner, "Y");
     const composed = table.errorSetType(.empty, &[_]u32{ ax, by });
     const fail = table.internFailable(.i32, composed);
-    try std.testing.expectEqualStrings("(i32, !(A.X | B.Y))", table.formatTypeName(a, fail));
+    try std.testing.expectEqualStrings("(i32, !(A.X | B.Y))", table.formatTypeName(a, fail, null));
 }
 
 test "intern: a builtin's structural info answers its builtin slot" {

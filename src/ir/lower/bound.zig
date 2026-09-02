@@ -363,7 +363,7 @@ fn reportUncallable(
 ) void {
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.module.types.formatTypeName(self.alloc, bound_ty), spelled, param,
+        self.module.types.formatTypeName(self.alloc, bound_ty, null), spelled, param,
     });
     d.addHelpFmt(id, bound.span, null, help_fmt, help_args);
 }

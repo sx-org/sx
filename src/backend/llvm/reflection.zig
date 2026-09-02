@@ -35,7 +35,7 @@ pub const Reflection = struct {
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const tid = TypeId.fromIndex(i);
-            const name_str = self.e.ir_mod.types.formatTypeName(self.e.alloc, tid);
+            const name_str = self.e.ir_mod.types.formatTypeName(self.e.alloc, tid, null);
             const str_z = self.e.alloc.dupeZ(u8, name_str) catch unreachable;
             defer self.e.alloc.free(str_z);
             const global_str = c.LLVMAddGlobal(self.e.llvm_module, c.LLVMArrayType(self.e.cached_i8, @intCast(name_str.len + 1)), "tn.str");

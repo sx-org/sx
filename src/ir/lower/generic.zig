@@ -691,17 +691,22 @@ pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span
 
 /// Format a type name for display (e.g. "*Point", "[]i32", "[3]f64").
 pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
-    return self.module.types.formatTypeName(self.alloc, ty);
+    return self.module.types.formatTypeName(self.alloc, ty, null);
 }
 
-/// A type's SOURCE spelling, for diagnostics: a generic instance is rendered as
-/// the template applied to its arguments (`Sink(i64)`), never as the mangled
-/// instance name that keys it internally. Everything else formats as usual.
+/// A type's SOURCE spelling, for diagnostics: `formatTypeName` with every
+/// nominal leaf, at any depth, named by `sourceLeaf`.
 pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
-    // Two modules may declare one spelling. A reader can only act on a name that
-    // says which declaration it means, so a spelling with more than one author
-    // carries the module that declares THIS one — and one with a single author is
-    // left exactly as the program writes it.
+    return self.module.types.formatTypeName(self.alloc, ty, .{ .ctx = self, .name = sourceLeaf });
+}
+
+/// The source spelling of one nominal leaf, or null for the declared spelling.
+/// A generic instance is the template applied to its arguments (`Sink(i64)`),
+/// never the mangled instance name that keys it internally. A reader can only
+/// act on a name that says which declaration it means, so a spelling with more
+/// than one author carries the file that declares THIS one.
+fn sourceLeaf(ctx: *anyopaque, ty: TypeId) ?[]const u8 {
+    const self: *Lowering = @ptrCast(@alignCast(ctx));
     if (self.openSetOf(ty)) |set| {
         if (self.nameHasMultipleTypeAuthors(set.decl.name)) {
             if (set.source_file) |src| {
@@ -710,10 +715,9 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
         }
         return set.decl.name;
     }
-    const inst = self.getStructTypeName(ty) orelse return self.formatTypeName(ty);
+    if (self.module.types.get(ty) == .@"error") return self.module.types.errorSetDiagnosticName(self.alloc, ty);
+    const inst = self.getStructTypeName(ty) orelse return null;
     const template = self.struct_instance_template.get(inst) orelse {
-        // A plain type whose spelling several modules declare says which one it is
-        // the same way a set does.
         if (self.plain_struct_authors.get(ty)) |author| {
             if (self.nameHasMultipleTypeAuthors(author.decl.name)) {
                 if (author.source) |src| {
@@ -721,22 +725,22 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
                 }
             }
         }
-        return self.formatTypeName(ty);
+        return null;
     };
-    const author = self.struct_instance_author.get(inst) orelse return self.formatTypeName(ty);
-    const binds = self.struct_instance_bindings.getPtr(inst) orelse return self.formatTypeName(ty);
+    const author = self.struct_instance_author.get(inst) orelse return null;
+    const binds = self.struct_instance_bindings.getPtr(inst) orelse return null;
     var out = std.ArrayList(u8).empty;
-    out.appendSlice(self.alloc, template) catch return self.formatTypeName(ty);
-    out.append(self.alloc, '(') catch return self.formatTypeName(ty);
+    out.appendSlice(self.alloc, template) catch return null;
+    out.append(self.alloc, '(') catch return null;
     var n: usize = 0;
     for (author.type_params) |tp| {
         const bound = binds.get(tp.name) orelse continue;
-        if (n > 0) out.appendSlice(self.alloc, ", ") catch return self.formatTypeName(ty);
-        out.appendSlice(self.alloc, self.formatSourceTypeName(bound)) catch return self.formatTypeName(ty);
+        if (n > 0) out.appendSlice(self.alloc, ", ") catch return null;
+        out.appendSlice(self.alloc, self.formatSourceTypeName(bound)) catch return null;
         n += 1;
     }
-    if (n == 0) return self.formatTypeName(ty);
-    out.append(self.alloc, ')') catch return self.formatTypeName(ty);
+    if (n == 0) return null;
+    out.append(self.alloc, ')') catch return null;
     return out.items;
 }
 
