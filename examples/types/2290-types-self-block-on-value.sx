@@ -23,6 +23,9 @@ main :: () -> i64 {
     w := v.{ self.x = self.x + 1; };
     print("{} {} {}\n", w.x, w.y, v.x); // 4 6 3
 
+    e := w.{};
+    print("{}\n", e.x); // 4
+
     k := 10;
     f := ||_{ k } Vec.zero().{ |p| p.y = k; };
     print("{}\n", f().y); // 10
