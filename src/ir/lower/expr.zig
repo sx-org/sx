@@ -379,7 +379,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // to `@tagName` for function / error-set / protocol types, leaking
         // internal spellings ('function', 'error') into the message.
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot build a struct literal for non-struct type '{s}'", .{self.module.types.formatTypeName(self.alloc, ty)});
+            d.addFmt(.err, span, "cannot build a struct literal for non-struct type '{s}'", .{self.module.types.formatTypeName(self.alloc, ty, null)});
         return self.zeroValue(ty);
     }
 
@@ -2483,7 +2483,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
             }
             if (!from_target) {
                 if (self.diagnostics) |d| {
-                    const name = self.module.types.formatTypeName(self.alloc, resolved);
+                    const name = self.module.types.formatTypeName(self.alloc, resolved, null);
                     d.addFmt(.err, te.span, "a '.[ ]' literal's type prefix names the aggregate type, not the element type — '{s}' is not an array/vector/slice; annotate the binding instead: `x : [{d}]{s} = .[ … ]`", .{ name, al.elements.len, name });
                 }
                 return self.builder.constUndef(.unresolved);
@@ -3681,7 +3681,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         if (self.target_type == .type_value) {
                             break :blk self.builder.constType(fn_tid);
                         }
-                        const sid = self.module.types.internString(self.module.types.formatTypeName(self.alloc, fn_tid));
+                        const sid = self.module.types.internString(self.module.types.formatTypeName(self.alloc, fn_tid, null));
                         const str = self.builder.constString(sid);
                         break :blk self.boxAnyOf(str, .string, null);
                     }

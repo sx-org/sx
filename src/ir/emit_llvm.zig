@@ -905,7 +905,7 @@ pub const LLVMEmitter = struct {
             // rules, and the type is the only useful thing to know about it.
             if (llvm_size != ir_size) std.debug.panic(
                 "layout disagreement for '{s}': llvm={d} ir={d}",
-                .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty), llvm_size, ir_size },
+                .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty, null), llvm_size, ir_size },
             );
         }
     }

@@ -1,0 +1,21 @@
+error: '() -> Box (examples/generics/2292-generics-bound-spelling-names-same-name-authors/lib.sx)' does not satisfy the bound '() -> Box (examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx)' on '$F'
+  --> examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx:11:22
+   |
+11 | takeBox :: (make: $F/() -> Box) -> i32 { return make().n; }
+   |                      ^^^^^^^^^
+
+help: it returns 'Box (examples/generics/2292-generics-bound-spelling-names-same-name-authors/lib.sx)', and the bound asks for 'Box (examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx)'
+   |
+11 | takeBox :: (make: $F/() -> Box) -> i32 { return make().n; }
+   |                      ^^^^^^^^^
+
+error: '() -> (i32, !IoErr (examples/generics/2292-generics-bound-spelling-names-same-name-authors/lib.sx))' does not satisfy the bound '() -> (i32, !IoErr (examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx))' on '$F'
+  --> examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx:12:22
+   |
+12 | takeFail :: (run: $F/() -> (i32, !IoErr)) -> i32 { return run() catch |e| -1; }
+   |                      ^^^^^^^^^^^^^^^^^^^
+
+help: it returns '(i32, !IoErr (examples/generics/2292-generics-bound-spelling-names-same-name-authors/lib.sx))', and the bound asks for '(i32, !IoErr (examples/generics/2292-generics-bound-spelling-names-same-name-authors.sx))'
+   |
+12 | takeFail :: (run: $F/() -> (i32, !IoErr)) -> i32 { return run() catch |e| -1; }
+   |                      ^^^^^^^^^^^^^^^^^^^

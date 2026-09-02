@@ -272,10 +272,10 @@ fn checkMember(
     }
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.formatTypeName(bound_ty), set_name, param,
+        self.formatSourceTypeName(bound_ty), set_name, param,
     });
     if (self.openSetOfMember(bound_ty)) |other| {
-        d.addHelpFmt(id, bound.span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(bound_ty), other.decl.name });
+        d.addHelpFmt(id, bound.span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(bound_ty), other.decl.name });
     } else {
         d.addHelpFmt(id, bound.span, null, "a type joins '{s}' by declaring itself into it: '{s} :: @OpenVariant({s}) {{ … }}'", .{ set_name, self.formatTypeName(bound_ty), set_name });
     }
@@ -292,7 +292,7 @@ pub fn checkCallable(
     bound_ty: TypeId,
 ) void {
     const fte = bound.data.function_type_expr;
-    const spelled = self.formatTypeName(self.resolveTypeWithBindings(bound));
+    const spelled = self.formatSourceTypeName(self.resolveTypeWithBindings(bound));
     const sig = self.callableSigOf(bound_ty) orelse
         return reportUncallable(self, bound, spelled, param, bound_ty, "a unique lambda, a 'Closure', a function pointer, or a nominal with a function-type impl answers this bound", .{});
     var got_i: usize = 0;
@@ -309,7 +309,7 @@ pub fn checkCallable(
                 }
                 for (elems, rest, 0..) |w, g, j| {
                     if (w == .unresolved or w == g) continue;
-                    return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i + j + 1, self.formatTypeName(g), self.formatTypeName(w) });
+                    return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i + j + 1, self.formatSourceTypeName(g), self.formatSourceTypeName(w) });
                 }
             }
             got_i = sig.params.len;
@@ -324,7 +324,7 @@ pub fn checkCallable(
         const got = sig.params[got_i];
         got_i += 1;
         if (want == .unresolved or want == got) continue;
-        return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i, self.formatTypeName(got), self.formatTypeName(want) });
+        return reportUncallable(self, bound, spelled, param, bound_ty, "argument {d} is '{s}', and the bound passes '{s}'", .{ got_i, self.formatSourceTypeName(got), self.formatSourceTypeName(want) });
     }
     if (got_i != sig.params.len) {
         return reportUncallable(self, bound, spelled, param, bound_ty, "it takes {d} argument{s}, and the bound calls it with {d}", .{
@@ -334,7 +334,7 @@ pub fn checkCallable(
     const want_ret = if (fte.return_type) |rt| self.resolveTypeWithBindings(rt) else TypeId.void;
     if (want_ret == .unresolved or want_ret == sig.ret) return;
     if (channelOpenMatch(self, want_ret, sig.ret)) return;
-    reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(sig.ret), self.formatTypeName(want_ret) });
+    reportUncallable(self, bound, spelled, param, bound_ty, "it returns '{s}', and the bound asks for '{s}'", .{ self.formatSourceTypeName(sig.ret), self.formatSourceTypeName(want_ret) });
 }
 
 /// A bare-`!` channel on the bound's return is a callability question, not a
@@ -363,7 +363,7 @@ fn reportUncallable(
 ) void {
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.module.types.formatTypeName(self.alloc, bound_ty), spelled, param,
+        self.formatSourceTypeName(bound_ty), spelled, param,
     });
     d.addHelpFmt(id, bound.span, null, help_fmt, help_args);
 }
@@ -416,7 +416,7 @@ fn checkProtocolBinding(
     // rather than escaping the check for want of a name to look up.
     const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
         reportViolation(self, bound, proto_name, param, bound_ty,
-            "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
+            "'{s}' is a structural type and can carry no 'impl'", .{self.formatSourceTypeName(bound_ty)});
         return;
     };
     const b = self.boundNonConformance(proto_ty, concrete_name, bound_ty) orelse return;
@@ -441,7 +441,7 @@ fn reportBoundNonConformance(
     if (handle and !b.impl_visible) {
         const d = self.diagnostics orelse return;
         d.addFmt(.err, bound.span, "'{s}' does not conform to the bound '{s}' — a handle conforms through 'impl {s} for {s}', and none is visible here", .{
-            self.formatTypeName(bound_ty), proto_name, proto_name, self.formatTypeName(bound_ty),
+            self.formatSourceTypeName(bound_ty), proto_name, proto_name, self.formatTypeName(bound_ty),
         });
         return;
     }
@@ -459,7 +459,7 @@ fn reportBoundNonConformance(
         }
     }
     reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
+        "'{s}' has no '{s}' for '{s}'", .{ self.formatSourceTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
 }
 
 /// A compiler-formed bound. There is no impl to look up: the binding satisfies
@@ -509,7 +509,7 @@ fn checkFormed(
     const actual = self.module.types.initTarget(bound_ty) orelse {
         const d = self.diagnostics orelse return;
         const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-            self.formatTypeName(bound_ty), spelled, param,
+            self.formatSourceTypeName(bound_ty), spelled, param,
         });
         d.addHelpFmt(id, bound.span, null, "an initializer is formed at the argument of a value parameter — '${s}' can only bind what formation produced", .{param});
         return;
@@ -517,9 +517,9 @@ fn checkFormed(
     if (want == .unresolved or actual == want) return;
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.formatTypeName(bound_ty), spelled, param,
+        self.formatSourceTypeName(bound_ty), spelled, param,
     });
-    d.addHelpFmt(id, bound.span, null, "this initializer writes '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(actual), self.formatTypeName(want) });
+    d.addHelpFmt(id, bound.span, null, "this initializer writes '{s}', and the bound asks for '{s}'", .{ self.formatSourceTypeName(actual), self.formatSourceTypeName(want) });
 }
 
 /// The `@BuildBlock` half: the binding must be a block the compiler formed, for
@@ -535,7 +535,7 @@ fn checkFormedBlock(
     const protocol = self.blockProtocolOf(bound_ty) orelse {
         const d = self.diagnostics orelse return;
         const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-            self.formatTypeName(bound_ty), spelled, param,
+            self.formatSourceTypeName(bound_ty), spelled, param,
         });
         d.addHelpFmt(id, bound.span, null, "a build block is formed from a trailing block at the call — '${s}' can only bind one of those", .{param});
         return;
@@ -543,9 +543,9 @@ fn checkFormedBlock(
     if (want == .unresolved or protocol == want) return;
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.formatTypeName(bound_ty), spelled, param,
+        self.formatSourceTypeName(bound_ty), spelled, param,
     });
-    d.addHelpFmt(id, bound.span, null, "this block is intercepted at '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(protocol), self.formatTypeName(want) });
+    d.addHelpFmt(id, bound.span, null, "this block is intercepted at '{s}', and the bound asks for '{s}'", .{ self.formatSourceTypeName(protocol), self.formatSourceTypeName(want) });
 }
 
 /// The deferred question, arriving: `$V/P` where `P` is bound by this same
@@ -582,14 +582,14 @@ fn checkAgainstSibling(
         }
         if (spelled_args > 0) {
             const d0 = self.diagnostics orelse return;
-            const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' spells type arguments, but '${s}' is bound to '{s}', which takes none", .{ param, sibling, self.formatTypeName(sib_ty) });
+            const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' spells type arguments, but '${s}' is bound to '{s}', which takes none", .{ param, sibling, self.formatSourceTypeName(sib_ty) });
             d0.addHelpFmt(id, bound.span, null, "a bound on a concrete type is an identity, not an instantiation — write '${s}/{s}'", .{ param, sibling });
             return;
         }
         if (bound_ty == sib_ty) return;
         const d0 = self.diagnostics orelse return;
-        const id = d0.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound on '${s}'", .{ self.formatTypeName(bound_ty), param });
-        d0.addHelpFmt(id, bound.span, null, "'${s}' is bound to '{s}', so '${s}' must be '{s}'", .{ sibling, self.formatTypeName(sib_ty), param, self.formatTypeName(sib_ty) });
+        const id = d0.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound on '${s}'", .{ self.formatSourceTypeName(bound_ty), param });
+        d0.addHelpFmt(id, bound.span, null, "'${s}' is bound to '{s}', so '${s}' must be '{s}'", .{ sibling, self.formatSourceTypeName(sib_ty), param, self.formatSourceTypeName(sib_ty) });
         return;
     }
     // The sibling landed on a protocol: its own arity decides whether the
@@ -598,13 +598,13 @@ fn checkAgainstSibling(
         if (spelled_args != pd.type_params.len) {
             const d0 = self.diagnostics orelse return;
             const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' writes {d} type argument{s}, but '${s}' is bound to '{s}', which takes {d}", .{
-                param, spelled_args, if (spelled_args == 1) "" else "s", sibling, self.formatTypeName(sib_ty), pd.type_params.len,
+                param, spelled_args, if (spelled_args == 1) "" else "s", sibling, self.formatSourceTypeName(sib_ty), pd.type_params.len,
             });
             d0.addHelpFmt(id, bound.span, null, "the arity is the bound's, and '${s}' is only known at the call that binds it", .{sibling});
             return;
         }
     }
-    checkProtocolBinding(self, bound, sib_ty, self.formatTypeName(sib_ty), param, bound_ty);
+    checkProtocolBinding(self, bound, sib_ty, self.formatSourceTypeName(sib_ty), param, bound_ty);
 }
 
 fn reportViolation(
@@ -618,7 +618,7 @@ fn reportViolation(
 ) void {
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-        self.formatTypeName(bound_ty), proto_name, param,
+        self.formatSourceTypeName(bound_ty), proto_name, param,
     });
     d.addHelpFmt(id, bound.span, null, help_fmt, help_args);
 }

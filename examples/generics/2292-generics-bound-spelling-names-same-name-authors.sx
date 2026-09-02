@@ -1,0 +1,18 @@
+// Two declarations of one name author two types. A callable bound that
+// spells one is not filled by a callable returning the other, and the refusal
+// names each author by its file inside the compound — a function type and the
+// channel of a failable — where the spelling alone says nothing.
+@import "modules/std.sx";
+@import "2292-generics-bound-spelling-names-same-name-authors/lib.sx";
+
+Box :: struct { n: i32 }
+IoErr :: error { Failed; Canceled }
+
+takeBox :: (make: $F/() -> Box) -> i32 { return make().n; }
+takeFail :: (run: $F/() -> (i32, !IoErr)) -> i32 { return run() catch |e| -1; }
+
+main :: () -> i32 {
+    a := takeBox(makeBox);
+    b := takeFail(mayFail);
+    return a + b;
+}

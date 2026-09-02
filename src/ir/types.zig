@@ -1496,7 +1496,7 @@ pub const TypeTable = struct {
             .name = self.internString(block_env_field),
             .ty = self.ptrTo(.void),
         }}) catch unreachable;
-        const name = std.fmt.allocPrint(self.alloc, "@BuildBlock({s})", .{self.formatTypeName(self.alloc, protocol)}) catch "@BuildBlock";
+        const name = std.fmt.allocPrint(self.alloc, "@BuildBlock({s})", .{self.formatTypeName(self.alloc, protocol, null)}) catch "@BuildBlock";
         return self.intern(.{ .@"struct" = .{
             .name = self.internString(name),
             .fields = fields,
@@ -2028,9 +2028,9 @@ pub const TypeTable = struct {
     /// declaration is meant. The qualified form is freshly allocated via
     /// `alloc`; every other answer is a borrowed slice.
     pub fn errorSetDiagnosticName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
-        if (id.isBuiltin()) return self.formatTypeName(alloc, id);
+        if (id.isBuiltin()) return self.formatTypeName(alloc, id, null);
         const info = self.get(id);
-        if (info != .@"error") return self.formatTypeName(alloc, id);
+        if (info != .@"error") return self.formatTypeName(alloc, id, null);
         const e = info.@"error";
         const name = self.getString(e.name);
         if (e.tags.len == 0 or !self.errorNameIsShared(e)) return name;
@@ -2058,53 +2058,59 @@ pub const TypeTable = struct {
     /// `!(A | B)` so the bang binds the whole channel. A member-less channel is
     /// identified by a spelling that is not a legal type name and already
     /// carries its own `!`.
-    pub fn channelName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
-        const name = self.formatTypeName(alloc, id);
+    pub fn channelName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId, leaf: ?Leaf) []const u8 {
+        const name = self.formatTypeName(alloc, id, leaf);
         if (name.len > 0 and name[0] == '!') return name;
         if (std.mem.indexOfScalar(u8, name, '|') != null)
             return std.fmt.allocPrint(alloc, "!({s})", .{name}) catch "!";
         return std.fmt.allocPrint(alloc, "!{s}", .{name}) catch "!";
     }
 
+    /// A caller's name for a nominal leaf — struct, enum, union, tagged union,
+    /// protocol, error set. Null keeps the declared spelling.
+    pub const Leaf = struct {
+        ctx: *anyopaque,
+        name: *const fn (ctx: *anyopaque, id: TypeId) ?[]const u8,
+    };
+
     /// Like `typeName` but produces structural names for compound
     /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function types)
-    /// instead of returning `"?"`. Compound names are freshly allocated via
+    /// instead of returning `"?"`, with every nominal leaf, at any depth,
+    /// offered to `leaf` first. Compound names are freshly allocated via
     /// `alloc`; every builtin and named user type returns a borrowed slice.
-    pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
+    pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId, leaf: ?Leaf) []const u8 {
         if (id.isBuiltin()) return self.typeName(id);
         const info = self.get(id);
         return switch (info) {
-            .@"struct" => |s| self.getString(s.name),
-            .@"enum" => |e| self.getString(e.name),
-            .@"union" => |u| self.getString(u.name),
-            .tagged_union => |u| self.getString(u.name),
-            .protocol => |p| self.getString(p.name),
-            .@"error" => |e| self.getString(e.name),
+            .@"struct", .@"enum", .@"union", .tagged_union, .protocol, .@"error" => blk: {
+                if (leaf) |l| if (l.name(l.ctx, id)) |n| break :blk n;
+                break :blk self.typeName(id);
+            },
             .pointer => |p| blk: {
-                const inner = self.formatTypeName(alloc, p.pointee);
+                const inner = self.formatTypeName(alloc, p.pointee, leaf);
                 break :blk std.fmt.allocPrint(alloc, "*{s}", .{inner}) catch "*?";
             },
             .many_pointer => |p| blk: {
-                const inner = self.formatTypeName(alloc, p.element);
+                const inner = self.formatTypeName(alloc, p.element, leaf);
                 break :blk std.fmt.allocPrint(alloc, "[*]{s}", .{inner}) catch "[*]?";
             },
             .slice => |s| blk: {
-                const inner = self.formatTypeName(alloc, s.element);
+                const inner = self.formatTypeName(alloc, s.element, leaf);
                 if (s.len_type == .i64)
                     break :blk std.fmt.allocPrint(alloc, "[]{s}", .{inner}) catch "[]?";
-                const len_name = self.formatTypeName(alloc, s.len_type);
+                const len_name = self.formatTypeName(alloc, s.len_type, leaf);
                 break :blk std.fmt.allocPrint(alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "@Slice(?)";
             },
             .array => |a| blk: {
-                const inner = self.formatTypeName(alloc, a.element);
+                const inner = self.formatTypeName(alloc, a.element, leaf);
                 break :blk std.fmt.allocPrint(alloc, "[{d}]{s}", .{ a.length, inner }) catch "[N]?";
             },
             .vector => |v| blk: {
-                const inner = self.formatTypeName(alloc, v.element);
+                const inner = self.formatTypeName(alloc, v.element, leaf);
                 break :blk std.fmt.allocPrint(alloc, "@Vector({d},{s})", .{ v.length, inner }) catch "@Vector(?)";
             },
             .optional => |o| blk: {
-                const inner = self.formatTypeName(alloc, o.child);
+                const inner = self.formatTypeName(alloc, o.child, leaf);
                 break :blk std.fmt.allocPrint(alloc, "?{s}", .{inner}) catch "?_";
             },
             .function => |f| blk: {
@@ -2113,7 +2119,7 @@ pub const TypeTable = struct {
                 buf.append(alloc, '(') catch break :blk "(?)";
                 for (f.params, 0..) |p, i| {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, p)) catch break :blk "(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, p, leaf)) catch break :blk "(?)";
                 }
                 if (f.is_c_variadic) {
                     if (f.params.len > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
@@ -2122,29 +2128,29 @@ pub const TypeTable = struct {
                 buf.append(alloc, ')') catch break :blk "(?)";
                 if (f.ret != .void) {
                     buf.appendSlice(alloc, " -> ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, f.ret)) catch break :blk "(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, f.ret, leaf)) catch break :blk "(?)";
                 }
                 if (f.call_conv == .c) buf.appendSlice(alloc, " abi(.c)") catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
             .closure => |co| blk: {
                 if (co.init_target) |it| {
-                    break :blk std.fmt.allocPrint(alloc, "@Init({s})", .{self.formatTypeName(alloc, it)}) catch "@Init(?)";
+                    break :blk std.fmt.allocPrint(alloc, "@Init({s})", .{self.formatTypeName(alloc, it, leaf)}) catch "@Init(?)";
                 }
                 if (co.build_protocol) |bp| {
-                    break :blk std.fmt.allocPrint(alloc, "@BuildBlock({s})", .{self.formatTypeName(alloc, bp)}) catch "@BuildBlock(?)";
+                    break :blk std.fmt.allocPrint(alloc, "@BuildBlock({s})", .{self.formatTypeName(alloc, bp, leaf)}) catch "@BuildBlock(?)";
                 }
                 var buf = std.ArrayList(u8).empty;
                 defer buf.deinit(alloc);
                 buf.appendSlice(alloc, "Closure(") catch break :blk "Closure(?)";
                 for (co.params, 0..) |p, i| {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "Closure(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, p)) catch break :blk "Closure(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, p, leaf)) catch break :blk "Closure(?)";
                 }
                 buf.append(alloc, ')') catch break :blk "Closure(?)";
                 if (co.ret != .void) {
                     buf.appendSlice(alloc, " -> ") catch break :blk "Closure(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, co.ret)) catch break :blk "Closure(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, co.ret, leaf)) catch break :blk "Closure(?)";
                 }
                 break :blk buf.toOwnedSlice(alloc) catch "Closure(?)";
             },
@@ -2155,10 +2161,10 @@ pub const TypeTable = struct {
                 const n = self.failableValueSlotCount(f);
                 for (0..n) |i| {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, self.failableValueSlotType(f, i))) catch break :blk "(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, self.failableValueSlotType(f, i), leaf)) catch break :blk "(?)";
                 }
                 if (n > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                buf.appendSlice(alloc, self.channelName(alloc, f.err)) catch break :blk "(?)";
+                buf.appendSlice(alloc, self.channelName(alloc, f.err, leaf)) catch break :blk "(?)";
                 buf.append(alloc, ')') catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
@@ -2168,7 +2174,7 @@ pub const TypeTable = struct {
                 buf.appendSlice(alloc, "pack(") catch break :blk "pack(?)";
                 for (pk.elements, 0..) |e, i| {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "pack(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, e)) catch break :blk "pack(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, e, leaf)) catch break :blk "pack(?)";
                 }
                 buf.append(alloc, ')') catch break :blk "pack(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "pack(?)";
