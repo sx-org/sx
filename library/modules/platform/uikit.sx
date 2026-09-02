@@ -446,7 +446,9 @@ impl Platform for UIKitPlatform {
 
     hideKeyboard :: (self: *UIKitPlatform) {
         if session := self.session {
+            self.notifyTextWillChange();
             session.abandon();
+            self.notifyTextDidChange();
         }
         self.pendingResponder = .hide;
     }
@@ -912,17 +914,13 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
-            self.notifyTextWillChange();
             session.insert(fromCstring(text.UTF8String().(cstring)));
-            self.notifyTextDidChange();
         }
     }
 
     deleteBackward :: (self: *UIKitPlatform) {
         if session := self.session {
-            self.notifyTextWillChange();
             session.deleteBackward();
-            self.notifyTextDidChange();
         }
     }
 
@@ -934,17 +932,13 @@ impl Platform for UIKitPlatform {
             if t := text { run = fromCstring(t.UTF8String().(cstring)); }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
-            self.notifyTextWillChange();
             session.setMarked(run, selStart, selEnd);
-            self.notifyTextDidChange();
         }
     }
 
     commitMarked :: (self: *UIKitPlatform) {
         if session := self.session {
-            self.notifyTextWillChange();
             session.commitMarked();
-            self.notifyTextDidChange();
         }
     }
 
@@ -960,6 +954,8 @@ impl Platform for UIKitPlatform {
         null
     }
 
+    // UIKit's input delegate hears only changes the app makes on its own;
+    // notifying it for an edit the keyboard asked for resets the composition.
     notifyTextWillChange :: (self: *UIKitPlatform) {
         if d := self.inputDelegate {
             if view := self.glView { d.textWillChange(view); }
