@@ -1258,8 +1258,6 @@ pub const TypeTable = struct {
         return self.intern(.{ .slice = .{ .element = element, .len_type = len_type } });
     }
 
-    /// The type of a fat pointer's length word: a slice's declared `Len`,
-    /// `i64` for `string` and every other container whose `.len` is a count.
     /// The slice shape of `ty`: a `[]T`'s own info, and `{u8, i64}` for
     /// `string`, which is `[]u8`. Null for every other type.
     pub fn sliceInfoOf(self: *const TypeTable, ty: TypeId) ?TypeInfo.SliceInfo {
@@ -1271,6 +1269,8 @@ pub const TypeTable = struct {
         };
     }
 
+    /// The type of a fat pointer's length word: a slice's declared `Len`,
+    /// `i64` for `string` and every other container whose `.len` is a count.
     pub fn lenTypeOf(self: *const TypeTable, ty: TypeId) TypeId {
         if (ty.isBuiltin()) return .i64;
         return switch (self.get(ty)) {
