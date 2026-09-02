@@ -56,7 +56,7 @@ main :: () -> i32 {
     // A button owns its surface and the padding inside it, and centres its
     // label in the frame it is given.
     key : View = Button{ label = "7", fontSize = 20.0, corner = 4.0 };
-    keySize := key.sizeThatFits(ProposedSize.flexible());
+    keySize := key.fit(ProposedSize.flexible());
     key.render(*rc, Frame.make(0.0, 104.0, keySize.width, keySize.height));
 
     for n in tree.nodes { show(n); }

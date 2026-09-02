@@ -53,7 +53,7 @@ ModBox :: @OpenVariant(View) ($V: Type) {
     child: V;
     m: Mod = .{};
 
-    sizeThatFits :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
+    fit :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
         if self.m.hidden { return Size.zero(); }
         boxW : ?f32 = self.m.width;
         boxH : ?f32 = self.m.height;
@@ -63,7 +63,7 @@ ModBox :: @OpenVariant(View) ($V: Type) {
         contentH : ?f32 = null;
         if w := boxW { contentW = w - self.m.padding.horizontal(); }
         if h := boxH { contentH = h - self.m.padding.vertical(); }
-        child := self.child.sizeThatFits(ProposedSize{ width = contentW, height = contentH });
+        child := self.child.fit(ProposedSize{ width = contentW, height = contentH });
         Size{
             width = (self.m.width ?? (child.width + self.m.padding.horizontal()))
                 + self.m.margin.horizontal(),
