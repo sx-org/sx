@@ -2481,7 +2481,7 @@ test "sema: generic index resolves with realistic List/Move (methods, cross-refs
     try std.testing.expectEqualStrings("Square", f_ty.?.struct_type);
 }
 
-test "sema: method-return slice + .ptr index + tagged-enum element" {
+test "sema: method-return slice + .ptr index + payload-enum element" {
     const parser_mod = @import("parser.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

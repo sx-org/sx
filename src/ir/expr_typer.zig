@@ -269,8 +269,9 @@ pub const ExprTyper = struct {
                     // Check union fields (payload enum payloads) + promoted struct fields
                     const info = self.l.module.types.get(obj_ty);
                     var m: usize = 0;
+                    const overlay = info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload());
                     while (self.l.module.types.memberName(obj_ty, @intCast(m))) |mname| : (m += 1) {
-                        if (info != .@"union" and info != .@"enum") break;
+                        if (!overlay) break;
                         const mty = self.l.module.types.memberType(obj_ty, @intCast(m)) orelse break;
                         if (mname == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(mty) else mty;
                         if (!self.l.payloadPromotes(mty)) continue;

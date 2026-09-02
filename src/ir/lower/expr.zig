@@ -987,7 +987,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     if (!ty.isBuiltin()) {
         const info = self.module.types.get(ty);
         var m: usize = 0;
-        if (info == .@"union" or info == .@"enum") {
+        if (info == .@"union" or (info == .@"enum" and info.@"enum".hasPayload())) {
             while (self.module.types.memberName(ty, @intCast(m))) |mname| : (m += 1) {
                 const mty = self.module.types.memberType(ty, @intCast(m)) orelse break;
                 if (mname == field_name_id) return mty;

@@ -3106,7 +3106,7 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
     // Union / payload enum: variants overlay at one offset. A direct field is a
     // union_gep; a promoted anonymous-struct member is a union_gep into the
     // variant followed by a struct_gep into the member.
-    if (type_info == .@"union" or type_info == .@"enum") {
+    if (type_info == .@"union" or (type_info == .@"enum" and type_info.@"enum".hasPayload())) {
         var i: usize = 0;
         while (self.module.types.memberName(obj_ty, @intCast(i))) |mname| : (i += 1) {
             const mty = self.module.types.memberType(obj_ty, @intCast(i)) orelse break;

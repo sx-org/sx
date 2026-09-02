@@ -1,0 +1,5 @@
+error: field 'red' not found on type 'Color'
+  --> examples/diagnostics/2300-diagnostics-enum-variant-field-write.sx:9:5
+   |
+ 9 |     c.red = 1;
+   |     ^^^^^
