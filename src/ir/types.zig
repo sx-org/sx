@@ -1259,7 +1259,7 @@ pub const TypeTable = struct {
     }
 
     /// The slice shape of `ty`: a `[]T`'s own info, and `{u8, i64}` for
-    /// `string`, which is `[]u8`. Null for every other type.
+    /// `string`. Null for every other type.
     pub fn sliceInfoOf(self: *const TypeTable, ty: TypeId) ?TypeInfo.SliceInfo {
         if (ty == .string) return .{ .element = .u8 };
         if (ty.isBuiltin()) return null;
