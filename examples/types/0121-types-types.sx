@@ -222,7 +222,7 @@ main :: () {
     flag := true;
     if flag { print("bool: true\n"); }
 
-    // --- Union  ---
+    // --- Union ---
     o : Overlay = ---;
     o.f = 3.14;
     print("union-f: {}\n", o.f);

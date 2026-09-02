@@ -752,7 +752,7 @@ Payload-less enums print as `.variant`. Enums with payloads print as `.variant(v
 print("{}", s);  // .circle(3.140000)
 ```
 
-### Union Types 
+### Union Types
 C-style unions for zero-cost memory overlays (type punning). All fields share the same memory — no tag, no runtime overhead. The LLVM representation is `[max_field_size x i8]`.
 
 #### Declaration
