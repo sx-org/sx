@@ -16,6 +16,6 @@ main :: () -> i32 {
     print("{}\n", r);
     bytes : [2]u8 = .[1, 2];
     mp8 : [*]u8 = xx *bytes[0];
-    s : []u8 = mp8;           // [*]u8 → string — the same rejection
+    s : []u8 = mp8;           // [*]u8 → string
     return 0;
 }

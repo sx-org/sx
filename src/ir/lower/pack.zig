@@ -220,7 +220,7 @@ pub fn isPackName(self: *Lowering, name: []const u8) bool {
 pub fn lowerPackToSlice(self: *Lowering, pack_name: []const u8, slice_ty: TypeId) Ref {
     const arg_nodes = (self.pack_arg_nodes orelse return self.builder.constInt(0, .unresolved)).get(pack_name) orelse
         return self.builder.constInt(0, .unresolved);
-    const elem_ty = self.module.types.get(slice_ty).slice.element;
+    const elem_ty = self.module.types.sliceInfoOf(slice_ty).?.element;
     const is_any = elem_ty == .any;
     const elem_is_protocol = blk: {
         if (elem_ty.isBuiltin()) break :blk false;

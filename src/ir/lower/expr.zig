@@ -3857,7 +3857,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (uop.op == .xx and uop.operand.data == .identifier and self.isPackName(uop.operand.data.identifier.name)) {
                 const pname = uop.operand.data.identifier.name;
                 if (self.target_type) |tt| {
-                    if (!tt.isBuiltin() and self.module.types.get(tt) == .slice) {
+                    if (self.module.types.sliceInfoOf(tt) != null) {
                         break :blk self.lowerPackToSlice(pname, tt);
                     }
                 }

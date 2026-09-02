@@ -7,5 +7,5 @@ error: a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it car
 error: a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]
   --> examples/diagnostics/1183-diagnostics-many-pointer-to-slice-rejected.sx:19:5
    |
-19 |     s : []u8 = mp8;           // [*]u8 → string — the same rejection
+19 |     s : []u8 = mp8;           // [*]u8 → string
    |     ^^^^^^^^^^^^^^^
