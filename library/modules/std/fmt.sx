@@ -133,11 +133,12 @@ intToHexString :: (n: i64) -> string {
     substr(buf, start, 16 - start)
 }
 
-concat :: (a: string, b: string) -> string {
+concat :: (..parts: []string) -> string {
+    n := 0;
+    for p in parts { n += p.len; }
     sb := StringBuilder.init();
-    sb.reserve(a.len + b.len);
-    sb.write(a);
-    sb.write(b);
+    sb.reserve(n);
+    for p in parts { sb.write(p); }
     sb.finish()
 }
 
@@ -190,28 +191,22 @@ toCstring :: (s: string) -> cstring {
 // boundaries. Used for bundle paths where Apple .app and Android APK
 // both expect POSIX-style paths.
 pathJoin :: (..parts: []string) -> string {
-    result := "";
-    i := 0;
-    while i < parts.len {
-        p := parts[i];
-        if p.len > 0 {
-            if tail := result.last() {
-                head := p[0];
-                if tail == '/' {
-                    if head == '/' {
-                        p = substr(p, 1, p.len - 1);
-                    }
-                } else {
-                    if head != '/' {
-                        result = concat(result, "/");
-                    }
-                }
+    sb := StringBuilder.init();
+    tail : ?u8 = null;
+    for p in parts {
+        if p.len == 0 { continue; }
+        start := 0;
+        if t := tail {
+            if t == '/' {
+                if p[0] == '/' { start = 1; }
+            } else if p[0] != '/' {
+                sb.write("/");
             }
-            result = concat(result, p);
         }
-        i += 1;
+        sb.write(p[start .. p.len]);
+        tail = p[p.len - 1];
     }
-    result
+    sb.finish()
 }
 
 structToString :: (s: $T) -> string {
