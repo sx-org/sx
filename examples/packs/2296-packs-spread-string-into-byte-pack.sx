@@ -1,0 +1,15 @@
+// A `string` spreads into a `..xs: []u8` pack: it is the slice already, so the
+// spread passes it through as any `[]u8` would.
+@import "modules/std.sx";
+
+sumBytes :: (..xs: []u8) -> i64 {
+    total := 0;
+    for x in xs { total += x; }
+    total
+}
+
+main :: () -> i32 {
+    s := "ab";
+    print("{} {}\n", sumBytes(..s), sumBytes(1, 2));
+    0
+}

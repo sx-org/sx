@@ -1163,7 +1163,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
                 .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
                 .@"enum" => info == .@"enum" or info == .tagged_union,
                 .@"union" => info == .@"union" or info == .tagged_union,
-                .slice => info == .slice,
+                .slice => info == .slice or TypeId.fromIndex(@intCast(idx)) == .string,
                 .array => info == .array,
                 .pointer => info == .pointer or info == .many_pointer,
                 .vector => info == .vector,

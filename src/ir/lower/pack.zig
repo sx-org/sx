@@ -419,11 +419,11 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
                 // NON-addressable rvalue array (`sum(..makeArr())`) keeps the
                 // copying `array_to_slice` op: this is a call ARGUMENT, so the
                 // temp lives for the call's duration — a copy is SOUND.
-                const slice_val = switch (arr_info.?) {
-                    .array => self.arrayToSliceView(arr_val, arr_ty, slice_ty) orelse
-                        self.builder.emit(.{ .array_to_slice = .{ .operand = arr_val } }, slice_ty),
-                    else => arr_val,
-                };
+                const slice_val = if (arr_info != null and arr_info.? == .array)
+                    self.arrayToSliceView(arr_val, arr_ty, slice_ty) orelse
+                        self.builder.emit(.{ .array_to_slice = .{ .operand = arr_val } }, slice_ty)
+                else
+                    arr_val;
                 args.shrinkRetainingCapacity(fixed_count);
                 args.append(self.alloc, slice_val) catch unreachable;
                 return;

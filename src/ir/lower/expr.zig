@@ -2492,18 +2492,14 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (!from_target) {
         if (self.target_type) |tt| {
-            if (tt == .string) {
-                elem_ty = .u8;
+            if (self.module.types.sliceInfoOf(tt)) |s| {
+                elem_ty = s.element;
                 from_target = true;
             } else if (!tt.isBuiltin()) {
                 const info = self.module.types.get(tt);
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
-                        from_target = true;
-                    },
-                    .slice => |s| {
-                        elem_ty = s.element;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2956,8 +2952,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const base_len_ty = self.module.types.lenTypeOf(obj_ty);
     const len_ty = blk: {
         if (self.target_type) |tgt| {
-            if (!tgt.isBuiltin() and self.module.types.get(tgt) == .slice) {
-                const ts = self.module.types.get(tgt).slice;
+            if (self.module.types.sliceInfoOf(tgt)) |ts| {
                 const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
                 if (same_elem) break :blk ts.len_type;
             }

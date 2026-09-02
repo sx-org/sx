@@ -1,6 +1,6 @@
-// `string` is `[]u8`: a cloned byte slice binds as a `string` and wraps into
-// `?string` with no conversion. `clone` funds itself from the context
-// allocator when no allocator is named.
+// `string` is `[]u8`: a cloned byte slice binds as a `string`, wraps into
+// `?string`, and is in the `slice` category, so `free` takes it back. `clone`
+// funds itself from the context allocator when no allocator is named.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
@@ -9,5 +9,7 @@ main :: () -> i32 {
     s : string = b;
     t : ?string = b;
     print("{} {} {} {}\n", s, t ?? "none", b.len, @typeName([]u8));
+    print("{} {}\n", []u8 is slice, string is slice);
+    b.free();
     0
 }
