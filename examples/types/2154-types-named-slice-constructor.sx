@@ -43,7 +43,7 @@ boxed :: () -> void {
     print("boxed si={} hold={} empty={}\n", si, hold, b[0..0]);
 
     wide : []u8 = a[0..];
-    print("boxed wide={} str={}\n", wide, "ab");
+    print("boxed wide={} str={}\n", wide.len, "ab");
 }
 
 // A narrow slice minted inside a GENERIC body reads the same through `any`.

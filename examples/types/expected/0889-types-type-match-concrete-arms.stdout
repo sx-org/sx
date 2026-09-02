@@ -3,6 +3,6 @@ u8: int
 f64: other
 opt exact: ?i64
 opt category: optional
-slice: []u8
+slice: []i32
 string: string
 neg: other

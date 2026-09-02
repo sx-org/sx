@@ -667,7 +667,7 @@ pub const ExprTyper = struct {
             .slice_expr => |se| {
                 const obj_ty = self.l.narrowedContainerChild(se.object) orelse self.l.inferExprType(se.object);
                 if (obj_ty == .string) return .string;
-                return self.l.module.types.sliceOf(self.l.getElementType(obj_ty));
+                return self.l.module.types.sliceOfLen(self.l.getElementType(obj_ty), self.l.module.types.lenTypeOf(obj_ty));
             },
             .deref_expr => |de| {
                 const ptr_ty = self.l.inferExprType(de.operand);

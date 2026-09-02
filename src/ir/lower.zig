@@ -1559,10 +1559,7 @@ pub const Lowering = struct {
             //     `[][]T` and downstream LLVM emission crashes when the
             //     caller's argument-marshal pack produces a `[]T` that
             //     doesn't match the callee's stored param shape.
-            if (!declared_ty.isBuiltin()) {
-                const info = self.module.types.get(declared_ty);
-                if (info == .slice) return declared_ty;
-            }
+            if (self.module.types.sliceInfoOf(declared_ty) != null) return declared_ty;
             return self.module.types.sliceOf(declared_ty);
         }
         return declared_ty;
@@ -2586,9 +2583,7 @@ pub const Lowering = struct {
         const info = self.module.types.get(ty);
         if (info != .pointer) return null;
         const pointee = info.pointer.pointee;
-        if (pointee.isBuiltin()) return null;
-        const pi = self.module.types.get(pointee);
-        return if (pi == .slice) pi.slice.element else null;
+        return if (self.module.types.sliceInfoOf(pointee)) |ps| ps.element else null;
     }
 
     /// The payload type a container use site (index, slice, generic binding)

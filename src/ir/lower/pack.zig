@@ -364,8 +364,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         // the signature states rather than the slot a diagnostic just named.
         const fixed = ast.fixedParamCount(fd.params);
         const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
-        if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
-            const elem = self.module.types.get(declared).slice.element;
+        if (self.module.types.sliceInfoOf(declared)) |declared_slice| {
+            const elem = declared_slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
                 // A bare-function value converts by its SIGNATURE, not the
                 // integer word that carries it.
@@ -388,10 +388,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             variadic_idx = i;
             const declared = self.resolveTypeWithBindings(p.type_expr);
             elem_ty = declared;
-            if (!declared.isBuiltin()) {
-                const info = self.module.types.get(declared);
-                if (info == .slice) elem_ty = info.slice.element;
-            }
+            if (self.module.types.sliceInfoOf(declared)) |declared_slice| elem_ty = declared_slice.element;
             break;
         }
     }
@@ -413,7 +410,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             const spread = arg_node.data.spread_expr;
             const arr_ty = self.inferExprType(spread.operand);
             const arr_info: ?types.TypeInfo = if (arr_ty.isBuiltin()) null else self.module.types.get(arr_ty);
-            if (arr_info != null and (arr_info.? == .array or arr_info.? == .slice)) {
+            if (self.module.types.sliceInfoOf(arr_ty) != null or (arr_info != null and arr_info.? == .array)) {
                 const arr_val = self.lowerExpr(spread.operand);
                 // Convert array to slice. For an ADDRESSABLE array build a
                 // zero-copy VIEW over its storage (consistent

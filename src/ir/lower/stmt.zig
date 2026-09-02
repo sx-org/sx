@@ -845,7 +845,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                         return;
                     }
                     ref = self.builder.optionalWrap(ref, ty);
-                } else if (ty_info == .slice) {
+                } else if (self.module.types.sliceInfoOf(ty) != null) {
                     // Array → slice promotion when the initializer is an array
                     // value bound into a slice-typed local (`s : []T = arr`).
                     // For an ADDRESSABLE array (a named local/global/field)

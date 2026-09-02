@@ -3390,7 +3390,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.failMsg("comptime List builder: result type has no cap field");
         const n: Reg = @bitCast(@as(i64, @intCast(items.len)));
         // Write the `items` slice as a {ptr, len} fat pointer at field 0.
-        if (items_fty.isBuiltin() or table.get(items_fty) != .slice)
+        if (table.sliceInfoOf(items_fty) == null)
             return self.failMsg("comptime List builder: items field is not a slice");
         const items_off = addr + fieldOffset(table, list_ty, 0);
         try self.machine.writeWord(items_off, table.pointer_size, backing);

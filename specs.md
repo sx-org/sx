@@ -90,8 +90,9 @@ value and `i2 :: struct { x: i64; }` declares a type, while `x : i7 = 0` is
 `unknown type 'i7'` — that width is spelled `@int(7, .signed)`.
 
 (There is no exception for the stdlib: a reserved type name is reserved
-everywhere. `string` is a language primitive — the compiler resolves it by
-name, it is declared nowhere, and it cannot be re-bound.)
+everywhere. `string` is a language primitive, the type `[]u8` under its own
+name — the compiler resolves it by name, it is declared nowhere, and it
+cannot be re-bound.)
 
 #### The `@` namespace
 
@@ -4578,7 +4579,7 @@ match type {
     case enum:     result = enumWalkOverTables(type, val);
 }
 ```
-Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
+Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `string` is `[]u8`, so it is in `slice` as well as in its own category, and `case string:` stands above `case slice:`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
 
 > Note: `case enum:` matches payload-less enums AND tagged enums (enums
 > with payloads); `case union:` matches C-style untagged unions AND

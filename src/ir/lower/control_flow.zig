@@ -707,9 +707,9 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
 
     // Slice shape: an `items: []T` slice — view via its `.ptr`/`.len`.
     for (info.@"struct".fields, 0..) |f, i| {
-        if (f.name == items_id and !f.ty.isBuiltin() and self.module.types.get(f.ty) == .slice) {
+        if (f.name == items_id and self.module.types.sliceInfoOf(f.ty) != null) {
             const slice_val = self.builder.emit(.{ .struct_get = .{ .base = value, .field_index = @intCast(i) } }, f.ty);
-            const elem = self.module.types.get(f.ty).slice.element;
+            const elem = self.module.types.sliceInfoOf(f.ty).?.element;
             const mp_ty = self.module.types.manyPtrTo(elem);
             return .{
                 .data = self.builder.emit(.{ .data_ptr = .{ .operand = slice_val } }, mp_ty),

@@ -354,8 +354,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // becomes the view. Read as a `{ptr, len}` literal instead, an aggregate
     // element lands in the `ptr` word and fails LLVM verification.
     if (sl.struct_name == null and sl.type_expr == null and sl.init_block == null and
-        sl.field_inits.len > 0 and !ty.isBuiltin() and
-        self.module.types.get(ty) == .slice and !isSliceHeaderLiteral(sl))
+        sl.field_inits.len > 0 and self.module.types.sliceInfoOf(ty) != null and !isSliceHeaderLiteral(sl))
     {
         var elems = std.ArrayList(*Node).empty;
         defer elems.deinit(self.alloc);
@@ -2493,7 +2492,10 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (!from_target) {
         if (self.target_type) |tt| {
-            if (!tt.isBuiltin()) {
+            if (tt == .string) {
+                elem_ty = .u8;
+                from_target = true;
+            } else if (!tt.isBuiltin()) {
                 const info = self.module.types.get(tt);
                 switch (info) {
                     .array => |a| {

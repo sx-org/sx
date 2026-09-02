@@ -8,11 +8,11 @@ main :: () -> i32 {
     if e { print("spawn failed\n"); return 1; }
 
     msg := "ping\n";
-    wrote := child.stdinWrite(xx msg);
+    wrote := child.stdinWrite(msg);
     if wrote != xx msg.len { print("write: {}\n", wrote); return 1; }
 
     buf := allocString(64);
-    got := child.stdoutRead(xx buf);
+    got := child.stdoutRead(buf);
     if got <= 0 { print("read: {}\n", got); return 1; }
     print("echoed: {}", buf[0 .. got.(i64)]);
 

@@ -52,7 +52,7 @@ error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit
 32 |     t.len = 200 + 100;
    |             ^^^^^^^^^
 
-error: cannot implicitly convert '[]u8' to '@Slice(u8,u8)': a non-constant length does not fit a narrower length word
+error: cannot implicitly convert 'string' to '@Slice(u8,u8)': a non-constant length does not fit a narrower length word
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:35:5
    |
 35 |     tiny : Tiny = plain;

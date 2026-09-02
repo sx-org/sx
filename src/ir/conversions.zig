@@ -119,6 +119,18 @@ pub const CoercionResolver = struct {
         // header. Without this the array value is passed where a slice is
         // expected — the callee reads the header off the wrong bytes. The
         // local-bound path already does this conversion on its own.
+        if (!src_ty.isBuiltin() and dst_ty == .string) {
+            const si = self.l.module.types.get(src_ty);
+            if (si == .array and si.array.element == .u8) return .array_to_slice;
+        }
+        // Two slices over the same element differing only in the width of
+        // their length word (`string` is `[]u8`): the fat pointer is rebuilt on
+        // the destination's `Len`, the view unchanged.
+        if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
+            if (self.l.module.types.sliceInfoOf(dst_ty)) |ds| {
+                if (ss.element == ds.element) return .slice_len_convert;
+            }
+        }
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);
@@ -133,12 +145,6 @@ pub const CoercionResolver = struct {
             // the user supplies the length via `ptr[0..len]`.
             if (si == .many_pointer and di == .slice) {
                 return .many_to_slice_reject;
-            }
-            // Two slices over the same element differing only in the width of
-            // their length word: the fat pointer is rebuilt on the destination's
-            // `Len`, the view unchanged.
-            if (si == .slice and di == .slice and si.slice.element == di.slice.element) {
-                return .slice_len_convert;
             }
         }
 
