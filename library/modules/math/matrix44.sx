@@ -55,7 +55,7 @@ Mat4 :: struct {
             self.data[0] = x;
             self.data[5] = y;
             self.data[10] = z;
-            self.data[15] = 1.0;            
+            self.data[15] = 1.0;
         }
     }
 
