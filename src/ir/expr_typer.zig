@@ -682,10 +682,15 @@ pub const ExprTyper = struct {
             // the chained form yields `?T` (an optional target flattens).
             .postfix_cast => |pc| blk: {
                 const t = self.l.resolveTypeArg(pc.type_expr);
-                if (!pc.is_optional_chain) break :blk t;
                 if (t == .unresolved) break :blk t;
-                const t_is_opt = !t.isBuiltin() and self.l.module.types.get(t) == .optional;
-                break :blk if (t_is_opt) t else self.l.module.types.optionalOf(t);
+                var v = t;
+                if (pc.is_optional_chain) {
+                    const t_is_opt = !t.isBuiltin() and self.l.module.types.get(t) == .optional;
+                    v = if (t_is_opt) t else self.l.module.types.optionalOf(t);
+                }
+                if (!pc.consumed) break :blk v;
+                const set = self.l.castErrorSet();
+                break :blk if (set == .unresolved) set else self.l.module.types.internFailable(v, set);
             },
             .chained_comparison => .bool,
             .null_coalesce => |nc| blk: {

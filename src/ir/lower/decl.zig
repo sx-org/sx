@@ -2653,8 +2653,7 @@ fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
     return switch (terminal.raw) {
         .var_decl => true,
         .const_decl => |cd| switch (cd.value.data) {
-            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal,
-            .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op => true,
+            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal, .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op => true,
             else => false,
         },
         else => false,
@@ -3741,8 +3740,8 @@ pub fn isCImportVisible(self: *Lowering, fn_name: []const u8) bool {
 /// Byte-identical adapter over `isVisible`.
 pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
     // The `__sx_` prefix is the compiler-reserved namespace: those calls are
-    // compiler REWRITES (chained-assertion desugars → fmt.sx's
-    // `__sx_chain_cast_*` runtime), synthesized at any lowering site —
+    // compiler REWRITES (`@printf` expansions → core.sx's `__sx_printf_*`
+    // primitives), synthesized at any lowering site —
     // including inside std part-files that do not import the declaring module.
     // A compiler indirection is exempt from the user-facing visibility gate,
     // like UFCS rewrites.

@@ -155,6 +155,19 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
     c.abort()
 }
 
+// ── The checked read of boxed storage ──────────────────────────────────────
+// The graceful assertion (`try av.(T)`) raises `mismatch`; `@cast` is the
+// unconsumed one, and a mismatch stops the program naming the call site.
+CastError :: error { mismatch }
+
+@cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
+    if !@typeEq(@typeOf(av), T) {
+        @printf("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, @typeName(T), @typeName(av));
+        c.exit(1);
+    }
+    return @unbox(av, T);
+}
+
 // The primitives `@printf`'s expansion calls, one per argument kind. Each
 // renders into stack storage. The `__sx_` prefix is what lets the compiler
 // synthesize these calls in a module that imports nothing.

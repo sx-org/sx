@@ -1477,8 +1477,8 @@ fn emitErrorExit(self: *Lowering, exit: ErrorExit, err: Ref) void {
 /// success path continues with X's value — the value part for a value-carrying
 /// callee, `void` for a pure-failable one.
 pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
-    // A direct assertion operand (`try av.(T)`) desugars to the failable
-    // runtime call and consumes through the ordinary machinery below.
+    // A direct assertion operand (`try av.(T)`) is marked consumed and
+    // consumes through the ordinary machinery below.
     const operand = self.desugarErasedAssert(operand_in) orelse operand_in;
     const attempted: Attempted = .{ .node = operand, .boundary = operand.data == .block };
     // (1) `try` is legal only where a failure has somewhere to go — a failable
@@ -1582,8 +1582,8 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
 /// no failable *enclosing* function.
 pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) Ref {
     var attempted = catchAttempted(ce_in);
-    // A direct assertion operand (`av.(T) catch …`) desugars to the
-    // failable runtime call; the ordinary paths below consume it.
+    // A direct assertion operand (`av.(T) catch …`) is marked consumed;
+    // the ordinary paths below consume it.
     if (self.desugarErasedAssert(attempted.node)) |dsg| attempted.node = dsg;
     var ce_rewritten = ce_in.*;
     ce_rewritten.operand = @constCast(attempted.node);
@@ -1813,8 +1813,8 @@ pub fn operandIsFailableLike(self: *Lowering, node: *const Node) bool {
         return self.coalesceIsFailable(&node.data.null_coalesce);
     }
     // A postfix assertion on a type-erased receiver is failable BY SHAPE
-    // (its inferred type is the asserted T; the failable form exists only
-    // for the consumers, which desugar it — see desugarErasedAssert).
+    // (its inferred type is the asserted T until a consumer marks it —
+    // see desugarErasedAssert).
     if (self.isErasedAssertNode(node)) return true;
     return self.errorChannelOf(self.inferExprType(node)) != null;
 }
@@ -1873,12 +1873,12 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
     return false;
 }
 
-/// Rewrite a DIRECT assertion operand of a graceful consumer (`try` /
-/// failable-`??` operand / `catch`) into the failable runtime call
-/// `@tryCast(av, T)` (std/fmt.sx) so the ordinary error-channel
-/// machinery consumes it. Looks through a `try` marker. Returns null for
-/// every other shape — including assertions NESTED inside the operand
-/// expression, which stay in the unconsumed (panic) form by design.
+/// Mark a DIRECT assertion operand of a graceful consumer (`try` /
+/// failable-`??` operand / `catch`) as consumed, so it types and lowers as
+/// the failable `(T, !CastError)` the ordinary error-channel machinery
+/// consumes. Looks through a `try` marker. Returns null for every other
+/// shape — including assertions NESTED inside the operand expression,
+/// which stay in the unconsumed (panic) form by design.
 pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
     if (node.data == .try_expr) {
         const inner = self.desugarErasedAssert(node.data.try_expr.operand) orelse return null;
@@ -1910,23 +1910,10 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
                 self.refuseSetFromAny(target, node.span)) return null;
         }
     }
-    const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "@tryCast";
-    const callee = self.alloc.create(Node) catch unreachable;
-    callee.* = .{ .data = .{ .identifier = .{ .name = helper } }, .span = node.span, .source_file = node.source_file };
-    // A protocol receiver reaches the helper as its {ctx, typeId} prefix
-    // VIEW — wrap in `xx …` so the arg lowers through the modeled
-    // protocol_to_any conversion under the helper's `av: any` param.
-    const operand_node: *Node = blk_w: {
-        const rt = self.inferExprType(pc.operand);
-        if (self.getProtocolInfo(rt) == null) break :blk_w pc.operand;
-        const xx_node = self.alloc.create(Node) catch unreachable;
-        xx_node.* = .{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
-        break :blk_w xx_node;
-    };
-    const args = self.alloc.dupe(*Node, &.{ operand_node, pc.type_expr }) catch unreachable;
-    const call = self.alloc.create(Node) catch unreachable;
-    call.* = .{ .data = .{ .call = .{ .callee = callee, .args = args } }, .span = node.span, .source_file = node.source_file };
-    return call;
+    const marked = self.alloc.create(Node) catch unreachable;
+    marked.* = node.*;
+    marked.data.postfix_cast.consumed = true;
+    return marked;
 }
 
 /// The success (value) type of a failable `??` chain: descend to the
@@ -1957,9 +1944,9 @@ fn flattenCoalesceOperand(self: *Lowering, node: *const Node, list: *std.ArrayLi
         self.flattenCoalesceChain(&node.data.null_coalesce, list);
         return;
     }
-    // Chain operands that are direct assertions (`av.(T) ?? d`)
-    // desugar to the failable runtime call here, so every consumer
-    // of the flattened list sees an ordinary failable.
+    // Chain operands that are direct assertions (`av.(T) ?? d`) are
+    // marked consumed here, so every consumer of the flattened list sees
+    // an ordinary failable.
     list.append(self.alloc, self.desugarErasedAssert(node) orelse node) catch unreachable;
 }
 

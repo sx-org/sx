@@ -127,9 +127,8 @@ compiler implements — `@volatileLoad` and `@volatileStore` (§Intrinsics,
 Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
 (§Compile-time Evaluation, `@isComptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over `@printf` and
-`@isComptime`. So are the postfix assertion's three temperaments —
-`@cast` / `@tryCast` / `@castOrNull` (§Postfix Cast), owned by
-`modules/std/fmt.sx`.
+`@isComptime`. So is the postfix assertion's spelled form, `@cast`
+(§Postfix Cast), owned by `modules/std/core.sx`.
 
 `@printf($fmt: string, ..$args)` is an allocation-free formatted write to fd 1.
 `$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
@@ -3147,10 +3146,8 @@ On an **`any` receiver** the assertion has three temperaments:
   the inner `T`, the result exactly `?T`, composing with the optional
   toolbox: `av.(?f64) ?? 9.5`, `if v := av.(?i64) { … }`, `== null`.
 
-Each temperament is also spelled: `@cast(av, T) -> T` panics,
-`@tryCast(av, T) -> (T, !CastError)` raises, `@castOrNull(av, T) -> ?T` answers
-`null`. The postfix forms rewrite to exactly these, and a spelled `@cast`
-reports its own call site.
+`@cast(av, T) -> T` spells the unconsumed temperament and reports its own
+call site.
 
 **`av.(@Any)` is the raw-view retrieval, not an assertion** — the one
 target exempt from the three temperaments: it answers the view's own
@@ -3158,7 +3155,7 @@ target exempt from the three temperaments: it answers the view's own
 the std `@Any` shape triggers). The exemption is the bare postfix
 target only: the soft form `.(?@Any)` still asserts the boxed payload,
 and `xx av` keeps its unchecked-unbox meaning for EVERY target, `@Any`
-included (the assert helpers' generic `xx av` depends on it).
+included (a generic `(av: any) -> $T { xx av }` depends on it).
 `rawMakeAny(r.typeId, r.data)` reassembles a working view from the
 pair.
 

@@ -496,35 +496,6 @@ print :: ($fmt: string, ..$args) {
     w.flush();
 }
 
-// ── Postfix-assertion runtime ───────────────────────────────────────────
-// `av.(T)` on a type-erased receiver is a CHECKED assertion: `@tryCast` is
-// the error-channel temperament, `@cast` panics on mismatch (the
-// unconsumed-failable carve-out; Go/Odin parity), `@castOrNull` answers
-// mismatch with `null`. The compiler rewrites the postfix forms to these.
-
-CastError :: error { mismatch }
-
-@tryCast :: (av: any, $T: Type) -> (T, !CastError) {
-    if !@typeEq(@typeOf(av), T) { raise .mismatch; }
-    return @unbox(av, T);
-}
-
-@cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
-    if !@typeEq(@typeOf(av), T) {
-        print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
-        c.exit(1);
-    }
-    return @unbox(av, T);
-}
-
-// Mismatch is a value (`null`), never a failure — the optional IS the check
-// (comma-ok parity).
-@castOrNull :: (av: any, $T: Type) -> ?T {
-    if !@typeEq(@typeOf(av), T) { return null; }
-    v : T = @unbox(av, T);
-    return v;
-}
-
 // `p.(Q)` between interfaces, unconsumed: an absent row stops the program. The
 // referent's concrete type is only known to the running program, so the message
 // reads it off the handle rather than off the site.
@@ -533,50 +504,6 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
         print("re-erasure failed: '{}' does not conform to '{}'\n", @typeName(concrete), @typeName(target));
         c.exit(1);
     }
-}
-
-// ── Optional-chained assertions `o?.(T)` on a `?any` receiver ──────────
-// Chain-null is always a VALUE (null result), never a failure; each
-// temperament's failure handling applies only to a PRESENT payload.
-// (Bodies are self-contained rather than delegating to the unchained
-// helpers: a nested generic `try` does not bind `$T` through the outer
-// instantiation.)
-
-// Consumed forms (`try o?.(T)`, `o?.(T) ?? d`, `… catch`): mismatch of a
-// present payload goes down the error channel; null passes through.
-__sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
-    if av := o {
-        if !@typeEq(@typeOf(av), T) { raise .mismatch; }
-        v : T = @unbox(av, T);
-        r : ?T = v;
-        return r;
-    }
-    return null;
-}
-
-// Unconsumed form (`v := o?.(T);`): a present, mismatched payload panics.
-__sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> ?T {
-    if av := o {
-        if !@typeEq(@typeOf(av), T) {
-            print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, @typeOf(av));
-            c.exit(1);
-        }
-        v : T = @unbox(av, T);
-        r : ?T = v;
-        return r;
-    }
-    return null;
-}
-
-// Soft form (`o?.(?T)`): chain-null and mismatch-null CONFLATE.
-__sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
-    if av := o {
-        if !@typeEq(@typeOf(av), T) { return null; }
-        v : T = @unbox(av, T);
-        r : ?T = v;
-        return r;
-    }
-    return null;
 }
 
 // ── The runtime variant walk (enum/tagged-union values behind an `any`) ──

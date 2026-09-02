@@ -900,6 +900,9 @@ pub const PostfixCast = struct {
     // `expr.(T, alloc)` — the allocator an `Into` conversion funds from
     // (lvalue-only; an interface target refuses it, both at lowering).
     alloc_arg: ?*Node = null,
+    // A checked assertion claimed by `try` / `??` / `catch`: it types and
+    // lowers as the failable `(T, !CastError)` instead of the panic form.
+    consumed: bool = false,
 };
 
 pub const WhileExpr = struct {

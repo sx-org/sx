@@ -122,10 +122,7 @@ pub const entries = [_]Contract{
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
     .{ .name = "@error", .module = "modules/std/core.sx" },
-    // Their bodies render a mismatch through the allocating formatter, so fmt owns them.
-    .{ .name = "@cast", .module = "modules/std/fmt.sx" },
-    .{ .name = "@tryCast", .module = "modules/std/fmt.sx" },
-    .{ .name = "@castOrNull", .module = "modules/std/fmt.sx" },
+    .{ .name = "@cast", .module = "modules/std/core.sx" },
     .{ .name = "@sqrt", .module = "modules/math/scalar.sx" },
     .{ .name = "@sin", .module = "modules/math/scalar.sx" },
     .{ .name = "@cos", .module = "modules/math/scalar.sx" },
@@ -272,8 +269,6 @@ pub const objc_call_head = "@ObjcCall";
 pub const swift_class_head = "@SwiftClass";
 pub const swift_struct_head = "@SwiftStruct";
 pub const swift_protocol_head = "@SwiftProtocol";
-
-
 
 /// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
 /// producer, so these names never reach a declaration or a value.

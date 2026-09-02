@@ -4098,16 +4098,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                         break :blk self.builder.constUndef(.unresolved);
                     if (lowerAnyAssertAtSet(self, &pc, node.span, true)) |answer| break :blk answer;
-                    // Assertion regime through the chain: soft target →
-                    // conflating maybe-helper; concrete target unconsumed →
-                    // panic helper (consumers claim the failable form via
-                    // desugarErasedAssert before reaching this arm).
-                    const helper: []const u8 = if (pc.type_expr.data == .optional_type_expr) "__sx_chain_cast_maybe" else "__sx_chain_cast_or_panic";
-                    const targ_node = if (pc.type_expr.data == .optional_type_expr) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
-                    const callee_node = Node{ .data = .{ .identifier = .{ .name = helper } }, .span = node.span, .source_file = node.source_file };
-                    const args = self.alloc.dupe(*Node, &.{ pc.operand, targ_node }) catch unreachable;
-                    const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
-                    break :blk self.lowerCall(&syn_call);
+                    break :blk lowerChainedErasedAssert(self, &pc, node);
                 }
                 // Conversion regime mapped over the chain (typed payload).
                 const dst = self.resolveTypeArg(pc.type_expr);
@@ -4204,12 +4195,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     }
                 }
             }
-            // An `any` receiver is the checked-assertion regime. Reaching
-            // THIS arm means no graceful consumer claimed it (`try` / `or` /
-            // `catch` desugar their direct assertion operands via
-            // desugarErasedAssert) — so this is the UNCONSUMED form:
-            // panic on mismatch (the deliberate carve-out from the
-            // unconsumed-failable rule, scoped to assertion forms).
+            // An `any` receiver is the checked-assertion regime; the node
+            // carries whether a graceful consumer claimed it.
             if (self.inferExprType(pc.operand) == .any) {
                 // `av.(@Any)` is the raw-view RETRIEVAL — the view's own
                 // {data, typeId} words, built field-wise; NOT an
@@ -4239,26 +4226,14 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                     break :blk self.builder.constUndef(.unresolved);
                 if (lowerAnyAssertAtSet(self, &pc, node.span, false)) |answer| break :blk answer;
-                // `.(?T)` is the SOFT assertion: mismatch is a value
-                // (`null`), never a failure — the optional IS the check.
-                // The asserted type is the INNER T; the result is `?T`.
-                if (pc.type_expr.data == .optional_type_expr) {
-                    const callee_node = Node{ .data = .{ .identifier = .{ .name = "@castOrNull" } }, .span = node.span, .source_file = node.source_file };
-                    const args = self.alloc.dupe(*Node, &.{ pc.operand, pc.type_expr.data.optional_type_expr.inner_type }) catch unreachable;
-                    const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
-                    break :blk self.lowerCall(&syn_call);
-                }
-                const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
-                const args = self.alloc.dupe(*Node, &.{ pc.operand, pc.type_expr }) catch unreachable;
-                const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
-                break :blk self.lowerCall(&syn_call);
+                break :blk lowerErasedAssert(self, &pc, pc.operand, node);
             }
             // A PROTOCOL receiver with a concrete (non-recovery) target is
             // the checked DOWNCAST: with the typeId word
             // it is exactly the any assertion over the value's
             // {ctx, typeId} prefix view — the operand wraps in an
             // `xx …: any` (the modeled protocol_to_any conversion) and the
-            // SAME helpers serve all three temperaments. Recovery /
+            // same lowering serves all three temperaments. Recovery /
             // conversion targets (p.(*T), p.(@Protocol), p.(any),
             // re-erasure to another protocol) fall through to lowerXX.
             {
@@ -4278,16 +4253,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         else => {
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
-                            if (pc.type_expr.data == .optional_type_expr) {
-                                const callee_node = Node{ .data = .{ .identifier = .{ .name = "@castOrNull" } }, .span = node.span, .source_file = node.source_file };
-                                const args = self.alloc.dupe(*Node, &.{ xx_node, pc.type_expr.data.optional_type_expr.inner_type }) catch unreachable;
-                                const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
-                                break :blk self.lowerCall(&syn_call);
-                            }
-                            const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
-                            const args = self.alloc.dupe(*Node, &.{ xx_node, pc.type_expr }) catch unreachable;
-                            const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
-                            break :blk self.lowerCall(&syn_call);
+                            break :blk lowerErasedAssert(self, &pc, xx_node, node);
                         },
                     }
                 }
@@ -4560,6 +4526,143 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 /// own contract — the soft `.(?P)` is a question whose answer is null for every
 /// box, and an assertion states what cannot hold, so it is refused where it is
 /// written. Null for a target that is not a bare set: the ordinary route stands.
+const AssertRegime = enum { unconsumed, consumed, soft };
+
+fn assertRegime(pc: *const ast.PostfixCast) AssertRegime {
+    if (pc.type_expr.data == .optional_type_expr) return .soft;
+    return if (pc.consumed) .consumed else .unconsumed;
+}
+
+/// The `CastError` set core.sx declares — an error set of that name carrying
+/// `mismatch` — or `.unresolved` when core is not in the program.
+pub fn castErrorSet(self: *Lowering) TypeId {
+    const set = self.module.types.findByName(self.module.types.internString("CastError")) orelse return .unresolved;
+    if (self.module.types.get(set) != .@"error") return .unresolved;
+    return if (self.module.types.errorSetMember(set, "mismatch") == .one) set else .unresolved;
+}
+
+fn mismatchTag(self: *Lowering, set: TypeId) Ref {
+    const member = self.module.types.errorSetMember(set, "mismatch").one;
+    return self.builder.constInt(@intCast(member), set);
+}
+
+fn diagCastErrorMissing(self: *Lowering, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "a consumed assertion needs 'CastError' in scope — @import \"modules/std/core.sx\"", .{});
+    return self.builder.constUndef(.unresolved);
+}
+
+/// A checked assertion whose receiver node `recv` lowers to an `any` view
+/// (an `any`, or a protocol wrapped in `xx`). Unconsumed is the spelled
+/// `@cast` call, so the call site is the panic's site; graceful and soft
+/// lower structurally over the boxed tag.
+fn lowerErasedAssert(self: *Lowering, pc: *const ast.PostfixCast, recv: *Node, node: *const Node) Ref {
+    const regime = assertRegime(pc);
+    if (regime == .unconsumed) {
+        const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
+        const args = self.alloc.dupe(*Node, &.{ recv, pc.type_expr }) catch unreachable;
+        const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
+        return self.lowerCall(&syn_call);
+    }
+    const target_node = if (regime == .soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+    const target = self.resolveTypeArg(target_node);
+    if (target == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, target_node.span, "unknown type in postfix cast '.(T)'", .{});
+        return self.builder.constUndef(.unresolved);
+    }
+    const saved_target = self.target_type;
+    self.target_type = .any;
+    const av = self.lowerExpr(recv);
+    self.target_type = saved_target;
+    return lowerAnyAssertView(self, av, target, regime, node.span);
+}
+
+/// The graceful or soft assertion over the `any` view `av`: the boxed tag
+/// against `target`, a typed load on a match. Soft answers `?T`; consumed
+/// answers the failable `(T, !CastError)` tuple.
+fn lowerAnyAssertView(self: *Lowering, av: Ref, target: TypeId, regime: AssertRegime, span: ast.Span) Ref {
+    const soft = regime == .soft;
+    const set = self.castErrorSet();
+    if (!soft and set == .unresolved) return diagCastErrorMissing(self, span);
+    const result_ty = if (soft) self.module.types.optionalOf(target) else self.module.types.internFailable(target, set);
+    const tid = self.builder.emit(.{ .struct_get = .{ .base = av, .field_index = 1 } }, .type_value);
+    const eq_args = self.alloc.dupe(Ref, &.{ tid, self.builder.constType(target) }) catch unreachable;
+    const matches = self.builder.callBuiltin(.rt_type_eq, eq_args, .bool);
+    const ok_bb = self.freshBlock("assert.ok");
+    const miss_bb = self.freshBlock("assert.miss");
+    const merge_bb = self.freshBlockWithParams("assert.merge", &.{result_ty});
+    self.builder.condBr(matches, ok_bb, &.{}, miss_bb, &.{});
+    self.builder.switchToBlock(ok_bb);
+    const value = self.builder.emit(.{ .unbox_any = .{ .operand = av } }, target);
+    const ok_result = if (soft)
+        self.builder.optionalWrap(value, result_ty)
+    else
+        self.buildFailableTuple(result_ty, &.{value}, self.builder.constInt(0, set));
+    self.builder.br(merge_bb, &.{ok_result});
+    self.builder.switchToBlock(miss_bb);
+    const miss_result = if (soft)
+        self.builder.constNull(result_ty)
+    else
+        self.buildFailableTuple(result_ty, &.{self.builder.constUndef(target)}, mismatchTag(self, set));
+    self.builder.br(merge_bb, &.{miss_result});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
+/// `o?.(T)` on a `?any`: the unchained assertion mapped over the optional.
+/// Chain-null is a value in every regime; a present payload runs the
+/// unchained form on a scope-bound temp and its answer is lifted — `?T`
+/// for soft (one null level) and unconsumed, `(?T, !CastError)` for consumed.
+fn lowerChainedErasedAssert(self: *Lowering, pc: *const ast.PostfixCast, node: *const Node) Ref {
+    const regime = assertRegime(pc);
+    const target_node = if (regime == .soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+    const target = self.resolveTypeArg(target_node);
+    if (target == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, target_node.span, "unknown type in postfix cast '.(T)'", .{});
+        return self.builder.constUndef(.unresolved);
+    }
+    const opt_ty = self.module.types.optionalOf(target);
+    const set = self.castErrorSet();
+    if (regime == .consumed and set == .unresolved) return diagCastErrorMissing(self, node.span);
+    const result_ty = if (regime == .consumed) self.module.types.internFailable(opt_ty, set) else opt_ty;
+
+    const opt_val = self.lowerExpr(pc.operand);
+    const has_val = self.builder.emit(.{ .optional_has_value = .{ .operand = opt_val } }, .bool);
+    const some_bb = self.freshBlock("cast.some");
+    const none_bb = self.freshBlock("cast.none");
+    const merge_bb = self.freshBlockWithParams("cast.merge", &.{result_ty});
+    self.builder.condBr(has_val, some_bb, &.{}, none_bb, &.{});
+
+    self.builder.switchToBlock(some_bb);
+    const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, .any);
+    const temp_name = std.fmt.allocPrint(self.alloc, "$cast_{d}", .{self.block_counter}) catch @panic("out of memory");
+    self.block_counter += 1;
+    self.scope.?.put(temp_name, .{ .ref = unwrapped, .ty = .any, .is_alloca = false });
+    const recv = self.synthNode(.{ .identifier = .{ .name = temp_name } }, node.span, node.source_file);
+    const inner = lowerErasedAssert(self, pc, recv, node);
+    const some_result = switch (regime) {
+        .soft => inner,
+        .unconsumed => self.builder.optionalWrap(inner, opt_ty),
+        .consumed => lifted: {
+            const inner_ty = self.module.types.internFailable(target, set);
+            const value = self.extractSuccessValue(inner, inner_ty, target);
+            const tag = self.extractErrorSlot(inner, inner_ty, set);
+            break :lifted self.buildFailableTuple(result_ty, &.{self.builder.optionalWrap(value, opt_ty)}, tag);
+        },
+    };
+    self.builder.br(merge_bb, &.{some_result});
+
+    self.builder.switchToBlock(none_bb);
+    const none_result = if (regime == .consumed)
+        self.buildFailableTuple(result_ty, &.{self.builder.constNull(opt_ty)}, self.builder.constInt(0, set))
+    else
+        self.builder.constNull(opt_ty);
+    self.builder.br(merge_bb, &.{none_result});
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
 fn lowerAnyAssertAtSet(self: *Lowering, pc: *const ast.PostfixCast, span: ast.Span, chained: bool) ?Ref {
     const soft = pc.type_expr.data == .optional_type_expr;
     const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;

@@ -3999,6 +3999,7 @@ pub const Lowering = struct {
     pub const lowerForceUnwrap = lower_expr.lowerForceUnwrap;
     pub const diagOptionalOperand = lower_expr.diagOptionalOperand;
     pub const lowerNullCoalesce = lower_expr.lowerNullCoalesce;
+    pub const castErrorSet = lower_expr.castErrorSet;
     pub const resolveOptionalInner = lower_expr.resolveOptionalInner;
     pub const lowerExpr = lower_expr.lowerExpr;
     pub const lowerAsmExpr = lower_expr.lowerAsmExpr;
