@@ -1,5 +1,5 @@
 // `xx args` with a `[]u8` destination materializes the comptime pack into that
-// slice, the type `string` names.
+// slice.
 @import "modules/std.sx";
 
 count :: (items: []u8) -> i64 { items.len }

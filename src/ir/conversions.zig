@@ -132,8 +132,8 @@ pub const CoercionResolver = struct {
                 if (si == .many_pointer) return .many_to_slice_reject;
             }
             // Two slices over the same element differing only in the width of
-            // their length word (`string` is `[]u8`): the fat pointer is rebuilt on
-            // the destination's `Len`, the view unchanged.
+            // their length word: the fat pointer is rebuilt on the destination's
+            // `Len`, the view unchanged.
             if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
                 if (ss.element == ds.element) return .slice_len_convert;
             }
