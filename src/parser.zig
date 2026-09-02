@@ -5407,10 +5407,10 @@ pub const Parser = struct {
         };
     }
 
-    /// Whether the brace group at the cursor opens as a field list — empty,
-    /// `name = …`, or comma-separated elements — rather than as statements.
+    /// Whether the brace group at the cursor opens as a field list —
+    /// `name = …` or comma-separated elements — rather than as statements.
+    /// An empty group is statements: `v.{}` yields `v`.
     fn braceOpensAsFieldList(self: *Parser) bool {
-        if (self.braceIsEmpty()) return true;
         const first = self.tokens.next(self.tok);
         if (self.tokens.tag(first) == .identifier and self.tokens.tag(self.tokens.next(first)) == .equal) return true;
         const shape = self.scanBraceShape();
