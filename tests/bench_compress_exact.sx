@@ -18,7 +18,7 @@ strategyAt :: (index: i64) -> deflate.Strategy {
 
 strategyName :: (index: i64) -> string {
     if index == 1 { return "filtered"; }
-    if index == 2 { return "huffman_only"; }
+    if index == 2 { return "huffmanOnly"; }
     if index == 3 { return "rle"; }
     if index == 4 { return "fixed"; }
     "default"

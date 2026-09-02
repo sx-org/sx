@@ -449,7 +449,7 @@ write_markdown() {
         echo
         echo "## Exact-output matrix"
         echo
-        echo "The untimed compatibility gate covers both 1 MiB corpora, levels 0 through 10, and every public strategy: \`default\`, \`filtered\`, \`huffman_only\`, \`rle\`, and \`fixed\`. Each implementation writes the same 16-byte length-prefixed record format, followed by the complete compressed bytes."
+        echo "The untimed compatibility gate covers both 1 MiB corpora, levels 0 through 10, and every public strategy: \`default\`, \`filtered\`, \`huffmanOnly\`, \`rle\`, and \`fixed\`. Each implementation writes the same 16-byte length-prefixed record format, followed by the complete compressed bytes."
         echo
         echo "- Expected cases: 110 (2 corpora × 11 levels × 5 strategies)"
         echo "- SX cases produced: $sx_exact_cases"

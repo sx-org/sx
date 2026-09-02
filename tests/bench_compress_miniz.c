@@ -149,7 +149,7 @@ static int append_exact_record(FILE *file, unsigned corpus, unsigned level,
 static int run_exact_corpus(FILE *file, const char *label, unsigned corpus,
                             const unsigned char *data, size_t size) {
     static const char *const strategy_names[5] = {
-        "default", "filtered", "huffman_only", "rle", "fixed"
+        "default", "filtered", "huffmanOnly", "rle", "fixed"
     };
     unsigned level, strategy;
     for (level = 0; level <= 10; ++level) {
