@@ -1206,6 +1206,7 @@ pub const RuntimeClassDecl = struct {
     runtime_path: []const u8, // directive arg: "java/path/Foo" / "NSString" / "Foundation.URL"
     runtime: RuntimeKind,
     members: []const RuntimeClassMember = &.{},
+    extends_span: Span = .{ .start = 0, .end = 0 }, // the alias right of `extends =`
     is_extern: bool = false, // `@ObjcClass(…) extern` — class is provided by the runtime; we only reference it (vs `export`, which defines + registers a new sx class)
     is_main: bool = false, // `main = true` / `main = true` — class is the launchable entry (Activity / UIApplicationDelegate / ...)
     /// True when the sx-side alias NAME was a backtick raw identifier — exempt

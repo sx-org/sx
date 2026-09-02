@@ -818,6 +818,7 @@ pub fn lowerSuperCall(
 /// substituted to `*<ClassName>State` during body lowering
 pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     upsertRuntimeClass(self, fcd.name, fcd);
+    if (self.program_index.runtime_class_map.get(fcd.name) == null) return;
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
@@ -849,10 +850,11 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
 /// same-name externs binding the SAME runtime class MERGE into a union surface
 /// (every consumer sees the union through the
 /// map). Genuine conflicts diagnose: different runtime bindings, any
-/// sx-defined (export) duplicate, or same-name methods with different
-/// static-ness/arity/selector.
+/// sx-defined (export) duplicate, same-name methods with different
+/// static-ness/arity/selector, or an `extends =` that closes a cycle.
 fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeClassDecl) void {
     const existing = self.program_index.runtime_class_map.get(key) orelse {
+        if (extendsClosesCycle(self, key, fcd.members, fcd.extends_span)) return;
         self.program_index.runtime_class_map.put(key, fcd) catch {};
         return;
     };
@@ -952,7 +954,36 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
     const merged = self.alloc.create(ast.RuntimeClassDecl) catch return;
     merged.* = existing.*;
     merged.members = self.alloc.dupe(ast.RuntimeClassMember, members.items) catch return;
+    if (extendsClosesCycle(self, key, merged.members, fcd.extends_span)) return;
     self.program_index.runtime_class_map.put(key, merged) catch {};
+}
+
+/// The registered `extends =` graph is a forest, so a walk from `members`'
+/// parent alias ends at an unregistered name or at `key` itself. Reaching
+/// `key` diagnoses the cycle at `span` and keeps the entry out of the map.
+fn extendsClosesCycle(self: *Lowering, key: []const u8, members: []const ast.RuntimeClassMember, span: ast.Span) bool {
+    var walk = extendsAlias(members) orelse return false;
+    var chain = std.ArrayList(u8).empty;
+    chain.appendSlice(self.alloc, key) catch return false;
+    while (true) {
+        chain.appendSlice(self.alloc, " extends ") catch return false;
+        chain.appendSlice(self.alloc, walk) catch return false;
+        if (std.mem.eql(u8, walk, key)) break;
+        const parent = self.program_index.runtime_class_map.get(walk) orelse return false;
+        walk = extendsAlias(parent.members) orelse return false;
+    }
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "cyclic `extends =` chain: {s}", .{chain.items});
+    }
+    return true;
+}
+
+pub fn extendsAlias(members: []const ast.RuntimeClassMember) ?[]const u8 {
+    for (members) |m| switch (m) {
+        .extends => |alias| return alias,
+        else => {},
+    };
+    return null;
 }
 
 /// Resolve the `extends = ParentAlias` declaration on a sx-defined

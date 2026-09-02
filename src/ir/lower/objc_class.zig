@@ -13,6 +13,7 @@ const Module = mod_mod.Module;
 
 
 const lower = @import("../lower.zig");
+const lower_ffi = @import("ffi.zig");
 const Lowering = lower.Lowering;
 
 /// Eagerly lower bodied instance methods on every sx-defined
@@ -58,49 +59,31 @@ pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, f
 
 /// Walk the `extends =` chain looking for a method by name.
 /// Returns the owning fcd + the method decl, or null if no ancestor
-/// declares it. Depth-capped at 16 to break accidental cycles
-/// (real Obj-C class chains rarely exceed 6 levels).
+/// declares it.
 pub fn findRuntimeMethodInChain(self: *Lowering, fcd: *const ast.RuntimeClassDecl, method_name: []const u8) ?struct { fcd: *const ast.RuntimeClassDecl, method: ast.RuntimeMethodDecl } {
     var current: *const ast.RuntimeClassDecl = fcd;
-    var depth: u32 = 0;
-    while (depth < 16) : (depth += 1) {
+    while (true) {
         for (current.members) |m| switch (m) {
             .method => |md| if (std.mem.eql(u8, md.name, method_name)) return .{ .fcd = current, .method = md },
             else => {},
         };
-        // Not on this level — follow `extends = ParentName`.
-        const parent = blk: {
-            for (current.members) |m| switch (m) {
-                .extends => |p| break :blk p,
-                else => {},
-            };
-            break :blk null;
-        } orelse return null;
+        const parent = lower_ffi.extendsAlias(current.members) orelse return null;
         current = self.program_index.runtime_class_map.get(parent) orelse return null;
     }
-    return null;
 }
 
 /// Walk the `extends =` chain looking for a `@ObjcProperty` field by
 /// name. Companion to findRuntimeMethodInChain.
 pub fn findRuntimePropertyInChain(self: *Lowering, fcd: *const ast.RuntimeClassDecl, field_name: []const u8) ?ast.RuntimeFieldDecl {
     var current: *const ast.RuntimeClassDecl = fcd;
-    var depth: u32 = 0;
-    while (depth < 16) : (depth += 1) {
+    while (true) {
         for (current.members) |m| switch (m) {
             .field => |f| if (f.is_property and std.mem.eql(u8, f.name, field_name)) return f,
             else => {},
         };
-        const parent = blk: {
-            for (current.members) |m| switch (m) {
-                .extends => |p| break :blk p,
-                else => {},
-            };
-            break :blk null;
-        } orelse return null;
+        const parent = lower_ffi.extendsAlias(current.members) orelse return null;
         current = self.program_index.runtime_class_map.get(parent) orelse return null;
     }
-    return null;
 }
 
 const ObjcDefinedStateField = struct {
