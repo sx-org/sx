@@ -2779,7 +2779,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@typeEq",
         .@"@unbox",
         .vectorLanes,
-        .__sx_variant_tag_width,
+        .@"@tag",
+        .@"@as",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3072,7 +3073,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@typeEq",
         .@"@unbox",
         .vectorLanes,
-        .__sx_variant_tag_width,
+        .@"@tag",
+        .@"@as",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3352,7 +3354,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@typeEq",
         .@"@unbox",
         .vectorLanes,
-        .__sx_variant_tag_width,
+        .@"@tag",
+        .@"@as",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3719,7 +3722,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@typeEq",
         .@"@unbox",
         .vectorLanes,
-        .__sx_variant_tag_width,
+        .@"@tag",
+        .@"@as",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3982,6 +3986,146 @@ fn lowerUnboxIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         return Ref.none;
     }
     return self.builder.emit(.{ .unbox_any = .{ .operand = boxedReceiver(self, c.args[0]) } }, target);
+}
+
+/// `@tag(v)` — an enum value's tag. A typed enum yields the tag in its tag
+/// type: a payload-free value IS the tag, a payload-carrying one reads its
+/// tag word. A boxed value yields a view of the tag word typed by the tag
+/// type the runtime width table names.
+fn lowerTagIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 1) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@tag takes 1 argument, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const ty = self.inferExprType(c.args[0]);
+    const val = self.lowerExpr(c.args[0]);
+    if (ty == .any) return boxedTagView(self, val);
+    if (!ty.isBuiltin() and self.module.types.get(ty) == .@"enum") {
+        const e = self.module.types.get(ty).@"enum";
+        if (e.hasPayload()) return self.builder.emit(.{ .enum_tag = .{ .operand = val } }, e.tag_type);
+        return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = ty, .to = e.tag_type } }, e.tag_type);
+    }
+    if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@tag takes an enum value or an `any`, got '{s}'", .{self.formatTypeName(ty)});
+    return Ref.none;
+}
+
+/// The integer types a runtime tag width names, sign-encoded as
+/// `variantTagWidth` does: positive widths are unsigned, negative signed.
+const tag_width_types = [_]struct { width: i64, ty: TypeId }{
+    .{ .width = 1, .ty = .u8 },   .{ .width = -1, .ty = .i8 },
+    .{ .width = 2, .ty = .u16 },  .{ .width = -2, .ty = .i16 },
+    .{ .width = 4, .ty = .u32 },  .{ .width = -4, .ty = .i32 },
+    .{ .width = 8, .ty = .u64 },  .{ .width = -8, .ty = .i64 },
+};
+
+/// A view of a boxed enum's tag word, typed by its tag type.
+fn boxedTagView(self: *Lowering, av: Ref) Ref {
+    const b = &self.builder;
+    const type_word = b.structGet(av, 1, .i64);
+    const width_args = self.alloc.dupe(Ref, &.{type_word}) catch return Ref.none;
+    const width = b.callBuiltin(.rt_variant_tag_width, width_args, .i64);
+    const slot = b.alloca(.type_value);
+    b.store(slot, b.constType(.i64));
+    const merge_bb = self.freshBlock("tag.merge");
+    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
+    defer cases.deinit(self.alloc);
+    var blocks = std.ArrayList(inst_mod.BlockId).empty;
+    defer blocks.deinit(self.alloc);
+    for (tag_width_types) |entry| {
+        const bb = self.freshBlock("tag.width");
+        cases.append(self.alloc, .{ .value = @bitCast(entry.width), .target = bb, .args = &.{} }) catch return Ref.none;
+        blocks.append(self.alloc, bb) catch return Ref.none;
+    }
+    b.switchBr(width, cases.items, merge_bb, &.{});
+    for (tag_width_types, blocks.items) |entry, bb| {
+        b.switchToBlock(bb);
+        b.store(slot, b.constType(entry.ty));
+        b.br(merge_bb, &.{});
+    }
+    b.switchToBlock(merge_bb);
+    const tag_ty = b.load(slot, .type_value);
+    return b.makeAny(tag_ty, b.anyData(av, self.module.types.ptrTo(.void)));
+}
+
+/// `@as(T, v)` — the compiler's conversions of `v` to `T`: every arm of the
+/// coercion ladder except the user `Into` fallback and the unchecked unbox. A
+/// boxed `v` dispatches on its runtime tag over the scalar sources that
+/// convert to `T`; a pairing with no conversion stops the program.
+fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@as takes 2 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@as expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    const src = self.inferExprType(c.args[1]);
+    const saved_target = self.target_type;
+    self.target_type = if (src == .any) .any else dst;
+    const val = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+    const src_ty = self.builder.getRefType(val);
+    if (src_ty == .any) return boxedAs(self, val, dst, c.callee.span);
+    switch (self.coercionResolver().classify(src_ty, dst)) {
+        .no_op => return val,
+        .unbox_any => unreachable,
+        .none, .closure_to_fn_reject, .unique_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => {
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@as has no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst) });
+            return self.builder.constUndef(dst);
+        },
+        else => return self.coerceExplicit(val, src_ty, dst),
+    }
+}
+
+/// The scalar sources a boxed `@as` dispatches over.
+const boxed_as_sources = [_]TypeId{ .bool, .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .isize, .usize, .f32, .f64 };
+
+fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
+    const b = &self.builder;
+    const type_word = b.structGet(av, 1, .i64);
+    const slot = b.alloca(dst);
+    const merge_bb = self.freshBlock("as.merge");
+    const refuse_bb = self.freshBlock("as.refuse");
+    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
+    defer cases.deinit(self.alloc);
+    var srcs = std.ArrayList(TypeId).empty;
+    defer srcs.deinit(self.alloc);
+    var blocks = std.ArrayList(inst_mod.BlockId).empty;
+    defer blocks.deinit(self.alloc);
+    var candidates = std.ArrayList(TypeId).empty;
+    defer candidates.deinit(self.alloc);
+    candidates.append(self.alloc, dst) catch return Ref.none;
+    for (boxed_as_sources) |s| if (s != dst) candidates.append(self.alloc, s) catch return Ref.none;
+    for (candidates.items) |s| {
+        const plan = self.coercionResolver().classify(s, dst);
+        const converts = switch (plan) {
+            .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .optional_wrap => true,
+            else => false,
+        };
+        if (!converts) continue;
+        const bb = self.freshBlock("as.from");
+        cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
+        srcs.append(self.alloc, s) catch return Ref.none;
+        blocks.append(self.alloc, bb) catch return Ref.none;
+    }
+    b.switchBr(type_word, cases.items, refuse_bb, &.{});
+    for (srcs.items, blocks.items) |s, bb| {
+        b.switchToBlock(bb);
+        const loaded = b.emit(.{ .unbox_any = .{ .operand = av } }, s);
+        b.store(slot, self.coerceExplicit(loaded, s, dst));
+        b.br(merge_bb, &.{});
+    }
+    b.switchToBlock(refuse_bb);
+    if (self.runtimeBinding("asRefused")) |fid| {
+        const callee = self.module.functions.items[@intFromEnum(fid)];
+        var args = [_]Ref{ b.constType(dst), av };
+        _ = b.call(fid, self.prependCtxIfNeeded(&callee, &args), callee.ret);
+    } else if (self.diagnostics) |d| d.addFmt(.err, span, "@as writes its refusal through modules/std/core.sx, which is not in the program", .{});
+    b.emitUnreachable();
+    b.switchToBlock(merge_bb);
+    return b.load(slot, dst);
 }
 
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
@@ -4322,6 +4466,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@len", .@"@field" => return lowerBoxedViewIntrinsic(self, id, c),
         .@"@inner" => return lowerInnerIntrinsic(self, c),
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
+        .@"@tag" => return lowerTagIntrinsic(self, c),
+        .@"@as" => return lowerAsIntrinsic(self, c),
         else => {},
     };
     if (std.mem.eql(u8, name, "anyElement")) {
@@ -4429,18 +4575,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // it falls through to generic-function lowering → "cannot infer …".
         const ty = self.resolveTypeCallWithBindings(c);
         return self.builder.constType(ty);
-    }
-    if (std.mem.eql(u8, name, "__sx_variant_tag_width")) {
-        // INTERNAL: the sign-encoded tag-word width (fmt's runtime variant
-        // walk). Static arg folds; runtime Type reads the width table.
-        if (c.args.len < 1) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            const arg_ref = self.lowerExpr(c.args[0]);
-            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_variant_tag_width, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        return self.builder.constInt(self.module.types.variantTagWidth(ty), .i64);
     }
     return null;
 }

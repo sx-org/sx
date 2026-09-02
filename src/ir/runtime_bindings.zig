@@ -25,6 +25,8 @@ pub const entries = [_]Binding{
     .{ .module = core, .name = "writeInt" },
     .{ .module = core, .name = "writeUint" },
     .{ .module = core, .name = "writeFloat" },
+    // A boxed `@as` whose pairing has no conversion.
+    .{ .module = core, .name = "asRefused" },
 };
 
 pub fn find(name: []const u8) ?Binding {

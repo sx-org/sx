@@ -1,0 +1,16 @@
+// `@as` converts a boxed value by its runtime type: a narrow integer widens,
+// a float narrows to an integer, and an optional target wraps the result.
+@import "modules/std.sx";
+
+widen :: (av: any) -> i64 { @as(i64, av) }
+
+main :: () -> i32 {
+    small : u8 = 200;
+    neg : i16 = -5;
+    f : f64 = 2.75;
+    print("{} {} {}\n", widen(small), widen(neg), widen(f));
+    o := @as(?i64, small);
+    print("{}\n", o ?? -1);
+    print("{}\n", @as(f64, 3));
+    0
+}

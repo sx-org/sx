@@ -1,0 +1,22 @@
+// `@tag` reads an enum value's tag: a typed value yields the tag in its tag
+// type, a boxed value a view typed by that same type, whatever the backing —
+// a `u8`, an `i16`, or a layout struct's tag word.
+@import "modules/std.sx";
+
+Small :: enum u8 { a; b :: 200; }
+Wide :: enum i16 { lo :: 3; hi :: 700; }
+Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
+
+main :: () -> i32 {
+    s := Small.b;
+    print("{} {}\n", @tag(s), @typeName(@typeOf(@tag(s))));
+    n := Wide.hi;
+    print("{} {}\n", @tag(n), @typeName(@typeOf(@tag(n))));
+    e := Ev.key(9);
+    print("{} {}\n", @tag(e), @typeName(@typeOf(@tag(e))));
+
+    boxed : any = n;
+    view := @tag(boxed);
+    print("{} {}\n", @typeName(view), @as(i64, view));
+    0
+}

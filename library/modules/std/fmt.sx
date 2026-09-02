@@ -211,7 +211,7 @@ flagsToString :: (val: $T) -> string {
 enumToString :: (u: $T) -> string {
     if isFlags(T) { return flagsToString(u); }
     av : any = u;
-    idx := __sx_variant_index(T, av);
+    idx := variantIndex(av) ?? { return concat(".(", intToString(@as(i64, @tag(av))), ")"); };
     result := concat(".", @typeInfo(T).enum.fields[idx].name);
     pstr := anyToString(@field(av, idx));
     if pstr.len > 0 {
@@ -261,7 +261,7 @@ writeAny :: (w: Writer, val: any) {
         }
         case .enum: |ei| {
             if isFlags(t) {
-                bits := __sx_any_tag_word(t, val);
+                bits := @as(i64, @tag(val));
                 empty := true;
                 fi := 0;
                 while fi < ei.fields.len {
@@ -275,8 +275,7 @@ writeAny :: (w: Writer, val: any) {
                     fi += 1;
                 }
                 if empty { w.write("0"); }
-            } else {
-                idx := __sx_variant_index(t, val);
+            } else if idx := variantIndex(val) {
                 live := ei.fields[idx];
                 w.write(".");
                 w.write(live.name);
@@ -285,6 +284,10 @@ writeAny :: (w: Writer, val: any) {
                     writeAny(w, @field(val, idx));
                     w.write(")");
                 }
+            } else {
+                w.write(".(");
+                writeInt(w, @as(i64, @tag(val)));
+                w.write(")");
             }
         }
         // The payload renders as it constructs, so a struct payload brings its
@@ -431,43 +434,3 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
     }
 }
 
-// ── The runtime variant walk (enum values behind an `any`) ──
-// The tag word of the variant value `av` views: little-endian byte assembly
-// of the low `__sx_variant_tag_width(t)` bytes (a payload-less enum's whole
-// value; a payload enum's tag slot at offset 0 — never the wider header a
-// backing-type union may carry). A negative width means a signed backing /
-// tag type: sign-extend so small negative explicit values round-trip.
-__sx_any_tag_word :: (t: Type, av: any) -> i64 {
-    w := __sx_variant_tag_width(t);
-    signed := false;
-    if w < 0 { signed = true; w = -w; }
-    p : [*]u8 = rawAnyData(av).([*]u8);
-    v := 0;
-    i := 0;
-    while i < w {
-        b : i64 = p[i];
-        v = v | (b << (8 * i));
-        i += 1;
-    }
-    if signed {
-        if w < 8 {
-            shift := 64 - 8 * w;
-            v = (v << shift) >> shift;
-        }
-    }
-    v
-}
-
-// A variant value's SEQUENTIAL ordinal: scan the reflected variant values
-// (explicit values and explicit tags included) for the one the tag word
-// carries.
-__sx_variant_index :: (t: Type, av: any) -> i64 {
-    v := __sx_any_tag_word(t, av);
-    n := @typeInfo(t).enum.fields.len;
-    i := 0;
-    while i < n {
-        if @typeInfo(t).enum.fields[i].value == v { return i; }
-        i += 1;
-    }
-    @panic(format("{} has no variant for tag {}", @typeName(t), v), @SourceSite{})
-}

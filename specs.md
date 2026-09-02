@@ -4592,7 +4592,7 @@ Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `v
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `@field` / `anyElement`, `rawMakeAny`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `@field` / `anyElement`, `rawMakeAny`) with ONE compiled body per arm; `@as(i64, val)` / `@as(f64, val)` in the `int`/`float` arms width-dispatch over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -5581,7 +5581,10 @@ The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `isFla
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
 ### Type Conversion
-- Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
+- Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. Runtime-typed data travels as `any` and comes back through the assertion forms.
+- `@as($T: Type, v: $S) -> T` — the compiler's conversions of `v` to `T`: every arm of the coercion ladder except `Into` and the unchecked unbox. A boxed `v` converts by its runtime type; a pairing with no conversion stops the program naming both types.
+- `@tag(v: $T)` — an enum value's tag: a typed enum's tag in its tag type; a boxed one as an `any` view typed by its tag type.
+- `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
 
 ### Vectors
 - `@Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`

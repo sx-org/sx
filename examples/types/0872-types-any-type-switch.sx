@@ -26,7 +26,7 @@ describe :: (av: any) -> string {
         case string: |s| { r = format("str '{}'", s); }
         case struct: { r = "some struct"; }
         case enum: { r = "some enum"; }
-        case float: { fv : f64 = xx av; r = format("float {}", fv); }
+        case float: { r = format("float {}", @as(f64, av)); }
         else: { r = concat("other: ", @typeName(@typeOf(av))); }
     }
     r

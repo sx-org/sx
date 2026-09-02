@@ -1,0 +1,14 @@
+// A boxed `@as` whose pairing has no conversion stops the program naming
+// both types.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+main :: () -> i32 {
+    p := Point{ x = 1, y = 2 };
+    boxed : any = p;
+    print("{}\n", @as(i64, boxed));
+    return 0;
+}
