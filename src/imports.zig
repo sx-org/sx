@@ -926,7 +926,10 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         // A parameterized protocol is instantiated cross-module; record its
         // defining path so the instantiation resolves method-signature types in
         // this module.
-        .protocol_decl => decl.data.protocol_decl.source_file = file_path,
+        .protocol_decl => |pd| {
+            decl.data.protocol_decl.source_file = file_path;
+            stampProtocolMethodSources(pd, file_path);
+        },
         // An sx-defined `@ObjcClass` / `@JniClass`: its IMP trampolines are
         // emitted at lowering time (possibly from another module's context), so
         // record the defining path AND stamp each method body.
@@ -948,7 +951,10 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
             // OWN module (the instantiation source-pin), so their
             // bodies need the defining path stamped just like a top-level fn.
             .struct_decl => |sd| stampStructMethodSources(sd, file_path),
-            .protocol_decl => cd.value.data.protocol_decl.source_file = file_path,
+            .protocol_decl => |pd| {
+                cd.value.data.protocol_decl.source_file = file_path;
+                stampProtocolMethodSources(pd, file_path);
+            },
             .runtime_class_decl => {
                 cd.value.data.runtime_class_decl.source_file = file_path;
                 stampRuntimeClassMethodSources(cd.value.data.runtime_class_decl, file_path);
@@ -962,6 +968,14 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
 /// Stamp the defining module path onto every method (and struct-level fn
 /// constant) body of a struct decl, so a generic-struct method monomorphized at
 /// a cross-module call site still pins to the module that declares it.
+/// A default method body is written in the protocol's module and reused by
+/// every conformer's synthesized method, so it carries the protocol's path.
+fn stampProtocolMethodSources(pd: ast.ProtocolDecl, file_path: []const u8) void {
+    for (pd.methods) |m| {
+        if (m.default_body) |body| body.source_file = file_path;
+    }
+}
+
 fn stampStructMethodSources(sd: ast.StructDecl, file_path: []const u8) void {
     for (sd.methods) |m| {
         if (m.data == .fn_decl) m.data.fn_decl.body.source_file = file_path;
@@ -1319,7 +1333,7 @@ pub fn loadCoreModule(
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
 ) !void {
     const path = resolveImportPath(allocator, io, dirName(mod.path), core_module, null, stdlib_paths) catch return;
-    if (cache.contains(path)) return;
+    if (cache.contains(path) or sameFileIdentity(allocator, path, mod.path)) return;
     const core = (try loadFileModule(allocator, io, path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse return;
 
     var list = std.ArrayList(*Node).empty;
