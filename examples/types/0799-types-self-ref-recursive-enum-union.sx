@@ -2,7 +2,7 @@
 // identity. Three single-author shapes that reference a not-yet-interned name in a
 // `*Name` field:
 // * `Node`  — a SELF-referential UNION (linked cells: `next: *Node`).
-// * `Tree`  — a SELF-referential ENUM/tagged-union (`branch: *Tree`).
+// * `Tree`  — a SELF-referential ENUM/payload enum (`branch: *Tree`).
 // * `A`/`B` — a MUTUALLY-referential union pair (`A` holds `*B`, `B` holds `*A`).
 //
 // A `*Name` field forward-creates a STRUCT stub under `Name`. The per-decl

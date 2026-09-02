@@ -71,7 +71,7 @@ library/modules/std/core.sx:83:46: intrinsic [use] | rawMakeAny :: (tp: Type, da
 library/modules/std/core.sx:313:39: intrinsic [use] | rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
 library/modules/std/core.sx:314:40: intrinsic [use] | rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
 library/modules/std/core.sx:315:39: intrinsic [use] | rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-library/modules/std/core.sx:316:36: intrinsic [use] | rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged-union
+library/modules/std/core.sx:316:36: intrinsic [use] | rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum
 library/modules/std/core.sx:318:36: intrinsic [use] | rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
 library/modules/std/core.sx:319:36: intrinsic [use] | rawFieldCount   :: (t: u32) -> i64 intrinsic;
 library/modules/std/core.sx:320:46: intrinsic [use] | rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId

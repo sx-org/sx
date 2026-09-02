@@ -1593,7 +1593,7 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // arity, parameter types, return type, or calling convention.
     if (isFunctionType(self, src_ty) and isFunctionType(self, dst_ty)) return true;
     // An unmodeled pair where exactly ONE side is an aggregate value
-    // (struct/union/tagged union/array/tuple) is NEVER a legitimate
+    // (struct/union/payload enum/array/tuple) is NEVER a legitimate
     // bit-reinterpretation, width match or not: the aggregate's bytes pun
     // into a scalar/pointer slot (a same-width `struct{i64}` passed where a
     // pointer is expected). The same-width
@@ -1644,7 +1644,8 @@ fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
     if (ty == .string or ty == .any) return true;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
-        .@"struct", .@"union", .tagged_union, .array, .slice, .closure, .failable => true,
+        .@"struct", .@"union", .array, .slice, .closure, .failable => true,
+        .@"enum" => |e| e.hasPayload(),
         else => false,
     };
 }

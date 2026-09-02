@@ -473,7 +473,6 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
         .@"struct" => |s| try writer.writeAll(tt.getString(s.name)),
         .@"enum" => |e| try writer.writeAll(tt.getString(e.name)),
         .@"union" => |u| try writer.writeAll(tt.getString(u.name)),
-        .tagged_union => |u| try writer.writeAll(tt.getString(u.name)),
         .protocol => |p| try writer.writeAll(tt.getString(p.name)),
         .@"error" => |e| try writer.writeAll(tt.getString(e.name)),
         .pointer => |p| {

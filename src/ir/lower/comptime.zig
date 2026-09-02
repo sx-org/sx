@@ -130,7 +130,7 @@ pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?
 /// destination enum type `ty`. The tag respects explicit variant values
 /// (`enum { a; b :: 5; }`); the enum's backing width is applied by the
 /// const emitters via the destination type's LLVM type. Plain enums only —
-/// a tagged-union or non-enum destination is diagnosed loudly rather than
+/// a payload enum or non-enum destination is diagnosed loudly rather than
 /// silently zero-initialized.
 pub fn constEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral, ty: TypeId, span: ast.Span) ?inst_mod.ConstantValue {
     if (!ty.isBuiltin()) {
@@ -139,8 +139,8 @@ pub fn constEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral, ty: TypeId,
             const e = info.@"enum";
             const name_id = self.module.types.internString(el.name);
             for (e.variants, 0..) |variant, i| {
-                if (variant != name_id) continue;
-                if (e.explicit_values) |vals| {
+                if (variant.name != name_id) continue;
+                if (e.values) |vals| {
                     if (i < vals.len) return .{ .int = vals[i] };
                 }
                 return .{ .int = @intCast(i) };
@@ -413,8 +413,8 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     // struct in the type table, and only the interface word names it.
     if (std.mem.eql(u8, name, "interface")) return isErasedProtocolType(self, tid);
     if (std.mem.eql(u8, name, "struct")) return info == .@"struct" and !info.@"struct".is_protocol;
-    if (std.mem.eql(u8, name, "enum")) return info == .@"enum" or info == .tagged_union;
-    if (std.mem.eql(u8, name, "union")) return info == .@"union" or info == .tagged_union;
+    if (std.mem.eql(u8, name, "enum")) return info == .@"enum";
+    if (std.mem.eql(u8, name, "union")) return info == .@"union";
     if (std.mem.eql(u8, name, "array")) return info == .array;
     if (std.mem.eql(u8, name, "pointer")) return info == .pointer or info == .many_pointer;
     if (std.mem.eql(u8, name, "vector")) return info == .vector;
@@ -672,10 +672,9 @@ fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
                 const nm = c.args[0].data.string_literal.raw;
                 const nid = self.module.types.internString(nm);
                 const tid = self.module.types.findByName(nid) orelse self.module.types.internNominal(.{
-                    .tagged_union = .{
+                    .@"enum" = .{
                         .name = nid,
-                        .fields = &.{},
-                        .tag_type = .i64,
+                        .variants = &.{},
                         .defined = false, // forward placeholder — never-completed `declare` stays rejected
                     },
                 }, 0);
@@ -792,18 +791,18 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
 
 /// Post-check a comptime type-construction result. A bare `declare("X")` never
 /// completed by a `define(handle, …)` leaves
-/// a forward `tagged_union` PLACEHOLDER (`defined == false`); sizing /
+/// a forward enum PLACEHOLDER (`defined == false`); sizing /
 /// constructing / emitting it panics at codegen (`verifySizes`: llvm_size !=
 /// ir_size). Reject it loudly here. An *explicitly* defined empty type (an empty
-/// struct / tuple / enum / tagged_union — `defined == true`, possibly 0 fields)
+/// struct / tuple / enum — `defined == true`, possibly 0 fields)
 /// is a legitimate result and passes through. Returns the type, or null after
 /// gating the build.
 fn checkComptimeTypeResult(self: *Lowering, tid: TypeId, span: ast.Span) ?TypeId {
     if (!tid.isBuiltin()) {
         const info = self.module.types.get(tid);
-        if (info == .tagged_union and !info.tagged_union.defined) {
+        if (info == .@"enum" and !info.@"enum".defined) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "type '{s}' is declared but never defined — complete it with define(handle, info)", .{self.module.types.getString(info.tagged_union.name)});
+                d.addFmt(.err, span, "type '{s}' is declared but never defined — complete it with define(handle, info)", .{self.module.types.getString(info.@"enum".name)});
             return null;
         }
     }
@@ -819,10 +818,6 @@ pub fn renameNominalType(self: *Lowering, tid: TypeId, name: []const u8) void {
     const new_name_id = tbl.internString(name);
     var info = tbl.get(tid);
     switch (info) {
-        .tagged_union => |*u| {
-            if (u.name == new_name_id) return;
-            u.name = new_name_id;
-        },
         .@"enum" => |*e| {
             if (e.name == new_name_id) return;
             e.name = new_name_id;
@@ -1432,7 +1427,7 @@ fn lowerComptimeCallArgsMode(
     // Bind VALUE-typed comptime params (`$o: Ord`, `$s: Shape`, ...) to their
     // argument's materialized comptime value — both into
     // `comptime_value_bindings` (the comptime-readable scalar: int / enum-tag /
-    // tagged-union-tag, so a downstream lowerer can read the constant for an
+    // payload enum-tag, so a downstream lowerer can read the constant for an
     // identifier) AND as a scoped value (so `if o == .a` / `if s == .circle`
     // lowers as an ordinary comparison). Saved/restored around the body so
     // nested comptime calls don't leak the outer call's bindings. A
@@ -1442,7 +1437,7 @@ fn lowerComptimeCallArgsMode(
     const saved_value_ref_bindings = self.comptime_value_ref_bindings;
     var value_bindings: ?std.StringHashMap(i64) = null;
     var value_ref_bindings: ?std.StringHashMap(Ref) = null;
-    // Tagged-union payload expressions belong to the caller. Materialize them
+    // Payload enum payload expressions belong to the caller. Materialize them
     // in the staging scope (whose parent is the caller), then transfer only the
     // resulting comptime formal bindings into the parentless callee scope.
     // This keeps the body hygienic without making `.circle(caller_local)` lose
@@ -1609,18 +1604,18 @@ fn classifyInlineExit(self: *Lowering, ret_ty: TypeId) Lowering.InlineExit {
 /// the body. Two stores are written:
 ///   - `int_store` (`comptime_value_bindings`, param → i64): the
 ///     comptime-readable SCALAR — the int for an `int` param, the variant TAG
-///     for an `enum` or `tagged_union` param. Preserves the integration
+///     for an `enum` param. Preserves the integration
 ///     contract: `comptimeIntNamed(param)` keeps returning the tag/int, and the
 ///     param remains usable in a type position (`[o]i64`).
 ///   - `ref_store` (`comptime_value_ref_bindings`, param → Ref): the full
 ///     materialized value Ref for a non-scalar param (the `enum_init(tag,
-///     payload)` of a tagged-union, the aggregate const of a struct/array), so
+///     payload)` of a payload enum, the aggregate const of a struct/array), so
 ///     a lowering-time consumer can read the WHOLE bound value via
 ///     `comptimeValueRefNamed(param)`.
 /// Supported constraint kinds:
 ///   - `.@"enum"` (payload-less): bind the variant tag, scope an
 ///     `enum_init(tag, none)` so `if o == .a` lowers as an enum comparison.
-///   - `.tagged_union` (payload-bearing enum): bind the variant tag (int_store)
+///   - a payload-carrying enum: bind the variant tag (int_store)
 ///     AND the full `enum_init(tag, payload)` value (ref_store + scope), so a
 ///     bare variant (`.point`) or a payload variant (`.circle(5.0)`) both
 ///     resolve — `if s == .circle` lowers as a tag comparison and any payload
@@ -1646,8 +1641,10 @@ pub fn bindComptimeValueParams(
         if (constraint_ty.isBuiltin()) continue;
         const info = self.module.types.get(constraint_ty);
         switch (info) {
-            .@"enum" => self.bindEnumValueParam(param.name, constraint_ty, info.@"enum", arg_node, int_store),
-            .tagged_union => self.bindTaggedUnionValueParam(param.name, constraint_ty, info.tagged_union, arg_node, int_store, ref_store),
+            .@"enum" => |e| if (e.hasPayload())
+                self.bindPayloadEnumValueParam(param.name, constraint_ty, e, arg_node, int_store, ref_store)
+            else
+                self.bindEnumValueParam(param.name, constraint_ty, e, arg_node, int_store),
             // Other constraint kinds (`type`-metatype params, generic type
             // params, structs/arrays) are not bound here. The param falls to
             // whatever downstream resolution already applies — never a silent
@@ -1659,7 +1656,7 @@ pub fn bindComptimeValueParams(
 
 /// Record `param → tag` in `int_store` (lazily creating/activating it, seeded
 /// from any outer-active bindings so a surrounding comptime call's value params
-/// stay visible). Shared by the enum and tagged-union binders.
+/// stay visible). Shared by the enum and payload enum binders.
 pub fn recordComptimeTag(self: *Lowering, store: *?std.StringHashMap(i64), name: []const u8, tag: i64) void {
     if (store.* == null) {
         var m = std.StringHashMap(i64).init(self.alloc);
@@ -1727,8 +1724,8 @@ pub fn bindEnumValueParam(
     }
 }
 
-/// Bind a `.tagged_union` (payload-bearing enum) comptime value param. The arg
-/// is one of two constant forms:
+/// Bind a payload-carrying enum comptime value param. The arg is one of two
+/// constant forms:
 ///   - a bare variant literal `.point` (no payload), an `.enum_literal` node, or
 ///   - a payload variant `.circle(5.0)`, a `.call` node whose callee is an
 ///     `.enum_literal`.
@@ -1737,11 +1734,11 @@ pub fn bindEnumValueParam(
 /// `enum_init(tag, payload)` value in `ref_store` + scope (so a payload read off
 /// the bound value resolves). A non-constant arg (any other node shape) or an
 /// unknown variant is a loud diagnostic.
-pub fn bindTaggedUnionValueParam(
+pub fn bindPayloadEnumValueParam(
     self: *Lowering,
     name: []const u8,
     constraint_ty: TypeId,
-    union_info: types.TypeInfo.TaggedUnionInfo,
+    union_info: types.TypeInfo.EnumInfo,
     arg_node: *const Node,
     int_store: *?std.StringHashMap(i64),
     ref_store: *?std.StringHashMap(Ref),
@@ -1751,18 +1748,18 @@ pub fn bindTaggedUnionValueParam(
         .enum_literal => |el| el.name,
         .call => |c| if (c.callee.data == .enum_literal) c.callee.data.enum_literal.name else {
             if (self.diagnostics) |d|
-                d.addFmt(.err, arg_node.span, "comptime tagged-union value parameter '{s}' must be a constant variant literal of '{s}' (e.g. `.variant` or `.variant(payload)`)", .{ name, self.formatTypeName(constraint_ty) });
+                d.addFmt(.err, arg_node.span, "comptime enum value parameter '{s}' must be a constant variant literal of '{s}' (e.g. `.variant` or `.variant(payload)`)", .{ name, self.formatTypeName(constraint_ty) });
             return;
         },
         else => {
             if (self.diagnostics) |d|
-                d.addFmt(.err, arg_node.span, "comptime tagged-union value parameter '{s}' must be a constant variant literal of '{s}' (e.g. `.variant` or `.variant(payload)`)", .{ name, self.formatTypeName(constraint_ty) });
+                d.addFmt(.err, arg_node.span, "comptime enum value parameter '{s}' must be a constant variant literal of '{s}' (e.g. `.variant` or `.variant(payload)`)", .{ name, self.formatTypeName(constraint_ty) });
             return;
         },
     };
 
     if (self.findTaggedVariant(union_info, variant_name) == null) {
-        self.emitBadVariant(constraint_ty, union_info, variant_name, arg_node.span);
+        self.emitBadEnumVariant(constraint_ty, union_info, variant_name, arg_node.span);
         return;
     }
 
@@ -1788,11 +1785,11 @@ pub fn bindTaggedUnionValueParam(
     }
 }
 
-/// True iff `variants` (interned enum variant name-ids) contains `variant_name`.
-pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant_name: []const u8) bool {
+/// True iff `variants` contains `variant_name`.
+pub fn enumHasVariant(self: *Lowering, variants: []const types.TypeInfo.EnumInfo.Variant, variant_name: []const u8) bool {
     const name_id = self.module.types.internString(variant_name);
     for (variants) |v| {
-        if (v == name_id) return true;
+        if (v.name == name_id) return true;
     }
     return false;
 }
@@ -1966,7 +1963,7 @@ pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
 }
 
 /// Lowering-time accessor for the full materialized value of a NON-scalar
-/// comptime value param (a tagged-union literal, a struct/array aggregate):
+/// comptime value param (a payload enum literal, a struct/array aggregate):
 /// returns the IR `Ref` of the bound value (e.g. the `enum_init(tag, payload)`
 /// of a `$s: Shape` bound to `.circle(5.0)`), or null if `name` is not a
 /// non-scalar comptime value binding. Companion to `comptimeIntNamed`, which

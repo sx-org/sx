@@ -807,13 +807,13 @@ pub const Lowering = struct {
     struct_instance_bindings: std.StringHashMap(std.StringHashMap(TypeId)), // mangled struct name → type param bindings
     struct_instance_template: std.StringHashMap([]const u8), // mangled struct name → template name
     struct_instance_author: std.StringHashMap(*const ast.StructDecl), // mangled struct name → authoring StructDecl (CP-2: body-author ≡ layout-author)
-    comptime_value_bindings: ?std.StringHashMap(i64) = null, // comptime value bindings ($N → integer value: int / enum-tag / tagged-union-tag)
+    comptime_value_bindings: ?std.StringHashMap(i64) = null, // comptime value bindings ($N → integer value: int / enum-tag / payload enum-tag)
     /// Comptime value params bound to a NON-scalar materialized value (a
-    /// tagged-union literal, a struct/array aggregate). Keyed by param name →
+    /// payload enum literal, a struct/array aggregate). Keyed by param name →
     /// the IR `Ref` of the materialized value (an `enum_init(tag, payload)` for
-    /// a tagged union, an aggregate const for a struct/array). The companion to
+    /// a payload enum, an aggregate const for a struct/array). The companion to
     /// `comptime_value_bindings`: the i64 map carries the comptime-readable
-    /// scalar (the variant TAG for a tagged union, so `comptimeIntNamed` keeps
+    /// scalar (the variant TAG for a payload enum, so `comptimeIntNamed` keeps
     /// returning it); this map carries the full value Ref so a lowering-time
     /// consumer can read the whole bound value (`comptimeValueRefNamed`).
     comptime_value_ref_bindings: ?std.StringHashMap(Ref) = null,
@@ -3085,13 +3085,13 @@ pub const Lowering = struct {
 
     /// The integer type a payload-less enum's value IS — its declared backing
     /// type, `i64` when none was written. Null for every other type: a
-    /// payload-CARRYING enum is a `tagged_union` (`{tag, payload}`), not a
-    /// scalar, so no integer stands for its value.
+    /// payload-CARRYING enum is `{tag, payload}`, not a scalar, so no integer
+    /// stands for its value.
     pub fn enumBackingType(self: *Lowering, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         const info = self.module.types.get(ty);
-        if (info != .@"enum") return null;
-        return info.@"enum".backing_type orelse .i64;
+        if (info != .@"enum" or info.@"enum".hasPayload()) return null;
+        return info.@"enum".tag_type;
     }
 
     /// Value range of an integer type, for literal fits-checks. Null for
@@ -3410,7 +3410,7 @@ pub const Lowering = struct {
     pub const recordComptimeTag = lower_comptime.recordComptimeTag;
     pub const recordComptimeValueRef = lower_comptime.recordComptimeValueRef;
     pub const bindEnumValueParam = lower_comptime.bindEnumValueParam;
-    pub const bindTaggedUnionValueParam = lower_comptime.bindTaggedUnionValueParam;
+    pub const bindPayloadEnumValueParam = lower_comptime.bindPayloadEnumValueParam;
     pub const enumHasVariant = lower_comptime.enumHasVariant;
     pub const comptimeValueRefNamed = lower_comptime.comptimeValueRefNamed;
     pub const lowerInlineComptime = lower_comptime.lowerInlineComptime;
@@ -3475,7 +3475,7 @@ pub const Lowering = struct {
     pub const FieldLvalueMention = lower_stmt.FieldLvalueMention;
     pub const storeSwizzle = lower_stmt.storeSwizzle;
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
-    pub const diagTaggedUnionVariantWrite = lower_stmt.diagTaggedUnionVariantWrite;
+    pub const diagPayloadVariantWrite = lower_stmt.diagPayloadVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
     pub const rootIsConstant = lower_stmt.rootIsConstant;
     pub const storeOrCompound = lower_stmt.storeOrCompound;

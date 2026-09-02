@@ -16,7 +16,7 @@ error: 'i64' cannot carry a function-type impl
 19 | impl (i64) -> i64 for i64 { call :: (self: *i64, x: i64) -> i64 { return x; } }
    |                       ^^^
 
-help: a conformer is a struct, an untagged union, or an enum
+help: a conformer is a struct, a union, or an enum
    |
 19 | impl (i64) -> i64 for i64 { call :: (self: *i64, x: i64) -> i64 { return x; } }
    |                       ^^^
@@ -38,7 +38,7 @@ error: '$T' cannot carry a function-type impl
 23 | impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
    |                       ^^
 
-help: a conformer is one named type — a struct, an untagged union, or an enum
+help: a conformer is one named type — a struct, a union, or an enum
    |
 23 | impl (i64) -> i64 for $T { call :: (self: *T, x: i64) -> i64 { return x; } }
    |                       ^^

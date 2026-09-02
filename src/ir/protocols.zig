@@ -715,12 +715,12 @@ pub const ProtocolResolver = struct {
     }
 
     /// A type that can carry a function-type impl: a struct that is not a
-    /// protocol handle, an untagged union, or an enum in either of its shapes.
+    /// protocol handle, a union, or an enum.
     fn isNominalConformer(self: ProtocolResolver, ty: TypeId) bool {
         if (ty.isBuiltin()) return false;
         return switch (self.l.module.types.get(ty)) {
             .@"struct" => |s| !s.is_protocol,
-            .@"union", .@"enum", .tagged_union => true,
+            .@"union", .@"enum" => true,
             else => false,
         };
     }
@@ -754,7 +754,7 @@ pub const ProtocolResolver = struct {
         if (target_node.data == .type_expr and target_node.data.type_expr.is_generic) {
             if (diags) |d| {
                 const id = d.addFmtId(.err, at, "'${s}' cannot carry a function-type impl", .{target_node.data.type_expr.name});
-                d.addHelpFmt(id, at, null, "a conformer is one named type — a struct, an untagged union, or an enum", .{});
+                d.addHelpFmt(id, at, null, "a conformer is one named type — a struct, a union, or an enum", .{});
             }
             return;
         }
@@ -773,7 +773,7 @@ pub const ProtocolResolver = struct {
                 if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct")
                     d.addHelpFmt(id, at, null, "an interface handle is not a concrete conformer", .{})
                 else
-                    d.addHelpFmt(id, at, null, "a conformer is a struct, an untagged union, or an enum", .{});
+                    d.addHelpFmt(id, at, null, "a conformer is a struct, a union, or an enum", .{});
             }
             return;
         }

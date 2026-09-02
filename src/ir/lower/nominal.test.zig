@@ -11,7 +11,6 @@ const stub: TypeInfo = .{ .@"struct" = .{ .name = StringId.empty, .fields = &.{}
 
 const enum_info: TypeInfo = .{ .@"enum" = .{ .name = StringId.empty, .variants = &.{} } };
 const union_info: TypeInfo = .{ .@"union" = .{ .name = StringId.empty, .fields = &.{} } };
-const tagged_union_info: TypeInfo = .{ .tagged_union = .{ .name = StringId.empty, .fields = &.{}, .tag_type = .i64 } };
 const error_set_info: TypeInfo = .{ .@"error" = .{ .name = StringId.empty, .tags = &.{} } };
 const struct_info: TypeInfo = .{ .@"struct" = .{ .name = StringId.empty, .fields = &.{} } };
 
@@ -21,7 +20,6 @@ test "adoptsForwardStructStub: every non-struct nominal kind adopts a forward st
     // place (updatePreservingKey's kind-stability assert would trip).
     try std.testing.expect(nominal.adoptsForwardStructStub(stub, enum_info));
     try std.testing.expect(nominal.adoptsForwardStructStub(stub, union_info));
-    try std.testing.expect(nominal.adoptsForwardStructStub(stub, tagged_union_info));
     try std.testing.expect(nominal.adoptsForwardStructStub(stub, error_set_info));
 }
 

@@ -286,7 +286,7 @@ pub const Analyzer = struct {
             },
             .enum_decl => |ed| {
                 if (ed.variant_types.len > 0) {
-                    // Tagged enum with payloads. Also recorded in `enum_types` so
+                    // Payload enum with payloads. Also recorded in `enum_types` so
                     // the name resolves as a type (e.g. a `[*]Event` element).
                     try self.addSymbol(ed.name, .enum_type, .{ .union_type = ed.name }, node.span);
                     try self.enum_types.put(ed.name, ed.variant_names);
@@ -1687,7 +1687,7 @@ pub const Analyzer = struct {
     fn resolveTypeAnnotation(self: *Analyzer, type_node: ?*Node) ?Type {
         if (type_node) |tn| {
             if (Type.fromTypeExpr(tn)) |t| return t;
-            // Check registered types (structs, enums, tagged enums)
+            // Check registered types (structs, enums, payload enums)
             if (tn.data == .type_expr) {
                 const name = tn.data.type_expr.name;
                 // Check type aliases first

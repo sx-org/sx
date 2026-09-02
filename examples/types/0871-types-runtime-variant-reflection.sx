@@ -18,7 +18,7 @@ Wire :: enum { ping :: 0x10; pong :: 0x20; data :: 0x100: i64; }
 Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
 
 main :: () {
-    // static `.value` on a tagged union with explicit tags
+    // static `.value` on a payload enum with explicit tags
     print("static wire: {} {} {}\n", @typeInfo(Wire).enum.fields[0].value, @typeInfo(Wire).enum.fields[1].value, @typeInfo(Wire).enum.fields[2].value);
 
     // runtime `.value`: ordinals, explicit values, flags
@@ -41,7 +41,7 @@ main :: () {
     nt := @typeOf(nv);
     print("rt live neg: {} (vv {})\n", nv, @typeInfo(nt).enum.fields[0].value);
 
-    // tagged union with payload + explicit tags
+    // payload enum with payload + explicit tags
     w : Wire = .data(42);
     wv : any = w;
     print("rt live wire: {}\n", wv);

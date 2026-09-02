@@ -75,7 +75,7 @@ pub const Inst = struct {
     span: Span = .{},
 };
 
-// ── Op (tagged union) ───────────────────────────────────────────────────
+// ── Op (payload enum) ───────────────────────────────────────────────────
 
 pub const Op = union(enum) {
     // ── Constants ───────────────────────────────────────────────────
@@ -215,7 +215,7 @@ pub const Op = union(enum) {
     // ── Enum ops ────────────────────────────────────────────────────
     enum_init: EnumInit, // construct enum value (tag + optional payload)
     enum_tag: UnaryOp, // extract tag from enum/union
-    enum_payload: FieldAccess, // extract payload from tagged union
+    enum_payload: FieldAccess, // extract payload from payload enum
 
     // ── Union ops ───────────────────────────────────────────────────
     union_get: FieldAccess, // read union field (reinterpret)
@@ -607,7 +607,7 @@ pub const BuiltinId = enum(u16) {
     rt_is_flags,
     rt_vector_lanes,
     // The parts the type table counts for a tag: struct/union fields,
-    // enum/tagged-union variants, array elements, vector lanes. 0 for a kind
+    // enum/payload enum variants, array elements, vector lanes. 0 for a kind
     // whose count lives in the value (a fat pointer's header).
     rt_member_count,
     // The tag-word byte width a runtime variant read loads (sign-encoded:

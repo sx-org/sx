@@ -80,7 +80,7 @@ JsonError :: error { Overflow; Io; NonFinite }
 
 // ── Value model ──────────────────────────────────────────────────────
 //
-// `Value` is a tagged union over the JSON kinds. `null`/`bool`/`int`/
+// `Value` is a payload enum over the JSON kinds. `null`/`bool`/`int`/
 // `float` are scalars; `str` is a VIEW into caller memory; `array` is a
 // `List(Value)` and `object` owns growable child storage (see Object).
 // Grow the array through the explicit-allocator form — `arr.append(v,

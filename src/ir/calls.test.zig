@@ -365,7 +365,7 @@ test "plan: enum construction (qualified + dot-shorthand) carries variant tag" {
 
     const red = module.types.internString("Red");
     const green = module.types.internString("Green");
-    const variants = [_]@TypeOf(red){ red, green };
+    const variants = [_]ir_mod.types.TypeInfo.EnumInfo.Variant{ .{ .name = red }, .{ .name = green } };
     const color = module.types.intern(.{ .@"enum" = .{ .name = module.types.internString("Color"), .variants = &variants } });
 
     // Qualified: `Color.Green`.

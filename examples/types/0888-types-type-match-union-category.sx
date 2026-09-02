@@ -1,9 +1,9 @@
 // The `union` category in the runtime type-category match: `case union:`
-// matches C-style untagged unions AND tagged unions (payload enums);
-// `case enum:` matches payload-less enums AND tagged unions. The overlap
+// matches C-style unions AND payload enums (payload enums);
+// `case enum:` matches payload-less enums AND payload enums. The overlap
 // resolves FIRST-WINS — a tag belongs to the first arm that names it —
 // and a specific user type name claims its tag ahead of the category
-// that contains it. Untagged unions box into `any` and their tags classify
+// that contains it. Unions box into `any` and their tags classify
 // like every other registered type.
 @import "modules/std.sx";
 
@@ -49,18 +49,18 @@ kind :: (x: $T) -> string {
 
 main :: () {
     tu := TU{ i = 5 };
-    print("untagged: {}\n", onlyUnion(@typeOf(tu)));
+    print("union: {}\n", onlyUnion(@typeOf(tu)));
     print("enum: {}\n", onlyUnion(@typeOf(E.a)));
-    print("tagged: {}\n", onlyUnion(@typeOf(Shape.none)));
+    print("payload enum: {}\n", onlyUnion(@typeOf(Shape.none)));
 
-    print("both untagged: {}\n", both(@typeOf(tu)));
-    print("both tagged: {}\n", both(@typeOf(Shape.none)));
+    print("both union: {}\n", both(@typeOf(tu)));
+    print("both payload enum: {}\n", both(@typeOf(Shape.none)));
     print("both enum: {}\n", both(@typeOf(E.a)));
 
     print("concrete first: {}\n", pick(@typeOf(Point{ x = 1, y = 2 })));
     print("category rest: {}\n", pick(@typeOf(Size2{ w = 3, h = 4 })));
 
-    print("static untagged: {}\n", kind(tu));
+    print("static union: {}\n", kind(tu));
     print("static enum: {}\n", kind(E.a));
 
     av : any = tu;

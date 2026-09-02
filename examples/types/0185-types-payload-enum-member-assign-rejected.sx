@@ -1,5 +1,5 @@
-// A direct write to a tagged-union (enum-with-payload) variant member is
-// rejected: a tagged union is laid out `{ tag, payload }`, and a member write
+// A direct write to a payload enum (enum-with-payload) variant member is
+// rejected: a payload enum is laid out `{ tag, payload }`, and a member write
 // would set the payload but leave the tag stale. The variant is set via
 // construction (`s = .rect(...)`), which writes both tag and payload.
 

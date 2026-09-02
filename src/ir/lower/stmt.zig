@@ -2473,7 +2473,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 } else obj_ty_raw;
                 // Resolve the LHS member's type via the SAME resolver the lvalue-
                 // pointer path uses (fieldLvalueResolve), so the RHS target type
-                // and the store slot can't diverge. Covers union/tagged-union
+                // and the store slot can't diverge. Covers union/payload enum
                 // direct + promoted members, tuple/vector lanes, and structs —
                 // not just structs (a plain getStructFields loop returned nothing
                 // for a union member, leaving a struct-literal RHS untyped →
@@ -2698,9 +2698,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
             }
 
-            // Reject a direct write to a tagged-union variant: it
+            // Reject a direct write to a payload enum variant: it
             // sets the payload but not the tag. Construct via `x = .variant(...)`.
-            if (self.diagTaggedUnionVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
+            if (self.diagPayloadVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
 
             // Special .len/.ptr handling only for slices, strings, arrays — NOT structs
             const is_special_container = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
@@ -2872,7 +2872,7 @@ fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalIn
 /// The one addressable storage slot an assignable target names, with every
 /// subexpression evaluated exactly once. Null when the target names no slot: an
 /// accessor property (a get/set call pair), an Obj-C `@ObjcProperty` or
-/// `__sx_state` field, a tagged-union variant, a slice's `.len`/`.ptr` header
+/// `__sx_state` field, a payload enum variant, a slice's `.len`/`.ptr` header
 /// word, and a comptime tuple/struct index. The caller diagnoses; this emits no
 /// diagnostic of its own.
 ///
@@ -2938,7 +2938,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
                 }
             }
 
-            if (isTaggedUnionVariantField(self, obj_ty, fa.field)) return null;
+            if (isPayloadVariantField(self, obj_ty, fa.field)) return null;
 
             const is_special_container = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
                 const obj_info = self.module.types.get(obj_ty);
@@ -3061,7 +3061,7 @@ const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 /// returning a bare `TypeId`, respectively). They do not route through here,
 /// so a new aggregate shape must be taught to all three.
 const FieldResolution = union(enum) {
-    /// Direct union/tagged-union member: union_gep(index) into the aggregate.
+    /// Direct union/payload enum member: union_gep(index) into the aggregate.
     union_direct: struct { index: u32, ty: TypeId },
     /// Promoted member of an anonymous-struct union variant: union_gep into
     /// the variant struct `variant_ty`, then struct_gep into the member.
@@ -3103,22 +3103,19 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
     const field_name_id = self.module.types.internString(field);
     const type_info = self.module.types.get(obj_ty);
 
-    // Union / tagged-union: variants overlay at offset 0. A direct field is a
+    // Union / payload enum: variants overlay at one offset. A direct field is a
     // union_gep; a promoted anonymous-struct member is a union_gep into the
     // variant followed by a struct_gep into the member.
-    const union_fields: ?[]const types.TypeInfo.StructInfo.Field = switch (type_info) {
-        .@"union" => |u| u.fields,
-        .tagged_union => |u| u.fields,
-        else => null,
-    };
-    if (union_fields) |fields| {
-        for (fields, 0..) |f, i| {
-            if (f.name == field_name_id) {
-                return .{ .union_direct = .{ .index = @intCast(i), .ty = f.ty } };
+    if (type_info == .@"union" or type_info == .@"enum") {
+        var i: usize = 0;
+        while (self.module.types.memberName(obj_ty, @intCast(i))) |mname| : (i += 1) {
+            const mty = self.module.types.memberType(obj_ty, @intCast(i)) orelse break;
+            if (mname == field_name_id) {
+                return .{ .union_direct = .{ .index = @intCast(i), .ty = mty } };
             }
-            if (!self.payloadPromotes(f.ty)) continue;
-            switch (self.lookupField(f.ty, field)) {
-                .hit, .private => |h| return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = f.ty, .member_index = h.index, .ty = h.ty } },
+            if (!self.payloadPromotes(mty)) continue;
+            switch (self.lookupField(mty, field)) {
+                .hit, .private => |h| return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = mty, .member_index = h.index, .ty = h.ty } },
                 .missing => {},
             }
         }
@@ -3235,7 +3232,7 @@ fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldR
     }
 }
 
-/// Lower a plain (untagged) `union` struct-literal `.{ member = value, ... }`.
+/// Lower a plain  `union` struct-literal `.{ member = value, ... }`.
 /// The generic struct-literal path can't build a union — `getStructFields`
 /// returns empty for a union, so a union literal would fall through to a
 /// malformed `structInit` whose overlapping zero-fill clobbers the named
@@ -3248,7 +3245,7 @@ fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldR
 /// several promoted members of the SAME anonymous-struct variant
 /// (`.{ x = 1.0, y = 2.0 }`). Naming two direct members, or members from
 /// different arms, would silently let a later store clobber an earlier one —
-/// reject it loudly (no silent last-wins). `tagged_union`s never reach here
+/// reject it loudly (no silent last-wins). Payload enums never reach here
 /// (handled earlier in `lowerStructLiteral`).
 pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId, span: ast.Span) Ref {
     // Empty `.{}` → an undefined union value (matches the spec's `--- ` form;
@@ -3309,8 +3306,8 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
     return self.builder.load(slot, ty);
 }
 
-/// True when `obj.field` names a DIRECT variant of a tagged union — a store
-/// target that would set the payload but NOT the tag: a tagged union is laid
+/// True when `obj.field` names a DIRECT variant of a payload enum — a store
+/// target that would set the payload but NOT the tag: a payload enum is laid
 /// out `{ tag, payload }`, the write path emits a `union_gep` into the payload
 /// only, so the discriminant goes stale and a later `match`/`==` takes the
 /// wrong arm. The variant is set via construction (`x = .variant(...)`, which
@@ -3319,25 +3316,25 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
 /// Returns false (keeps working) for: plain `union` (no tag); promoted / nested
 /// sub-field writes (`s.rect.w = ...`, where the immediate object is the payload
 /// struct, resolving to `.indexed`/`.union_promoted`, not `.union_direct`); and
-/// non-aggregates. Derefs one pointer level so a `*TaggedUnion` receiver is
+/// non-aggregates. Derefs one pointer level so a `*PayloadEnum` receiver is
 /// caught too. Uses the shared `fieldLvalueResolve` matcher, so the guard can't
 /// drift from the store path's notion of which member a name resolves to.
-fn isTaggedUnionVariantField(self: *Lowering, obj_ty: TypeId, field: []const u8) bool {
+fn isPayloadVariantField(self: *Lowering, obj_ty: TypeId, field: []const u8) bool {
     var ty = obj_ty;
     if (!ty.isBuiltin()) {
         const info = self.module.types.get(ty);
         if (info == .pointer) ty = info.pointer.pointee;
     }
-    if (ty.isBuiltin() or self.module.types.get(ty) != .tagged_union) return false;
+    if (ty.isBuiltin() or self.module.types.get(ty) != .@"enum" or !self.module.types.get(ty).@"enum".hasPayload()) return false;
     const res = self.fieldLvalueResolve(ty, field) orelse return false;
     return res == .union_direct;
 }
 
 /// Emit that rejection; true when the caller must skip the store.
-pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) bool {
-    if (!isTaggedUnionVariantField(self, obj_ty, field)) return false;
+pub fn diagPayloadVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) bool {
+    if (!isPayloadVariantField(self, obj_ty, field)) return false;
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot assign to tagged-union variant '{s}' directly — a member write sets the payload but leaves the tag stale; construct the variant instead (e.g. `x = .{s}(...)`)", .{ field, field });
+        d.addFmt(.err, span, "cannot assign to enum variant '{s}' directly — a member write sets the payload but leaves the tag stale; construct the variant instead (e.g. `x = .{s}(...)`)", .{ field, field });
     return true;
 }
 
@@ -4088,8 +4085,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 if (tryLowerPropertyStore(self, fa, val, target.span)) continue;
                 const obj_ptr = self.lowerExprAsPtr(fa.object);
                 const obj_ty = self.inferExprType(fa.object);
-                // Reject a direct write to a tagged-union variant.
-                if (self.diagTaggedUnionVariantWrite(obj_ty, fa.field, target.span)) continue;
+                // Reject a direct write to a payload enum variant.
+                if (self.diagPayloadVariantWrite(obj_ty, fa.field, target.span)) continue;
                 // Resolve the target field via the shared lvalue resolver —
                 // the same one address-of uses — so a missing field emits a
                 // diagnostic instead of defaulting to field 0 / field_ty

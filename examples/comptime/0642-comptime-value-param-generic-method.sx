@@ -33,7 +33,7 @@ Box :: struct ($T: Type) {
 Shape :: enum { circle: f64; point; }
 
 Drawer :: struct ($T: Type) {
-    // Tagged-union comptime value param on a generic-struct method.
+    // Payload enum comptime value param on a generic-struct method.
     area :: (self: *Drawer(T), $s: Shape) -> i64 {
         if s == .circle { return 1; }
         return 0;

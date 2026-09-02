@@ -8,7 +8,7 @@
 //
 // The visibility-aware resolver (`*Lowering` as the `resolveInner` hook) is
 // threaded through `buildEnumInfo` / `buildUnionInfo`, matching what
-// `registerStructDecl` does for struct fields. Building the tagged-union body
+// `registerStructDecl` does for struct fields. Building the payload enum body
 // in `registerEnumDecl` through the stateless `type_bridge.buildEnumInfo`
 // instead — whose flat `findByName` picks the wrong same-name author — makes
 // `got`'s payload the stdlib `Event`, so `e.code` errors "field 'code' not

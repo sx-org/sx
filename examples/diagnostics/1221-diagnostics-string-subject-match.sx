@@ -1,5 +1,5 @@
 // A case-style match subject carries a discriminant the switch can dispatch on:
-// enums, tagged unions, error sets, optionals, integers, bools, or type ids (specs
+// enums, payload enums, error sets, optionals, integers, bools, or type ids (specs
 // §Pattern Matching). A `string` subject and a float subject have none and are
 // rejected up front with a located diagnostic.
 @import "modules/std.sx";

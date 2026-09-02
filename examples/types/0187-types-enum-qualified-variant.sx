@@ -21,7 +21,7 @@ main :: () {
         case .blue:       { print("blue\n"); }
     }
 
-    // Tagged union: payloadless variant qualified, payload variant via call.
+    // Payload enum: payloadless variant qualified, payload variant via call.
     d := Shape.dot;
     match d {
         case .circle: |r| { print("circle {}\n", r); }

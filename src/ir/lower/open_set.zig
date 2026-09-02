@@ -59,7 +59,7 @@ const Ref = inst_mod.Ref;
 const FuncId = inst_mod.FuncId;
 
 /// The tag word: the shipped payload-enum tag type, so dispatch and layout reuse
-/// the tagged-union machinery unchanged.
+/// the payload enum machinery unchanged.
 pub const tag_type: TypeId = .i64;
 
 /// The name of the backing struct's payload field.
@@ -116,11 +116,11 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
     const options = readOptions(self, decl, node) orelse return;
     const table = &self.module.types;
     const name_id = table.internString(decl.name);
-    const ty = table.internNominal(.{ .tagged_union = .{
+    const ty = table.internNominal(.{ .@"enum" = .{
         .name = name_id,
-        .fields = &.{},
+        .variants = &.{},
         .tag_type = tag_type,
-        .backing_type = backingType(self, 0, effectiveAlign(self, options.alignment)),
+        .layout = backingType(self, 0, effectiveAlign(self, options.alignment)),
     } }, self.shadowNominalId(name_id));
     table.type_decl_tids.put(@ptrCast(decl), ty) catch {};
     self.open_sets.put(decl, .{
@@ -468,7 +468,7 @@ fn fits(
 ) bool {
     const size = self.module.types.typeSizeBytes(variant);
     const alignment = self.module.types.typeAlignBytes(variant);
-    const set_name = self.module.types.getString(self.module.types.get(set.ty).tagged_union.name);
+    const set_name = self.module.types.getString(self.module.types.get(set.ty).@"enum".name);
     if (size > set.max) {
         reportOversize(self, sd, set, variant, size, span, grown);
         return false;
@@ -493,7 +493,7 @@ fn reportOversize(
     grown: ?[]const u8,
 ) void {
     const d = self.diagnostics orelse return;
-    const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it is {d} bytes, and the set's payload ceiling is {d}", .{ sd.name, self.module.types.getString(self.module.types.get(set.ty).tagged_union.name), size, set.max });
+    const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it is {d} bytes, and the set's payload ceiling is {d}", .{ sd.name, self.module.types.getString(self.module.types.get(set.ty).@"enum".name), size, set.max });
     if (grown) |g| {
         d.addHelpFmt(id, span, null, "it grew when '{s}' did — a set's layout follows the largest member declared anywhere in the program", .{g});
     }
@@ -543,9 +543,9 @@ fn containsByValue(self: *Lowering, ty: TypeId, set: TypeId, depth: u32) bool {
             }
             break :blk false;
         },
-        .tagged_union => |u| blk: {
-            for (u.fields) |f| {
-                if (containsByValue(self, f.ty, set, depth + 1)) break :blk true;
+        .@"enum" => |e| blk: {
+            for (e.variants) |v| {
+                if (containsByValue(self, v.payload, set, depth + 1)) break :blk true;
             }
             break :blk false;
         },
@@ -732,7 +732,7 @@ fn collectSetsByValue(self: *Lowering, ty: TypeId, out: *std.AutoHashMap(TypeId,
         .array => |a| collectSetsByValue(self, a.element, out, depth + 1),
         .optional => |o| collectSetsByValue(self, o.child, out, depth + 1),
         .@"union" => |u| for (u.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
-        .tagged_union => |u| for (u.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
+        .@"enum" => |e| for (e.variants) |v| collectSetsByValue(self, v.payload, out, depth + 1),
         else => {},
     }
 }
@@ -759,17 +759,17 @@ fn layoutFields(self: *Lowering, set: *Set) void {
         const size: u32 = @intCast(self.module.types.typeSizeBytes(m));
         if (size > payload) payload = size;
     }
-    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+    var variants = std.ArrayList(types.TypeInfo.EnumInfo.Variant).empty;
     for (set.members.items) |m| {
-        fields.append(self.alloc, .{
+        variants.append(self.alloc, .{
             .name = self.module.types.internString(self.module.types.typeName(m)),
-            .ty = m,
+            .payload = m,
         }) catch return;
     }
     const info = self.module.types.get(set.ty);
     var updated = info;
-    updated.tagged_union.fields = self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return;
-    updated.tagged_union.backing_type = backingType(self, payload, set.alignment);
+    updated.@"enum".variants = self.alloc.dupe(types.TypeInfo.EnumInfo.Variant, variants.items) catch return;
+    updated.@"enum".layout = backingType(self, payload, set.alignment);
     self.module.types.updatePreservingKey(set.ty, updated);
 }
 
@@ -777,7 +777,7 @@ fn layoutFields(self: *Lowering, set: *Set) void {
 fn cascade(self: *Lowering, grown: *Set) void {
     const deps = self.open_set_dependents.getPtr(grown.ty) orelse return;
     if (deps.items.len == 0) return;
-    const grown_name = self.module.types.getString(self.module.types.get(grown.ty).tagged_union.name);
+    const grown_name = self.module.types.getString(self.module.types.get(grown.ty).@"enum".name);
     if (self.open_set_relayout.contains(grown.ty)) {
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, grown.span, "'{s}' has no finite layout: it holds a set by value that holds '{s}' by value", .{ grown_name, grown_name });
@@ -1239,8 +1239,8 @@ pub fn writeMemberInto(self: *Lowering, slot: Ref, value: Ref, member_ty: TypeId
 /// The active member's storage inside the slot, typed as that member.
 fn payloadAddress(self: *Lowering, slot: Ref, set_ty: TypeId, member_ty: TypeId) Ref {
     const table = &self.module.types;
-    const info = table.get(set_ty).tagged_union;
-    const payload_ty = table.get(info.backing_type.?).@"struct".fields[1].ty;
+    const info = table.get(set_ty).@"enum";
+    const payload_ty = table.get(info.layout.?).@"struct".fields[1].ty;
     const bytes = self.builder.structGepTyped(slot, 1, table.ptrTo(payload_ty), set_ty);
     const want = table.ptrTo(member_ty);
     return self.builder.emit(.{ .bitcast = .{
@@ -1298,8 +1298,8 @@ pub fn anyView(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const Node) 
 /// The same view over a slot already addressed.
 fn anyViewOfSlot(self: *Lowering, set_ty: TypeId, slot: Ref) Ref {
     const table = &self.module.types;
-    const info = table.get(set_ty).tagged_union;
-    const payload_ty = table.get(info.backing_type.?).@"struct".fields[1].ty;
+    const info = table.get(set_ty).@"enum";
+    const payload_ty = table.get(info.layout.?).@"struct".fields[1].ty;
     const bytes = self.builder.structGepTyped(slot, 1, table.ptrTo(payload_ty), set_ty);
     const void_ptr = table.ptrTo(.void);
     const data = self.builder.emit(.{ .bitcast = .{

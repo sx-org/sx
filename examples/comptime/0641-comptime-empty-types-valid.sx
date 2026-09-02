@@ -1,19 +1,18 @@
 // A comptime-constructed type with NO members is VALID for every kind:
 //   - an empty struct `struct {}` is a zero-size aggregate you can instantiate
 //     (`.{}`),
-//   - an empty enum and an empty tagged_union are valid uninhabited / zero-member
-//     types — legitimate to NAME and reference even though they have no
-//     constructible value (no variant to construct).
+//   - an empty enum is a valid uninhabited type — legitimate to NAME and
+//     reference even though it has no constructible value (no variant to
+//     construct).
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
 EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));
 EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ fields = .[] }));
-EmptyUnion  :: rawRegisterType(declare("EmptyUnion"), 3, .[]);
 
 main :: () -> i32 {
     s : EmptyStruct = .{};
     _ = s;
-    print("empty struct/enum/tagged_union are all valid\n");
+    print("empty struct/enum are both valid\n");
     return 0;
 }

@@ -118,7 +118,7 @@ main :: () {
     st : Status = .err;
     print("backing: {}\n", st);
 
-    // --- Enum (tagged union) ---
+    // --- Enum (payload enum) ---
     sh : Shape = .circle(3.14);
     print("tagged: {}\n", sh);
 
@@ -222,7 +222,7 @@ main :: () {
     flag := true;
     if flag { print("bool: true\n"); }
 
-    // --- Union (untagged) ---
+    // --- Union  ---
     o : Overlay = ---;
     o.f = 3.14;
     print("union-f: {}\n", o.f);

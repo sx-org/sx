@@ -461,7 +461,7 @@ verbatim to LLVM, clobber meaning, "no-output ⇒ must be volatile," AT&T defaul
 
 ## II.3 sx AST
 
-sx's AST is a pointer-based tagged union (`Data = union(enum)` in `src/ast.zig`,
+sx's AST is a pointer-based payload enum (`Data = union(enum)` in `src/ast.zig`,
 nodes built via `Parser.createNode`), much simpler than Zig's SoA `extra_data`
 scheme, so it stores slices directly:
 

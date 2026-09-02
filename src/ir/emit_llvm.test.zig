@@ -918,12 +918,12 @@ test "emit: enum_init and enum_tag (plain enum)" {
     defer module.deinit();
 
     // Create a plain enum type: Color { Red, Green, Blue }
-    const variants = &[_]types.StringId{
-        str(&module, "Red"),
-        str(&module, "Green"),
-        str(&module, "Blue"),
+    const variants = &[_]types.TypeInfo.EnumInfo.Variant{
+        .{ .name = str(&module, "Red") },
+        .{ .name = str(&module, "Green") },
+        .{ .name = str(&module, "Blue") },
     };
-    const owned_variants = alloc.dupe(types.StringId, variants) catch unreachable;
+    const owned_variants = alloc.dupe(types.TypeInfo.EnumInfo.Variant, variants) catch unreachable;
     defer alloc.free(owned_variants);
     const color_ty = module.types.intern(.{ .@"enum" = .{
         .name = str(&module, "Color"),
@@ -955,22 +955,21 @@ test "emit: enum_init and enum_tag (plain enum)" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "ret i64") != null);
 }
 
-test "emit: tagged union (enum_init with payload, enum_tag, enum_payload)" {
+test "emit: payload enum (enum_init with payload, enum_tag, enum_payload)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
 
-    // Create a tagged union: Shape { Circle: f64, Rect: i64 }
-    const ufields = &[_]types.TypeInfo.StructInfo.Field{
-        .{ .name = str(&module, "Circle"), .ty = .f64 },
-        .{ .name = str(&module, "Rect"), .ty = .i64 },
+    // Shape { Circle: f64, Rect: i64 }
+    const ufields = &[_]types.TypeInfo.EnumInfo.Variant{
+        .{ .name = str(&module, "Circle"), .payload = .f64 },
+        .{ .name = str(&module, "Rect"), .payload = .i64 },
     };
-    const owned_ufields = alloc.dupe(types.TypeInfo.StructInfo.Field, ufields) catch unreachable;
+    const owned_ufields = alloc.dupe(types.TypeInfo.EnumInfo.Variant, ufields) catch unreachable;
     defer alloc.free(owned_ufields);
-    const shape_ty = module.types.intern(.{ .tagged_union = .{
+    const shape_ty = module.types.intern(.{ .@"enum" = .{
         .name = str(&module, "Shape"),
-        .fields = owned_ufields,
-        .tag_type = .i64,
+        .variants = owned_ufields,
     } });
 
     var b = Builder.init(&module);
@@ -998,7 +997,7 @@ test "emit: tagged union (enum_init with payload, enum_tag, enum_payload)" {
     try std.testing.expect(emitter.verify());
 
     const ir_str = emitter.dumpToString();
-    // Tagged-union enum_init/enum_payload lower to a memory pattern
+    // A payload enum's enum_init/enum_payload lower to a memory pattern
     // (alloca + GEP + store/load), not SSA insert/extractvalue. enum_tag
     // does emit extractvalue.
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "alloca") != null);
@@ -1011,7 +1010,7 @@ test "emit: union_get (reinterpret union field)" {
     var module = Module.init(alloc);
     defer module.deinit();
 
-    // Untagged union: Data { as_int: i64, as_float: f64 }
+    // Union: Data { as_int: i64, as_float: f64 }
     const ufields = &[_]types.TypeInfo.StructInfo.Field{
         .{ .name = str(&module, "as_int"), .ty = .i64 },
         .{ .name = str(&module, "as_float"), .ty = .f64 },

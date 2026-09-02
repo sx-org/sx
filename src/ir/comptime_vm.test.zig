@@ -744,7 +744,7 @@ test "comptime_vm exec: payloadless enum_init + enum_tag" {
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
-    const variants = [_]types.StringId{ table.internString("red"), table.internString("green"), table.internString("blue") };
+    const variants = [_]types.TypeInfo.EnumInfo.Variant{ .{ .name = table.internString("red") }, .{ .name = table.internString("green") }, .{ .name = table.internString("blue") } };
     const color = table.intern(.{ .@"enum" = .{ .name = table.internString("Color"), .variants = &variants } });
 
     // g := Color.green (tag 1); return enum_tag(g) + 10  → 11
@@ -763,7 +763,7 @@ test "comptime_vm exec: payloadless enum_init + enum_tag" {
     try std.testing.expectEqual(@as(i64, 11), toI64(try v.run(&fb.func, &.{})));
 }
 
-test "comptime_vm exec: tagged-union enum_init with payload lays out {tag@0, payload@tag_size}" {
+test "comptime_vm exec: payload enum enum_init with payload lays out {tag@0, payload@tag_size}" {
     // The construction primitive `define` reuses: build `E.value(42)` where
     // `E = { value: i64, closed: void }` and verify the comptime bytes — tag 0
     // at offset 0, the i64 payload at offset tag_size (8). Mirrors the LLVM
@@ -771,13 +771,12 @@ test "comptime_vm exec: tagged-union enum_init with payload lays out {tag@0, pay
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
-    const ufields = [_]types.TypeInfo.StructInfo.Field{
-        .{ .name = table.internString("value"), .ty = .i64 },
-        .{ .name = table.internString("closed"), .ty = .void },
-    };
-    const e = table.intern(.{ .tagged_union = .{ .name = table.internString("E"), .fields = &ufields, .tag_type = .i64 } });
+    const e = table.intern(.{ .@"enum" = .{ .name = table.internString("E"), .variants = &.{
+        .{ .name = table.internString("value"), .payload = .i64 },
+        .{ .name = table.internString("closed"), .payload = .void },
+    } } });
 
-    // return E.value(42)   → the tagged-union value's Addr
+    // return E.value(42)   → the payload enum value's Addr
     var fb = Fb.init(alloc, &.{}, e);
     defer fb.deinit();
     const b0 = fb.block(&.{});
@@ -1168,12 +1167,12 @@ test "comptime_vm exec: compiler-fn type_kind + type_field_value (native reflect
         .{ .name = module.types.internString("y"), .ty = .i64 },
     };
     const point = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Point"), .fields = &pfields } });
-    const variants = [_]types.StringId{ module.types.internString("ok"), module.types.internString("missing") };
+    const variants = [_]types.TypeInfo.EnumInfo.Variant{ .{ .name = module.types.internString("ok") }, .{ .name = module.types.internString("missing") } };
     const evals = [_]i64{ 200, 404 };
     const status = module.types.intern(.{ .@"enum" = .{
         .name = module.types.internString("Status"),
         .variants = &variants,
-        .explicit_values = &evals,
+        .values = &evals,
     } });
 
     // extern type_kind(t: u32) -> i64 [compiler]   (FuncId 0)

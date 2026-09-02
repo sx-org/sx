@@ -2207,7 +2207,7 @@ pub const Ops = struct {
                 // Plain enum or builtin integer → integer constant
                 self.e.mapRef(c.LLVMConstInt(ty, ei.tag, 0));
             } else if (ty_kind == c.LLVMStructTypeKind) {
-                // Tagged union with no payload — header field 0 holds the tag
+                // Payload enum with no payload — header field 0 holds the tag
                 const header_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
                 const tag_val = c.LLVMConstInt(header_ty, ei.tag, 0);
                 var result = c.LLVMGetUndef(ty);
@@ -2220,7 +2220,7 @@ pub const Ops = struct {
             const tag = c.LLVMConstInt(self.e.cached_i32, ei.tag, 0);
             self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, self.e.resolveRef(ei.payload)));
         } else {
-            // Tagged union with payload — { header, payload_bytes }
+            // Payload enum with payload — { header, payload_bytes }
             const union_ty = self.e.toLLVMType(instruction.ty);
             const header_ty = c.LLVMStructGetTypeAtIndex(union_ty, 0);
             const tag_val = c.LLVMConstInt(header_ty, ei.tag, 0);
@@ -2242,11 +2242,11 @@ pub const Ops = struct {
 
     pub fn emitEnumTag(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        // Check if this is a plain enum (integer) or tagged union (struct with tag at 0)
+        // Check if this is a plain enum (integer) or payload enum (struct with tag at 0)
         const val_ty = c.LLVMTypeOf(val);
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMStructTypeKind) {
-            // Tagged union — extract field 0 (tag)
+            // Payload enum — extract field 0 (tag)
             var tag = c.LLVMBuildExtractValue(self.e.builder, val, 0, "etag");
             // Truncate to declared tag width if needed (e.g. i64 → i32 for u32 tags)
             // This is essential for FFI unions where the i64 tag slot contains
@@ -2276,7 +2276,7 @@ pub const Ops = struct {
         const base_ty = c.LLVMTypeOf(base);
         const base_kind = c.LLVMGetTypeKind(base_ty);
         if (base_kind == c.LLVMStructTypeKind) {
-            // Tagged union: alloca, store, GEP field 1 (payload area), bitcast, load
+            // Payload enum: alloca, store, GEP field 1 (payload area), bitcast, load
             const tmp = self.e.buildEntryAlloca(base_ty, "ep.tmp");
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, base_ty, tmp, 1, "ep.pp");
@@ -2295,13 +2295,13 @@ pub const Ops = struct {
         const base_ty = c.LLVMTypeOf(base);
         const kind = c.LLVMGetTypeKind(base_ty);
         if (kind == c.LLVMStructTypeKind) {
-            // Tagged union { header, payload_bytes } — access payload at field 1
+            // Payload enum { header, payload_bytes } — access payload at field 1
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, base_ty, tmp, 1, "ug.pp");
             self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, result_ty, payload_ptr, "ug.val"));
         } else {
-            // Untagged union [N x i8] — alloca, store, reinterpret-load
+            // Union [N x i8] — alloca, store, reinterpret-load
             const tmp = self.e.buildEntryAlloca(base_ty, "ug.tmp");
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, result_ty, tmp, "ug.val"));
@@ -2325,11 +2325,11 @@ pub const Ops = struct {
             }
             const st_kind = c.LLVMGetTypeKind(union_llvm_ty);
             if (st_kind == c.LLVMStructTypeKind) {
-                // Tagged union — payload is at field 1
+                // Payload enum — payload is at field 1
                 const payload_ptr = c.LLVMBuildStructGEP2(self.e.builder, union_llvm_ty, base_ptr, 1, "ugep.pp");
                 self.e.mapRef(payload_ptr);
             } else {
-                // Untagged union — data starts at offset 0
+                // Union — data starts at offset 0
                 self.e.mapRef(base_ptr);
             }
         } else {

@@ -1,6 +1,6 @@
 // Comptime type-call COMPOSITION: a `($T) -> Type` builder walks a named
 // tuple's reflected members, projects each element type through `pointeeType`
-// + a member projection, and mints a tagged-union whose variant labels mirror
+// + a member projection, and mints a payload enum whose variant labels mirror
 // the tuple's labels — the shape the `race` result synthesis needs
 // (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
 //
@@ -14,7 +14,7 @@
 // Stand-in for a task handle: a pointer to a generic box carrying the result.
 Box :: struct ($R: Type) { value: R; }
 
-// Mint a tagged-union mirroring a named tuple of `*Box(..)` handles:
+// Mint a payload enum mirroring a named tuple of `*Box(..)` handles:
 // variant name = tuple label, payload = the box's value type (`*Box(A)` -> `A`).
 ResultOf :: ($T: Type) -> Type {
     vs : [@typeInfo(T).struct.fields.len]VariantInfo = ---;

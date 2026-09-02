@@ -58,7 +58,6 @@ pub const GenericResolver = struct {
             // appends nothing.
             .@"struct" => |s| self.mangleNominalName(self.l.module.types.getString(s.name), s.nominal_id),
             .@"union" => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
-            .tagged_union => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
             .@"enum" => |e| self.mangleNominalName(self.l.module.types.getString(e.name), e.nominal_id),
             .pointer => |p| blk: {
                 const inner = self.mangleTypeName(p.pointee);

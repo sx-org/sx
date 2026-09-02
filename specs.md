@@ -45,7 +45,7 @@ slot), so a reserved-spelled impl method still needs the backtick
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a `constraint` or `interface` **method**, and an
-enum/tagged-union
+enum
 **variant** (`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo`
 is the canonical case), and is reached bare after a dot: field access
 (`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
@@ -287,7 +287,7 @@ GLSL;
 ### Keywords
 `if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `error`, `private`
 
-> Note: `enum` is used for both payload-less and payload-bearing sum types (tagged unions). `union` is reserved for C-style untagged unions (memory overlays).
+> Note: `enum` is used for both payload-less and payload-bearing sum types (payload enums). `union` is reserved for C-style unions (memory overlays).
 
 > Note: `raise`, `try`, `catch`, and `error` are the error-handling keywords. `??` supplies a failable's default, alongside its optional one. See [§12 Error Handling](#12-error-handling).
 
@@ -656,7 +656,7 @@ qn  := f64.nan;           // a quiet NaN
   only `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
-  by literal comparison nor by printing. Reinterpret the bits through an untagged
+  by literal comparison nor by printing. Reinterpret the bits through a
   union (`union { f: f64; bits: u64; }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
   `epsilon = 0x3CB0000000000000`, `minPositive = 0x0010000000000000`,
@@ -681,7 +681,7 @@ qn  := f64.nan;           // a quiet NaN
   the builtin `127`.
 
 ### Enum Types
-User-defined sum types with named variants. Variants may optionally carry typed data (tagged unions). Internally, payload-less enums are represented as `i64` (variant index). Enums with payloads are represented as `{ i64, [max_payload_size x i8] }` (tag + data).
+User-defined sum types with named variants. Variants may optionally carry typed data. One layout rule: the tag sits in its tag type at its offset, followed by a payload area sized by the widest payload — empty when every variant is void, so a payload-free enum is its tag word alone.
 
 #### Declaration
 ```sx
@@ -692,7 +692,7 @@ Color :: enum {
   blue;
 }
 
-// Enum with payloads (tagged union)
+// Enum with payloads
 Shape :: enum {
     circle: f32;    // typed variant
     rect: i32;      // typed variant
@@ -752,8 +752,8 @@ Payload-less enums print as `.variant`. Enums with payloads print as `.variant(v
 print("{}", s);  // .circle(3.140000)
 ```
 
-### Union Types (Untagged)
-C-style untagged unions for zero-cost memory overlays (type punning). All fields share the same memory — no tag, no runtime overhead. The LLVM representation is `[max_field_size x i8]`.
+### Union Types 
+C-style unions for zero-cost memory overlays (type punning). All fields share the same memory — no tag, no runtime overhead. The LLVM representation is `[max_field_size x i8]`.
 
 #### Declaration
 ```sx
@@ -923,8 +923,8 @@ every field is equal (the same element-wise policy as tuples, which share the
 struct layout). Each field is compared against its own type — an `f64` field uses
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
 containing a NaN field is NOT equal to itself), a `string` field uses
-content equality (`strEq`), a nested struct/tuple field recurses, a tagged-union
-field compares by tag only (matching a bare tagged-union `==`), a slice /
+content equality (`strEq`), a nested struct/tuple field recurses, a payload enum
+field compares by tag only (matching a bare payload enum `==`), a slice /
 pointer / cstring field compares by identity, and an `?T` field compares by the
 optional value-equality rule (§Optional Types — both-null equal, one-null
 unequal, both-present → payload compare). Because the comparison walks named
@@ -933,7 +933,7 @@ non-deterministic for a struct with alignment gaps, which is precisely why the
 compare is field-wise.
 
 A struct is **not comparable** — the whole `==` / `!=` is a compile error — when
-any field has no defined value-equality: an untagged `union` field (inactive-
+any field has no defined value-equality: a `union` field (inactive-
 variant bytes are unspecified) or a fixed `[N]T` array field (compare elements
 individually). These mirror the rejection of the same shapes as bare top-level
 `==` operands. `<`, `<=`, `>`, `>=` are not defined on structs.
@@ -1114,7 +1114,7 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
   any module may implement any constraint or interface for any type with
   canonical identity. Conformer identity is canonical type identity;
   structural types canonicalize structurally.
-- A **constraint** head takes structs, untagged unions, enums, builtins,
+- A **constraint** head takes structs, unions, enums, builtins,
   structural composites (`[]T`, `[N]T`, fn types), **and interface
   types** as conformers.
 - An **interface** head takes concrete conformers. `impl Q for I` with
@@ -2178,7 +2178,7 @@ and arithmetic / ordering on un-narrowed optionals stay rejected.
   payloads. The payload compares by its own type's rule (a float payload uses
   the IEEE ordered compare — a present NaN is not equal to itself; a string
   payload compares by content; a struct payload recurses field-wise; a
-  tagged-union payload compares by tag only). A null payload is never read.
+  payload enum payload compares by tag only). A null payload is never read.
 - `?T == T` (either order): false when the optional is null, otherwise the
   payload compare. A literal on the concrete side types at the payload
   (`optWidth == 40.0` against a `?f32`).
@@ -2528,7 +2528,7 @@ p(5);                        // a *Accumulator calls the same way
 whose type is `Accumulator` or `*Accumulator` is callable. Coherence keys on the
 pair `(function type, conformer)`, and a nominal carries **at most one**
 function-type impl — a second `impl (…) -> … for Accumulator`, at any signature,
-is an error at the impls. Conformers are nominal — a struct, an untagged union,
+is an error at the impls. Conformers are nominal — a struct, a union,
 or an enum. `impl (i64) -> i64 for i64`, an interface head
 (`impl (i64) -> i64 for Show`), and an unconstrained blanket
 (`impl (i64) -> i64 for $T`) are refused. A callable nominal does not coerce to
@@ -4242,7 +4242,7 @@ The backing type must be an integer type (`u8`, `u16`, `u32`, `i8`, `i16`, `i32`
 
 ### Enum Layout Struct
 
-For C interop with tagged unions (e.g. SDL_Event), a struct can be used as the backing type to specify the exact memory layout:
+For C interop with payload enums (e.g. SDL_Event), a struct can be used as the backing type to specify the exact memory layout:
 
 ```sx
 // Inline layout
@@ -4265,7 +4265,7 @@ The layout struct must have:
 - A field named `payload` — array type, the variant data area. Its size determines the maximum payload capacity.
 - Any other fields are treated as padding/reserved and positioned by the struct layout.
 
-This gives explicit control over the memory layout instead of relying on automatic alignment. The total size equals the struct size. Without a layout struct, tagged enums use `{ tag, [max_payload_size x i8] }` with no padding.
+This gives explicit control over the memory layout instead of relying on automatic alignment. The total size equals the struct size. Without a layout struct, payload enums use `{ tag, [max_payload_size x i8] }` with no padding.
 
 ### Enum Flags
 
@@ -4480,8 +4480,8 @@ answers from site-local visibility at either phase.
 | `unsigned` | the unsigned integers |
 | `float` | `f32`, `f64` |
 | `struct` | struct and tuple types |
-| `enum` | payload-less enums and tagged unions |
-| `union` | untagged unions and tagged unions |
+| `enum` | enums, with or without payloads |
+| `union` | unions |
 | `slice` | `[]T` |
 | `array` | `[N]T` |
 | `pointer` | `*T`, `[*]T`, function pointers |
@@ -4581,10 +4581,9 @@ match type {
 ```
 Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error`, `closure`, `type`, `interface`. `string` is `[]u8`, so it is in `slice` as well as in its own category, and `case string:` stands above `case slice:`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
 
-> Note: `case enum:` matches payload-less enums AND tagged enums (enums
-> with payloads); `case union:` matches C-style untagged unions AND
-> tagged enums — the same split as the static `inline match T`
-> classifier, arm for arm. Arms claim tags **first-wins with the loud
+> Note: `case enum:` matches every enum, with or without payloads;
+> `case union:` matches unions — the same split as the static
+> `inline match T` classifier, arm for arm. Arms claim tags **first-wins with the loud
 > unreachable-arm error**, exactly like the type switch: overlapping
 > categories resolve by order, a specific type — user-named
 > (`case Point:`), builtin (`case i64:`), or a composite type expression
@@ -5556,7 +5555,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 ### Type Introspection
 - `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
-- `@typeInfo(T).struct.fields` / `@typeInfo(T).enum.fields` — a type's reflected members. `.struct` lists a struct's, tuple's, or untagged union's fields as the prelude's `FieldInfo` (`.name` — `""` for a positional tuple element —, `.type`, `.offset`, `.index`); `.enum` lists an enum's or tagged union's variants as `VariantInfo` (`.name`, `.payload`, `.value`). The projected variant must be the one `@typeInfo` reflects `T` into. `.len` is the member count, and over a spelled type it is a compile-time integer.
+- `@typeInfo(T).struct.fields` / `@typeInfo(T).enum.fields` — a type's reflected members. `.struct` lists a struct's, tuple's, or union's fields as the prelude's `FieldInfo` (`.name` — `""` for a positional tuple element —, `.type`, `.offset`, `.index`); `.enum` lists an enum's or payload enum's variants as `VariantInfo` (`.name`, `.payload`, `.value`). The projected variant must be the one `@typeInfo` reflects `T` into. `.len` is the member count, and over a spelled type it is a compile-time integer.
 - `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload` — the reflected member's type, itself a type (`@typeInfo(pointeeType(@typeInfo(T).struct.fields[i].type))`). A tagless variant's payload is `void`.
 - `@typeInfo(tp)` accepts a **runtime `Type` value**: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout), so kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) and every member read answer identically on compile-time and runtime `Type`s.
 - `anyElement(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the member views); vector lanes are packed, so the same stride walks both arrays and vectors.
@@ -5568,8 +5567,8 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox(v: any, $T: Type) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
-- `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum and tagged-union variants, array elements, vector lanes, and the count a slice's or string's header carries.
-- `@field(v: any, idx: i64) -> any` — the `idx`-th part `@len` counts: a member at its layout offset — a tagged union's members share the PAYLOAD offset (the header size, the same for every variant), an untagged union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
+- `@len(v: any) -> i64` — the receiver's part count: struct and union fields, enum variants, array elements, vector lanes, and the count a slice's or string's header carries.
+- `@field(v: any, idx: i64) -> any` — the `idx`-th part `@len` counts: a member at its layout offset — a payload enum's members share the PAYLOAD offset (the header size, the same for every variant), a union's arms all sit at 0 — or an array, vector, slice, or string element, striding by the element size from the in-place storage or from the buffer a fat pointer names. Nested access chains by repeated calls with no copies. An arbitrary-width int member views under its TRUE (non-builtin) tag — dispatch consumers (`x.(f.type)`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`.
 - `@inner(v: any) -> ?any` — an optional's payload, `null` when it is absent.
 
 Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`

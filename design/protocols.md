@@ -79,7 +79,7 @@ import-scoped: within one import scope exactly one impl of a pair is visible, so
 every coercion site selects one vtable deterministically, and duplicates are
 diagnosed where both are seen.
 
-A **constraint** head takes structs, untagged unions, enums, builtins,
+A **constraint** head takes structs, unions, enums, builtins,
 structural composites, and **interface types** as conformers. An interface's own
 methods are members, so exact-signature satisfaction covers them and the bridge
 impl body is empty; a constraint method mentioning `Self` past the receiver is

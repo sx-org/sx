@@ -30,7 +30,7 @@ main :: () -> i32 {
     // 2. paired range index capture — no storage, no `*i` spelling
     for v, i in xs, 0.. { i = 99; }
 
-    // 3. match-arm payload capture (tagged union)
+    // 3. match-arm payload capture (payload enum)
     s : Shape = .circle(3.0);
     match s {
         case .circle: |r| { r = 5.0; }

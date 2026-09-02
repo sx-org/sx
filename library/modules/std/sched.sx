@@ -35,7 +35,7 @@ c :: @import "modules/std/c.sx";
 // to raise `IoErr.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fibTramp re-emit).
 @import "modules/std/atomic.sx";
-// `race` synthesizes its result type (a tagged-union mirroring the input tuple's
+// `race` synthesizes its result type (a payload enum mirroring the input tuple's
 // labels) and constructs the winner variant by runtime index — both need the
 // metatype WRITE side (`makeEnum`/`makeVariant`/`VariantInfo`).
 // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
@@ -1044,7 +1044,7 @@ wakeIoWaiterForFd :: (self: *Scheduler, fd: i32) {
 // handles (from `context.io.async`), returns when the FIRST is `.ready`, and
 // CANCELS every loser before returning — with Phase-3 TRUE cancellation each loser
 // stops at its next suspend, so `race` returns at WINNER-time, not slowest-loser-
-// time. The result is a comptime-synthesized tagged-union (`RaceResult`) mirroring
+// time. The result is a comptime-synthesized payload enum (`RaceResult`) mirroring
 // the input tuple's labels: each variant's NAME is the tuple label, its payload is
 // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
 // positional-tuple form (`._0`/`._1`) is rejected — an unnamed element reflects a

@@ -1,16 +1,16 @@
-error: cannot match on 'string' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+error: cannot match on 'string' — match subjects must be enums, error sets, optionals, integers, bools, or Type values
   --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:9:16
    |
  9 |     r := match s { case "hi": { 1 } case "bye": { 2 } else: { 0 } };
    |                ^
 
-error: cannot match on 'f64' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+error: cannot match on 'f64' — match subjects must be enums, error sets, optionals, integers, bools, or Type values
   --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:13:16
    |
 13 |     y := match x { case 1: { 10 } case 2: { 20 } else: { 0 } };
    |                ^
 
-error: cannot match on 'string' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+error: cannot match on 'string' — match subjects must be enums, error sets, optionals, integers, bools, or Type values
   --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:19:16
    |
 19 |     u := match s { case string: { 1 } else: { 0 } };

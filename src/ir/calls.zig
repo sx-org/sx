@@ -25,7 +25,7 @@ pub const CallPlan = struct {
     kind: Kind,
     return_type: TypeId,
     target: Target = .none,
-    /// Enum / tagged-union variant tag, for the construction kinds.
+    /// Enum / payload enum variant tag, for the construction kinds.
     variant: ?u32 = null,
     /// Lowering prepends the receiver as arg 0 (UFCS / instance-method forms).
     prepends_receiver: bool = false,
@@ -89,7 +89,7 @@ pub const CallPlan = struct {
         /// its GlobalId in the plan prevents a later bare-name lookup from
         /// rebinding `pkg.cb()` to another module's same-spelled global.
         callable_global: program_index.GlobalInfo,
-        /// Enum / tagged-union type under construction.
+        /// Enum / payload enum type under construction.
         constructed: TypeId,
     };
 };
@@ -100,7 +100,7 @@ pub const CallPlan = struct {
 /// and plain free functions (lowered or lazy via `fn_ast_map`), closure /
 /// function-typed locals, protocol dispatch, runtime-class instance/static
 /// methods, struct (UFCS) methods, qualified namespace calls, and
-/// enum/tagged-union construction.
+/// enum/payload enum construction.
 ///
 /// A `*Lowering` facade (like `ExprTyper` / `PackResolver`): call
 /// typing reads live lexical-scope / target-type state and the function /
@@ -592,7 +592,7 @@ pub const CallResolver = struct {
                 const type_name_id = self.l.module.types.internString(tn);
                 if (self.l.module.types.findByName(type_name_id)) |ty| {
                     const ti = self.l.module.types.get(ty);
-                    if (ti == .tagged_union or ti == .@"enum") return .{
+                    if (ti == .@"enum") return .{
                         .kind = .enum_construct,
                         .return_type = ty,
                         .target = .{ .constructed = ty },
@@ -692,7 +692,7 @@ pub const CallResolver = struct {
             if (self.l.target_type) |tgt| {
                 if (!tgt.isBuiltin()) {
                     const ti = self.l.module.types.get(tgt);
-                    if (ti == .tagged_union or ti == .@"enum")
+                    if (ti == .@"enum")
                         variant = self.l.resolveVariantIndex(tgt, c.callee.data.enum_literal.name);
                 }
             }

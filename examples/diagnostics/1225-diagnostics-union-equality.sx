@@ -1,5 +1,5 @@
-// `==` / `!=` between two untagged-`union` VALUES is a located diagnostic. An
-// untagged union is a raw byte aggregate (`[N x i8]` storage) whose
+// `==` / `!=` between two `union` VALUES is a located diagnostic. An
+// union is a raw byte aggregate (`[N x i8]` storage) whose
 // inactive-variant and padding bytes are unspecified, so byte-wise equality is
 // undefined; the binary-op equality lowering (src/ir/lower/expr.zig) hints at
 // comparing a specific variant field instead. The same guard covers fixed arrays,

@@ -1,4 +1,4 @@
-// Constructing a PAYLOAD-CARRYING variant of a TAGGED UNION whose variants
+// Constructing a PAYLOAD-CARRYING variant of a PAYLOAD ENUM whose variants
 // carry EXPLICIT tag values stores the EXPLICIT tag value at runtime — the
 // same encoding `match` switches on and C-interop uses — NOT the sequential
 // ordinal. The ordinal indexes `fields[]` for the payload-type lookup only.
@@ -14,7 +14,7 @@
 
 K :: struct { a: i64; b: i64; }
 
-// Explicit-tag tagged union: payload-less `quit`, scalar-payload `key`, and
+// Explicit-tag payload enum: payload-less `quit`, scalar-payload `key`, and
 // struct-payload `mouse`. None of the explicit values equal a small ordinal.
 Ev :: enum { quit :: 0x100; key :: 0x300: i64; mouse :: 0x400: K; }
 

@@ -147,7 +147,6 @@ pub const TypeInfo = union(enum) {
     @"struct": StructInfo,
     @"enum": EnumInfo,
     @"union": UnionInfo,
-    tagged_union: TaggedUnionInfo,
     array: ArrayInfo,
     slice: SliceInfo,
     pointer: PointerInfo,
@@ -191,36 +190,40 @@ pub const TypeInfo = union(enum) {
         };
     };
 
+    /// An enum: variants, each with a payload (`.void` when it carries none),
+    /// and the tag's integer type. A payload-free enum's value IS its tag; a
+    /// payload-carrying one is `{ tag, payload area }` sized by the widest
+    /// payload, or its stated `layout` struct.
     pub const EnumInfo = struct {
         name: StringId,
-        variants: []const StringId,
+        variants: []const Variant,
+        tag_type: TypeId = .i64,
+        /// The stated layout struct (`enum struct { … }`, an open set's shape).
+        layout: ?TypeId = null,
+        /// Explicit variant values (flags, custom values, explicit tags).
+        values: ?[]const i64 = null,
         is_flags: bool = false,
-        explicit_values: ?[]const i64 = null, // for flags (power-of-2) or custom values
-        backing_type: ?TypeId = null, // e.g. u32 for `enum u32 { ... }`
         nominal_id: u32 = 0, // stable nominal identity; 0 == structural
+        /// False only for a `declare(...)` forward placeholder not yet
+        /// completed by `define`/`register_type`; `checkComptimeTypeResult`
+        /// rejects it while accepting a legitimately empty `defined` enum.
+        defined: bool = true,
+
+        pub const Variant = struct {
+            name: StringId,
+            payload: TypeId = .void,
+        };
+
+        pub fn hasPayload(self: EnumInfo) bool {
+            for (self.variants) |v| if (v.payload != .void) return true;
+            return false;
+        }
     };
 
     pub const UnionInfo = struct {
         name: StringId,
         fields: []const StructInfo.Field,
         nominal_id: u32 = 0, // stable nominal identity; 0 == structural
-    };
-
-    pub const TaggedUnionInfo = struct {
-        name: StringId,
-        fields: []const StructInfo.Field,
-        tag_type: TypeId, // tag integer type (e.g. .u32, .i64)
-        backing_type: ?TypeId = null, // enum struct backing (e.g. { tag: u32; _: u32; payload: [30]u32; })
-        explicit_tag_values: ?[]const i64 = null, // explicit variant values (e.g., quit :: 0x100)
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
-        // True for every real construction (normal unions, error sets, and a
-        // `register_type`/`define` completion). False ONLY for a `declare(...)`
-        // forward PLACEHOLDER that has not yet been completed — a 0-field
-        // tagged_union that is indistinguishable from an explicitly-defined
-        // empty union by field count alone. `checkComptimeTypeResult` rejects
-        // `defined == false` (declared but never defined) while accepting a
-        // legitimately-empty `defined == true` union.
-        defined: bool = true,
     };
 
     pub const ArrayInfo = struct {
@@ -802,26 +805,17 @@ pub const TypeTable = struct {
                     key.appendSlice(self.alloc, std.mem.asBytes(&f.ty)) catch unreachable;
                 }
             },
-            .tagged_union => |tu| {
-                for (tu.fields) |f| {
-                    key.appendSlice(self.alloc, std.mem.asBytes(&f.name)) catch unreachable;
-                    key.appendSlice(self.alloc, std.mem.asBytes(&f.ty)) catch unreachable;
-                }
-                key.appendSlice(self.alloc, std.mem.asBytes(&tu.tag_type)) catch unreachable;
-                key.append(self.alloc, if (tu.backing_type != null) 1 else 0) catch unreachable;
-                if (tu.backing_type) |bt| key.appendSlice(self.alloc, std.mem.asBytes(&bt)) catch unreachable;
-                key.append(self.alloc, if (tu.explicit_tag_values != null) 1 else 0) catch unreachable;
-                if (tu.explicit_tag_values) |vals| for (vals) |v| {
-                    key.appendSlice(self.alloc, std.mem.asBytes(&v)) catch unreachable;
-                };
-            },
             .@"enum" => |e| {
-                for (e.variants) |v| key.appendSlice(self.alloc, std.mem.asBytes(&v)) catch unreachable;
+                for (e.variants) |v| {
+                    key.appendSlice(self.alloc, std.mem.asBytes(&v.name)) catch unreachable;
+                    key.appendSlice(self.alloc, std.mem.asBytes(&v.payload)) catch unreachable;
+                }
                 key.append(self.alloc, if (e.is_flags) 1 else 0) catch unreachable;
-                key.append(self.alloc, if (e.backing_type != null) 1 else 0) catch unreachable;
-                if (e.backing_type) |bt| key.appendSlice(self.alloc, std.mem.asBytes(&bt)) catch unreachable;
-                key.append(self.alloc, if (e.explicit_values != null) 1 else 0) catch unreachable;
-                if (e.explicit_values) |vals| for (vals) |v| {
+                key.appendSlice(self.alloc, std.mem.asBytes(&e.tag_type)) catch unreachable;
+                key.append(self.alloc, if (e.layout != null) 1 else 0) catch unreachable;
+                if (e.layout) |lt| key.appendSlice(self.alloc, std.mem.asBytes(&lt)) catch unreachable;
+                key.append(self.alloc, if (e.values != null) 1 else 0) catch unreachable;
+                if (e.values) |vals| for (vals) |v| {
                     key.appendSlice(self.alloc, std.mem.asBytes(&v)) catch unreachable;
                 };
             },
@@ -837,7 +831,7 @@ pub const TypeTable = struct {
         return id;
     }
 
-    /// Intern a nominal type (struct/enum/union/tagged_union) under a
+    /// Intern a nominal type (struct/enum/union) under a
     /// stable nominal identity. `nominal_id` folds into the intern key so two
     /// authors that share a display name still get distinct TypeIds. With
     /// `nominal_id == 0` this is byte-identical to `intern` (structural keying),
@@ -849,7 +843,6 @@ pub const TypeTable = struct {
             .@"struct" => |*s| s.nominal_id = nominal_id,
             .@"enum" => |*e| e.nominal_id = nominal_id,
             .@"union" => |*u| u.nominal_id = nominal_id,
-            .tagged_union => |*u| u.nominal_id = nominal_id,
             else => std.debug.assert(nominal_id == 0),
         }
         return self.intern(stamped);
@@ -893,7 +886,6 @@ pub const TypeTable = struct {
             const n: ?StringId = switch (info) {
                 .@"struct" => |s| s.name,
                 .@"union" => |u| u.name,
-                .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
                 .@"error" => |e| e.name,
                 else => null,
@@ -980,7 +972,11 @@ pub const TypeTable = struct {
         return switch (self.get(ty)) {
             .@"struct" => |s| self.fieldsCursorReach(s.fields, crossed, &here),
             .@"union" => |u| self.fieldsCursorReach(u.fields, crossed, &here),
-            .tagged_union => |u| self.fieldsCursorReach(u.fields, crossed, &here),
+            .@"enum" => |e| blk: {
+                var reach: CursorReach = .none;
+                for (e.variants) |v| reach = strongerReach(reach, self.cursorReachOf(v.payload, crossed, &here));
+                break :blk reach;
+            },
             .failable => |f| strongerReach(
                 self.cursorReachOf(f.value, crossed, &here),
                 self.cursorReachOf(f.err, crossed, &here),
@@ -1012,7 +1008,7 @@ pub const TypeTable = struct {
         return .none;
     }
 
-    /// Member count of an aggregate type: struct/union/tagged-union fields, enum
+    /// Member count of an aggregate type: struct/union/payload enum fields, enum
     /// variants, or array/vector length. Returns null for a type that has no
     /// member count (a scalar, pointer, the `unresolved` sentinel, …) — so a
     /// caller bails loudly rather than reading a silent 0. The comptime
@@ -1024,7 +1020,6 @@ pub const TypeTable = struct {
         return switch (self.get(id)) {
             .@"struct" => |s| @intCast(s.fields.len),
             .@"union" => |u| @intCast(u.fields.len),
-            .tagged_union => |u| @intCast(u.fields.len),
             .@"enum" => |e| @intCast(e.variants.len),
             .array => |a| @intCast(a.length),
             .vector => |v| @intCast(v.length),
@@ -1032,7 +1027,7 @@ pub const TypeTable = struct {
         };
     }
 
-    /// Nominal name of a named type (struct / union / tagged-union / enum /
+    /// Nominal name of a named type (struct / union / enum /
     /// error-set / protocol), or null for an unnamed type (scalar, pointer,
     /// slice, …) or an out-of-range id. Backs the `type_nominal_name` comptime
     /// compiler-API reader (the `compiler_lib` handler + VM both call it — no drift).
@@ -1043,7 +1038,6 @@ pub const TypeTable = struct {
         return switch (self.get(id)) {
             .@"struct" => |s| s.name,
             .@"union" => |u| u.name,
-            .tagged_union => |u| u.name,
             .@"enum" => |e| e.name,
             .@"error" => |e| e.name,
             .protocol => |p| p.name,
@@ -1051,8 +1045,8 @@ pub const TypeTable = struct {
         };
     }
 
-    /// Name of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// name or an enum variant name. Null for a negative / out-of-range `idx`
+    /// Name of member `idx` of an aggregate: a struct/union field name or an
+    /// enum variant name. Null for a negative / out-of-range `idx`
     /// or a type with no named members. Backs the `type_field_name` reader.
     pub fn memberName(self: *const TypeTable, id: TypeId, idx: i64) ?StringId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
@@ -1060,24 +1054,23 @@ pub const TypeTable = struct {
         return switch (self.get(id)) {
             .@"struct" => |s| if (i < s.fields.len) s.fields[i].name else null,
             .@"union" => |u| if (i < u.fields.len) u.fields[i].name else null,
-            .tagged_union => |u| if (i < u.fields.len) u.fields[i].name else null,
-            .@"enum" => |e| if (i < e.variants.len) e.variants[i] else null,
+            .@"enum" => |e| if (i < e.variants.len) e.variants[i].name else null,
             else => null,
         };
     }
 
-    /// Type of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// type, an array/vector element type, or row 0 as the slice element, the
-    /// string byte, or the optional child. Null for a negative / out-of-range
-    /// `idx` or a type with no member types (e.g. a payloadless enum). Backs
-    /// the `type_field_type` reader.
+    /// Type of member `idx` of an aggregate: a struct/union field type, an enum
+    /// variant's payload (`void` when it carries none), an array/vector element
+    /// type, or row 0 as the slice element, the string byte, or the optional
+    /// child. Null for a negative / out-of-range `idx` or a type with no member
+    /// types. Backs the `type_field_type` reader.
     pub fn memberType(self: *const TypeTable, id: TypeId, idx: i64) ?TypeId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
         return switch (self.get(id)) {
             .@"struct" => |s| if (i < s.fields.len) s.fields[i].ty else null,
             .@"union" => |u| if (i < u.fields.len) u.fields[i].ty else null,
-            .tagged_union => |u| if (i < u.fields.len) u.fields[i].ty else null,
+            .@"enum" => |e| if (i < e.variants.len) e.variants[i].payload else null,
             .array => |a| if (i < a.length) a.element else null,
             .vector => |v| if (i < v.length) v.element else null,
             .slice => |sl| if (i == 0) sl.element else null,
@@ -1105,8 +1098,8 @@ pub const TypeTable = struct {
     /// source of truth behind the reflected `.offset` (static fold, the runtime
     /// `__sx_field_offset_ptrs` tables, and the VM's `rt_field_offset`), so
     /// the three can never drift. Struct members use the same aligned
-    /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
-    /// offset (the header size — identical for every variant); an untagged
+    /// walk `typeSizeBytes` lays out. A payload enum answers its PAYLOAD
+    /// offset (the header size — identical for every variant); a
     /// union's arms all overlay at 0; array elements and vector lanes stride
     /// by their element size. Null for a type without addressable members or
     /// an out-of-range `idx`.
@@ -1125,23 +1118,9 @@ pub const TypeTable = struct {
                 unreachable;
             },
             .@"union" => |u| return if (i < u.fields.len) 0 else null,
-            .tagged_union => |u| {
-                if (i >= u.fields.len) return null;
-                // Payload area starts after the header. Mirrors the LLVM type
-                // (backend/llvm/types.zig): header = tag, or — for a
-                // backing-type union — every backing field except the last.
-                if (u.backing_type) |bt| {
-                    const bi = self.get(bt);
-                    if (bi == .@"struct" and bi.@"struct".fields.len > 1) {
-                        var header: usize = 0;
-                        const bfields = bi.@"struct".fields;
-                        for (bfields[0 .. bfields.len - 1]) |bf| {
-                            header += self.typeSizeBytes(bf.ty);
-                        }
-                        return header;
-                    }
-                }
-                return self.typeSizeBytes(u.tag_type);
+            .@"enum" => |e| {
+                if (i >= e.variants.len or !e.hasPayload()) return null;
+                return self.payloadOffset(e);
             },
             .array => |a| return if (i < a.length) i * self.typeSizeBytes(a.element) else null,
             .vector => |v| return if (i < v.length) i * self.typeSizeBytes(v.element) else null,
@@ -1149,20 +1128,32 @@ pub const TypeTable = struct {
         }
     }
 
+    /// The byte offset of a payload-carrying enum's payload area: after the
+    /// tag, or after every field but the last of a stated layout.
+    pub fn payloadOffset(self: *const TypeTable, e: TypeInfo.EnumInfo) usize {
+        if (e.layout) |lt| {
+            const li = self.get(lt);
+            if (li == .@"struct" and li.@"struct".fields.len > 1) {
+                var header: usize = 0;
+                for (li.@"struct".fields[0 .. li.@"struct".fields.len - 1]) |f| header += self.typeSizeBytes(f.ty);
+                return header;
+            }
+        }
+        return self.typeSizeBytes(e.tag_type);
+    }
+
     /// Stable kind discriminant of a type, for comptime reflection branching.
     /// TOTAL (never fails): an unnamed / non-aggregate type or an out-of-range id
     /// is `other` (0). Codes are compiler-owned and stable — NOT tied to any sx
     /// enum's declaration order; the sx side maps them. Backs the `type_kind`
-    /// reader. (A `tagged_union` is a payload-carrying enum; the sx metatype folds
-    /// codes 2 and 3 onto its single `.enum` TypeInfo variant.)
-    ///   0 other · 1 struct · 2 enum · 3 tagged_union
+    /// reader.
+    ///   0 other · 1 struct · 2 enum
     ///   5 union · 6 array · 7 vector · 8 error
     pub fn kindCode(self: *const TypeTable, id: TypeId) i64 {
         if (id.index() >= self.infos.items.len) return 0;
         return switch (self.get(id)) {
             .@"struct" => 1,
             .@"enum" => 2,
-            .tagged_union => 3,
             .@"union" => 5,
             .array => 6,
             .vector => 7,
@@ -1172,7 +1163,7 @@ pub const TypeTable = struct {
     }
 
     /// Integer value of variant `idx`: its explicit value when the enum /
-    /// tagged union declares one (custom values, flags, explicit tags), else
+    /// payload enum declares one (custom values, flags, explicit tags), else
     /// its ordinal. Null for a non-variant type, a negative / out-of-range
     /// `idx`, or an out-of-range id. The single value source behind the
     /// reflected `.value` — the static fold, the `__sx_type_infos` records,
@@ -1184,12 +1175,7 @@ pub const TypeTable = struct {
         return switch (self.get(id)) {
             .@"enum" => |e| blk: {
                 if (i >= e.variants.len) break :blk null;
-                if (e.explicit_values) |vals| if (i < vals.len) break :blk vals[i];
-                break :blk @intCast(i); // ordinal default
-            },
-            .tagged_union => |u| blk: {
-                if (i >= u.fields.len) break :blk null;
-                if (u.explicit_tag_values) |vals| if (i < vals.len) break :blk vals[i];
+                if (e.values) |vals| if (i < vals.len) break :blk vals[i];
                 break :blk @intCast(i); // ordinal default
             },
             else => null,
@@ -1199,17 +1185,16 @@ pub const TypeTable = struct {
     /// The byte width of the tag word a runtime variant read must load from a
     /// value of type `id`, SIGN-ENCODED: positive = zero-extend, negative =
     /// |width| bytes, sign-extend (a signed backing / tag type, so small
-    /// negative explicit values round-trip). A payload-less enum's whole
-    /// value IS its tag (backing size, default 8); a tagged union's tag is
-    /// the LOW @sizeOf(tag_type) bytes at offset 0 (a backing-type union's
-    /// header can be wider than the tag — the width must come from the tag
-    /// type, never the header). 0 for a non-variant kind. Feeds the
-    /// `__sx_variant_tag_widths` runtime table and its static fold.
+    /// negative explicit values round-trip). A payload-free enum's whole
+    /// value IS its tag; a payload-carrying enum's tag is the LOW
+    /// @sizeOf(tag_type) bytes at its offset (a stated layout's header can be
+    /// wider than the tag — the width comes from the tag type, never the
+    /// header). 0 for a non-variant kind. Feeds the `__sx_variant_tag_widths`
+    /// runtime table and its static fold.
     pub fn variantTagWidth(self: *const TypeTable, id: TypeId) i64 {
         if (id.index() >= self.infos.items.len or id.isBuiltin()) return 0;
         const tag_ty: TypeId = switch (self.get(id)) {
-            .@"enum" => |e| e.backing_type orelse .i64,
-            .tagged_union => |u| u.tag_type,
+            .@"enum" => |e| e.tag_type,
             else => return 0,
         };
         const w: i64 = @intCast(self.typeSizeBytes(tag_ty));
@@ -1227,7 +1212,6 @@ pub const TypeTable = struct {
             const n: ?StringId = switch (info) {
                 .@"struct" => |s| s.name,
                 .@"union" => |u| u.name,
-                .tagged_union => |u| u.name,
                 .@"enum" => |e| e.name,
                 .@"error" => |e| e.name,
                 else => null,
@@ -1760,19 +1744,16 @@ pub const TypeTable = struct {
                 }
                 return @max(max_field, 8);
             },
-            .tagged_union => |u| {
-                if (u.backing_type) |bt| return self.sizeOf(bt);
+            .@"enum" => |e| {
+                if (e.layout) |lt| return self.sizeOf(lt);
+                if (!e.hasPayload()) return @max(@as(u32, @intCast(self.typeSizeBytes(e.tag_type))), 8);
                 var max_field: u32 = 0;
-                for (u.fields) |f| {
-                    const sz = self.sizeOf(f.ty);
+                for (e.variants) |v| {
+                    const sz = self.sizeOf(v.payload);
                     if (sz > max_field) max_field = sz;
                 }
-                const tag_sz = @as(u32, @intCast(self.typeSizeBytes(u.tag_type)));
+                const tag_sz = @as(u32, @intCast(self.typeSizeBytes(e.tag_type)));
                 return tag_sz + @max(max_field, 8);
-            },
-            .@"enum" => |e| {
-                if (e.backing_type) |bt| return self.sizeOf(bt);
-                return 8;
             },
             .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, typeId, vtable}
@@ -1865,23 +1846,7 @@ pub const TypeTable = struct {
                 }
                 break :blk if (max_payload == 0) 8 else max_payload;
             },
-            .tagged_union => |u| blk: {
-                if (u.backing_type) |bt| break :blk self.typeSizeBytes(bt);
-                var max_payload: usize = 0;
-                for (u.fields) |f| {
-                    const fs = self.typeSizeBytes(f.ty);
-                    if (fs > max_payload) max_payload = fs;
-                }
-                // Mirror the LLVM lowering (backend/llvm/types.zig): the payload
-                // area is laid out as `[max_size x i8]` with a floor of 8 when no
-                // field carries a payload (all-void / empty union). Without this
-                // floor an empty/all-void tagged_union sizes to tag_size only,
-                // diverging from the LLVM type and tripping verifySizes.
-                if (max_payload == 0) max_payload = 8;
-                const tag_size = self.typeSizeBytes(u.tag_type);
-                const raw = max_payload + tag_size;
-                break :blk (raw + 7) & ~@as(usize, 7);
-            },
+
             .array => |a| blk: {
                 const elem_size = self.typeSizeBytes(a.element);
                 break :blk elem_size * @as(usize, @intCast(a.length));
@@ -1911,9 +1876,21 @@ pub const TypeTable = struct {
             .protocol => 3 * ptr_size, // {ctx, typeId, vtable}
             // The payload area aligns to 1, so the tag word alone pads the tail.
             .@"error" => |es| (4 + self.errorChannelPayloadBytes(es.tags) + 3) & ~@as(usize, 3),
-            .@"enum" => |e| {
-                if (e.backing_type) |bt| return self.typeSizeBytes(bt);
-                return 8;
+            .@"enum" => |e| blk: {
+                if (e.layout) |lt| break :blk self.typeSizeBytes(lt);
+                if (!e.hasPayload()) break :blk self.typeSizeBytes(e.tag_type);
+                var max_payload: usize = 0;
+                for (e.variants) |v| {
+                    const fs = self.typeSizeBytes(v.payload);
+                    if (fs > max_payload) max_payload = fs;
+                }
+                // Mirror the LLVM lowering (backend/llvm/types.zig): the payload
+                // area is `[max_size x i8]` with a floor of 8, so it never
+                // sizes to the tag alone.
+                if (max_payload == 0) max_payload = 8;
+                const tag_size = self.typeSizeBytes(e.tag_type);
+                const raw = max_payload + tag_size;
+                break :blk (raw + 7) & ~@as(usize, 7);
             },
             // LLVM rounds arbitrary-width integers up to the next power-of-2
             // width before computing ABI size (i12 → 2 bytes, i24 → 4 bytes).
@@ -1958,15 +1935,15 @@ pub const TypeTable = struct {
                 break :blk max_a;
             },
             .@"union" => 8,
-            // A stated backing shape IS the layout, so its alignment is the
-            // union's — that is how an open set delivers its declared payload
+            .@"error" => 4, // the tag word; a payload area does not raise it
+            // A stated layout IS the enum's shape, so its alignment is the
+            // enum's — that is how an open set delivers its declared payload
             // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
             // the tag word.
-            .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
-            .@"error" => 4, // the tag word; a payload area does not raise it
-            .@"enum" => |e| {
-                if (e.backing_type) |bt| return self.typeAlignBytes(bt);
-                return 8;
+            .@"enum" => |e| blk: {
+                if (e.layout) |lt| break :blk self.typeAlignBytes(lt);
+                if (!e.hasPayload()) break :blk self.typeAlignBytes(e.tag_type);
+                break :blk 8;
             },
             .array => |a| self.typeAlignBytes(a.element),
             // LLVM gives vectors their NATURAL alignment — the ABI size
@@ -2026,7 +2003,6 @@ pub const TypeTable = struct {
                     .@"struct" => |s| self.getString(s.name),
                     .@"enum" => |e| self.getString(e.name),
                     .@"union" => |u| self.getString(u.name),
-                    .tagged_union => |u| self.getString(u.name),
                     .protocol => |p| self.getString(p.name),
                     .@"error" => |e| self.getString(e.name),
                     else => "?",
@@ -2079,8 +2055,8 @@ pub const TypeTable = struct {
         return std.fmt.allocPrint(alloc, "!{s}", .{name}) catch "!";
     }
 
-    /// A caller's name for a nominal leaf — struct, enum, union, tagged union,
-    /// protocol, error set. Null keeps the declared spelling.
+    /// A caller's name for a nominal leaf — struct, enum, union, protocol,
+    /// error set. Null keeps the declared spelling.
     pub const Leaf = struct {
         ctx: *anyopaque,
         name: *const fn (ctx: *anyopaque, id: TypeId) ?[]const u8,
@@ -2095,7 +2071,7 @@ pub const TypeTable = struct {
         if (id.isBuiltin()) return self.typeName(id);
         const info = self.get(id);
         return switch (info) {
-            .@"struct", .@"enum", .@"union", .tagged_union, .protocol, .@"error" => blk: {
+            .@"struct", .@"enum", .@"union", .protocol, .@"error" => blk: {
                 if (leaf) |l| if (l.name(l.ctx, id)) |n| break :blk n;
                 break :blk self.typeName(id);
             },
@@ -2278,10 +2254,6 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             h.update(std.mem.asBytes(&u.name));
             if (u.nominal_id != 0) h.update(std.mem.asBytes(&u.nominal_id));
         },
-        .tagged_union => |u| {
-            h.update(std.mem.asBytes(&u.name));
-            if (u.nominal_id != 0) h.update(std.mem.asBytes(&u.nominal_id));
-        },
         .protocol => |p| h.update(std.mem.asBytes(&p.name)),
         // An error channel keys by its MEMBER SET; the derived spelling is a
         // function of that set, and identifies a member-less channel alone.
@@ -2349,7 +2321,6 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .@"struct" => |s| s.name == b.@"struct".name and s.nominal_id == b.@"struct".nominal_id,
         .@"enum" => |e| e.name == b.@"enum".name and e.nominal_id == b.@"enum".nominal_id,
         .@"union" => |u| u.name == b.@"union".name and u.nominal_id == b.@"union".nominal_id,
-        .tagged_union => |u| u.name == b.tagged_union.name and u.nominal_id == b.tagged_union.nominal_id,
         .protocol => |p| p.name == b.protocol.name,
         .@"error" => |e| {
             const f = b.@"error";

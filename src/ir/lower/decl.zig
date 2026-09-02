@@ -66,30 +66,31 @@ pub fn dfsByValueCycle(self: *Lowering, tid: TypeId, color: []u8) void {
     const idx = tid.index();
     if (idx >= color.len) return;
     color[idx] = 1; // gray (on the current containment path)
-    if (byValueAggregateFields(&self.module.types, tid)) |fields| {
-        for (fields, 0..) |f, k| {
-            if (!isByValueAggregate(&self.module.types, f.ty)) continue; // pointer/slice/etc. break the cycle
-            const fidx = f.ty.index();
-            if (fidx >= color.len) continue;
-            if (color[fidx] == 1) {
-                // Back-edge: `f.ty` is on the current path → infinitely sized.
-                self.diagInfiniteSize(f.ty);
-                self.poisonAggregateField(tid, k);
-            } else if (color[fidx] == 0) {
-                self.dfsByValueCycle(f.ty, color);
-            }
+    var k: usize = 0;
+    while (byValueMemberType(&self.module.types, tid, k)) |mt| : (k += 1) {
+        if (!isByValueAggregate(&self.module.types, mt)) continue; // pointer/slice/etc. break the cycle
+        const fidx = mt.index();
+        if (fidx >= color.len) continue;
+        if (color[fidx] == 1) {
+            // Back-edge: `mt` is on the current path → infinitely sized.
+            self.diagInfiniteSize(mt);
+            self.poisonAggregateField(tid, k);
+        } else if (color[fidx] == 0) {
+            self.dfsByValueCycle(mt, color);
         }
     }
     color[idx] = 2; // black (fully explored)
 }
 
-/// The by-value fields of a nominal aggregate, or null for any other type.
-fn byValueAggregateFields(table: *const types.TypeTable, tid: TypeId) ?[]const types.TypeInfo.StructInfo.Field {
+/// The type of by-value member `k` of a nominal aggregate — a struct or union
+/// field, an enum variant's payload — or null past the last member and for
+/// any other type.
+fn byValueMemberType(table: *const types.TypeTable, tid: TypeId, k: usize) ?TypeId {
     if (tid.isBuiltin()) return null;
     return switch (table.get(tid)) {
-        .@"struct" => |s| s.fields,
-        .tagged_union => |u| u.fields,
-        .@"union" => |u| u.fields,
+        .@"struct" => |s| if (k < s.fields.len) s.fields[k].ty else null,
+        .@"union" => |u| if (k < u.fields.len) u.fields[k].ty else null,
+        .@"enum" => |e| if (k < e.variants.len) e.variants[k].payload else null,
         else => null,
     };
 }
@@ -100,7 +101,8 @@ fn byValueAggregateFields(table: *const types.TypeTable, tid: TypeId) ?[]const t
 fn isByValueAggregate(table: *const types.TypeTable, ty: TypeId) bool {
     if (ty.isBuiltin()) return false;
     return switch (table.get(ty)) {
-        .@"struct", .tagged_union, .@"union" => true,
+        .@"struct", .@"union" => true,
+        .@"enum" => |e| e.hasPayload(),
         else => false,
     };
 }
@@ -113,9 +115,16 @@ pub fn poisonAggregateField(self: *Lowering, tid: TypeId, k: usize) void {
     const table = &self.module.types;
     const info = table.get(tid);
     var new_info = info;
+    if (info == .@"enum") {
+        const nv = self.alloc.dupe(types.TypeInfo.EnumInfo.Variant, info.@"enum".variants) catch return;
+        if (k >= nv.len) return;
+        nv[k].payload = .unresolved;
+        new_info.@"enum".variants = nv;
+        table.updatePreservingKey(tid, new_info);
+        return;
+    }
     const src_fields = switch (info) {
         .@"struct" => |s| s.fields,
-        .tagged_union => |u| u.fields,
         .@"union" => |u| u.fields,
         else => return,
     };
@@ -124,7 +133,6 @@ pub fn poisonAggregateField(self: *Lowering, tid: TypeId, k: usize) void {
     nf[k].ty = .unresolved;
     switch (new_info) {
         .@"struct" => |*s| s.fields = nf,
-        .tagged_union => |*u| u.fields = nf,
         .@"union" => |*u| u.fields = nf,
         else => return,
     }
@@ -503,10 +511,10 @@ fn targetEnumValue(self: *Lowering, enum_name: []const u8, variant: []const u8) 
     return .{ .target_variant = .{ .enum_name = enum_name, .variant = variant } };
 }
 
-pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {
+pub fn findVariantIndex(self: *Lowering, variants: []const types.TypeInfo.EnumInfo.Variant, name: []const u8) u32 {
     const name_id = self.module.types.internString(name);
     for (variants, 0..) |v, i| {
-        if (v == name_id) return @intCast(i);
+        if (v.name == name_id) return @intCast(i);
     }
     return 0; // fallback to first variant
 }
@@ -925,7 +933,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 } else if (cd.value.data == .struct_decl) {
                     self.registerStructDecl(&cd.value.data.struct_decl, decl.source_file);
                 } else if (cd.value.data == .enum_decl) {
-                    // Per-decl nominal identity for enum/tagged-union types
+                    // Per-decl nominal identity for enum/payload enum types
                     self.registerEnumDecl(&cd.value.data.enum_decl);
                 } else if (cd.value.data == .union_decl) {
                     // Per-decl nominal identity for plain union types
@@ -1168,7 +1176,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 self.registerStructDecl(&decl.data.struct_decl, decl.source_file);
             },
             .enum_decl => {
-                // Per-decl nominal identity for enum/tagged-union types
+                // Per-decl nominal identity for enum/payload enum types
                 self.registerEnumDecl(&decl.data.enum_decl);
             },
             .union_decl => {

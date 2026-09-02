@@ -303,26 +303,14 @@ pub fn qualifyMatchArm(self: *Lowering, subject_ty: TypeId, pat: *const Node) Ar
             if (!channelIsOpen(self, subject_ty) and !channelCarries(self, subject_ty, id)) return .not_in_channel;
             return .{ .ok = .{ .case_value = id, .field_index = id, .payload = table.memberPayload(id) } };
         },
-        .@"enum" => |e| {
+        .@"enum" => |tu| {
             if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
-            for (e.variants, 0..) |v, vi| {
-                if (!std.mem.eql(u8, table.strings.get(v), fa.field)) continue;
-                return .{ .ok = .{
-                    .case_value = declaredTagValue(e.explicit_values, vi),
-                    .field_index = @intCast(vi),
-                    .payload = .void,
-                } };
-            }
-            return .bad_leaf;
-        },
-        .tagged_union => |tu| {
-            if (armPrefixType(self, fa.object) != subject_ty) return .bad_prefix;
-            for (tu.fields, 0..) |f, vi| {
+            for (tu.variants, 0..) |f, vi| {
                 if (!std.mem.eql(u8, table.strings.get(f.name), fa.field)) continue;
                 return .{ .ok = .{
-                    .case_value = declaredTagValue(tu.explicit_tag_values, vi),
+                    .case_value = declaredTagValue(tu.values, vi),
                     .field_index = @intCast(vi),
-                    .payload = f.ty,
+                    .payload = f.payload,
                 } };
             }
             return .bad_leaf;
@@ -361,7 +349,7 @@ pub fn refuseQualifiedArm(self: *Lowering, verdict: ArmVerdict, subject_ty: Type
     const subject = self.formatTypeName(subject_ty);
     const on_channel = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .@"error";
     const has_variants = !subject_ty.isBuiltin() and switch (self.module.types.get(subject_ty)) {
-        .@"enum", .tagged_union => true,
+        .@"enum" => true,
         else => false,
     };
     switch (verdict) {

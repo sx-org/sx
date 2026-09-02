@@ -1527,7 +1527,7 @@ fn resolveDirectoryImport(
         // the file's own decls (resolveImports processes `@import` lines in
         // source order, and @imports usually come first), so iterating it
         // directly preserves the scan order the lowering pass needs to
-        // register `Event` (a tagged_union) before `handle_event(e: *Event)`
+        // register `Event` (a payload enum) before `handle_event(e: *Event)`
         // triggers the placeholder-struct fallback in `resolveTypeName`.
         for (file_mod.decls) |decl| {
             if (seen_nodes.contains(decl)) continue;

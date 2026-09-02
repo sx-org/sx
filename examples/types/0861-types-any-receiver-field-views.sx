@@ -2,7 +2,7 @@
 // the result is
 //   { the tag's i-th member type,  av.data + that member's offset }
 // so member access composes by repeated calls with no copies, aliasing the
-// boxed value's storage. For a tagged union the offset table answers the
+// boxed value's storage. For a payload enum the offset table answers the
 // payload offset, so a variant's payload composes the same way.
 
 @import "modules/std.sx";
@@ -32,7 +32,7 @@ main :: () -> i64 {
     pkt.kind = 77;
     print("{}\n", @field(av, 2));    // 77
 
-    // Tagged-union live payload through an any view.
+    // Payload enum live payload through an any view.
     s := Shape.square(42);
     sv : any = s;
     print("{}\n", @field(sv, 1));    // 42

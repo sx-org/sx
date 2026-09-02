@@ -431,10 +431,10 @@ __sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
     }
 }
 
-// ── The runtime variant walk (enum/tagged-union values behind an `any`) ──
+// ── The runtime variant walk (enum values behind an `any`) ──
 // The tag word of the variant value `av` views: little-endian byte assembly
 // of the low `__sx_variant_tag_width(t)` bytes (a payload-less enum's whole
-// value; a tagged union's tag slot at offset 0 — never the wider header a
+// value; a payload enum's tag slot at offset 0 — never the wider header a
 // backing-type union may carry). A negative width means a signed backing /
 // tag type: sign-extend so small negative explicit values round-trip.
 __sx_any_tag_word :: (t: Type, av: any) -> i64 {

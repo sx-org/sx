@@ -1,6 +1,6 @@
 // Inline comptime methods retain ordinary function and receiver boundaries:
 // an explicit return runs only callee defers, a pointer receiver may spill an
-// rvalue temporary, and a tagged-union payload resolves caller locals before
+// rvalue temporary, and a payload enum payload resolves caller locals before
 // the hygienic body scope is installed.
 
 Mode :: enum { run; }
