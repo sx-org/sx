@@ -1,4 +1,4 @@
-error: 'Map2__f32__f32' does not satisfy the bound 'Series(f32)' on '$B'
+error: 'Map2(f32, f32)' does not satisfy the bound 'Series(f32)' on '$B'
   --> examples/diagnostics/2032-diagnostics-blanket-carrier-slot.sx:16:17
    |
 16 | tally :: (b: $B/Series(f32)) -> i64 { 1 }
