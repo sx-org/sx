@@ -2461,7 +2461,10 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     if (al.type_expr) |te| {
         const resolved = self.resolveArrayLiteralType(te);
         if (resolved != .unresolved) {
-            if (!resolved.isBuiltin()) {
+            if (self.module.types.sliceInfoOf(resolved)) |s| {
+                elem_ty = s.element;
+                from_target = true;
+            } else if (!resolved.isBuiltin()) {
                 const info = self.module.types.get(resolved);
                 switch (info) {
                     .array => |a| {
@@ -2472,10 +2475,6 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                         elem_ty = v.element;
                         from_target = true;
                         is_vector = true;
-                    },
-                    .slice => |s| {
-                        elem_ty = s.element;
-                        from_target = true;
                     },
                     else => {},
                 }
