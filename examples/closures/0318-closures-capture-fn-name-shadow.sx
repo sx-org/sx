@@ -5,29 +5,27 @@
 // The rule mirrors call dispatch: `collectCaptures` asks
 // `Scope.lookupNearest` first, which resolves the binding at the nearest
 // declaring depth; the fn-name skip applies only when no binding exists.
-// Here the local is named `out`, which the std prelude also declares.
+// Here the local is named `concat`, which the std prelude also declares.
 @import "modules/std.sx";
-
-// `out` collides with the std prelude fn `out :: (str: string) -> void`.
 
 // 1. Local pointer shadow, mutated THROUGH the closure — result visible.
 mutate :: () -> i64 {
     result : i64 = 0;
-    out := *result;              // local named like the prelude fn `out`
-    c := ||_{ out = out } { out.* = 42; };  // must capture `out`, not skip it
+    concat := *result;              // local named like the prelude fn `concat`
+    c := ||_{ concat = concat } { concat.* = 42; };  // must capture `concat`, not skip it
     c();
     result
 }
 
 // 2. Param shadow, captured by value.
-addOne :: (out: i64) -> i64 {
-    c := ||_{ out = out } out + 1;
+addOne :: (concat: i64) -> i64 {
+    c := ||_{ concat = concat } concat + 1;
     c()
 }
 
-// 3. No shadow: the closure calls the REAL prelude fn `out` (unchanged).
+// 3. No shadow: the closure calls the REAL prelude fn `concat`.
 callReal :: () {
-    c := || { out("real-out\n"); };
+    c := || { @printf("{}", concat("real-", "out\n")); };
     c();
 }
 

@@ -10,26 +10,26 @@ sum :: (..args: []i32) -> i32 {
 
 printAll :: (..args: []i32) {
     for it in args {
-        out(intToString(it));
-        out(" ");
+        @printf("{}", intToString(it));
+        @printf(" ");
     }
-    out("\n");
+    @printf("\n");
 }
 
 main :: () -> i32 {
-    out(intToString(sum(10, 20, 30)));
-    out("\n");
+    @printf("{}", intToString(sum(10, 20, 30)));
+    @printf("\n");
 
     printAll(1, 2, 3, 4, 5);
 
     arr : [3]i32 = .[10, 20, 30];
-    out(intToString(sum(..arr)));
-    out("\n");
+    @printf("{}", intToString(sum(..arr)));
+    @printf("\n");
 
     for it in arr {
-        out(intToString(it));
-        out(" ");
+        @printf("{}", intToString(it));
+        @printf(" ");
     }
-    out("\n");
+    @printf("\n");
     0
 }

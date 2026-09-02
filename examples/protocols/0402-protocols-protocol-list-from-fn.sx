@@ -20,7 +20,7 @@ add :: (items: *List(Sizable), w: Leaf) {
 
 main :: () -> void {
     // Works: protocol value created in main, appended to list
-    out("=== Created in main ===\n");
+    @printf("=== Created in main ===\n");
     listA : List(Sizable) = .{};
     leaf := Leaf{ value = 42 };
     s := leaf.(Sizable);
@@ -32,7 +32,7 @@ main :: () -> void {
 
     // The handle is created inside add(); both dispatches read the `make`
     // storage, not add()'s frame.
-    out("=== Created in add() ===\n");
+    @printf("=== Created in add() ===\n");
     listB : List(Sizable) = .{};
     add(*listB, Leaf{ value = 99 });
     r3 := listB.items[0].size();
@@ -40,5 +40,5 @@ main :: () -> void {
     r4 := listB.items[0].size();
     print("second: {} (expected 99)\n", r4);
 
-    out("=== OK ===\n");
+    @printf("=== OK ===\n");
 }

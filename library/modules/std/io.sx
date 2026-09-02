@@ -265,7 +265,7 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
     alreadyCanceled := f.canceled.load(.acquire);
     if f.state == .pending and !alreadyCanceled {
         if f.park.handle != null {
-            out("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
+            @printf("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
             c.abort();
         }
         context.io.suspendRaw(*f.park) catch {};   // cancellation surfaces via `f.canceled` below

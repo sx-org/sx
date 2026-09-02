@@ -130,7 +130,7 @@ Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
 `@isComptime`. So is the postfix assertion's spelled form, `@cast`
 (§Postfix Cast), owned by `modules/std/core.sx`.
 
-`@printf($fmt: string, ..$args)` is an allocation-free formatted write to fd 1.
+`@printf($fmt: string, ..$args)` is an allocation-free formatted write to stdout.
 `$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
 consumes the next argument, `{{` and `}}` write a brace — and the compiler
 expands the call into one write per segment and per argument, in source order.
@@ -138,15 +138,17 @@ An argument is a `string`, a `bool`, an integer or a float; any other type is a
 compile error, because rendering it takes the allocating formatter, `print`.
 
 `@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
-`file:line: msg` and stops the program; a site with `line == 0` writes bare
-`msg`. A `@run` panic exits the COMPILER with code 1, a compiled panic raises
-SIGABRT. It renders through `@printf`, so it reaches its message with a broken
-or exhausted allocator behind it.
+`file:line: msg` to stderr and stops the program; a site with `line == 0`
+writes bare `msg`. A `@run` panic exits the COMPILER with code 1, a compiled
+panic raises SIGABRT. It renders through the same stack-buffered writer
+`@printf` expands onto, so it reaches its message with a broken or exhausted
+allocator behind it.
 
-A contract name resolves program-wide. The registry admits exactly one canonical
-declaration of it, so there is no second author for the import-visibility rule to
-choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
-written.
+A contract name resolves program-wide, and `modules/std/core.sx` is in every
+program, so an `@` name needs no import. The registry admits exactly one
+canonical declaration of it, so there is no second author for the
+import-visibility rule to choose between: `@SourceSite` and `@VaList` are
+spelled bare wherever they are written.
 
 Separately, a few `@` names are **compiler-formed** — `@run`, `@insert`, `@Init(T)`,
 `@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)`, `@Slice(T, Len)` and
@@ -5531,7 +5533,6 @@ error: 'intern' runs only at compile time — it cannot be called from the
 ```
 
 ### I/O
-- `out(str: string) -> void` — write a string to standard output
 - `print(fmt: string, ..args: []any)` — formatted print. Parses `{}` placeholders in the format string and substitutes arguments. When all argument types are statically known, the compiler specializes the call at compile time (no `any` boxing).
 
 ### Math

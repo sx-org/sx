@@ -6,6 +6,8 @@ module asm "    bl _cb                      // x0 = cb(x0)  \E2\80\94 back into 
 module asm "    ldp x29, x30, [sp], #16"
 module asm "    ret"
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: nounwind
 define i64 @cb(i64 %0) #0 {
 entry:

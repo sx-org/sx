@@ -1,16 +1,8 @@
-// The byte sink of the prelude. `write` takes text, `flush` releases what an
-// impl held back. Neither answers: a sink out of memory stops the program, a
-// sink whose far end is gone drops the bytes, so no caller branches on a write.
-//
+// The heap-backed `Writer` and the separator loop over any `Writer`.
 // Consumers never import this file directly — std.sx re-exports every name
 // here.
 @import "modules/std/core.sx";
 c :: @import "modules/std/c.sx";
-
-Writer :: interface {
-    write :: (self: *Self, s: string) -> void;
-    flush :: (self: *Self) -> void { }
-}
 
 // Text accumulated on the heap. `finish` hands the bytes to the caller and
 // leaves the builder empty, so the built string outlives the builder without
@@ -56,24 +48,6 @@ impl Writer for StringBuilder {
         self.reserve(if n < self.bytes.len then i64.max else n);
         c.memcpy(*self.bytes.ptr[self.bytes.len], s.ptr, s.len);
         self.bytes.len += s.len;
-    }
-}
-
-FdWriter :: struct {
-    fd: i32;
-
-    init :: (fd: i32) -> FdWriter { .{ fd = fd } }
-}
-
-impl Writer for FdWriter {
-    // A refused write — a pipe whose reader is gone — drops the rest of `s`.
-    write :: (self: *FdWriter, s: string) -> void {
-        off := 0;
-        while off < s.len {
-            n := c.write(self.fd, *s[off], s.len - off);
-            if n <= 0 { return; }
-            off += n.(i64);
-        }
     }
 }
 

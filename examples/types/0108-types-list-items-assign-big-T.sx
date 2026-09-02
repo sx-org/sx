@@ -37,6 +37,6 @@ main :: () -> void {
     if obj.sentinel != 0xDEADBEEF {
         print("BUG: sentinel was corrupted!\n");
     } else {
-        out("OK\n");
+        @printf("OK\n");
     }
 }

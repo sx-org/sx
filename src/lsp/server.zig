@@ -1236,7 +1236,6 @@ pub const Server = struct {
             .{ .name = "@cos", .label = "@cos(x: $T) -> T", .params = &.{"x: $T"} },
             .{ .name = "@floor", .label = "@floor(x: $T) -> T", .params = &.{"x: $T"} },
             .{ .name = "print", .label = "print(fmt: string, args: ..any)", .params = &.{ "fmt: string", "args: ..any" } },
-            .{ .name = "out", .label = "out(str: string) -> void", .params = &.{"str: string"} },
         };
         for (&builtin_sigs) |b| {
             const matches = std.mem.eql(u8, call_ctx.name, b.name) or

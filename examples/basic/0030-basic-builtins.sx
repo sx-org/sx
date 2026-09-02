@@ -15,8 +15,8 @@ main :: () {
     // ========================================================
     print("=== 7. Builtins ===\n");
 
-    // out
-    out("out-ok\n");
+    // @printf
+    @printf("out-ok\n");
 
     // sqrt
     print("sqrt: {}\n", @sqrt(9.0));

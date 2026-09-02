@@ -1,2 +1,1 @@
 cast 7
-type assertion failed at 2247-errors-cast-spelled-temperaments.sx:10: expected i64, got f64

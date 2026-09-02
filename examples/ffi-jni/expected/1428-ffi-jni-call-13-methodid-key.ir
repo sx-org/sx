@@ -1,6 +1,7 @@
 
 @gShouldCall = internal global i1 false
 @__sx_default_context = internal constant { ptr } zeroinitializer
+@__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [5 x i8] c"getX\00", align 1
 @str.1 = private unnamed_addr constant [4 x i8] c"()I\00", align 1
 @SX_JNI_CLS_com_example_A_getX____I = internal global ptr null
@@ -20,15 +21,105 @@
 @str.8 = private unnamed_addr constant [4 x i8] c"ok\0A\00", align 1
 
 ; Function Attrs: nounwind
-define internal void @out(ptr %0, { ptr, i64 } %1) #0 {
+define internal { i32 } @FdWriter.init(ptr %0, { i64, [4 x i8] } %1) #0 {
 entry:
-  %alloca = alloca { ptr, i64 }, align 8
-  store { ptr, i64 } %1, ptr %alloca, align 8
-  %load = load { ptr, i64 }, ptr %alloca, align 8
-  %dptr = extractvalue { ptr, i64 } %load, 0
-  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %alloca = alloca { i64, [4 x i8] }, align 8
+  %ep.tmp = alloca { i64, [4 x i8] }, align 8
+  store { i64, [4 x i8] } %1, ptr %alloca, align 8
+  %allocaN = alloca i32, align 4
+  %load = load { i64, [4 x i8] }, ptr %alloca, align 8
+  %etag = extractvalue { i64, [4 x i8] } %load, 0
+  switch i64 %etag, label %match.unr.7 [
+    i64 0, label %match.arm.3
+    i64 1, label %match.arm.4
+    i64 2, label %match.arm.5
+    i64 3, label %match.arm.6
+  ]
+
+match.merge.2:                                    ; preds = %match.arm.6, %match.arm.5, %match.arm.4, %match.arm.3
+  %bp = phi i64 [ 0, %match.arm.3 ], [ 1, %match.arm.4 ], [ 2, %match.arm.5 ], [ %sext, %match.arm.6 ]
+  %trunc = trunc i64 %bp to i32
+  store i32 %trunc, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %si = insertvalue { i32 } undef, i32 %loadN, 0
+  ret { i32 } %si
+
+match.arm.3:                                      ; preds = %entry
+  br label %match.merge.2
+
+match.arm.4:                                      ; preds = %entry
+  br label %match.merge.2
+
+match.arm.5:                                      ; preds = %entry
+  br label %match.merge.2
+
+match.arm.6:                                      ; preds = %entry
+  store { i64, [4 x i8] } %load, ptr %ep.tmp, align 8
+  %ep.pp = getelementptr inbounds nuw { i64, [4 x i8] }, ptr %ep.tmp, i32 0, i32 1
+  %ep.val = load i32, ptr %ep.pp, align 4
+  %sext = sext i32 %ep.val to i64
+  br label %match.merge.2
+
+match.unr.7:                                      ; preds = %entry
+  unreachable
+}
+
+; Function Attrs: nounwind
+define internal void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  %allocaN = alloca i64, align 8
+  store ptr %1, ptr %alloca, align 8
+  %allocaN = alloca { ptr, i64 }, align 8
+  store { ptr, i64 } %2, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 0, ptr %allocaN, align 8
+  br label %while.hdr.21
+
+while.hdr.21:                                     ; preds = %if.merge.25, %entry
+  %load = load i64, ptr %allocaN, align 8
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
   %len = extractvalue { ptr, i64 } %loadN, 1
-  %call = call i64 @write(i32 1, ptr %dptr, i64 %len)
+  %icmp = icmp slt i64 %load, %len
+  br i1 %icmp, label %while.body.22, label %while.exit.23
+
+while.body.22:                                    ; preds = %while.hdr.21
+  %loadN = load ptr, ptr %alloca, align 8
+  %loadN = load { i32 }, ptr %loadN, align 4
+  %sg = extractvalue { i32 } %loadN, 0
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %igp.data = extractvalue { ptr, i64 } %loadN, 0
+  %igp.ptr = getelementptr i8, ptr %igp.data, i64 %loadN
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %sub = sub i64 %lenN, %loadN
+  %call = call i64 @write(i32 %sg, ptr %igp.ptr, i64 %sub)
+  store i64 %call, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp sle i64 %loadN, 0
+  br i1 %icmpN, label %if.then.24, label %if.merge.25
+
+while.exit.23:                                    ; preds = %while.hdr.21
+  ret void
+
+if.then.24:                                       ; preds = %while.body.22
+  ret void
+
+if.merge.25:                                      ; preds = %while.body.22
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %add = add i64 %loadN, %loadN
+  store i64 %add, ptr %allocaN, align 8
+  br label %while.hdr.21
+}
+
+; Function Attrs: nounwind
+define internal void @FdWriter.flush(ptr %0, ptr %1) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %1, ptr %alloca, align 8
   ret void
 }
 
@@ -166,6 +257,7 @@ jni.cont48:                                       ; preds = %jni.miss47, %jni.co
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
+  %alloca = alloca { i32 }, align 8
   %gload = load i1, ptr @gShouldCall, align 1
   br i1 %gload, label %if.then.0, label %if.merge.1
 
@@ -174,6 +266,25 @@ if.then.0:                                        ; preds = %entry
   br label %if.merge.1
 
 if.merge.1:                                       ; preds = %if.then.0, %entry
-  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.8, i64 3 })
+  %call = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  store { i32 } %call, ptr %alloca, align 4
+  %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
+  %siN = insertvalue { ptr, i64, ptr } %si, i64 108, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
+  call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.8, i64 3 })
   ret i32 0
+}
+
+; Function Attrs: nounwind
+define internal void @__thunk_FdWriter_Writer_write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
+entry:
+  call void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2)
+  ret void
+}
+
+; Function Attrs: nounwind
+define internal void @__thunk_FdWriter_Writer_flush(ptr %0, ptr %1) #0 {
+entry:
+  call void @FdWriter.flush(ptr %0, ptr %1)
+  ret void
 }

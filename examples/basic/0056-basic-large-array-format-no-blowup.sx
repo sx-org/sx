@@ -9,8 +9,8 @@
 f :: () {
     buf : [65536]u8 = ---;
     buf[0] = 65; // 'A'
-    out(string{ ptr = *buf[0], len = 1 });
-    out("\n");
+    @printf("{}", string{ ptr = *buf[0], len = 1 });
+    @printf("\n");
 }
 
 main :: () -> i32 {

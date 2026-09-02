@@ -1,7 +1,6 @@
-@import "modules/std/core.sx";   // string
-@import "modules/std/fmt.sx";    // concat, buildFormat
-@import "modules/std/writer.sx"; // StringBuilder
-c :: @import "modules/std/c.sx"; // libc write
+@import "modules/std/core.sx";
+@import "modules/std/fmt.sx";
+@import "modules/std/writer.sx";
 
 // =====================================================================
 // log.sx — plain leveled logging, orthogonal to the
@@ -14,8 +13,10 @@ c :: @import "modules/std/c.sx"; // libc write
 
 // Prefix the level, append a newline, write the whole line to stderr.
 logEmit :: (level: string, msg: string) {
-    line := concat(concat(level, msg), "\n");
-    c.write(2, line.ptr, line.len);
+    w := FdWriter.init(.stderr);
+    w.write(level);
+    w.write(msg);
+    w.write("\n");
 }
 
 warn  :: ($fmt: string, ..$args) { sb := StringBuilder.init(); @insert buildFormat(fmt, "sb"); sb.flush(); logEmit("WARN:  ", sb.finish()); }

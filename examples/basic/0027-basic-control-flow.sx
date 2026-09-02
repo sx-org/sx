@@ -117,76 +117,76 @@ main :: () {
 
     // For loop basic
     farr : [4]i32 = .[10, 20, 30, 40];
-    out("for:");
+    @printf("for:");
     for it in farr {
-        out(" ");
-        out(intToString(it));
+        @printf(" ");
+        @printf("{}", intToString(it));
     }
-    out("\n");
+    @printf("\n");
 
     // For with print
-    out("for-print:");
+    @printf("for-print:");
     for it in farr {
         print(" {}", it);
     }
-    out("\n");
+    @printf("\n");
 
     // For with index
-    out("for-idx:");
+    @printf("for-idx:");
     for _, ix in farr, 0.. {
-        out(" ");
-        out(intToString(ix));
+        @printf(" ");
+        @printf("{}", intToString(ix));
     }
-    out("\n");
+    @printf("\n");
 
     // For with print two args
-    out("for-2arg:");
+    @printf("for-2arg:");
     for it, ix in farr, 0.. {
         print(" {}@{}", it, ix);
     }
-    out("\n");
+    @printf("\n");
 
     // For with break
-    out("for-break:");
+    @printf("for-break:");
     for it in farr {
         if it == 30 { break; }
         print(" {}", it);
     }
-    out("\n");
+    @printf("\n");
 
     // For with continue
-    out("for-continue:");
+    @printf("for-continue:");
     for it in farr {
         if it == 20 { continue; }
         print(" {}", it);
     }
-    out("\n");
+    @printf("\n");
 
     // For on slice
     fsl : []i32 = .[10, 20, 30];
-    out("for-slice:");
+    @printf("for-slice:");
     for it in fsl {
         print(" {}", it);
     }
-    out("\n");
+    @printf("\n");
 
     // For on slice with index
-    out("for-slice-idx:");
+    @printf("for-slice-idx:");
     for it, ix in fsl, 0.. {
         print(" {}:{}", ix, it);
     }
-    out("\n");
+    @printf("\n");
 
     // Nested for
     nfA : [2]i32 = .[0, 1];
     nfB : [2]i32 = .[0, 1];
-    out("for-nested:");
+    @printf("for-nested:");
     for oa in nfA {
         for ob in nfB {
             print(" ({},{})", oa, ob);
         }
     }
-    out("\n");
+    @printf("\n");
 
     // For with break preserving index
     fbi : [5]i32 = .[10, 20, 30, 40, 50];

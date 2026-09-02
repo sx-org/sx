@@ -1,4 +1,6 @@
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: naked noinline nounwind
 define internal i64 @add(i64 %0, i64 %1) #0 {
 entry:

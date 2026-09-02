@@ -242,7 +242,7 @@ Printer :: struct { count: i32; }
 impl Repeater for Printer {
     say :: (self: *Printer, msg: string) {
         self.count += 1;
-        out(msg);
+        @printf("{}", msg);
     }
 }
 

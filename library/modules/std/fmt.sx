@@ -27,55 +27,6 @@ intToString :: (n: i64) -> string {
     substr(tmp, i + 1, 19 - i)
 }
 
-// Unsigned decimal of `n`'s 64 bits — renders the full u64 range
-// (0 .. 18446744073709551615).
-uintToString :: (n: i64) -> string {
-    if n == 0 { return "0"; }
-    // Long division by 10 across the four unsigned 16-bit limbs, most
-    // significant first. Each step folds the running remainder into the
-    // next limb; the per-step accumulator stays well within i64
-    // (max 9*65536 + 65535), so signed `/` and `%` are exact.
-    g := decomposeU16x4(n);
-    digits : [20]u8 = ---;
-    tmp := string{ ptr = *digits[0], len = 20 };
-    i := 19;
-    while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
-        rem := 0;
-        k := 0;
-        while k < 4 {
-            acc := rem * 65536 + g[k];
-            g[k] = acc / 10;
-            rem = acc % 10;
-            k += 1;
-        }
-        tmp[i] = rem + '0';
-        i -= 1;
-    }
-    substr(tmp, i + 1, 19 - i)
-}
-
-boolToString :: (b: bool) -> string {
-    if b then "true" else "false"
-}
-
-floatToString :: (f: f64) -> string {
-    neg := f < 0.0;
-    v := if neg then 0.0 - f else f;
-    intPart := v.(i64);
-    frac := ((v - intPart.(f64)) * 1000000.0).(i64);
-    if frac < 0 { frac = 0 - frac; }
-    istr := intToString(intPart);
-    fstr := intToString(frac);
-    zeros := "000000";
-    sb := StringBuilder.init();
-    if neg { sb.write("-"); }
-    sb.write(istr);
-    sb.write(".");
-    sb.write(zeros[0 .. 6 - fstr.len]);
-    sb.write(fstr);
-    sb.finish()
-}
-
 hexGroup :: (buf: string, offset: i64, val: i64) {
     i := offset + 3;
     v := val;
@@ -302,19 +253,19 @@ writeAny :: (w: Writer, val: any) {
     t := @typeOf(val);
     match @typeInfo(t) {
         case .void: {}
-        case .bool: w.write(boolToString(@unbox(val, bool)));
+        case .bool: writeBool(w, @unbox(val, bool));
         case .string: w.write(@unbox(val, string));
         // A category arm binds the widened reading its whole tag set shares,
         // so one arm covers every width.
         case .int: {
             match val {
-                case unsigned: |n| { w.write(uintToString(n)); }
-                case signed: |n| { w.write(intToString(n)); }
+                case unsigned: |n| { writeUint(w, n); }
+                case signed: |n| { writeInt(w, n); }
             }
         }
         case .float: {
             match val {
-                case float: |f| { w.write(floatToString(f)); }
+                case float: |f| { writeFloat(w, f); }
             }
         }
         case .struct: |si| {
@@ -486,7 +437,7 @@ format :: ($fmt: string, ..$args) -> string {
 }
 
 print :: ($fmt: string, ..$args) {
-    w := FdWriter.init(1);
+    w := FdWriter.init(.stdout);
     @insert buildFormat(fmt, "w");
     w.flush();
 }

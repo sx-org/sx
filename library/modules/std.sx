@@ -54,12 +54,16 @@ OptionalInfo    :: core.OptionalInfo;
 
 // --- Output ---
 
-out :: core.out;
+Writer        :: core.Writer;
+Fd            :: core.Fd;
+FdWriter      :: core.FdWriter;
+writeBool     :: core.writeBool;
+writeInt      :: core.writeInt;
+writeUint     :: core.writeUint;
+writeFloat    :: core.writeFloat;
 
 writer        :: @import "modules/std/writer.sx";
-Writer        :: writer.Writer;
 StringBuilder :: writer.StringBuilder;
-FdWriter      :: writer.FdWriter;
 writeEach     :: writer.writeEach;
 
 // --- Formatting ---
@@ -72,10 +76,7 @@ __sx_reerase_or_panic :: fmt.__sx_reerase_or_panic;
 
 anyToString      :: fmt.anyToString;
 intToString      :: fmt.intToString;
-uintToString     :: fmt.uintToString;
 intToHexString   :: fmt.intToHexString;
-floatToString    :: fmt.floatToString;
-boolToString     :: fmt.boolToString;
 structToString   :: fmt.structToString;
 enumToString     :: fmt.enumToString;
 flagsToString    :: fmt.flagsToString;

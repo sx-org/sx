@@ -48,6 +48,7 @@ const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
 const lower_call = @import("lower/call.zig");
+const lower_binding = @import("lower/binding.zig");
 const lower_cvariadic = @import("lower/cvariadic.zig");
 const lower_pack = @import("lower/pack.zig");
 const lower_generic = @import("lower/generic.zig");
@@ -573,6 +574,8 @@ pub const Lowering = struct {
     /// map addresses each author's OWN slot by decl identity, letting
     /// a SHADOWED author lower its body into a distinct FuncId.
     fn_decl_fids: std.AutoHashMap(*const ast.FnDecl, FuncId),
+    /// Runtime binding name → the resolved function, once per compilation.
+    runtime_binding_fids: std.StringHashMap(FuncId),
     /// Identity map for mutable top-level globals. The name/source indexes are
     /// compatibility and visibility views; a qualified namespace selection
     /// already carries the exact `*VarDecl`, so reads/writes/address-taking
@@ -1333,6 +1336,7 @@ pub const Lowering = struct {
             .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
             .fn_decl_fids = std.AutoHashMap(*const ast.FnDecl, FuncId).init(module.alloc),
+            .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
@@ -3822,6 +3826,7 @@ pub const Lowering = struct {
     pub const tryLowerAtomicIntrinsic = lower_call.tryLowerAtomicIntrinsic;
     pub const tryLowerVolatileIntrinsic = lower_call.tryLowerVolatileIntrinsic;
     pub const tryLowerPrintfIntrinsic = lower_call.tryLowerPrintfIntrinsic;
+    pub const runtimeBinding = lower_binding.runtimeBinding;
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;

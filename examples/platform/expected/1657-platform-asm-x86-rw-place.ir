@@ -1,6 +1,8 @@
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: nounwind
-define internal i64 @bump() #0 {
+define internal i64 @bump(ptr %0) #0 {
 entry:
   %alloca = alloca i64, align 8
   store i64 41, ptr %alloca, align 8
@@ -14,7 +16,7 @@ entry:
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call i64 @bump()
+  %call = call i64 @bump(ptr @__sx_default_context)
   %icmp = icmp ne i64 %call, 42
   br i1 %icmp, label %if.then.0, label %if.merge.1
 

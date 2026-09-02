@@ -12,8 +12,8 @@ tick :: () {
 
 main :: () -> void {
     // Test 1: += always produces 1 (BUG)
-    out("--- Test 1: += (broken) ---\n");
-    out("Expected: 1, 2, 3\n");
+    @printf("--- Test 1: += (broken) ---\n");
+    @printf("Expected: 1, 2, 3\n");
     i : i64 = 0;
     while i < 3 {
         tick();
@@ -21,8 +21,8 @@ main :: () -> void {
     }
 
     // Test 2: manual read-modify-write works correctly
-    out("--- Test 2: = x + 1 (works) ---\n");
-    out("Expected: 2, 3, 4\n");
+    @printf("--- Test 2: = x + 1 (works) ---\n");
+    @printf("Expected: 2, 3, 4\n");
     gCounter = gCounter + 1;
     print("counter={}\n", gCounter);
     gCounter = gCounter + 1;
