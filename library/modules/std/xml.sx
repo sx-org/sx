@@ -2,7 +2,7 @@
 // references — used when emitting Info.plist / AndroidManifest content
 // from sx values that may contain user-supplied text.
 @import "modules/std/core.sx";     // string
-@import "modules/std/fmt.sx";      // concat, substr
+@import "modules/std/fmt.sx";
 
 escape :: (s: string) -> string {
     result := "";
@@ -18,7 +18,7 @@ escape :: (s: string) -> string {
         if c == '\'' { ent = "&apos;"; }
         if ent.len > 0 {
             if i > segStart {
-                result = concat(result, substr(s, segStart, i - segStart));
+                result = concat(result, s[segStart .. i]);
             }
             result = concat(result, ent);
             segStart = i + 1;
@@ -26,7 +26,7 @@ escape :: (s: string) -> string {
         i += 1;
     }
     if segStart < s.len {
-        result = concat(result, substr(s, segStart, s.len - segStart));
+        result = concat(result, s[segStart .. s.len]);
     }
     result
 }

@@ -334,9 +334,7 @@ SqliteErr :: error {
 // `fromCstring` must not escape.
 sqFromCstr :: (p: ?cstring) -> string {
     if p == null { return ""; }
-    v := fromCstring(p);
-    if v.len == 0 { return ""; }
-    return substr(v, 0, v.len);
+    return format("{}", fromCstring(p));
 }
 
 // `n` raw bytes at `p` as a context.allocator copy ("" when p is null).

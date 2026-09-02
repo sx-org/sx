@@ -2128,8 +2128,8 @@ Conversion discipline (Odin's model):
   terminated copy with `toCstring(s)`.
 - `cstring` does not coerce to `string` implicitly — the length is an
   O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
-  view (shares C's buffer); `substr(fromCstring(c), 0, n)` the owned
-  copy.
+  view (shares C's buffer); a copy must be made for it to outlive C's
+  buffer.
 - `xx` bit-casts `cstring` ↔ `*u8` / `[*]u8` / integer-pointer values
   for low-level interop.
 
@@ -5983,7 +5983,7 @@ main :: () -> i32 {
 ### Standard Library Layout
 
 ```
-modules/std.sx        the prelude — print/format, string ops (concat, substr,
+modules/std.sx        the prelude — print/format, string ops (concat,
                       pathJoin, ...), List(T), Context + push, the Allocator
                       interface; plus the namespace tail: mem / xml / log /
                       fs / process / socket / json / cli / hash / test ::

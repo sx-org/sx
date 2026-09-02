@@ -6,25 +6,9 @@
 c :: @import "modules/std/c.sx";
 
 intToString :: (n: i64) -> string {
-    if n == 0 { return "0"; }
-    neg := n < 0;
-    // Extract digits straight from `n` without ever negating it: `0 - n`
-    // overflows for i64::MIN (its magnitude is unrepresentable as a
-    // positive i64). sx `%` truncates toward zero, so `n % 10` keeps n's
-    // sign; take each remainder's absolute value for the digit.
-    digits : [20]u8 = ---;
-    tmp := string{ ptr = *digits[0], len = 20 };
-    i := 19;
-    v := n;
-    while v != 0 {
-        d := v % 10;
-        if d < 0 { d = 0 - d; }
-        tmp[i] = d + '0';
-        v = v / 10;
-        i -= 1;
-    }
-    if neg { tmp[i] = '-'; i -= 1; }
-    substr(tmp, i + 1, 19 - i)
+    sb := StringBuilder.init();
+    writeInt(sb, n);
+    sb.finish()
 }
 
 hexGroup :: (buf: string, offset: i64, val: i64) {
@@ -81,7 +65,9 @@ intToHexString :: (n: i64) -> string {
         if buf[start] != '0' { break; }
         start += 1;
     }
-    substr(buf, start, 16 - start)
+    sb := StringBuilder.init();
+    sb.write(buf[start .. 16]);
+    sb.finish()
 }
 
 concat :: (..parts: []string) -> string {
@@ -90,13 +76,6 @@ concat :: (..parts: []string) -> string {
     sb := StringBuilder.init();
     sb.reserve(n);
     for p in parts { sb.write(p); }
-    sb.finish()
-}
-
-substr :: (s: string, start: i64, len: i64) -> string {
-    sb := StringBuilder.init();
-    sb.reserve(len);
-    sb.write(s[start .. start + len]);
     sb.finish()
 }
 
@@ -122,7 +101,7 @@ cstringLen :: (c: cstring) -> i64 {
 }
 
 // A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
-// shares C's buffer — `substr` it if it must outlive the source.
+// shares C's buffer — copy it if it must outlive the source.
 fromCstring :: (c: cstring) -> string {
     p : [*]u8 = c.([*]u8);
     string{ ptr = p, len = cstringLen(c) }

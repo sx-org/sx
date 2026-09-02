@@ -1,5 +1,5 @@
 @import "modules/std/core.sx";   // @SourceSite
-@import "modules/std/fmt.sx";    // print, concat, substr, toCstring, fromCstring
+@import "modules/std/fmt.sx";
 @import "modules/std/mem.sx";
 c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 posix :: @import "modules/std/posix.sx";
@@ -85,13 +85,12 @@ decodeStatus :: (raw: i32) -> i32 {
 }
 
 // Read an environment variable. Returns null if unset; an empty
-// string if set to "".
+// string if set to "". A later `setenv` overwrites getenv's buffer, so the
+// value is copied out.
 env :: (name: [:0]u8) -> ?string {
     p := getenv(toCstring(name));
     if p == null { return null; }
-    v := fromCstring(p);
-    if v.len == 0 { return ""; }
-    substr(v, 0, v.len)
+    format("{}", fromCstring(p))
 }
 
 // Locate an executable by walking `$PATH`. Returns the absolute path
@@ -110,7 +109,7 @@ findExecutable :: (name: [:0]u8) -> ?string {
         // Strip the trailing newline that `command -v` emits.
         out := r.stdout;
         if out.len > 0 {
-            if out[out.len - 1] == '\n' { out = substr(out, 0, out.len - 1); }
+            if out[out.len - 1] == '\n' { out = out[0 .. out.len - 1]; }
         }
         if out.len == 0 { return null; }
         return out;

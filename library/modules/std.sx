@@ -89,7 +89,6 @@ optionalToString :: fmt.optionalToString;
 // --- String ops ---
 
 concat      :: fmt.concat;
-substr      :: fmt.substr;
 last        :: fmt.last;
 pathJoin    :: fmt.pathJoin;
 cstringLen  :: fmt.cstringLen;

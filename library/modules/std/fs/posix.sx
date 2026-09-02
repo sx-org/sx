@@ -248,10 +248,10 @@ fsBasename :: (p: string) -> string {
     }
     end := last + 1;
     while last > 0 {
-        if p[last - 1] == '/' { return substr(p, last, end - last); }
+        if p[last - 1] == '/' { return p[last .. end]; }
         last -= 1;
     }
-    substr(p, 0, end)
+    p[0 .. end]
 }
 
 fsDirname :: (p: string) -> string {
@@ -267,7 +267,7 @@ fsDirname :: (p: string) -> string {
                 if p[last - 1] != '/' { break; }
                 last -= 1;
             }
-            return substr(p, 0, last);
+            return p[0 .. last];
         }
         last -= 1;
     }

@@ -194,10 +194,10 @@ fsBasename :: (path: string) -> string {
     while last > 0 and fsWindowsSeparator(path[last]) { last -= 1; }
     end := last + 1;
     while last > 0 {
-        if fsWindowsSeparator(path[last - 1]) { return substr(path, last, end - last); }
+        if fsWindowsSeparator(path[last - 1]) { return path[last .. end]; }
         last -= 1;
     }
-    substr(path, 0, end)
+    path[0 .. end]
 }
 
 fsDirname :: (path: string) -> string {
@@ -207,12 +207,12 @@ fsDirname :: (path: string) -> string {
     while last > 0 {
         if fsWindowsSeparator(path[last]) {
             while last > 0 and fsWindowsSeparator(path[last - 1]) { last -= 1; }
-            if last == 2 and path[1] == ':' { return substr(path, 0, 3); }
-            return substr(path, 0, last);
+            if last == 2 and path[1] == ':' { return path[0 .. 3]; }
+            return path[0 .. last];
         }
         last -= 1;
     }
-    if path.len >= 2 and path[1] == ':' { return substr(path, 0, 2); }
+    if path.len >= 2 and path[1] == ':' { return path[0 .. 2]; }
     "."
 }
 

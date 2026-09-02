@@ -15,7 +15,7 @@ bump :: ufcs (p: Point, by: i64) -> i64 { return p.x + by; }
 main :: () -> i32 {
     _ = add2(1, 2, 3);           // plain bare call, too many
     _ = add2(1);                 // plain bare call, too few
-    _ = substr("abc", 1, 2, 3);  // flat-imported stdlib fn, too many
+    _ = intToString(1, 2);       // flat-imported stdlib fn, too many
     p := Point{ x = 5 };
     _ = p.scaled(2, 9);          // method dot-call, too many
     _ = p.bump(1, 2);            // ufcs dot-call, too many
