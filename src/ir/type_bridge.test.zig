@@ -59,10 +59,7 @@ test "resolveAstType: optional slice" {
     const id = type_bridge.resolveAstType(opt, &table, null, null);
     const info = table.get(id);
     switch (info) {
-        .optional => |o| {
-            const child_info = table.get(o.child);
-            try std.testing.expectEqual(TypeInfo{ .slice = .{ .element = .u8 } }, child_info);
-        },
+        .optional => |o| try std.testing.expectEqual(TypeId.string, o.child),
         else => return error.TestUnexpectedResult,
     }
 }

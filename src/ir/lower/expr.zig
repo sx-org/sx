@@ -354,8 +354,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // becomes the view. Read as a `{ptr, len}` literal instead, an aggregate
     // element lands in the `ptr` word and fails LLVM verification.
     if (sl.struct_name == null and sl.type_expr == null and sl.init_block == null and
-        sl.field_inits.len > 0 and !ty.isBuiltin() and
-        self.module.types.get(ty) == .slice and !isSliceHeaderLiteral(sl))
+        sl.field_inits.len > 0 and self.module.types.sliceInfoOf(ty) != null and !isSliceHeaderLiteral(sl))
     {
         var elems = std.ArrayList(*Node).empty;
         defer elems.deinit(self.alloc);
@@ -2462,7 +2461,10 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     if (al.type_expr) |te| {
         const resolved = self.resolveArrayLiteralType(te);
         if (resolved != .unresolved) {
-            if (!resolved.isBuiltin()) {
+            if (self.module.types.sliceInfoOf(resolved)) |s| {
+                elem_ty = s.element;
+                from_target = true;
+            } else if (!resolved.isBuiltin()) {
                 const info = self.module.types.get(resolved);
                 switch (info) {
                     .array => |a| {
@@ -2473,10 +2475,6 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                         elem_ty = v.element;
                         from_target = true;
                         is_vector = true;
-                    },
-                    .slice => |s| {
-                        elem_ty = s.element;
-                        from_target = true;
                     },
                     else => {},
                 }
@@ -2493,15 +2491,14 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     if (!from_target) {
         if (self.target_type) |tt| {
-            if (!tt.isBuiltin()) {
+            if (self.module.types.sliceInfoOf(tt)) |s| {
+                elem_ty = s.element;
+                from_target = true;
+            } else if (!tt.isBuiltin()) {
                 const info = self.module.types.get(tt);
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
-                        from_target = true;
-                    },
-                    .slice => |s| {
-                        elem_ty = s.element;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2954,8 +2951,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     const base_len_ty = self.module.types.lenTypeOf(obj_ty);
     const len_ty = blk: {
         if (self.target_type) |tgt| {
-            if (!tgt.isBuiltin() and self.module.types.get(tgt) == .slice) {
-                const ts = self.module.types.get(tgt).slice;
+            if (self.module.types.sliceInfoOf(tgt)) |ts| {
                 const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
                 if (same_elem) break :blk ts.len_type;
             }
@@ -3860,7 +3856,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (uop.op == .xx and uop.operand.data == .identifier and self.isPackName(uop.operand.data.identifier.name)) {
                 const pname = uop.operand.data.identifier.name;
                 if (self.target_type) |tt| {
-                    if (!tt.isBuiltin() and self.module.types.get(tt) == .slice) {
+                    if (self.module.types.sliceInfoOf(tt) != null) {
                         break :blk self.lowerPackToSlice(pname, tt);
                     }
                 }

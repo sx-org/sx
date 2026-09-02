@@ -220,7 +220,7 @@ pub fn isPackName(self: *Lowering, name: []const u8) bool {
 pub fn lowerPackToSlice(self: *Lowering, pack_name: []const u8, slice_ty: TypeId) Ref {
     const arg_nodes = (self.pack_arg_nodes orelse return self.builder.constInt(0, .unresolved)).get(pack_name) orelse
         return self.builder.constInt(0, .unresolved);
-    const elem_ty = self.module.types.get(slice_ty).slice.element;
+    const elem_ty = self.module.types.sliceInfoOf(slice_ty).?.element;
     const is_any = elem_ty == .any;
     const elem_is_protocol = blk: {
         if (elem_ty.isBuiltin()) break :blk false;
@@ -364,8 +364,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         // the signature states rather than the slot a diagnostic just named.
         const fixed = ast.fixedParamCount(fd.params);
         const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
-        if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
-            const elem = self.module.types.get(declared).slice.element;
+        if (self.module.types.sliceInfoOf(declared)) |declared_slice| {
+            const elem = declared_slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
                 // A bare-function value converts by its SIGNATURE, not the
                 // integer word that carries it.
@@ -388,10 +388,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             variadic_idx = i;
             const declared = self.resolveTypeWithBindings(p.type_expr);
             elem_ty = declared;
-            if (!declared.isBuiltin()) {
-                const info = self.module.types.get(declared);
-                if (info == .slice) elem_ty = info.slice.element;
-            }
+            if (self.module.types.sliceInfoOf(declared)) |declared_slice| elem_ty = declared_slice.element;
             break;
         }
     }
@@ -413,7 +410,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             const spread = arg_node.data.spread_expr;
             const arr_ty = self.inferExprType(spread.operand);
             const arr_info: ?types.TypeInfo = if (arr_ty.isBuiltin()) null else self.module.types.get(arr_ty);
-            if (arr_info != null and (arr_info.? == .array or arr_info.? == .slice)) {
+            if (self.module.types.sliceInfoOf(arr_ty) != null or (arr_info != null and arr_info.? == .array)) {
                 const arr_val = self.lowerExpr(spread.operand);
                 // Convert array to slice. For an ADDRESSABLE array build a
                 // zero-copy VIEW over its storage (consistent
@@ -422,11 +419,11 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
                 // NON-addressable rvalue array (`sum(..makeArr())`) keeps the
                 // copying `array_to_slice` op: this is a call ARGUMENT, so the
                 // temp lives for the call's duration — a copy is SOUND.
-                const slice_val = switch (arr_info.?) {
-                    .array => self.arrayToSliceView(arr_val, arr_ty, slice_ty) orelse
-                        self.builder.emit(.{ .array_to_slice = .{ .operand = arr_val } }, slice_ty),
-                    else => arr_val,
-                };
+                const slice_val = if (arr_info != null and arr_info.? == .array)
+                    self.arrayToSliceView(arr_val, arr_ty, slice_ty) orelse
+                        self.builder.emit(.{ .array_to_slice = .{ .operand = arr_val } }, slice_ty)
+                else
+                    arr_val;
                 args.shrinkRetainingCapacity(fixed_count);
                 args.append(self.alloc, slice_val) catch unreachable;
                 return;

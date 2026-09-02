@@ -658,7 +658,9 @@ pub const TypeTable = struct {
     }
 
     /// Intern a TypeInfo, returning the existing TypeId if structurally equal.
+    /// `[]u8` IS `string`: the slice spelling interns to the primitive.
     pub fn intern(self: *TypeTable, info: TypeInfo) TypeId {
+        if (info == .slice and info.slice.element == .u8 and info.slice.len_type == .i64) return .string;
         const key = TypeKey{ .info = info };
         if (self.intern_map.get(key)) |existing| {
             return existing;
@@ -1254,6 +1256,17 @@ pub const TypeTable = struct {
 
     pub fn sliceOfLen(self: *TypeTable, element: TypeId, len_type: TypeId) TypeId {
         return self.intern(.{ .slice = .{ .element = element, .len_type = len_type } });
+    }
+
+    /// The slice shape of `ty`: a `[]T`'s own info, and `{u8, i64}` for
+    /// `string`. Null for every other type.
+    pub fn sliceInfoOf(self: *const TypeTable, ty: TypeId) ?TypeInfo.SliceInfo {
+        if (ty == .string) return .{ .element = .u8 };
+        if (ty.isBuiltin()) return null;
+        return switch (self.get(ty)) {
+            .slice => |s| s,
+            else => null,
+        };
     }
 
     /// The type of a fat pointer's length word: a slice's declared `Len`,

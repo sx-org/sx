@@ -119,26 +119,23 @@ pub const CoercionResolver = struct {
         // header. Without this the array value is passed where a slice is
         // expected — the callee reads the header off the wrong bytes. The
         // local-bound path already does this conversion on its own.
-        if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
-            const si = self.l.module.types.get(src_ty);
-            const di = self.l.module.types.get(dst_ty);
-            if (si == .array and di == .slice and si.array.element == di.slice.element) {
-                return .array_to_slice;
-            }
-            // `[*]T → []T`: a many-pointer carries NO length, so it cannot form a
-            // `{ptr,len}` slice header implicitly. Silently passing the bare 8-byte
-            // pointer where a 16-byte fat pointer is expected corrupts the callee's
-            // view (garbage `.len`, mis-aligned reads) — at comptime it segfaults,
-            // at runtime it fails LLVM verification. Reject loudly so
-            // the user supplies the length via `ptr[0..len]`.
-            if (si == .many_pointer and di == .slice) {
-                return .many_to_slice_reject;
+        if (self.l.module.types.sliceInfoOf(dst_ty)) |ds| {
+            if (!src_ty.isBuiltin()) {
+                const si = self.l.module.types.get(src_ty);
+                if (si == .array and si.array.element == ds.element) return .array_to_slice;
+                // `[*]T → []T`: a many-pointer carries NO length, so it cannot form a
+                // `{ptr,len}` slice header implicitly. Silently passing the bare 8-byte
+                // pointer where a 16-byte fat pointer is expected corrupts the callee's
+                // view (garbage `.len`, mis-aligned reads) — at comptime it segfaults,
+                // at runtime it fails LLVM verification. Reject loudly so
+                // the user supplies the length via `ptr[0..len]`.
+                if (si == .many_pointer) return .many_to_slice_reject;
             }
             // Two slices over the same element differing only in the width of
             // their length word: the fat pointer is rebuilt on the destination's
             // `Len`, the view unchanged.
-            if (si == .slice and di == .slice and si.slice.element == di.slice.element) {
-                return .slice_len_convert;
+            if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
+                if (ss.element == ds.element) return .slice_len_convert;
             }
         }
 

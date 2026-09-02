@@ -115,7 +115,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 }
 
 // Copy a slice into fresh storage owned by `a`.
-clone :: ufcs (src: []$T, a: Allocator) -> []T {
+clone :: ufcs (src: []$T, a: Allocator = context.allocator) -> []T {
     raw := a.allocBytes(src.len * @sizeOf(T));
     c.memcpy(raw, src.ptr, src.len * @sizeOf(T));
     .{ ptr = raw.([*]T), len = src.len }

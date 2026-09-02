@@ -2072,7 +2072,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             } else if (mode == .implicit and self.refuseImplicitLenNarrow(src_ty, dst_ty)) {
                 return self.builder.constUndef(dst_ty);
             }
-            const elem_ty = self.module.types.get(dst_ty).slice.element;
+            const elem_ty = self.module.types.sliceInfoOf(dst_ty).?.element;
             const mp_ty = self.module.types.manyPtrTo(elem_ty);
             const data = self.builder.emit(.{ .data_ptr = .{ .operand = val } }, mp_ty);
             const len = self.emitLengthI64(val, src_ty);

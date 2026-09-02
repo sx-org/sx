@@ -1,0 +1,8 @@
+// A `[]u8` prefix on a `.[ ]` literal names the element type `u8`.
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    a := []u8.[1, 2];
+    print("{} {}\n", a.len, @typeName(@typeOf(a)));
+    0
+}

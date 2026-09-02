@@ -21,7 +21,7 @@ describe :: (av: any) -> string {
     match av {
         case i64: |v| { r = format("int {}", v + 1); }
         case Point: |p| { r = format("point ({},{})", p.x, p.y); }   // concrete beats `struct` below
-        case []u8: |b| { r = format("{} bytes", b.len); }
+        case []i32: |b| { r = format("{} bytes", b.len); }
         case ?i64: |o| { r = format("maybe {}", o ?? 0); }
         case string: |s| { r = format("str '{}'", s); }
         case struct: { r = "some struct"; }
@@ -33,7 +33,7 @@ describe :: (av: any) -> string {
 }
 
 main :: () {
-    bytes : []u8 = .[1, 2, 3];
+    bytes : []i32 = .[1, 2, 3];
     o : ?i64 = 7;
     onull : ?i64 = null;
     p := Point{ x = 3, y = 4 };

@@ -398,6 +398,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "string")) return tid == .string;
     if (std.mem.eql(u8, name, "void")) return tid == .void;
     if (std.mem.eql(u8, name, "type") or std.mem.eql(u8, name, "Type")) return tid == .type_value;
+    if (std.mem.eql(u8, name, "slice")) return tt.sliceInfoOf(tid) != null;
     if (tid.isBuiltin()) {
         // A concrete builtin ARM (`case i64:`, `case u8:`, `case f32:`):
         // resolve the primitive spelling and compare (this
@@ -414,7 +415,6 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "struct")) return info == .@"struct" and !info.@"struct".is_protocol;
     if (std.mem.eql(u8, name, "enum")) return info == .@"enum" or info == .tagged_union;
     if (std.mem.eql(u8, name, "union")) return info == .@"union" or info == .tagged_union;
-    if (std.mem.eql(u8, name, "slice")) return info == .slice;
     if (std.mem.eql(u8, name, "array")) return info == .array;
     if (std.mem.eql(u8, name, "pointer")) return info == .pointer or info == .many_pointer;
     if (std.mem.eql(u8, name, "vector")) return info == .vector;

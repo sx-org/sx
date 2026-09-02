@@ -1,7 +1,7 @@
 // Concrete arms in the runtime type-category match resolve through the
 // full type resolver: a BUILTIN name (`case i64:`) is one tag and claims
 // it first-wins ahead of the category that contains it, and composite
-// type expressions (`case ?i64:`, `case []u8:`) work the same way.
+// type expressions (`case ?i64:`, `case []i32:`) work the same way.
 // `string` / `bool` / `void` are single-type arms.
 @import "modules/std.sx";
 
@@ -17,7 +17,7 @@ conc :: (t: Type) -> string {
 comp :: (t: Type) -> string {
     match t {
         case ?i64:     return "?i64";
-        case []u8:     return "[]u8";
+        case []i32:    return "[]i32";
         case string:   return "string";
         case optional: return "optional";
         else:          return "other";
@@ -32,7 +32,7 @@ main :: () {
 
     o : ?i64 = 5;
     q : ?f64 = 1.5;
-    s : []u8 = .[1, 2];
+    s : []i32 = .[1, 2];
     print("opt exact: {}\n", comp(@typeOf(o)));
     print("opt category: {}\n", comp(@typeOf(q)));
     print("slice: {}\n", comp(@typeOf(s)));
