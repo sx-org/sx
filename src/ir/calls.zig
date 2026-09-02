@@ -368,7 +368,10 @@ pub const CallResolver = struct {
             }
             // Runtime-class instance method: look up the method's declared
             // return type so chained calls (e.g.
-            // `UIWindow.alloc().initWithWindowScene(scene)`) resolve.
+            // `UIWindow.alloc().initWithWindowScene(scene)`) resolve. The
+            // method is found along the `extends =` chain, as lowering finds
+            // it; the return type resolves against the receiver's class so
+            // an inherited `*Self` is the receiver.
             {
                 var recv_inner = recv_ty;
                 if (!recv_inner.isBuiltin()) {
@@ -380,17 +383,14 @@ pub const CallResolver = struct {
                     if (inner_info == .@"struct") {
                         const sn = self.l.module.types.getString(inner_info.@"struct".name);
                         if (self.l.program_index.runtime_class_map.get(sn)) |fcd| {
-                            for (fcd.members) |m| switch (m) {
-                                .method => |md| if (!md.is_static and std.mem.eql(u8, md.name, cfa.field)) {
-                                    return .{
-                                        .kind = .runtime_instance,
-                                        .return_type = self.l.resolveRuntimeMethodReturnType(fcd, md),
-                                        .target = .{ .runtime_method = .{ .name = md.name, .is_static = false } },
-                                        .prepends_receiver = true,
-                                    };
-                                },
-                                else => {},
-                            };
+                            if (self.l.findRuntimeMethodInChain(fcd, cfa.field)) |found| {
+                                if (!found.method.is_static) return .{
+                                    .kind = .runtime_instance,
+                                    .return_type = self.l.resolveRuntimeMethodReturnType(fcd, found.method),
+                                    .target = .{ .runtime_method = .{ .name = found.method.name, .is_static = false } },
+                                    .prepends_receiver = true,
+                                };
+                            }
                         }
                     }
                 }

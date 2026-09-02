@@ -1,0 +1,32 @@
+// A method declared on an `extends =` ancestor types its return at the call
+// site: a field read chained onto the call resolves as it does off a local.
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+
+Point :: struct { x: f64; y: f64; }
+
+SxChainBase :: @ObjcClass("SxChainBase", extends = NSObject) export {
+    alloc :: () -> *SxChainBase;
+
+    point :: (self: *Self) -> Point { return Point{ x = 1.5, y = 2.5 }; }
+}
+
+SxChainLeaf :: @ObjcClass("SxChainLeaf", extends = SxChainBase) export {
+    alloc :: () -> *SxChainLeaf;
+}
+
+main :: () -> i32 {
+    inline if @host.os == .macos {
+        leaf := SxChainLeaf.alloc();
+        if leaf == null { print("FAIL: alloc returned null\n"); return 1; }
+        p := leaf.point();
+        print("chained {} bound {}\n", leaf.point().y, p.y);
+        selRelease : SEL = sel_registerName("release".ptr);
+        releaseFn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        releaseFn(leaf, selRelease);
+    }
+    inline if @host.os != .macos {
+        print("chained 2.500000 bound 2.500000\n");
+    }
+    0
+}
