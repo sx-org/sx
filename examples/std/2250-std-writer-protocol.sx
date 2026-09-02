@@ -18,9 +18,9 @@ main :: () -> i32 {
     sb := StringBuilder.init();
     report(sb, "built", names);
     report(sb, "again", names);
-    out(sb.finish());
+    @printf("{}", sb.finish());
 
-    fd := FdWriter.init(1);
+    fd := FdWriter.init(.stdout);
     report(fd, "descriptor", names);
 
     // A descriptor whose reader is gone answers EPIPE; the writer drops the
@@ -29,7 +29,7 @@ main :: () -> i32 {
     fds : [2]i32 = ---;
     c.pipe(*fds);
     c.close(fds[0]);
-    dead := FdWriter.init(fds[1]);
+    dead := FdWriter.init(.raw(fds[1]));
     report(dead, "dropped", names);
 
     print("alive\n");

@@ -356,7 +356,7 @@ printAny(pkt);   // walk with @field / anyElement — no copies
 
 ## Standard Library
 
-`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `@typeOf` / `@sizeOf` / field reflection.
+`modules/std.sx`: `print`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `@typeOf` / `@sizeOf` / field reflection.
 
 **Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seqCst`). `compareExchange` returns `?T` (`null` = success).
 

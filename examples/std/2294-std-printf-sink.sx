@@ -1,0 +1,5 @@
+// A `@printf` site is one stdout `FdWriter`: the segments and the argument go
+// through it by function id, and the sink is flushed after the last write.
+main :: () {
+    @printf("printf-ok {}\n", 7);
+}

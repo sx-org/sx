@@ -3739,13 +3739,6 @@ pub fn isCImportVisible(self: *Lowering, fn_name: []const u8) bool {
 /// Non-transitive `@import` visibility check for top-level decls.
 /// Byte-identical adapter over `isVisible`.
 pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
-    // The `__sx_` prefix is the compiler-reserved namespace: those calls are
-    // compiler REWRITES (`@printf` expansions → core.sx's `__sx_printf_*`
-    // primitives), synthesized at any lowering site —
-    // including inside std part-files that do not import the declaring module.
-    // A compiler indirection is exempt from the user-facing visibility gate,
-    // like UFCS rewrites.
-    if (std.mem.startsWith(u8, name, "__sx_")) return true;
     // A registered `@` contract resolves program-wide, exactly as its type
     // counterparts do: the registry admits one canonical declaration of the
     // name, so no second author exists for a visibility rule to choose between.

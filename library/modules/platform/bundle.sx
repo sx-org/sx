@@ -45,11 +45,11 @@ bundleMain :: (opts: BuildOptions) -> bool {
         return true;
     }
     if bid.len == 0 {
-        out("error: bundle requires bundleId (set via setBundleId() or --bundle-id)\n");
+        @printf("error: bundle requires bundleId (set via setBundleId() or --bundle-id)\n");
         return false;
     }
     if binary.len == 0 {
-        out("error: bundle: empty binaryPath (compiler bug)\n");
+        @printf("error: bundle: empty binaryPath (compiler bug)\n");
         return false;
     }
 
@@ -61,7 +61,7 @@ bundleMain :: (opts: BuildOptions) -> bool {
     // device, so fail fast with a clear hint.
     if opts.isIosDevice() {
         if opts.codesignIdentity().len == 0 or opts.provisioningProfile().len == 0 {
-            out("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
+            @printf("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
             return false;
         }
     }
@@ -74,16 +74,16 @@ bundleMain :: (opts: BuildOptions) -> bool {
     rmZ := strToCstr(rmCmd);
     if r := run(rmZ) {
         if r.exitCode != 0 {
-            out("error: bundle: failed to clean ");
-            out(bundle);
-            out("\n");
+            @printf("error: bundle: failed to clean ");
+            @printf("{}", bundle);
+            @printf("\n");
             return false;
         }
     }
     if !createDirAll(bundleZ) {
-        out("error: bundle: cannot create dir ");
-        out(bundle);
-        out("\n");
+        @printf("error: bundle: cannot create dir ");
+        @printf("{}", bundle);
+        @printf("\n");
         return false;
     }
 
@@ -95,11 +95,11 @@ bundleMain :: (opts: BuildOptions) -> bool {
     assetRoot := if isMac then concat(bundle, "/Contents/Resources") else bundle;
     if isMac {
         if !createDirAll(strToCstr(macosDir)) {
-            out("error: bundle: cannot create Contents/MacOS\n");
+            @printf("error: bundle: cannot create Contents/MacOS\n");
             return false;
         }
         if !createDirAll(strToCstr(assetRoot)) {
-            out("error: bundle: cannot create Contents/Resources\n");
+            @printf("error: bundle: cannot create Contents/Resources\n");
             return false;
         }
     }
@@ -110,7 +110,7 @@ bundleMain :: (opts: BuildOptions) -> bool {
     exeDest = concat(exeDest, exeName);
     exeDestZ := strToCstr(exeDest);
     if !copyFile(binaryZ, exeDestZ) {
-        out("error: bundle: copy binary failed\n");
+        @printf("error: bundle: copy binary failed\n");
         return false;
     }
     setMode(exeDestZ, 493); // 0o755 = preserve executable bit
@@ -121,7 +121,7 @@ bundleMain :: (opts: BuildOptions) -> bool {
     plistPath := concat(plistDir, "/Info.plist");
     plistPathZ := strToCstr(plistPath);
     if !writeFile(plistPathZ, plist) {
-        out("error: bundle: write Info.plist failed\n");
+        @printf("error: bundle: write Info.plist failed\n");
         return false;
     }
 
@@ -144,9 +144,9 @@ bundleMain :: (opts: BuildOptions) -> bool {
         src := opts.assetDirSrcAt(j);
         dest := opts.assetDirDestAt(j);
         if !copyAssetDir(src, dest, assetRoot) {
-            out("error: bundle: failed to copy asset dir '");
-            out(src);
-            out("'\n");
+            @printf("error: bundle: failed to copy asset dir '");
+            @printf("{}", src);
+            @printf("'\n");
             return false;
         }
         j += 1;
@@ -165,7 +165,7 @@ bundleMain :: (opts: BuildOptions) -> bool {
             fwDir := concat(bundle, "/Frameworks");
             fwDirZ := strToCstr(fwDir);
             if !createDirAll(fwDirZ) {
-                out("error: bundle: cannot create Frameworks dir\n");
+                @printf("error: bundle: cannot create Frameworks dir\n");
                 return false;
             }
             i : i64 = 0;
@@ -189,7 +189,7 @@ bundleMain :: (opts: BuildOptions) -> bool {
             if e := extractEntitlements(profile, bid) {
                 entPath = e;
             } else {
-                out("error: bundle: failed to extract entitlements from provisioning profile\n");
+                @printf("error: bundle: failed to extract entitlements from provisioning profile\n");
                 return false;
             }
         }
@@ -198,13 +198,13 @@ bundleMain :: (opts: BuildOptions) -> bool {
         return false;
     }
     if opts.isIosDevice() and !profileAcceptsBundleCertificate(profile, bundle) {
-        out("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
+        @printf("error: provisioning profile does not include the certificate selected by --codesign-identity; regenerate the profile for the current signing certificate\n");
         return false;
     }
 
-    out("bundled: ");
-    out(bundle);
-    out("\n");
+    @printf("bundled: ");
+    @printf("{}", bundle);
+    @printf("\n");
     true
 }
 
@@ -318,14 +318,14 @@ embedProvisioningProfile :: (profile: string, bundle: string) -> bool {
         dest := concat(bundle, "/embedded.mobileprovision");
         destZ := strToCstr(dest);
         if !writeFile(destZ, data) {
-            out("error: bundle: failed to write embedded.mobileprovision\n");
+            @printf("error: bundle: failed to write embedded.mobileprovision\n");
             return false;
         }
         return true;
     }
-    out("error: bundle: cannot read provisioning profile: ");
-    out(profile);
-    out("\n");
+    @printf("error: bundle: cannot read provisioning profile: ");
+    @printf("{}", profile);
+    @printf("\n");
     false
 }
 
@@ -350,9 +350,9 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
     // a trailing `/` to src.
     destFullZ := strToCstr(destFull);
     if !createDirAll(destFullZ) {
-        out("error: bundle: cannot create asset dest '");
-        out(destFull);
-        out("'\n");
+        @printf("error: bundle: cannot create asset dest '");
+        @printf("{}", destFull);
+        @printf("'\n");
         return false;
     }
     // `cp -R src/. dest/` copies the contents of src into dest. The
@@ -365,13 +365,13 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
     cmdZ := strToCstr(cmd);
     if r := run(cmdZ) {
         if r.exitCode != 0 {
-            out("error: cp -R failed:\n");
-            out(r.stdout);
+            @printf("error: cp -R failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
         return true;
     }
-    out("error: cp -R spawn failed\n");
+    @printf("error: cp -R spawn failed\n");
     false
 }
 
@@ -401,16 +401,16 @@ embedFramework :: (opts: BuildOptions, name: string, destDir: string) -> bool {
             cmdZ := strToCstr(cmd);
             if r := run(cmdZ) {
                 if r.exitCode != 0 {
-                    out("error: cp -R ");
-                    out(candidate);
-                    out(" -> ");
-                    out(dest);
-                    out(" failed\n");
+                    @printf("error: cp -R ");
+                    @printf("{}", candidate);
+                    @printf(" -> ");
+                    @printf("{}", dest);
+                    @printf(" failed\n");
                     return false;
                 }
                 return true;
             }
-            out("error: cp -R failed to spawn\n");
+            @printf("error: cp -R failed to spawn\n");
             return false;
         }
         i += 1;
@@ -474,12 +474,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd1Z := strToCstr(cmd1);
     if r := run(cmd1Z) {
         if r.exitCode != 0 {
-            out("error: failed to decode provisioning profile:\n");
-            out(r.stdout);
+            @printf("error: failed to decode provisioning profile:\n");
+            @printf("{}", r.stdout);
             return null;
         }
     } else {
-        out("error: security cms spawn failed\n");
+        @printf("error: security cms spawn failed\n");
         return null;
     }
 
@@ -491,12 +491,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd2Z := strToCstr(cmd2);
     if r := run(cmd2Z) {
         if r.exitCode != 0 {
-            out("error: failed to extract entitlements:\n");
-            out(r.stdout);
+            @printf("error: failed to extract entitlements:\n");
+            @printf("{}", r.stdout);
             return null;
         }
     } else {
-        out("error: plutil extract spawn failed\n");
+        @printf("error: plutil extract spawn failed\n");
         return null;
     }
 
@@ -510,8 +510,8 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     team := "";
     if r := run(cmd3Z) {
         if r.exitCode != 0 {
-            out("error: profile missing ApplicationIdentifierPrefix:\n");
-            out(r.stdout);
+            @printf("error: profile missing ApplicationIdentifierPrefix:\n");
+            @printf("{}", r.stdout);
             return null;
         }
         team = r.stdout;
@@ -525,11 +525,11 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
             else { break; }
         }
     } else {
-        out("error: plutil ApplicationIdentifierPrefix spawn failed\n");
+        @printf("error: plutil ApplicationIdentifierPrefix spawn failed\n");
         return null;
     }
     if team.len == 0 {
-        out("error: provisioning profile has empty ApplicationIdentifierPrefix\n");
+        @printf("error: provisioning profile has empty ApplicationIdentifierPrefix\n");
         return null;
     }
 
@@ -544,7 +544,7 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     profileAppId := "";
     if r := run(strToCstr(cmdProfileId)) {
         if r.exitCode != 0 {
-            out("error: profile missing application-identifier\n");
+            @printf("error: profile missing application-identifier\n");
             return null;
         }
         profileAppId = r.stdout;
@@ -557,15 +557,15 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
             else { break; }
         }
     } else {
-        out("error: plutil application-identifier spawn failed\n");
+        @printf("error: plutil application-identifier spawn failed\n");
         return null;
     }
     if profileAppId != wildcardAppId and profileAppId != resolvedAppId {
-        out("error: provisioning profile application-identifier '");
-        out(profileAppId);
-        out("' does not allow bundle id '");
-        out(bundleId);
-        out("'\n");
+        @printf("error: provisioning profile application-identifier '");
+        @printf("{}", profileAppId);
+        @printf("' does not allow bundle id '");
+        @printf("{}", bundleId);
+        @printf("'\n");
         return null;
     }
 
@@ -578,12 +578,12 @@ extractEntitlements :: (profile: string, bundleId: string) -> ?string {
     cmd4Z := strToCstr(cmd4);
     if r := run(cmd4Z) {
         if r.exitCode != 0 {
-            out("error: failed to resolve application-identifier:\n");
-            out(r.stdout);
+            @printf("error: failed to resolve application-identifier:\n");
+            @printf("{}", r.stdout);
             return null;
         }
     } else {
-        out("error: plutil replace spawn failed\n");
+        @printf("error: plutil replace spawn failed\n");
         return null;
     }
 
@@ -607,13 +607,13 @@ codesign :: (bundle: string, identity: string, entPath: string) -> bool {
     cmdZ := strToCstr(cmd);
     if r := run(cmdZ) {
         if r.exitCode != 0 {
-            out("error: codesign failed:\n");
-            out(r.stdout);
+            @printf("error: codesign failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
         return true;
     }
-    out("error: codesign spawn failed\n");
+    @printf("error: codesign spawn failed\n");
     false
 }
 
@@ -666,22 +666,22 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
 
     sdk := discoverAndroidSdk();
     if sdk.len == 0 {
-        out("error: cannot locate Android SDK \xe2\x80\x94 set $ANDROID_HOME\n");
+        @printf("error: cannot locate Android SDK \xe2\x80\x94 set $ANDROID_HOME\n");
         return false;
     }
 
     buildTools := findHighestSubdir(pathJoin(sdk, "build-tools"));
     if buildTools.len == 0 {
-        out("error: no build-tools under ");
-        out(sdk);
-        out("/build-tools\n");
+        @printf("error: no build-tools under ");
+        @printf("{}", sdk);
+        @printf("/build-tools\n");
         return false;
     }
     platformDir := findHighestSubdir(pathJoin(sdk, "platforms"));
     if platformDir.len == 0 {
-        out("error: no platforms under ");
-        out(sdk);
-        out("/platforms\n");
+        @printf("error: no platforms under ");
+        @printf("{}", sdk);
+        @printf("/platforms\n");
         return false;
     }
     androidJar := pathJoin(platformDir, "android.jar");
@@ -701,12 +701,12 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     rmCmd = concat(rmCmd, "\"");
     if r := run(strToCstr(rmCmd)) {
         if r.exitCode != 0 {
-            out("error: apk: failed to clean stage dir\n");
+            @printf("error: apk: failed to clean stage dir\n");
             return false;
         }
     }
     if !createDirAll(strToCstr(libDir)) {
-        out("error: apk: cannot create stage lib dir\n");
+        @printf("error: apk: cannot create stage lib dir\n");
         return false;
     }
 
@@ -716,7 +716,7 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     soBasename := basename(binary);
     soDest := pathJoin(libDir, soBasename);
     if !copyFile(strToCstr(binary), strToCstr(soDest)) {
-        out("error: apk: failed to copy .so into stage\n");
+        @printf("error: apk: failed to copy .so into stage\n");
         return false;
     }
 
@@ -730,7 +730,7 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
         generatedXml := buildAndroidManifest(opts, bundleId, libName);
         generatedPath := pathJoin(stage, "AndroidManifest.xml");
         if !writeFile(strToCstr(generatedPath), generatedXml) {
-            out("error: apk: failed to write AndroidManifest.xml\n");
+            @printf("error: apk: failed to write AndroidManifest.xml\n");
             return false;
         }
         manifestUsed = generatedPath;
@@ -756,12 +756,12 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     aaptCmd = concat(aaptCmd, "\" 2>&1");
     if r := run(strToCstr(aaptCmd)) {
         if r.exitCode != 0 {
-            out("error: aapt2 link failed:\n");
-            out(r.stdout);
+            @printf("error: aapt2 link failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: aapt2 spawn failed\n");
+        @printf("error: aapt2 spawn failed\n");
         return false;
     }
 
@@ -803,12 +803,12 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     alignCmd = concat(alignCmd, "\" 2>&1");
     if r := run(strToCstr(alignCmd)) {
         if r.exitCode != 0 {
-            out("error: zipalign failed:\n");
-            out(r.stdout);
+            @printf("error: zipalign failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: zipalign spawn failed\n");
+        @printf("error: zipalign spawn failed\n");
         return false;
     }
 
@@ -818,7 +818,7 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
         if home := env("HOME") {
             keystore = pathJoin(home, ".android/debug.keystore");
         } else {
-            out("error: apk: cannot locate $HOME for default keystore\n");
+            @printf("error: apk: cannot locate $HOME for default keystore\n");
             return false;
         }
     }
@@ -835,12 +835,12 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     signCmd = concat(signCmd, "\" 2>&1");
     if r := run(strToCstr(signCmd)) {
         if r.exitCode != 0 {
-            out("error: apksigner failed:\n");
-            out(r.stdout);
+            @printf("error: apksigner failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: apksigner spawn failed\n");
+        @printf("error: apksigner spawn failed\n");
         return false;
     }
 
@@ -850,9 +850,9 @@ androidBundleMain :: (opts: BuildOptions, binary: string, apkPath: string, bundl
     deleteFile(strToCstr(aligned));
     run(strToCstr(concat("rm -rf \"", concat(stage, "\""))));
 
-    out("apk: ");
-    out(apkPath);
-    out("\n");
+    @printf("apk: ");
+    @printf("{}", apkPath);
+    @printf("\n");
     true
 }
 
@@ -868,15 +868,15 @@ runInDir :: (dir: string, cmd: string) -> bool {
     wrapped = concat(wrapped, " 2>&1");
     if r := run(strToCstr(wrapped)) {
         if r.exitCode != 0 {
-            out("error: ");
-            out(cmd);
-            out(" failed:\n");
-            out(r.stdout);
+            @printf("error: ");
+            @printf("{}", cmd);
+            @printf(" failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
         return true;
     }
-    out("error: shell spawn failed\n");
+    @printf("error: shell spawn failed\n");
     false
 }
 
@@ -1050,17 +1050,17 @@ compileJniMainSources :: (opts: BuildOptions, stage: string, androidJar: string,
     javaRoot := pathJoin(stage, "java");
     classesRoot := pathJoin(stage, "classes");
     if !createDirAll(strToCstr(javaRoot)) {
-        out("error: apk: cannot create java root\n");
+        @printf("error: apk: cannot create java root\n");
         return false;
     }
     if !createDirAll(strToCstr(classesRoot)) {
-        out("error: apk: cannot create classes root\n");
+        @printf("error: apk: cannot create classes root\n");
         return false;
     }
 
     javac := discoverJavac();
     if javac.len == 0 {
-        out("error: javac not on PATH and $JAVA_HOME unset \xe2\x80\x94 install a JDK (Android Studio bundles one at $ANDROID_STUDIO/Contents/jre)\n");
+        @printf("error: javac not on PATH and $JAVA_HOME unset \xe2\x80\x94 install a JDK (Android Studio bundles one at $ANDROID_STUDIO/Contents/jre)\n");
         return false;
     }
 
@@ -1079,14 +1079,14 @@ compileJniMainSources :: (opts: BuildOptions, stage: string, androidJar: string,
 
         pkgDir := if pkg.len > 0 then pathJoin(javaRoot, pkg) else javaRoot;
         if !createDirAll(strToCstr(pkgDir)) {
-            out("error: apk: cannot create java pkg dir\n");
+            @printf("error: apk: cannot create java pkg dir\n");
             return false;
         }
         javaPath := pathJoin(pkgDir, concat(cls, ".java"));
         if !writeFile(strToCstr(javaPath), javaSource) {
-            out("error: apk: cannot write .java for ");
-            out(runtimePath);
-            out("\n");
+            @printf("error: apk: cannot write .java for ");
+            @printf("{}", runtimePath);
+            @printf("\n");
             return false;
         }
         if javacFiles.len > 0 { javacFiles = concat(javacFiles, " "); }
@@ -1109,12 +1109,12 @@ compileJniMainSources :: (opts: BuildOptions, stage: string, androidJar: string,
     javacCmd = concat(javacCmd, " 2>&1");
     if r := run(strToCstr(javacCmd)) {
         if r.exitCode != 0 {
-            out("error: javac failed:\n");
-            out(r.stdout);
+            @printf("error: javac failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: javac spawn failed\n");
+        @printf("error: javac spawn failed\n");
         return false;
     }
 
@@ -1128,12 +1128,12 @@ compileJniMainSources :: (opts: BuildOptions, stage: string, androidJar: string,
     d8Cmd = concat(d8Cmd, " 2>&1");
     if r := run(strToCstr(d8Cmd)) {
         if r.exitCode != 0 {
-            out("error: d8 failed:\n");
-            out(r.stdout);
+            @printf("error: d8 failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: d8 spawn failed\n");
+        @printf("error: d8 spawn failed\n");
         return false;
     }
     true
@@ -1164,7 +1164,7 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     run(strToCstr(rmCmd));
     parent := if dirPart(dest).len > 0 then concat(".sx-tmp/apk-assets/", dirPart(dest)) else ".sx-tmp/apk-assets";
     if !createDirAll(strToCstr(parent)) {
-        out("error: apk: cannot create asset stage dir\n");
+        @printf("error: apk: cannot create asset stage dir\n");
         return false;
     }
     cpCmd := concat("cp -R \"", src);
@@ -1173,12 +1173,12 @@ zipAssetDir :: (src: string, dest: string, apk: string) -> bool {
     cpCmd = concat(cpCmd, "\" 2>&1");
     if r := run(strToCstr(cpCmd)) {
         if r.exitCode != 0 {
-            out("error: cp -R asset dir failed:\n");
-            out(r.stdout);
+            @printf("error: cp -R asset dir failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
     } else {
-        out("error: cp -R asset dir spawn failed\n");
+        @printf("error: cp -R asset dir spawn failed\n");
         return false;
     }
     // Make apk path absolute-ish for the cd shell wrapping. The user
@@ -1208,12 +1208,12 @@ ensureDebugKeystore :: (keystorePath: string) -> bool {
     cmd = concat(cmd, "\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=Android Debug,O=Android,C=US\" 2>&1");
     if r := run(strToCstr(cmd)) {
         if r.exitCode != 0 {
-            out("error: keytool failed:\n");
-            out(r.stdout);
+            @printf("error: keytool failed:\n");
+            @printf("{}", r.stdout);
             return false;
         }
         return true;
     }
-    out("error: keytool spawn failed\n");
+    @printf("error: keytool spawn failed\n");
     false
 }

@@ -35,5 +35,5 @@ main :: () {
     if gShouldCall {
         unusedJni(null, null, null, null, null);
     }
-    out("ok\n");
+    @printf("ok\n");
 }

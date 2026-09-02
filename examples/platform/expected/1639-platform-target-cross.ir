@@ -1,4 +1,6 @@
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:

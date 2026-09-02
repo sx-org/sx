@@ -8,13 +8,6 @@
 // `type_bridge` respectively), exactly like `int` / `bool` / `f64`. They need
 // no declaration and cannot be re-bound.
 
-// `out` writes a string straight to fd 1 via libc `write` — a plain sx function,
-// NOT a compiler builtin. At comptime it runs through the evaluator's host-FFI
-// escape (the VM's dlsym path / the interp's extern call); at runtime it's an
-// ordinary libc call through the canonical std/c.sx surface.
-out :: (str: string) -> void {
-    c.write(1, str.ptr, str.len);
-}
 // `@sqrt` / `@sin` / `@cos` / `@floor` are declared in math/scalar.sx.
 @sizeOf :: ($T: Type) -> i64;
 @alignOf :: ($T: Type) -> i64;
@@ -116,7 +109,7 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 @envOf :: (f: $F) -> F;
 @callPtr :: ($F: Type) -> *void;
 
-// Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
+// Formatted write to stdout, allocation-free. `$fmt` is a comptime string in the
 // same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
 // and `}}` write a brace — and the compiler expands the call into one write per
 // segment and per argument, in source order.
@@ -131,10 +124,10 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 // backend's rather than a fold.
 @isComptime :: () -> bool;
 
-// Write `msg` and stop the program. `site` defaults to the call site, so the
-// message carries `file:line:` unless the caller passes a site with no line.
-// Allocation-free like `@printf`: it renders through the same primitives, so a
-// panic reaches its message with a broken or exhausted allocator behind it.
+// Write `msg` to stderr and stop the program. `site` defaults to the call site,
+// so the message carries `file:line:` unless the caller passes a site with no
+// line. Allocation-free like `@printf`: it renders through the same writer, so
+// a panic reaches its message with a broken or exhausted allocator behind it.
 //
 // A `@run` panic exits the COMPILER with code 1; a compiled panic raises
 // SIGABRT.
@@ -144,11 +137,15 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 @error :: (msg: string, site: @SourceSite = @caller) -> noreturn;
 
 @panic :: (msg: string, site: @SourceSite = @caller) -> noreturn {
-    if site.line == 0 {
-        @printf("{}\n", msg);
-    } else {
-        @printf("{}:{}: {}\n", site.file, site.line, msg);
+    w := FdWriter.init(.stderr);
+    if site.line != 0 {
+        w.write(site.file);
+        w.write(":");
+        writeInt(w, site.line);
+        w.write(": ");
     }
+    w.write(msg);
+    w.write("\n");
     if @isComptime() {
         c.exit(1);
     }
@@ -162,108 +159,121 @@ CastError :: error { mismatch }
 
 @cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
     if !@typeEq(@typeOf(av), T) {
-        @printf("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, @typeName(T), @typeName(av));
+        w := FdWriter.init(.stderr);
+        w.write("type assertion failed at ");
+        w.write(site.file);
+        w.write(":");
+        writeInt(w, site.line);
+        w.write(": expected ");
+        w.write(@typeName(T));
+        w.write(", got ");
+        w.write(@typeName(av));
+        w.write("\n");
         c.exit(1);
     }
     return @unbox(av, T);
 }
 
-// The primitives `@printf`'s expansion calls, one per argument kind. Each
-// renders into stack storage. The `__sx_` prefix is what lets the compiler
-// synthesize these calls in a module that imports nothing.
-__sx_printf_str :: (s: string) {
-    out(s);
+// ── The byte sink ──────────────────────────────────────────────────────────
+// `write` takes text, `flush` releases what an impl held back. Neither answers:
+// a sink out of memory stops the program, a sink whose far end is gone drops
+// the bytes, so no caller branches on a write.
+Writer :: interface {
+    write :: (self: *Self, s: string) -> void;
+    flush :: (self: *Self) -> void { }
 }
 
-__sx_printf_bool :: (b: bool) {
-    out(if b then "true" else "false");
+// A POSIX descriptor: the standard streams by name, any other by number.
+Fd :: enum { stdin; stdout; stderr; raw: i32; }
+
+FdWriter :: struct {
+    raw: i32;
+
+    init :: (fd: Fd) -> FdWriter {
+        raw : i32 = match fd {
+            case .stdin: 0;
+            case .stdout: 1;
+            case .stderr: 2;
+            case .raw: |n| { n }
+        };
+        .{ raw = raw }
+    }
+}
+
+impl Writer for FdWriter {
+    // A refused write — a pipe whose reader is gone — drops the rest of `s`.
+    write :: (self: *FdWriter, s: string) -> void {
+        off := 0;
+        while off < s.len {
+            n := c.write(self.raw, *s[off], s.len - off);
+            if n <= 0 { return; }
+            off += n.(i64);
+        }
+    }
+}
+
+// The renderers `@printf`'s expansion calls, one per argument kind.
+writeBool :: (w: Writer, b: bool) {
+    w.write(if b then "true" else "false");
 }
 
 // Digits land back-to-front in the buffer, so the write starts at `i`. Twenty
-// bytes hold the widest rendering either integer helper produces: i64's minimum
-// (nineteen digits and a sign) and u64's maximum (twenty digits).
-__sx_printf_i64 :: (n: i64) {
+// bytes hold the widest rendering either integer renderer produces: i64's
+// minimum (nineteen digits and a sign) and u64's maximum (twenty digits).
+writeInt :: (w: Writer, n: i64) {
     // i64.min's magnitude is not an i64; that value is the twenty-byte literal.
     if n == i64.min {
-        out("-9223372036854775808");
-    } else {
-        buf: [20]u8 = ---;
-        i := 20;
-        if n == 0 {
-            i -= 1;
-            buf[i] = '0';
-        } else {
-            v := if n < 0 then 0 - n else n;
-            while v != 0 {
-                i -= 1;
-                buf[i] = ((v % 10) + '0').(u8);
-                v = v / 10;
-            }
-            if n < 0 {
-                i -= 1;
-                buf[i] = '-';
-            }
-        }
-        c.write(1, *buf[i], (20 - i));
+        w.write("-9223372036854775808");
+        return;
     }
-}
-
-// Four unsigned 16-bit limbs of `n`'s bits, most significant first, then long
-// division by 10. A negative i64 pattern is the two's-complement unsigned
-// value: each limb is folded into 0..65535. Each step's accumulator is at
-// most 9*65536+65535, so signed `/` and `%` stay inside i64.
-__sx_printf_u64 :: (n: u64) {
     buf: [20]u8 = ---;
     i := 20;
-    bits: i64 = n.(i64);
-    if bits == 0 {
+    if n == 0 {
         i -= 1;
         buf[i] = '0';
     } else {
-        g0 := bits % 65536;
-        if g0 < 0 { g0 = g0 + 65536; }
-        r1 := (bits - g0) / 65536;
-        g1 := r1 % 65536;
-        if g1 < 0 { g1 = g1 + 65536; }
-        r2 := (r1 - g1) / 65536;
-        g2 := r2 % 65536;
-        if g2 < 0 { g2 = g2 + 65536; }
-        r3 := (r2 - g2) / 65536;
-        g3 := r3 % 65536;
-        if g3 < 0 { g3 = g3 + 65536; }
-        g: [4]i64 = ---;
-        g[0] = g3;
-        g[1] = g2;
-        g[2] = g1;
-        g[3] = g0;
-        while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
-            rem := 0;
-            k := 0;
-            while k < 4 {
-                acc := rem * 65536 + g[k];
-                g[k] = acc / 10;
-                rem = acc % 10;
-                k += 1;
-            }
+        v := if n < 0 then 0 - n else n;
+        while v != 0 {
             i -= 1;
-            buf[i] = (rem + '0').(u8);
+            buf[i] = ((v % 10) + '0').(u8);
+            v = v / 10;
+        }
+        if n < 0 {
+            i -= 1;
+            buf[i] = '-';
         }
     }
-    c.write(1, *buf[i], (20 - i));
+    w.write(string{ ptr = *buf[i], len = 20 - i });
 }
 
-// Six fractional digits, zero-padded — the rendering `floatToString` gives
-// the same value.
-__sx_printf_f64 :: (f: f64) {
+writeUint :: (w: Writer, n: u64) {
+    buf: [20]u8 = ---;
+    i := 20;
+    if n == 0 {
+        i -= 1;
+        buf[i] = '0';
+    } else {
+        v := n;
+        while v != 0 {
+            i -= 1;
+            buf[i] = ((v % 10) + '0').(u8);
+            v = v / 10;
+        }
+    }
+    w.write(string{ ptr = *buf[i], len = 20 - i });
+}
+
+// Six fractional digits, zero-padded.
+writeFloat :: (w: Writer, f: f64) {
     v := f;
     if v < 0.0 {
-        out("-");
+        w.write("-");
         v = 0.0 - v;
     }
     whole := v.(i64);
     frac := ((v - whole.(f64)) * 1000000.0).(i64);
-    __sx_printf_i64(whole);
-    out(".");
+    writeInt(w, whole);
+    w.write(".");
     buf: [6]u8 = ---;
     i := 6;
     while i > 0 {
@@ -271,7 +281,7 @@ __sx_printf_f64 :: (f: f64) {
         buf[i] = ((frac % 10) + '0').(u8);
         frac = frac / 10;
     }
-    c.write(1, *buf[0], 6);
+    w.write(string{ ptr = *buf[0], len = 6 });
 }
 
 // The reader a definition whose parameter list ends in a bare `..` walks its

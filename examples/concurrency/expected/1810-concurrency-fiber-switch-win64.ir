@@ -7,6 +7,7 @@ module asm "    call fib_body"
 module asm "    ud2"
 
 @gOut = internal global ptr null
+@__sx_default_context = internal constant { ptr } zeroinitializer
 
 ; Function Attrs: nounwind
 declare ptr @GetStdHandle(i32) #0
@@ -71,10 +72,10 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal void @boot(ptr %0) #0 {
+define internal void @boot(ptr %0, ptr %1) #0 {
 entry:
   %alloca = alloca ptr, align 8
-  store ptr %0, ptr %alloca, align 8
+  store ptr %1, ptr %alloca, align 8
   %allocaN = alloca ptr, align 8
   %call = call ptr @VirtualAlloc(ptr null, i64 131072, i32 12288, i32 4)
   store ptr %call, ptr %allocaN, align 8
@@ -144,7 +145,7 @@ while.exit.2:                                     ; preds = %while.hdr.0
 declare ptr @VirtualAlloc(ptr, i64, i32, i32) #0
 
 ; Function Attrs: nounwind
-define internal i64 @run() #0 {
+define internal i64 @run(ptr %0) #0 {
 entry:
   %alloca = alloca { [30 x i64] }, align 8
   store { [30 x i64] } undef, ptr %alloca, align 8
@@ -167,8 +168,8 @@ entry:
   store ptr %gepN, ptr %gepN, align 8
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 2
   store ptr %alloca, ptr %gepN, align 8
-  call void @boot(ptr %allocaN)
-  call void @boot(ptr %allocaN)
+  call void @boot(ptr %0, ptr %allocaN)
+  call void @boot(ptr %0, ptr %allocaN)
   %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
   call void @swap_good(ptr %alloca, ptr %gepN)
   %load = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
@@ -187,7 +188,7 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal void @emitNum(i64 %0) #0 {
+define internal void @emitNum(ptr %0, i64 %1) #0 {
 entry:
   %alloca = alloca i64, align 8
   %allocaN = alloca [1 x i8], align 1
@@ -196,7 +197,7 @@ entry:
   %allocaN = alloca i64, align 8
   %allocaN = alloca i64, align 8
   %allocaN = alloca i32, align 4
-  store i64 %0, ptr %alloca, align 8
+  store i64 %1, ptr %alloca, align 8
   %load = load i64, ptr %alloca, align 8
   %icmp = icmp eq i64 %load, 0
   br i1 %icmp, label %if.then.3, label %if.merge.4
@@ -249,10 +250,10 @@ while.exit.7:                                     ; preds = %while.hdr.5
 }
 
 ; Function Attrs: nounwind
-define internal void @emitB(i8 %0) #0 {
+define internal void @emitB(ptr %0, i8 %1) #0 {
 entry:
   %alloca = alloca i8, align 1
-  store i8 %0, ptr %alloca, align 1
+  store i8 %1, ptr %alloca, align 1
   %allocaN = alloca [1 x i8], align 1
   %load = load i8, ptr %alloca, align 1
   %igp.ptr = getelementptr i8, ptr %allocaN, i64 0
@@ -270,7 +271,7 @@ define i32 @main() #0 {
 entry:
   %call = call ptr @GetStdHandle(i32 -11)
   store ptr %call, ptr @gOut, align 8
-  %callN = call i64 @run()
+  %callN = call i64 @run(ptr @__sx_default_context)
   %alloca = alloca i64, align 8
   store i64 %callN, ptr %alloca, align 8
   %load = load i64, ptr %alloca, align 8
@@ -283,11 +284,11 @@ entry:
   %allocaN = alloca i64, align 8
   store i64 %andN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emitNum(i64 %loadN)
-  call void @emitB(i8 32)
+  call void @emitNum(ptr @__sx_default_context, i64 %loadN)
+  call void @emitB(ptr @__sx_default_context, i8 32)
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emitNum(i64 %loadN)
-  call void @emitB(i8 32)
+  call void @emitNum(ptr @__sx_default_context, i64 %loadN)
+  call void @emitB(ptr @__sx_default_context, i8 32)
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -312,15 +313,15 @@ if.merge.11:                                      ; preds = %if.then.10, %if.the
   br label %if.merge.9
 
 if.then.12:                                       ; preds = %if.merge.9
-  call void @emitB(i8 80)
+  call void @emitB(ptr @__sx_default_context, i8 80)
   br label %if.merge.14
 
 if.else.13:                                       ; preds = %if.merge.9
-  call void @emitB(i8 70)
+  call void @emitB(ptr @__sx_default_context, i8 70)
   br label %if.merge.14
 
 if.merge.14:                                      ; preds = %if.else.13, %if.then.12
-  call void @emitB(i8 10)
+  call void @emitB(ptr @__sx_default_context, i8 10)
   call void @ExitProcess(i32 0)
   ret i32 0
 }

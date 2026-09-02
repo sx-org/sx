@@ -30,7 +30,7 @@
 //     `process.exit`) rather than returning a silent empty.
 // =====================================================================
 
-@import "modules/std/core.sx";   // out
+@import "modules/std/core.sx";
 @import "modules/build.sx";
 proc :: @import "modules/std/process.sx";
 c :: @import "modules/std/c.sx"; // the shared libc handle for the per-OS externs below
@@ -92,12 +92,12 @@ inline match @host.os {
                 region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
                 // mmap signals failure with MAP_FAILED = (void*)-1, not null.
                 if region == -1 {
-                    out("std.cli: mmap failed while reading /proc/self/cmdline.\n");
+                    @printf("std.cli: mmap failed while reading /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
                 n := cmdlineRead(region, cap);
                 if n < 0 {
-                    out("std.cli: cannot read /proc/self/cmdline.\n");
+                    @printf("std.cli: cannot read /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
                 if n < cap {
@@ -164,7 +164,7 @@ osArgc :: () -> i64 {
             return cmdlineArgc;
         }
         else: {
-            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
+            @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }
@@ -217,7 +217,7 @@ osArgs :: (buf: []string) -> []string {
             return result;
         }
         else: {
-            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
+            @printf("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }

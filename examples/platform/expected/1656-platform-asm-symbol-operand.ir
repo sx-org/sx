@@ -1,4 +1,6 @@
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: nounwind
 define i64 @cb(i64 %0) #0 {
 entry:
@@ -10,10 +12,10 @@ entry:
 }
 
 ; Function Attrs: nounwind
-define internal i64 @tramp(i64 %0) #0 {
+define internal i64 @tramp(ptr %0, i64 %1) #0 {
 entry:
   %alloca = alloca i64, align 8
-  store i64 %0, ptr %alloca, align 8
+  store i64 %1, ptr %alloca, align 8
   %load = load i64, ptr %alloca, align 8
   %asm = call i64 asm sideeffect "        stp x29, x30, [sp, #-16]!\0A        mov x0, ${1}\0A        bl ${2:c}\0A        mov ${0}, x0\0A        ldp x29, x30, [sp], #16\0A", "=r,r,s,~{x0},~{x30},~{memory}"(i64 %load, ptr @cb)
   ret i64 %asm
@@ -22,7 +24,7 @@ entry:
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call i64 @tramp(i64 41)
+  %call = call i64 @tramp(ptr @__sx_default_context, i64 41)
   %ca.tr = trunc i64 %call to i32
   ret i32 %ca.tr
 }

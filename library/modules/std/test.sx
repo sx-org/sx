@@ -2,6 +2,6 @@
 
 assert :: (condition: bool) {
     if !condition {
-        out("assertion failed\n");
+        @printf("assertion failed\n");
     }
 }

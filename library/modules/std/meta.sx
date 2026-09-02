@@ -81,8 +81,8 @@ define :: (handle: Type, info: TypeInfo) -> Type {
         else: {
             // Reflect-only shapes (int/float/array/union/...) cannot be minted:
             // there is nothing nominal to register.
-            msg := "define: only struct/enum TypeInfo shapes can be minted\n";
-            c.write(2, msg.ptr, msg.len);
+            w := FdWriter.init(.stderr);
+            w.write("define: only struct/enum TypeInfo shapes can be minted\n");
         }
     }
     return handle;

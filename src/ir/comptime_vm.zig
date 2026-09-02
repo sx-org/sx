@@ -1273,17 +1273,20 @@ pub const Vm = struct {
                 return .{ .value = frame.get(b.rhs.index()) };
             },
 
-            // ── Enums (payloadless: the tag is the value) ───────
+            // ── Enums: a payloadless enum's value IS its tag; a tagged union's
+            // value is the address of its `{ tag, payload }` bytes ───────
             .enum_init => |ei| {
-                if (ei.payload.isNone()) return .{ .value = @as(Reg, ei.tag) };
+                const uty = ins.ty;
+                const is_union = !uty.isBuiltin() and (try self.requireTable()).get(uty) == .tagged_union;
+                if (ei.payload.isNone() and !is_union) return .{ .value = @as(Reg, ei.tag) };
                 // Tagged union { tag@0, payload@tag_size } — `{ header, [N x i8] }`
                 // in the LLVM layout (see backend/llvm/types.zig). Allocate the
                 // whole value (zeroed: the payload area is max-payload sized, so a
                 // smaller variant leaves the tail zero), write the tag at offset 0,
-                // and copy the payload bytes in at `tag_size`.
+                // and copy the payload bytes in at `tag_size`; a payloadless
+                // variant leaves the area zero.
                 const table = try self.requireTable();
-                const uty = ins.ty;
-                if (uty.isBuiltin() or table.get(uty) != .tagged_union)
+                if (!is_union)
                     return self.failMsg("comptime VM: enum_init-with-payload on a non-tagged-union result type not supported");
                 const tu = table.get(uty).tagged_union;
                 // The simple `{ header(tag)@0, [N x i8] payload@tag_size }` layout
@@ -1297,9 +1300,11 @@ pub const Vm = struct {
                 const addr = self.machine.allocBytes(size, table.typeAlignBytes(uty));
                 @memset(try self.machine.bytes(addr, size), 0);
                 try self.writeField(table, addr, tu.tag_type, @as(Reg, ei.tag));
-                const tag_size: Addr = @intCast(table.typeSizeBytes(tu.tag_type));
-                const payload_ty = try self.refTy(ref_types, ei.payload);
-                try self.writeField(table, addr + tag_size, payload_ty, frame.get(ei.payload.index()));
+                if (!ei.payload.isNone()) {
+                    const tag_size: Addr = @intCast(table.typeSizeBytes(tu.tag_type));
+                    const payload_ty = try self.refTy(ref_types, ei.payload);
+                    try self.writeField(table, addr + tag_size, payload_ty, frame.get(ei.payload.index()));
+                }
                 return .{ .value = addr };
             },
             .enum_tag => |u| {

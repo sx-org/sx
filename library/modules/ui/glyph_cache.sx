@@ -208,9 +208,9 @@ GlyphCache :: struct {
         fileSize : i32 = 0;
         fontData := read_file_bytes(path.ptr, *fileSize);
         if fontData == null {
-            out("Failed to load font: ");
-            out(path);
-            out("\n");
+            @printf("Failed to load font: ");
+            @printf("{}", path);
+            @printf("\n");
             return false;
         }
         self.fontData = fontData;
@@ -289,9 +289,9 @@ GlyphCache :: struct {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
 
-        out("GlyphCache initialized: ");
-        out(path);
-        out("\n");
+        @printf("GlyphCache initialized: ");
+        @printf("{}", path);
+        @printf("\n");
         true
     }
 
@@ -545,7 +545,7 @@ GlyphCache :: struct {
         }
 
         self.dirty = false;
-        out("GlyphCache atlas grown\n");
+        @printf("GlyphCache atlas grown\n");
     }
 
     setDpiScale :: (self: *GlyphCache, scale: f32) {

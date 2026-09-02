@@ -53,9 +53,9 @@ zoneToAlignment :: (zone: Zone) -> ?Alignment {
 NodeType :: enum { rect; text; image; }
 processNode :: (t: NodeType) -> bool {
     match t {
-        case .rect: { out("rect\n"); }
-        case .text: { out("text\n"); }
-        case .image: { out("image\n"); }
+        case .rect: { @printf("rect\n"); }
+        case .text: { @printf("text\n"); }
+        case .image: { @printf("image\n"); }
     }
     true
 }
@@ -64,20 +64,20 @@ main :: () -> void {
     // Test null arm
     r0 := zoneToAlignment(.floating);
     if a := r0 { print("BUG: floating should be null, got h={}\n", xx a.h); }
-    else { out("ok: floating is null\n"); }
+    else { @printf("ok: floating is null\n"); }
 
     // Test concrete arms
     r1 := zoneToAlignment(.left);
     if a := r1 { print("ok: left h={}\n", xx a.h); }
-    else { out("BUG: left returned null\n"); }
+    else { @printf("BUG: left returned null\n"); }
 
     r2 := zoneToAlignment(.center);
     if a := r2 { print("ok: center h={}\n", xx a.h); }
-    else { out("BUG: center returned null\n"); }
+    else { @printf("BUG: center returned null\n"); }
 
     r3 := zoneToAlignment(.topRight);
     if a := r3 { print("ok: topRight h={} v={}\n", xx a.h, xx a.v); }
-    else { out("BUG: topRight returned null\n"); }
+    else { @printf("BUG: topRight returned null\n"); }
 
     // Test side-effect match (no null arms) still works
     processNode(.rect);

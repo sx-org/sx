@@ -18,9 +18,9 @@ makeThing :: () -> MyProtocol {
 
 main :: () -> void {
     v := makeThing();
-    out("direct call works\n");
+    @printf("direct call works\n");
 
     c := makeThing;
     result := c();
-    out("closure call works\n");
+    @printf("closure call works\n");
 }

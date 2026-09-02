@@ -19,7 +19,7 @@ add :: (items: *List(Sizable), w: Leaf) {
 }
 
 dispatchFn :: (items: *List(Sizable)) {
-    out("dispatchFn: about to dispatch\n");
+    @printf("dispatchFn: about to dispatch\n");
     s := items.items[0].size();
     print("dispatchFn: result = {}\n", s);
 }
@@ -29,16 +29,16 @@ main :: () -> void {
     add(*items, Leaf{ value = 42 });
 
     // Direct dispatch twice
-    out("=== Direct 1 ===\n");
+    @printf("=== Direct 1 ===\n");
     r1 := items.items[0].size();
     print("r1 = {}\n", r1);
 
-    out("=== Direct 2 ===\n");
+    @printf("=== Direct 2 ===\n");
     r2 := items.items[0].size();
     print("r2 = {}\n", r2);
 
     // Then from function
-    out("=== From function ===\n");
+    @printf("=== From function ===\n");
     dispatchFn(*items);
-    out("=== OK ===\n");
+    @printf("=== OK ===\n");
 }

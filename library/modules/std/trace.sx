@@ -1,6 +1,5 @@
-@import "modules/std/core.sx";   // string
-@import "modules/std/fmt.sx";    // concat, format
-c :: @import "modules/std/c.sx"; // libc write
+@import "modules/std/core.sx";
+@import "modules/std/fmt.sx";
 
 // =====================================================================
 // trace.sx — error return-trace formatting.
@@ -82,7 +81,8 @@ toString :: () -> string {
 printCurrent :: () {
     s := toString();
     if s.len > 0 {
-        c.write(2, s.ptr, s.len);
+        w := FdWriter.init(.stderr);
+        w.write(s);
     }
 }
 

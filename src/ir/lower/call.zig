@@ -3499,8 +3499,9 @@ pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const as
     return Ref.none; // store has a void result
 }
 
-/// The argument kinds `@printf` renders, each with the core.sx primitive that
-/// writes it and the type that primitive takes.
+/// The argument kinds `@printf` renders. A string goes to the sink's own
+/// `write`; every other kind goes through a core.sx renderer that takes the
+/// erased `Writer` handle.
 const PrintfKind = enum {
     str,
     boolean,
@@ -3508,13 +3509,13 @@ const PrintfKind = enum {
     unsigned,
     float,
 
-    fn primitive(self: PrintfKind) []const u8 {
+    fn binding(self: PrintfKind) []const u8 {
         return switch (self) {
-            .str => "__sx_printf_str",
-            .boolean => "__sx_printf_bool",
-            .signed => "__sx_printf_i64",
-            .unsigned => "__sx_printf_u64",
-            .float => "__sx_printf_f64",
+            .str => "FdWriter.write",
+            .boolean => "writeBool",
+            .signed => "writeInt",
+            .unsigned => "writeUint",
+            .float => "writeFloat",
         };
     }
 
@@ -3548,65 +3549,85 @@ fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
     };
 }
 
-/// Emit `<primitive>(<arg>)`, routed through the ordinary call path so the
-/// primitive is lowered on demand wherever the `@printf` sits.
-fn emitPrintfCall(self: *Lowering, primitive: []const u8, arg: *Node, span: ast.Span, src: ?[]const u8) void {
-    const callee = self.synthNode(.{ .identifier = .{ .name = primitive } }, span, src);
-    const args = self.alloc.dupe(*Node, &.{arg}) catch @panic("out of memory");
-    _ = self.lowerCall(&.{ .callee = callee, .args = args });
+/// One `@printf` site's sink: a stdout `FdWriter` in a frame slot, and the
+/// `Writer` handle borrowed over that slot for the renderers.
+const PrintfSink = struct {
+    slot: Ref,
+    handle: Ref,
+};
+
+/// Call runtime binding `name` with `args`, the implicit context prepended
+/// when the callee takes one.
+fn callBinding(self: *Lowering, name: []const u8, args: []Ref) ?Ref {
+    const fid = self.runtimeBinding(name) orelse return null;
+    const callee = self.module.functions.items[@intFromEnum(fid)];
+    return self.builder.call(fid, self.prependCtxIfNeeded(&callee, args), callee.ret);
+}
+
+/// `w := FdWriter.init(.stdout)` in a frame slot, erased once to the `Writer`
+/// handle. The descriptor type and the interface type are read off the bound
+/// declarations, so the expansion spells no type name.
+fn openPrintfSink(self: *Lowering) ?PrintfSink {
+    const init_fid = self.runtimeBinding("FdWriter.init") orelse return null;
+    const init_fn = self.module.functions.items[@intFromEnum(init_fid)];
+    const fd_ty = init_fn.params[init_fn.params.len - 1].ty;
+    const sink_ty = init_fn.ret;
+    const render_fid = self.runtimeBinding("writeInt") orelse return null;
+    const render_fn = self.module.functions.items[@intFromEnum(render_fid)];
+    const iface_ty = render_fn.params[render_fn.params.len - 2].ty;
+
+    var init_args = [_]Ref{self.builder.enumInit(self.resolveVariantValue(fd_ty, "stdout"), Ref.none, fd_ty)};
+    const w = callBinding(self, "FdWriter.init", &init_args) orelse return null;
+    const slot = self.builder.alloca(sink_ty);
+    self.builder.store(slot, w);
+    const iface_info = self.module.types.get(iface_ty);
+    if (iface_info != .@"struct") return null;
+    const proto_name = self.module.types.getString(iface_info.@"struct".name);
+    const concrete_name = self.resolveConcreteTypeName(sink_ty) orelse return null;
+    const handle = self.buildProtocolValue(slot, proto_name, concrete_name, iface_ty, sink_ty);
+    return .{ .slot = slot, .handle = handle };
+}
+
+/// Write one value of `kind` through the sink.
+fn emitPrintfWrite(self: *Lowering, sink: PrintfSink, kind: PrintfKind, val: Ref) void {
+    var args = [_]Ref{ if (kind == .str) sink.slot else sink.handle, val };
+    _ = callBinding(self, kind.binding(), &args);
 }
 
 /// Write one literal run of the format string.
-fn emitPrintfSegment(self: *Lowering, text: []const u8, span: ast.Span, src: ?[]const u8) void {
+fn emitPrintfSegment(self: *Lowering, sink: PrintfSink, text: []const u8) void {
     if (text.len == 0) return;
     const owned = self.alloc.dupe(u8, text) catch @panic("out of memory");
-    // `is_raw` keeps the bytes verbatim: the segment arrives here unescaped.
-    const lit = self.synthNode(.{ .string_literal = .{ .raw = owned, .is_raw = true } }, span, src);
-    emitPrintfCall(self, PrintfKind.str.primitive(), lit, span, src);
+    emitPrintfWrite(self, sink, .str, self.builder.constString(self.module.types.internString(owned)));
 }
 
-/// Write one `{}` argument. The value is lowered and bound to a synthetic
-/// local, so the conversion to the primitive's parameter type happens here.
-fn emitPrintfArg(self: *Lowering, arg: *const Node, span: ast.Span, src: ?[]const u8) void {
+/// Write one `{}` argument, converted to its renderer's parameter type.
+fn emitPrintfArg(self: *Lowering, sink: PrintfSink, arg: *const Node) void {
     const raw = self.lowerExpr(@constCast(arg));
     const arg_ty = self.builder.getRefType(raw);
     const kind = printfKind(self, arg_ty) orelse {
         if (self.diagnostics) |d| d.addFmt(.err, arg.span, "@printf renders a string, a bool, an integer or a float — '{s}' takes the allocating formatter, `print`", .{self.formatTypeName(arg_ty)});
         return;
     };
-    const val = self.coerceToType(raw, arg_ty, kind.param());
-
-    var buf: [48]u8 = undefined;
-    const nm = std.fmt.bufPrint(&buf, "$printf_{d}", .{self.block_counter}) catch "$printf";
-    self.block_counter += 1;
-    const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
-    self.scope.?.put(owned, .{ .ref = val, .ty = kind.param(), .is_alloca = false });
-    const id_node = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
-    emitPrintfCall(self, kind.primitive(), id_node, span, src);
+    emitPrintfWrite(self, sink, kind, self.coerceToType(raw, arg_ty, kind.param()));
 }
 
-/// Recognize `@printf($fmt, ..$args)` and expand it into the core.sx emission
-/// primitives: one call per literal segment and one per argument, in source
-/// order. The format vocabulary is `print`'s — `{}` takes the next argument,
+/// Recognize `@printf($fmt, ..$args)` and expand it onto a stdout `FdWriter`:
+/// one write per literal segment and one per argument, in source order, then
+/// `flush`. Every call goes by function id through the runtime-bindings
+/// table. The format vocabulary is `print`'s — `{}` takes the next argument,
 /// `{{` and `}}` write a brace.
 ///
 /// Gated on the registry: the name reaches here only because
 /// `modules/std/core.sx` declares it, and `contracts` refuses the declaration
-/// in any other module.
+/// in any other module; the module is in every program.
 pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     const id = intrinsics.findByName(name) orelse return null;
     if (id != .@"@printf") return null;
 
     const span = c.callee.span;
-    const src = self.current_source_file;
     if (c.args.len == 0) {
         if (self.diagnostics) |d| d.addFmt(.err, span, "@printf expects a format string", .{});
-        return Ref.none;
-    }
-    // The expansion calls into core.sx, so the name resolving program-wide is
-    // not enough — the module has to be in the program.
-    if (!self.program_index.fn_ast_map.contains(PrintfKind.str.primitive())) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx; @import it", .{});
         return Ref.none;
     }
     // The format steers the expansion, so it is read at lowering: a literal is
@@ -3616,6 +3637,10 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         if (self.diagnostics) |d| d.addFmt(.err, fmt_node.span, "@printf's format must be a string literal", .{});
         return Ref.none;
     }
+    const sink = openPrintfSink(self) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx, which is not in the program", .{});
+        return Ref.none;
+    };
     const lit = fmt_node.data.string_literal;
     const fmt = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
 
@@ -3630,9 +3655,9 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
                 if (self.diagnostics) |d| d.addFmt(.err, span, "@printf's format has more '{{}}' placeholders than arguments", .{});
                 return Ref.none;
             }
-            emitPrintfSegment(self, seg.items, span, src);
+            emitPrintfSegment(self, sink, seg.items);
             seg.clearRetainingCapacity();
-            emitPrintfArg(self, c.args[next_arg], span, src);
+            emitPrintfArg(self, sink, c.args[next_arg]);
             next_arg += 1;
             i += 2;
             continue;
@@ -3645,7 +3670,9 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         seg.append(self.alloc, fmt[i]) catch @panic("out of memory");
         i += 1;
     }
-    emitPrintfSegment(self, seg.items, span, src);
+    emitPrintfSegment(self, sink, seg.items);
+    var flush_args = [_]Ref{sink.slot};
+    _ = callBinding(self, "FdWriter.flush", &flush_args);
 
     if (next_arg != c.args.len) {
         if (self.diagnostics) |d| d.addFmt(.err, c.args[next_arg].span, "@printf is passed {d} argument{s} the format has no '{{}}' for", .{

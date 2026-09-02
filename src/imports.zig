@@ -926,7 +926,10 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         // A parameterized protocol is instantiated cross-module; record its
         // defining path so the instantiation resolves method-signature types in
         // this module.
-        .protocol_decl => decl.data.protocol_decl.source_file = file_path,
+        .protocol_decl => |pd| {
+            decl.data.protocol_decl.source_file = file_path;
+            stampProtocolMethodSources(pd, file_path);
+        },
         // An sx-defined `@ObjcClass` / `@JniClass`: its IMP trampolines are
         // emitted at lowering time (possibly from another module's context), so
         // record the defining path AND stamp each method body.
@@ -948,7 +951,10 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
             // OWN module (the instantiation source-pin), so their
             // bodies need the defining path stamped just like a top-level fn.
             .struct_decl => |sd| stampStructMethodSources(sd, file_path),
-            .protocol_decl => cd.value.data.protocol_decl.source_file = file_path,
+            .protocol_decl => |pd| {
+                cd.value.data.protocol_decl.source_file = file_path;
+                stampProtocolMethodSources(pd, file_path);
+            },
             .runtime_class_decl => {
                 cd.value.data.runtime_class_decl.source_file = file_path;
                 stampRuntimeClassMethodSources(cd.value.data.runtime_class_decl, file_path);
@@ -956,6 +962,14 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
             else => {},
         },
         else => {},
+    }
+}
+
+/// A default method body is written in the protocol's module and reused by
+/// every conformer's synthesized method, so it carries the protocol's path.
+fn stampProtocolMethodSources(pd: ast.ProtocolDecl, file_path: []const u8) void {
+    for (pd.methods) |m| {
+        if (m.default_body) |body| body.source_file = file_path;
     }
 }
 
@@ -1218,31 +1232,9 @@ fn loadImport(
     if (chain.contains(resolved_path)) return null;
     if (cache.get(resolved_path)) |cached| return cached;
 
-    // Try as file first
-    if (std.Io.Dir.readFileAlloc(.cwd(), io, resolved_path, allocator, .limited(10 * 1024 * 1024))) |imp_bytes| {
-        const imp_source = try allocator.dupeZ(u8, imp_bytes);
-
-        if (source_map) |sm| {
-            sm.put(resolved_path, imp_source) catch {};
-        }
-
-        var p = try parser.Parser.init(allocator, imp_source);
-        const imp_root = p.parse() catch {
-            if (diagnostics) |diags| {
-                diags.addFmtInFile(.err, resolved_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ resolved_path, p.err_msg orelse "unknown" });
-            }
-            return error.ImportError;
-        };
-
-        // Push onto chain before recursing, pop after
-        try chain.put(resolved_path, {});
-        const imp_dir = dirName(resolved_path);
-        const result = try resolveImports(allocator, io, imp_root, imp_dir, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
-        _ = chain.remove(resolved_path);
-
-        try cache.put(resolved_path, result);
+    if (try loadFileModule(allocator, io, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) |result| {
         return result;
-    } else |_| {
+    } else {
         // File read failed — try as directory import. An extensionless
         // path that names a directory next to a same-named `.sx` file
         // is ambiguous: require the explicit `.sx` spelling for the
@@ -1279,6 +1271,81 @@ fn loadImport(
         try cache.put(resolved_path, result);
         return result;
     }
+}
+
+/// Parse and resolve the module file at `resolved_path` and cache it. Null when
+/// the path is not a readable file.
+fn loadFileModule(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    resolved_path: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!?ResolvedModule {
+    const imp_bytes = std.Io.Dir.readFileAlloc(.cwd(), io, resolved_path, allocator, .limited(10 * 1024 * 1024)) catch return null;
+    const imp_source = try allocator.dupeZ(u8, imp_bytes);
+
+    if (source_map) |sm| {
+        sm.put(resolved_path, imp_source) catch {};
+    }
+
+    var p = try parser.Parser.init(allocator, imp_source);
+    const imp_root = p.parse() catch {
+        if (diagnostics) |diags| {
+            diags.addFmtInFile(.err, resolved_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ resolved_path, p.err_msg orelse "unknown" });
+        }
+        return error.ImportError;
+    };
+
+    // Push onto chain before recursing, pop after
+    try chain.put(resolved_path, {});
+    const imp_dir = dirName(resolved_path);
+    const result = try resolveImports(allocator, io, imp_root, imp_dir, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+    _ = chain.remove(resolved_path);
+
+    try cache.put(resolved_path, result);
+    return result;
+}
+
+/// The module the `@` contracts and the runtime bindings are declared in.
+pub const core_module = "modules/std/core.sx";
+
+/// Put `core_module` into the program behind `mod` when no import brought it,
+/// ahead of the program's own declarations as an `@import` on the first line
+/// would. The `@` names and the runtime bindings resolve program-wide, so
+/// every program carries their declaring module; no import edge is recorded,
+/// so its other names stay out of bare lookup.
+pub fn loadCoreModule(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mod: *ResolvedModule,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) !void {
+    const path = resolveImportPath(allocator, io, dirName(mod.path), core_module, null, stdlib_paths) catch return;
+    if (cache.contains(path) or sameFileIdentity(allocator, path, mod.path)) return;
+    const core = (try loadFileModule(allocator, io, path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse return;
+
+    var list = std.ArrayList(*Node).empty;
+    var seen_in_list = std.StringHashMap(void).init(allocator);
+    var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
+    try mod.mergeFlat(allocator, &list, &seen_in_list, &seen_nodes, core);
+    for (mod.decls) |decl| {
+        if (seen_nodes.contains(decl)) continue;
+        try seen_nodes.put(decl, {});
+        try list.append(allocator, decl);
+    }
+    mod.decls = try list.toOwnedSlice(allocator);
 }
 
 /// A module-scope declaration-expansion driver: `inline if`, `inline match`,

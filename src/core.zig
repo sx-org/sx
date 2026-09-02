@@ -109,12 +109,24 @@ pub const Compilation = struct {
         self.import_sources.put(self.file_path, self.source) catch {};
         self.diagnostics.import_sources = &self.import_sources;
 
-        const mod = imports.resolveImports(
+        var mod = imports.resolveImports(
             self.allocator,
             self.io,
             root,
             base_dir,
             self.file_path,
+            &chain,
+            cache,
+            &self.import_sources,
+            &self.diagnostics,
+            self.stdlib_paths,
+            &self.import_graph,
+            &self.flat_import_graph,
+        ) catch return error.CompileError;
+        imports.loadCoreModule(
+            self.allocator,
+            self.io,
+            &mod,
             &chain,
             cache,
             &self.import_sources,

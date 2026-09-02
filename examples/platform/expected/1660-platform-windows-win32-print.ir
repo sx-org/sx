@@ -1,4 +1,6 @@
 
+@__sx_default_context = internal constant { ptr } zeroinitializer
+
 ; Function Attrs: nounwind
 declare ptr @GetStdHandle(i32) #0
 
