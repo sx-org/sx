@@ -6,6 +6,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
+deflate :: @import "modules/std/codecs/deflate.sx";
 
 Header :: struct {
     modifiedSeconds: i64 = 0;
@@ -37,8 +38,8 @@ checksum :: (data: string, initial: u32 = 0) -> u32 { crc32(data, initial.(i64))
 Encoder :: struct {
     state: GzipDeflater;
 
-    init :: (options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
-        try validateOptions(options);
+    init :: (options: deflate.Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
+        try options.validate();
         state := try GzipDeflater.initOptions(options.level, options.strategy, GzipOptions{
             mtime = header.modifiedSeconds,
             filename = header.filename,
@@ -51,8 +52,8 @@ Encoder :: struct {
         Encoder{ state = state }
     }
 
-    reset :: (self: *Encoder, options: Options = .{}, header: Header = .{}) -> !Error {
-        try validateOptions(options);
+    reset :: (self: *Encoder, options: deflate.Options = .{}, header: Header = .{}) -> !Error {
+        try options.validate();
         try self.state.resetOptions(options.level, options.strategy, GzipOptions{
             mtime = header.modifiedSeconds,
             filename = header.filename,
@@ -128,8 +129,8 @@ impl StreamingDecoder for Decoder {
     deinit :: (self: *Decoder) { self.deinit(); }
 }
 
-encode :: (data: string, options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validateOptions(options);
+encode :: (data: string, options: deflate.Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    try options.validate();
     gzipCompressOptionsStrategy(data, GzipOptions{
         mtime = header.modifiedSeconds,
         filename = header.filename,
@@ -141,7 +142,7 @@ encode :: (data: string, options: Options = .{}, header: Header = .{}, alloc: Al
     }, options.level, options.strategy, alloc)
 }
 
-encodeInto :: (data: string, output: string, options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+encodeInto :: (data: string, output: string, options: deflate.Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
     encoder := try Encoder.init(options, header, alloc);
     defer encoder.deinit();
     inputAt := 0;

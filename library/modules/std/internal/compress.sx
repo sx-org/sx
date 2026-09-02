@@ -9,6 +9,10 @@
 @import "modules/std/core.sx";
 @import "modules/std/list.sx";
 @import "modules/std/compress.sx";
+deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";
+
+private Strategy :: deflateContracts.Strategy;
+private Flush :: deflateContracts.Flush;
 
 private DeflatePath :: enum { fastest; portable; }
 
@@ -27,10 +31,6 @@ compressBound :: (sourceLen: i64) -> (i64, !Error) {
     ratioBound := 128 + (sourceLen * 110) / 100;
     blockBound := 128 + sourceLen + ((sourceLen / (31 * 1024)) + 1) * 5;
     if ratioBound > blockBound then ratioBound else blockBound
-}
-
-validateOptions :: (options: Options) -> !Error {
-    if options.level < 0 or options.level > 10 { raise .InvalidOptions; }
 }
 
 validateOutputLimit :: (maxOutput: i64) -> !Error {

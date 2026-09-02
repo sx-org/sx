@@ -6,6 +6,11 @@
 @import "modules/std/core.sx";
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
+deflateContracts :: @import "modules/std/codecs/deflate_contracts.sx";
+
+Strategy :: deflateContracts.Strategy;
+Flush    :: deflateContracts.Flush;
+Options  :: deflateContracts.Options;
 
 bound :: (sourceLen: i64) -> (i64, !Error) {
     compressBound(sourceLen)
@@ -15,14 +20,14 @@ Encoder :: struct {
     state: Deflater;
 
     init :: (options: Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
-        try validateOptions(options);
+        try options.validate();
         state := Deflater.initStrategy(options.level, options.strategy, alloc);
         if state.allocationFailed { state.deinit(); raise .AllocationFailed; }
         Encoder{ state = state }
     }
 
     reset :: (self: *Encoder, options: Options = .{}) -> !Error {
-        try validateOptions(options);
+        try options.validate();
         alloc := self.state.alloc;
         self.state.deinit();
         self.state = Deflater.initStrategy(options.level, options.strategy, alloc);
@@ -98,7 +103,7 @@ impl StreamingDecoder for Decoder {
 }
 
 encode :: (data: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validateOptions(options);
+    try options.validate();
     result := deflateStrategy(data, options.level, options.strategy, alloc);
     if result.ptr == null { raise .AllocationFailed; }
     result

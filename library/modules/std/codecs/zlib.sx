@@ -6,6 +6,7 @@
 @import "modules/std/core.sx";
 @import "modules/std/compress.sx";
 @import "modules/std/internal/compress.sx";
+deflate :: @import "modules/std/codecs/deflate.sx";
 
 bound :: (sourceLen: i64) -> (i64, !Error) {
     compressBound(sourceLen)
@@ -16,22 +17,22 @@ checksum :: (data: string, initial: u32 = 1) -> u32 { adler32(data, initial.(i64
 Encoder :: struct {
     state: ZlibDeflater;
 
-    init :: (options: Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
-        try validateOptions(options);
+    init :: (options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
+        try options.validate();
         state := ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
         if state.raw.allocationFailed { state.deinit(); raise .AllocationFailed; }
         Encoder{ state = state }
     }
 
-    reset :: (self: *Encoder, options: Options = .{}) -> !Error {
-        try validateOptions(options);
+    reset :: (self: *Encoder, options: deflate.Options = .{}) -> !Error {
+        try options.validate();
         alloc := self.state.alloc;
         self.state.deinit();
         self.state = ZlibDeflater.initStrategy(options.level, options.strategy, alloc);
         if self.state.raw.allocationFailed { raise .AllocationFailed; }
     }
 
-    flush :: (self: *Encoder, input: string, output: string, mode: Flush = .none) -> (Progress, !Error) {
+    flush :: (self: *Encoder, input: string, output: string, mode: deflate.Flush = .none) -> (Progress, !Error) {
         self.state.stepFlush(input, output, mode)
     }
 
@@ -99,15 +100,15 @@ impl StreamingDecoder for Decoder {
     deinit :: (self: *Decoder) { self.deinit(); }
 }
 
-encode :: (data: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validateOptions(options);
+encode :: (data: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    try options.validate();
     result := compressPath(data, options.level, options.strategy, .fastest, alloc);
     if result.ptr == null { raise .AllocationFailed; }
     result
 }
 
-encodeInto :: (data: string, output: string, options: Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
-    try validateOptions(options);
+encodeInto :: (data: string, output: string, options: deflate.Options = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    try options.validate();
     if options.strategy == .default {
         return try compressInto(data, output, options.level, alloc);
     }

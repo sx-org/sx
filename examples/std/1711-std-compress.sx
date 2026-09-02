@@ -203,7 +203,7 @@ testStreaming :: (alloc: Allocator) -> bool {
         if outputEnd > encoded.len { outputEnd = encoded.len; }
         output : string = "";
         if outputAt < outputEnd { output = encoded[outputAt..outputEnd]; }
-        mode : compress.Flush = if inputEnd == PLAIN.len then .finish else .none;
+        mode : deflate.Flush = if inputEnd == PLAIN.len then .finish else .none;
         progress := encoder.flush(input, output, mode) catch { encoder.deinit(); return false; };
         inputAt += progress.consumed;
         outputAt += progress.produced;
@@ -241,7 +241,14 @@ testStreaming :: (alloc: Allocator) -> bool {
     emptyOutput : [8]u8 = ---;
     progress := erased.finish(emptyOutput[..]) catch { erased.deinit(); return false; };
     erased.deinit();
-    progress.status == .done
+    if progress.status != .done { return false; }
+
+    protocolDecoder := deflate.Decoder.init(PLAIN.len, alloc) catch { return false; };
+    erasedDecoder : *compress.StreamingDecoder = *protocolDecoder;
+    replay : [64]u8 = ---;
+    progress = erasedDecoder.read(rawFixture(), replay[..]) catch { erasedDecoder.deinit(); return false; };
+    erasedDecoder.deinit();
+    progress.status == .done and same(replay[..progress.produced], PLAIN)
 }
 
 testGzipMetadata :: (alloc: Allocator) -> bool {

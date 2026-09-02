@@ -21,11 +21,6 @@ library. Its deterministic output is pinned to miniz 3.1.2 commit
 
 ## Shared contracts
 
-`compress.Options` selects a compression `level` from 0 through 10 and a
-`Strategy`. The default is level 6 with the default strategy. Invalid levels
-raise `Error.InvalidOptions`; there is no C-style `-1` default or numeric flag
-word.
-
 DEFLATE, zlib, gzip, and ZIP reuse `compress.Error` directly:
 
 - `InvalidArgument` and `InvalidOptions` reject caller mistakes (a negative
@@ -71,6 +66,11 @@ decoding. Their ordinary `decode` and `decodeInto` operations reject trailing
 bytes; the corresponding `decodePrefix` and `decodeIntoPrefix` operations
 return both the decoded bytes and the compressed byte count when a stream is
 embedded in a larger input.
+
+`deflate.Options` selects a compression `level` from 0 through 10 and a
+`deflate.Strategy`; zlib and gzip take the same options. The default is level 6
+with the default strategy. Invalid levels raise `Error.InvalidOptions`; there
+is no C-style `-1` default or numeric flag word.
 
 `zlib.checksum` is Adler-32 and `gzip.checksum` is CRC-32; both take and
 return `u32` and accept an optional prior checksum for incremental updates.

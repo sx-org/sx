@@ -1,0 +1,16 @@
+// DEFLATE option types shared by the raw, zlib, and gzip codecs and the engine
+// behind them.
+
+@import "modules/std/compress.sx";
+
+Strategy :: enum { default; filtered; huffmanOnly; rle; fixed; }
+Flush :: enum { none; sync; full; finish; }
+
+Options :: struct {
+    level: i64 = 6;
+    strategy: Strategy = .default;
+
+    validate :: (self: *Options) -> !Error {
+        if self.level < 0 or self.level > 10 { raise .InvalidOptions; }
+    }
+}

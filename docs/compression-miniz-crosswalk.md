@@ -122,7 +122,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `tdefl_compress_mem_to_output` | `deflate.Encoder` through `compress.StreamingEncoder` produces into caller-provided output windows; it is not a callback sink adapter, so callers explicitly forward produced windows and sink errors |
 | `tdefl_compressor_alloc` | by-value `deflate.Encoder.init(options, alloc)` replaces opaque compressor heap allocation |
 | `tdefl_compressor_free` | `deflate.Encoder.deinit()` releases engine allocations; encoder storage itself is caller-owned by value |
-| `tdefl_create_comp_flags_from_zip_params` | typed `compress.Options`, `Strategy`, and ZIP `EntryOptions` replace packed numeric flags |
+| `tdefl_create_comp_flags_from_zip_params` | typed `deflate.Options`, `Strategy`, and ZIP `EntryOptions` replace packed numeric flags |
 | `tdefl_get_adler32` | running-compressor checksum state is private; callers needing a checksum use `zlib.checksum` |
 | `tdefl_get_prev_return_status` | Each streaming operation returns a typed `compress.Progress.status`; there is no mutable numeric-status query |
 | `tdefl_init` | Internal. `std.internal.compress.Deflater.initStrategy` under public `deflate.Encoder.init` |

@@ -8,7 +8,7 @@
 
 EXACT_PATH :: ".sx-tmp/bench-compress/sx-exact.matrix";
 
-strategyAt :: (index: i64) -> compress.Strategy {
+strategyAt :: (index: i64) -> deflate.Strategy {
     if index == 1 { return .filtered; }
     if index == 2 { return .huffmanOnly; }
     if index == 3 { return .rle; }
@@ -42,7 +42,7 @@ runCorpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> boo
     while level <= 10 {
         strategy := 0;
         while strategy < 5 {
-            options : compress.Options = .{
+            options : deflate.Options = .{
                 level = level,
                 strategy = strategyAt(strategy),
             };
