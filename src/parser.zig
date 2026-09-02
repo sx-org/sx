@@ -2050,6 +2050,7 @@ pub const Parser = struct {
 
         var is_main = false;
         var extends_alias: ?[]const u8 = null;
+        var extends_span: ast.Span = .{ .start = 0, .end = 0 };
         var implements_aliases = std.ArrayList([]const u8).empty;
         var saw_implements = false;
         while (self.tokens.tag(self.tok) == .comma) {
@@ -2075,6 +2076,7 @@ pub const Parser = struct {
                 if (extends_alias != null) {
                     return self.fail("'extends' takes one type");
                 }
+                extends_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 extends_alias = try self.parseRuntimeAlias();
             } else if (std.mem.eql(u8, arg_name, "implements")) {
                 if (saw_implements) {
@@ -2282,6 +2284,7 @@ pub const Parser = struct {
             .runtime_path = runtime_path,
             .runtime = runtime,
             .members = try members.toOwnedSlice(self.allocator),
+            .extends_span = extends_span,
             .is_extern = is_extern_eff,
             .is_main = is_main,
             .is_raw = name_is_raw,

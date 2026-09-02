@@ -1,0 +1,5 @@
+error: cyclic `extends =` chain: SxCycB extends SxCycA extends SxCycB
+  --> examples/ffi-objc/2289-ffi-objc-cyclic-extends-refused.sx:10:42
+   |
+10 | SxCycB :: @ObjcClass("SxCycB", extends = SxCycA) export {
+   |                                          ^^^^^^
