@@ -126,8 +126,8 @@ same (module, name) identity rule. Most are a signature with no body, which the
 compiler implements — `@volatileLoad` and `@volatileStore` (§Intrinsics,
 Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@isComptime`
 (§Compile-time Evaluation, `@isComptime()`).
-`@panic` is ordinary sx: a body written in the owning module, over `@printf` and
-`@isComptime`. So is the postfix assertion's spelled form, `@cast`
+`@panic` is ordinary sx: a body written in the owning module, over the stderr
+writer and `@isComptime`. So is the postfix assertion's spelled form, `@cast`
 (§Postfix Cast), owned by `modules/std/core.sx`.
 
 `@printf($fmt: string, ..$args)` is an allocation-free formatted write to stdout.
