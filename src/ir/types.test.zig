@@ -343,10 +343,10 @@ test "pack type: formatTypeName" {
     defer arena.deinit();
 
     const p = table.packType(&[_]TypeId{ .bool, .i32, .string });
-    try std.testing.expectEqualStrings("pack(bool, i32, string)", table.formatTypeName(arena.allocator(), p));
+    try std.testing.expectEqualStrings("pack(bool, i32, string)", table.formatTypeName(arena.allocator(), p, null));
 
     const empty = table.packType(&.{});
-    try std.testing.expectEqualStrings("pack()", table.formatTypeName(arena.allocator(), empty));
+    try std.testing.expectEqualStrings("pack()", table.formatTypeName(arena.allocator(), empty, null));
 }
 
 test "failable value slots: named struct is one slot, anon product flattens" {
