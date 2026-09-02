@@ -965,9 +965,6 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
     }
 }
 
-/// Stamp the defining module path onto every method (and struct-level fn
-/// constant) body of a struct decl, so a generic-struct method monomorphized at
-/// a cross-module call site still pins to the module that declares it.
 /// A default method body is written in the protocol's module and reused by
 /// every conformer's synthesized method, so it carries the protocol's path.
 fn stampProtocolMethodSources(pd: ast.ProtocolDecl, file_path: []const u8) void {
@@ -976,6 +973,9 @@ fn stampProtocolMethodSources(pd: ast.ProtocolDecl, file_path: []const u8) void 
     }
 }
 
+/// Stamp the defining module path onto every method (and struct-level fn
+/// constant) body of a struct decl, so a generic-struct method monomorphized at
+/// a cross-module call site still pins to the module that declares it.
 fn stampStructMethodSources(sd: ast.StructDecl, file_path: []const u8) void {
     for (sd.methods) |m| {
         if (m.data == .fn_decl) m.data.fn_decl.body.source_file = file_path;

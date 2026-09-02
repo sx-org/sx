@@ -212,8 +212,7 @@ impl Writer for FdWriter {
     }
 }
 
-// The renderers `@printf`'s expansion calls, one per argument kind. Each fills
-// stack storage and hands the sink one write.
+// The renderers `@printf`'s expansion calls, one per argument kind.
 writeBool :: (w: Writer, b: bool) {
     w.write(if b then "true" else "false");
 }
