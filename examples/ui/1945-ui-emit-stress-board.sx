@@ -21,7 +21,7 @@ BoardView :: @OpenVariant(View) {
     state: *BoardViewState = null;
     side: f32 = 0.0;
 
-    sizeThatFits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+    fit :: (self: *BoardView, proposal: ProposedSize) -> Size {
         Size{ width = self.side, height = self.side }
     }
 

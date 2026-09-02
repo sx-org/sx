@@ -1015,9 +1015,9 @@ Allocator :: interface {
     deallocBytes :: (self: *Self, ptr: *void);
 }
 View      :: interface {
-    sizeThatFits :: (self: *Self, proposal: ProposedSize) -> Size;
-    layout         :: (self: *Self, bounds: Frame);
-    render         :: (self: *Self, ctx: *RenderContext, frame: Frame);
+    fit    :: (self: *Self, proposal: ProposedSize) -> Size;
+    layout :: (self: *Self, bounds: Frame);
+    render :: (self: *Self, ctx: *RenderContext, frame: Frame);
 }
 Series    :: interface(T: Type) {
     count :: (self: *Self) -> i64;

@@ -40,7 +40,7 @@ main :: () -> i32 {
         corner = 8.0,
         padding = ui.EdgeInsets.symmetric(6.0, 2.0),
     });
-    cardSize := card.sizeThatFits(ProposedSize.flexible());
+    cardSize := card.fit(ProposedSize.flexible());
     print("card {}x{}\n", cardSize.width.(i64), cardSize.height.(i64));
     draw(*card, Frame.make(0.0, 0.0, cardSize.width, cardSize.height));
 
@@ -51,7 +51,7 @@ main :: () -> i32 {
         bg = ui.COLOR_DARK_GRAY,
         margin = ui.EdgeInsets.all(4.0),
     });
-    sameSize := same.sizeThatFits(ProposedSize.flexible());
+    sameSize := same.fit(ProposedSize.flexible());
     print("same {}x{}\n", sameSize.width.(i64), sameSize.height.(i64));
 
     // A ring instead of a fill; a fixed size centres the box in the bounds and
@@ -76,7 +76,7 @@ main :: () -> i32 {
 
     // Hidden measures zero and draws nothing.
     gone : View = place(Label{ text = "gone" }, Mod{ hidden = true });
-    goneSize := gone.sizeThatFits(ProposedSize.flexible());
+    goneSize := gone.fit(ProposedSize.flexible());
     print("hidden {}x{}\n", goneSize.width.(i64), goneSize.height.(i64));
     draw(*gone, Frame.make(0.0, 0.0, 40.0, 16.0));
 

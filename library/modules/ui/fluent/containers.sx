@@ -21,7 +21,7 @@
 Spacer :: @OpenVariant(View) {
     minLength: f32 = 0.0;
 
-    sizeThatFits :: (self: *Spacer, proposal: ProposedSize) -> Size {
+    fit :: (self: *Spacer, proposal: ProposedSize) -> Size {
         Size.zero()
     }
 
@@ -50,7 +50,7 @@ measureColumn :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetr
             m.spacers += 1;
             continue;
         }
-        s := c.sizeThatFits(ProposedSize{ width = width, height = null });
+        s := c.fit(ProposedSize{ width = width, height = null });
         if s.width > m.cross { m.cross = s.width; }
         m.main += s.height;
     }
@@ -66,7 +66,7 @@ measureRow :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetric
             m.spacers += 1;
             continue;
         }
-        s := c.sizeThatFits(ProposedSize{ width = null, height = height });
+        s := c.fit(ProposedSize{ width = null, height = height });
         if s.height > m.cross { m.cross = s.height; }
         m.main += s.width;
     }
@@ -86,7 +86,7 @@ VStack :: @OpenVariant(View) {
     spacing: f32 = 0.0;
     alignment: HAlignment = .leading;
 
-    sizeThatFits :: (self: *VStack, proposal: ProposedSize) -> Size {
+    fit :: (self: *VStack, proposal: ProposedSize) -> Size {
         m := measureColumn(*self.children, proposal.width, self.spacing);
         Size{ width = m.cross, height = m.main }
     }
@@ -119,7 +119,7 @@ HStack :: @OpenVariant(View) {
     spacing: f32 = 0.0;
     alignment: VAlignment = .center;
 
-    sizeThatFits :: (self: *HStack, proposal: ProposedSize) -> Size {
+    fit :: (self: *HStack, proposal: ProposedSize) -> Size {
         m := measureRow(*self.children, proposal.height, self.spacing);
         Size{ width = m.main, height = m.cross }
     }
@@ -151,11 +151,11 @@ ZStack :: @OpenVariant(View) {
     children: List(View) = .{};
     alignment: Alignment = ALIGN_CENTER;
 
-    sizeThatFits :: (self: *ZStack, proposal: ProposedSize) -> Size {
+    fit :: (self: *ZStack, proposal: ProposedSize) -> Size {
         w := 0.0;
         h := 0.0;
         for *c in self.children {
-            s := c.sizeThatFits(proposal);
+            s := c.fit(proposal);
             if s.width > w { w = s.width; }
             if s.height > h { h = s.height; }
         }
@@ -177,7 +177,7 @@ columnFrame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extr
     if sp := child.*.(?Spacer) {
         return Frame.make(bounds.origin.x, y, 0.0, sp.minLength + extra);
     }
-    s := child.sizeThatFits(ProposedSize{ width = bounds.size.width, height = null });
+    s := child.fit(ProposedSize{ width = bounds.size.width, height = null });
     Frame.make(bounds.origin.x + alignH(alignment, s.width, bounds.size.width), y, s.width, s.height)
 }
 
@@ -185,12 +185,12 @@ rowFrame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: 
     if sp := child.*.(?Spacer) {
         return Frame.make(x, bounds.origin.y, sp.minLength + extra, 0.0);
     }
-    s := child.sizeThatFits(ProposedSize{ width = null, height = bounds.size.height });
+    s := child.fit(ProposedSize{ width = null, height = bounds.size.height });
     Frame.make(x, bounds.origin.y + alignV(alignment, s.height, bounds.size.height), s.width, s.height)
 }
 
 stackedFrame :: (child: *View, bounds: Frame, alignment: Alignment) -> Frame {
-    s := child.sizeThatFits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
+    s := child.fit(ProposedSize.fixed(bounds.size.width, bounds.size.height));
     Frame.make(
         bounds.origin.x + alignH(alignment.h, s.width, bounds.size.width),
         bounds.origin.y + alignV(alignment.v, s.height, bounds.size.height),
