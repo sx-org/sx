@@ -59,7 +59,7 @@ const Ref = inst_mod.Ref;
 const FuncId = inst_mod.FuncId;
 
 /// The tag word: the shipped payload-enum tag type, so dispatch and layout reuse
-/// the payload enum machinery unchanged.
+/// the payload enum machinery.
 pub const tag_type: TypeId = .i64;
 
 /// The name of the backing struct's payload field.

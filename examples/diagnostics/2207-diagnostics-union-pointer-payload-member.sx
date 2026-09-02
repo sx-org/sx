@@ -1,4 +1,4 @@
-// A union or tagged-enum variant whose payload is a POINTER to a struct does
+// A union or payload-enum variant whose payload is a POINTER to a struct does
 // not promote the pointee's members: the union's bytes are the pointer, not
 // the pointee, so `.a` is `field not found` — write and read, both kinds.
 

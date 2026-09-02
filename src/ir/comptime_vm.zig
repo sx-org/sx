@@ -3067,8 +3067,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// How a value of type `ty` is held: a register word (scalar, pointer,
     /// func-ref, enum tag, error tag, pointer-child optional) or by-address in
-    /// comptime memory (struct, array, tuple, slice, string, `any`, tagged
-    /// union, non-pointer optional). Everything else — `void`, `noreturn`,
+    /// comptime memory (struct, array, tuple, slice, string, `any`, payload
+    /// enum, non-pointer optional). Everything else — `void`, `noreturn`,
     /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 

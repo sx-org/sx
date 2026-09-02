@@ -238,8 +238,8 @@ pub const Reflection = struct {
 
     // ── Runtime `@typeInfo(tp)` const records ────────────────
     //
-    // One constant per TypeId whose BYTES match the sx `TypeInfo` tagged
-    // union (tag word at 0, payload at tag_size — buildTypeInfo's layout
+    // One constant per TypeId whose BYTES match the sx `TypeInfo` payload
+    // enum (tag word at 0, payload at tag_size — buildTypeInfo's layout
     // convention), reached through a master `[N x ptr]`. Each record is its
     // own global typed per its kind's payload shape (padding arrays place
     // members at exact offsets); the runtime arm loads the record THROUGH

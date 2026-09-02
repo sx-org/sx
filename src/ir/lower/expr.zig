@@ -202,7 +202,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     else
         self.target_type orelse .unresolved;
 
-    // Plain  union target: build by writing each named member into a
+    // Plain union target: build by writing each named member into a
     // union-sized slot. `getStructFields` returns empty for a union, so the
     // generic struct path below would emit a malformed `structInit` whose
     // overlapping zero-fill clobbers the named member. Tagged
@@ -1189,7 +1189,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     // Bare `Enum.variant` — a qualified enum literal. When the object is a type
-    // NAME resolving to an enum / payload enum (not shadowed by a value binding /
+    // NAME resolving to an enum (not shadowed by a value binding /
     // global value) and `field` is a PAYLOADLESS variant, construct it like the
     // leading-dot `.variant` in a typed context. Mirrors the `alias.Enum.variant`
     // namespace path above. Restricted to payloadless variants so a payload-
@@ -2071,7 +2071,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
         return self.lowerErrorMemberShorthand(el.name, span);
     }
 
-    // The destination must be a known enum / payload enum that carries the
+    // The destination must be a known enum that carries the
     // named variant; any other shape would lower to a silent 0.
     if (target == .unresolved) {
         // Cascade guard: an unresolved destination usually means the slot's
@@ -2352,7 +2352,7 @@ pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8
     return 0;
 }
 
-/// True iff `variant_name` is a declared variant of the enum / payload enum
+/// True iff `variant_name` is a declared variant of the enum
 /// `ty`. The call-shaped construction paths (`.Variant(payload)` /
 /// `Type.Variant(payload)`) must gate on this BEFORE `resolveVariantIndex`,
 /// which returns 0 (the zeroth variant) for an unknown name — silently

@@ -1,6 +1,6 @@
 // Runtime variant reflection: off a runtime `Type`, `@typeInfo(t).enum.fields`
-// carries explicit values, explicit tags and the ordinal default, and a tagged
-// union reflects its DECLARED tag where a plain enum reflects its value;
+// carries explicit values, explicit tags and the ordinal default, and a payload
+// enum reflects its DECLARED tag where a plain enum reflects its value;
 // `isFlags(t)` answers at runtime; `@len` counts a boxed value's variants and
 // `@field` views its payload at a runtime index. Printing a boxed variant
 // resolves the LIVE one by scanning those reflected values against the value's

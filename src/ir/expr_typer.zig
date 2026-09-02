@@ -325,7 +325,7 @@ pub const ExprTyper = struct {
                 // Bare `Enum.variant` — a qualified enum literal read as a VALUE
                 // (its type is the enum). Mirrors the `lowerFieldAccess`
                 // qualified-enum-literal path: object is a type NAME resolving to
-                // an enum / payload enum (not shadowed by a value binding / global
+                // an enum (not shadowed by a value binding / global
                 // value) and `field` is a PAYLOADLESS variant. Without this, a
                 // direct `go(E.x)` generic-arg inference (and a `hash_val(E.A)`
                 // key) yielded `.unresolved` for the value's type.

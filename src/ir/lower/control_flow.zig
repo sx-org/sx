@@ -1264,7 +1264,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var subject_ty = self.inferExprType(me.subject);
     // A pointer subject (e.g. a `for *x in xs` element capture) matches
     // through the deref (specs §for, by-reference capture): deref to the
-    // pointed-to payload enum/enum so tag/payload extraction works, and to
+    // pointed-to enum so tag/payload extraction works, and to
     // an integer/bool pointee so the value drives the switch directly.
     if (!subject_ty.isBuiltin()) {
         const sinfo = self.module.types.get(subject_ty);
@@ -1335,7 +1335,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     };
 
     // Subject-type gate: a case-style match dispatches on
-    // a discriminant — an enum / payload enum tag, an error tag, an optional's
+    // a discriminant — an enum tag, an error tag, an optional's
     // has_value bit, an integer/bool value, or a type id. Any other subject has
     // no valid switch scrutinee, and letting it through hands the backend
     // invalid IR (a raw `[8 x i8]` union scrutinee, `switch ptr`, or
@@ -1367,7 +1367,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             };
         };
         if (!dispatchable) {
-            // An union (directly, or through a pointer — the deref
+            // A union (directly, or through a pointer — the deref
             // above never fires for unions) gets its own wording:
             // the type EXISTS but carries no discriminant to match on. Same
             // family as the arm-level payload-binding rejection,
@@ -1653,7 +1653,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             };
             // First-wins, mirroring the any-subject type switch: a tag
             // belongs to the first arm that names it. Categories overlap
-            // (`enum`/`union` share payload enums, `int` contains `i64`),
+            // (`int` contains `i64`),
             // and a duplicate switch case is invalid IR — before the
             // claim set, an overlap was an LLVM verifier crash.
             var eff_tv = std.ArrayList(u64).empty;

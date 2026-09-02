@@ -25,7 +25,7 @@ pub const CallPlan = struct {
     kind: Kind,
     return_type: TypeId,
     target: Target = .none,
-    /// Enum / payload enum variant tag, for the construction kinds.
+    /// Enum variant tag, for the construction kinds.
     variant: ?u32 = null,
     /// Lowering prepends the receiver as arg 0 (UFCS / instance-method forms).
     prepends_receiver: bool = false,
@@ -89,7 +89,7 @@ pub const CallPlan = struct {
         /// its GlobalId in the plan prevents a later bare-name lookup from
         /// rebinding `pkg.cb()` to another module's same-spelled global.
         callable_global: program_index.GlobalInfo,
-        /// Enum / payload enum type under construction.
+        /// Enum type under construction.
         constructed: TypeId,
     };
 };
@@ -100,7 +100,7 @@ pub const CallPlan = struct {
 /// and plain free functions (lowered or lazy via `fn_ast_map`), closure /
 /// function-typed locals, protocol dispatch, runtime-class instance/static
 /// methods, struct (UFCS) methods, qualified namespace calls, and
-/// enum/payload enum construction.
+/// enum construction.
 ///
 /// A `*Lowering` facade (like `ExprTyper` / `PackResolver`): call
 /// typing reads live lexical-scope / target-type state and the function /

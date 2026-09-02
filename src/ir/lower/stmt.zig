@@ -3232,7 +3232,7 @@ fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldR
     }
 }
 
-/// Lower a plain  `union` struct-literal `.{ member = value, ... }`.
+/// Lower a plain `union` struct-literal `.{ member = value, ... }`.
 /// The generic struct-literal path can't build a union — `getStructFields`
 /// returns empty for a union, so a union literal would fall through to a
 /// malformed `structInit` whose overlapping zero-fill clobbers the named

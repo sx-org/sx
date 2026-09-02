@@ -1008,7 +1008,7 @@ pub const TypeTable = struct {
         return .none;
     }
 
-    /// Member count of an aggregate type: struct/union/payload enum fields, enum
+    /// Member count of an aggregate type: struct/union fields, enum
     /// variants, or array/vector length. Returns null for a type that has no
     /// member count (a scalar, pointer, the `unresolved` sentinel, …) — so a
     /// caller bails loudly rather than reading a silent 0. The comptime
@@ -1162,8 +1162,8 @@ pub const TypeTable = struct {
         };
     }
 
-    /// Integer value of variant `idx`: its explicit value when the enum /
-    /// payload enum declares one (custom values, flags, explicit tags), else
+    /// Integer value of variant `idx`: its explicit value when the enum
+    /// declares one (custom values, flags, explicit tags), else
     /// its ordinal. Null for a non-variant type, a negative / out-of-range
     /// `idx`, or an out-of-range id. The single value source behind the
     /// reflected `.value` — the static fold, the `__sx_type_infos` records,

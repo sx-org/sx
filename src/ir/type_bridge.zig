@@ -584,7 +584,7 @@ pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anyt
 /// nominal slot — the shared body-BUILDER behind both the stateless inline
 /// field-type path (`resolveInlineEnum`) and the stateful per-decl registration
 /// (`Lowering.registerEnumDecl`, which interns it under a per-decl nominal
-/// identity so two same-name top-level enums get DISTINCT TypeIds). Nested
+/// identity so two same-name top-level enums get DISTINCT TypeIds).
 /// Decode an explicit enum-variant value node (`esc :: '\x1b'`, `quit :: 0x100`)
 /// to its integer, or `null` if it isn't a constant the enum machinery
 /// understands (the caller supplies the positional / power-of-2 fallback).

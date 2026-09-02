@@ -2505,7 +2505,7 @@ test "sema: method-return slice + .ptr index + tagged-enum element" {
     // `p.poll()` resolves to its slice return type, not void.
     try std.testing.expect(evs_ty != null and evs_ty.? == .slice_type);
     try std.testing.expectEqualStrings("Event", evs_ty.?.slice_type.element_name);
-    // `evs.ptr[0]` resolves to the (tagged-enum) element type.
+    // `evs.ptr[0]` resolves to the (enum) element type.
     try std.testing.expect(e_ty != null);
     try std.testing.expectEqualStrings("Event", e_ty.?.toName().?);
 }

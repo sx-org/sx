@@ -1,10 +1,9 @@
 // The `union` category in the runtime type-category match: `case union:`
-// matches C-style unions AND payload enums (payload enums);
-// `case enum:` matches payload-less enums AND payload enums. The overlap
-// resolves FIRST-WINS — a tag belongs to the first arm that names it —
-// and a specific user type name claims its tag ahead of the category
-// that contains it. Unions box into `any` and their tags classify
-// like every other registered type.
+// matches unions; `case enum:` matches enums, with or without payloads.
+// Arms claim tags FIRST-WINS — a tag belongs to the first arm that names
+// it — and a specific user type name claims its tag ahead of the category
+// that contains it. Unions box into `any` and their tags classify like
+// every other registered type.
 @import "modules/std.sx";
 
 TU :: union { i: i64; f: f64; }
