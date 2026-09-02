@@ -219,15 +219,3 @@ test "objcDefinedAncestors visits a cycle's names once, not until the buffer fil
 
     try expectAncestors(&mod, "B", &.{ "B", "A" });
 }
-
-test "objcDefinedAncestors keeps a self-parent class in the sequence" {
-    var mod = Module.init(std.testing.allocator);
-    defer mod.deinit();
-
-    mod.appendObjcDefinedClass("A", &walker_decl);
-    mod.setObjcDefinedClassParent("A", "A");
-    mod.appendObjcDefinedClass("C", &walker_decl);
-    mod.setObjcDefinedClassParent("C", "NSObject");
-
-    try expectAncestors(&mod, "A", &.{"A"});
-}

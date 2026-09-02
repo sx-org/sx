@@ -57,7 +57,5 @@ CAMetalLayer :: @ObjcClass("CAMetalLayer", extends = CALayer) extern {
     // to the commit, so the third is stall headroom. Two lets
     // nextDrawable block while the compositor still holds one.
     setMaximumDrawableCount :: (self: *Self, n: u64);
-    // The drawable commits in the current CATransaction, with the IME
-    // keyboard's animation, instead of on a separate present timeline.
     setPresentsWithTransaction :: (self: *Self, on: BOOL);
 }
