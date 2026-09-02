@@ -4,9 +4,9 @@
 // run is never part of committed, so composing and abandoning move no
 // committed byte. Insert over a live mark discards the mark without reporting
 // a composition, while commitMarked splices those same bytes in and reports
-// them as text. Backspace takes a whole UTF-8 scalar wherever it lands, and an
-// op that would overrun the inline capacity leaves both the document and the
-// queue untouched.
+// them as text. Backspace takes a whole UTF-8 scalar wherever it lands and a
+// selection whole, and an op that would overrun the inline capacity leaves
+// both the document and the queue untouched.
 @import "modules/std.sx";
 @import "modules/ui/input.sx";
 
@@ -80,13 +80,24 @@ main :: () -> i32 {
     show("abandoned", doc);
 
     // The caret decides where bytes go and which one backspace takes.
-    doc.caret = 1;
+    doc.select(1, 1);
     doc.insert("-");
     report(*queue);
     show("spliced", doc);
     doc.deleteBackward();
     report(*queue);
     show("unspliced", doc);
+
+    // A selection goes whole: backspace takes every scalar in it and says
+    // so once per scalar, and text lands in its place.
+    doc.select(1, 3);
+    doc.deleteBackward();
+    report(*queue);
+    show("cut", doc);
+    doc.select(0, 1);
+    doc.insert("가");
+    report(*queue);
+    show("replaced", doc);
 
     // An insert past the inline capacity is refused whole; the one that
     // reaches the last byte exactly is not.

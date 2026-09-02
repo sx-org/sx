@@ -21,6 +21,12 @@ abandoned committed "ab!" caret 3 marked "" [0 0]
 spliced committed "a-b!" caret 2 marked "" [0 0]
   .deleteBackward
 unspliced committed "ab!" caret 1 marked "" [0 0]
-overrun committed "ab!" queued 0
+  .deleteBackward
+  .deleteBackward
+cut committed "a" caret 1 marked "" [0 0]
+  .deleteBackward
+  .text "가"
+replaced committed "가" caret 3 marked "" [0 0]
+overrun committed "가" queued 0
 filled 1024 queued 0
 utf16 가 3 1 | a 1 1

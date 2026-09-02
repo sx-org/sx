@@ -92,7 +92,7 @@ main :: () -> i32 {
         doc.caretFrame.size.width.(i64), doc.caretFrame.size.height.(i64));
 
     // The caret splits the committed run, and the mark lands at the split.
-    doc.caret = 1;
+    doc.select(1, 1);
     root.queue.push(composing("xy", 2));
     loop.frame();
     show("split", *root);

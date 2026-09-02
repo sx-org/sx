@@ -243,11 +243,13 @@ SESSION_MARKED_CAP :: 256;
 
 // --- TextInputSession — the editable document ---
 //
-// Committed text, the caret and the IME's marked (preedit) run in
+// Committed text, the selection and the IME's marked (preedit) run in
 // inline storage: POD, no allocator, owned by value. The marked run is
 // NOT part of committed, and markedLen == 0 is "not composing". Every
-// offset is a UTF-8 byte offset — `caret` into committed,
-// markedSelStart/markedSelEnd into marked.
+// offset is a UTF-8 byte offset — `anchor` and `caret` into committed,
+// markedSelStart/markedSelEnd into marked. The selection is
+// [anchor, caret); anchor == caret is a bare caret, and every edit
+// collapses it there.
 //
 // The session is the SOLE author of the events it publishes on
 // `queue`: that queue is its REPORT channel to everyone else, never a
@@ -256,6 +258,7 @@ SESSION_MARKED_CAP :: 256;
 TextInputSession :: struct {
     committed: [SESSION_COMMITTED_CAP]u8 = .{};
     committedLen: i64 = 0;
+    anchor: i64 = 0;
     caret: i64 = 0;
     marked: [SESSION_MARKED_CAP]u8 = .{};
     markedLen: i64 = 0;
@@ -287,9 +290,22 @@ TextInputSession :: struct {
 
     isComposing :: (self: *TextInputSession) -> bool => self.markedLen > 0;
 
-    // Replaces the live marked run whole; empty text is the abandon.
+    // The selection to edit next: clamped to committed, lo before hi. A
+    // selection is not an edit, so nothing is published.
+    select :: (self: *TextInputSession, lo: i64, hi: i64) {
+        a := if lo < 0 then 0 else if lo > self.committedLen then self.committedLen else lo;
+        b := if hi < a then a else if hi > self.committedLen then self.committedLen else hi;
+        self.anchor = a;
+        self.caret = b;
+    }
+
+    hasSelection :: (self: *TextInputSession) -> bool => self.anchor < self.caret;
+
+    // Replaces the live marked run whole; empty text is the abandon. A
+    // composition that starts over a selection takes its place.
     setMarked :: (self: *TextInputSession, text: string, selStart: i64, selEnd: i64) {
         if text.len > SESSION_MARKED_CAP { return; }
+        if text.len > 0 and self.markedLen == 0 and self.hasSelection() { self.deleteSelection(); }
         if text.len > 0 { c.memcpy(*self.marked[0], text.ptr, text.len); }
         self.markedLen = text.len;
         self.markedSelStart = selStart;
@@ -301,11 +317,12 @@ TextInputSession :: struct {
         self.setMarked("", 0, 0);
     }
 
-    // The marked run gives way to `text` — one text report, no
-    // composition report.
+    // The marked run and the selection give way to `text` — one text
+    // report, no composition report.
     insert :: (self: *TextInputSession, text: string) {
-        if self.committedLen + text.len > SESSION_COMMITTED_CAP { return; }
+        if self.committedLen - (self.caret - self.anchor) + text.len > SESSION_COMMITTED_CAP { return; }
         self.clearMark();
+        if self.hasSelection() { self.deleteSelection(); }
         self.spliceAtCaret(text.ptr, text.len);
         self.queue.push(.text(.{ text = text }));
     }
@@ -325,7 +342,7 @@ TextInputSession :: struct {
         self.queue.push(.text(.{ text = run }));
     }
 
-    // A whole UTF-8 scalar goes, never a byte.
+    // A whole UTF-8 scalar goes, never a byte; a selection goes whole.
     deleteBackward :: (self: *TextInputSession) {
         if self.markedLen > 0 {
             self.markedLen = utf8ScalarStart(self.markedText(), self.markedLen);
@@ -334,13 +351,32 @@ TextInputSession :: struct {
             self.publishMarked();
             return;
         }
+        if self.hasSelection() {
+            self.deleteSelection();
+            return;
+        }
         if self.caret == 0 { return; }
         at := utf8ScalarStart(self.committedText(), self.caret);
+        self.removeBeforeCaret(at);
+        self.queue.push(.deleteBackward(.{}));
+    }
+
+    // Deleting a selection is one backspace per scalar in it, reported
+    // as such.
+    deleteSelection :: (self: *TextInputSession) {
+        while self.caret > self.anchor {
+            at := utf8ScalarStart(self.committedText(), self.caret);
+            self.removeBeforeCaret(at);
+            self.queue.push(.deleteBackward(.{}));
+        }
+    }
+
+    removeBeforeCaret :: (self: *TextInputSession, at: i64) {
         tail := self.committedLen - self.caret;
         if tail > 0 { c.memmove(*self.committed[at], *self.committed[self.caret], tail); }
         self.committedLen -= self.caret - at;
         self.caret = at;
-        self.queue.push(.deleteBackward(.{}));
+        if self.anchor > at { self.anchor = at; }
     }
 
     publishMarked :: (self: *TextInputSession) {
@@ -363,6 +399,7 @@ TextInputSession :: struct {
         if n > 0 { c.memcpy(*self.committed[self.caret], src, n); }
         self.committedLen += n;
         self.caret += n;
+        self.anchor = self.caret;
     }
 }
 
