@@ -96,6 +96,7 @@ pub const Node = struct {
         named_arg: NamedArg,
         trailing_block: TrailingBlock,
         juxtaposition: Juxtaposition,
+        self_block: SelfBlock,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -1001,6 +1002,16 @@ pub const Juxtaposition = struct {
     /// the value's pointer to. Settling copies both onto the aggregate.
     init_block: ?*Node = null,
     init_block_self: ?[]const u8 = null,
+};
+
+/// `expr.{ |s| … }` — a self-trailing block on a value: the value is stored,
+/// `binder` names a pointer to it inside the block, and the written value is
+/// the result. On a juxtaposition or a `.{ … }` primary the block rides on
+/// the aggregate node instead.
+pub const SelfBlock = struct {
+    operand: *Node,
+    block: *Node,
+    binder: []const u8,
 };
 
 pub const NamespaceDecl = struct {

@@ -51,12 +51,12 @@ Mat4 :: struct {
     }
 
     scale :: (x: f32, y: f32, z: f32) -> Mat4 {
-        m := Mat4.zero();
-        m.data[0] = x;
-        m.data[5] = y;
-        m.data[10] = z;
-        m.data[15] = 1.0;
-        m
+        Mat4.zero().{
+            self.data[0] = x;
+            self.data[5] = y;
+            self.data[10] = z;
+            self.data[15] = 1.0;
+        }
     }
 
     rotateX :: (angle: f32) -> Mat4 {

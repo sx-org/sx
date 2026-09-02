@@ -569,6 +569,10 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, jx.block);
             if (jx.init_block) |ib| try walk(b, ib);
         },
+        .self_block => |sb| {
+            try walk(b, sb.operand);
+            try walk(b, sb.block);
+        },
 
         .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
         .binary_op => |o| {

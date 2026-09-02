@@ -1,0 +1,7 @@
+error: a self-trailing block writes into a value; this operand is a type
+  --> examples/diagnostics/2291-diagnostics-self-block-on-type.sx:10:10
+   |
+10 |     b := Button.{ self.label = "Play"; };
+   |          ^^^^^^
+
+help: construct the value first: `T{ … }.{ … }`

@@ -853,6 +853,7 @@ pub const Analyzer = struct {
             // and as a trailing block (void) otherwise — the editor's half of
             // the rule the lowering front settles.
             .juxtaposition => |jx| self.juxtapositionType(jx),
+            .self_block => |sb| self.inferExprType(sb.operand),
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -1373,6 +1374,10 @@ pub const Analyzer = struct {
                     try self.analyzeNode(item);
                 }
                 if (jx.init_block) |ib| try self.analyzeNode(ib);
+            },
+            .self_block => |sb| {
+                try self.analyzeNode(sb.operand);
+                try self.analyzeNode(sb.block);
             },
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
@@ -1916,6 +1921,10 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
             if (jx.init_block) |ib| {
                 if (findNodeAtOffset(ib, offset)) |found| return found;
             }
+        },
+        .self_block => |sb| {
+            if (findNodeAtOffset(sb.operand, offset)) |found| return found;
+            if (findNodeAtOffset(sb.block, offset)) |found| return found;
         },
         .break_expr, .continue_expr => {},
         .caller_site => {},

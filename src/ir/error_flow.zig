@@ -425,6 +425,10 @@ pub const ErrorFlow = struct {
             .struct_literal => |sl| {
                 for (sl.field_inits) |fi| self.flowExpr(fi.value, ctx, proven);
             },
+            .self_block => |sb| {
+                self.flowExpr(sb.operand, ctx, proven);
+                self.flowExpr(sb.block, ctx, proven);
+            },
             .array_literal => |al| {
                 for (al.elements) |el| self.flowExpr(el, ctx, proven);
             },

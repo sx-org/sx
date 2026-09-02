@@ -445,6 +445,10 @@ pub const UnknownTypeChecker = struct {
                 self.checkBindingNames(jx.block);
                 if (jx.init_block) |ib| self.checkBindingNames(ib);
             },
+            .self_block => |sb| {
+                self.checkBindingNames(sb.operand);
+                self.checkBindingNames(sb.block);
+            },
             .asm_expr => |ae| {
                 self.checkBindingNames(ae.template);
                 for (ae.operands) |op| self.checkBindingNames(op.payload);
@@ -635,6 +639,10 @@ pub const UnknownTypeChecker = struct {
             .named_arg => |na| self.harvestScopeDecls(na.value, out),
             .trailing_block => |tb| self.harvestScopeDecls(tb.lambda, out),
             .juxtaposition => |jx| self.harvestScopeDecls(jx.expr, out),
+            .self_block => |sb| {
+                self.harvestScopeDecls(sb.operand, out);
+                self.harvestScopeDecls(sb.block, out);
+            },
             .lambda => |lm| self.harvestScopeDecls(lm.body, out),
             .fn_decl => |fd| self.harvestScopeDecls(fd.body, out),
             else => {},
@@ -934,6 +942,10 @@ pub const UnknownTypeChecker = struct {
             .named_arg => |na| self.walkBodyTypes(na.value, declared, in_scope, type_vals),
             .trailing_block => |tb| self.walkBodyTypes(tb.lambda, declared, in_scope, type_vals),
             .juxtaposition => |jx| self.walkJuxtapositionTypes(node, jx, declared, in_scope, type_vals),
+            .self_block => |sb| {
+                self.walkBodyTypes(sb.operand, declared, in_scope, type_vals);
+                self.walkBodyTypes(sb.block, declared, in_scope, type_vals);
+            },
             .lambda => |lm| self.checkScope(lm.type_params, lm.params, lm.return_type, lm.body, declared, in_scope, type_vals),
             .fn_decl => |fd| self.checkScope(fd.type_params, fd.params, fd.return_type, fd.body, declared, in_scope, type_vals),
             else => {},

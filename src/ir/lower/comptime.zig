@@ -693,6 +693,10 @@ fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
         .var_decl => |v| if (v.value) |val| scanDeclareNames(self, val, depth + 1),
         .const_decl => |cd| scanDeclareNames(self, cd.value, depth + 1),
         .struct_literal => |sl| for (sl.field_inits) |fi| scanDeclareNames(self, fi.value, depth + 1),
+        .self_block => |sb| {
+            scanDeclareNames(self, sb.operand, depth + 1);
+            scanDeclareNames(self, sb.block, depth + 1);
+        },
         .array_literal => |al| for (al.elements) |e| scanDeclareNames(self, e, depth + 1),
         else => {},
     }

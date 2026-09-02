@@ -677,6 +677,7 @@ pub const ExprTyper = struct {
                 }
                 return .unresolved;
             },
+            .self_block => |sb| self.inferType(sb.operand),
             // Postfix cast: the expression's type IS the written target;
             // the chained form yields `?T` (an optional target flattens).
             .postfix_cast => |pc| blk: {
