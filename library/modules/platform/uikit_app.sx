@@ -171,9 +171,19 @@ sxClamp :: (v: i64, lo: i64, hi: i64) -> i64 {
     if v < lo then lo else if v > hi then hi else v
 }
 
-// The selection, which sits inside the marked run while one is live.
-sxSelStart :: (doc: *TextInputSession) -> i64 => doc.caret + doc.markedSelStart;
+// The selection: the IME's inside the marked run while one is live, the
+// document's otherwise.
+sxSelStart :: (doc: *TextInputSession) -> i64 =>
+    if doc.markedLen > 0 then doc.caret + doc.markedSelStart else doc.anchor;
 sxSelEnd   :: (doc: *TextInputSession) -> i64 => doc.caret + doc.markedSelEnd;
+
+// Inside a live mark the selection is the IME's own, carried by
+// setMarkedText:selectedRange:; a range set then leaves the document alone.
+sxSelect :: (lo: i64, hi: i64) {
+    if doc := sxSession() {
+        if doc.markedLen == 0 { doc.select(lo, hi); }
+    }
+}
 
 sxIsBackward :: (direction: i64) -> bool =>
     direction == SX_TEXT_BACKWARD or direction == SX_TEXT_LEFT or direction == SX_TEXT_UP;
@@ -277,6 +287,7 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
 
     replaceRange_withText :: (self: *Self, range: *void, text: *NSString) {
         if gUikitPlat == null { return; }
+        sxSelect(sxLoOf(range), sxHiOf(range));
         gUikitPlat.insertText(text);
     }
 
@@ -285,8 +296,9 @@ SxView :: @ObjcClass("SxView", extends = UIView, implements = .[UITextInput]) ex
         null
     }
 
-    // The session's ops carry the caret; UIKit's selection is a read of it.
-    setSelectedTextRange :: (self: *Self, range: *void) { }
+    setSelectedTextRange :: (self: *Self, range: *void) {
+        sxSelect(sxLoOf(range), sxHiOf(range));
+    }
 
     markedTextRange :: (self: *Self) -> ?*UITextRange {
         if doc := sxSession() {
