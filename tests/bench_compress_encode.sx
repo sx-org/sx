@@ -11,7 +11,7 @@ BENCH_SAMPLES : i64 = 15;
 
 monoNs :: () -> i64 {
     ts : time.Timespec = .{};
-    if c.clock_gettime(time.CLOCK_MONOTONIC, @ts) != 0 { return -1; }
+    if c.clock_gettime(time.CLOCK_MONOTONIC, *ts) != 0 { return -1; }
     ts.sec * 1000000000 + ts.nsec
 }
 
@@ -65,7 +65,7 @@ runCase :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
         alloc.deallocBytes(value.ptr);
         run += 1;
     }
-    encodeNs := medianSample(@samples);
+    encodeNs := medianSample(*samples);
     if encodeNs <= 0 { return false; }
 
     packed := zlib.encode(data, options, alloc) catch { return false; };

@@ -10,7 +10,7 @@ BENCH_SAMPLES : i64 = 15;
 
 monoNs :: () -> i64 {
     ts : time.Timespec = .{};
-    if c.clock_gettime(time.CLOCK_MONOTONIC, @ts) != 0 { return -1; }
+    if c.clock_gettime(time.CLOCK_MONOTONIC, *ts) != 0 { return -1; }
     ts.sec * 1000000000 + ts.nsec
 }
 
@@ -97,7 +97,7 @@ runCase :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
         }
         run += 1;
     }
-    decodeNs := medianSample(@samples);
+    decodeNs := medianSample(*samples);
     if decodeNs <= 0 {
         context.allocator.deallocBytes(packed.ptr);
         return false;
