@@ -1297,6 +1297,7 @@ pub const Parser = struct {
                 if (kind != .enum_variant) return self.fail("an 'else' member belongs to an enum with an integer backing type");
                 if (else_name != null) return self.fail("an enum has one 'else' member");
                 self.advance();
+                for (names.items) |taken| if (std.mem.eql(u8, taken, self.tokens.slice(self.tok))) return self.fail("the 'else' member's name is a variant's");
                 else_name = self.tokens.slice(self.tok);
                 else_name_start = self.tokens.start(self.tok);
                 self.advance();
@@ -1306,6 +1307,7 @@ pub const Parser = struct {
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName(kind.nameExpected());
             }
+            if (else_name) |en| if (std.mem.eql(u8, en, self.tokens.slice(self.tok))) return self.fail("the 'else' member's name is a variant's");
             try names.append(self.allocator, self.tokens.slice(self.tok));
             try name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();

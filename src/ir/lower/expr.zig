@@ -2133,11 +2133,17 @@ pub fn isElseMember(self: *Lowering, ty: TypeId, name: []const u8) bool {
     };
 }
 
-/// `E.rest(v)` — the else member's value IS `v` in the backing integer,
-/// retyped as `E`.
-pub fn elseMemberInit(self: *Lowering, ty: TypeId, arg: Ref) Ref {
+/// `E.rest(v)` when `name` is the else member of `ty`: the value IS `v` in
+/// the backing integer, retyped as `E`. Any other argument count is the bare
+/// spelling's error. Null when `name` is not the else member.
+pub fn elseMemberCall(self: *Lowering, ty: TypeId, name: []const u8, args: []const Ref, span: ast.Span) ?Ref {
+    if (!self.isElseMember(ty, name)) return null;
+    if (args.len != 1) {
+        self.refuseBareElseMember(ty, name, span);
+        return self.builder.enumInit(0, Ref.none, ty);
+    }
     const backing = self.enumBackingType(ty).?;
-    const as_backing = self.coerceToType(arg, self.builder.getRefType(arg), backing);
+    const as_backing = self.coerceToType(args[0], self.builder.getRefType(args[0]), backing);
     return self.builder.emit(.{ .bitcast = .{ .operand = as_backing, .from = backing, .to = ty } }, ty);
 }
 

@@ -1761,9 +1761,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 const type_info = self.module.types.get(result_ty);
                                 if (type_info == .@"enum") {
                                     // Qualified enum construction: Type.variant(payload)
-                                    if (self.isElseMember(result_ty, fa.field) and args.items.len == 1) {
-                                        return self.elseMemberInit(result_ty, args.items[0]);
-                                    }
+                                    if (self.elseMemberCall(result_ty, fa.field, args.items, c.callee.span)) |ref| return ref;
                                     if (!self.hasVariant(result_ty, fa.field)) {
                                         self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
                                         return self.builder.enumInit(0, Ref.none, result_ty);
@@ -1991,9 +1989,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.module.types.findByName(type_name_id)) |union_ty| {
                         const type_info = self.module.types.get(union_ty);
                         if (type_info == .@"enum") {
-                            if (self.isElseMember(union_ty, func_name) and args.items.len == 1) {
-                                return self.elseMemberInit(union_ty, args.items[0]);
-                            }
+                            if (self.elseMemberCall(union_ty, func_name, args.items, c.callee.span)) |ref| return ref;
                             if (!self.hasVariant(union_ty, func_name)) {
                                 self.emitBadEnumVariant(union_ty, type_info.@"enum", func_name, c.callee.span);
                                 return self.builder.enumInit(0, Ref.none, union_ty);
@@ -2598,9 +2594,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // `resolveVariantIndex` returns 0 for an unknown name, which would
             // silently build the zeroth variant (`.int_(7)` on a renamed enum
             // constructing `.null`). `target` is a payload enum per the blk above.
-            if (self.isElseMember(target, el.name) and args.items.len == 1) {
-                return self.elseMemberInit(target, args.items[0]);
-            }
+            if (self.elseMemberCall(target, el.name, args.items, c.callee.span)) |ref| return ref;
             if (!self.hasVariant(target, el.name)) {
                 self.emitBadEnumVariant(target, self.module.types.get(target).@"enum", el.name, c.callee.span);
                 return self.builder.enumInit(0, Ref.none, target);

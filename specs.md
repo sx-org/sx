@@ -4299,7 +4299,8 @@ with both is an error (two arms catch the rest).
 The `else` member is not a reflected member: `@typeInfo(Fd).enum.fields` and
 `@len(Fd)` see the named members only, and a value no named member covers
 prints as `.(7)`. An `else` member on a payload enum, on an enum with a stated
-layout, or a second one, is an error.
+layout or a non-integer backing type, a second one, or one whose name a
+variant spells, is an error.
 
 ### Enum Flags
 
