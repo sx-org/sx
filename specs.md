@@ -1461,9 +1461,8 @@ The table is built per `Q` when a re-erasure to `Q`, a runtime
 conformance `is` against `Q`, or a `p.(?Q)` probe on an erased
 receiver exists; construction waits on the impl facts of §6.9.
 
-Both forms read the same null: unconsumed `p.(Q)` panics,
-`try p.(Q)` raises, `p.(?Q)` answers null. `Q == I` is the identity
-handle copy of §5.2.
+Both forms read the same null: unconsumed `p.(Q)` panics, `p.(?Q)`
+answers null. `Q == I` is the identity handle copy of §5.2.
 
 ##### 6.5 Equality
 

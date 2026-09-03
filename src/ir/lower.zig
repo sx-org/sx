@@ -3700,6 +3700,7 @@ pub const Lowering = struct {
     pub const lowerSoftPointerRecovery = lower_protocol.lowerSoftPointerRecovery;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const firstUnimplementedMethod = lower_protocol.firstUnimplementedMethod;
+    pub const conformanceAnswer = lower_protocol.conformanceAnswer;
     pub const boundNonConformance = lower_protocol.boundNonConformance;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const checkBoundBindings = lower_bound.checkBindings;

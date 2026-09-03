@@ -1,0 +1,18 @@
+// `@conforms` evaluates its value argument even when the answer folds.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }
+
+n : i64 = 0;
+
+tick :: () -> W {
+    n += 1;
+    W{ v = n }
+}
+
+main :: () {
+    _ = @conforms(I, tick());
+    print("{}\n", n);
+}

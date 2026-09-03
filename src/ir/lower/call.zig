@@ -4160,8 +4160,9 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
 }
 
 /// `@conforms(I, v)` — whether `v` conforms to interface `I`. A concrete `v`
-/// folds from the impl facts; an interface handle or a boxed `v` reads `I`'s
-/// conformance table by the referent's type at runtime.
+/// folds from whether its methods satisfy `I` (the fact `is` answers); an
+/// interface handle or a boxed `v` reads `I`'s conformance table by the
+/// referent's type at runtime.
 fn lowerConformsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 2) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@conforms takes 2 arguments, got {d}", .{c.args.len});
@@ -4174,16 +4175,13 @@ fn lowerConformsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         return self.builder.constBool(false);
     }
     const vty = self.inferExprType(c.args[1]);
+    const val = self.lowerExpr(c.args[1]);
     if (vty == .any) {
-        const av = self.lowerExpr(c.args[1]);
-        return self.conformanceAsk(self.builder.emit(.{ .struct_get = .{ .base = av, .field_index = 1 } }, .type_value), iface);
+        return self.conformanceAsk(self.builder.emit(.{ .struct_get = .{ .base = val, .field_index = 1 } }, .type_value), iface);
     }
-    if (self.getProtocolInfo(vty) != null) {
-        const handle = self.lowerExpr(c.args[1]);
-        return self.conformanceAsk(self.protocolTypeIdWord(handle), iface);
-    }
-    const proto_name = self.module.types.getString(self.module.types.get(iface).@"struct".name);
-    return self.builder.constBool(self.protocolResolver().hasConcreteImplDecl(iface, proto_name, vty));
+    if (self.getProtocolInfo(vty) != null) return self.conformanceAsk(self.protocolTypeIdWord(val), iface);
+    if (self.conformanceAnswer(iface, vty)) |ok| return self.builder.constBool(ok);
+    return self.builder.emit(.{ .placeholder = self.module.types.internString("conforms-await") }, .bool);
 }
 
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
