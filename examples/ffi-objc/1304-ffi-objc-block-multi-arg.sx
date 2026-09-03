@@ -31,7 +31,7 @@ impl Into(Block) for Closure(i32, *void) -> void {
             flags = 0,
             reserved = 0,
             invoke = (*__block_invoke_void_i32_p).(*void),
-            descriptor = *__sx_block_descriptor,
+            descriptor = *kBlockDescriptor,
             sxEnv = self.env,
             sxFn = self.fnPtr,
         }
