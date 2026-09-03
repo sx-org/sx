@@ -223,8 +223,5 @@ composeEventBatch :: (batch: *List(PlatformEvent), live: *List(PlatformEvent), i
     }
     ime.clear();
 
-    out : []PlatformEvent = ---;
-    out.ptr = batch.items.ptr;
-    out.len = batch.len;
-    out
+    batch.items
 }
