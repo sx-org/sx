@@ -4,11 +4,11 @@
 @import "modules/std.sx";
 
 flagged :: (v: any) -> string {
-    if p := @inner(v) { format("{}", @unbox(p, i32)) } else { "null" }
+    if p := @inner(v) { format("{}", @unbox(i32, p)) } else { "null" }
 }
 
 sentinel :: (v: any) -> string {
-    if p := @inner(v) { format("{}", @unbox(p, *i32).*) } else { "null" }
+    if p := @inner(v) { format("{}", @unbox(*i32, p).*) } else { "null" }
 }
 
 main :: () -> i32 {

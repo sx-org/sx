@@ -235,8 +235,8 @@ writeAny :: (w: Writer, val: any) {
     t := @typeOf(val);
     match @typeInfo(t) {
         case .void: {}
-        case .bool: writeBool(w, @unbox(val, bool));
-        case .string: w.write(@unbox(val, string));
+        case .bool: writeBool(w, @unbox(bool, val));
+        case .string: w.write(@unbox(string, val));
         // A category arm binds the widened reading its whole tag set shares,
         // so one arm covers every width.
         case .int: {
@@ -318,7 +318,7 @@ writeAny :: (w: Writer, val: any) {
             if p := @inner(val) { writeAny(w, p); } else { w.write("null"); }
         }
         case .typeValue: {
-            tv := @unbox(val, Type);
+            tv := @unbox(Type, val);
             w.write(@typeName(tv));
         }
         else: w.write("<?>");
@@ -338,7 +338,7 @@ writeElements :: (w: Writer, val: any) {
 }
 
 writePointer :: (w: Writer, val: any) {
-    p := @unbox(val, *void);
+    p := @unbox(*void, val);
     if p == null { w.write("null"); return; }
     pt := @typeOf(val);
     w.write(@typeName(pt));

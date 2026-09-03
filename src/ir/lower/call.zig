@@ -3973,19 +3973,19 @@ fn boxedReceiver(self: *Lowering, arg: *const Node) Ref {
     return if (ty == .any) val else self.boxAnyOf(val, ty, arg);
 }
 
-/// `@unbox(v, $T)` — the typed load of `v`'s boxed storage as `T`. No tag
+/// `@unbox($T, v)` — the typed load of `v`'s boxed storage as `T`. No tag
 /// check: `T` names what the storage holds, and the load is the operation.
 fn lowerUnboxIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 2) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@unbox takes 2 arguments, got {d}", .{c.args.len});
         return Ref.none;
     }
-    const target = if (self.isStaticTypeArg(c.args[1])) self.resolveTypeArg(c.args[1]) else TypeId.unresolved;
+    const target = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
     if (target == .unresolved) {
-        if (self.diagnostics) |d| d.addFmt(.err, c.args[1].span, "@unbox expects a type known at compile time", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@unbox expects a type known at compile time", .{});
         return Ref.none;
     }
-    return self.builder.emit(.{ .unbox_any = .{ .operand = boxedReceiver(self, c.args[0]) } }, target);
+    return self.builder.emit(.{ .unbox_any = .{ .operand = boxedReceiver(self, c.args[1]) } }, target);
 }
 
 /// `@tag(v)` — an enum value's tag. A typed enum yields the tag in its tag
@@ -4498,13 +4498,13 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         else => {},
     };
     if (std.mem.eql(u8, name, "anyElement")) {
-        // anyElement(av, elem, idx) → element view into an array/vector held
+        // anyElement(elem, av, idx) → element view into an array/vector held
         // by `av`: pure stride math, `{elem, av.data + idx * @sizeOf(elem)}`.
         // A static `elem` folds its size and tag to constants; a runtime Type
         // reads the rt size table. Bounds are the caller's (same OOB rule as
         // the field family).
         if (c.args.len < 3) return self.builder.constInt(0, .any);
-        const av = self.lowerExpr(c.args[0]);
+        const av = self.lowerExpr(c.args[1]);
         // The index lowers under its declared i64 param type — an ambient
         // `any` target (this call in return/arg position) must not leak
         // into an `xx` index argument.
@@ -4514,12 +4514,12 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         self.target_type = saved_target;
         var tag: Ref = undefined;
         var elem_size: Ref = undefined;
-        if (self.isStaticTypeArg(c.args[1])) {
-            const elem_ty = self.resolveTypeArg(c.args[1]);
+        if (self.isStaticTypeArg(c.args[0])) {
+            const elem_ty = self.resolveTypeArg(c.args[0]);
             tag = self.builder.constType(elem_ty);
             elem_size = self.builder.constInt(@intCast(self.module.types.typeSizeBytes(elem_ty)), .i64);
         } else {
-            tag = self.lowerExpr(c.args[1]);
+            tag = self.lowerExpr(c.args[0]);
             const sz_args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constInt(0, .any);
             elem_size = self.builder.callBuiltin(.@"rt_@sizeOf", sz_args, .i64);
         }

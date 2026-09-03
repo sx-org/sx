@@ -7,13 +7,13 @@
 Point :: struct { x: i32; y: i32 }
 
 describe :: (v: any) -> string {
-    if @typeEq(@typeOf(v), i64) { return format("i64 {}", @unbox(v, i64)); }
+    if @typeEq(@typeOf(v), i64) { return format("i64 {}", @unbox(i64, v)); }
     if @typeEq(@typeOf(v), Point) {
-        p := @unbox(v, Point);
+        p := @unbox(Point, v);
         return format("Point {} {}", p.x, p.y);
     }
     if @typeEq(@typeOf(v), []i16) {
-        s := @unbox(v, []i16);
+        s := @unbox([]i16, v);
         return format("slice {} {} {}", s.len, s[0], s[1]);
     }
     "other"

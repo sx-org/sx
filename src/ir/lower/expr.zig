@@ -4495,7 +4495,7 @@ fn lowerErasedAssert(self: *Lowering, pc: *const ast.PostfixCast, recv: *Node, n
     const regime = assertRegime(pc);
     if (regime == .unconsumed) {
         const callee_node = Node{ .data = .{ .identifier = .{ .name = "@cast" } }, .span = node.span, .source_file = node.source_file };
-        const args = self.alloc.dupe(*Node, &.{ recv, pc.type_expr }) catch unreachable;
+        const args = self.alloc.dupe(*Node, &.{ pc.type_expr, recv }) catch unreachable;
         const syn_call = ast.Call{ .callee = @constCast(&callee_node), .args = args };
         return self.lowerCall(&syn_call);
     }

@@ -202,14 +202,14 @@ pub const CallResolver = struct {
                 };
                 return .{ .kind = .builtin, .return_type = rt, .target = .{ .builtin = bid } };
             }
-            // `@unbox(v, T)` types as `T` and `@inner(v)` as the interned
+            // `@unbox(T, v)` types as `T` and `@inner(v)` as the interned
             // `?any` — shapes the registry's fixed `ret` cannot carry.
             if (std.mem.eql(u8, bare_name, "@inner")) {
                 return refl(bare_name, self.l.module.types.optionalOf(.any));
             }
             if (std.mem.eql(u8, bare_name, "@unbox")) {
-                const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[1]))
-                    self.l.resolveTypeArg(c.args[1])
+                const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[0]))
+                    self.l.resolveTypeArg(c.args[0])
                 else
                     TypeId.unresolved;
                 return refl(bare_name, target);
