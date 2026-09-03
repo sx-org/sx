@@ -1506,13 +1506,28 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     defer arm_verdicts.deinit(self.alloc);
     for (me.arms) |_| arm_verdicts.append(self.alloc, null) catch unreachable;
 
+    // The arm naming the enum's `else` member: it is the default arm, and its
+    // capture binds the subject word in the backing integer.
+    var else_arm: ?usize = null;
     for (me.arms, 0..) |arm, i| {
         if (arm.pattern == null) {
+            if (else_arm != null) {
+                if (self.diagnostics) |d| d.addFmt(.err, arm.body.span, "two arms catch the rest of '{s}'", .{self.formatTypeName(subject_ty)});
+            }
             default_bb = arm_blocks.items[i];
             arm_tag_values.append(self.alloc, &.{}) catch unreachable;
             continue;
         }
         const pat = arm.pattern.?;
+        if (elseArmLeaf(self, subject_ty, pat)) |_| {
+            if (default_bb != null) {
+                if (self.diagnostics) |d| d.addFmt(.err, pat.span, "two arms catch the rest of '{s}'", .{self.formatTypeName(subject_ty)});
+            }
+            default_bb = arm_blocks.items[i];
+            else_arm = i;
+            arm_tag_values.append(self.alloc, &.{}) catch unreachable;
+            continue;
+        }
 
         if (is_any_switch) {
             // TYPE SWITCH arm: a category keyword names a tag SET; anything
@@ -1780,6 +1795,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
 
+    // Every value of the backing integer is a value of an else-member enum, so
+    // the arms are never the whole of it without the else arm or `else:`.
+    if (default_bb == null and !subject_ty.isBuiltin()) {
+        const info = self.module.types.get(subject_ty);
+        if (info == .@"enum") if (info.@"enum".else_member) |m| {
+            if (self.diagnostics) |d| d.addFmt(.err, me.subject.span, "a match over '{s}' needs a '.{s}' arm or an 'else:' arm: every {s} is a value of it", .{ self.formatTypeName(subject_ty), self.module.types.getString(m), self.formatTypeName(info.@"enum".tag_type) });
+        };
+    }
+
     // If no default arm, create an unreachable default
     if (default_bb == null) {
         default_bb = self.freshBlock("match.unr");
@@ -1837,7 +1861,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         self.scope = &arm_scope;
 
         if (arm.capture) |capture_name| {
-            if (arm_verdicts.items[i]) |verdict| {
+            if (else_arm == i) {
+                const backing = self.enumBackingType(subject_ty).?;
+                const word = self.builder.emit(.{ .bitcast = .{ .operand = subject, .from = subject_ty, .to = backing } }, backing);
+                arm_scope.put(capture_name, .{ .ref = word, .ty = backing, .is_alloca = false, .origin = .match_payload });
+            } else if (arm_verdicts.items[i]) |verdict| {
                 // The skip above drops every refusal, so a stored verdict here
                 // is `ok`.
                 const ok = verdict.ok;
@@ -2034,7 +2062,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
 
     // Emit default block if no explicit else arm
     if (default_bb != null) {
-        var found_default = false;
+        var found_default = else_arm != null;
         for (me.arms) |arm| {
             if (arm.pattern == null) {
                 found_default = true;
@@ -2139,4 +2167,15 @@ pub fn currentBlockHasTerminator(self: *Lowering) bool {
 pub fn ensureTerminator(self: *Lowering, ret_ty: TypeId) void {
     if (self.currentBlockHasTerminator()) return;
     self.emitBodyExit(null, ret_ty, .fallthrough);
+}
+
+/// The else member an arm names — `.rest` or `E.rest` over an else-member
+/// enum subject — or null.
+fn elseArmLeaf(self: *Lowering, subject_ty: TypeId, pat: *const Node) ?[]const u8 {
+    const leaf: []const u8 = switch (pat.data) {
+        .enum_literal => |el| el.name,
+        .field_access => |fa| if (lower_error.armPrefixType(self, fa.object) == subject_ty) fa.field else return null,
+        else => return null,
+    };
+    return if (self.isElseMember(subject_ty, leaf)) leaf else null;
 }

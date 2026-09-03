@@ -548,6 +548,10 @@ pub const EnumDecl = struct {
     is_flags: bool = false,
     variant_values: []const ?*Node = &.{}, // explicit value per variant (null = auto), empty = all auto
     backing_type: ?*Node = null, // optional backing type: enum u8 { ... }
+    /// The `else NAME;` member: the name every value of the backing integer the
+    /// named members do not cover reaches. Null when the enum declares none.
+    else_name: ?[]const u8 = null,
+    else_name_start: u32 = 0,
     /// True when the declared NAME was a backtick raw identifier
     /// (`` `i32 :: enum { … } ``) — exempt from the reserved-type-name decl
     /// check. A bare reserved-name decl still errors.

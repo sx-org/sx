@@ -1195,6 +1195,15 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 /// Null when the subject/pattern supplies no typed payload — the arm-level
 /// binding guard diagnoses those at lowering.
 fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
+    // The else member's capture is the subject word in the backing integer.
+    if (pattern) |p| {
+        const leaf: ?[]const u8 = switch (p.data) {
+            .enum_literal => |el| el.name,
+            .field_access => |fa| fa.field,
+            else => null,
+        };
+        if (leaf) |l| if (self.isElseMember(subject_ty, l)) return self.enumBackingType(subject_ty);
+    }
     if (subject_ty.isBuiltin()) return null;
     if (pattern) |pat| {
         if (pat.data == .field_access) return switch (lower_error.qualifyMatchArm(self, subject_ty, pat)) {

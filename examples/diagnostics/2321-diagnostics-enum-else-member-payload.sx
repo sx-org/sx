@@ -1,0 +1,7 @@
+// An `else` member needs an enum that is its integer backing type: a payload
+// enum has a tag word and a payload area, so nothing else remains to name.
+@import "modules/std.sx";
+
+Shape :: enum { dot; circle: f32; else other; }
+
+main :: () { }

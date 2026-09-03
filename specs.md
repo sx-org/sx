@@ -4241,6 +4241,10 @@ Syntax: `Name :: enum [flags] [type] { ... }`
 
 The backing type must be an integer type (`u8`, `u16`, `u32`, `i8`, `i16`, `i32`, `i64`, etc.). When omitted, the default is `i64`. This is useful for C interop (matching C enum sizes) and memory efficiency.
 
+A payload-less enum is its backing integer, so the two convert implicitly in
+both directions through the integer ladder: `c : Color = 2` and `n : u8 = c`
+need no cast.
+
 ### Enum Layout Struct
 
 For C interop with payload enums (e.g. SDL_Event), a struct can be used as the backing type to specify the exact memory layout:
@@ -4267,6 +4271,35 @@ The layout struct must have:
 - Any other fields are treated as padding/reserved and positioned by the struct layout.
 
 This gives explicit control over the memory layout instead of relying on automatic alignment. The total size equals the struct size. Without a layout struct, payload enums use `{ tag, [max_payload_size x i8] }` with no padding.
+
+### The `else` Member
+
+An integer-backed enum may name the rest of its backing type:
+
+```sx
+Fd :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+```
+
+Every value of the backing integer is then a value of the enum. The named
+members cover their tags; every other value reaches the `else` member, whose
+name is the declaration's. The type is exactly its backing integer — no tag
+word, no payload area — so `@sizeOf(Fd)` is 4 and `@tag(fd)` is the word.
+
+`Fd.raw(7)` is the value 7 in the type; the argument converts through the
+integer ladder. `Fd.raw(1)` is the same word as `Fd.stdout`, so it is
+`Fd.stdout`: a named member is never shadowed. The member has no value of its
+own, so `Fd.raw` without an argument is an error.
+
+In a `match`, the arm naming the else member — `case .raw:` or
+`case Fd.raw:` — is the default arm, and its capture binds the word in the
+backing type: `case .raw: |n|`. A match over such an enum is exhaustive only
+with that arm or an `else:` arm; a match with neither is an error, and one
+with both is an error (two arms catch the rest).
+
+The `else` member is not a reflected member: `@typeInfo(Fd).enum.fields` and
+`@len(Fd)` see the named members only, and a value no named member covers
+prints as `.(7)`. An `else` member on a payload enum, on an enum with a stated
+layout, or a second one, is an error.
 
 ### Enum Flags
 

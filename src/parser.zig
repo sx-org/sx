@@ -1266,6 +1266,9 @@ pub const Parser = struct {
     const SetMembers = struct {
         names: []const []const u8,
         name_starts: []const u32,
+        /// The `else NAME;` member, enum variants only.
+        else_name: ?[]const u8 = null,
+        else_name_start: u32 = 0,
         /// Payload type per member, or null; empty when no member carries one.
         payloads: []const ?*Node,
         /// Explicit discriminant per member, or null; empty when none is written.
@@ -1283,9 +1286,22 @@ pub const Parser = struct {
         var values = std.ArrayList(?*Node).empty;
         var has_payload = false;
         var has_value = false;
+        var else_name: ?[]const u8 = null;
+        var else_name_start: u32 = 0;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             if (self.tokens.tag(self.tok) == .kw_private) {
                 return self.fail(kind.privateReject());
+            }
+            // `else NAME;` — the member the rest of the backing integer reaches.
+            if (self.tokens.tag(self.tok) == .kw_else and self.peekTag(1) == .identifier) {
+                if (kind != .enum_variant) return self.fail("an 'else' member belongs to an enum with an integer backing type");
+                if (else_name != null) return self.fail("an enum has one 'else' member");
+                self.advance();
+                else_name = self.tokens.slice(self.tok);
+                else_name_start = self.tokens.start(self.tok);
+                self.advance();
+                try self.expectStatementEnd();
+                continue;
             }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName(kind.nameExpected());
@@ -1320,6 +1336,8 @@ pub const Parser = struct {
         return .{
             .names = try names.toOwnedSlice(self.allocator),
             .name_starts = try name_starts.toOwnedSlice(self.allocator),
+            .else_name = else_name,
+            .else_name_start = else_name_start,
             .payloads = if (has_payload) try payloads.toOwnedSlice(self.allocator) else &.{},
             .values = if (has_value) try values.toOwnedSlice(self.allocator) else &.{},
         };
@@ -1352,6 +1370,8 @@ pub const Parser = struct {
             .variant_types = members.payloads,
             .is_flags = is_flags,
             .variant_values = members.values,
+            .else_name = members.else_name,
+            .else_name_start = members.else_name_start,
             .backing_type = backing_type,
             .is_raw = name_is_raw,
         } });

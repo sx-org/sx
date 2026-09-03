@@ -699,6 +699,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
             .tag_type = tag_type orelse .i64,
             .layout = backing_type,
             .values = explicit_tag_vals,
+            .else_member = if (ed.else_name) |n| table.internString(n) else null,
         } };
     }
 
@@ -754,6 +755,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
         .is_flags = ed.is_flags,
         .values = explicit_vals,
         .tag_type = enum_backing orelse .i64,
+        .else_member = if (ed.else_name) |n| table.internString(n) else null,
     } };
 }
 

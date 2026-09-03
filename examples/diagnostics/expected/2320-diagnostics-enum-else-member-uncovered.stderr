@@ -1,0 +1,5 @@
+error: a match over 'Desc' needs a '.raw' arm or an 'else:' arm: every i32 is a value of it
+  --> examples/diagnostics/2320-diagnostics-enum-else-member-uncovered.sx:9:16
+   |
+ 9 |     n := match d { case .stdin: 0; case .stdout: 1; };
+   |                ^

@@ -1176,6 +1176,12 @@ pub fn registerEnumDecl(self: *Lowering, ed: *const ast.EnumDecl) void {
     // over a namespaced same-name import), not via a global `findByName`
     // first-match.
     const info = type_bridge.buildEnumInfo(ed, table, self);
+    if (ed.else_name != null and (info.@"enum".hasPayload() or info.@"enum".layout != null)) {
+        if (self.diagnostics) |d| {
+            const span = ast.Span{ .start = ed.else_name_start, .end = ed.else_name_start + @as(u32, @intCast(ed.else_name.?.len)) };
+            d.addFmt(.err, span, "an 'else' member needs an enum that is its integer backing type — '{s}' carries payloads or states a layout", .{ed.name});
+        }
+    }
     _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
 }
 

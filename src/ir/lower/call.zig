@@ -1761,6 +1761,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 const type_info = self.module.types.get(result_ty);
                                 if (type_info == .@"enum") {
                                     // Qualified enum construction: Type.variant(payload)
+                                    if (self.isElseMember(result_ty, fa.field) and args.items.len == 1) {
+                                        return self.elseMemberInit(result_ty, args.items[0]);
+                                    }
                                     if (!self.hasVariant(result_ty, fa.field)) {
                                         self.emitBadEnumVariant(result_ty, type_info.@"enum", fa.field, c.callee.span);
                                         return self.builder.enumInit(0, Ref.none, result_ty);
@@ -1988,6 +1991,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.module.types.findByName(type_name_id)) |union_ty| {
                         const type_info = self.module.types.get(union_ty);
                         if (type_info == .@"enum") {
+                            if (self.isElseMember(union_ty, func_name) and args.items.len == 1) {
+                                return self.elseMemberInit(union_ty, args.items[0]);
+                            }
                             if (!self.hasVariant(union_ty, func_name)) {
                                 self.emitBadEnumVariant(union_ty, type_info.@"enum", func_name, c.callee.span);
                                 return self.builder.enumInit(0, Ref.none, union_ty);
@@ -2568,7 +2574,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
 
-            // .Variant(payload) — payload enum construction. Requires target to be a payload enum.
+            // .Variant(payload) — payload enum construction, or the else member
+            // of an integer-backed enum. Requires the target to be one of those.
             const target = blk: {
                 if (target_opt) |tgt| {
                     // A `?E` destination constructs the E and wraps at the
@@ -2577,7 +2584,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     var t = tgt;
                     while (!t.isBuiltin()) {
                         const info = self.module.types.get(t);
-                        if (info == .@"enum" and info.@"enum".hasPayload()) break :blk t;
+                        if (info == .@"enum" and (info.@"enum".hasPayload() or self.isElseMember(t, el.name))) break :blk t;
                         if (info != .optional) break;
                         t = info.optional.child;
                     }
@@ -2591,6 +2598,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // `resolveVariantIndex` returns 0 for an unknown name, which would
             // silently build the zeroth variant (`.int_(7)` on a renamed enum
             // constructing `.null`). `target` is a payload enum per the blk above.
+            if (self.isElseMember(target, el.name) and args.items.len == 1) {
+                return self.elseMemberInit(target, args.items[0]);
+            }
             if (!self.hasVariant(target, el.name)) {
                 self.emitBadEnumVariant(target, self.module.types.get(target).@"enum", el.name, c.callee.span);
                 return self.builder.enumInit(0, Ref.none, target);

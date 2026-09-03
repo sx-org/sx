@@ -1,0 +1,5 @@
+error: an 'else' member needs an enum that is its integer backing type — 'Shape' carries payloads or states a layout
+  --> examples/diagnostics/2321-diagnostics-enum-else-member-payload.sx:5:40
+   |
+ 5 | Shape :: enum { dot; circle: f32; else other; }
+   |                                        ^^^^^
