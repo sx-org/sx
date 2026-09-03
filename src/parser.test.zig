@@ -7,7 +7,7 @@ const Node = ast.Node;
 const Parser = @import("parser.zig").Parser;
 
 // The comptime type-metaprogramming surface must PARSE — the data types as
-// struct/enum decls, and bodyless `intrinsic` consts.
+// struct/enum decls, and the bodyless `@` declarations.
 test "parser: comptime type-metaprogramming surface parses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -25,9 +25,9 @@ test "parser: comptime type-metaprogramming surface parses" {
         \\TypeInfo :: enum {
         \\    `enum: EnumInfo;
         \\}
-        \\declare    :: () -> Type intrinsic;
-        \\define     :: (handle: Type, info: TypeInfo) -> Type intrinsic;
-        \\field_type :: ($T: Type, idx: i64) -> Type intrinsic;
+        \\@declare    :: () -> Type;
+        \\@define     :: (handle: Type, info: TypeInfo) -> Type;
+        \\@field_type :: ($T: Type, idx: i64) -> Type;
         \\
     ;
     var parser = try Parser.init(alloc, src);
@@ -40,7 +40,7 @@ test "parser: comptime type-metaprogramming surface parses" {
     const Found = struct {
         // A top-level `Name :: struct/enum {…}` parses to a `.struct_decl` /
         // `.enum_decl` node DIRECTLY (not wrapped in a const_decl); only the
-        // `intrinsic` forms are `.fn_decl`. Match on the shared `declName`.
+        // `@` declarations are `.fn_decl`. Match on the shared `declName`.
         fn byName(ds: []const *Node, name: []const u8) ?*const Node {
             for (ds) |d| {
                 if (d.data.declName()) |n| {
@@ -65,22 +65,16 @@ test "parser: comptime type-metaprogramming surface parses" {
     try std.testing.expectEqual(@as(usize, 1), ed.variant_names.len);
     try std.testing.expectEqualStrings("enum", ed.variant_names[0]);
 
-    // Builtins: the `(params) -> Ret intrinsic;` form parses as a `.fn_decl`
-    // (the `->` triggers the function-def path) whose body is a `intrinsic`
-    // marker — same shape as the existing reflection builtins in core.sx.
-    for ([_][]const u8{ "declare", "define", "field_type" }) |bn| {
+    // Builtins: `@name :: (params) -> Ret;` parses as a `.fn_decl` whose body
+    // is the `.intrinsic_expr` marker — the shape of the reflection builtins in
+    // core.sx.
+    for ([_][]const u8{ "@declare", "@define", "@field_type" }) |bn| {
         const d = Found.byName(decls, bn) orelse return error.MissingDecl;
         try std.testing.expect(d.data == .fn_decl);
         try std.testing.expect(d.data.fn_decl.body.data == .intrinsic_expr);
         try std.testing.expect(d.data.fn_decl.return_type != null);
     }
 }
-
-// The `compiler`-library binding surface PARSES — `name :: @library "x";` plus
-// the postfix `intrinsic` marker, marking a compiler-domain / compiler-API
-// function — no `extern`, no fake `@library`. The
-// AST must carry `abi == .compiler`, `extern_export == .none`, `extern_lib ==
-// null`, and a synthesized empty-block (bodiless) body.
 
 // A bare `extern` (no abi annotation) leaves `abi == .default`.
 test "parser: bare extern leaves abi == .default" {
@@ -905,17 +899,6 @@ test "parser: a struct linkage tail binds its abi and lib" {
     try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
 }
 
-test "parser: `name :: T intrinsic` annotates the constant" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var p = try Parser.init(alloc, "mystery :: i64 intrinsic\n");
-    const decls = (try p.parse()).data.root.decls;
-    try std.testing.expectEqual(@as(usize, 1), decls.len);
-    try std.testing.expect(decls[0].data.const_decl.value.data == .intrinsic_expr);
-    try std.testing.expect(decls[0].data.const_decl.type_annotation != null);
-}
 
 // ---- The binding layer ----
 //
@@ -1193,13 +1176,6 @@ test "parser: an `@` function declaration is its signature, with an intrinsic bo
     try std.testing.expectEqualStrings("@vaEnd", end.name);
     try std.testing.expect(end.body.data == .intrinsic_expr);
     try std.testing.expect(end.return_type == null);
-}
-
-test "parser: an `@` function declaration takes no `intrinsic` marker" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "@vaEnd :: (list: *@VaList) intrinsic;");
-    try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "parser: an `@` function declaration takes no arrow body, ABI, or linkage" {

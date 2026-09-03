@@ -10,10 +10,10 @@
 // codesign; no provisioning embed needed for the simulator.
 
 configure :: () {
-    opts := buildOptions();
-    opts.setBundlePath(".sx-tmp/1615-platform-ios-sim-bundle.app");
-    opts.setBundleId("co.example.iossim");
-    onBuild(bundleMain);
+    opts := @buildOptions();
+    @setBundlePath(opts, ".sx-tmp/1615-platform-ios-sim-bundle.app");
+    @setBundleId(opts, "co.example.iossim");
+    @onBuild(bundleMain);
 }
 @run configure();
 

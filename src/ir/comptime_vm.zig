@@ -415,7 +415,7 @@ pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.
 
 /// Run a post-link build callback on the VM (the post-codegen build driver — see
 /// `core.invokeByFuncId`). Like `tryEval`, but for a callback that may take the
-/// opaque `BuildOptions` handle as an explicit arg (the `onBuild(cb)` form,
+/// opaque `BuildOptions` handle as an explicit arg (the `@onBuild(cb)` form,
 /// `cb: (opt: BuildOptions) -> bool`): when `pass_options` is set, the handle (a
 /// null sentinel — the real state is the threaded `BuildConfig`) is passed after
 /// the implicit ctx.
@@ -453,7 +453,7 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
 }
 
 /// A `{ name: string, ty: Type }` member decoded from comptime memory — the
-/// shape of the compiler-API `Member` that `rawRegisterType` takes.
+/// shape of the compiler-API `Member` that `@rawRegisterType` takes.
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
 /// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
@@ -496,13 +496,13 @@ fn predIsAndroid(triple: ?[]const u8) bool {
     return tripleHas(triple, "android");
 }
 
-/// Map a BuildOptions predicate name (`isMacos`/…) to its triple-test, or null.
+/// Map a BuildOptions predicate name (`@isMacos`/…) to its triple-test, or null.
 fn boolPredicate(name: []const u8) ?*const fn (?[]const u8) bool {
-    if (std.mem.eql(u8, name, "isMacos")) return predIsMacOS;
-    if (std.mem.eql(u8, name, "isIos")) return predIsIOS;
-    if (std.mem.eql(u8, name, "isIosDevice")) return predIsIOSDevice;
-    if (std.mem.eql(u8, name, "isIosSimulator")) return predIsIOSSimulator;
-    if (std.mem.eql(u8, name, "isAndroid")) return predIsAndroid;
+    if (std.mem.eql(u8, name, "@isMacos")) return predIsMacOS;
+    if (std.mem.eql(u8, name, "@isIos")) return predIsIOS;
+    if (std.mem.eql(u8, name, "@isIosDevice")) return predIsIOSDevice;
+    if (std.mem.eql(u8, name, "@isIosSimulator")) return predIsIOSSimulator;
+    if (std.mem.eql(u8, name, "@isAndroid")) return predIsAndroid;
     return null;
 }
 
@@ -520,7 +520,7 @@ pub const Vm = struct {
     /// The mutable build configuration (`BuildOptions` accumulator) — the SAME
     /// `BuildConfig` `EmitLLVM` owns and `main.zig` reads post-link. Threaded in at
     /// the `@run`/const-init eval sites so a `BuildOptions` intrinsic
-    /// (e.g. `setOutputPath`) records into it directly. Null at lowering-time
+    /// (e.g. `@setOutputPath`) records into it directly. Null at lowering-time
     /// type-fn evals (no build config exists yet); such a function bails loudly.
     build_config: ?*compiler_hooks.BuildConfig = null,
     /// File → source text (the diagnostics' `import_sources`), threaded from the host
@@ -608,7 +608,7 @@ pub const Vm = struct {
     /// Run a comptime entry with the materialized implicit `*Context` (when the
     /// function has one) PREPENDED to `extra` explicit arg words. A nullary
     /// const-init / `@run` passes `extra = &.{}`; a post-link build callback of
-    /// the `onBuild` form passes the opaque `BuildOptions` handle.
+    /// the `@onBuild` form passes the opaque `BuildOptions` handle.
     fn runEntryArgs(self: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: entry run needs a module");
         const func = module.getFunction(func_id);
@@ -1603,7 +1603,7 @@ pub const Vm = struct {
                 return .{ .value = addr };
             },
 
-            // Comptime metatype `intrinsic`s (`declare`/`define`). An unmodeled
+            // Comptime metatype `@` primitives (`@declare`/`@define`). An unmodeled
             // builtin returns null → bail with its name (never a silent default).
             .call_builtin => |bi| {
                 if (try self.callBuiltinVm(bi, ins.ty, frame, ref_types)) |r| return .{ .value = r };
@@ -2033,7 +2033,7 @@ pub const Vm = struct {
 /// mode, so an id that is not evaluate-only cannot arrive here.
 fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []const Ref, frame: *Frame, ref_types: []const TypeId, result_ty: TypeId) Error!?Reg {
         const table = try self.requireTable();
-        if (intr == .rawIntern) {
+        if (intr == .@"@rawIntern") {
             if (args.len != 1) return self.failMsg("comptime intern: expected one string arg");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
@@ -2043,7 +2043,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const id = @constCast(table).internString(text);
             return @as(Reg, @intFromEnum(id));
         }
-        if (intr == .rawTextOf) {
+        if (intr == .@"@rawTextOf") {
             if (args.len != 1) return self.failMsg("comptime text_of: expected one StringId arg");
             const raw = frame.get(args[0].index());
             if (raw > std.math.maxInt(u32)) return self.failMsg("comptime text_of: StringId out of range");
@@ -2053,7 +2053,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // ── read-only reflection readers ──────────────────────────
         // Type handle = a u32 `TypeId` (a word), exactly like `StringId` — so
         // these mirror intern/text_of's shape: word in, word out, no marshaling.
-        if (intr == .rawFindType) {
+        if (intr == .@"@rawFindType") {
             if (args.len != 1) return self.failMsg("comptime find_type: expected one StringId arg");
             const sid: types.StringId = @enumFromInt(try self.argHandle(args, frame, 0));
             // Not found → the dedicated `unresolved` (0) sentinel, never a real
@@ -2061,7 +2061,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const tid = table.findByName(sid) orelse TypeId.unresolved;
             return @as(Reg, tid.index());
         }
-        if (intr == .rawFieldCount) {
+        if (intr == .@"@rawFieldCount") {
             if (args.len != 1) return self.failMsg("comptime type_field_count: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             // `TypeTable.memberCount`; a type with no member count bails loudly
@@ -2070,14 +2070,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_count: type has no field/variant count");
             return @as(Reg, @bitCast(count));
         }
-        if (intr == .rawTypeName) {
+        if (intr == .@"@rawTypeName") {
             if (args.len != 1) return self.failMsg("comptime type_nominal_name: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             const sid = table.nominalName(tid) orelse
                 return self.failMsg("comptime type_nominal_name: type has no nominal name");
             return @as(Reg, @intFromEnum(sid));
         }
-        if (intr == .rawFieldName) {
+        if (intr == .@"@rawFieldName") {
             if (args.len != 2) return self.failMsg("comptime type_field_name: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2085,7 +2085,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_name: out-of-range idx or unnamed member");
             return @as(Reg, @intFromEnum(sid));
         }
-        if (intr == .rawFieldType) {
+        if (intr == .@"@rawFieldType") {
             if (args.len != 2) return self.failMsg("comptime type_field_type: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2093,12 +2093,12 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime type_field_type: out-of-range idx or member has no type");
             return @as(Reg, mty.index());
         }
-        if (intr == .rawTypeKind) {
+        if (intr == .@"@rawTypeKind") {
             if (args.len != 1) return self.failMsg("comptime type_kind: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
             return @as(Reg, @bitCast(table.kindCode(tid))); // total — never bails
         }
-        if (intr == .rawVariantValue) {
+        if (intr == .@"@rawVariantValue") {
             if (args.len != 2) return self.failMsg("comptime type_field_value: expected (TypeId, idx)");
             const tid = try self.argTypeId(args, frame, 0);
             const idx: i64 = @bitCast(frame.get(args[1].index()));
@@ -2111,32 +2111,32 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // mutable access the read-side `intern` uses (the table is genuinely
         // mutable; the VM merely holds it `const`). They take/return real `Type`
         // values (`.type_value` words = `TypeId.index()`).
-        if (intr == .rawDeclareType) {
+        if (intr == .@"@rawDeclareType") {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             return @as(Reg, (self.declareNominal(table, text)).index());
         }
-        if (intr == .rawPointerTo) {
+        if (intr == .@"@rawPointerTo") {
             if (args.len != 1) return self.failMsg("comptime pointer_to: expected (Type)");
             const t = try self.argTypeId(args, frame, 0);
             return @as(Reg, @constCast(table).intern(.{ .pointer = .{ .pointee = t } }).index());
         }
-        if (intr == .rawRegisterType) {
+        if (intr == .@"@rawRegisterType") {
             return self.registerTypeVm(args, frame, ref_types);
         }
         // ── BuildOptions ───────────────────────────────────────────────────
-        // `buildOptions()` hands back an opaque, zero-field `BuildOptions` handle;
+        // `@buildOptions()` hands back an opaque, zero-field `BuildOptions` handle;
         // the real state lives on the threaded `BuildConfig`. Return the null
         // sentinel word (the handle is never dereferenced — every operation takes it
         // as an ignored `self`).
-        if (intr == .buildOptions) {
+        if (intr == .@"@buildOptions") {
             return @as(Reg, null_addr);
         }
-        // `onBuild(cb)` — register the build callback (`cb: (opt:
+        // `@onBuild(cb)` — register the build callback (`cb: (opt:
         // BuildOptions) -> bool`). The callback receives the `BuildOptions`
         // handle when invoked (the `post_link_takes_options` flag drives that).
-        if (intr == .onBuild) {
+        if (intr == .@"@onBuild") {
             if (args.len != 1) return self.failMsg("comptime onBuild: expected (cb)");
             const bc = self.build_config orelse
                 return self.failMsg("comptime onBuild: no build config threaded into the VM");
@@ -2151,23 +2151,23 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // forwards before the post-link callback runs. Each builds a fresh
         // `List(string)` in comptime memory (the result type drives its layout) — no
         // driver action, so they're pure data even in the sx-driven end state.
-        if (intr == .cObjectPaths) {
+        if (intr == .@"@cObjectPaths") {
             if (args.len != 0) return self.failMsg("comptime cObjectPaths: expected no args");
             const bc = self.build_config orelse
                 return self.failMsg("comptime cObjectPaths: no build config threaded into the VM");
             return try self.makeStringList(table, result_ty, bc.c_object_paths);
         }
-        if (intr == .linkLibraries) {
+        if (intr == .@"@linkLibraries") {
             if (args.len != 0) return self.failMsg("comptime linkLibraries: expected no args");
             const bc = self.build_config orelse
                 return self.failMsg("comptime linkLibraries: no build config threaded into the VM");
             return try self.makeStringList(table, result_ty, bc.link_libraries);
         }
-        // `emitObject() -> string` — ACTION: verify + emit the codegen'd module
+        // `@emitObject() -> string` — ACTION: verify + emit the codegen'd module
         // to its object file and return the path. Dispatches through the
         // host-installed hook (the VM can't emit itself); emission is sx-driven
         // via `defaultPipeline`.
-        if (intr == .emitObject) {
+        if (intr == .@"@emitObject") {
             if (args.len != 0) return self.failMsg("comptime emitObject: expected no args");
             const bc = self.build_config orelse
                 return self.failMsg("comptime emitObject: no build config threaded into the VM");
@@ -2177,34 +2177,34 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime emitObject: object emission failed");
             return try self.makeStringValue(table, path);
         }
-        // Build-config metadata the sx driver passes to `link`. Read-only data
+        // Build-config metadata the sx driver passes to `@link`. Read-only data
         // forwarded by `main.zig` (the merged CLI + `@run` build config).
-        if (intr == .buildOutput) {
+        if (intr == .@"@buildOutput") {
             if (args.len != 0) return self.failMsg("comptime buildOutput: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime buildOutput: no build config");
             return try self.makeStringValue(table, bc.output_path orelse "");
         }
-        if (intr == .buildTarget) {
+        if (intr == .@"@buildTarget") {
             if (args.len != 0) return self.failMsg("comptime buildTarget: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime buildTarget: no build config");
             return try self.makeStringValue(table, bc.target_triple orelse "");
         }
-        if (intr == .buildFrameworks) {
+        if (intr == .@"@buildFrameworks") {
             if (args.len != 0) return self.failMsg("comptime buildFrameworks: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime buildFrameworks: no build config");
             return try self.makeStringList(table, result_ty, bc.target_frameworks);
         }
-        if (intr == .buildFlags) {
+        if (intr == .@"@buildFlags") {
             if (args.len != 0) return self.failMsg("comptime buildFlags: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime buildFlags: no build config");
             return try self.makeStringList(table, result_ty, bc.merged_link_flags);
         }
-        // `link(objects, output, libraries, frameworks, flags, target)` — the one
-        // genuine ACTION: dispatch to the host-installed linker (the VM can't link
+        // `@link(objects, output, libraries, frameworks, flags, target)` — the one
+        // genuine ACTION: dispatch to the host-installed linker (the VM can't @link
         // itself). Void return, because the build callback is not fallible; a
-        // link failure bails loudly → hard build error. `ref_types` gives each
+        // @link failure bails loudly → hard build error. `ref_types` gives each
         // List(string) arg its concrete type for the comptime reader.
-        if (intr == .link) {
+        if (intr == .@"@link") {
             if (args.len != 6) return self.failMsg("comptime link: expected (objects, output, libraries, frameworks, flags, target)");
             const bc = self.build_config orelse
                 return self.failMsg("comptime link: no build config threaded into the VM");
@@ -2257,17 +2257,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // null so the caller treats it as unknown (it then bails loudly).
         const bc = self.build_config orelse return null;
         const str_fields = [_]StrField{
-            .{ .set = "setOutputPath", .get = "", .field = &bc.output_path },
-            .{ .set = "setWasmShell", .get = "", .field = &bc.wasm_shell_path },
-            .{ .set = "setPostLinkModule", .get = "", .field = &bc.post_link_module },
-            .{ .set = "setBundlePath", .get = "bundlePath", .field = &bc.bundle_path },
-            .{ .set = "setBundleId", .get = "bundleId", .field = &bc.bundle_id },
-            .{ .set = "setCodesignIdentity", .get = "codesignIdentity", .field = &bc.codesign_identity },
-            .{ .set = "setProvisioningProfile", .get = "provisioningProfile", .field = &bc.provisioning_profile },
-            .{ .set = "setManifestPath", .get = "manifestPath", .field = &bc.manifest_path },
-            .{ .set = "setKeystorePath", .get = "keystorePath", .field = &bc.keystore_path },
-            .{ .set = "_", .get = "binaryPath", .field = &bc.binary_path },
-            .{ .set = "_", .get = "targetTriple", .field = &bc.target_triple },
+            .{ .set = "@setOutputPath", .get = "", .field = &bc.output_path },
+            .{ .set = "@setWasmShell", .get = "", .field = &bc.wasm_shell_path },
+            .{ .set = "@setPostLinkModule", .get = "", .field = &bc.post_link_module },
+            .{ .set = "@setBundlePath", .get = "@bundlePath", .field = &bc.bundle_path },
+            .{ .set = "@setBundleId", .get = "@bundleId", .field = &bc.bundle_id },
+            .{ .set = "@setCodesignIdentity", .get = "@codesignIdentity", .field = &bc.codesign_identity },
+            .{ .set = "@setProvisioningProfile", .get = "@provisioningProfile", .field = &bc.provisioning_profile },
+            .{ .set = "@setManifestPath", .get = "@manifestPath", .field = &bc.manifest_path },
+            .{ .set = "@setKeystorePath", .get = "@keystorePath", .field = &bc.keystore_path },
+            .{ .set = "_", .get = "@binaryPath", .field = &bc.binary_path },
+            .{ .set = "_", .get = "@targetTriple", .field = &bc.target_triple },
         };
         for (str_fields) |sf| {
             if (sf.set.len > 1 and std.mem.eql(u8, name, sf.set)) {
@@ -2281,19 +2281,19 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             }
         }
         // List-appending setters (dupe + append into the persistent gpa).
-        if (std.mem.eql(u8, name, "addLinkFlag")) {
+        if (std.mem.eql(u8, name, "@addLinkFlag")) {
             if (args.len != 2) return self.failMsg("comptime addLinkFlag: expected (self, flag)");
             bc.link_flags.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
                 return self.failMsg("comptime addLinkFlag: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "addFramework")) {
+        if (std.mem.eql(u8, name, "@addFramework")) {
             if (args.len != 2) return self.failMsg("comptime addFramework: expected (self, name)");
             bc.frameworks.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
                 return self.failMsg("comptime addFramework: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "addAssetDir")) {
+        if (std.mem.eql(u8, name, "@addAssetDir")) {
             if (args.len != 3) return self.failMsg("comptime addAssetDir: expected (self, src, dest)");
             const src = try self.dupeArgStr(args, frame, 1);
             const dest = try self.dupeArgStr(args, frame, 2);
@@ -2302,18 +2302,18 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return @as(Reg, null_addr);
         }
         // Count getters (i64).
-        if (std.mem.eql(u8, name, "assetDirCount"))
+        if (std.mem.eql(u8, name, "@assetDirCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.asset_dirs.items.len))));
-        if (std.mem.eql(u8, name, "frameworkCount"))
+        if (std.mem.eql(u8, name, "@frameworkCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_frameworks.len))));
-        if (std.mem.eql(u8, name, "frameworkPathCount"))
+        if (std.mem.eql(u8, name, "@frameworkPathCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
-        if (std.mem.eql(u8, name, "jniMainCount"))
+        if (std.mem.eql(u8, name, "@jniMainCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
         // Indexed string getters (out-of-range → "").
         // Asset dirs are `{src,dest}` structs, so read the field directly.
-        const want_src = std.mem.eql(u8, name, "assetDirSrcAt");
-        if (want_src or std.mem.eql(u8, name, "assetDirDestAt")) {
+        const want_src = std.mem.eql(u8, name, "@assetDirSrcAt");
+        if (want_src or std.mem.eql(u8, name, "@assetDirDestAt")) {
             if (args.len != 2) return self.failMsg("comptime assetDir getter: expected (self, i)");
             const idx: i64 = @bitCast(frame.get(args[1].index()));
             if (idx < 0 or @as(usize, @intCast(idx)) >= bc.asset_dirs.items.len)
@@ -2321,13 +2321,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const ad = bc.asset_dirs.items[@intCast(idx)];
             return try self.makeStringValue(table, if (want_src) ad.src else ad.dest);
         }
-        if (std.mem.eql(u8, name, "frameworkAt"))
+        if (std.mem.eql(u8, name, "@frameworkAt"))
             return try self.indexedStr(args, frame, bc.target_frameworks);
-        if (std.mem.eql(u8, name, "frameworkPathAt"))
+        if (std.mem.eql(u8, name, "@frameworkPathAt"))
             return try self.indexedStr(args, frame, bc.target_framework_paths);
-        if (std.mem.eql(u8, name, "jniMainRuntimePathAt"))
+        if (std.mem.eql(u8, name, "@jniMainRuntimePathAt"))
             return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
-        if (std.mem.eql(u8, name, "jniMainJavaSourceAt"))
+        if (std.mem.eql(u8, name, "@jniMainJavaSourceAt"))
             return try self.indexedStr(args, frame, bc.jni_main_java_sources);
         // Target predicates (computed from the triple).
         if (boolPredicate(name)) |pred| {
@@ -2474,7 +2474,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             self.failMsg("comptime reflection builtin: type word out of TypeId range (mis-read arg?)");
     }
 
-    /// Service a comptime metatype `intrinsic` (`meta.sx`'s `declare`/`define`)
+    /// Service a comptime metatype `@` primitive (`meta.sx`'s `@rawDeclareType`/`@rawRegisterType`)
     /// natively on comptime memory. Returns the result word, or `null` for a
     /// builtin the VM doesn't model yet (caller bails).
     fn callBuiltinVm(self: *Vm, bi: inst_mod.BuiltinCall, ins_ty: TypeId, frame: *Frame, ref_types: []const TypeId) Error!?Reg {
@@ -3360,7 +3360,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// the result type of the calling primitive (`List(string)`); its field
     /// offsets/types drive the layout (target-aware via the table), so this works
     /// for any `{ items: [*]string, len: i64, cap: i64 }`-shaped struct. Used by
-    /// the metadata-query compiler primitives (`cObjectPaths`/`linkLibraries`).
+    /// the metadata-query compiler primitives (`@cObjectPaths`/`@linkLibraries`).
     fn makeStringList(self: *Vm, table: *const types.TypeTable, list_ty: TypeId, items: []const []const u8) Error!Reg {
         if (list_ty.isBuiltin() or table.get(list_ty) != .@"struct")
             return self.failMsg("comptime List builder: result type is not a List struct");
@@ -3402,7 +3402,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// Read a `List(string)` aggregate (at `addr`) into a host `[][]const u8` —
     /// the inverse of `makeStringList`. Element string bytes are VIEWS into comptime
     /// memory (stable arena); the outer array is gpa-allocated (freed at
-    /// `Vm.deinit`). Used by the `link` primitive to read its List args.
+    /// `Vm.deinit`). Used by the `@link` primitive to read its List args.
     fn readStringList(self: *Vm, table: *const types.TypeTable, list_ty: TypeId, addr: Addr) Error![]const []const u8 {
         if (list_ty.isBuiltin() or table.get(list_ty) != .@"struct")
             return self.failMsg("comptime List reader: arg type is not a List struct");

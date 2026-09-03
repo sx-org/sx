@@ -498,7 +498,7 @@ pub fn typeInfoRooted(node: *const Node) bool {
 /// already covered by `.parameterized_type_expr`; this names the type-QUERY /
 /// projection builtins that parse as a plain `.call`.
 pub fn isTypeReturningBuiltinName(name: []const u8) bool {
-    return std.mem.eql(u8, name, "pointeeType") or
+    return std.mem.eql(u8, name, "@pointeeType") or
         std.mem.eql(u8, name, "@typeOf");
 }
 

@@ -1,4 +1,4 @@
-// The compiler-coupled prelude primitives: `intrinsic` declarations and the
+// The compiler-coupled prelude primitives: the `@` declarations and the
 // types the compiler resolves by NAME program-wide
 // (`Context`, `Allocator`, `Into`, `@SourceSite`). Consumers never import
 // this file directly — std.sx re-exports every name here.
@@ -13,11 +13,11 @@
 @alignOf :: ($T: Type) -> i64;
 @typeOf :: (val: $T) -> Type;
 @typeName :: ($T: Type) -> string;
-// The target type of a pointer: `pointeeType(*X)` -> `X`. Comptime reflection,
+// The target type of a pointer: `@pointeeType(*X)` -> `X`. Comptime reflection,
 // folded at lower time, so it composes in any type-arg slot. A non-pointer
 // argument is a loud compile error, not a silent fallthrough.
-pointeeType :: ($P: Type) -> Type intrinsic;
-isFlags :: ($T: Type) -> bool intrinsic;
+@pointeeType :: ($P: Type) -> Type;
+@isFlags :: ($T: Type) -> bool;
 // `FooError.D` for the member an error value carries — the composition
 // `e.set.name`, `"."`, and `e.name` spell out.
 @errorName :: (e: $T) -> string;
@@ -25,9 +25,9 @@ isFlags :: ($T: Type) -> bool intrinsic;
 // views as `void`.
 @errorPayload :: (e: $T) -> any;
 // Element view into an array/vector held by an `any`: pure stride math —
-// `{ elem,  rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
+// `{ elem,  @rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
-anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
+@anyElement :: (elem: Type, av: any, idx: i64) -> any;
 
 // ── Boxed-value views: a value's parts, read in place ──────────────────────
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
@@ -70,10 +70,10 @@ anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 // over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
 // writes names and re-resolves, never raw tags; byte copies through the data
 // pointer are SHALLOW — interior pointers are not followed; and a view carries
-// NO lifetime — `rawMakeAny` trusts the caller that `data` points at a live,
+// NO lifetime — `@rawMakeAny` trusts the caller that `data` points at a live,
 // aligned value of `tp` covering @sizeOf(tp) bytes.
-rawAnyData :: (av: any) -> *void intrinsic;
-rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
+@rawAnyData :: (av: any) -> *void;
+@rawMakeAny :: (tp: Type, data: *void) -> any;
 
 // A volatile access is emitted exactly as written: the optimizer may not elide
 // it, duplicate it, fuse it with a neighbour, or move it across another
@@ -354,17 +354,17 @@ writeFloat :: (w: Writer, f: f64) {
 //
 // Handles are bare `u32`s so they intern no extra prelude type. Callers alias
 // them locally where it aids reading.
-rawIntern       :: (s: string) -> u32 intrinsic;              // text  -> StringId
-rawTextOf       :: (id: u32) -> string intrinsic;             // StringId -> text
-rawFindType     :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
-rawTypeKind     :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum
+@rawIntern       :: (s: string) -> u32;              // text  -> StringId
+@rawTextOf       :: (id: u32) -> string;             // StringId -> text
+@rawFindType     :: (name: u32) -> u32;              // StringId -> TypeId (0 = unresolved)
+@rawTypeKind     :: (t: u32) -> i64;                 // 0 other 1 struct 2 enum
                                                               // 4 tuple 5 union 6 array 7 vector 8 error
-rawTypeName     :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
-rawFieldCount   :: (t: u32) -> i64 intrinsic;
-rawFieldName    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
-rawFieldType    :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
-rawVariantValue :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
-rawPointerTo    :: (t: Type) -> Type intrinsic;
+@rawTypeName     :: (t: u32) -> u32;                 // TypeId -> StringId
+@rawFieldCount   :: (t: u32) -> i64;
+@rawFieldName    :: (t: u32, idx: i64) -> u32;       // -> StringId
+@rawFieldType    :: (t: u32, idx: i64) -> u32;       // -> TypeId
+@rawVariantValue :: (t: u32, idx: i64) -> i64;       // enum variant's value
+@rawPointerTo    :: (t: Type) -> Type;
 
 // ── `@typeInfo`: the reflected type shape ────────────────────────────────────
 //

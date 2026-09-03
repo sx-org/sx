@@ -1,5 +1,11 @@
-error: unknown intrinsic 'mystery'
-  --> examples/diagnostics/1189-diagnostics-unknown-builtin.sx:9:1
+error: unknown intrinsic '@mystery'
+  --> examples/diagnostics/1189-diagnostics-unknown-builtin.sx:6:1
    |
- 9 | mystery :: ($T: Type, x: T) -> T intrinsic;
-   | ^^^^^^^
+ 6 | @mystery :: ($T: Type, x: T) -> T;
+   | ^^^^^^^^
+
+error: '@mystery' is not a compiler-maintained contract — '@' names belong to the compiler; a declaration name is an ordinary identifier
+  --> examples/diagnostics/1189-diagnostics-unknown-builtin.sx:6:1
+   |
+ 6 | @mystery :: ($T: Type, x: T) -> T;
+   | ^^^^^^^^

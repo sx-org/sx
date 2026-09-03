@@ -1,7 +1,7 @@
 // macOS `.app` bundle smoke test.
 //
-// `defaultPipeline` auto-bundles when `bundlePath` is set (build.sx imports the
-// sx bundler, so no explicit `onBuild` is needed). `sx build` runs the bundler
+// `defaultPipeline` auto-bundles when `@bundlePath` is set (build.sx imports the
+// sx bundler, so no explicit `@onBuild` is needed). `sx build` runs the bundler
 // after link, producing a signed `.app`. The `.build` `bundle` directive asserts
 // the `.app` structure (`Contents/MacOS`, `Info.plist`, `_CodeSignature`) and then
 // cleans it up. macOS-host ONLY — the directive skips the example on other hosts.
@@ -9,9 +9,9 @@
 @import "modules/std.sx";
 
 configure :: () {
-    opts := buildOptions();
-    opts.setBundlePath(".sx-tmp/1665-platform-macos-bundle-smoke.app");
-    opts.setBundleId("co.example.bundlesmoke");
+    opts := @buildOptions();
+    @setBundlePath(opts, ".sx-tmp/1665-platform-macos-bundle-smoke.app");
+    @setBundleId(opts, "co.example.bundlesmoke");
 }
 @run configure();
 

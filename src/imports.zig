@@ -105,7 +105,7 @@ pub fn resolveImportPath(allocator: std.mem.Allocator, io: std.Io, base_dir: []c
     if (std.mem.eql(u8, canon, resolved)) return canon;
     // The respelling must still name the SAME file on disk. `resolved` was
     // probed for existence, but a lexical `..` collapse through a SYMLINKED
-    // component changes which file the string denotes (`link/../other.sx`
+    // component changes which file the string denotes (`@link/../other.sx`
     // resolves through the symlink's target dir in the kernel, but collapses
     // to the sibling `other.sx` lexically) — and a re-relativization against
     // a stale `$PWD` can respell it to a different or nonexistent path.
@@ -412,7 +412,7 @@ pub const ResolvedModule = struct {
     /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
     /// const caches) are per-source — that is what prevents same-name collapse for
     /// types/aliases and supports same-name value consts. So is every
-    /// compiler-gated declaration — an `@` name, or an `intrinsic` body — whose
+    /// compiler-gated declaration — an `@` name — whose
     /// declaration-site gate (the contract registry, the intrinsic registry) runs
     /// in lowering and must see each author. Everything
     /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed

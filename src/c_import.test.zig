@@ -80,8 +80,8 @@ test "cSourceCacheKey: include dirs vary the key" {
 
 test "cSourceCacheKey: libc dirs vary the key" {
     // Same source, same flags, same (absent) --target: only the libc differs.
-    // A native Linux build varies it by how the link resolves, so an object
-    // compiled against glibc must never be served to a musl link.
+    // A native Linux build varies it by how the @link resolves, so an object
+    // compiled against glibc must never be served to a musl @link.
     const musl = c_import.cSourceCacheKey(SRC, none, none, none, none, none, &.{"/zig/libc/include/x86_64-linux-musl"}, VER, null, null);
     const glibc = c_import.cSourceCacheKey(SRC, none, none, none, none, none, &.{"/zig/libc/include/x86-linux-gnu"}, VER, null, null);
     const host = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, null, null);

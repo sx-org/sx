@@ -2,16 +2,16 @@
 @import "modules/build.sx";
 @import "modules/platform/bundle.sx";
 
-// `onBuild(bundleMain)` registers the sx-side `.app` bundler explicitly:
+// `@onBuild(bundleMain)` registers the sx-side `.app` bundler explicitly:
 // under `sx build` on macOS the post-link callback writes a real `.app`
 // beside the binary. 1665 reaches the same bundler through
 // `defaultPipeline`'s auto-bundle instead.
 
 configure :: () {
-    opts := buildOptions();
-    opts.setBundlePath(".sx-tmp/1614-platform-macos-bundle.app");
-    opts.setBundleId("co.example.hello");
-    onBuild(bundleMain);
+    opts := @buildOptions();
+    @setBundlePath(opts, ".sx-tmp/1614-platform-macos-bundle.app");
+    @setBundleId(opts, "co.example.hello");
+    @onBuild(bundleMain);
 }
 @run configure();
 

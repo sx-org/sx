@@ -1,16 +1,16 @@
 // Comptime compiler API — read-only reflection readers.
 //
-// `rawFindType` / `rawFieldCount` are bound to the `compiler` library via
-// `intrinsic` (mode `evaluate`), alongside `rawIntern` / `rawTextOf`. The
+// `@rawFindType` / `@rawFieldCount` are bound to the `compiler` library via
+// `@` primitives (mode `evaluate`), alongside `@rawIntern` / `@rawTextOf`. The
 // compiler exposes its own type table to comptime sx as plain handles (a
 // `TypeId` is a u32, like a `StringId`), so the calls are clean scalar
 // host-calls — handle in, scalar out, no marshaling.
 //
-//   rawFindType(name)        → the named type's handle (0 / `unresolved` if absent)
-//   rawFieldCount(t)    → its member count (struct fields here)
+//   @rawFindType(name)        → the named type's handle (0 / `unresolved` if absent)
+//   @rawFieldCount(t)    → its member count (struct fields here)
 //
 // Comptime-only: they run inside `@run`, folding to plain int constants the
-// runtime `main` prints. Chains `rawIntern` → `rawFindType` → `rawFieldCount`.
+// runtime `main` prints. Chains `@rawIntern` → `@rawFindType` → `@rawFieldCount`.
 
 @import "modules/std.sx";
 
@@ -22,10 +22,10 @@ TypeId   :: u32;
 Point :: struct { x: i64; y: i64; z: i64; }
 
 // Look the struct up by name and count its fields, all at comptime.
-pointFields :: @run rawFieldCount(rawFindType(rawIntern("Point")));
+pointFields :: @run @rawFieldCount(@rawFindType(@rawIntern("Point")));
 
 // A name with no matching type folds to the `unresolved` sentinel (0).
-missingId :: @run rawFindType(rawIntern("NoSuchType"));
+missingId :: @run @rawFindType(@rawIntern("NoSuchType"));
 
 main :: () {
     print("Point has {} fields\n", pointFields);

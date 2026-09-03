@@ -407,7 +407,7 @@ Pair;
 **Terminators — one rule, applied wherever a statement or a declaration ENDS.**
 Top-level and local bindings, expression statements, assignments, `return` /
 `raise` / `break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
-the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
+the other directive forms, and a function's `extern` / `=> expr`
 body all take the `;`. The value-less spellings take it the same way — a
 `return` with nothing to return, and a `name : Type` declaration with no
 initializer:
@@ -3159,7 +3159,7 @@ the std `@Any` shape triggers). The exemption is the bare postfix
 target only: the soft form `.(?@Any)` still asserts the boxed payload,
 and `@unbox(T, av)` is the unchecked read for EVERY target, `@Any`
 included (a generic `(av: any) -> $T { @unbox(T, av) }` depends on it).
-`rawMakeAny(r.typeId, r.data)` reassembles a working view from the
+`@rawMakeAny(r.typeId, r.data)` reassembles a working view from the
 pair.
 
 **Optional chaining**: `o?.(T)` maps the cast over an optional receiver —
@@ -4541,7 +4541,7 @@ no tags (the armless-arm error).
 `interface` and `struct` are **disjoint**: `T is struct` is false for every
 interface and every constraint, at both phases. A constraint matches no
 category, and there is no `constraint` category word. Flags-ness is
-`isFlags(T)`, not a category; set membership is asked with the set's own type
+`@isFlags(T)`, not a category; set membership is asked with the set's own type
 as the right operand.
 
 ### Logical Operators
@@ -4628,7 +4628,7 @@ Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `v
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `@field` / `anyElement`, `rawMakeAny`) with ONE compiled body per arm; `@as(i64, val)` / `@as(f64, val)` in the `int`/`float` arms width-dispatch over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `@field` / `@anyElement`, `@rawMakeAny`) with ONE compiled body per arm; `@as(i64, val)` / `@as(f64, val)` in the `int`/`float` arms width-dispatch over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -5467,28 +5467,16 @@ iteration. `return` runs all pending defers of the function. A `break` or
 
 An **intrinsic** is a declaration whose implementation lives in the compiler.
 
-A FUNCTION intrinsic has two spellings. A plain name is written with the
-reserved word `intrinsic` in body position, where a `{ ... }` body would
-otherwise go; an `@` name is written as its signature alone, because the sigil
-is already the marker:
+An intrinsic is an `@` name written as its signature alone; the sigil is the
+marker:
 
 ```sx
-isFlags :: ($T: Type) -> bool intrinsic;
+@buildOptions :: () -> BuildOptions;
 @volatileLoad :: ($T: Type, address: *T) -> T;
 ```
 
-The `@` form takes no body — no brace block, no `=> expr`, no `intrinsic`
-keyword — and no `abi`, linkage, `ufcs`, or accessor modifier. A DATA intrinsic
-is written with the reserved word for every name, since it has no signature the
-sigil could stand over:
-
-```sx
-n :: intrinsic;
-n :: i64 intrinsic;
-```
-
-`intrinsic` is a keyword, not a directive: `#intrinsic` is not a spelling of it
-and does not parse.
+The declaration takes no body — no brace block, no `=> expr` — and no `abi`,
+linkage, `ufcs`, or accessor modifier.
 
 An intrinsic binds to the compiler's registry by **(module, name)** — the
 declaring module is part of its identity. `@sizeOf` is an intrinsic because
@@ -5513,12 +5501,12 @@ folded to a constant (`@sizeOf`, `@alignOf`), or lowered to dedicated IR ops
 (the atomics). Two — `@typeName` and `@typeInfo` — are
 **dual**: folded at lowering when the type argument is statically resolvable, and
 serviced by the comptime evaluator when it is only known at evaluation time. The
-compiler-API surface (`rawIntern`, `rawFindType`, the `BuildOptions` methods, …) is
+compiler-API surface (`@rawIntern`, `@rawFindType`, the `BuildOptions` accessors, …) is
 **evaluate**: the comptime evaluator services it and there is no runtime form at
 all. Calling one from the runtime call graph is a compile-time error that prints
 the path from the root that reached it.
 
-Dispatch is not the same as stage-availability. `@sqrt` and `atomicLoad` are both
+Dispatch is not the same as stage-availability. `@sqrt` and `@atomicLoad` are both
 lowered. The evaluator interprets the atomic ops, and evaluates the `call_builtin`
 that `@sqrt` lowers to, so `@run @sqrt(x)` is a compile-time constant.
 
@@ -5532,7 +5520,7 @@ whether it runs at compile time or at runtime; what decides is **reachability**.
 
 - **Compile-time roots**: `@run`, type construction, `@insert`, module-scope
   `inline if` / `inline match` / `inline for`, and a build callback registered
-  with `onBuild`. A `::` whose initializer is a call is not a compile-time
+  with `@onBuild`. A `::` whose initializer is a call is not a compile-time
   root.
 - **Runtime roots**: `main`, exported definitions, and anything named by global
   data (an interface vtable, an open set's tag table, the default `Context`).
@@ -5592,13 +5580,13 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `@typeOf(val: $T) -> Type` — returns the runtime type tag of a value
 - `@typeName($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `@typeInfo(T).struct.fields` / `@typeInfo(T).enum.fields` — a type's reflected members. `.struct` lists a struct's, tuple's, or union's fields as the prelude's `FieldInfo` (`.name` — `""` for a positional tuple element —, `.type`, `.offset`, `.index`); `.enum` lists an enum's variants as `VariantInfo` (`.name`, `.payload`, `.value`). The projected variant must be the one `@typeInfo` reflects `T` into. `.len` is the member count, and over a spelled type it is a compile-time integer.
-- `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload` — the reflected member's type, itself a type (`@typeInfo(pointeeType(@typeInfo(T).struct.fields[i].type))`). A tagless variant's payload is `void`.
+- `@typeInfo(T).struct.fields[i].type` / `@typeInfo(T).enum.fields[i].payload` — the reflected member's type, itself a type (`@typeInfo(@pointeeType(@typeInfo(T).struct.fields[i].type))`). A tagless variant's payload is `void`.
 - `@typeInfo(tp)` accepts a **runtime `Type` value**: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout), so kind-first dispatch (`match @typeInfo(tp) { case .struct: |si| { … } }`) and every member read answer identically on compile-time and runtime `Type`s.
-- `anyElement(elem: Type, av: any, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the member views); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `rawAnyData(av: any) -> *void` / `rawMakeAny(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `rawMakeAny` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `@anyElement(elem: Type, av: any, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, @rawAnyData(av) + idx * @sizeOf(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the member views); vector lanes are packed, so the same stride walks both arrays and vectors.
+- `@rawAnyData(av: any) -> *void` / `@rawMakeAny(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, typeId}` pair (see Raw-view retrieval, §Postfix Cast). `@rawMakeAny` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `@sizeOf(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `@typeInfo`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `@errorName(e: $T) -> string` — `Owner.Member` for the member an error value carries (`"FooError.D"`) — the composition `e.set.name`, `"."`, and `e.name` spell out. Reads the always-linked qualified-name table at the value's member id.
 - `@errorPayload(e: $T) -> any` — the live member's payload as an `any` VIEW of the channel's payload area (same borrow rules as the boxed-view family). A payload-free member views as `void`.
-- `isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
+- `@isFlags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `@typeEq($A: Type, $B: Type) -> bool` — structural TypeId equality (`@typeEq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if @typeEq(...)` is comptime-decidable
 - `@unbox($T: Type, v: any) -> T` — the boxed storage read AS `T`: an unchecked typed load through the view, with no tag check, so `T` must be the boxed type and a wider one overreads. The checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 - The boxed-view family — `@len` / `@field` / `@inner` — reads a boxed value's parts in place, dispatching on the view's runtime tag. Each result is an `any` VIEW `{the part's type, a pointer to it inside the receiver}` — an interior pointer, not a copy. An addressable receiver is borrowed (mutations of it stay visible through a live view) and an rvalue receiver spills to a frame temp first, so a view is valid only while the storage it names lives. A wrong-kind tag or an index past the count is **undefined behavior** (in-bounds GEP — the caller gates on `@len`).
@@ -5611,7 +5599,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). Passing a non-Type VALUE (`@sizeOf(6)`, `isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `@isFlags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`@typeOf(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `@typeName`, plus `@sizeOf`, `@alignOf`, and `@isFlags` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_flag_bits`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `@typeEq`, which compares tags directly (no table). Passing a non-Type VALUE (`@sizeOf(6)`, `@isFlags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
@@ -5760,14 +5748,14 @@ The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build 
 @import "modules/build.sx";
 
 configureBuild :: () {
-    opts := buildOptions();
-    opts.addLinkFlag("-lm");
-    opts.setOutputPath("out/my_program");
+    opts := @buildOptions();
+    @addLinkFlag(opts, "-lm");
+    @setOutputPath(opts, "out/my_program");
 
     inline if @host.os == .wasm {
-        opts.setOutputPath("sx-out/wasm/app.html");
-        opts.addLinkFlag("-sUSE_SDL=3");
-        opts.addLinkFlag("-sALLOW_MEMORY_GROWTH=1");
+        @setOutputPath(opts, "sx-out/wasm/app.html");
+        @addLinkFlag(opts, "-sUSE_SDL=3");
+        @addLinkFlag(opts, "-sALLOW_MEMORY_GROWTH=1");
     }
 }
 @run configureBuild();
@@ -5777,11 +5765,11 @@ configureBuild :: () {
 
 | Method | Description |
 |--------|-------------|
-| `buildOptions()` | Returns a `BuildOptions` value for the current compilation |
-| `opts.addLinkFlag(flag)` | Appends a linker flag (merged with CLI flags) |
-| `opts.setOutputPath(path)` | Sets the output binary path (overridden by CLI `-o`) |
+| `@buildOptions()` | Returns a `BuildOptions` value for the current compilation |
+| `@addLinkFlag(opts, flag)` | Appends a linker flag (merged with CLI flags) |
+| `@setOutputPath(opts, path)` | Sets the output binary path (overridden by CLI `-o`) |
 
-Build flags from `addLinkFlag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
+Build flags from `@addLinkFlag` are merged with any flags passed on the command line. Duplicate library flags (e.g., `-lSDL3` from multiple imports) are automatically deduplicated.
 
 ### The Target Facts — `@host`
 
@@ -6069,7 +6057,7 @@ a warnings-only build still exits 0.
 | `--target <target>` | Target triple or shorthand (default: host) |
 | `--cpu <name>` | CPU name (default: generic) |
 | `--opt <level>` | Optimization: `none`/`0`, `less`/`1`, `default`/`2`, `aggressive`/`3` |
-| `-o <path>` | Output path (overrides `setOutputPath`) |
+| `-o <path>` | Output path (overrides `@setOutputPath`) |
 
 ### Target Shorthands
 
@@ -6106,10 +6094,10 @@ Users opt in **explicitly** from their own `@run` block:
 @import "modules/platform/bundle.sx";
 
 @run {
-    opts := buildOptions();
-    opts.setBundlePath("MyApp.app");
-    opts.setBundleId("com.example.app");
-    onBuild(bundleMain);
+    opts := @buildOptions();
+    @setBundlePath(opts, "MyApp.app");
+    @setBundleId(opts, "com.example.app");
+    @onBuild(bundleMain);
 }
 ```
 
@@ -6121,13 +6109,13 @@ Two registration forms:
 
 | Setter | Behavior |
 |--------|----------|
-| `onBuild(cb: (opt: BuildOptions) -> bool)` | First-class function value. Preferred. |
-| `BuildOptions.setPostLinkModule(name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundleMain` post-link. |
+| `@onBuild(cb: (opt: BuildOptions) -> bool)` | First-class function value. Preferred. |
+| `@setPostLinkModule(opts, name: [:0]u8)` | Name-based fallback; compiler resolves `<name>.bundleMain` post-link. |
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
-`bundlePath` is set and no callback was registered, the compiler
-auto-falls-back to `setPostLinkModule("platform.bundle")`. The sx
-bundler reads `bundlePath()` regardless of which flag the user used.
+`@bundlePath` is set and no callback was registered, the compiler
+auto-falls-back to `@setPostLinkModule("platform.bundle")`. The sx
+bundler reads `@bundlePath()` regardless of which flag the user used.
 The callback returns `false` to fail the build.
 
 ### BuildOptions surface
@@ -6135,41 +6123,41 @@ The callback returns `false` to fail the build.
 `BuildOptions` is an opaque, zero-field handle in
 [library/modules/build.sx](library/modules/build.sx) — the state lives in the
 compiler's `BuildConfig`, and the handle is only ever an ignored `self`. Its
-methods are `intrinsic` declarations with mode `evaluate`: the comptime
+accessors are `@` declarations with mode `evaluate`: the comptime
 evaluator services them, and they have no runtime form. Setters accumulate
 config; accessors read it back inside the build callback.
 
 The callback itself is an ordinary sx function — default ABI, implicit Context —
-registered with `onBuild`. Nothing marks it compile-time: it stays out of the
+registered with `@onBuild`. Nothing marks it compile-time: it stays out of the
 binary because no runtime root reaches it.
 
 | Method | Read / write | Purpose |
 |--------|--------------|---------|
-| `addLinkFlag(flag)` | write | extra linker flag |
-| `addFramework(name)` | write | `-framework <name>` (Apple) |
-| `setOutputPath(path)` | write | linked binary path |
-| `setWasmShell(path)` | write | custom WASM shell template |
-| `addAssetDir(src, dest)` | write | bundle a directory of runtime assets |
-| `setPostLinkModule(name)` | write | name-based callback fallback |
-| `setBundlePath(path)` | write | `.app` / `.apk` output |
-| `setBundleId(id)` | write | iOS `CFBundleIdentifier` / Android package |
-| `setCodesignIdentity(name)` | write | Apple signing identity (`-` = ad-hoc) |
-| `setProvisioningProfile(path)` | write | iOS device `.mobileprovision` |
-| `setManifestPath(path)` | write | Android AndroidManifest.xml override |
-| `setKeystorePath(path)` | write | Android keystore override |
-| `binaryPath()` | read | path of the freshly-linked binary |
-| `bundlePath() / bundleId()` | read | mirror of the setters |
-| `codesignIdentity() / provisioningProfile()` | read | Apple codesign params |
-| `manifestPath() / keystorePath()` | read | Android overrides |
-| `targetTriple()` | read | canonicalized target triple |
-| `isMacos() / isIos() / isIosDevice() / isIosSimulator() / isAndroid()` | read | per-target predicates |
-| `frameworkCount() / frameworkAt(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
-| `frameworkPathCount() / frameworkPathAt(i)` | read | linker `-F` search paths |
-| `jniMainCount() / jniMainRuntimePathAt(i) / jniMainJavaSourceAt(i)` | read | `main = true` emissions for the APK bundler |
-| `assetDirCount() / assetDirSrcAt(i) / assetDirDestAt(i)` | read | iterate registered asset trees |
+| `@addLinkFlag(flag)` | write | extra linker flag |
+| `@addFramework(name)` | write | `-framework <name>` (Apple) |
+| `@setOutputPath(path)` | write | linked binary path |
+| `@setWasmShell(path)` | write | custom WASM shell template |
+| `@addAssetDir(src, dest)` | write | bundle a directory of runtime assets |
+| `@setPostLinkModule(name)` | write | name-based callback fallback |
+| `@setBundlePath(path)` | write | `.app` / `.apk` output |
+| `@setBundleId(id)` | write | iOS `CFBundleIdentifier` / Android package |
+| `@setCodesignIdentity(name)` | write | Apple signing identity (`-` = ad-hoc) |
+| `@setProvisioningProfile(path)` | write | iOS device `.mobileprovision` |
+| `@setManifestPath(path)` | write | Android AndroidManifest.xml override |
+| `@setKeystorePath(path)` | write | Android keystore override |
+| `@binaryPath()` | read | path of the freshly-linked binary |
+| `@bundlePath() / @bundleId()` | read | mirror of the setters |
+| `@codesignIdentity() / @provisioningProfile()` | read | Apple codesign params |
+| `@manifestPath() / @keystorePath()` | read | Android overrides |
+| `@targetTriple()` | read | canonicalized target triple |
+| `@isMacos() / @isIos() / @isIosDevice() / @isIosSimulator() / @isAndroid()` | read | per-target predicates |
+| `@frameworkCount() / @frameworkAt(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
+| `@frameworkPathCount() / @frameworkPathAt(i)` | read | linker `-F` search paths |
+| `@jniMainCount() / @jniMainRuntimePathAt(i) / @jniMainJavaSourceAt(i)` | read | `main = true` emissions for the APK bundler |
+| `@assetDirCount() / @assetDirSrcAt(i) / @assetDirDestAt(i)` | read | iterate registered asset trees |
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
-that read after-the-fact (`binaryPath`, `bundlePath`, etc.) return
+that read after-the-fact (`@binaryPath`, `@bundlePath`, etc.) return
 the value that was either set in `@run` or forwarded from a CLI flag.
 
 ### `fs.sx` and `process.sx` stdlib modules
@@ -6218,16 +6206,16 @@ bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 
 ### Apple `.app` flow (`bundle.sx::bundleMain`)
 
-`bundleMain` branches on `isAndroid()` first; the remaining body is
+`bundleMain` branches on `@isAndroid()` first; the remaining body is
 the Apple path. Per target:
 
 | Step | macOS | iOS sim | iOS device |
 |------|-------|---------|------------|
 | Stage `<bundle>` (rm-rf + mkdir + copy binary + set exe bit) | ✓ | ✓ | ✓ |
 | Write `Info.plist` | minimal `CFBundle*` | + `UIDeviceFamily` + `LSRequiresIPhoneOS` + `UIApplicationSceneManifest` + `DTPlatformName=iPhoneSimulator` | + same with `DTPlatformName=iPhoneOS` |
-| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `provisioningProfile()` set |
+| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `@provisioningProfile()` set |
 | Embed `Frameworks/<Name>.framework/` (recursive `cp -R` per `-F` search path) | — | when present | when present |
-| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `provisioningProfile()` set |
+| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `@provisioningProfile()` set |
 | Codesign | ad-hoc (`-`) | ad-hoc | `--sign <identity> --entitlements <ent>` |
 
 ### Android `.apk` flow (`bundle.sx::androidBundleMain`)
@@ -6237,7 +6225,7 @@ The Android branch:
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
 3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copyFile` from the linked output.
-4. **Manifest** — user-supplied via `setManifestPath()`, or synthesized:
+4. **Manifest** — user-supplied via `@setManifestPath()`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
 5. **Compile `main = true` Java sources** — write each entry's `javaSource` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
@@ -6828,7 +6816,6 @@ set_operand     = set_ref
                 | 'error' '{' set_members '}' // at least one member; `error { }` is rejected
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
-                | IDENT '::' type 'intrinsic' end
 at_fn_decl      = AT_IDENT '::' '(' params? ')' ('->' ret_type)? end
                   // a compiler-implemented function; the sigil is the marker,
                   // so no keyword, body, ABI, or linkage follows

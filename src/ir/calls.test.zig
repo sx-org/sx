@@ -83,7 +83,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         .{ .name = "@len", .want = .i64 },
         .{ .name = "@errorName", .want = .string },
         .{ .name = "@isComptime", .want = .bool },
-        .{ .name = "isFlags", .want = .bool },
+        .{ .name = "@isFlags", .want = .bool },
         .{ .name = "@typeOf", .want = .type_value },
         .{ .name = "@field", .want = .any },
         .{ .name = "__interp_print_frames", .want = .void },

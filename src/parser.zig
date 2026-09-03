@@ -175,7 +175,7 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .comptime_expr = .{ .expr = expr } });
         }
 
-        // Top-level @framework directive: link against an Apple framework.
+        // Top-level @framework directive: @link against an Apple framework.
         if (self.tokens.tag(self.tok) == .at_framework) {
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
@@ -326,15 +326,6 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = ct, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
-        // Intrinsic declaration: name :: intrinsic;
-        if (self.tokens.tag(self.tok) == .kw_intrinsic) {
-            const bi_start = self.tokens.start(self.tok);
-            self.advance();
-            try self.expectStatementEnd();
-            const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
-            return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = bi, .name_span = name_span, .is_raw = name_is_raw } });
-        }
-
         // Enum declaration
         if (self.tokens.tag(self.tok) == .kw_enum) {
             const node = try self.parseEnumDecl(name, start_pos, name_is_raw);
@@ -418,8 +409,7 @@ pub const Parser = struct {
         }
 
         // A compiler-owned function: `@NAME :: (params) [-> R];`. The sigil is
-        // the whole marker, so the signature stands alone with no body — the
-        // form a plain name spells with the `intrinsic` keyword. It routes
+        // the whole marker, so the signature stands alone with no body. It routes
         // ahead of the function-definition heuristic, which reads a bodyless
         // `(types) -> R` as a function-type alias.
         if (name.len > 0 and name[0] == '@' and self.tokens.tag(self.tok) == .l_paren) {
@@ -448,17 +438,6 @@ pub const Parser = struct {
             try self.parseTypeExpr()
         else
             try self.parseExpr();
-
-        // name :: type_expr intrinsic; — intrinsic with type annotation. The
-        // declaration is already whole without the tail, so the tail binds only
-        // where the declaration has not already ended.
-        if (!self.atStatementEnd() and self.tokens.tag(self.tok) == .kw_intrinsic) {
-            const bi_start = self.tokens.start(self.tok);
-            self.advance();
-            try self.expectStatementEnd();
-            const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
-            return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = value, .value = bi, .name_span = name_span, .is_raw = name_is_raw } });
-        }
 
         try self.expectStatementEnd();
         return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = value, .name_span = name_span, .is_raw = name_is_raw } });
@@ -550,7 +529,7 @@ pub const Parser = struct {
 
         if (self.tokens.tag(self.tok) == .kw_extern) {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
-            // at link time)
+            // at @link time)
             self.advance();
             const tail = self.parseLinkageTail(true);
             try self.expectStatementEnd();
@@ -625,6 +604,15 @@ pub const Parser = struct {
             }
             if (std.mem.eql(u8, at_name, "@typeInfo") and self.peekTag(1) == .l_paren) {
                 return self.parseTypeInfoProjection(start);
+            }
+            // A type-returning builtin (`@pointeeType(P)`, `@typeOf(x)`) is a
+            // parameterized head in a type slot, like a type-returning function.
+            if ((std.mem.eql(u8, at_name, "@pointeeType") or std.mem.eql(u8, at_name, "@typeOf")) and self.peekTag(1) == .l_paren) {
+                self.advance();
+                return try self.createNode(start, .{ .parameterized_type_expr = .{
+                    .name = at_name,
+                    .args = try self.parseTypeArgList(),
+                } });
             }
             const at_idx = self.tok;
             self.advance();
@@ -2771,8 +2759,8 @@ pub const Parser = struct {
 
     /// `@NAME :: (params) [-> R] { body }` or, where the implementation is the
     /// compiler's, `@NAME :: (params) [-> R];`. A bodyless declaration takes
-    /// the body node the `intrinsic` keyword builds for a plain name, so every
-    /// downstream consumer reads one shape. Either form carries no ABI,
+    /// the `.intrinsic_expr` body node, so every downstream consumer reads one
+    /// shape. Either form carries no ABI,
     /// linkage, `ufcs`, or accessor modifier.
     fn parseAtFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         const list = try self.parseParams();
@@ -2883,7 +2871,7 @@ pub const Parser = struct {
             extern_name = tail.name;
         }
 
-        // Body: block `{ ... }`, arrow `=> expr;`, intrinsic, or #compiler marker.
+        // Body: block `{ ... }`, arrow `=> expr;`, or #compiler marker.
         // An `extern` import has NO body — just `;`. The extern_export modifier
         // carries the linkage; we synthesize an empty block as the (non-optional)
         // body placeholder, and lowering routes on the modifier rather than this
@@ -2902,11 +2890,6 @@ pub const Parser = struct {
             try self.expectStatementEnd();
             const stmts = try self.allocator.alloc(*Node, 0);
             break :blk try self.createNode(semi_start, .{ .block = .{ .stmts = stmts, .produces_value = false } });
-        } else if (self.tokens.tag(self.tok) == .kw_intrinsic) blk: {
-            const bi_start = self.tokens.start(self.tok);
-            self.advance();
-            try self.expectStatementEnd();
-            break :blk try self.createNode(bi_start, .{ .intrinsic_expr = {} });
         } else if (self.tokens.tag(self.tok) == .fat_arrow) blk: {
             is_arrow = true;
             self.advance();
@@ -4910,7 +4893,7 @@ pub const Parser = struct {
         // with no return type) marks a fn decl just like `abi(...)`.
         // `@set` is a bodied accessor with NO return type, so it sits directly
         // after `)` (`(self, v) @set { … }`) — a fn-def marker like `{`/`=>`.
-        return tag == .l_brace or tag == .kw_intrinsic or tag == .fat_arrow or tag == .at_set or tag == .kw_abi or tag == .kw_extern or tag == .kw_export;
+        return tag == .l_brace or tag == .fat_arrow or tag == .at_set or tag == .kw_abi or tag == .kw_extern or tag == .kw_export;
     }
 
     fn hasFnBodyAfterArrow(self: *Parser) bool {
@@ -4945,7 +4928,6 @@ pub const Parser = struct {
             }
             if (self.tokens.tag(self.tok) == .fat_arrow) return true;
             if (self.tokens.tag(self.tok) == .l_brace) return true;
-            if (self.tokens.tag(self.tok) == .kw_intrinsic) return true;
             if (self.tokens.tag(self.tok) == .at_get) return true; // `-> R @get => …` is a fn def
             if (self.tokens.tag(self.tok) == .at_set) return true; // `-> R @set { … }` is a fn def
             // Postfix linkage modifier after the return type: `-> R extern;` /
@@ -5114,7 +5096,6 @@ pub const Parser = struct {
             .kw_extern,
             .kw_export,
             .kw_asm,
-            .kw_intrinsic,
             .kw_private,
             .colon,
             .colon_colon,
@@ -5330,7 +5311,6 @@ pub const Parser = struct {
             .kw_extern,
             .kw_export,
             .kw_asm,
-            .kw_intrinsic,
             .kw_private,
             .colon,
             .colon_colon,
@@ -5962,7 +5942,7 @@ test "parse library declaration" {
 }
 
 test "parse void function with builtin body" {
-    const source = "foo :: () intrinsic;";
+    const source = "@foo :: () -> void;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -5970,7 +5950,7 @@ test "parse void function with builtin body" {
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
-    try std.testing.expectEqualStrings("foo", decl.data.fn_decl.name);
+    try std.testing.expectEqualStrings("@foo", decl.data.fn_decl.name);
     try std.testing.expect(decl.data.fn_decl.body.data == .intrinsic_expr);
 }
 

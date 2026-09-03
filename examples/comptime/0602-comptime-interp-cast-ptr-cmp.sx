@@ -24,11 +24,11 @@ postLink :: (opt: BuildOptions) -> bool {
 }
 
 // The registrar runs only at compile time (nothing runtime-reachable calls it):
-// comptime evaluator (never the binary), so its `buildOptions()` /
-// `onBuild()` compiler-API calls are permitted.
+// comptime evaluator (never the binary), so its `@buildOptions()` /
+// `@onBuild()` compiler-API calls are permitted.
 configure :: () {
-    opts := buildOptions();
-    onBuild(postLink);
+    opts := @buildOptions();
+    @onBuild(postLink);
 }
 @run configure();
 

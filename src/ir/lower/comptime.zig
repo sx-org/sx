@@ -2198,7 +2198,7 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
 /// domain, or one that loops, yields null.
 fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
     // Each hop resolves from the PREVIOUS hop's author, so a chain whose middle
-    // link is visible only inside its own module still follows. The pin is
+    // @link is visible only inside its own module still follows. The pin is
     // restored on every exit path, including the terminal return.
     const entry = self.pinConstAuthorSource(self.current_source_file);
     defer entry.unpin();

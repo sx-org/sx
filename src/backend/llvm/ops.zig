@@ -1455,7 +1455,7 @@ pub const Ops = struct {
         // Welded `compiler`-library functions are comptime-only — they have no
         // runtime symbol (the comptime interp dispatches them to a Zig handler).
         // A welded call inside a RUNTIME function is illegal; surface a clean
-        // build-gating error instead of an undefined-symbol link failure. A
+        // build-gating error instead of an undefined-symbol @link failure. A
         // welded call inside a COMPTIME function (a `@run` / `::` initializer
         // wrapper, `is_comptime`) is fine — that body is interp-evaluated and its
         // LLVM emission is dead, so skip the gate there.

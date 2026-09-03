@@ -571,7 +571,7 @@ test "sameFileIdentity: distinct spellings of one file match; distinct and unsta
     const dotted = try std.fmt.allocPrint(alloc, "{s}/./mod.sx", .{absdir});
     try std.testing.expect(imports.sameFileIdentity(alloc, mod, dotted));
 
-    // Symlink-following: the link and its target are one file.
+    // Symlink-following: the @link and its target are one file.
     try tmp.dir.symLink(io, "mod.sx", "link.sx", .{});
     const link = try std.fmt.allocPrint(alloc, "{s}/link.sx", .{absdir});
     try std.testing.expect(imports.sameFileIdentity(alloc, mod, link));

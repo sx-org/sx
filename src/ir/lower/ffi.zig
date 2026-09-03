@@ -826,7 +826,7 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
             // Obj-C runtime class name. `extends = NSObjectBase`
             // where NSObjectBase is aliased to "NSObject" must
             // pass "NSObject" to objc_allocateClassPair, otherwise
-            // the runtime's class-hierarchy link is broken and
+            // the runtime's class-hierarchy @link is broken and
             // inherited-method dispatch fails.
             self.module.setObjcDefinedClassParent(fcd.name, self.resolveObjcParentName(fcd));
             // Per-class ivar handle global. The class-pair

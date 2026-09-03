@@ -12,7 +12,7 @@ p : any = P{ a = 1, b = 2.5 };
 main :: () {
     print("{} {} {}\n", g, s, p);
     print("{}\n", g.(i64) + 1);
-    q : *i64 = rawAnyData(g).(*i64);
+    q : *i64 = @rawAnyData(g).(*i64);
     q.* = 9;
     print("{}\n", g);
 }

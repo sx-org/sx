@@ -173,7 +173,7 @@ pub fn fnDeclOf(raw: RawDeclRef) ?*const ast.FnDecl {
 }
 
 /// A PLAIN free function — no type params, an ordinary (non-`extern`/
-/// `intrinsic`/`#compiler`/`extern`) body — the only callable kind the bare-call
+/// compiler-provided/`#compiler`/`extern`) body — the only callable kind the bare-call
 /// verdict counts.
 pub fn isPlainFreeFnDecl(fd: *const ast.FnDecl) bool {
     if (fd.type_params.len > 0) return false;

@@ -1,6 +1,6 @@
 // ONE compiled function walks ANY value — kind dispatch is a runtime
 // `@typeInfo` match, struct fields are interior views (`@field`),
-// array/vector elements are stride views (anyElement), and the leaves feed
+// array/vector elements are stride views (@anyElement), and the leaves feed
 // the tag-driven formatter. One erasure at the root; every inner step is view
 // math, zero copies.
 
@@ -30,7 +30,7 @@ printAny :: (av: any) {
             i := 0;
             while i < ai.len {
                 if i > 0 { print(", "); }
-                printAny(anyElement(ai.elem, av, i));
+                printAny(@anyElement(ai.elem, av, i));
                 i += 1;
             }
             print("]");
@@ -40,7 +40,7 @@ printAny :: (av: any) {
             i := 0;
             while i < vi.len {
                 if i > 0 { print(", "); }
-                printAny(anyElement(vi.elem, av, i));
+                printAny(@anyElement(vi.elem, av, i));
                 i += 1;
             }
             print("]");

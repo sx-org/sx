@@ -9,5 +9,5 @@ main :: () {
     th : Type = Header;
     tk : Type = Kind;
     print("{} {} {} {}\n",
-        @sizeOf(th), @alignOf(th), isFlags(tk), @typeEq(th, Header));
+        @sizeOf(th), @alignOf(th), @isFlags(tk), @typeEq(th, Header));
 }

@@ -2,8 +2,8 @@
 // default sx convention. `abi(.compiler)` is not one of them.
 //
 // The two surfaces it would otherwise name have their own spellings: the
-// compiler-API surface is an `intrinsic` bound by the registry (1189 / 1242), and
-// a build callback is an ordinary function registered with `onBuild`, kept out of
+// compiler-API surface is an `@` declaration bound by the registry (1189 / 1242), and
+// a build callback is an ordinary function registered with `@onBuild`, kept out of
 // the binary by reachability rather than by its ABI (1664).
 @import "modules/std.sx";
 

@@ -251,7 +251,7 @@
         },
         {
           "name": "keyword.other.sx",
-          "match": "(?<!\\.)\\b(?:abi|asm|intrinsic|ufcs)\\b"
+          "match": "(?<!\\.)\\b(?:abi|asm|ufcs)\\b"
         },
         {
           "name": "keyword.operator.word.sx",
@@ -285,7 +285,7 @@
           }
         },
         {
-          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(::)\\s*(?=(?:(?:extern|export|private|inline|intrinsic)\\b\\s*)*\\()",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(::)\\s*(?=(?:(?:extern|export|private|inline)\\b\\s*)*\\()",
           "captures": {
             "1": { "name": "entity.name.function.sx" },
             "2": { "name": "keyword.operator.declaration.sx" }

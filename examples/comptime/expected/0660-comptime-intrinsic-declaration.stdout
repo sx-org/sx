@@ -4,5 +4,5 @@
 fields(P)      = 2
 field 0 name   = a
 @typeName(P)   = P
-isFlags(E)     = false
+@isFlags(E)     = false
 @len(vector)   = 3

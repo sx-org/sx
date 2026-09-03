@@ -53,7 +53,6 @@ pub const Tag = enum(u8) {
     kw_extern, // extern (import: external linkage, C ABI, no body)
     kw_export, // export (define + expose: external linkage, C ABI)
     kw_asm, // asm (inline assembly expression / global asm decl)
-    kw_intrinsic, // intrinsic (body position: the impl is a compiler intrinsic)
     kw_private, // private (file-local visibility: module-scope decls and struct fields)
 
     // Symbols
@@ -275,7 +274,6 @@ pub const Tag = enum(u8) {
             .kw_extern,
             .kw_export,
             .kw_asm,
-            .kw_intrinsic,
             .kw_private,
             => .keyword,
             .at_run,
@@ -401,7 +399,6 @@ pub const Tag = enum(u8) {
             .kw_extern,
             .kw_export,
             .kw_asm,
-            .kw_intrinsic,
             .kw_private,
             => true,
             .int_literal,
@@ -552,11 +549,6 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     // `asm` is a real keyword; `volatile` / `clobbers` stay OUT of this table
     // (recognized contextually only inside an `asm { … }` body).
     .{ "asm", .kw_asm },
-    // `intrinsic` marks a declaration whose implementation is a compiler
-    // intrinsic (`isFlags :: ($T: Type) -> bool intrinsic;`). A
-    // reserved word: the registry in `ir/intrinsics.zig` binds it by module +
-    // declared name.
-    .{ "intrinsic", .kw_intrinsic },
     // `private` restricts a module-scope declaration or a struct field to its
     // declaring source file. A reserved word; `` `private `` stays usable as a
     // raw identifier.

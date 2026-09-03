@@ -157,7 +157,7 @@ pub const Root = struct {
 ///   `compiler` library binds via `abi(.zig)`.
 /// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
 ///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
-///   Covers the compiler-API surface (`rawIntern`/`rawFindType`/`buildOptions`/… —
+///   Covers the compiler-API surface (`@rawIntern`/`@rawFindType`/`@buildOptions`/… —
 ///   bodiless decls whose Zig/VM handler is the impl) AND user compiler-domain
 ///   functions like post-link callbacks (bodied, but emit-skipped). The ABI alone
 ///   marks it — there is no `extern <lib>` and no fake `@library "compiler"`.
@@ -491,7 +491,7 @@ pub const VarDecl = struct {
     type_annotation: ?*Node,
     value: ?*Node,
     /// `extern`-global form `g : T extern [LIB] ["csym"];` — a reference to a
-    /// global defined elsewhere (external linkage, resolved at link time).
+    /// global defined elsewhere (external linkage, resolved at @link time).
     /// `extern_lib` is the optional source-library reference and `extern_name`
     /// the optional symbol-name override.
     is_extern: bool = false,

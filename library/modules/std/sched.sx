@@ -1064,7 +1064,7 @@ wakeIoWaiterForFd :: (self: *Scheduler, fd: i32) {
 //     match winner { case .a: |v| {…}  case .b: |v| {…} }     // losers cancelled
 
 // Synthesize the race RESULT type for a named tuple `$T` of `*Future(..)` handles.
-// A member's `*Future(R)` projects to its result `R`: `pointeeType` strips the
+// A member's `*Future(R)` projects to its result `R`: `@pointeeType` strips the
 // pointer to `Future(R)`, and field 0 of `Future` is `value: R` (the `Value :: R`
 // type member is not a data field). One nominal type per distinct `T` (type-fn
 // identity), so the decl, every `makeVariant(RaceResult(T), …)` call, and the
@@ -1074,7 +1074,7 @@ RaceResult :: ($T: Type) -> Type {
     inline for field in @typeInfo(T).struct.fields {
         vs[field.index] = VariantInfo{
             name    = field.name,                                              // tuple label → variant name
-            payload = @typeInfo(pointeeType(field.type)).struct.fields[0].type, // *Future(R) -> Future(R) -> R
+            payload = @typeInfo(@pointeeType(field.type)).struct.fields[0].type, // *Future(R) -> Future(R) -> R
         };
     }
     return makeEnum("RaceResult", vs);

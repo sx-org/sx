@@ -28,7 +28,7 @@ inline if @host.os == .ios and @host.isSimulator { … }
 
 The implementation kernel is not a per-site special case for the spelling `@host`. It is: **a comptime constant may be a struct, and `inline if` / `inline match` / the integer folder evaluate a field-access whose object is such a constant.** `@host` is the one such constant the compiler injects. `OS` / `ARCH` / `POINTER_SIZE` are deleted with no shims; every in-repo caller migrates in the cut.
 
-The same language-surface cut camelCases every **sx-authored** identifier in the stdlib, corpus, specs, and language contracts (`@isComptime`, `addLinkFlag`, `pathJoin`, …). Imported C/ObjC/JNI symbol spellings, `__sx_*` ABI, and Zig internals stay. No dual spelling: each name’s old form is gone in the PR that introduces the new form.
+The same language-surface cut camelCases every **sx-authored** identifier in the stdlib, corpus, specs, and language contracts (`@isComptime`, `@addLinkFlag`, `pathJoin`, …). Imported C/ObjC/JNI symbol spellings, `__sx_*` ABI, and Zig internals stay. No dual spelling: each name’s old form is gone in the PR that introduces the new form.
 
 ---
 
@@ -124,11 +124,11 @@ Runtime reads go through `lowerExpr`'s identifier arm (`src/ir/lower/expr.zig`):
 
 2. **Field types stay the named enums `OperatingSystem` / `Architecture`, not nested anonymous enums.** They already exist, `fieldTypeMatches` already accepts a `type_expr` spelling, and a function can take `os: OperatingSystem`. Nested anonymous enums would need a shape-checker extension and would be unnameable in signatures.
 
-3. **camelCase is the identifier convention for sx-authored names** in stdlib, corpus, specs, and language contracts. Field names, function names, comptime-const fields, `@` function names, contract struct fields, and example-local identifiers are camelCase (`pointerSize`, `isSimulator`, `@isComptime`, `addLinkFlag`, `pathJoin`). Type names stay PascalCase (`OperatingSystem`, `Architecture`). Enum variants stay lower/dot identifiers (`.macos`, `.x86_64`). Already-camelCase `@` functions stay (`@sizeOf`, `@typeOf`, `@errorName`). Foreign C/ObjC/JNI **imported symbol spellings** stay as the C name. `__sx_*` compiler ABI stays. Zig compiler internals stay snake_case (Zig). Completeness for sx names is `rg` of snake_case identifiers in `.sx` / `specs.md` / `docs`, minus those exclusions.
+3. **camelCase is the identifier convention for sx-authored names** in stdlib, corpus, specs, and language contracts. Field names, function names, comptime-const fields, `@` function names, contract struct fields, and example-local identifiers are camelCase (`pointerSize`, `isSimulator`, `@isComptime`, `@addLinkFlag`, `pathJoin`). Type names stay PascalCase (`OperatingSystem`, `Architecture`). Enum variants stay lower/dot identifiers (`.macos`, `.x86_64`). Already-camelCase `@` functions stay (`@sizeOf`, `@typeOf`, `@errorName`). Foreign C/ObjC/JNI **imported symbol spellings** stay as the C name. `__sx_*` compiler ABI stays. Zig compiler internals stay snake_case (Zig). Completeness for sx names is `rg` of snake_case identifiers in `.sx` / `specs.md` / `docs`, minus those exclusions.
 
 4. **`pointerSize` is a stored `i64` byte width** (`4` on wasm32, `8` otherwise — the current `POINTER_SIZE` rule). Not `u8` (comptime ints and `@sizeOf` are `i64`). Not derived from `@sizeOf(*void)`: expansion must fold before layout exists. `isize` / `usize` remain the pointer-width *integer types*; they are not a substitute for the byte count.
 
-5. **`isSimulator: bool` is the iOS device/sim split.** `.ios` stays one OS tag. The bool is `TargetConfig.isIOSSimulator()` (triple contains `"simulator"`). False on every non-iOS target, including macOS. Bundler code that already calls `BuildOptions.isIosSimulator()` is a different surface (build-script API) and is not rewritten onto `@host`.
+5. **`isSimulator: bool` is the iOS device/sim split.** `.ios` stays one OS tag. The bool is `TargetConfig.isIOSSimulator()` (triple contains `"simulator"`). False on every non-iOS target, including macOS. Bundler code that already calls `@isIosSimulator(BuildOptions)` is a different surface (build-script API) and is not rewritten onto `@host`.
 
 6. **No other fields.** Endian, ABI/env, object format, pointer bit width, `isEmscripten`, `vaListWords` stay out. Add a field when it has an sx caller or a `TargetConfig` source *and* a reason the expander must see it without layout.
 
@@ -416,7 +416,7 @@ OS (`TargetConfig` cascade, first match wins):
 |---|---|
 | `isWasm()` | `.wasm` |
 | `isWindows()` | `.windows` |
-| `isAndroid()` | `.android` |
+| `@isAndroid()` | `.android` |
 | `isLinux()` | `.linux` |
 | `isIOS()` | `.ios` |
 | `isMacOS()` | `.macos` |
@@ -465,15 +465,15 @@ Already camelCase, leave: `@sizeOf` `@alignOf` `@typeOf` `@typeName` `@typeInfo`
 
 #### Reflection / compiler-API intrinsics (`core.sx`, not `@`)
 
-`struct_field_count` → `structFieldCount` (same pattern: `structFieldName`, `structFieldType`, `structFieldOffset`, `structFieldValue`). `variant_count` `variant_name` `variant_type` `variant_payload` `variant_value` `variant_index` → `variantCount` `variantName` `variantType` `variantPayload` `variantValue` `variantIndex`. `pointee_type` → `pointeeType`. `is_flags` → `isFlags`. `any_element` → `anyElement`. `raw_any_data` `raw_make_any` `raw_intern` `raw_text_of` `raw_find_type` `raw_type_kind` `raw_type_name` `raw_field_count` `raw_field_name` `raw_field_type` `raw_variant_value` `raw_pointer_to` `raw_declare_type` `raw_register_type` → `rawAnyData` `rawMakeAny` `rawIntern` `rawTextOf` `rawFindType` `rawTypeKind` `rawTypeName` `rawFieldCount` `rawFieldName` `rawFieldType` `rawVariantValue` `rawPointerTo` `rawDeclareType` `rawRegisterType`. Binding keys in `intrinsics.zig` match.
+`struct_field_count` → `structFieldCount` (same pattern: `structFieldName`, `structFieldType`, `structFieldOffset`, `structFieldValue`). `variant_count` `variant_name` `variant_type` `variant_payload` `variant_value` `variant_index` → `variantCount` `variantName` `variantType` `variantPayload` `variantValue` `variantIndex`. `pointee_type` → `@pointeeType`. `is_flags` → `@isFlags`. `any_element` → `@anyElement`. `raw_any_data` `raw_make_any` `raw_intern` `raw_text_of` `raw_find_type` `raw_type_kind` `raw_type_name` `raw_field_count` `raw_field_name` `raw_field_type` `raw_variant_value` `raw_pointer_to` `raw_declare_type` `raw_register_type` → `@rawAnyData` `@rawMakeAny` `@rawIntern` `@rawTextOf` `@rawFindType` `@rawTypeKind` `@rawTypeName` `@rawFieldCount` `@rawFieldName` `@rawFieldType` `@rawVariantValue` `@rawPointerTo` `@rawDeclareType` `@rawRegisterType`. Binding keys in `intrinsics.zig` match.
 
 #### `build.sx` / `compiler.sx`
 
-`build_options` → `buildOptions`. `add_link_flag` `add_framework` `set_output_path` `set_wasm_shell` `add_asset_dir` `asset_dir_count` `asset_dir_src_at` `asset_dir_dest_at` `set_post_link_module` `binary_path` `set_bundle_path` `set_bundle_id` `set_codesign_identity` `set_provisioning_profile` `bundle_path` `bundle_id` `codesign_identity` `provisioning_profile` `target_triple` `is_macos` `is_ios` `is_ios_device` `is_ios_simulator` `is_android` `framework_count` `framework_at` `framework_path_count` `framework_path_at` `set_manifest_path` `set_keystore_path` `manifest_path` `keystore_path` `jni_main_count` `jni_main_runtime_path_at` `jni_main_java_source_at` `on_build` `c_object_paths` `link_libraries` `emit_object` `build_output` `build_target` `build_frameworks` `build_flags` → `addLinkFlag` `addFramework` `setOutputPath` `setWasmShell` `addAssetDir` `assetDirCount` `assetDirSrcAt` `assetDirDestAt` `setPostLinkModule` `binaryPath` `setBundlePath` `setBundleId` `setCodesignIdentity` `setProvisioningProfile` `bundlePath` `bundleId` `codesignIdentity` `provisioningProfile` `targetTriple` `isMacos` `isIos` `isIosDevice` `isIosSimulator` `isAndroid` `frameworkCount` `frameworkAt` `frameworkPathCount` `frameworkPathAt` `setManifestPath` `setKeystorePath` `manifestPath` `keystorePath` `jniMainCount` `jniMainRuntimePathAt` `jniMainJavaSourceAt` `onBuild` `cObjectPaths` `linkLibraries` `emitObject` `buildOutput` `buildTarget` `buildFrameworks` `buildFlags`. Comptime-VM dispatch keys (`callCompilerFn`) match the new names.
+`build_options` → `@buildOptions`. `add_link_flag` `add_framework` `set_output_path` `set_wasm_shell` `add_asset_dir` `asset_dir_count` `asset_dir_src_at` `asset_dir_dest_at` `set_post_link_module` `binary_path` `set_bundle_path` `set_bundle_id` `set_codesign_identity` `set_provisioning_profile` `bundle_path` `bundle_id` `codesign_identity` `provisioning_profile` `target_triple` `is_macos` `is_ios` `is_ios_device` `is_ios_simulator` `is_android` `framework_count` `framework_at` `framework_path_count` `framework_path_at` `set_manifest_path` `set_keystore_path` `manifest_path` `keystore_path` `jni_main_count` `jni_main_runtime_path_at` `jni_main_java_source_at` `on_build` `c_object_paths` `link_libraries` `emit_object` `build_output` `build_target` `build_frameworks` `build_flags` → `@addLinkFlag` `@addFramework` `@setOutputPath` `@setWasmShell` `@addAssetDir` `@assetDirCount` `@assetDirSrcAt` `@assetDirDestAt` `@setPostLinkModule` `@binaryPath` `@setBundlePath` `@setBundleId` `@setCodesignIdentity` `@setProvisioningProfile` `@bundlePath` `@bundleId` `@codesignIdentity` `@provisioningProfile` `@targetTriple` `@isMacos` `@isIos` `@isIosDevice` `@isIosSimulator` `@isAndroid` `@frameworkCount` `@frameworkAt` `@frameworkPathCount` `@frameworkPathAt` `@setManifestPath` `@setKeystorePath` `@manifestPath` `@keystorePath` `@jniMainCount` `@jniMainRuntimePathAt` `@jniMainJavaSourceAt` `@onBuild` `@cObjectPaths` `@linkLibraries` `@emitObject` `@buildOutput` `@buildTarget` `@buildFrameworks` `@buildFlags`. Comptime-VM dispatch keys (`callCompilerFn`) match the new names.
 
 #### Atomics
 
-`atomic_load` `atomic_store` `atomic_fetch_add` … `atomic_cmpxchg_weak` → `atomicLoad` `atomicStore` `atomicFetchAdd` `atomicCmpxchgWeak` (same pattern for the rest of the atomic intrinsic names).
+`atomic_load` `atomic_store` `atomic_fetch_add` … `atomic_cmpxchg_weak` → `@atomicLoad` `@atomicStore` `@atomicFetchAdd` `@atomicCmpxchgWeak` (same pattern for the rest of the atomic intrinsic names).
 
 #### Stdlib and corpus (examples, not a complete catalog)
 
@@ -542,9 +542,9 @@ Sx-authored snake_case identifiers camelCase (kernel mapping above). Completenes
 | `src/ir/lower/expr.zig` | Identifier `@host` and field projection as constants |
 | `src/ir/lower.zig` `lookupConstStructField` | Probe `comptime_constants` struct int fields **before** `foldConstStructField`. `SourceConstCtx.lookupConstStructField` delegates here, not to `foldConstStructField` |
 | `src/ir/lower/pack.zig` `comptimeIndexOf` | Consult `evalComptimeValue` for `.int_val`; union exhaustiveness |
-| `src/ir/intrinsics.zig` | **No `@host` entry.** Rename snake_case binding keys / `.name` strings to the camelCase sx spelling (`@isComptime`, `structFieldCount`, `atomicLoad`, …) |
+| `src/ir/intrinsics.zig` | **No `@host` entry.** Rename snake_case binding keys / `.name` strings to the camelCase sx spelling (`@isComptime`, `structFieldCount`, `@atomicLoad`, …) |
 | `src/lexer.zig` directive table | Match `"@context.extend"` (Zig tag stays `at_context_extend`) |
-| `src/ir/comptime_vm.zig` compiler-fn dispatch | Keys match `buildOptions` / `addLinkFlag` / `isIosSimulator` / … |
+| `src/ir/comptime_vm.zig` compiler-fn dispatch | Keys match `@buildOptions` / `@addLinkFlag` / `@isIosSimulator` / … |
 
 ### Stdlib declaration
 
@@ -674,7 +674,7 @@ If a later stdlib caller needs endian or ABI, that is a new field on the contrac
 - `src/target.zig` — `TargetConfig.isIOSSimulator`, `isWasm32`, OS/arch predicates
 - `library/modules/std/target.sx` — current dummy facts and enums
 - `library/modules/std/c.sx`, `net/epoll.sx`, `fs/posix_abi.sx` — import-free platform prune
-- `library/modules/build.sx` — `isIosSimulator` build API (kept as a surface; different from `@host.isSimulator`)
+- `library/modules/build.sx` — `@isIosSimulator` build API (kept as a surface; different from `@host.isSimulator`)
 - `specs.md` §8 Compiler Constants (~5833); `@error` live-arm example (~5728)
 - `examples/comptime/0609-comptime-inline-if.sx`, `0668-comptime-module-inline-if-const-condition.sx`, `examples/platform/1604-platform-build-config.sx`
 
@@ -731,7 +731,7 @@ Each PR is independently reviewable and must keep `zig build test` green. No shi
 
 **Files / components:**
 - `specs.md` §8 Compiler Constants — rewrite in present tense (see Specs-facing contract). Fix the `modules/build.sx` citation. Include `.ios`, `.android`, `.wasm64`.
-- `specs.md` `@error` live-arm example and Build Configuration wasm example (`@host.os`, `buildOptions`, `addLinkFlag`, …)
+- `specs.md` `@error` live-arm example and Build Configuration wasm example (`@host.os`, `@buildOptions`, `@addLinkFlag`, …)
 - Every snake_case language name specs currently write (`@isComptime`, `@vaStart`, `structFieldCount`, `@context.extend`, …) — present tense, no historical framing
 - `docs/*` / `readme.md` only if they mention `OS` / `ARCH` / `POINTER_SIZE` or snake_case language names
 

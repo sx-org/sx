@@ -746,7 +746,7 @@ pub const LLVMEmitter = struct {
     /// binary with CWD=/.
     ///
     /// Only a build that asks for a bundle gets it: `--bundle` lands on
-    /// `target_config`, `@run setBundlePath` on `build_config`, and either
+    /// `target_config`, `@run @setBundlePath` on `build_config`, and either
     /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;
@@ -1060,7 +1060,7 @@ pub const LLVMEmitter = struct {
 
             const llvm_global = c.LLVMAddGlobal(self.llvm_module, llvm_ty, name_z.ptr);
 
-            // Extern globals (`<name> : <type> extern;`) resolve at link time
+            // Extern globals (`<name> : <type> extern;`) resolve at @link time
             // to a libSystem / framework symbol — no initializer, default linkage.
             if (global.is_extern) {
                 c.LLVMSetLinkage(llvm_global, c.LLVMExternalLinkage);

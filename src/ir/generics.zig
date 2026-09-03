@@ -243,7 +243,7 @@ pub const GenericResolver = struct {
     /// active `type_bindings` — but `isTypeShapedAstNode` only knows
     /// REGISTERED type names, so Strategy 1 skipped it and the callee
     /// diagnosed "cannot infer". Folded type expressions
-    /// (`pointeeType(T)`) already passed; a bound `T` must too.
+    /// (`@pointeeType(T)`) already passed; a bound `T` must too.
     fn argIsBoundTypeParam(self: GenericResolver, arg: *const Node) bool {
         if (arg.data != .identifier) return false;
         const tb = if (self.l.type_bindings) |*b| b else return false;

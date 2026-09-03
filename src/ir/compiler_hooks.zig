@@ -5,8 +5,8 @@ const FuncId = inst.FuncId;
 
 // ── BuildConfig ─────────────────────────────────────────────────────────
 // Mutable build configuration accumulated by the sx-driven build pipeline
-// (`defaultPipeline` / an `onBuild` callback) running on the comptime VM,
-// which reads/writes these fields via the `intrinsic` primitives.
+// (`defaultPipeline` / an `@onBuild` callback) running on the comptime VM,
+// which reads/writes these fields via the `@` primitives.
 
 /// `(src_dir, dest_in_bundle)` pair recorded by
 /// `BuildOptions.addAssetDir(src, dest)`. The sx bundler walks the
@@ -26,7 +26,7 @@ pub const BuildConfig = struct {
     output_path: ?[]const u8 = null,
     wasm_shell_path: ?[]const u8 = null,
 
-    /// Post-link callback registered via `onBuild(cb)`. When set, the
+    /// Post-link callback registered via `@onBuild(cb)`. When set, the
     /// compiler re-enters the comptime VM after `target.link()`
     /// and invokes this function. A `false` return is treated as a
     /// build failure.
@@ -42,7 +42,7 @@ pub const BuildConfig = struct {
 
     /// Path of the freshly-linked binary, populated by `main.zig`
     /// right before the post-link callback runs. The sx-side bundler
-    /// reads this via `binaryPath()` to know what file to wrap.
+    /// reads this via `@binaryPath()` to know what file to wrap.
     binary_path: ?[]const u8 = null,
 
     // Apple `.app` / Android `.apk` bundling parameters. Set either
@@ -60,30 +60,30 @@ pub const BuildConfig = struct {
     target_triple: ?[]const u8 = null,
 
     /// C companion object files (`@import c { @source ... }`, compiled to `.o`)
-    /// and `@library` link names, forwarded by main.zig before the post-link
+    /// and `@library` @link names, forwarded by main.zig before the post-link
     /// callback so the sx-driven build pipeline can read them via the
-    /// `cObjectPaths()` / `linkLibraries()` compiler primitives and pass them
-    /// to `link`. Slices reference compiler-owned memory that outlives the
+    /// `@cObjectPaths()` / `@linkLibraries()` compiler primitives and pass them
+    /// to `@link`. Slices reference compiler-owned memory that outlives the
     /// callback.
     c_object_paths: []const []const u8 = &.{},
     link_libraries: []const []const u8 = &.{},
 
-    /// The fully-merged link flags (CLI `extra_link_flags` + `@run` build-block
-    /// flags), forwarded by main.zig. The sx driver reads them via `buildFlags()`
-    /// and passes them to `link`. (Distinct from `link_flags`, which holds only
+    /// The fully-merged @link flags (CLI `extra_link_flags` + `@run` build-block
+    /// flags), forwarded by main.zig. The sx driver reads them via `@buildFlags()`
+    /// and passes them to `@link`. (Distinct from `link_flags`, which holds only
     /// the `@run`-accumulated subset.)
     merged_link_flags: []const []const u8 = &.{},
 
     /// Host-installed callbacks for build-pipeline ACTIONS the comptime VM can't
     /// perform itself (it can't depend on the driver — `core`/`main`/`target`).
-    /// main.zig installs this before the post-link callback; the VM's `link`
-    /// primitive dispatches through it. Null outside a post-link build (a `link`
+    /// main.zig installs this before the post-link callback; the VM's `@link`
+    /// primitive dispatches through it. Null outside a post-link build (a `@link`
     /// call then bails loudly — it's a post-codegen-only action).
     build_hooks: ?*const BuildHooks = null,
 
     /// Frameworks the binary links against (`-framework` names) and
     /// the search paths to look them up in (`-F` directories), forwarded
-    /// from the link step so the sx bundler can embed them into
+    /// from the @link step so the sx bundler can embed them into
     /// `<bundle>/Frameworks/`.
     target_frameworks: []const []const u8 = &.{},
     target_framework_paths: []const []const u8 = &.{},
@@ -124,11 +124,11 @@ pub const BuildConfig = struct {
 pub const BuildHooks = struct {
     ctx: *anyopaque,
     /// Verify + emit the codegen'd module to its object file; return the path
-    /// (ctx-owned). The `emitObject()` primitive — an ACTION: emission is
+    /// (ctx-owned). The `@emitObject()` primitive — an ACTION: emission is
     /// sx-driven via `defaultPipeline`.
     emit_object: *const fn (ctx: *anyopaque) anyerror![]const u8,
     /// Link `objects` → `output`, with the given `libraries` / `frameworks` /
-    /// link `flags` / `target` triple. (`objects` is the full object list; the
+    /// @link `flags` / `target` triple. (`objects` is the full object list; the
     /// adapter splits it for the underlying linker.)
     link: *const fn (
         ctx: *anyopaque,

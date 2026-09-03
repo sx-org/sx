@@ -203,7 +203,7 @@ fn isExportedEntryName(name: []const u8) bool {
 }
 
 /// The well-known stdlib build driver (`library/modules/build.sx`). It is invoked
-/// by the compiler post-codegen when no `@run onBuild(...)` override exists, but
+/// by the compiler post-codegen when no `@run @onBuild(...)` override exists, but
 /// is never CALLED from sx — so it must be force-lowered like an OS entry point,
 /// else lazy lowering leaves it a bodiless `declare` stub the VM can't run.
 fn isDefaultBuildPipeline(name: []const u8) bool {
@@ -322,7 +322,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.lowerMainAndComptime(decls);
     // Pass 2b: force-lower the stdlib build driver `defaultPipeline` (in the
     // flat-imported `modules/build.sx`, so NOT in the main `decls` above). The
-    // compiler auto-invokes it post-codegen when no `@run onBuild(...)` override
+    // compiler auto-invokes it post-codegen when no `@run @onBuild(...)` override
     // exists, but nothing CALLS it from sx — so without this it stays a bodiless
     // stub the build VM can't run. No-ops when build.sx isn't imported.
     self.lazyLowerFunction("defaultPipeline");
@@ -1675,7 +1675,7 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 
 /// Serialize a top-level global's initializer into a static `ConstantValue`.
 /// Extern globals (external symbol) and value-less declarations carry no
-/// payload — they default to zero/extern at link, which is correct. An
+/// payload — they default to zero/extern at @link, which is correct. An
 /// identifier initializer that names a module constant is materialized from
 /// the recorded constant (`K : A : 42; g : A = K;` → 42); a
 /// global initialized from an identifier that resolves to no usable constant
@@ -3452,7 +3452,7 @@ pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: Stri
 }
 
 pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
-    // An `intrinsic` body binds to the registry (`ir/intrinsics.zig`) by
+    // An intrinsic body binds to the registry (`ir/intrinsics.zig`) by
     // (module, name). Validate here — above the generic-template guard, since
     // most intrinsics are `$T`-generic and would otherwise skip the check —
     // so an unregistered or wrong-arity declaration is a diagnostic at its own
@@ -3611,7 +3611,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     self.fn_decl_fids.put(fd, fid) catch {};
 }
 
-/// Validate an `intrinsic` declaration against the registry. The registry IS the
+/// Validate an intrinsic declaration against the registry. The registry IS the
 /// allow-list: a name it does not carry has no handler anywhere, so accepting the
 /// declaration would defer the failure to a call site (or, worse, to a recognizer
 /// that silently does the wrong thing). Diagnose at the declaration span instead.
@@ -4052,7 +4052,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
         }) catch unreachable;
     }
 
-    // An `intrinsic` body needs no lowering — the compiler is the implementation.
+    // An intrinsic body needs no lowering — the compiler is the implementation.
     // `extern` imports are declare-only too (empty placeholder body).
     if (fd.body.data == .intrinsic_expr or
         fd.extern_export == .extern_)
