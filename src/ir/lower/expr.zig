@@ -4968,7 +4968,7 @@ fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) 
 /// `tag is <contract>` over a runtime `Type`: one row of the contract's
 /// conformance table. An interface's row is its vtable-or-null, so the question
 /// is whether that word is present; a constraint's row is the answer itself.
-fn conformanceAsk(self: *Lowering, tag: Ref, contract: TypeId) Ref {
+pub fn conformanceAsk(self: *Lowering, tag: Ref, contract: TypeId) Ref {
     const table = self.conformanceTable(contract) orelse return self.builder.constBool(false);
     if (self.protocolKindOf(contract)) |kind| {
         if (kind == .erased) {

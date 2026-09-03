@@ -427,13 +427,3 @@ print :: ($fmt: string, ..$args) {
     w.flush();
 }
 
-// `p.(Q)` between interfaces, unconsumed: an absent row stops the program. The
-// referent's concrete type is only known to the running program, so the message
-// reads it off the handle rather than off the site.
-__sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
-    if !conforms {
-        print("re-erasure failed: '{}' does not conform to '{}'\n", @typeName(concrete), @typeName(target));
-        c.exit(1);
-    }
-}
-

@@ -1,0 +1,26 @@
+// `@conforms(I, v)` answers whether `v` conforms to interface `I`: a concrete
+// value folds at compile time, an interface handle and a boxed value read the
+// interface's conformance table by the referent's type.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; }
+Q :: interface { q :: (self: *Self) -> i64; }
+
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }
+impl Q for W { q :: (self: *W) -> i64 { self.v + 1 } }
+
+V :: struct { n: i64; }
+impl I for V { a :: (self: *V) -> i64 { self.n } }
+
+main :: () {
+    w := W{ v = 3 };
+    v := V{ n = 9 };
+    print("static: {} {}\n", @conforms(Q, w), @conforms(Q, v));
+    hw : I = w;
+    hv : I = v;
+    print("handle: {} {}\n", @conforms(Q, hw), @conforms(Q, hv));
+    bw : any = w;
+    bv : any = v;
+    print("boxed: {} {}\n", @conforms(Q, bw), @conforms(Q, bv));
+}

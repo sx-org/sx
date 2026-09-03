@@ -1,0 +1,8 @@
+// A failing `@assert` with no message panics with `assertion failed`.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+main :: () {
+    @assert(false);
+}

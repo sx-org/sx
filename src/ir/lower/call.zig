@@ -2781,6 +2781,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .vectorLanes,
         .@"@tag",
         .@"@as",
+        .@"@conforms",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3075,6 +3076,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .vectorLanes,
         .@"@tag",
         .@"@as",
+        .@"@conforms",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3356,6 +3358,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .vectorLanes,
         .@"@tag",
         .@"@as",
+        .@"@conforms",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3724,6 +3727,7 @@ fn isReflectionCall(name: []const u8) bool {
         .vectorLanes,
         .@"@tag",
         .@"@as",
+        .@"@conforms",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -4155,6 +4159,33 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     return b.load(slot, dst);
 }
 
+/// `@conforms(I, v)` — whether `v` conforms to interface `I`. A concrete `v`
+/// folds from the impl facts; an interface handle or a boxed `v` reads `I`'s
+/// conformance table by the referent's type at runtime.
+fn lowerConformsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@conforms takes 2 arguments, got {d}", .{c.args.len});
+        return self.builder.constBool(false);
+    }
+    const iface = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    const kind = if (iface == .unresolved) null else self.protocolKindOf(iface);
+    if (kind == null or kind.? != .erased) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@conforms asks about an interface, got '{s}'", .{if (iface == .unresolved) "a type unknown at compile time" else self.formatTypeName(iface)});
+        return self.builder.constBool(false);
+    }
+    const vty = self.inferExprType(c.args[1]);
+    if (vty == .any) {
+        const av = self.lowerExpr(c.args[1]);
+        return self.conformanceAsk(self.builder.emit(.{ .struct_get = .{ .base = av, .field_index = 1 } }, .type_value), iface);
+    }
+    if (self.getProtocolInfo(vty) != null) {
+        const handle = self.lowerExpr(c.args[1]);
+        return self.conformanceAsk(self.protocolTypeIdWord(handle), iface);
+    }
+    const proto_name = self.module.types.getString(self.module.types.get(iface).@"struct".name);
+    return self.builder.constBool(self.protocolResolver().hasConcreteImplDecl(iface, proto_name, vty));
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4495,6 +4526,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         .@"@tag" => return lowerTagIntrinsic(self, c),
         .@"@as" => return lowerAsIntrinsic(self, c),
+        .@"@conforms" => return lowerConformsIntrinsic(self, c),
         else => {},
     };
     if (std.mem.eql(u8, name, "anyElement")) {

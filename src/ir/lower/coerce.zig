@@ -814,7 +814,7 @@ fn reeraseHandle(self: *Lowering, operand: Ref, src_ty: TypeId, dst_ty: TypeId, 
     const present = self.builder.emit(.{ .cmp_ne = .{ .lhs = vt, .rhs = self.builder.constNull(void_ptr) } }, .bool);
     const eff_ctx = switch (on_absent) {
         .panic => blk: {
-            refuseAbsentReerasure(self, present, tid, dst_ty);
+            refuseAbsentReerasure(self, present, dst_ty);
             break :blk ctx;
         },
         .absent => blk: {
@@ -835,21 +835,25 @@ fn reeraseHandle(self: *Lowering, operand: Ref, src_ty: TypeId, dst_ty: TypeId, 
     return self.builder.structInit(&fields, dst_ty);
 }
 
-/// Stop the program when a re-erasure finds no row. The message names the
-/// referent's concrete type, which only the running program knows.
-fn refuseAbsentReerasure(self: *Lowering, present: Ref, tid: Ref, dst_ty: TypeId) void {
-    const name = "__sx_reerase_or_panic";
-    self.lazyLowerFunction(name);
-    const fid = self.resolveFuncByName(name) orelse return;
-    const has_ctx = self.module.functions.items[@intFromEnum(fid)].has_implicit_ctx;
-    var a = [_]Ref{ present, tid, self.builder.constType(dst_ty) };
-    const args: []Ref = if (!has_ctx) &a else blk: {
-        const wide = self.alloc.alloc(Ref, a.len + 1) catch break :blk &a;
-        wide[0] = self.current_ctx_ref;
-        @memcpy(wide[1..], &a);
-        break :blk wide;
-    };
-    _ = self.builder.call(fid, args, .void);
+/// Stop the program when a re-erasure finds no row: the spelled
+/// `@assert(<row present>, "<literal naming the target>")`, synthesized as an
+/// identifier call so the assertion carries the site.
+fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
+    const cs = self.builder.current_span;
+    const span = ast.Span{ .start = cs.start, .end = cs.end };
+    const src = self.current_source_file;
+    const scope = self.scope orelse return;
+    var buf: [48]u8 = undefined;
+    const nm = std.fmt.bufPrint(&buf, "$conforms_{d}", .{self.block_counter}) catch "$conforms";
+    self.block_counter += 1;
+    const owned = self.alloc.dupe(u8, nm) catch return;
+    scope.put(owned, .{ .ref = present, .ty = .bool, .is_alloca = false });
+    const ok = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
+    const text = std.fmt.allocPrint(self.alloc, "re-erasure to '{s}' failed", .{self.formatTypeName(dst_ty)}) catch return;
+    const msg = self.synthNode(.{ .string_literal = .{ .raw = text, .is_raw = true } }, span, src);
+    const callee = self.synthNode(.{ .identifier = .{ .name = "@assert" } }, span, src);
+    const args = self.alloc.dupe(*Node, &.{ ok, msg }) catch return;
+    _ = self.lowerCall(&.{ .callee = callee, .args = args });
 }
 
 pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {

@@ -4009,6 +4009,7 @@ pub const Lowering = struct {
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
     pub const lowerIs = lower_expr.lowerIs;
+    pub const conformanceAsk = lower_expr.conformanceAsk;
     pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;
