@@ -657,19 +657,21 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
                 .payload = field_ty,
             }) catch unreachable;
         }
-        // Resolve backing type and tag type from enum struct
-        // e.g. enum struct { tag: u32; _: u32; payload: [30]u32; } { ... }
+        // A struct backing type is the stated layout, its first field the tag
+        // (`enum struct { tag: u32; _: u32; payload: [30]u32; }`); an integer
+        // backing type is the tag alone.
         var backing_type: ?TypeId = null;
         var tag_type: ?TypeId = null;
         if (ed.backing_type) |bt| {
             const backing_ty = inner.resolveInner(bt);
-            backing_type = backing_ty;
-            // Extract tag type from first field of backing struct
             const backing_info = table.get(backing_ty);
             if (backing_info == .@"struct") {
+                backing_type = backing_ty;
                 if (backing_info.@"struct".fields.len > 0) {
                     tag_type = backing_info.@"struct".fields[0].ty;
                 }
+            } else {
+                tag_type = backing_ty;
             }
         }
 

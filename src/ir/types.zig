@@ -1889,8 +1889,9 @@ pub const TypeTable = struct {
                 // sizes to the tag alone.
                 if (max_payload == 0) max_payload = 8;
                 const tag_size = self.typeSizeBytes(e.tag_type);
+                const tag_align = self.typeAlignBytes(e.tag_type);
                 const raw = max_payload + tag_size;
-                break :blk (raw + 7) & ~@as(usize, 7);
+                break :blk (raw + tag_align - 1) & ~(tag_align - 1);
             },
             // LLVM rounds arbitrary-width integers up to the next power-of-2
             // width before computing ABI size (i12 → 2 bytes, i24 → 4 bytes).
@@ -1942,8 +1943,7 @@ pub const TypeTable = struct {
             // the tag word.
             .@"enum" => |e| blk: {
                 if (e.layout) |lt| break :blk self.typeAlignBytes(lt);
-                if (!e.hasPayload()) break :blk self.typeAlignBytes(e.tag_type);
-                break :blk 8;
+                break :blk self.typeAlignBytes(e.tag_type);
             },
             .array => |a| self.typeAlignBytes(a.element),
             // LLVM gives vectors their NATURAL alignment — the ABI size
