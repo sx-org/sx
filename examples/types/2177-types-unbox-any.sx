@@ -1,9 +1,9 @@
-// Dest-inferred `xx` unboxes `any` after the boxed type is known.
+// `@unbox` reads a boxed value as the type its box holds.
 @import "modules/std.sx";
 
 main :: () {
     n : i64 = 7;
     av : any = n;
-    got : i64 = xx av;
+    got := @unbox(i64, av);
     print("{}\n", got);
 }

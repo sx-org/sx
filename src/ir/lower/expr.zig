@@ -4083,7 +4083,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // no value of the set is ever one (spec: Open Sets — the downcast).
             {
                 const recv_ty = self.inferExprType(pc.operand);
-                if (self.isOpenSet(recv_ty) and pc.alloc_arg == null) {
+                if (self.isOpenSet(recv_ty)) {
                     const soft = pc.type_expr.data == .optional_type_expr;
                     const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
                     // A bare target name is asked of THIS file: a member's name two
@@ -4141,7 +4141,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // `xx av` must stay universal. Name-and-shape gated,
                 // like @Protocol on a protocol receiver.
                 raw_view: {
-                    if (pc.alloc_arg != null) break :raw_view;
                     const tname: []const u8 = switch (pc.type_expr.data) {
                         .identifier => |id| id.name,
                         .type_expr => |te| te.name,
@@ -4228,24 +4227,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.refuseOpenSetNonMember(self.inferExprType(pc.operand), dst, node.span))
                     break :blk self.builder.constUndef(dst);
             }
-            if (pc.alloc_arg != null) {
-                // Same-interface `p.(I, alloc)`: routed through the erasure
-                // so one place refuses the allocating spelling.
-                if (self.getProtocolInfo(dst) != null and self.inferExprType(pc.operand) == dst) {
-                    break :blk self.lowerInterfaceErasure(&pc, dst, node.span);
-                }
-                if (self.isOpenSet(dst)) {
-                    if (self.diagnostics) |d| {
-                        // An open set is not a protocol conversion at all: the active
-                        // member lives INLINE in the slot, so forming one is ordinary
-                        // value formation and there is nothing an allocator could fund
-                        // (spec: Open Sets — formation).
-                        const id = d.addFmtId(.err, node.span, "'.({s}, alloc)' is not a conversion that allocates: '{s}' holds its member inline", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
-                        d.addHelpFmt(id, node.span, null, "forming a set value is ordinary value formation — write '.({s})', or let the expected type form it", .{self.formatTypeName(dst)});
-                    }
-                    break :blk self.builder.constUndef(dst);
-                }
-            }
             const saved_target = self.target_type;
             self.target_type = dst;
             defer self.target_type = saved_target;
@@ -4256,30 +4237,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             self.suppress_int_fit_check = true;
             const operand = self.lowerExpr(pc.operand);
             self.suppress_int_fit_check = saved_fit;
-            var named_alloc: ?Ref = null;
-            if (pc.alloc_arg) |an| {
-                if (!self.isLvalueExpr(an)) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, an.span, "the allocator argument must be an LVALUE naming an allocator", .{});
-                    break :blk self.builder.constUndef(dst);
-                }
-                const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' interface in scope — @import \"modules/std.sx\"", .{});
-                    break :blk self.builder.constUndef(dst);
-                };
-                const av = self.lowerExpr(an);
-                const avt = self.builder.getRefType(av);
-                named_alloc = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
-            }
             const saved_postfix = self.xx_is_postfix;
-            const saved_into = self.into_alloc_ref;
             self.xx_is_postfix = true;
-            self.into_alloc_ref = named_alloc;
-            defer {
-                self.xx_is_postfix = saved_postfix;
-                self.into_alloc_ref = saved_into;
-            }
+            defer self.xx_is_postfix = saved_postfix;
             break :blk self.lowerXX(operand, pc.operand);
         },
         .enum_literal => |el| self.lowerEnumLiteral(&el),
@@ -5066,7 +5026,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             lhs_ty != .void and rhs_ty != .void)
         {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot compare an 'any' value with '{s}': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare '@typeOf(av)' against a type", .{if (bop.op == .eq) "==" else "!="});
+                d.addFmt(.err, ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end }, "cannot compare an 'any' value with '{s}': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked '@unbox(T, av)'), or compare '@typeOf(av)' against a type", .{if (bop.op == .eq) "==" else "!="});
             }
             return self.builder.constBool(false);
         }

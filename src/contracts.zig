@@ -112,6 +112,8 @@ pub const entries = [_]Contract{
     .{ .name = "@tag", .module = "modules/std/core.sx" },
     .{ .name = "@as", .module = "modules/std/core.sx" },
     .{ .name = "@conforms", .module = "modules/std/core.sx" },
+    .{ .name = "@convert", .module = "modules/std/core.sx" },
+    .{ .name = "@coerce", .module = "modules/std/core.sx" },
     .{ .name = "@isComptime", .module = "modules/std/core.sx" },
     .{ .name = "@vaStart", .module = "modules/std/core.sx" },
     .{ .name = "@vaArg", .module = "modules/std/core.sx" },

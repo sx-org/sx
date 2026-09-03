@@ -91,7 +91,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 /// type table, so it borrows `*Lowering` rather than re-threading every map.
 /// IR EMISSION stays in `Lowering` — registration
 /// calls `self.l.declareFunction` (the emission primitive) but the thunk/value
-/// builders (`createProtocolThunk` / `buildProtocolValue` / `tryUserConversion`)
+/// builders (`createProtocolThunk` / `buildProtocolValue` / `lowerConvert`)
 /// do NOT live here.
 pub const ProtocolResolver = struct {
     l: *Lowering,

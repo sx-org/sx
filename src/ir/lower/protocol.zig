@@ -1507,16 +1507,10 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
 }
 
 /// Postfix erasure `expr.(I)` — an interface handle BORROWS its referent, so
-/// there is no allocating spelling: an allocator argument is refused.
+/// there is no allocating spelling.
 pub fn lowerInterfaceErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
-    const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
-
-    if (pc.alloc_arg != null) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.({s}, alloc)' allocates, but an interface handle borrows its referent — write '.({s})'", .{ dst_pi.name, dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    }
+    if (self.getProtocolInfo(dst_ty) == null) return self.builder.constUndef(dst_ty);
 
     const operand = self.lowerExpr(pc.operand);
     return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);

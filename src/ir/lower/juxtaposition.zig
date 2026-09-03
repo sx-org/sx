@@ -320,7 +320,6 @@ fn walk(self: *Lowering, node: *const Node) void {
         .postfix_cast => |pc| {
             walk(self, pc.operand);
             walk(self, pc.type_expr);
-            if (pc.alloc_arg) |a| walk(self, a);
         },
         .while_expr => |we| {
             walk(self, we.condition);

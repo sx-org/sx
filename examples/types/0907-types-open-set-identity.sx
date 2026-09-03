@@ -86,7 +86,7 @@ main :: () -> i32 {
     // and it is recovered as that.
     maybe: ?View = Panel{ title = "optional" };
     box: any = maybe;
-    back: ?View = xx box;
+    back := @as(?View, box);
     if held := back { print("boxed {} holds {}\n", @typeOf(box), held.render()); }
 
     print("comptime {}\n", CT_MEMBER);

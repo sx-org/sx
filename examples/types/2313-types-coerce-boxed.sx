@@ -1,0 +1,15 @@
+// `@coerce(T, v)` on a boxed value converts by its runtime type, as `@as`
+// does; a typed value that no compiler conversion takes reaches `Into`.
+@import "modules/std.sx";
+
+Wrap :: struct { v: i64; }
+impl Into(Wrap) for i64 { convert :: (self: i64, alloc: Allocator) -> Wrap { Wrap{ v = self * 2 } } }
+
+main :: () -> i32 {
+    av : any = 7;
+    n := @coerce(i64, av);
+    small : u8 = 9;
+    w := @coerce(Wrap, 21);
+    print("{} {} {}\n", n, @coerce(i64, small), w.v);
+    0
+}

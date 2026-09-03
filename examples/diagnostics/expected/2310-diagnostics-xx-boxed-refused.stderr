@@ -1,0 +1,5 @@
+error: 'xx' does not read a boxed value: '@as(i64, av)' converts it, 'av.(i64)' asserts it, '@unbox(i64, av)' reads it unchecked
+  --> examples/diagnostics/2310-diagnostics-xx-boxed-refused.sx:7:15
+   |
+ 7 |     n : i64 = xx av;
+   |               ^^^^^

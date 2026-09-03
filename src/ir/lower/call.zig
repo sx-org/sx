@@ -2782,6 +2782,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@tag",
         .@"@as",
         .@"@conforms",
+        .@"@convert",
+        .@"@coerce",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3077,6 +3079,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@tag",
         .@"@as",
         .@"@conforms",
+        .@"@convert",
+        .@"@coerce",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3359,6 +3363,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@tag",
         .@"@as",
         .@"@conforms",
+        .@"@convert",
+        .@"@coerce",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -3728,6 +3734,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@tag",
         .@"@as",
         .@"@conforms",
+        .@"@convert",
+        .@"@coerce",
         .anyElement,
         .rawAnyData,
         .rawMakeAny,
@@ -4184,6 +4192,82 @@ fn lowerConformsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.builder.emit(.{ .placeholder = self.module.types.internString("conforms-await") }, .bool);
 }
 
+/// `@convert(T, v, alloc = context.allocator)` — the `impl Into(T) for S`
+/// conversion, funded from `alloc`. An interface or open-set target has no
+/// allocating conversion; a pair with no impl is a diagnostic.
+fn lowerConvertIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len < 2 or c.args.len > 3) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@convert takes 2 or 3 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@convert expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    if (self.getProtocolInfo(dst) != null) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "'@convert({s}, …)' allocates, but an interface handle borrows its referent — write 'v.({s})'", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
+        return self.builder.constUndef(dst);
+    }
+    if (self.isOpenSet(dst)) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, c.callee.span, "'@convert({s}, …)' is not a conversion that allocates: '{s}' holds its member inline", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
+            d.addHelpFmt(id, c.callee.span, null, "forming a set value is ordinary value formation — write 'v.({s})', or let the expected type form it", .{self.formatTypeName(dst)});
+        }
+        return self.builder.constUndef(dst);
+    }
+    const val = self.lowerExpr(c.args[1]);
+    const src_ty = self.builder.getRefType(val);
+    var alloc: ?Ref = null;
+    if (c.args.len == 3) {
+        const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[2].span, "@convert's allocator needs the 'Allocator' interface in scope — @import \"modules/std.sx\"", .{});
+            return self.builder.constUndef(dst);
+        };
+        const saved_target = self.target_type;
+        self.target_type = alloc_ty;
+        const av = self.lowerExpr(c.args[2]);
+        self.target_type = saved_target;
+        const avt = self.builder.getRefType(av);
+        alloc = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, c.args[2]);
+    }
+    if (self.lowerConvert(val, c.args[1], src_ty, dst, alloc)) |converted| return converted;
+    if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "no 'impl Into({s}) for {s}'", .{ self.formatTypeName(dst), self.formatTypeName(src_ty) });
+    return self.builder.constUndef(dst);
+}
+
+/// `@coerce(T, v)` — the ladder `xx` and `.(T)` enter: `@as`, then
+/// `@convert` from the context allocator when the compiler's conversions
+/// make no progress. A boxed `v` converts by its runtime type as `@as` does;
+/// an interface handle at another interface is the assertion `p.(Q)`.
+fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@coerce takes 2 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@coerce expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    const src = self.inferExprType(c.args[1]);
+    const saved_target = self.target_type;
+    self.target_type = if (src == .any) .any else dst;
+    const val = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+    const src_ty = self.builder.getRefType(val);
+    if (src_ty == .any) return boxedAs(self, val, dst, c.callee.span);
+    const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
+    if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) {
+        if (self.diagnostics) |d| {
+            const target = if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) self.module.types.get(dst).optional.child else dst;
+            d.addFmt(.err, c.callee.span, "an interface handle re-erases through the assertion 'p.({s})'", .{self.formatTypeName(target)});
+        }
+        return self.builder.constUndef(dst);
+    }
+    return self.lowerCoerce(val, c.args[1], src_ty, dst);
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4525,6 +4609,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@tag" => return lowerTagIntrinsic(self, c),
         .@"@as" => return lowerAsIntrinsic(self, c),
         .@"@conforms" => return lowerConformsIntrinsic(self, c),
+        .@"@convert" => return lowerConvertIntrinsic(self, c),
+        .@"@coerce" => return lowerCoerceIntrinsic(self, c),
         else => {},
     };
     if (std.mem.eql(u8, name, "anyElement")) {

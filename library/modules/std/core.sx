@@ -68,6 +68,11 @@ anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 // time; an interface handle or a boxed `v` reads the interface's conformance
 // table by the referent's type.
 @conforms :: ($I: Type, v: $S) -> bool;
+// The `impl Into(T) for S` conversion of `v`, funded from `alloc`.
+@convert :: ($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T;
+// The ladder the cast sugars enter: `@as`, then `@convert` from the context
+// allocator when the compiler's conversions make no progress.
+@coerce :: ($T: Type, v: $S) -> T;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, typeId}` layout is private; these two are the stable contract
@@ -614,11 +619,11 @@ Context :: struct {}
 // sentinel. DSL dispatch and helpers read `context.jni`.
 @context.extend jni: *void = null;
 
-// User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
-// `val.(T, alloc)`, falls through the built-in conversion ladder to an
-// `impl Into(T) for Source` lookup; the compiler monomorphises `convert` for
-// the (Source, T) pair and emits a direct call. Compile-time only — no vtable,
-// no runtime dispatch. `.(T)` funds from `context.allocator`; `.(T, alloc)`
+// User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)`,
+// falls through the built-in conversion ladder to an `impl Into(T) for
+// Source` lookup; the compiler monomorphises `convert` for the (Source, T)
+// pair and emits a direct call. Compile-time only — no vtable, no runtime
+// dispatch. `.(T)` funds from `context.allocator`; `@convert(T, val, alloc)`
 // names another. The stdlib writes `.(T)` and never dest-inferred opt-in.
 Into :: constraint(Target: Type) {
     convert :: (self: *Self, alloc: Allocator) -> Target;

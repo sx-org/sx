@@ -1,0 +1,25 @@
+// `@convert(T, v)` runs `impl Into(T) for S`: one source converts to two
+// targets through two impls, and a third argument names the allocator the
+// conversion funds from.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+Celsius :: struct { deg: f64; }
+Kelvin :: struct { k: f64; }
+Label :: struct { text: string; }
+
+impl Into(Kelvin) for Celsius { convert :: (self: Celsius, alloc: Allocator) -> Kelvin { Kelvin{ k = self.deg + 273.15 } } }
+impl Into(Label) for Celsius {
+    convert :: (self: Celsius, alloc: Allocator) -> Label { Label{ text = format("{} C", self.deg) } }
+}
+
+main :: () -> i32 {
+    c := Celsius{ deg = 20.0 };
+    k := @convert(Kelvin, c);
+    l := @convert(Label, c);
+    arena := Arena.init(context.allocator, 4096);
+    a := arena.(Allocator);
+    l2 := @convert(Label, Celsius{ deg = -1.5 }, a);
+    print("{} {} {}\n", k.k, l.text, l2.text);
+    0
+}

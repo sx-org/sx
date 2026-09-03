@@ -2,9 +2,8 @@
 // @Protocol): the `any` view's own pair `{data, typeId}`. Retrieval
 // is the POSTFIX spelling ONLY — `av.(@Any)` builds the pair
 // field-wise and is the one target exempt from the assertion regime.
-// `xx av` keeps its unchecked-unbox meaning for every target (the
-// assert helpers' generic `xx av` depends on that), and the soft form
-// `.(?@Any)` still asserts the boxed payload.
+// `@unbox(T, av)` is the unchecked read for every target, `@Any`
+// included, and the soft form `.(?@Any)` still asserts the boxed payload.
 // `rawMakeAny(r.typeId, r.data)` reassembles a view from the pair.
 @import "modules/std.sx";
 

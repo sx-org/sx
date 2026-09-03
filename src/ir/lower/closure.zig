@@ -1193,7 +1193,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         // unresolved, while the same literal without the cast works.
         .postfix_cast => |pc| {
             self.collectCaptures(pc.operand, param_names, captures);
-            if (pc.alloc_arg) |an| self.collectCaptures(an, param_names, captures);
         },
         // `f(x = captured)` — the argument value hangs off the named-arg node,
         // so `.call`'s walk over `args` stops at the wrapper.

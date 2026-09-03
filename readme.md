@@ -352,7 +352,7 @@ describe(@typeOf(av));
 printAny(pkt);   // walk with @field / anyElement — no copies
 ```
 
-`xx av` is an unchecked load. `==` on `any` is an error — unbox or compare `@typeOf`.
+`@unbox(T, av)` is the unchecked load. `==` on `any` is an error — unbox or compare `@typeOf`.
 
 ## Standard Library
 
