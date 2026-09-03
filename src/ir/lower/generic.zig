@@ -260,17 +260,36 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 ///
 /// Dynamic shapes (index_expr, field_access, runtime locals,
 /// etc.) fall to the alternative path that emits a builtin_call.
+/// A bare name is a static type when it is a bound generic parameter, a
+/// type alias, or a name no value visible from the querying module binds.
+/// A local, a module-level global, or a module const (`x: Type = i64;
+/// type_name(x)`) routes through the dynamic builtin call so the runtime
+/// lookup table fires. A generic body lowers in its caller's visibility,
+/// where a same-named value may be in view, so the binding answers first; a
+/// type alias spelled with the value grammar (`Ptr :: *u8`) is also recorded
+/// as a module const, so the alias answers before the value maps.
+fn staticTypeName(self: *Lowering, name: []const u8) bool {
+    if (self.type_bindings) |tb| {
+        if (tb.contains(name)) return true;
+    }
+    if (self.scope) |scope| {
+        if (scope.lookup(name) != null) return false;
+    }
+    if (self.program_index.type_alias_map.contains(name)) return true;
+    if (self.selectGlobalAuthor(name) == .resolved) return false;
+    return switch (self.selectModuleConst(name)) {
+        .resolved, .ambiguous => false,
+        else => true,
+    };
+}
+
 pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .type_expr => |te| {
             if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
-            // A name bound to a VALUE — a local, a module-level global, or a
-            // module const (`x: Type = i64; type_name(x)`) — is not static:
-            // it routes through the dynamic builtin call so the runtime lookup
-            // table fires. A type-keyword name (e.g. `i64`) binds no value.
-            return !self.identifierBindsValue(te.name);
+            return staticTypeName(self, te.name);
         },
-        .identifier => |id| return !self.identifierBindsValue(id.name),
+        .identifier => |id| return staticTypeName(self, id.name),
         .field_access => {
             if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
             if (type_bridge.typeInfoProjection(node)) |p| return self.isStaticTypeArg(p.type_arg);
