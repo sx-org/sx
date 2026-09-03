@@ -1,6 +1,6 @@
 
 @gShouldCall = internal global i1 false
-@__sx_default_context = internal constant { ptr } zeroinitializer
+@kDefaultContext = internal constant { ptr } zeroinitializer
 @__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [5 x i8] c"getX\00", align 1
 @str.1 = private unnamed_addr constant [4 x i8] c"()I\00", align 1
@@ -262,17 +262,17 @@ entry:
   br i1 %gload, label %if.then.0, label %if.merge.1
 
 if.then.0:                                        ; preds = %entry
-  call void @unusedJni(ptr @__sx_default_context, ptr null, ptr null, ptr null, ptr null, ptr null)
+  call void @unusedJni(ptr @kDefaultContext, ptr null, ptr null, ptr null, ptr null, ptr null)
   br label %if.merge.1
 
 if.merge.1:                                       ; preds = %if.then.0, %entry
-  %call = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %call, ptr %alloca, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
   %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.8, i64 3 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %alloca)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.8, i64 3 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %alloca)
   ret i32 0
 }
 

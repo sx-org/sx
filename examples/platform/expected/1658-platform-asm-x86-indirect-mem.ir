@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 define internal i64 @poke(ptr %0) #0 {
@@ -14,7 +14,7 @@ entry:
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call i64 @poke(ptr @__sx_default_context)
+  %call = call i64 @poke(ptr @kDefaultContext)
   %icmp = icmp ne i64 %call, 42
   br i1 %icmp, label %if.then.0, label %if.merge.1
 

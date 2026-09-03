@@ -1,5 +1,5 @@
 // A fiber INHERITS the dynamic `context` in force when it was
-// spawned. Running a fiber body under the static `__sx_default_context`
+// spawned. Running a fiber body under the static `kDefaultContext`
 // (the `abi(.c)` `fibDispatch` dropping the implicit context) makes a
 // `push Context{ … }` around `spawn` invisible inside the fiber.
 // `Scheduler.spawn` snapshots `context` into the fiber and `fibDispatch`

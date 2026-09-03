@@ -152,7 +152,7 @@ memRealloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) ->
 // --- CAllocator: stateless allocator that delegates directly to libc ---
 //
 // Zero-sized struct. Used as the default `context.allocator` at program
-// start (see `__sx_default_context` in the codegen). The thunks never
+// start (see `kDefaultContext` in the codegen). The thunks never
 // dereference `self`, so the protocol value's ctx field is `null`.
 //
 // Unlike GPA, no `init()` is needed — there's nothing to allocate.
@@ -173,7 +173,7 @@ impl Allocator for CAllocator {
 // backs. The erasure of this global folds to a static constant borrowing
 // the global's storage (identity semantics — the receiver is a real
 // address, never null: null ctx is the `?Protocol` absent sentinel) —
-// `__sx_default_context` is fully built before `main` runs.
+// `kDefaultContext` is fully built before `main` runs.
 cAllocator : CAllocator = .{};
 
 @context.extend allocator: Allocator = cAllocator;

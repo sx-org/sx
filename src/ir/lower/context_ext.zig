@@ -20,7 +20,7 @@
 //! authority, so push lowering, field access, the hidden-param typing, the
 //! comptime VM, and reflection all follow the assembled layout with no
 //! further plumbing. Each field's type resolves in its DECLARING module's
-//! visibility context. `__sx_default_context` emission
+//! visibility context. `kDefaultContext` emission
 //! (`emitDefaultContextGlobal`) walks the assembled fields by name.
 
 const std = @import("std");
@@ -305,7 +305,7 @@ pub fn contextFieldByName(self: *Lowering, fname: []const u8) ?ContextFieldRef {
 
 /// Serialize the `@context.extend` declaration named `fname`'s default into a
 /// static ConstantValue against the assembled field type — the extension
-/// half of the `__sx_default_context` initializer. Reuses the global-
+/// half of the `kDefaultContext` initializer. Reuses the global-
 /// initializer serializer — defaults are exactly the compile-time-constant
 /// class — evaluated in the DECLARING module's visibility context so a
 /// default naming the author's own consts resolves there. Null = the default

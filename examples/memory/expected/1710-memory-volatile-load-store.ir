@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 @__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [18 x i8] c"scalar: 41 41 42\0A\00", align 1
 @str.1 = private unnamed_addr constant [15 x i8] c"scalar: WRONG\0A\00", align 1
@@ -175,23 +175,23 @@ and.merge.3:                                      ; preds = %and.rhs.2, %and.mer
   br i1 %bpN, label %if.then.4, label %if.else.5
 
 if.then.4:                                        ; preds = %and.merge.3
-  %call = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %call, ptr %allocaN, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str, i64 17 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str, i64 17 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.6
 
 if.else.5:                                        ; preds = %and.merge.3
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.1, i64 14 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.1, i64 14 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.6
 
 if.merge.6:                                       ; preds = %if.else.5, %if.then.4
@@ -205,23 +205,23 @@ if.merge.6:                                       ; preds = %if.else.5, %if.then
   br i1 %icmpN, label %if.then.31, label %if.else.32
 
 if.then.31:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.2, i64 12 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.2, i64 12 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.33
 
 if.else.32:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.3, i64 15 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.3, i64 15 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.33
 
 if.merge.33:                                      ; preds = %if.else.32, %if.then.31
@@ -235,23 +235,23 @@ if.merge.33:                                      ; preds = %if.else.32, %if.the
   br i1 %icmpN, label %if.then.34, label %if.else.35
 
 if.then.34:                                       ; preds = %if.merge.33
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.4, i64 11 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.4, i64 11 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.36
 
 if.else.35:                                       ; preds = %if.merge.33
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.5, i64 14 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.5, i64 14 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.36
 
 if.merge.36:                                      ; preds = %if.else.35, %if.then.34
@@ -281,23 +281,23 @@ and.merge.38:                                     ; preds = %and.rhs.37, %if.mer
   br i1 %bpN, label %if.then.39, label %if.else.40
 
 if.then.39:                                       ; preds = %and.merge.38
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.6, i64 15 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.6, i64 15 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.41
 
 if.else.40:                                       ; preds = %and.merge.38
-  %callN = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %allocaN, { ptr, i64 } { ptr @str.7, i64 17 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %allocaN)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.7, i64 17 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
   br label %if.merge.41
 
 if.merge.41:                                      ; preds = %if.else.40, %if.then.39

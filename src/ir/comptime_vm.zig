@@ -626,9 +626,9 @@ pub const Vm = struct {
     }
 
     /// Materialize the default `Context` in comptime memory and return its address —
-    /// the VM analogue of the static `__sx_default_context` global. The
+    /// the VM analogue of the static `kDefaultContext` global. The
     /// implicit-ctx param is an opaque `*void`, so the real Context type AND
-    /// its initializer come from the `__sx_default_context` global — the ONE
+    /// its initializer come from the `kDefaultContext` global — the ONE
     /// source of truth (lowering emits it EARLY for scan-time type-fn evals;
     /// see `emitDefaultContextGlobalEarly`). Laying that constant into
     /// comptime memory gives a context whose fn slots are real func-refs, so
@@ -642,13 +642,13 @@ pub const Vm = struct {
     fn materializeDefaultContext(self: *Vm, module: *const Module) Error!Addr {
         const table = self.table orelse return self.failMsg("comptime VM: default context needs a type table");
         for (module.globals.items, 0..) |*g, i| {
-            if (!std.mem.eql(u8, module.types.getString(g.name), "__sx_default_context")) continue;
+            if (!std.mem.eql(u8, module.types.getString(g.name), "kDefaultContext")) continue;
             const addr = self.machine.allocBytes(table.typeSizeBytes(g.ty), table.typeAlignBytes(g.ty)); // zeroed
             self.recordGlobalInstance(addr, table.typeSizeBytes(g.ty), inst_mod.GlobalId.fromIndex(@intCast(i)));
             if (g.init_val) |iv| try self.layoutConst(table, iv, g.ty, addr);
             return addr;
         }
-        return self.failMsg("comptime VM: `__sx_default_context` is not emitted yet — the implicit context is unavailable in this evaluation");
+        return self.failMsg("comptime VM: `kDefaultContext` is not emitted yet — the implicit context is unavailable in this evaluation");
     }
 
     /// Lay a static `ConstantValue` of type `ty` into comptime memory at `addr` (the
@@ -1509,12 +1509,12 @@ pub const Vm = struct {
             // memory, once per evaluation. The instance is VM-LOCAL: a store
             // through it lands on compile-time state that is discarded, and only
             // an escape relocates the address back to the global's symbol.
-            // `__sx_default_context` keeps its own materialization (the implicit
+            // `kDefaultContext` keeps its own materialization (the implicit
             // ctx that every entry frame is handed).
             .global_addr => |gid| {
                 const module = self.module orelse return self.failMsg("comptime VM: global_addr needs a module");
                 if (gid.index() < module.globals.items.len and
-                    std.mem.eql(u8, module.types.getString(module.globals.items[gid.index()].name), "__sx_default_context"))
+                    std.mem.eql(u8, module.types.getString(module.globals.items[gid.index()].name), "kDefaultContext"))
                 {
                     return .{ .value = try self.materializeDefaultContext(module) };
                 }

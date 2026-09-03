@@ -660,7 +660,7 @@ pub fn detectContextDecl(decls: []const *const Node) bool {
 /// (`isExportedEntryName`): main and JNI hooks are invoked by the
 /// dyld / JVM with no `__sx_ctx` arg, so the visible signature must
 /// not include one. Their bodies are still sx code — they
-/// synthesise `&__sx_default_context` at entry and use it as their
+/// synthesise `&kDefaultContext` at entry and use it as their
 /// own `current_ctx_ref`.
 pub fn funcWantsImplicitCtx(self: *const Lowering, fd: *const ast.FnDecl) bool {
     if (!self.implicit_ctx_enabled) return false;
@@ -3945,7 +3945,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     // params shift by one. `current_ctx_ref` is bound to slot 0 so call-site
     // lowering can prepend it to every sx-to-sx call. For OS-called entry
     // points (main / JNI hooks) there's no ctx param — synthesise
-    // `&__sx_default_context` and bind `current_ctx_ref` to its address.
+    // `&kDefaultContext` and bind `current_ctx_ref` to its address.
     const wants_ctx = self.funcWantsImplicitCtx(fd);
     const saved_ctx_ref = self.current_ctx_ref;
     defer self.current_ctx_ref = saved_ctx_ref;
@@ -3993,7 +3993,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     // Inbound entry points + abi(.c) sx functions: bind current_ctx_ref
     // to the static default before any user code runs.
     if (!wants_ctx and self.implicit_ctx_enabled) {
-        if (self.program_index.global_names.get("__sx_default_context")) |dctx_gi| {
+        if (self.program_index.global_names.get("kDefaultContext")) |dctx_gi| {
             self.current_ctx_ref = self.builder.emit(.{ .global_addr = dctx_gi.id }, self.module.types.ptrTo(.void));
         }
     }
@@ -4158,10 +4158,10 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     if (fd.abi != .naked) self.bindNamedReturnSlots(fd, ret_ty, &scope);
 
     // Inbound entry points + abi(.c) sx functions: bind
-    // current_ctx_ref to &__sx_default_context. See companion comment
+    // current_ctx_ref to &kDefaultContext. See companion comment
     // in `lowerFunction` for the same case.
     if (!wants_ctx_lf and self.implicit_ctx_enabled) {
-        if (self.program_index.global_names.get("__sx_default_context")) |dctx_gi| {
+        if (self.program_index.global_names.get("kDefaultContext")) |dctx_gi| {
             self.current_ctx_ref = self.builder.emit(.{ .global_addr = dctx_gi.id }, self.module.types.ptrTo(.void));
         }
     }

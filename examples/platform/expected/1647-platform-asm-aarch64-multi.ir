@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 define internal { i64, i64 } @split(ptr %0, i64 %1) #0 {
@@ -22,7 +22,7 @@ entry:
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call { i64, i64 } @split(ptr @__sx_default_context, i64 4660)
+  %call = call { i64, i64 } @split(ptr @kDefaultContext, i64 4660)
   %sg = extractvalue { i64, i64 } %call, 0
   %alloca = alloca i64, align 8
   store i64 %sg, ptr %alloca, align 8

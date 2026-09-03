@@ -7,7 +7,7 @@ module asm "    call fib_body"
 module asm "    ud2"
 
 @gOut = internal global ptr null
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 declare ptr @GetStdHandle(i32) #0
@@ -271,7 +271,7 @@ define i32 @main() #0 {
 entry:
   %call = call ptr @GetStdHandle(i32 -11)
   store ptr %call, ptr @gOut, align 8
-  %callN = call i64 @run(ptr @__sx_default_context)
+  %callN = call i64 @run(ptr @kDefaultContext)
   %alloca = alloca i64, align 8
   store i64 %callN, ptr %alloca, align 8
   %load = load i64, ptr %alloca, align 8
@@ -284,11 +284,11 @@ entry:
   %allocaN = alloca i64, align 8
   store i64 %andN, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emitNum(ptr @__sx_default_context, i64 %loadN)
-  call void @emitB(ptr @__sx_default_context, i8 32)
+  call void @emitNum(ptr @kDefaultContext, i64 %loadN)
+  call void @emitB(ptr @kDefaultContext, i8 32)
   %loadN = load i64, ptr %allocaN, align 8
-  call void @emitNum(ptr @__sx_default_context, i64 %loadN)
-  call void @emitB(ptr @__sx_default_context, i8 32)
+  call void @emitNum(ptr @kDefaultContext, i64 %loadN)
+  call void @emitB(ptr @kDefaultContext, i8 32)
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
@@ -313,15 +313,15 @@ if.merge.11:                                      ; preds = %if.then.10, %if.the
   br label %if.merge.9
 
 if.then.12:                                       ; preds = %if.merge.9
-  call void @emitB(ptr @__sx_default_context, i8 80)
+  call void @emitB(ptr @kDefaultContext, i8 80)
   br label %if.merge.14
 
 if.else.13:                                       ; preds = %if.merge.9
-  call void @emitB(ptr @__sx_default_context, i8 70)
+  call void @emitB(ptr @kDefaultContext, i8 70)
   br label %if.merge.14
 
 if.merge.14:                                      ; preds = %if.else.13, %if.then.12
-  call void @emitB(ptr @__sx_default_context, i8 10)
+  call void @emitB(ptr @kDefaultContext, i8 10)
   call void @ExitProcess(i32 0)
   ret i32 0
 }

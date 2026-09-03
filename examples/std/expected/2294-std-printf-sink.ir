@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 @__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
 @str = private unnamed_addr constant [21 x i8] c"-9223372036854775808\00", align 1
 @str.1 = private unnamed_addr constant [11 x i8] c"printf-ok \00", align 1
@@ -224,16 +224,16 @@ declare i64 @write(i32, ptr, i64)
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   %alloca = alloca { i32 }, align 8
   store { i32 } %call, ptr %alloca, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
   %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.1, i64 10 })
-  call void @writeInt(ptr @__sx_default_context, { ptr, i64, ptr } %siN, i64 7)
-  call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.2, i64 1 })
-  call void @FdWriter.flush(ptr @__sx_default_context, ptr %alloca)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.1, i64 10 })
+  call void @writeInt(ptr @kDefaultContext, { ptr, i64, ptr } %siN, i64 7)
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.2, i64 1 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %alloca)
   ret i32 0
 }
 
