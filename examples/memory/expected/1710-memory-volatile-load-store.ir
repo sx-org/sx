@@ -11,47 +11,13 @@
 @str.7 = private unnamed_addr constant [18 x i8] c"aggregate: WRONG\0A\00", align 1
 
 ; Function Attrs: nounwind
-define internal { i32 } @FdWriter.init(ptr %0, { i64, [4 x i8] } %1) #0 {
+define internal { i32 } @FdWriter.init(ptr %0, i32 %1) #0 {
 entry:
-  %alloca = alloca { i64, [4 x i8] }, align 8
-  %ep.tmp = alloca { i64, [4 x i8] }, align 8
-  store { i64, [4 x i8] } %1, ptr %alloca, align 8
-  %allocaN = alloca i32, align 4
-  %load = load { i64, [4 x i8] }, ptr %alloca, align 8
-  %etag = extractvalue { i64, [4 x i8] } %load, 0
-  switch i64 %etag, label %match.unr.12 [
-    i64 0, label %match.arm.8
-    i64 1, label %match.arm.9
-    i64 2, label %match.arm.10
-    i64 3, label %match.arm.11
-  ]
-
-match.merge.7:                                    ; preds = %match.arm.11, %match.arm.10, %match.arm.9, %match.arm.8
-  %bp = phi i64 [ 0, %match.arm.8 ], [ 1, %match.arm.9 ], [ 2, %match.arm.10 ], [ %sext, %match.arm.11 ]
-  %trunc = trunc i64 %bp to i32
-  store i32 %trunc, ptr %allocaN, align 4
-  %loadN = load i32, ptr %allocaN, align 4
-  %si = insertvalue { i32 } undef, i32 %loadN, 0
+  %alloca = alloca i32, align 4
+  store i32 %1, ptr %alloca, align 4
+  %load = load i32, ptr %alloca, align 4
+  %si = insertvalue { i32 } undef, i32 %load, 0
   ret { i32 } %si
-
-match.arm.8:                                      ; preds = %entry
-  br label %match.merge.7
-
-match.arm.9:                                      ; preds = %entry
-  br label %match.merge.7
-
-match.arm.10:                                     ; preds = %entry
-  br label %match.merge.7
-
-match.arm.11:                                     ; preds = %entry
-  store { i64, [4 x i8] } %load, ptr %ep.tmp, align 8
-  %ep.pp = getelementptr inbounds nuw { i64, [4 x i8] }, ptr %ep.tmp, i32 0, i32 1
-  %ep.val = load i32, ptr %ep.pp, align 4
-  %sext = sext i32 %ep.val to i64
-  br label %match.merge.7
-
-match.unr.12:                                     ; preds = %entry
-  unreachable
 }
 
 ; Function Attrs: nounwind
@@ -64,16 +30,16 @@ entry:
   store { ptr, i64 } %2, ptr %allocaN, align 8
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
-  br label %while.hdr.26
+  br label %while.hdr.20
 
-while.hdr.26:                                     ; preds = %if.merge.30, %entry
+while.hdr.20:                                     ; preds = %if.merge.24, %entry
   %load = load i64, ptr %allocaN, align 8
   %loadN = load { ptr, i64 }, ptr %allocaN, align 8
   %len = extractvalue { ptr, i64 } %loadN, 1
   %icmp = icmp slt i64 %load, %len
-  br i1 %icmp, label %while.body.27, label %while.exit.28
+  br i1 %icmp, label %while.body.21, label %while.exit.22
 
-while.body.27:                                    ; preds = %while.hdr.26
+while.body.21:                                    ; preds = %while.hdr.20
   %loadN = load ptr, ptr %alloca, align 8
   %loadN = load { i32 }, ptr %loadN, align 4
   %sg = extractvalue { i32 } %loadN, 0
@@ -89,20 +55,20 @@ while.body.27:                                    ; preds = %while.hdr.26
   store i64 %call, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %icmpN = icmp sle i64 %loadN, 0
-  br i1 %icmpN, label %if.then.29, label %if.merge.30
+  br i1 %icmpN, label %if.then.23, label %if.merge.24
 
-while.exit.28:                                    ; preds = %while.hdr.26
+while.exit.22:                                    ; preds = %while.hdr.20
   ret void
 
-if.then.29:                                       ; preds = %while.body.27
+if.then.23:                                       ; preds = %while.body.21
   ret void
 
-if.merge.30:                                      ; preds = %while.body.27
+if.merge.24:                                      ; preds = %while.body.21
   %loadN = load i64, ptr %allocaN, align 8
   %loadN = load i64, ptr %allocaN, align 8
   %add = add i64 %loadN, %loadN
   store i64 %add, ptr %allocaN, align 8
-  br label %while.hdr.26
+  br label %while.hdr.20
 }
 
 ; Function Attrs: nounwind
@@ -175,7 +141,7 @@ and.merge.3:                                      ; preds = %and.rhs.2, %and.mer
   br i1 %bpN, label %if.then.4, label %if.else.5
 
 if.then.4:                                        ; preds = %and.merge.3
-  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %call, ptr %allocaN, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
@@ -185,7 +151,7 @@ if.then.4:                                        ; preds = %and.merge.3
   br label %if.merge.6
 
 if.else.5:                                        ; preds = %and.merge.3
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
@@ -202,29 +168,29 @@ if.merge.6:                                       ; preds = %if.else.5, %if.then
   store volatile i64 %sext, ptr %allocaN, align 8
   %volatile_load28 = load volatile i64, ptr %allocaN, align 8
   %icmpN = icmp eq i64 %volatile_load28, -1
-  br i1 %icmpN, label %if.then.31, label %if.else.32
+  br i1 %icmpN, label %if.then.25, label %if.else.26
 
-if.then.31:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.then.25:                                       ; preds = %if.merge.6
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.2, i64 12 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.33
+  br label %if.merge.27
 
-if.else.32:                                       ; preds = %if.merge.6
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.else.26:                                       ; preds = %if.merge.6
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.3, i64 15 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.33
+  br label %if.merge.27
 
-if.merge.33:                                      ; preds = %if.else.32, %if.then.31
+if.merge.27:                                      ; preds = %if.else.26, %if.then.25
   store i64 0, ptr %allocaN, align 8
   store ptr %allocaN, ptr %allocaN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
@@ -232,29 +198,29 @@ if.merge.33:                                      ; preds = %if.else.32, %if.the
   %loadN = load ptr, ptr %allocaN, align 8
   %volatile_load44 = load volatile i64, ptr %loadN, align 8
   %icmpN = icmp eq i64 %volatile_load44, -1
-  br i1 %icmpN, label %if.then.34, label %if.else.35
+  br i1 %icmpN, label %if.then.28, label %if.else.29
 
-if.then.34:                                       ; preds = %if.merge.33
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.then.28:                                       ; preds = %if.merge.27
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.4, i64 11 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.36
+  br label %if.merge.30
 
-if.else.35:                                       ; preds = %if.merge.33
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.else.29:                                       ; preds = %if.merge.27
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.5, i64 14 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.36
+  br label %if.merge.30
 
-if.merge.36:                                      ; preds = %if.else.35, %if.then.34
+if.merge.30:                                      ; preds = %if.else.29, %if.then.28
   store { i32, i32 } { i32 3, i32 4 }, ptr %allocaN, align 4
   %volatile_load57 = load volatile { i32, i32 }, ptr %allocaN, align 4
   store { i32, i32 } %volatile_load57, ptr %allocaN, align 4
@@ -268,39 +234,39 @@ if.merge.36:                                      ; preds = %if.else.35, %if.the
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i32, i32 } %loadN, 0
   %icmpN = icmp eq i32 %sgN, 4
-  br i1 %icmpN, label %and.rhs.37, label %and.merge.38
+  br i1 %icmpN, label %and.rhs.31, label %and.merge.32
 
-and.rhs.37:                                       ; preds = %if.merge.36
+and.rhs.31:                                       ; preds = %if.merge.30
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i32, i32 } %loadN, 1
   %icmpN = icmp eq i32 %sgN, 3
-  br label %and.merge.38
+  br label %and.merge.32
 
-and.merge.38:                                     ; preds = %and.rhs.37, %if.merge.36
-  %bpN = phi i1 [ false, %if.merge.36 ], [ %icmpN, %and.rhs.37 ]
-  br i1 %bpN, label %if.then.39, label %if.else.40
+and.merge.32:                                     ; preds = %and.rhs.31, %if.merge.30
+  %bpN = phi i1 [ false, %if.merge.30 ], [ %icmpN, %and.rhs.31 ]
+  br i1 %bpN, label %if.then.33, label %if.else.34
 
-if.then.39:                                       ; preds = %and.merge.38
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.then.33:                                       ; preds = %and.merge.32
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.6, i64 15 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.41
+  br label %if.merge.35
 
-if.else.40:                                       ; preds = %and.merge.38
-  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
+if.else.34:                                       ; preds = %and.merge.32
+  %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
   %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.7, i64 17 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
-  br label %if.merge.41
+  br label %if.merge.35
 
-if.merge.41:                                      ; preds = %if.else.40, %if.then.39
+if.merge.35:                                      ; preds = %if.else.34, %if.then.33
   ret i32 0
 }
 
