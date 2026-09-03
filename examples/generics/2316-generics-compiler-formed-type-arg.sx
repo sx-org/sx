@@ -1,0 +1,8 @@
+// A compiler-formed type constructor in a `$T: Type` argument slot binds the parameter.
+@import "modules/std.sx";
+
+size :: ($T: Type) -> i64 => @sizeOf(T);
+
+main :: () {
+    print("{}\n", size(@Vector(2, f64)));
+}

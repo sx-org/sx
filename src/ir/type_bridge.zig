@@ -390,7 +390,8 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         // type-shaped operand it IS the pointer type (`describe(*Padded)`).
         .unary_op => |uop| uop.op == .address_of and isTypeShapedAstNode(uop.operand, table),
         // A call to a comptime type-query / projection builtin whose RESULT is a
-        // Type — `field_type(T, i)`, `pointee(P)`, `@typeOf(x)`. These are
+        // Type — `field_type(T, i)`, `pointee(P)`, `@typeOf(x)` — or to a
+        // compiler-formed type constructor (`@Vector(3, f32)`). These are
         // type-shaped, so an arg / initializer like `field_type(T, i)` resolves
         // through `resolveTypeArg` (which routes `.call` to
         // `resolveTypeCallWithBindings`, folding the index — incl. an `inline for`
@@ -398,7 +399,7 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         // index → "cannot infer generic type parameter"). Value-returning calls
         // stay non-type-shaped (the `else` below).
         .call => |c| switch (c.callee.data) {
-            .identifier => |id| isTypeReturningBuiltinName(id.name),
+            .identifier => |id| isTypeReturningBuiltinName(id.name) or contracts.isTypeConstructor(id.name),
             else => false,
         },
         // A reflected member projection (`@typeInfo(T).struct.fields[i].type`)
