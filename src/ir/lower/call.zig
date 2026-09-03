@@ -4094,6 +4094,18 @@ fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
 /// The scalar sources a boxed `@as` dispatches over.
 const boxed_as_sources = [_]TypeId{ .bool, .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .isize, .usize, .f32, .f64 };
 
+/// Whether a boxed source of type `s` converts to `dst` without a diagnostic:
+/// the modeled scalar plans, the same-width integer pun the explicit ladder
+/// bitcasts, and an optional target whose payload the source converts to.
+fn boxedAsConverts(self: *Lowering, s: TypeId, dst: TypeId) bool {
+    return switch (self.coercionResolver().classify(s, dst)) {
+        .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int => true,
+        .none => self.isIntEx(s) and self.isIntEx(dst) and self.typeBitsEx(s) == self.typeBitsEx(dst),
+        .optional_wrap => boxedAsConverts(self, s, self.module.types.get(dst).optional.child),
+        else => false,
+    };
+}
+
 fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     const b = &self.builder;
     const type_word = b.structGet(av, 1, .i64);
@@ -4109,16 +4121,17 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     var candidates = std.ArrayList(TypeId).empty;
     defer candidates.deinit(self.alloc);
     candidates.append(self.alloc, dst) catch return Ref.none;
-    for (boxed_as_sources) |s| if (s != dst) candidates.append(self.alloc, s) catch return Ref.none;
+    if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) {
+        const child = self.module.types.get(dst).optional.child;
+        if (child != dst) candidates.append(self.alloc, child) catch return Ref.none;
+    }
+    for (boxed_as_sources) |s| {
+        var seen = false;
+        for (candidates.items) |c| seen = seen or c == s;
+        if (!seen) candidates.append(self.alloc, s) catch return Ref.none;
+    }
     for (candidates.items) |s| {
-        const plan = self.coercionResolver().classify(s, dst);
-        const converts = switch (plan) {
-            .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .optional_wrap => true,
-            // A same-width integer pun (`u64` → `i64`) is the explicit ladder's bitcast.
-            .none => self.isIntEx(s) and self.isIntEx(dst) and self.typeBitsEx(s) == self.typeBitsEx(dst),
-            else => false,
-        };
-        if (!converts) continue;
+        if (!boxedAsConverts(self, s, dst)) continue;
         const bb = self.freshBlock("as.from");
         cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
         srcs.append(self.alloc, s) catch return Ref.none;

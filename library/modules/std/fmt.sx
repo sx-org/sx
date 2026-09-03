@@ -211,13 +211,16 @@ flagsToString :: (val: $T) -> string {
 enumToString :: (u: $T) -> string {
     if isFlags(T) { return flagsToString(u); }
     av : any = u;
-    idx := variantIndex(av) ?? { return concat(".(", intToString(@as(i64, @tag(av))), ")"); };
-    result := concat(".", @typeInfo(T).enum.fields[idx].name);
-    pstr := anyToString(@field(av, idx));
-    if pstr.len > 0 {
-        result = concat(result, concat("(", concat(pstr, ")")));
+    if idx := variantIndex(av) {
+        result := concat(".", @typeInfo(T).enum.fields[idx].name);
+        pstr := anyToString(@field(av, idx));
+        if pstr.len > 0 {
+            result = concat(result, concat("(", concat(pstr, ")")));
+        }
+        result
+    } else {
+        concat(".(", intToString(@as(i64, @tag(av))), ")")
     }
-    result
 }
 
 optionalToString :: (o: $T) -> string {

@@ -10,5 +10,6 @@ Bits :: union { hue: Color; raw: u8 }
 main :: () -> i32 {
     print("{}\n", Bits{ raw = 2 }.hue);
     print("{}\n", Bits{ raw = 7 }.hue);
+    print("{}\n", enumToString(Bits{ raw = 7 }.hue));
     return 0;
 }
