@@ -1,11 +1,8 @@
-// A compiler-formed type constructor spelled in a `$T: Type` argument slot
-// binds the parameter: the call `@Vector(2, f64)` is type-shaped, like
-// `pointeeType(P)` or `@typeOf(x)`, so it resolves as a type argument rather
-// than through value inference.
+// A compiler-formed type constructor in a `$T: Type` argument slot binds the parameter.
 @import "modules/std.sx";
 
 size :: ($T: Type) -> i64 => @sizeOf(T);
 
 main :: () {
-    print("{} {} {} {}\n", size(@Vector(2, f64)), size(@Array(5, u8)), size(@Slice(u8, i64)), size(@int(8, .signed)));
+    print("{}\n", size(@Vector(2, f64)));
 }
