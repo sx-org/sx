@@ -3171,8 +3171,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
 /// defaults. Returns null if `name` is not an atomic intrinsic.
 ///
 /// Gated on the registry: a name reaches the ordering/type checks below only if
-/// `modules/std/atomic.sx` declares it as an intrinsic. A user function named
-/// `@atomicLoad` is an ordinary call, not a silently-hijacked atomic op.
+/// `modules/std/atomic.sx` declares it as an intrinsic. A bare `atomicLoad` is
+/// an ordinary call.
 pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     if (!isAtomicIntrinsic(name)) return null;
 

@@ -325,9 +325,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         .call => |cl| {
             // Type-returning REFLECTION calls are static only when their own
             // type argument is: `@typeOf(x)` with an `any`-typed operand
-            // answers the runtime TAG (freezing it statically said "any"
-            // where the two-step form read "Point"), and `@pointeeType(tp)`
-            // with a runtime `tp` produces a runtime Type.
+            // answers the runtime tag of the `any`, not the payload type,
+            // and `@pointeeType(tp)` with a runtime `tp` produces a runtime Type.
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
