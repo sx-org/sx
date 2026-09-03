@@ -25,9 +25,9 @@ test "parser: comptime type-metaprogramming surface parses" {
         \\TypeInfo :: enum {
         \\    `enum: EnumInfo;
         \\}
-        \\@declare    :: () -> Type;
-        \\@define     :: (handle: Type, info: TypeInfo) -> Type;
-        \\@field_type :: ($T: Type, idx: i64) -> Type;
+        \\@rawDeclare   :: () -> Type;
+        \\@rawDefine    :: (handle: Type, info: TypeInfo) -> Type;
+        \\@rawFieldType :: ($T: Type, idx: i64) -> Type;
         \\
     ;
     var parser = try Parser.init(alloc, src);
@@ -68,7 +68,7 @@ test "parser: comptime type-metaprogramming surface parses" {
     // Builtins: `@name :: (params) -> Ret;` parses as a `.fn_decl` whose body
     // is the `.intrinsic_expr` marker — the shape of the reflection builtins in
     // core.sx.
-    for ([_][]const u8{ "@declare", "@define", "@field_type" }) |bn| {
+    for ([_][]const u8{ "@rawDeclare", "@rawDefine", "@rawFieldType" }) |bn| {
         const d = Found.byName(decls, bn) orelse return error.MissingDecl;
         try std.testing.expect(d.data == .fn_decl);
         try std.testing.expect(d.data.fn_decl.body.data == .intrinsic_expr);
