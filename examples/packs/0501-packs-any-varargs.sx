@@ -10,10 +10,10 @@ printAny :: (..args: []any) {
     for it in args {
         type := @typeOf(it);
         match type {
-            case int: @printf("{}", intToString(xx it));
+            case int: @printf("{}", @as(i64, it));
             case string: @printf("{}", it.(string));
             case bool: @printf("{}", it.(bool));
-            case float: { f : f64 = xx it; @printf("{}", f); }
+            case float: @printf("{}", @as(f64, it));
             case Point: {
                 p := it.(Point);
                 @printf("(");

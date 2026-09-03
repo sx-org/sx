@@ -214,6 +214,25 @@ pub const CallResolver = struct {
                     TypeId.unresolved;
                 return refl(bare_name, target);
             }
+            // `@as(T, v)` types as `T`; `@tag(v)` as the enum's tag type, or
+            // `any` for a boxed `v`.
+            if (std.mem.eql(u8, bare_name, "@as")) {
+                const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[0]))
+                    self.l.resolveTypeArg(c.args[0])
+                else
+                    TypeId.unresolved;
+                return refl(bare_name, target);
+            }
+            if (std.mem.eql(u8, bare_name, "@tag")) {
+                const vt = if (c.args.len == 1) self.l.inferExprType(c.args[0]) else TypeId.unresolved;
+                const rt: TypeId = if (vt == .any)
+                    .any
+                else if (!vt.isBuiltin() and self.l.module.types.get(vt) == .@"enum")
+                    self.l.module.types.get(vt).@"enum".tag_type
+                else
+                    .unresolved;
+                return refl(bare_name, rt);
+            }
             // Reflection intrinsics lower through `tryLowerReflectionCall`, not
             // the `BuiltinId` dispatch above — but a pack-fn caller still needs
             // their result type to mangle with the right tag. The registry owns

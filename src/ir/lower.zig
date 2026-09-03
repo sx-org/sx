@@ -1468,6 +1468,8 @@ pub const Lowering = struct {
             const pty = self.resolveTypeWithBindings(p.type_expr);
             tmp_scope.put(p.name, .{ .ref = Ref.fromIndex(@intCast(i)), .ty = pty, .is_alloca = false });
         }
+        // A bodyless declaration is typed by the compiler at each call.
+        if (fd.body.data == .intrinsic_expr) return .unresolved;
         // Arrow functions without explicit return type: infer from body expression.
         if (fd.is_arrow) {
             return self.inferExprType(fd.body);

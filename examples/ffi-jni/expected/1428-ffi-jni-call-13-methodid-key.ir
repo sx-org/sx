@@ -269,7 +269,7 @@ if.merge.1:                                       ; preds = %if.then.0, %entry
   %call = call { i32 } @FdWriter.init(ptr @__sx_default_context, { i64, [4 x i8] } { i64 1, [4 x i8] undef })
   store { i32 } %call, ptr %alloca, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
-  %siN = insertvalue { ptr, i64, ptr } %si, i64 108, 1
+  %siN = insertvalue { ptr, i64, ptr } %si, i64 109, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.8, i64 3 })
   call void @FdWriter.flush(ptr @__sx_default_context, ptr %alloca)

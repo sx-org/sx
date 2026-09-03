@@ -109,6 +109,8 @@ pub const entries = [_]Contract{
     .{ .name = "@inner", .module = "modules/std/core.sx" },
     .{ .name = "@typeEq", .module = "modules/std/core.sx" },
     .{ .name = "@unbox", .module = "modules/std/core.sx" },
+    .{ .name = "@tag", .module = "modules/std/core.sx" },
+    .{ .name = "@as", .module = "modules/std/core.sx" },
     .{ .name = "@isComptime", .module = "modules/std/core.sx" },
     .{ .name = "@vaStart", .module = "modules/std/core.sx" },
     .{ .name = "@vaArg", .module = "modules/std/core.sx" },

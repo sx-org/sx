@@ -20,9 +20,9 @@ main :: () {
     print("{}\n", Ev.quit);          // .quit
     print("{} {}\n", Sig.term, Sig.interrupt);   // .term .interrupt
 
-    // The explicit tag value is the payload enum `.tag` word.
-    q : i64 = Ev.quit.tag;
-    t : i64 = Sig.term.tag;
+    // The explicit tag value is the tag word `@tag` reads.
+    q : i64 = @tag(Ev.quit);
+    t : i64 = @tag(Sig.term);
     print("{} {}\n", q, t);          // 256 15
 
     // Round-trip through a typed local, then print.

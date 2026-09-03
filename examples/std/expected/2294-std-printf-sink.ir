@@ -228,7 +228,7 @@ entry:
   %alloca = alloca { i32 }, align 8
   store { i32 } %call, ptr %alloca, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
-  %siN = insertvalue { ptr, i64, ptr } %si, i64 108, 1
+  %siN = insertvalue { ptr, i64, ptr } %si, i64 109, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @__sx_default_context, ptr %alloca, { ptr, i64 } { ptr @str.1, i64 10 })
   call void @writeInt(ptr @__sx_default_context, { ptr, i64, ptr } %siN, i64 7)
