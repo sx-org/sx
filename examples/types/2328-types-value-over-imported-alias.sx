@@ -1,0 +1,11 @@
+// A visible value wins over a same-spelled type alias another module authors:
+// the global `Val` here is classified by its runtime tag, not resolved as the
+// imported alias.
+@import "modules/std.sx";
+@import "2328-types-value-over-imported-alias/alias.sx";
+
+Val : any = 5;
+
+main :: () {
+    print("{}\n", Val is int);
+}

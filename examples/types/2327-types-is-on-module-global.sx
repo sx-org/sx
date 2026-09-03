@@ -1,0 +1,11 @@
+// A module-level `any` and a module const are values under `is` (the
+// global's runtime tag, the const's type). A type alias remains a type.
+@import "modules/std.sx";
+
+g : any = 5;
+K :: 7;
+T :: i64;
+
+main :: () {
+    print("{} {} {} {}\n", g is int, K is int, T is int, @sizeOf(T));
+}
