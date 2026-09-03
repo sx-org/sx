@@ -3052,7 +3052,10 @@ pub const LLVMEmitter = struct {
                     // whole aggregate is re-emitted with require_resolved=true.
                     break :blk c.LLVMConstNull(elem_ty);
                 },
-                .global_ref => |gid| self.global_map.get(gid.index()) orelse c.LLVMConstNull(elem_ty),
+                .global_ref => |gid| blk: {
+                    const target = self.global_map.get(gid.index()) orelse break :blk c.LLVMConstNull(elem_ty);
+                    break :blk if (c.LLVMGetTypeKind(elem_ty) == c.LLVMIntegerTypeKind) c.LLVMConstPtrToInt(target, elem_ty) else target;
+                },
                 // A null pointer field and a zero-initialized field both emit as
                 // the all-zero constant of the leaf type.
                 .null_val, .zeroinit => c.LLVMConstNull(elem_ty),
