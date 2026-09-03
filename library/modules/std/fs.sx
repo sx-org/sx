@@ -11,8 +11,8 @@ inline if @host.os == .windows {
     @import "modules/std/fs/posix.sx";
 }
 
-OpenMode :: enum { read; write; append; readWrite; }
-SeekFrom :: enum { set; current; end; }
+OpenMode :: enum i32 { read :: 0; write :: 1; append :: 2; readWrite :: 3; }
+SeekFrom :: enum i32 { set :: 0; current :: 1; end :: 2; }
 
 File :: struct {
     // The portable handle slot is wide enough for both a POSIX descriptor and
@@ -49,19 +49,12 @@ File :: struct {
 
     seek :: (self: *File, offset: i64, from: SeekFrom) -> i64 {
         if !self.isValid() { return -1; }
-        code := 0;
-        if from == .current { code = 1; }
-        else if from == .end { code = 2; }
-        fsFileSeek(self.fd, offset, code)
+        fsFileSeek(self.fd, offset, from)
     }
 }
 
 openFile :: (path: [:0]u8, mode: OpenMode) -> ?File {
-    code := 0;
-    if mode == .write { code = 1; }
-    else if mode == .append { code = 2; }
-    else if mode == .readWrite { code = 3; }
-    handle := fsOpenHandle(path, code);
+    handle := fsOpenHandle(path, mode);
     if !fsFileIsValid(handle) { return null; }
     File{ fd = handle }
 }

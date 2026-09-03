@@ -55,7 +55,7 @@ OptionalInfo    :: core.OptionalInfo;
 // --- Output ---
 
 Writer        :: core.Writer;
-Fd            :: core.Fd;
+Fd            :: c.Fd;
 FdWriter      :: core.FdWriter;
 writeBool     :: core.writeBool;
 writeInt      :: core.writeInt;
