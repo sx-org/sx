@@ -180,7 +180,7 @@ pub const TargetConfig = struct {
     }
 
     /// Check if target triple indicates Linux (NOT Android — Android uses
-    /// "linux-android" too but isAndroid() must take precedence).
+    /// "linux-android" too but @isAndroid() must take precedence).
     pub fn isLinux(self: TargetConfig) bool {
         if (self.isAndroid()) return false;
         return self.tripleContains("linux");
@@ -454,7 +454,7 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 // post-link via the BuildOptions callback registered from sx code.
 // `--apk <path>` on the CLI is a transitional alias that feeds
 // `bundle_path` so the auto-fallback to `platform.bundle.bundleMain`
-// fires; programs that opt in via `onBuild` reach the
+// fires; programs that opt in via `@onBuild` reach the
 // sx bundler directly.
 
 

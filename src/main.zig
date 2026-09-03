@@ -576,9 +576,9 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
     timer.printAll();
 }
 
-/// Driver-side adapter behind the `link` build-pipeline primitive. The
+/// Driver-side adapter behind the `@link` build-pipeline primitive. The
 /// comptime VM can't link itself (it must not depend on `target`), so it
-/// dispatches `link(...)` through a `BuildHooks` whose `ctx` is one of these. The
+/// dispatches `@link(...)` through a `BuildHooks` whose `ctx` is one of these. The
 /// VM passes the full object list; `target.link` takes (first object, rest), but
 /// treats both as plain inputs, so the split is immaterial.
 const BuildHooksCtx = struct {
@@ -589,7 +589,7 @@ const BuildHooksCtx = struct {
     base_config: sx.target.TargetConfig,
     has_jni_main: bool,
 
-    /// `emitObject()` — emit the already verified/optimized module to its object file,
+    /// `@emitObject()` — emit the already verified/optimized module to its object file,
     /// return the path. The sx driver calls this; the compiler does not emit on its own.
     fn emitObject(ctx_opaque: *anyopaque) anyerror![]const u8 {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
@@ -611,7 +611,7 @@ const BuildHooksCtx = struct {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         if (objects.len == 0) return error.NoObjects;
         var cfg = self.base_config;
-        // The passed `flags` are already the full merged set (`buildFlags()` returns
+        // The passed `flags` are already the full merged set (`@buildFlags()` returns
         // the merged CLI + `@run` flags), so use them as-is rather than re-unioning.
         cfg.extra_link_flags = flags;
         try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main);
@@ -662,13 +662,13 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     const obj_path = try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
 
     // Codegen only. There is NO auto-emit / auto-link: the build is driven
-    // entirely by the sx `defaultPipeline` (or a user `@run onBuild(...)`
-    // override), invoked after codegen below. `emitObject` (verify + object
-    // emission) and `link` run as sx-called ACTIONS through the build hooks.
+    // entirely by the sx `defaultPipeline` (or a user `@run @onBuild(...)`
+    // override), invoked after codegen below. `@emitObject` (verify + object
+    // emission) and `@link` run as sx-called ACTIONS through the build hooks.
     // The `--cache` object cache does not reach this path: it short-circuits
     // codegen, and the sx build program that runs after codegen may call
-    // `emitObject`, which needs the codegen'd module in memory —
-    // `defaultPipeline` always does, an `onBuild` override drives the build
+    // `@emitObject`, which needs the codegen'd module in memory —
+    // `defaultPipeline` always does, an `@onBuild` override drives the build
     // itself and need not. `.sx-cache` here holds only the C-import objects
     // c_import.zig writes.
     _ = enable_cache;
@@ -722,8 +722,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
     }
 
-    // NO auto-link here — the sx `defaultPipeline` (or a user `onBuild`
-    // override) calls `link` (and `emitObject`) as actions through these hooks.
+    // NO auto-link here — the sx `defaultPipeline` (or a user `@onBuild`
+    // override) calls `@link` (and `@emitObject`) as actions through these hooks.
     // The ctx lives on this stack frame so it outlives the callback below.
     var build_ctx = BuildHooksCtx{
         .comp = &comp,
@@ -749,7 +749,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.build_hooks = &build_hooks;
         // `--apk <path>` is a transitional alias for the bundle_path
         // → post_link_module = "platform.bundle" auto-fallback. The
-        // sx Android bundler reads `bundlePath()` regardless of which
+        // sx Android bundler reads `@bundlePath()` regardless of which
         // CLI flag the user typed.
         if (e.build_config.bundle_path == null) e.build_config.bundle_path = merged_config.bundle_path orelse merged_config.apk_path;
         if (e.build_config.bundle_id == null) e.build_config.bundle_id = merged_config.bundle_id;
@@ -763,9 +763,9 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
             e.build_config.target_triple = std.mem.span(t);
         } else {
             // Host build (no `--target`): expose the HOST triple so the sx
-            // bundler's `isMacos()`/`isIos()`/… predicates resolve correctly.
+            // bundler's `@isMacos()`/`@isIos()`/… predicates resolve correctly.
             // Left empty, a host macOS `.app` would get the flat iOS-style layout
-            // (isMacos() == false) instead of `Contents/MacOS/`.
+            // (@isMacos() == false) instead of `Contents/MacOS/`.
             const host = sx.llvm_api.c.LLVMGetDefaultTargetTriple();
             defer sx.llvm_api.c.LLVMDisposeMessage(host);
             e.build_config.target_triple = allocator.dupe(u8, std.mem.span(host)) catch null;
@@ -773,7 +773,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.target_frameworks = fws;
         e.build_config.target_framework_paths = merged_config.framework_paths;
         // The sx-driven build pipeline reads these via the
-        // `cObjectPaths()` / `linkLibraries()` / `buildOutput()` primitives. Slices
+        // `@cObjectPaths()` / `@linkLibraries()` / `@buildOutput()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
         e.build_config.c_object_paths = c_obj_paths;
         e.build_config.link_libraries = libs;
@@ -812,8 +812,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
     }
 
-    // Post-link build driver. Either the user registered an `onBuild(cb)`
-    // override (bundling is `@run onBuild(bundleMain);` — bundleMain runs the
+    // Post-link build driver. Either the user registered an `@onBuild(cb)`
+    // override (bundling is `@run @onBuild(bundleMain);` — bundleMain runs the
     // emit+link core then wraps the `.app`/`.apk`), or we run the stdlib
     // `defaultPipeline` (emit + link; it fails with a precise hint if a bundle was
     // requested via `--bundle`/`--apk` but no bundler was registered). The CLI

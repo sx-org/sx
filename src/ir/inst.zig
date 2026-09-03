@@ -755,7 +755,7 @@ pub const Function = struct {
     /// `abi(.c)` functions have it false.
     has_implicit_ctx: bool = false,
 
-    /// True for a declaration whose body is the `intrinsic` keyword — its
+    /// True for a declaration whose body the compiler provides (`.intrinsic_expr`) — its
     /// implementation lives in the compiler (see `ir/intrinsics.zig`).
     ///
     /// An intrinsic has NO symbol of any kind: `@sizeOf` folds to a constant,

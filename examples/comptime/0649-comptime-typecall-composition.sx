@@ -1,12 +1,12 @@
 // Comptime type-call COMPOSITION: a `($T) -> Type` builder walks a named
-// tuple's reflected members, projects each element type through `pointeeType`
+// tuple's reflected members, projects each element type through `@pointeeType`
 // + a member projection, and mints a payload enum whose variant labels mirror
 // the tuple's labels — the shape the `race` result synthesis needs
 // (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
 //
 // Exercises three things off the member cursor: its `.type` used as (1) a
 // `Type`-typed struct field value, (2) a nested type-call arg
-// (`@typeInfo(pointeeType(field.type)).struct.fields[0].type`), and its `.name`
+// (`@typeInfo(@pointeeType(field.type)).struct.fields[0].type`), and its `.name`
 // as a comptime string for a minted variant NAME.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
@@ -21,7 +21,7 @@ ResultOf :: ($T: Type) -> Type {
     inline for field in @typeInfo(T).struct.fields {
         vs[field.index] = VariantInfo{
             name    = field.name,                                               // folded to a const string
-            payload = @typeInfo(pointeeType(field.type)).struct.fields[0].type, // *Box(A) -> Box(A) -> A
+            payload = @typeInfo(@pointeeType(field.type)).struct.fields[0].type, // *Box(A) -> Box(A) -> A
         };
     }
     return makeEnum("ResultOf", vs);

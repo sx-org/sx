@@ -30,9 +30,9 @@ UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegat
 @import "modules/platform/bundle.sx";
 
 configure :: () {
-    opts := buildOptions();
-    opts.setBundlePath("/tmp/SxDeviceProbe.app");
-    onBuild(bundleMain);
+    opts := @buildOptions();
+    @setBundlePath(opts, "/tmp/SxDeviceProbe.app");
+    @onBuild(bundleMain);
 }
 @run configure();
 

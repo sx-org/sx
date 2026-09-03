@@ -14,7 +14,7 @@ nameOf :: ($T: Type) -> string {
 firstResult :: ($T: Type) -> i64 {
     total := 0;
     inline for i in 0..1 {
-        r : @typeInfo(pointeeType(@typeInfo(T).struct.fields[i].type)).struct.fields[0].type = 42;
+        r : @typeInfo(@pointeeType(@typeInfo(T).struct.fields[i].type)).struct.fields[0].type = 42;
         total = total + r;
     }
     return total;

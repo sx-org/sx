@@ -1,13 +1,10 @@
-// A bodiless `intrinsic` carrying a `$T: Type` parameter whose name the compiler
-// does not recognize fails with an "unknown intrinsic" diagnostic. The generic
-// monomorphization path (monomorphizeFunction's builtin-body branch) reports the
-// unresolved builtin name rather than falling through to `ensureTerminator`'s
-// `constInt(0)`.
+// A bodiless `@` declaration carrying a `$T: Type` parameter whose name the
+// compiler does not recognize fails with an "unknown intrinsic" diagnostic at
+// the declaration, never a fall-through into a zero body.
 @import "modules/std.sx";
 
-// `mystery` is not a recognized intrinsic.
-mystery :: ($T: Type, x: T) -> T intrinsic;
+@mystery :: ($T: Type, x: T) -> T;
 
 main :: () {
-    print("mystery(42) = {}\n", mystery(i64, 42));
+    print("mystery(42) = {}\n", @mystery(i64, 42));
 }

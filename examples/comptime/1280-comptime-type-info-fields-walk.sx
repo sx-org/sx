@@ -20,7 +20,7 @@ peel :: ($T: Type) -> [@typeInfo(T).struct.fields.len]VariantInfo {
     inline for field in @typeInfo(T).struct.fields {
         vs[field.index] = VariantInfo{
             name    = field.name,
-            payload = @typeInfo(pointeeType(field.type)).struct.fields[0].type,
+            payload = @typeInfo(@pointeeType(field.type)).struct.fields[0].type,
         };
     }
     return vs;
@@ -32,7 +32,7 @@ main :: () {
     }
 
     inline for field in @typeInfo(Holder).struct.fields {
-        slot : pointeeType(field.type) = ---;
+        slot : @pointeeType(field.type) = ---;
         print("{} : {}\n", field.name, @typeName(@typeOf(slot)));
     }
 

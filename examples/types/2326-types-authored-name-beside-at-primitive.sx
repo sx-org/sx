@@ -1,0 +1,10 @@
+// A name that reads like a reflection primitive is an ordinary identifier: the
+// primitives live in the `@` namespace, so an authored `pointeeType` is called
+// as written beside `@pointeeType`.
+@import "modules/std.sx";
+
+pointeeType :: () -> i64 => 7;
+
+main :: () {
+    print("{} {}\n", pointeeType(), @typeName(@pointeeType(*i64)));
+}

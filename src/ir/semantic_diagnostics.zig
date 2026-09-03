@@ -1009,7 +1009,7 @@ pub const UnknownTypeChecker = struct {
     /// Type-returning reflection builtins legal in a type position with
     /// VALUE arguments. Mirrors the lowering's comptime type-fn set.
     fn isTypeFnName(name: []const u8) bool {
-        const type_fns = [_][]const u8{ "@typeOf", "pointeeType" };
+        const type_fns = [_][]const u8{ "@typeOf", "@pointeeType" };
         for (type_fns) |tf| if (std.mem.eql(u8, name, tf)) return true;
         return false;
     }
@@ -1090,7 +1090,7 @@ pub const UnknownTypeChecker = struct {
             .parameterized_type_expr => |pt| {
                 const base = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
                 // A Type-returning reflection builtin in type position
-                // (`x.(pointeeType(T))`) takes VALUE args — never walk them as
+                // (`x.(@pointeeType(T))`) takes VALUE args — never walk them as
                 // type names; the lowering fold diagnoses a bad arg precisely.
                 if (isTypeFnName(base)) return;
                 for (pt.args, 0..) |a, i| {

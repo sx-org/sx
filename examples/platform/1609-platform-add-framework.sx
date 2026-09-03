@@ -7,8 +7,8 @@
 @import "modules/build.sx";
 
 configureBuild :: () {
-    opts := buildOptions();
-    opts.addFramework("CoreFoundation");
+    opts := @buildOptions();
+    @addFramework(opts, "CoreFoundation");
 }
 @run configureBuild();
 

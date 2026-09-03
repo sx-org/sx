@@ -28,8 +28,8 @@ error: @typeEq expects a type, got 'bool'
 16 |     print("{}\n", @typeEq(true, false));   // both bool — both rejected
    |                                 ^^^^^
 
-error: isFlags expects a type, got 'f64'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:17:27
+error: @isFlags expects a type, got 'f64'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:17:28
    |
-17 |     print("{}\n", isFlags(1.5));           // f64, not a type
-   |                           ^^^
+17 |     print("{}\n", @isFlags(1.5));           // f64, not a type
+   |                            ^^^

@@ -3,10 +3,10 @@
 //! would pass no matter how far the table drifted from the sx it describes.
 //!
 //!   * every `Id` has exactly one entry;
-//!   * every entry's (module, name) names a real `intrinsic` declaration;
-//!   * every `intrinsic` declaration in the library has an entry.
+//!   * every entry's (module, name) names a real `@` declaration;
+//!   * every `@` declaration in the library has an entry.
 //!
-//! The third check is the one that bites: adding `foo :: () -> i64 intrinsic;`
+//! The third check is the one that bites: adding `@foo :: () -> i64;`
 //! to std/core.sx without registering it fails here, instead of silently
 //! reaching a dispatch site that has no arm for it.
 
@@ -67,10 +67,10 @@ test "no duplicate binding keys" {
     }
 }
 
-/// Collect `name :: ... intrinsic;` declarations out of an sx source.
+/// Collect `@name :: ...;` declarations out of an sx source.
 ///
 /// Statement-based, NOT line-based: a declaration may wrap across lines, as
-/// compiler.sx's `link` does. A line-based scan silently misses those — and
+/// compiler.sx's `@link` does. A line-based scan silently misses those — and
 /// missing one means the test PASSES for an unregistered intrinsic, which is the
 /// exact failure this file exists to prevent.
 ///
@@ -95,17 +95,15 @@ fn collectDecls(
         try stripped.append(alloc, '\n');
     }
 
-    // Each `;` ends a statement. A plain name's intrinsic declaration ends with
-    // the `intrinsic` keyword; an `@` function declaration is marked by its
+    // Each `;` ends a statement. An `@` function declaration is marked by its
     // sigil and ends with its signature.
     var stmts = std.mem.splitScalar(u8, stripped.items, ';');
     while (stmts.next()) |raw| {
         const stmt = std.mem.trim(u8, raw, " \t\r\n");
-        const marked = std.mem.endsWith(u8, stmt, "intrinsic");
         // The LAST `::`, not the first: splitting on `;` means this chunk may
         // carry whole preceding declarations that never ended in one (e.g.
         // build.sx's `BuildOptions :: struct { }` sits directly above
-        // `buildOptions :: () -> BuildOptions intrinsic;`). Taking the first
+        // `@buildOptions :: () -> BuildOptions;`). Taking the first
         // `::` would name the wrong declaration.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
         // The declared name is the last identifier before that `::`, with its
@@ -125,21 +123,21 @@ fn collectDecls(
         const at_fn = name[0] == '@' and
             std.mem.startsWith(u8, tail, "(") and
             std.mem.indexOfScalar(u8, tail, '{') == null;
-        if (!marked and !at_fn) continue;
+        if (!at_fn) continue;
         try out.append(alloc, try alloc.dupe(u8, name));
     }
 }
 
-test "collectDecls keeps an `@` sigil, which is part of the registered name" {
+test "collectDecls keeps the `@` sigil, which is part of the registered name" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var out = std.ArrayList([]const u8).empty;
     try collectDecls(arena.allocator(),
-        \\isFlags :: ($T: Type) -> bool intrinsic;
+        \\@buildOptions :: () -> BuildOptions;
         \\@volatileLoad :: ($T: Type, address: *T) -> T;
     , &out);
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("isFlags", out.items[0]);
+    try std.testing.expectEqualStrings("@buildOptions", out.items[0]);
     try std.testing.expectEqualStrings("@volatileLoad", out.items[1]);
 }
 

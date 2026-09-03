@@ -2,14 +2,14 @@
 //
 // Completes the READ side the metatype needs to re-express `@typeInfo(T)` as sx:
 //
-//   rawTypeKind(t)            → a stable kind discriminant, to branch on the shape
+//   @rawTypeKind(t)            → a stable kind discriminant, to branch on the shape
 //                             (0 other · 1 struct · 2 enum ·
 //                              4 tuple · 5 union · 6 array · 7 vector · 8 error)
-//   rawVariantValue(t, i)  → enum variant i's integer value (explicit or ordinal)
+//   @rawVariantValue(t, i)  → enum variant i's integer value (explicit or ordinal)
 //
 // Together with rawFindType / rawFieldCount / rawFieldName / rawFieldType
 // / rawTypeName (examples 0628–0629), a comptime sx function fully reflects a
-// struct/enum/tuple into data — no `intrinsic` needed. All folded at `@run`, all
+// struct/enum/tuple into data — no `@` primitive needed. All folded at `@run`, all
 // serviced natively by the flat-memory VM.
 
 @import "modules/std.sx";
@@ -23,15 +23,15 @@ Color       :: enum { red; green; blue; }
 WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
 Point       :: struct { x: i64; y: i64; }
 
-colorKind :: @run rawTypeKind(rawFindType(rawIntern("Color")));   // 2 = enum
-pointKind :: @run rawTypeKind(rawFindType(rawIntern("Point")));   // 1 = struct
+colorKind :: @run @rawTypeKind(@rawFindType(@rawIntern("Color")));   // 2 = enum
+pointKind :: @run @rawTypeKind(@rawFindType(@rawIntern("Point")));   // 1 = struct
 
 // Plain enum → ordinal values.
-greenVal :: @run rawVariantValue(rawFindType(rawIntern("Color")), 1);   // 1
+greenVal :: @run @rawVariantValue(@rawFindType(@rawIntern("Color")), 1);   // 1
 
 // Flags enum → explicit values, read by name + value.
-vsyncName :: @run rawTextOf(rawFieldName(rawFindType(rawIntern("WindowFlags")), 0)); // "vsync"
-vsyncVal  :: @run rawVariantValue(rawFindType(rawIntern("WindowFlags")), 0);          // 64
+vsyncName :: @run @rawTextOf(@rawFieldName(@rawFindType(@rawIntern("WindowFlags")), 0)); // "vsync"
+vsyncVal  :: @run @rawVariantValue(@rawFindType(@rawIntern("WindowFlags")), 0);          // 64
 
 main :: () {
     print("Color kind = {}, Point kind = {}\n", colorKind, pointKind);

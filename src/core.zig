@@ -211,7 +211,7 @@ pub const Compilation = struct {
     }
 
     /// Re-enter the evaluator and call an already-resolved function id. The
-    /// post-link build callback, captured at `@run` time by `onBuild`.
+    /// post-link build callback, captured at `@run` time by `@onBuild`.
     /// `pass_options` passes the opaque `BuildOptions` handle as the callback's
     /// arg (`cb: (opt: BuildOptions) -> bool`); false for the no-arg form.
     pub fn invokeByFuncId(self: *Compilation, id: ir.FuncId, pass_options: bool) !ir.Value {
@@ -251,14 +251,14 @@ pub const Compilation = struct {
         return null;
     }
 
-    /// Get the post-link callback function id (set via `onBuild(fn)`), if any.
+    /// Get the post-link callback function id (set via `@onBuild(fn)`), if any.
     pub fn getPostLinkCallback(self: *Compilation) ?ir.FuncId {
         if (self.ir_emitter) |*e| return e.build_config.post_link_callback_fn;
         return null;
     }
 
     /// Whether the post-link callback takes the `BuildOptions` handle arg (the
-    /// `onBuild(cb)` form). Drives the `pass_options` flag at invocation.
+    /// `@onBuild(cb)` form). Drives the `pass_options` flag at invocation.
     pub fn getPostLinkTakesOptions(self: *Compilation) bool {
         if (self.ir_emitter) |*e| return e.build_config.post_link_takes_options;
         return false;

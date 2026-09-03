@@ -325,9 +325,8 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         .call => |cl| {
             // Type-returning REFLECTION calls are static only when their own
             // type argument is: `@typeOf(x)` with an `any`-typed operand
-            // answers the runtime TAG (freezing it statically said "any"
-            // where the two-step form read "Point"), and `pointeeType(tp)`
-            // with a runtime `tp` produces a runtime Type.
+            // answers the runtime tag of the `any`, not the payload type,
+            // and `@pointeeType(tp)` with a runtime `tp` produces a runtime Type.
             // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
@@ -338,7 +337,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
                     // "any"/"Drawable" where the value knows "Point".
                     if (aty == .any or self.getProtocolInfo(aty) != null) return false;
                 }
-                if (std.mem.eql(u8, cn, "pointeeType") and cl.args.len >= 1) {
+                if (std.mem.eql(u8, cn, "@pointeeType") and cl.args.len >= 1) {
                     return self.isStaticTypeArg(cl.args[0]);
                 }
             }
@@ -554,7 +553,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.aliasedFieldAccess(node)) |aliased| return self.resolveTypeArg(aliased);
             // Generic bindings first, mirroring the `.identifier` arm — a
             // `$T` referenced from a type-fn arg inside a parameterized
-            // target (`x.(pointeeType(T))`) parses as a type_expr, and the
+            // target (`x.(@pointeeType(T))`) parses as a type_expr, and the
             // stateless resolver below would fabricate a 0-field stub named
             // "T" instead.
             if (self.type_bindings) |tb| {
@@ -614,7 +613,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         .optional_type_expr,
         .function_type_expr,
         // A parameterized head (`Box(i64)`, or a Type-returning reflection
-        // builtin the postfix-cast target parses as one — `x.(pointeeType(T))`)
+        // builtin the postfix-cast target parses as one — `x.(@pointeeType(T))`)
         // resolves through the gated path, which delegates builtins to
         // `resolveTypeCallWithBindings`.
         .parameterized_type_expr,
@@ -1433,7 +1432,7 @@ pub fn hasComptimeParams(fd: *const ast.FnDecl) bool {
 }
 
 /// A plain free function: no type params (not generic) and an ordinary sx
-/// body (not `extern` / `intrinsic` / `#compiler` / `extern`). Only these get
+/// body (not `extern` / intrinsic / `#compiler`). Only these get
 /// an out-of-line identity-addressable slot — the bare-call disambiguation
 /// and the shadow-author lowering pass leave every other shape
 /// to the existing name-keyed dispatch.
@@ -2056,7 +2055,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // pointee($P) -> Type — comptime reflection: the target type of a pointer
     // (`pointee(*X)` -> `X`). Folds at lower time so it composes inside any
     // type-arg slot. A non-pointer arg is a loud error.
-    if (std.mem.eql(u8, callee_name, "pointeeType")) {
+    if (std.mem.eql(u8, callee_name, "@pointeeType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, cl.callee.span, "pointee takes one type: pointee($P)", .{});
@@ -2075,7 +2074,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         };
     }
     // @envType($F) -> Type — the environment a callable value IS. Folds here
-    // like `pointeeType` so it answers in a type-argument slot.
+    // like `@pointeeType` so it answers in a type-argument slot.
     if (std.mem.eql(u8, callee_name, "@envType")) {
         if (cl.args.len != 1) {
             if (self.diagnostics) |d|
@@ -2150,11 +2149,11 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     const is_qualified = std.mem.indexOfScalar(u8, pt.name, '.') != null;
 
     // A Type-returning reflection builtin spelled in a TYPE position
-    // (`x.(pointeeType(T))` — the postfix-cast target parses via
+    // (`x.(@pointeeType(T))` — the postfix-cast target parses via
     // parseTypeExpr, so the call arrives as a parameterized type). The
     // `.call` resolver owns these folds — delegate with the same arg nodes.
     if (!pt.is_raw and (std.mem.eql(u8, base_name, "@envType") or
-        std.mem.eql(u8, base_name, "pointeeType")))
+        std.mem.eql(u8, base_name, "@pointeeType")))
     {
         const sp = span orelse (if (pt.args.len > 0) pt.args[0].span else return .unresolved);
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };

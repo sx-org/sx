@@ -44,8 +44,8 @@ BUNDLE_FACE :: "assets/AppleGothic.ttf";
 // A host without the face builds an app without one; the runtime answers
 // that with a non-zero exit.
 configure :: () {
-    opts := buildOptions();
-    opts.addAssetDir(STAGE_DIR, "assets");
+    opts := @buildOptions();
+    @addAssetDir(opts, STAGE_DIR, "assets");
     if !exists(HOST_FACE) { return; }
     if !createDirAll(STAGE_DIR) { return; }
     copyFile(HOST_FACE, STAGE_FACE);

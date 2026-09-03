@@ -1,7 +1,7 @@
 // Runtime variant reflection: off a runtime `Type`, `@typeInfo(t).enum.fields`
 // carries explicit values, explicit tags and the ordinal default, and a payload
 // enum reflects its DECLARED tag where a plain enum reflects its value;
-// `isFlags(t)` answers at runtime; `@len` counts a boxed value's variants and
+// `@isFlags(t)` answers at runtime; `@len` counts a boxed value's variants and
 // `@field` views its payload at a runtime index. Printing a boxed variant
 // resolves the LIVE one by scanning those reflected values against the value's
 // tag word, so the printed name pins the tag -> ordinal reverse map: explicit
@@ -31,7 +31,7 @@ main :: () {
     fv : any = Flag.B;
     ft := @typeOf(fv);
     print("rt vv flags: {} {} {} {}\n", @typeInfo(ft).enum.fields[0].value, @typeInfo(ft).enum.fields[1].value, @typeInfo(ft).enum.fields[2].value, @typeInfo(ft).enum.fields[3].value);
-    print("rt isFlags: {} {}\n", isFlags(ft), isFlags(ct));
+    print("rt @isFlags: {} {}\n", @isFlags(ft), @isFlags(ct));
 
     print("rt count: {}\n", @len(cv));
 

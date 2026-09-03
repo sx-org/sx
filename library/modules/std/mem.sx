@@ -203,12 +203,12 @@ impl Allocator for GPA {
     // readers only observe it after all threads have joined.
     allocBytes :: (self: *GPA, size: i64) -> *void {
         if size == 0 { return null; }
-        atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
+        @atomicFetchAdd(i64, *self.allocCount, 1, .relaxed);
         return c.libcMalloc(size);
     }
     deallocBytes :: (self: *GPA, ptr: *void) {
         if ptr == null { return; }
-        atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
+        @atomicFetchSub(i64, *self.allocCount, 1, .relaxed);
         c.libcFree(ptr);
     }
 }

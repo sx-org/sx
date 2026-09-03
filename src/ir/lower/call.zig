@@ -884,7 +884,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // Check reflection builtins first (before lowering args — some args are type names, not values)
     if (c.callee.data == .identifier) {
         if (self.tryLowerReflectionCall(c.callee.data.identifier.name, c)) |ref| return ref;
-        // Atomic intrinsics (atomicLoad/atomicStore): a type arg + value args,
+        // Atomic intrinsics (@atomicLoad/@atomicStore): a type arg + value args,
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
@@ -927,8 +927,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // shadows the top-level fn entirely: the call targets
         // the local, so the program-fn visibility gate must not fire.
         // An intrinsic is a compiler feature, not a library export, so import
-        // visibility does not gate it — the same reason `@sizeOf` / `sqrt` /
-        // `atomicLoad` resolve with no import (their folds run before this
+        // visibility does not gate it — the same reason `@sizeOf` / `@sqrt` /
+        // `@atomicLoad` resolve with no import (their folds run before this
         // check). The evaluate-mode intrinsics DO reach here, because the VM
         // services them as ordinary declared calls; exempting them keeps every
         // intrinsic reachable on the same terms.
@@ -2773,8 +2773,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // must decide here rather than fall through a catch-all.
         .@"@typeOf",
         .@"@typeName",
-        .pointeeType,
-        .isFlags,
+        .@"@pointeeType",
+        .@"@isFlags",
         .@"@errorName",
         .@"@errorPayload",
         .@"@len",
@@ -2786,23 +2786,23 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@as",
         .@"@convert",
         .@"@coerce",
-        .anyElement,
-        .rawAnyData,
-        .rawMakeAny,
+        .@"@anyElement",
+        .@"@rawAnyData",
+        .@"@rawMakeAny",
         .@"@typeInfo",
-        .atomicLoad,
-        .atomicStore,
-        .atomicFetchAdd,
-        .atomicFetchSub,
-        .atomicFetchAnd,
-        .atomicFetchOr,
-        .atomicFetchXor,
-        .atomicFetchMin,
-        .atomicFetchMax,
-        .atomicSwap,
-        .atomicFence,
-        .atomicCmpxchg,
-        .atomicCmpxchgWeak,
+        .@"@atomicLoad",
+        .@"@atomicStore",
+        .@"@atomicFetchAdd",
+        .@"@atomicFetchSub",
+        .@"@atomicFetchAnd",
+        .@"@atomicFetchOr",
+        .@"@atomicFetchXor",
+        .@"@atomicFetchMin",
+        .@"@atomicFetchMax",
+        .@"@atomicSwap",
+        .@"@atomicFence",
+        .@"@atomicCmpxchg",
+        .@"@atomicCmpxchgWeak",
         .@"@volatileLoad",
         .@"@volatileStore",
         .@"@printf",
@@ -2816,63 +2816,63 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@envOf",
         .@"@callPtr",
         // evaluate-only: the VM services these; they never lower at all.
-        .rawDeclareType,
-        .rawRegisterType,
-        .cObjectPaths,
-        .linkLibraries,
-        .emitObject,
-        .link,
-        .buildOutput,
-        .buildTarget,
-        .buildFrameworks,
-        .buildFlags,
-        .buildOptions,
-        .addLinkFlag,
-        .addFramework,
-        .setOutputPath,
-        .setWasmShell,
-        .addAssetDir,
-        .assetDirCount,
-        .assetDirSrcAt,
-        .assetDirDestAt,
-        .setPostLinkModule,
-        .binaryPath,
-        .setBundlePath,
-        .setBundleId,
-        .setCodesignIdentity,
-        .setProvisioningProfile,
-        .bundlePath,
-        .bundleId,
-        .codesignIdentity,
-        .provisioningProfile,
-        .targetTriple,
-        .isMacos,
-        .isIos,
-        .isIosDevice,
-        .isIosSimulator,
-        .isAndroid,
-        .frameworkCount,
-        .frameworkAt,
-        .frameworkPathCount,
-        .frameworkPathAt,
-        .setManifestPath,
-        .setKeystorePath,
-        .manifestPath,
-        .keystorePath,
-        .jniMainCount,
-        .jniMainRuntimePathAt,
-        .jniMainJavaSourceAt,
-        .onBuild,
-        .rawIntern,
-        .rawTextOf,
-        .rawFindType,
-        .rawTypeKind,
-        .rawTypeName,
-        .rawFieldCount,
-        .rawFieldName,
-        .rawFieldType,
-        .rawVariantValue,
-        .rawPointerTo,
+        .@"@rawDeclareType",
+        .@"@rawRegisterType",
+        .@"@cObjectPaths",
+        .@"@linkLibraries",
+        .@"@emitObject",
+        .@"@link",
+        .@"@buildOutput",
+        .@"@buildTarget",
+        .@"@buildFrameworks",
+        .@"@buildFlags",
+        .@"@buildOptions",
+        .@"@addLinkFlag",
+        .@"@addFramework",
+        .@"@setOutputPath",
+        .@"@setWasmShell",
+        .@"@addAssetDir",
+        .@"@assetDirCount",
+        .@"@assetDirSrcAt",
+        .@"@assetDirDestAt",
+        .@"@setPostLinkModule",
+        .@"@binaryPath",
+        .@"@setBundlePath",
+        .@"@setBundleId",
+        .@"@setCodesignIdentity",
+        .@"@setProvisioningProfile",
+        .@"@bundlePath",
+        .@"@bundleId",
+        .@"@codesignIdentity",
+        .@"@provisioningProfile",
+        .@"@targetTriple",
+        .@"@isMacos",
+        .@"@isIos",
+        .@"@isIosDevice",
+        .@"@isIosSimulator",
+        .@"@isAndroid",
+        .@"@frameworkCount",
+        .@"@frameworkAt",
+        .@"@frameworkPathCount",
+        .@"@frameworkPathAt",
+        .@"@setManifestPath",
+        .@"@setKeystorePath",
+        .@"@manifestPath",
+        .@"@keystorePath",
+        .@"@jniMainCount",
+        .@"@jniMainRuntimePathAt",
+        .@"@jniMainJavaSourceAt",
+        .@"@onBuild",
+        .@"@rawIntern",
+        .@"@rawTextOf",
+        .@"@rawFindType",
+        .@"@rawTypeKind",
+        .@"@rawTypeName",
+        .@"@rawFieldCount",
+        .@"@rawFieldName",
+        .@"@rawFieldType",
+        .@"@rawVariantValue",
+        .@"@rawPointerTo",
         => null,
     };
 }
@@ -3049,27 +3049,27 @@ fn atomicOrderingFromNode(self: *Lowering, node: *const Node) ?inst_mod.AtomicOr
 fn isAtomicIntrinsic(name: []const u8) bool {
     const id = intrinsics.findByName(name) orelse return false;
     return switch (id) {
-        .atomicLoad,
-        .atomicStore,
-        .atomicFetchAdd,
-        .atomicFetchSub,
-        .atomicFetchAnd,
-        .atomicFetchOr,
-        .atomicFetchXor,
-        .atomicFetchMin,
-        .atomicFetchMax,
-        .atomicSwap,
-        .atomicFence,
-        .atomicCmpxchg,
-        .atomicCmpxchgWeak,
+        .@"@atomicLoad",
+        .@"@atomicStore",
+        .@"@atomicFetchAdd",
+        .@"@atomicFetchSub",
+        .@"@atomicFetchAnd",
+        .@"@atomicFetchOr",
+        .@"@atomicFetchXor",
+        .@"@atomicFetchMin",
+        .@"@atomicFetchMax",
+        .@"@atomicSwap",
+        .@"@atomicFence",
+        .@"@atomicCmpxchg",
+        .@"@atomicCmpxchgWeak",
         => true,
 
         .@"@sizeOf",
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .pointeeType,
-        .isFlags,
+        .@"@pointeeType",
+        .@"@isFlags",
         .@"@errorName",
         .@"@errorPayload",
         .@"@len",
@@ -3081,9 +3081,9 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
-        .anyElement,
-        .rawAnyData,
-        .rawMakeAny,
+        .@"@anyElement",
+        .@"@rawAnyData",
+        .@"@rawMakeAny",
         .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
@@ -3101,83 +3101,82 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@envType",
         .@"@envOf",
         .@"@callPtr",
-        .rawDeclareType,
-        .rawRegisterType,
-        .cObjectPaths,
-        .linkLibraries,
-        .emitObject,
-        .link,
-        .buildOutput,
-        .buildTarget,
-        .buildFrameworks,
-        .buildFlags,
-        .buildOptions,
-        .addLinkFlag,
-        .addFramework,
-        .setOutputPath,
-        .setWasmShell,
-        .addAssetDir,
-        .assetDirCount,
-        .assetDirSrcAt,
-        .assetDirDestAt,
-        .setPostLinkModule,
-        .binaryPath,
-        .setBundlePath,
-        .setBundleId,
-        .setCodesignIdentity,
-        .setProvisioningProfile,
-        .bundlePath,
-        .bundleId,
-        .codesignIdentity,
-        .provisioningProfile,
-        .targetTriple,
-        .isMacos,
-        .isIos,
-        .isIosDevice,
-        .isIosSimulator,
-        .isAndroid,
-        .frameworkCount,
-        .frameworkAt,
-        .frameworkPathCount,
-        .frameworkPathAt,
-        .setManifestPath,
-        .setKeystorePath,
-        .manifestPath,
-        .keystorePath,
-        .jniMainCount,
-        .jniMainRuntimePathAt,
-        .jniMainJavaSourceAt,
-        .onBuild,
-        .rawIntern,
-        .rawTextOf,
-        .rawFindType,
-        .rawTypeKind,
-        .rawTypeName,
-        .rawFieldCount,
-        .rawFieldName,
-        .rawFieldType,
-        .rawVariantValue,
-        .rawPointerTo,
+        .@"@rawDeclareType",
+        .@"@rawRegisterType",
+        .@"@cObjectPaths",
+        .@"@linkLibraries",
+        .@"@emitObject",
+        .@"@link",
+        .@"@buildOutput",
+        .@"@buildTarget",
+        .@"@buildFrameworks",
+        .@"@buildFlags",
+        .@"@buildOptions",
+        .@"@addLinkFlag",
+        .@"@addFramework",
+        .@"@setOutputPath",
+        .@"@setWasmShell",
+        .@"@addAssetDir",
+        .@"@assetDirCount",
+        .@"@assetDirSrcAt",
+        .@"@assetDirDestAt",
+        .@"@setPostLinkModule",
+        .@"@binaryPath",
+        .@"@setBundlePath",
+        .@"@setBundleId",
+        .@"@setCodesignIdentity",
+        .@"@setProvisioningProfile",
+        .@"@bundlePath",
+        .@"@bundleId",
+        .@"@codesignIdentity",
+        .@"@provisioningProfile",
+        .@"@targetTriple",
+        .@"@isMacos",
+        .@"@isIos",
+        .@"@isIosDevice",
+        .@"@isIosSimulator",
+        .@"@isAndroid",
+        .@"@frameworkCount",
+        .@"@frameworkAt",
+        .@"@frameworkPathCount",
+        .@"@frameworkPathAt",
+        .@"@setManifestPath",
+        .@"@setKeystorePath",
+        .@"@manifestPath",
+        .@"@keystorePath",
+        .@"@jniMainCount",
+        .@"@jniMainRuntimePathAt",
+        .@"@jniMainJavaSourceAt",
+        .@"@onBuild",
+        .@"@rawIntern",
+        .@"@rawTextOf",
+        .@"@rawFindType",
+        .@"@rawTypeKind",
+        .@"@rawTypeName",
+        .@"@rawFieldCount",
+        .@"@rawFieldName",
+        .@"@rawFieldType",
+        .@"@rawVariantValue",
+        .@"@rawPointerTo",
         => false,
     };
 }
 
 /// Recognize the atomic intrinsics and lower them to dedicated atomic IR ops:
-///   atomicLoad($T, ptr: *T, o: Ordering) -> T
-///   atomicStore($T, ptr: *T, v: T, o: Ordering)
+///   @atomicLoad($T, ptr: *T, o: Ordering) -> T
+///   @atomicStore($T, ptr: *T, v: T, o: Ordering)
 /// The `Ordering` arg MUST be a constant enum literal — read statically here and
 /// baked into the op (the op carries no runtime ordering operand). `T` must be a
 /// scalar of size 1/2/4/8/16. Both constraints are loud diagnostics, never silent
 /// defaults. Returns null if `name` is not an atomic intrinsic.
 ///
 /// Gated on the registry: a name reaches the ordering/type checks below only if
-/// `modules/std/atomic.sx` declares it as an intrinsic. A user function named
-/// `atomicLoad` is an ordinary call, not a silently-hijacked atomic op.
+/// `modules/std/atomic.sx` declares it as an intrinsic.
 pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     if (!isAtomicIntrinsic(name)) return null;
 
     // Fence is a standalone op — ordering only, no `$T`/ptr (different shape).
-    if (std.mem.eql(u8, name, "atomicFence")) {
+    if (std.mem.eql(u8, name, "@atomicFence")) {
         if (c.args.len != 1) {
             if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "atomicFence expects 1 argument", .{});
             return Ref.none;
@@ -3195,11 +3194,11 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         return Ref.none; // fence has a void result
     }
 
-    const is_load = std.mem.eql(u8, name, "atomicLoad");
-    const is_store = std.mem.eql(u8, name, "atomicStore");
-    const rmw_kind = rmwKindFromName(name); // atomicFetchAdd/Sub/And/Or/Xor/Min/Max
-    const is_cmpxchg = std.mem.eql(u8, name, "atomicCmpxchg");
-    const is_cmpxchg_weak = std.mem.eql(u8, name, "atomicCmpxchgWeak");
+    const is_load = std.mem.eql(u8, name, "@atomicLoad");
+    const is_store = std.mem.eql(u8, name, "@atomicStore");
+    const rmw_kind = rmwKindFromName(name); // @atomicFetchAdd/Sub/And/Or/Xor/Min/Max
+    const is_cmpxchg = std.mem.eql(u8, name, "@atomicCmpxchg");
+    const is_cmpxchg_weak = std.mem.eql(u8, name, "@atomicCmpxchgWeak");
     const is_cas = is_cmpxchg or is_cmpxchg_weak;
     if (!is_load and !is_store and rmw_kind == null and !is_cas) return null;
 
@@ -3350,8 +3349,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .pointeeType,
-        .isFlags,
+        .@"@pointeeType",
+        .@"@isFlags",
         .@"@errorName",
         .@"@errorPayload",
         .@"@len",
@@ -3363,84 +3362,84 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
-        .anyElement,
-        .rawAnyData,
-        .rawMakeAny,
+        .@"@anyElement",
+        .@"@rawAnyData",
+        .@"@rawMakeAny",
         .@"@typeInfo",
         .@"@sqrt",
         .@"@sin",
         .@"@cos",
         .@"@floor",
-        .atomicLoad,
-        .atomicStore,
-        .atomicFetchAdd,
-        .atomicFetchSub,
-        .atomicFetchAnd,
-        .atomicFetchOr,
-        .atomicFetchXor,
-        .atomicFetchMin,
-        .atomicFetchMax,
-        .atomicSwap,
-        .atomicFence,
-        .atomicCmpxchg,
-        .atomicCmpxchgWeak,
-        .rawDeclareType,
-        .rawRegisterType,
-        .cObjectPaths,
-        .linkLibraries,
-        .emitObject,
-        .link,
-        .buildOutput,
-        .buildTarget,
-        .buildFrameworks,
-        .buildFlags,
-        .buildOptions,
-        .addLinkFlag,
-        .addFramework,
-        .setOutputPath,
-        .setWasmShell,
-        .addAssetDir,
-        .assetDirCount,
-        .assetDirSrcAt,
-        .assetDirDestAt,
-        .setPostLinkModule,
-        .binaryPath,
-        .setBundlePath,
-        .setBundleId,
-        .setCodesignIdentity,
-        .setProvisioningProfile,
-        .bundlePath,
-        .bundleId,
-        .codesignIdentity,
-        .provisioningProfile,
-        .targetTriple,
-        .isMacos,
-        .isIos,
-        .isIosDevice,
-        .isIosSimulator,
-        .isAndroid,
-        .frameworkCount,
-        .frameworkAt,
-        .frameworkPathCount,
-        .frameworkPathAt,
-        .setManifestPath,
-        .setKeystorePath,
-        .manifestPath,
-        .keystorePath,
-        .jniMainCount,
-        .jniMainRuntimePathAt,
-        .jniMainJavaSourceAt,
-        .onBuild,
-        .rawIntern,
-        .rawTextOf,
-        .rawFindType,
-        .rawTypeKind,
-        .rawTypeName,
-        .rawFieldCount,
-        .rawFieldName,
-        .rawFieldType,
-        .rawVariantValue,
-        .rawPointerTo,
+        .@"@atomicLoad",
+        .@"@atomicStore",
+        .@"@atomicFetchAdd",
+        .@"@atomicFetchSub",
+        .@"@atomicFetchAnd",
+        .@"@atomicFetchOr",
+        .@"@atomicFetchXor",
+        .@"@atomicFetchMin",
+        .@"@atomicFetchMax",
+        .@"@atomicSwap",
+        .@"@atomicFence",
+        .@"@atomicCmpxchg",
+        .@"@atomicCmpxchgWeak",
+        .@"@rawDeclareType",
+        .@"@rawRegisterType",
+        .@"@cObjectPaths",
+        .@"@linkLibraries",
+        .@"@emitObject",
+        .@"@link",
+        .@"@buildOutput",
+        .@"@buildTarget",
+        .@"@buildFrameworks",
+        .@"@buildFlags",
+        .@"@buildOptions",
+        .@"@addLinkFlag",
+        .@"@addFramework",
+        .@"@setOutputPath",
+        .@"@setWasmShell",
+        .@"@addAssetDir",
+        .@"@assetDirCount",
+        .@"@assetDirSrcAt",
+        .@"@assetDirDestAt",
+        .@"@setPostLinkModule",
+        .@"@binaryPath",
+        .@"@setBundlePath",
+        .@"@setBundleId",
+        .@"@setCodesignIdentity",
+        .@"@setProvisioningProfile",
+        .@"@bundlePath",
+        .@"@bundleId",
+        .@"@codesignIdentity",
+        .@"@provisioningProfile",
+        .@"@targetTriple",
+        .@"@isMacos",
+        .@"@isIos",
+        .@"@isIosDevice",
+        .@"@isIosSimulator",
+        .@"@isAndroid",
+        .@"@frameworkCount",
+        .@"@frameworkAt",
+        .@"@frameworkPathCount",
+        .@"@frameworkPathAt",
+        .@"@setManifestPath",
+        .@"@setKeystorePath",
+        .@"@manifestPath",
+        .@"@keystorePath",
+        .@"@jniMainCount",
+        .@"@jniMainRuntimePathAt",
+        .@"@jniMainJavaSourceAt",
+        .@"@onBuild",
+        .@"@rawIntern",
+        .@"@rawTextOf",
+        .@"@rawFindType",
+        .@"@rawTypeKind",
+        .@"@rawTypeName",
+        .@"@rawFieldCount",
+        .@"@rawFieldName",
+        .@"@rawFieldType",
+        .@"@rawVariantValue",
+        .@"@rawPointerTo",
         => false,
     };
 }
@@ -3690,14 +3689,14 @@ fn atomicOrderingRank(o: inst_mod.AtomicOrdering) u8 {
 
 /// Map an `atomicFetch*` intrinsic name to its RMW kind (null if not one).
 fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
-    if (std.mem.eql(u8, name, "atomicFetchAdd")) return .add;
-    if (std.mem.eql(u8, name, "atomicFetchSub")) return .sub;
-    if (std.mem.eql(u8, name, "atomicFetchAnd")) return .@"and";
-    if (std.mem.eql(u8, name, "atomicFetchOr")) return .@"or";
-    if (std.mem.eql(u8, name, "atomicFetchXor")) return .xor;
-    if (std.mem.eql(u8, name, "atomicFetchMin")) return .min;
-    if (std.mem.eql(u8, name, "atomicFetchMax")) return .max;
-    if (std.mem.eql(u8, name, "atomicSwap")) return .xchg; // swap = exchange RMW
+    if (std.mem.eql(u8, name, "@atomicFetchAdd")) return .add;
+    if (std.mem.eql(u8, name, "@atomicFetchSub")) return .sub;
+    if (std.mem.eql(u8, name, "@atomicFetchAnd")) return .@"and";
+    if (std.mem.eql(u8, name, "@atomicFetchOr")) return .@"or";
+    if (std.mem.eql(u8, name, "@atomicFetchXor")) return .xor;
+    if (std.mem.eql(u8, name, "@atomicFetchMin")) return .min;
+    if (std.mem.eql(u8, name, "@atomicFetchMax")) return .max;
+    if (std.mem.eql(u8, name, "@atomicSwap")) return .xchg; // swap = exchange RMW
     return null;
 }
 
@@ -3719,8 +3718,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@alignOf",
         .@"@typeOf",
         .@"@typeName",
-        .pointeeType,
-        .isFlags,
+        .@"@pointeeType",
+        .@"@isFlags",
         .@"@errorName",
         .@"@errorPayload",
         .@"@len",
@@ -3732,9 +3731,9 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
-        .anyElement,
-        .rawAnyData,
-        .rawMakeAny,
+        .@"@anyElement",
+        .@"@rawAnyData",
+        .@"@rawMakeAny",
         .@"@typeInfo",
         .@"@isComptime",
         .@"@error",
@@ -3749,19 +3748,19 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@sin",
         .@"@cos",
         .@"@floor",
-        .atomicLoad,
-        .atomicStore,
-        .atomicFetchAdd,
-        .atomicFetchSub,
-        .atomicFetchAnd,
-        .atomicFetchOr,
-        .atomicFetchXor,
-        .atomicFetchMin,
-        .atomicFetchMax,
-        .atomicSwap,
-        .atomicFence,
-        .atomicCmpxchg,
-        .atomicCmpxchgWeak,
+        .@"@atomicLoad",
+        .@"@atomicStore",
+        .@"@atomicFetchAdd",
+        .@"@atomicFetchSub",
+        .@"@atomicFetchAnd",
+        .@"@atomicFetchOr",
+        .@"@atomicFetchXor",
+        .@"@atomicFetchMin",
+        .@"@atomicFetchMax",
+        .@"@atomicSwap",
+        .@"@atomicFence",
+        .@"@atomicCmpxchg",
+        .@"@atomicCmpxchgWeak",
         .@"@volatileLoad",
         .@"@volatileStore",
         .@"@printf",
@@ -3769,63 +3768,63 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@vaArg",
         .@"@vaCopy",
         .@"@vaEnd",
-        .rawDeclareType,
-        .rawRegisterType,
-        .cObjectPaths,
-        .linkLibraries,
-        .emitObject,
-        .link,
-        .buildOutput,
-        .buildTarget,
-        .buildFrameworks,
-        .buildFlags,
-        .buildOptions,
-        .addLinkFlag,
-        .addFramework,
-        .setOutputPath,
-        .setWasmShell,
-        .addAssetDir,
-        .assetDirCount,
-        .assetDirSrcAt,
-        .assetDirDestAt,
-        .setPostLinkModule,
-        .binaryPath,
-        .setBundlePath,
-        .setBundleId,
-        .setCodesignIdentity,
-        .setProvisioningProfile,
-        .bundlePath,
-        .bundleId,
-        .codesignIdentity,
-        .provisioningProfile,
-        .targetTriple,
-        .isMacos,
-        .isIos,
-        .isIosDevice,
-        .isIosSimulator,
-        .isAndroid,
-        .frameworkCount,
-        .frameworkAt,
-        .frameworkPathCount,
-        .frameworkPathAt,
-        .setManifestPath,
-        .setKeystorePath,
-        .manifestPath,
-        .keystorePath,
-        .jniMainCount,
-        .jniMainRuntimePathAt,
-        .jniMainJavaSourceAt,
-        .onBuild,
-        .rawIntern,
-        .rawTextOf,
-        .rawFindType,
-        .rawTypeKind,
-        .rawTypeName,
-        .rawFieldCount,
-        .rawFieldName,
-        .rawFieldType,
-        .rawVariantValue,
-        .rawPointerTo,
+        .@"@rawDeclareType",
+        .@"@rawRegisterType",
+        .@"@cObjectPaths",
+        .@"@linkLibraries",
+        .@"@emitObject",
+        .@"@link",
+        .@"@buildOutput",
+        .@"@buildTarget",
+        .@"@buildFrameworks",
+        .@"@buildFlags",
+        .@"@buildOptions",
+        .@"@addLinkFlag",
+        .@"@addFramework",
+        .@"@setOutputPath",
+        .@"@setWasmShell",
+        .@"@addAssetDir",
+        .@"@assetDirCount",
+        .@"@assetDirSrcAt",
+        .@"@assetDirDestAt",
+        .@"@setPostLinkModule",
+        .@"@binaryPath",
+        .@"@setBundlePath",
+        .@"@setBundleId",
+        .@"@setCodesignIdentity",
+        .@"@setProvisioningProfile",
+        .@"@bundlePath",
+        .@"@bundleId",
+        .@"@codesignIdentity",
+        .@"@provisioningProfile",
+        .@"@targetTriple",
+        .@"@isMacos",
+        .@"@isIos",
+        .@"@isIosDevice",
+        .@"@isIosSimulator",
+        .@"@isAndroid",
+        .@"@frameworkCount",
+        .@"@frameworkAt",
+        .@"@frameworkPathCount",
+        .@"@frameworkPathAt",
+        .@"@setManifestPath",
+        .@"@setKeystorePath",
+        .@"@manifestPath",
+        .@"@keystorePath",
+        .@"@jniMainCount",
+        .@"@jniMainRuntimePathAt",
+        .@"@jniMainJavaSourceAt",
+        .@"@onBuild",
+        .@"@rawIntern",
+        .@"@rawTextOf",
+        .@"@rawFindType",
+        .@"@rawTypeKind",
+        .@"@rawTypeName",
+        .@"@rawFieldCount",
+        .@"@rawFieldName",
+        .@"@rawFieldType",
+        .@"@rawVariantValue",
+        .@"@rawPointerTo",
         => false,
     };
 }
@@ -4380,7 +4379,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
 
     // `declare(name)` and `define(handle, info)` are ordinary sx functions
-    // (`modules/std/meta.sx`) written over the `intrinsic` primitives
+    // (`modules/std/meta.sx`) written over the `@` primitives
     // (`declare_type` / `register_type`), so they are not intercepted here.
     // (`preregisterForwardTypes` scans for the literal `declare("Name")`
     // spelling so a `*Name` self-reference forward-registers before the body
@@ -4513,7 +4512,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const b = self.resolveTypeArg(c.args[1]);
         return self.builder.constBool(a == b);
     }
-    if (std.mem.eql(u8, name, "isFlags")) {
+    if (std.mem.eql(u8, name, "@isFlags")) {
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constBool(false);
@@ -4575,8 +4574,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@coerce" => return lowerCoerceIntrinsic(self, c),
         else => {},
     };
-    if (std.mem.eql(u8, name, "anyElement")) {
-        // anyElement(elem, av, idx) → element view into an array/vector held
+    if (std.mem.eql(u8, name, "@anyElement")) {
+        // @anyElement(elem, av, idx) → element view into an array/vector held
         // by `av`: pure stride math, `{elem, av.data + idx * @sizeOf(elem)}`.
         // A static `elem` folds its size and tag to constants; a runtime Type
         // reads the rt size table. Bounds are the caller's (same OOB rule as
@@ -4606,14 +4605,14 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const addr = self.builder.add(base, stride, .i64);
         return self.builder.makeAny(tag, addr);
     }
-    if (std.mem.eql(u8, name, "rawAnyData")) {
-        // rawAnyData(av) → the view's data pointer (raw `any` layer).
+    if (std.mem.eql(u8, name, "@rawAnyData")) {
+        // @rawAnyData(av) → the view's data pointer (raw `any` layer).
         if (c.args.len < 1) return self.builder.constInt(0, .i64);
         const av = self.lowerExpr(c.args[0]);
         return self.builder.anyData(av, self.module.types.ptrTo(.void));
     }
-    if (std.mem.eql(u8, name, "rawMakeAny")) {
-        // rawMakeAny(tp, data) → assemble a view (raw `any` layer, UNCHECKED
+    if (std.mem.eql(u8, name, "@rawMakeAny")) {
+        // @rawMakeAny(tp, data) → assemble a view (raw `any` layer, UNCHECKED
         // at runtime: the caller asserts `data` points at a live, aligned
         // value of `tp`). The data arg lowers under its DECLARED param type
         // (*void) — without this, an ambient target (e.g. this call in
@@ -4638,7 +4637,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         });
         if (!data_is_ptr) {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, c.args[1].span, "rawMakeAny expects a pointer for 'data' (got '{s}') — pass the value's address (`*v`, or a rawAnyData result)", .{self.formatTypeName(data_ty)});
+                d.addFmt(.err, c.args[1].span, "@rawMakeAny expects a pointer for 'data' (got '{s}') — pass the value's address (`*v`, or a @rawAnyData result)", .{self.formatTypeName(data_ty)});
             }
             return self.builder.constInt(0, .any);
         }
@@ -4670,8 +4669,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.builder.constType(arg_ty);
         }
     }
-    if (std.mem.eql(u8, name, "pointeeType")) {
-        // VALUE-position `pointeeType(P)` — a comptime Type value. It ALSO
+    if (std.mem.eql(u8, name, "@pointeeType")) {
+        // VALUE-position `@pointeeType(P)` — a comptime Type value. It ALSO
         // resolves in TYPE position (a type-arg slot routes through
         // `resolveTypeArg` → `resolveTypeCallWithBindings`); this is the
         // value-position twin (e.g. assigned to a `Type` field like
@@ -4728,7 +4727,7 @@ pub fn persistEnvType(self: *Lowering, name: []const u8, ty: TypeId, span: ast.S
 }
 
 /// Guard for the type-introspection builtins (`@sizeOf`, `@alignOf`,
-/// `@typeName`, `@typeEq`, `isFlags`): every argument must denote a type. A
+/// `@typeName`, `@typeEq`, `@isFlags`): every argument must denote a type. A
 /// value argument is rejected with a diagnostic rather than silently
 /// reinterpreted as a TypeId index or sized via its `typeof`.
 ///
@@ -4742,7 +4741,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
     else if (std.mem.eql(u8, name, "@sizeOf") or
         std.mem.eql(u8, name, "@alignOf") or
         std.mem.eql(u8, name, "@typeName") or
-        std.mem.eql(u8, name, "isFlags"))
+        std.mem.eql(u8, name, "@isFlags"))
         1
     else
         return null;
@@ -4785,7 +4784,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
     if (std.mem.eql(u8, name, "@typeName"))
         return self.builder.constString(self.module.types.internString(""));
-    if (std.mem.eql(u8, name, "@typeEq") or std.mem.eql(u8, name, "isFlags"))
+    if (std.mem.eql(u8, name, "@typeEq") or std.mem.eql(u8, name, "@isFlags"))
         return self.builder.constBool(false);
     return self.builder.constInt(0, .i64);
 }
@@ -4859,7 +4858,7 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
 /// declared parameter list. `supplied` counts the args as they bind to
 /// params — receiver included for dot-dispatch, defaults not
 /// appended. Returns true when a diagnostic was emitted (the call must
-/// not lower). Pack / comptime / `#compiler` / `intrinsic` callees bind
+/// not lower). Pack / comptime / `#compiler` / intrinsic callees bind
 /// args through their own dispatch and are exempt.
 pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []const u8, supplied: usize, has_receiver: bool, span: ast.Span) bool {
     if (hasComptimeParams(fd) or isPackFn(fd)) return false;

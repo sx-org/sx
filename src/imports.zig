@@ -412,7 +412,7 @@ pub const ResolvedModule = struct {
     /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
     /// const caches) are per-source — that is what prevents same-name collapse for
     /// types/aliases and supports same-name value consts. So is every
-    /// compiler-gated declaration — an `@` name, or an `intrinsic` body — whose
+    /// compiler-gated declaration — an `@` name — whose
     /// declaration-site gate (the contract registry, the intrinsic registry) runs
     /// in lowering and must see each author. Everything
     /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed

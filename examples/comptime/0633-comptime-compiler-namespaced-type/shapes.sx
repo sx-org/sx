@@ -3,7 +3,7 @@
 @import "modules/std/meta.sx";   // rawDeclareType / rawRegisterType / Member
 
 buildSuit :: () -> Type {
-    return rawRegisterType(rawDeclareType("Suit"), 2, .[   // kind 2 = actual enum
+    return @rawRegisterType(@rawDeclareType("Suit"), 2, .[   // kind 2 = actual enum
         Member{ name = "hearts", ty = void },
         Member{ name = "spades", ty = void },
     ]);
