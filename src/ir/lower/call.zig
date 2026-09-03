@@ -4068,15 +4068,27 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     self.target_type = saved_target;
     const src_ty = self.builder.getRefType(val);
     if (src_ty == .any) return boxedAs(self, val, dst, c.callee.span);
+    // Interface re-erasure is not a conversion: it is the assertion `p.(Q)`.
+    const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
+    if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) return refuseAs(self, src_ty, dst, c.callee.span);
     switch (self.coercionResolver().classify(src_ty, dst)) {
         .no_op => return val,
         .unbox_any => unreachable,
-        .none, .closure_to_fn_reject, .unique_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@as has no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst) });
-            return self.builder.constUndef(dst);
+        .closure_to_fn_reject, .unique_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => return refuseAs(self, src_ty, dst, c.callee.span),
+        else => {
+            // The explicit ladder carries the modeled puns (same-width integer
+            // signedness, pointer words); a value it passes through untyped has
+            // no conversion.
+            const converted = self.coerceExplicit(val, src_ty, dst);
+            if (self.builder.getRefType(converted) != dst) return refuseAs(self, src_ty, dst, c.callee.span);
+            return converted;
         },
-        else => return self.coerceExplicit(val, src_ty, dst),
     }
+}
+
+fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
+    if (self.diagnostics) |d| d.addFmt(.err, span, "@as has no conversion from '{s}' to '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst) });
+    return self.builder.constUndef(dst);
 }
 
 /// The scalar sources a boxed `@as` dispatches over.
@@ -4102,6 +4114,8 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         const plan = self.coercionResolver().classify(s, dst);
         const converts = switch (plan) {
             .no_op, .widen, .narrow, .int_to_float, .float_to_int, .int_to_enum, .enum_to_int, .optional_wrap => true,
+            // A same-width integer pun (`u64` → `i64`) is the explicit ladder's bitcast.
+            .none => self.isIntEx(s) and self.isIntEx(dst) and self.typeBitsEx(s) == self.typeBitsEx(dst),
             else => false,
         };
         if (!converts) continue;

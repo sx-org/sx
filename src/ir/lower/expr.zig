@@ -1976,10 +1976,6 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
         const info = self.module.types.get(obj_ty);
         switch (info) {
             .@"enum" => |u| if (u.hasPayload()) {
-                // .tag → extract the enum tag value with the correct tag type
-                if (std.mem.eql(u8, field, "tag")) {
-                    return self.builder.emit(.{ .enum_tag = .{ .operand = obj } }, u.tag_type);
-                }
                 for (u.variants, 0..) |v, i| {
                     if (v.name == field_name_id) {
                         return self.builder.emit(.{ .enum_payload = .{ .base = obj, .field_index = @intCast(i) } }, v.payload);
