@@ -1,6 +1,5 @@
-// A module-level value is a value wherever a type could also stand: `is`
-// classifies a global `any` by its runtime tag and a module const by its
-// type, and a type alias stays a type.
+// A module-level `any` and a module const are values under `is` (the
+// global's runtime tag, the const's type). A type alias remains a type.
 @import "modules/std.sx";
 
 g : any = 5;

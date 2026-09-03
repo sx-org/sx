@@ -261,12 +261,10 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 /// Dynamic shapes (index_expr, field_access, runtime locals,
 /// etc.) fall to the alternative path that emits a builtin_call.
 
-/// A bare name is a static type unless a value visible from the querying
-/// module binds it: a bound generic parameter answers first (a generic body
-/// lowers in its caller's visibility, where a same-named value may be in
-/// view), then a local, a module-level global, or a module const. A const
-/// whose own author also registered the name as a type alias (`Ptr :: *u8`,
-/// `Both :: A | B`) is the type it names.
+/// A generic body lowers in its caller's visibility, where a same-named
+/// value may be in view, so a bound generic parameter answers first.
+/// A const whose author also registered the name as a type alias
+/// (`Both :: A | B`) is the type it names.
 fn staticTypeName(self: *Lowering, name: []const u8) bool {
     if (self.type_bindings) |tb| {
         if (tb.contains(name)) return true;
