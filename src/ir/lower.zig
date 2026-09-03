@@ -3713,6 +3713,7 @@ pub const Lowering = struct {
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
+    pub const anyBoxType = lower_coerce.anyBoxType;
     pub const refuseRvalueInterfaceErasure = lower_coerce.refuseRvalueInterfaceErasure;
     pub const refuseNullAtNonOptional = lower_coerce.refuseNullAtNonOptional;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;

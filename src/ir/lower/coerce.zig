@@ -579,6 +579,29 @@ pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
     return self.builder.makeAny(tid_ref, ctx_ref);
 }
 
+/// The type a value boxes under: the tag space has only the builtin int
+/// widths, so an arbitrary-width int boxes as the builtin it widens to.
+pub fn anyBoxType(self: *Lowering, src_ty: TypeId) TypeId {
+    if (src_ty.isBuiltin()) return src_ty;
+    return switch (self.module.types.get(src_ty)) {
+        .signed => |w| switch (w) {
+            8 => .i8,
+            16 => .i16,
+            32 => .i32,
+            64 => .i64,
+            else => if (w <= 32) TypeId.i32 else TypeId.i64,
+        },
+        .unsigned => |w| switch (w) {
+            8 => .u8,
+            16 => .u16,
+            32 => .u32,
+            64 => .u64,
+            else => if (w <= 32) TypeId.u32 else TypeId.u64,
+        },
+        else => src_ty,
+    };
+}
+
 /// Box a concrete value into an `any` view `{tag, data}`. `any` is a
 /// type-erased BORROW: the data slot holds the value's ADDRESS.
 /// - An addressable lvalue operand (same discipline as protocol erasure:
@@ -610,34 +633,8 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     // Tag-normalize arbitrary-width ints (the tag space only has the
     // builtin widths; a borrow of a 3-byte value under a 4-byte tag
     // would overread).
-    var box_ty = src_ty;
-    var v = val;
-    if (!src_ty.isBuiltin()) {
-        const info = self.module.types.get(src_ty);
-        const norm: ?TypeId = switch (info) {
-            .signed => |w| switch (w) {
-                8 => .i8,
-                16 => .i16,
-                32 => .i32,
-                64 => .i64,
-                else => if (w <= 32) TypeId.i32 else TypeId.i64,
-            },
-            .unsigned => |w| switch (w) {
-                8 => .u8,
-                16 => .u16,
-                32 => .u32,
-                64 => .u64,
-                else => if (w <= 32) TypeId.u32 else TypeId.u64,
-            },
-            else => null,
-        };
-        if (norm) |n| {
-            if (n != src_ty) {
-                box_ty = n;
-                v = self.builder.widen(val, src_ty, n);
-            }
-        }
-    }
+    const box_ty = anyBoxType(self, src_ty);
+    const v = if (box_ty == src_ty) val else self.builder.widen(val, src_ty, box_ty);
     if (box_ty == src_ty) {
         if (node) |n| {
             if (self.isLvalueExpr(n) and !self.isByValueBindingIdent(n)) {

@@ -1,0 +1,18 @@
+// A module-level `any` global is a static view over its payload: it reads
+// as the value, unboxes by type, and writes through its data pointer land
+// in the payload.
+@import "modules/std.sx";
+
+P :: struct { a: i64; b: f32; }
+
+g : any = 5;
+s : any = "hi";
+p : any = P{ a = 1, b = 2.5 };
+
+main :: () {
+    print("{} {} {}\n", g, s, p);
+    print("{}\n", g.(i64) + 1);
+    q : *i64 = rawAnyData(g).(*i64);
+    q.* = 9;
+    print("{}\n", g);
+}
