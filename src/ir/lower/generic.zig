@@ -260,8 +260,13 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 ///
 /// Dynamic shapes (index_expr, field_access, runtime locals,
 /// etc.) fall to the alternative path that emits a builtin_call.
-/// A generic body lowers in its caller's visibility, where a same-named
-/// value may be in view, so the binding answers first.
+
+/// A bare name is a static type unless a value visible from the querying
+/// module binds it: a bound generic parameter answers first (a generic body
+/// lowers in its caller's visibility, where a same-named value may be in
+/// view), then a local, a module-level global, or a module const. A const
+/// whose own author also registered the name as a type alias (`Ptr :: *u8`,
+/// `Both :: A | B`) is the type it names.
 fn staticTypeName(self: *Lowering, name: []const u8) bool {
     if (self.type_bindings) |tb| {
         if (tb.contains(name)) return true;
@@ -269,12 +274,22 @@ fn staticTypeName(self: *Lowering, name: []const u8) bool {
     if (self.scope) |scope| {
         if (scope.lookup(name) != null) return false;
     }
-    if (self.program_index.type_alias_map.contains(name)) return true;
-    if (self.selectGlobalAuthor(name) == .resolved) return false;
+    switch (self.selectGlobalAuthor(name)) {
+        .resolved, .ambiguous => return false,
+        else => {},
+    }
     return switch (self.selectModuleConst(name)) {
-        .resolved, .ambiguous => false,
+        .resolved => |r| aliasAuthoredIn(self, r.source, name),
+        .ambiguous => false,
         else => true,
     };
+}
+
+/// Whether `source` (the main file when null) registered `name` as a type alias.
+fn aliasAuthoredIn(self: *Lowering, source: ?[]const u8, name: []const u8) bool {
+    const src = source orelse self.main_file orelse return self.program_index.type_alias_map.contains(name);
+    const by_source = self.program_index.type_aliases_by_source.get(src) orelse return false;
+    return by_source.contains(name);
 }
 
 pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
