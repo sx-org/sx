@@ -1,0 +1,12 @@
+// A module-level value is a value wherever a type could also stand: `is`
+// classifies a global `any` by its runtime tag and a module const by its
+// type, and a type alias stays a type.
+@import "modules/std.sx";
+
+g : any = 5;
+K :: 7;
+T :: i64;
+
+main :: () {
+    print("{} {} {} {}\n", g is int, K is int, T is int, @sizeOf(T));
+}

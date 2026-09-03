@@ -264,22 +264,13 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
         .type_expr => |te| {
             if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
-            // A type-keyword name (e.g. `i64`) is always static.
-            // A user-defined name that happens to be in scope as
-            // a runtime variable (`x: Type = i64; type_name(x)`)
-            // is NOT static — route through the dynamic builtin
-            // call so the runtime lookup table fires.
-            if (self.scope) |scope| {
-                if (scope.lookup(te.name) != null) return false;
-            }
-            return true;
+            // A name bound to a VALUE — a local, a module-level global, or a
+            // module const (`x: Type = i64; type_name(x)`) — is not static:
+            // it routes through the dynamic builtin call so the runtime lookup
+            // table fires. A type-keyword name (e.g. `i64`) binds no value.
+            return !self.identifierBindsValue(te.name);
         },
-        .identifier => |id| {
-            if (self.scope) |scope| {
-                if (scope.lookup(id.name) != null) return false;
-            }
-            return true;
-        },
+        .identifier => |id| return !self.identifierBindsValue(id.name),
         .field_access => {
             if (self.aliasedFieldAccess(node)) |aliased| return self.isStaticTypeArg(aliased);
             if (type_bridge.typeInfoProjection(node)) |p| return self.isStaticTypeArg(p.type_arg);
