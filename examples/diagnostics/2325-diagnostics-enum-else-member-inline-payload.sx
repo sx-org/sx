@@ -1,6 +1,6 @@
-// An inline enum is held to the same rule as a named one: an `else` member
-// on a payload enum is diagnosed where the type is spelled, and records no
-// member for a construction to reach.
+// An `else` member on an inline payload enum is diagnosed where the type
+// is spelled.
+// The declaration records no member for a construction to reach.
 @import "modules/std.sx";
 
 main :: () {
