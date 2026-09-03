@@ -2778,10 +2778,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
-        .vectorLanes,
         .@"@tag",
         .@"@as",
-        .@"@conforms",
         .@"@convert",
         .@"@coerce",
         .anyElement,
@@ -3075,10 +3073,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
-        .vectorLanes,
         .@"@tag",
         .@"@as",
-        .@"@conforms",
         .@"@convert",
         .@"@coerce",
         .anyElement,
@@ -3359,10 +3355,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
-        .vectorLanes,
         .@"@tag",
         .@"@as",
-        .@"@conforms",
         .@"@convert",
         .@"@coerce",
         .anyElement,
@@ -3730,10 +3724,8 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@inner",
         .@"@typeEq",
         .@"@unbox",
-        .vectorLanes,
         .@"@tag",
         .@"@as",
-        .@"@conforms",
         .@"@convert",
         .@"@coerce",
         .anyElement,
@@ -4167,31 +4159,6 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
     return b.load(slot, dst);
 }
 
-/// `@conforms(I, v)` — whether `v` conforms to interface `I`. A concrete `v`
-/// folds from whether its methods satisfy `I` (the fact `is` answers); an
-/// interface handle or a boxed `v` reads `I`'s conformance table by the
-/// referent's type at runtime.
-fn lowerConformsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
-    if (c.args.len != 2) {
-        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@conforms takes 2 arguments, got {d}", .{c.args.len});
-        return self.builder.constBool(false);
-    }
-    const iface = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
-    const kind = if (iface == .unresolved) null else self.protocolKindOf(iface);
-    if (kind == null or kind.? != .erased) {
-        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@conforms asks about an interface, got '{s}'", .{if (iface == .unresolved) "a type unknown at compile time" else self.formatTypeName(iface)});
-        return self.builder.constBool(false);
-    }
-    const vty = self.inferExprType(c.args[1]);
-    const val = self.lowerExpr(c.args[1]);
-    if (vty == .any) {
-        return self.conformanceAsk(self.builder.emit(.{ .struct_get = .{ .base = val, .field_index = 1 } }, .type_value), iface);
-    }
-    if (self.getProtocolInfo(vty) != null) return self.conformanceAsk(self.protocolTypeIdWord(val), iface);
-    if (self.conformanceAnswer(iface, vty)) |ok| return self.builder.constBool(ok);
-    return self.builder.emit(.{ .placeholder = self.module.types.internString("conforms-await") }, .bool);
-}
-
 /// `@convert(T, v, alloc = context.allocator)` — the `impl Into(T) for S`
 /// conversion, funded from `alloc`. An interface or open-set target has no
 /// allocating conversion; a pair with no impl is a diagnostic.
@@ -4276,6 +4243,19 @@ fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Cal
             entry.name, entry.arity, if (entry.arity == 1) @as([]const u8, "") else "s", c.args.len,
         });
         return sentinel;
+    }
+    // A spelled type folds to its part count. A partless spelled type is an
+    // error, where a runtime tag of that kind answers 0. A module-scope value
+    // is not in the local scope, so the static test alone does not tell it
+    // from a type name: only an argument that infers to no value type folds.
+    if (id == .@"@len" and self.isStaticTypeArg(c.args[0])) {
+        const arg_ty = self.inferExprType(c.args[0]);
+        const ty = if (arg_ty == .type_value or arg_ty == .unresolved) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+        if (ty != .unresolved) {
+            if (self.module.types.memberCount(ty)) |n| return self.builder.constInt(n, .i64);
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@len of '{s}': the type has no parts", .{self.formatTypeName(ty)});
+            return sentinel;
+        }
     }
     const recv = boxedReceiver(self, c.args[0]);
     if (id == .@"@len") return boxedFatMerge(self, recv, boxedFatLen, boxedTableCount);
@@ -4529,27 +4509,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const b = self.resolveTypeArg(c.args[1]);
         return self.builder.constBool(a == b);
     }
-    if (std.mem.eql(u8, name, "vectorLanes")) {
-        // vectorLanes(T) → the lane COUNT. The one vector length the flat
-        // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
-        // occupy 4). Static arg folds; a runtime Type reads the lane table
-        // (non-vector tags answer 0 — kind discrimination is `@typeInfo`'s
-        // job). A static NON-vector is a loud error: `.len` is the right
-        // spelling.
-        if (c.args.len < 1) return self.builder.constInt(0, .i64);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            const arg_ref = self.lowerExpr(c.args[0]);
-            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
-            return self.builder.callBuiltin(.rt_vector_lanes, args_owned, .i64);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (!ty.isBuiltin() and ty != .unresolved) {
-            const info = self.module.types.get(ty);
-            if (info == .vector) return self.builder.constInt(@intCast(info.vector.length), .i64);
-        }
-        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "vectorLanes expects a vector type; '{s}' is not one", .{self.formatTypeName(ty)});
-        return self.builder.constInt(0, .i64);
-    }
     if (std.mem.eql(u8, name, "isFlags")) {
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
@@ -4608,7 +4567,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@unbox" => return lowerUnboxIntrinsic(self, c),
         .@"@tag" => return lowerTagIntrinsic(self, c),
         .@"@as" => return lowerAsIntrinsic(self, c),
-        .@"@conforms" => return lowerConformsIntrinsic(self, c),
         .@"@convert" => return lowerConvertIntrinsic(self, c),
         .@"@coerce" => return lowerCoerceIntrinsic(self, c),
         else => {},

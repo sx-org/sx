@@ -24,12 +24,6 @@ isFlags :: ($T: Type) -> bool intrinsic;
 // An error value's live payload as an `any` view. A payload-free member
 // views as `void`.
 @errorPayload :: (e: $T) -> any;
-// A vector's lane COUNT (`vectorLanes(@Vector(3,f32))` -> 3). The one length
-// the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
-// size / element size over-counts (3 lanes read as 4). Accepts a runtime Type
-// (lane-table read); any non-vector tag answers 0 at runtime — kind
-// discrimination is `@typeInfo`'s job, like the count tables.
-vectorLanes :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
 // `{ elem,  rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
@@ -42,7 +36,8 @@ anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 // views the i-th of those parts: a member at its layout offset — a payload
 // enum's members share the payload offset — or an element striding from the
 // in-place storage or from the buffer a fat pointer names. `@inner` views an
-// optional's payload, null when it is absent. Each result borrows the boxed
+// optional's payload, null when it is absent. A `Type` receiver, spelled or a
+// runtime value, answers that type's part count. Each result borrows the boxed
 // storage, so it aliases later writes and copies nothing. An index past the
 // count is UB.
 @len :: (v: any) -> i64;
@@ -64,10 +59,6 @@ anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 // ladder except `Into` and the unchecked unbox. A boxed `v` converts by its
 // runtime type; a pairing with no conversion stops the program.
 @as :: ($T: Type, v: $S) -> T;
-// Whether `v` conforms to interface `I`: a concrete `S` folds at compile
-// time; an interface handle or a boxed `v` reads the interface's conformance
-// table by the referent's type.
-@conforms :: ($I: Type, v: $S) -> bool;
 // The `impl Into(T) for S` conversion of `v`, funded from `alloc`.
 @convert :: ($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T;
 // The ladder the cast sugars enter: `@as`, then `@convert` from the context
@@ -438,7 +429,7 @@ ErrorInfo    :: struct { members: []MemberInfo; }
 IntInfo      :: struct { bits: i64; signed: bool; }
 FloatInfo    :: struct { bits: i64; }
 ArrayInfo    :: struct { elem: Type; len: i64; }
-VectorInfo   :: struct { elem: Type; lanes: i64; }
+VectorInfo   :: struct { elem: Type; len: i64; }
 SliceInfo    :: struct { elem: Type; }
 PointerInfo  :: struct { pointee: Type; }
 OptionalInfo :: struct { inner: Type; }

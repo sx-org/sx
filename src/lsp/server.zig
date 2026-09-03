@@ -728,7 +728,6 @@ pub const Server = struct {
             .{ .label = "@typeEq", .detail = "(A: Type, B: Type) -> bool" },
             .{ .label = "isFlags", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "pointeeType", .detail = "($P: Type) -> Type — *X -> X" },
-            .{ .label = "vectorLanes", .detail = "(T | tp: Type) -> i64 — vector lane count" },
             .{ .label = "anyElement", .detail = "(elem: Type, av: any, idx: i64) -> any — array/vector element view" },
             .{ .label = "rawAnyData", .detail = "(av: any) -> *void — the view's data pointer" },
             .{ .label = "rawMakeAny", .detail = "(tp: Type, data: *void) -> any — assemble a view (unchecked)" },
@@ -1215,7 +1214,6 @@ pub const Server = struct {
         const builtin_sigs = [_]struct { name: []const u8, label: []const u8, params: []const []const u8 }{
             .{ .name = "@typeOf", .label = "@typeOf(val: $T) -> Type", .params = &.{"val: $T"} },
             .{ .name = "@typeName", .label = "@typeName($T: Type) -> string", .params = &.{"$T: Type"} },
-            .{ .name = "vectorLanes", .label = "vectorLanes(T: Type) -> i64", .params = &.{"T: Type"} },
             .{ .name = "anyElement", .label = "anyElement(elem: Type, av: any, idx: i64) -> any", .params = &.{ "elem: Type", "av: any", "idx: i64" } },
             .{ .name = "rawAnyData", .label = "rawAnyData(av: any) -> *void", .params = &.{"av: any"} },
             .{ .name = "rawMakeAny", .label = "rawMakeAny(tp: Type, data: *void) -> any", .params = &.{ "tp: Type", "data: *void" } },

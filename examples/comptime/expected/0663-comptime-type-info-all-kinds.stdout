@@ -4,7 +4,7 @@ int bits=16 signed=true
 int bits=32 signed=false
 float bits=32
 array len=4 elem=i64
-vector lanes=3 elem=f32
+vector len=3 elem=f32
 slice elem=i64
 pointer pointee=Padded
 optional inner=i32
