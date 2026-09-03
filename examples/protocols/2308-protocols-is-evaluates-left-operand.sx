@@ -1,4 +1,4 @@
-// `@conforms` evaluates its value argument even when the answer folds.
+// `is` evaluates its left operand even when the answer folds.
 @import "modules/std.sx";
 
 I :: interface { a :: (self: *Self) -> i64; }
@@ -13,6 +13,6 @@ tick :: () -> W {
 }
 
 main :: () {
-    _ = @conforms(I, tick());
+    _ = tick() is I;
     print("{}\n", n);
 }

@@ -94,14 +94,13 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { size, alignment, flags, lanes, member_count, tag_width, slice_len_info, optional_flag };
+    pub const ScalarTableKind = enum { size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
             .size => .{ &self.e.type_size_array, &self.e.type_size_array_len },
             .alignment => .{ &self.e.type_align_array, &self.e.type_align_array_len },
             .flags => .{ &self.e.is_flags_array, &self.e.is_flags_array_len },
-            .lanes => .{ &self.e.vector_lanes_array, &self.e.vector_lanes_array_len },
             .member_count => .{ &self.e.member_count_array, &self.e.member_count_array_len },
             .tag_width => .{ &self.e.variant_tag_width_array, &self.e.variant_tag_width_array_len },
             .slice_len_info => .{ &self.e.slice_len_info_array, &self.e.slice_len_info_array_len },
@@ -127,13 +126,6 @@ pub const Reflection = struct {
                     }
                     break :blk 0;
                 },
-                .lanes => blk: {
-                    if (!tid.isBuiltin()) {
-                        const info = tt.get(tid);
-                        if (info == .vector) break :blk @intCast(info.vector.length);
-                    }
-                    break :blk 0;
-                },
                 .member_count => @intCast(tt.memberCount(tid) orelse 0),
                 // Sign-encoded (negative = sign-extend); the i64 bit pattern.
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
@@ -149,7 +141,6 @@ pub const Reflection = struct {
             .size => "__sx_type_sizes",
             .alignment => "__sx_type_aligns",
             .flags => "__sx_type_flag_bits",
-            .lanes => "__sx_vector_lanes",
             .member_count => "__sx_member_counts",
             .tag_width => "__sx_variant_tag_widths",
             .slice_len_info => "__sx_slice_len_infos",

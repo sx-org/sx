@@ -20,7 +20,7 @@ describe :: ($T: Type) -> string {
         case .int: |ii| { return format("int bits={} signed={}", ii.bits, ii.signed); }
         case .float: |fi| { return format("float bits={}", fi.bits); }
         case .array: |ai| { return format("array len={} elem={}", ai.len, @typeName(ai.elem)); }
-        case .vector: |vi| { return format("vector lanes={} elem={}", vi.lanes, @typeName(vi.elem)); }
+        case .vector: |vi| { return format("vector len={} elem={}", vi.len, @typeName(vi.elem)); }
         case .slice: |sl| { return format("slice elem={}", @typeName(sl.elem)); }
         case .pointer: |pi| { return format("pointer pointee={}", @typeName(pi.pointee)); }
         case .optional: |oi| { return format("optional inner={}", @typeName(oi.inner)); }

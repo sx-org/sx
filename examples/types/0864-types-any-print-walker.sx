@@ -38,7 +38,7 @@ printAny :: (av: any) {
         case .vector: |vi| {
             print("[");
             i := 0;
-            while i < vi.lanes {
+            while i < vi.len {
                 if i > 0 { print(", "); }
                 printAny(anyElement(vi.elem, av, i));
                 i += 1;

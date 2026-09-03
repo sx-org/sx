@@ -605,7 +605,6 @@ pub const BuiltinId = enum(u16) {
     @"rt_@sizeOf",
     @"rt_@alignOf",
     rt_is_flags,
-    rt_vector_lanes,
     // The parts the type table counts for a tag: struct/union fields,
     // enum/payload enum variants, array elements, vector lanes. 0 for a kind
     // whose count lives in the value (a fat pointer's header).
