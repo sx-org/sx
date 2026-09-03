@@ -13,7 +13,7 @@ pub const CSourceLocation = struct {
 
 /// Derive the NDK sysroot path from the NDK root (which by convention
 /// lives in `target_config.sysroot` on Android — see target.zig's
-/// Android @link branch + main.zig's auto-discovery). Returns a NUL-
+/// Android link branch + main.zig's auto-discovery). Returns a NUL-
 /// terminated path suitable for clang's `--sysroot <path>` argv.
 fn androidSysrootFromNdkRoot(allocator: std.mem.Allocator, ndk_root: []const u8) ![:0]u8 {
     const host_tag: []const u8 = if (builtin.os.tag == .macos) "darwin-x86_64" else "linux-x86_64";
@@ -395,7 +395,7 @@ pub fn validateExternRefs(allocator: std.mem.Allocator, root: *const Node, diags
 
 /// A cached entry must at least LOOK like an object file (Mach-O,
 /// ELF, or wasm magic) — a truncated or garbage entry falls back to a
-/// fresh compile instead of poisoning the @link with an opaque error.
+/// fresh compile instead of poisoning the link with an opaque error.
 pub fn objectMagicOk(data: []const u8) bool {
     if (data.len < 4) return false;
     if (data[0] == 0x7f and data[1] == 'E' and data[2] == 'L' and data[3] == 'F') return true;
@@ -475,7 +475,7 @@ pub fn compileCToObjects(
     );
     // The libc the unit compiles against is not implied by the other key
     // material: the same source, flags and (absent) `--target` compile against
-    // the host libc or against zig's musl depending on how the @link resolves.
+    // the host libc or against zig's musl depending on how the link resolves.
     const libc_dirs: []const []const u8 = if (selection.use_link_libc) libc.?.dirs else &.{};
 
     for (infos) |info| {
@@ -484,7 +484,7 @@ pub fn compileCToObjects(
         // Build clang args: -I dirs, -D defines, raw flags
         var args_list = std.ArrayList([*c]const u8).empty;
         // Cross-compile target: forward -target / -isysroot when set. A Linux
-        // @link through the zig backend names the target instead — it owns the
+        // link through the zig backend names the target instead — it owns the
         // libc below, and `target_config.triple` is null for a native build.
         if (selection.clang_triple) |triple| {
             try args_list.append(allocator, "-target");
@@ -513,7 +513,7 @@ pub fn compileCToObjects(
         // searched as system headers (warnings suppressed). `-nostdlibinc`
         // drops the standard system dirs (keeping clang's own builtin headers)
         // so a native-Linux host's `/usr/include` cannot supply a second libc
-        // behind these — the @link resolves exactly one. See
+        // behind these — the link resolves exactly one. See
         // target.linuxLibcIncludeDirs.
         if (selection.use_link_libc) {
             const lh = libc.?;
@@ -611,8 +611,8 @@ pub fn compileCToObjects(
     }
 
     // Cross-object duplicate exports are diagnosed HERE, before they
-    // surface as an opaque dylib/binary @link failure: every `@import c`
-    // unit shares one @link namespace — there is no per-unit symbol
+    // surface as an opaque dylib/binary link failure: every `@import c`
+    // unit shares one link namespace — there is no per-unit symbol
     // isolation. Scan failures are non-fatal — the linker
     // remains the backstop.
     var sym_owner = std.StringHashMap(usize).init(allocator);
@@ -644,7 +644,7 @@ pub fn compileCToObjects(
     return try obj_bufs.toOwnedSlice(allocator);
 }
 
-/// For JIT mode: write .o files to temp, @link into a shared library, dlopen it.
+/// For JIT mode: write .o files to temp, link into a shared library, dlopen it.
 /// Returns a handle that must be unloaded after JIT execution.
 pub fn loadCObjectsForJIT(
     allocator: std.mem.Allocator,
@@ -656,7 +656,7 @@ pub fn loadCObjectsForJIT(
     var temp_paths = std.ArrayList([]const u8).empty;
 
     // Write each .o buffer to a temp file (per-pid names: concurrent
-    // `sx run` processes must not clobber each other's @link inputs)
+    // `sx run` processes must not clobber each other's link inputs)
     const pid = std.c.getpid();
     var obj_paths = std.ArrayList([]const u8).empty;
     for (obj_bufs, 0..) |buf, i| {
@@ -891,8 +891,8 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
     // Dedup is by CONTENT (sources + includes + defines + flags), not
     // node identity: one module imported through several aliased paths
     // materializes several copies of its c_import_decl, and collecting
-    // each copy would compile (and @link!) the same unit repeatedly —
-    // duplicate-symbol death at AOT @link time.
+    // each copy would compile (and link!) the same unit repeatedly —
+    // duplicate-symbol death at AOT link time.
     const walker = struct {
         // Lexically normalized: the SAME file reached through different
         // import chains spells differently ("src/app/../repo/../db/../..

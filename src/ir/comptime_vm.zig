@@ -2200,9 +2200,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return try self.makeStringList(table, result_ty, bc.merged_link_flags);
         }
         // `@link(objects, output, libraries, frameworks, flags, target)` — the one
-        // genuine ACTION: dispatch to the host-installed linker (the VM can't @link
+        // genuine ACTION: dispatch to the host-installed linker (the VM can't link
         // itself). Void return, because the build callback is not fallible; a
-        // @link failure bails loudly → hard build error. `ref_types` gives each
+        // link failure bails loudly → hard build error. `ref_types` gives each
         // List(string) arg its concrete type for the comptime reader.
         if (intr == .@"@link") {
             if (args.len != 6) return self.failMsg("comptime link: expected (objects, output, libraries, frameworks, flags, target)");

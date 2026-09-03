@@ -491,7 +491,7 @@ pub const VarDecl = struct {
     type_annotation: ?*Node,
     value: ?*Node,
     /// `extern`-global form `g : T extern [LIB] ["csym"];` — a reference to a
-    /// global defined elsewhere (external linkage, resolved at @link time).
+    /// global defined elsewhere (external linkage, resolved at link time).
     /// `extern_lib` is the optional source-library reference and `extern_name`
     /// the optional symbol-name override.
     is_extern: bool = false,

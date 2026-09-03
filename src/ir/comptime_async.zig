@@ -100,7 +100,7 @@ const Closure = struct {
 /// `Closure.call`, but a stack-trace capture inside the evaluation (the testing
 /// allocator takes one per allocation) unwinds through this frame and must find
 /// a terminator instead of whatever the switching context happened to leave in
-/// the @link register.
+/// the link register.
 fn taskEntry() callconv(.naked) void {
     switch (builtin.cpu.arch) {
         .x86_64 => asm volatile (
@@ -131,13 +131,13 @@ fn taskEntry() callconv(.naked) void {
 var current_task: ?*Task = null;
 var free_list: ?*Task = null;
 
-/// Out of line so the caller treats the @link register as call-clobbered
+/// Out of line so the caller treats the link register as call-clobbered
 /// (`fiber.contextSwitch` is inline asm; the aarch64 backend does not honor
 /// that clobber in the same function).
 ///
 /// aarch64/riscv64 keep the return address in a register the switch destroys,
 /// so this frame carries a slot for it. The slot address is pinned to a
-/// register the switch clobbers: an unpinned operand can land in the @link
+/// register the switch clobbers: an unpinned operand can land in the link
 /// register itself, and the reload then reads the other fiber's slot.
 noinline fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
     var s: fiber.Switch = .{ .old = save, .new = target };

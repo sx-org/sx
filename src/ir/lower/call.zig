@@ -927,7 +927,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // shadows the top-level fn entirely: the call targets
         // the local, so the program-fn visibility gate must not fire.
         // An intrinsic is a compiler feature, not a library export, so import
-        // visibility does not gate it — the same reason `@sizeOf` / `sqrt` /
+        // visibility does not gate it — the same reason `@sizeOf` / `@sqrt` /
         // `@atomicLoad` resolve with no import (their folds run before this
         // check). The evaluate-mode intrinsics DO reach here, because the VM
         // services them as ordinary declared calls; exempting them keeps every
@@ -3171,8 +3171,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
 /// defaults. Returns null if `name` is not an atomic intrinsic.
 ///
 /// Gated on the registry: a name reaches the ordering/type checks below only if
-/// `modules/std/atomic.sx` declares it as an intrinsic. A bare `atomicLoad` is
-/// an ordinary call.
+/// `modules/std/atomic.sx` declares it as an intrinsic.
 pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
     if (!isAtomicIntrinsic(name)) return null;
 

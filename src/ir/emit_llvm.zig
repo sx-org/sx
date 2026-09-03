@@ -1060,7 +1060,7 @@ pub const LLVMEmitter = struct {
 
             const llvm_global = c.LLVMAddGlobal(self.llvm_module, llvm_ty, name_z.ptr);
 
-            // Extern globals (`<name> : <type> extern;`) resolve at @link time
+            // Extern globals (`<name> : <type> extern;`) resolve at link time
             // to a libSystem / framework symbol — no initializer, default linkage.
             if (global.is_extern) {
                 c.LLVMSetLinkage(llvm_global, c.LLVMExternalLinkage);

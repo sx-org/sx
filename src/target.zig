@@ -77,10 +77,10 @@ pub const TargetConfig = struct {
     /// debugger can step the binary: macOS resolves via the debug map → the
     /// `.o`; Linux carries DWARF in the binary directly. Implies `-O0` unless
     /// `--opt` is given explicitly (DWARF is only emitted at opt none/less).
-    /// The object is kept at `.sx-tmp/main.o` (its @link-time path, so the
+    /// The object is kept at `.sx-tmp/main.o` (its link-time path, so the
     /// debug map resolves when lldb is run from the project root).
     emit_obj: bool = false,
-    /// Self-contained @link backend (bundled `zig cc`). `.auto` uses it when a
+    /// Self-contained link backend (bundled `zig cc`). `.auto` uses it when a
     /// `zig` is discoverable, the target is Linux, and no explicit `--linker`
     /// was given; `.on` forces it (error if no zig / non-Linux target); `.off`
     /// uses the system `cc`. See design/bundled-zig-link-backend-design.md.
@@ -249,7 +249,7 @@ pub const TargetConfig = struct {
         return self.isMacOS() or self.isLinux() or self.isWindows();
     }
 
-    /// The zig `-target` for the bundled-zig @link backend. sx triples already
+    /// The zig `-target` for the bundled-zig link backend. sx triples already
     /// use zig's scheme, so this is pure pass-through; only the null
     /// (host-default) case synthesizes a portable triple from the host arch +
     /// host OS (musl on Linux for static portability, mingw on Windows).
@@ -273,9 +273,9 @@ pub const TargetConfig = struct {
     }
 };
 
-/// Decide whether the @link step drives the bundled-`zig` backend
+/// Decide whether the link step drives the bundled-`zig` backend
 /// (`zig cc -target …`) or the system linker. Returns the zig path to use,
-/// or null for the system linker. Errors loudly when a self-contained @link is
+/// or null for the system linker. Errors loudly when a self-contained link is
 /// requested but cannot be satisfied — never silently falls back in that case.
 ///
 /// Auto mode engages ONLY for a *bundled* zig (a real distribution): a
@@ -307,7 +307,7 @@ fn selectZigLinker(allocator: std.mem.Allocator, tc: TargetConfig) !?[]const u8 
     }
 }
 
-/// Build the `zig cc` @link argv (shared across macOS/Linux/Windows). zig cc is
+/// Build the `zig cc` link argv (shared across macOS/Linux/Windows). zig cc is
 /// a clang-compatible driver, so `-o`/`-L`/`-l`/`-framework`/extra objects all
 /// pass through. `-static` is added only for musl (the portable Linux path);
 /// macOS cannot static-link libSystem and Windows uses dynamic mingw.
@@ -519,7 +519,7 @@ pub fn discoverAppleSdk(allocator: std.mem.Allocator, io: std.Io, sdk_name: []co
 /// Run `<zig> env` and extract its `.lib_dir` (the `lib/zig` root that holds
 /// the bundled libc headers + clang builtins). Caller owns the returned slice.
 /// Errors loudly — a Linux self-contained build that reached here already
-/// needs zig for the @link, so a missing/garbled `zig env` is a hard failure,
+/// needs zig for the link, so a missing/garbled `zig env` is a hard failure,
 /// never a silent fallback.
 fn zigLibDir(allocator: std.mem.Allocator, io: std.Io, zig_path: []const u8) ![]const u8 {
     const r = std.process.run(allocator, io, .{
@@ -549,7 +549,7 @@ fn zigLibDir(allocator: std.mem.Allocator, io: std.Io, zig_path: []const u8) ![]
     return allocator.dupe(u8, rest[0..end]);
 }
 
-/// The `libc/include` layout for a Linux @link triple.
+/// The `libc/include` layout for a Linux link triple.
 pub const LibcHeaderLayout = struct {
     full_arch: []const u8,
     family_arch: []const u8,
@@ -559,7 +559,7 @@ pub const LibcHeaderLayout = struct {
     generic: []const u8,
 };
 
-/// The libc header set a @link triple needs, or null when the triple names no
+/// The libc header set a link triple needs, or null when the triple names no
 /// plain Linux libc — macOS/Windows/wasm, and Android (whose bionic headers
 /// come from the NDK sysroot instead).
 ///
@@ -589,7 +589,7 @@ pub fn libcHeaderLayout(link_triple: []const u8) !?LibcHeaderLayout {
 }
 
 pub const LibcHeaderTarget = struct {
-    /// The effective @link triple. The C compile targets it too.
+    /// The effective link triple. The C compile targets it too.
     triple: []const u8,
     layout: LibcHeaderLayout,
 };
@@ -597,9 +597,9 @@ pub const LibcHeaderTarget = struct {
 /// The Linux libc header set a build's `@import c` units compile against, or
 /// null when the target carries none (macOS/Windows/wasm/Android).
 ///
-/// Reads the effective @link triple, never `tc.triple` — that is null for a
+/// Reads the effective link triple, never `tc.triple` — that is null for a
 /// native build, which the zig backend still links as a synthesized triple.
-/// Headers must match the libc the @link resolves: glibc's LFS redirects
+/// Headers must match the libc the link resolves: glibc's LFS redirects
 /// reference `open64`/`stat64`/…, which musl does not define. Caller owns
 /// `triple`.
 pub fn libcHeaderTarget(tc: TargetConfig, allocator: std.mem.Allocator, host_os: std.Target.Os.Tag) !?LibcHeaderTarget {
@@ -613,7 +613,7 @@ pub fn libcHeaderTarget(tc: TargetConfig, allocator: std.mem.Allocator, host_os:
 }
 
 pub const LinuxLibcHeaders = struct {
-    /// The @link target these headers belong to; the C compile targets it too.
+    /// The link target these headers belong to; the C compile targets it too.
     triple: []const u8,
     dirs: []const []const u8,
 };
@@ -625,15 +625,15 @@ pub const LinuxLibcHeaders = struct {
 /// generic-libc, arch-any, any-linux-any) and come from the
 /// bundled/discovered zig's `lib/zig/libc/include`.
 ///
-/// Returns null when the @link does not go through the zig backend, or when it
-/// does but targets no Linux libc — a system-cc @link keeps the embedded
+/// Returns null when the link does not go through the zig backend, or when it
+/// does but targets no Linux libc — a system-cc link keeps the embedded
 /// clang's own header search (headers and linker then agree on the host libc).
 /// Errors loudly when zig or the expected header dirs can't be located.
 /// Caller owns the returned slice and each element.
 pub fn linuxLibcIncludeDirs(allocator: std.mem.Allocator, io: std.Io, tc: TargetConfig) !?LinuxLibcHeaders {
-    // The bundled-zig (musl/glibc) headers are correct only when the @link goes
+    // The bundled-zig (musl/glibc) headers are correct only when the link goes
     // through the zig backend, so mirror selectZigLinker's decision exactly —
-    // otherwise headers and linker could disagree (compile musl, @link glibc).
+    // otherwise headers and linker could disagree (compile musl, link glibc).
     const found = zig_backend.discoverZig(allocator);
     const use_zig = switch (tc.self_contained) {
         .off => false,
@@ -762,7 +762,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         // and `frameworks` parameter (Apple-only by definition) are
         // intentionally ignored here. On Android, users opt into specific
         // libs via `opts.addLinkFlag("-l<name>")` in their build.sx —
-        // the platform-specific @link surface should be expressed in build
+        // the platform-specific link surface should be expressed in build
         // options rather than auto-inherited from every imported module
         // (most of which assume Apple targets).
         const ndk_root = if (target_config.sysroot) |sr|

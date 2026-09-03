@@ -178,7 +178,7 @@ pub const Compilation = struct {
         self.ir_module = ir_mod_ptr;
         self.ir_emitter = emitter;
         // A comptime `@run` raised an unhandled error — the diagnostic + trace
-        // were already printed to stderr; abort before JIT/@link.
+        // were already printed to stderr; abort before JIT/link.
         if (emitter.comptime_failed) return error.ComptimeError;
         if (emitter.emission_failed) return error.CodegenError;
 
@@ -227,7 +227,7 @@ pub const Compilation = struct {
         return evaluation.completed() orelse error.ComptimeVmBail;
     }
 
-    /// Get @link flags accumulated from @run build blocks.
+    /// Get link flags accumulated from @run build blocks.
     pub fn getBuildLinkFlags(self: *Compilation) []const []const u8 {
         if (self.ir_emitter) |*e| return e.build_config.link_flags.items;
         return &.{};

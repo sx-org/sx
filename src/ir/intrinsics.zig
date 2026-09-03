@@ -255,7 +255,7 @@ pub const entries = [_]Entry{
 
     // ── build.sx: the BuildOptions DSL. Every one is a hook in compiler_hooks.zig
     // acting on the threaded BuildConfig. `self: BuildOptions` is an opaque
-    // zero-field handle, so the ufcs receiver counts toward arity.
+    // zero-field handle, so the handle argument counts toward arity.
     .{ .id = .@"@buildOptions", .module = build, .name = "@buildOptions", .mode = .evaluate, .arity = 0 },
     .{ .id = .@"@addLinkFlag", .module = build, .name = "@addLinkFlag", .mode = .evaluate, .arity = 2 },
     .{ .id = .@"@addFramework", .module = build, .name = "@addFramework", .mode = .evaluate, .arity = 2 },

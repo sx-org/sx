@@ -341,7 +341,7 @@ fn nameMatchesFilter(filter: []const u8, rel_path: []const u8) bool {
 /// (.exit/.stdout/.stderr/.ir) stay separate — they are regenerated data, not
 /// config. An unknown key is `error.UnknownField` (std.json default
 /// `ignore_unknown_fields = false`), surfaced as a loud test failure — never a
-/// silent ignore. Future directives (`cpu`, `@link`, `cwd`) are just new
+/// silent ignore. Future directives (`cpu`, `link`, `cwd`) are just new
 /// optional fields here, no new sidecar file.
 const BuildConfig = struct {
     aot: bool = false,

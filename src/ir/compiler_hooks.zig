@@ -42,7 +42,7 @@ pub const BuildConfig = struct {
 
     /// Path of the freshly-linked binary, populated by `main.zig`
     /// right before the post-link callback runs. The sx-side bundler
-    /// reads this via `@binaryPath()` to know what file to wrap.
+    /// reads this via `@binaryPath(opts)` to know what file to wrap.
     binary_path: ?[]const u8 = null,
 
     // Apple `.app` / Android `.apk` bundling parameters. Set either
@@ -60,7 +60,7 @@ pub const BuildConfig = struct {
     target_triple: ?[]const u8 = null,
 
     /// C companion object files (`@import c { @source ... }`, compiled to `.o`)
-    /// and `@library` @link names, forwarded by main.zig before the post-link
+    /// and `@library` link names, forwarded by main.zig before the post-link
     /// callback so the sx-driven build pipeline can read them via the
     /// `@cObjectPaths()` / `@linkLibraries()` compiler primitives and pass them
     /// to `@link`. Slices reference compiler-owned memory that outlives the
@@ -68,7 +68,7 @@ pub const BuildConfig = struct {
     c_object_paths: []const []const u8 = &.{},
     link_libraries: []const []const u8 = &.{},
 
-    /// The fully-merged @link flags (CLI `extra_link_flags` + `@run` build-block
+    /// The fully-merged link flags (CLI `extra_link_flags` + `@run` build-block
     /// flags), forwarded by main.zig. The sx driver reads them via `@buildFlags()`
     /// and passes them to `@link`. (Distinct from `link_flags`, which holds only
     /// the `@run`-accumulated subset.)
@@ -83,7 +83,7 @@ pub const BuildConfig = struct {
 
     /// Frameworks the binary links against (`-framework` names) and
     /// the search paths to look them up in (`-F` directories), forwarded
-    /// from the @link step so the sx bundler can embed them into
+    /// from the link step so the sx bundler can embed them into
     /// `<bundle>/Frameworks/`.
     target_frameworks: []const []const u8 = &.{},
     target_framework_paths: []const []const u8 = &.{},
@@ -128,7 +128,7 @@ pub const BuildHooks = struct {
     /// sx-driven via `defaultPipeline`.
     emit_object: *const fn (ctx: *anyopaque) anyerror![]const u8,
     /// Link `objects` → `output`, with the given `libraries` / `frameworks` /
-    /// @link `flags` / `target` triple. (`objects` is the full object list; the
+    /// link `flags` / `target` triple. (`objects` is the full object list; the
     /// adapter splits it for the underlying linker.)
     link: *const fn (
         ctx: *anyopaque,

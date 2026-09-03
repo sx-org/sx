@@ -6114,8 +6114,8 @@ Two registration forms:
 
 CLI `--bundle <path>` / `--apk <path>` are transitional aliases: if
 `@bundlePath` is set and no callback was registered, the compiler
-auto-falls-back to `@setPostLinkModule("platform.bundle")`. The sx
-bundler reads `@bundlePath()` regardless of which flag the user used.
+auto-falls-back to `@setPostLinkModule(opts, "platform.bundle")`. The sx
+bundler reads `@bundlePath(opts)` regardless of which flag the user used.
 The callback returns `false` to fail the build.
 
 ### BuildOptions surface
@@ -6131,30 +6131,30 @@ The callback itself is an ordinary sx function — default ABI, implicit Context
 registered with `@onBuild`. Nothing marks it compile-time: it stays out of the
 binary because no runtime root reaches it.
 
-| Method | Read / write | Purpose |
-|--------|--------------|---------|
-| `@addLinkFlag(flag)` | write | extra linker flag |
-| `@addFramework(name)` | write | `-framework <name>` (Apple) |
-| `@setOutputPath(path)` | write | linked binary path |
-| `@setWasmShell(path)` | write | custom WASM shell template |
-| `@addAssetDir(src, dest)` | write | bundle a directory of runtime assets |
-| `@setPostLinkModule(name)` | write | name-based callback fallback |
-| `@setBundlePath(path)` | write | `.app` / `.apk` output |
-| `@setBundleId(id)` | write | iOS `CFBundleIdentifier` / Android package |
-| `@setCodesignIdentity(name)` | write | Apple signing identity (`-` = ad-hoc) |
-| `@setProvisioningProfile(path)` | write | iOS device `.mobileprovision` |
-| `@setManifestPath(path)` | write | Android AndroidManifest.xml override |
-| `@setKeystorePath(path)` | write | Android keystore override |
-| `@binaryPath()` | read | path of the freshly-linked binary |
-| `@bundlePath() / @bundleId()` | read | mirror of the setters |
-| `@codesignIdentity() / @provisioningProfile()` | read | Apple codesign params |
-| `@manifestPath() / @keystorePath()` | read | Android overrides |
-| `@targetTriple()` | read | canonicalized target triple |
-| `@isMacos() / @isIos() / @isIosDevice() / @isIosSimulator() / @isAndroid()` | read | per-target predicates |
-| `@frameworkCount() / @frameworkAt(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
-| `@frameworkPathCount() / @frameworkPathAt(i)` | read | linker `-F` search paths |
-| `@jniMainCount() / @jniMainRuntimePathAt(i) / @jniMainJavaSourceAt(i)` | read | `main = true` emissions for the APK bundler |
-| `@assetDirCount() / @assetDirSrcAt(i) / @assetDirDestAt(i)` | read | iterate registered asset trees |
+| Accessor | Read / write | Purpose |
+|----------|--------------|---------|
+| `@addLinkFlag(opts, flag)` | write | extra linker flag |
+| `@addFramework(opts, name)` | write | `-framework <name>` (Apple) |
+| `@setOutputPath(opts, path)` | write | linked binary path |
+| `@setWasmShell(opts, path)` | write | custom WASM shell template |
+| `@addAssetDir(opts, src, dest)` | write | bundle a directory of runtime assets |
+| `@setPostLinkModule(opts, name)` | write | name-based callback fallback |
+| `@setBundlePath(opts, path)` | write | `.app` / `.apk` output |
+| `@setBundleId(opts, id)` | write | iOS `CFBundleIdentifier` / Android package |
+| `@setCodesignIdentity(opts, name)` | write | Apple signing identity (`-` = ad-hoc) |
+| `@setProvisioningProfile(opts, path)` | write | iOS device `.mobileprovision` |
+| `@setManifestPath(opts, path)` | write | Android AndroidManifest.xml override |
+| `@setKeystorePath(opts, path)` | write | Android keystore override |
+| `@binaryPath(opts)` | read | path of the freshly-linked binary |
+| `@bundlePath(opts) / @bundleId(opts)` | read | mirror of the setters |
+| `@codesignIdentity(opts) / @provisioningProfile(opts)` | read | Apple codesign params |
+| `@manifestPath(opts) / @keystorePath(opts)` | read | Android overrides |
+| `@targetTriple(opts)` | read | canonicalized target triple |
+| `@isMacos(opts) / @isIos(opts) / @isIosDevice(opts) / @isIosSimulator(opts) / @isAndroid(opts)` | read | per-target predicates |
+| `@frameworkCount(opts) / @frameworkAt(opts, i)` | read | linker `-framework` names (for `Frameworks/` embed) |
+| `@frameworkPathCount(opts) / @frameworkPathAt(opts, i)` | read | linker `-F` search paths |
+| `@jniMainCount(opts) / @jniMainRuntimePathAt(opts, i) / @jniMainJavaSourceAt(opts, i)` | read | `main = true` emissions for the APK bundler |
+| `@assetDirCount(opts) / @assetDirSrcAt(opts, i) / @assetDirDestAt(opts, i)` | read | iterate registered asset trees |
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
 that read after-the-fact (`@binaryPath`, `@bundlePath`, etc.) return
@@ -6206,16 +6206,16 @@ bundler invokes `codesign`, `plutil`, `security`, `aapt2`, `javac`,
 
 ### Apple `.app` flow (`bundle.sx::bundleMain`)
 
-`bundleMain` branches on `@isAndroid()` first; the remaining body is
+`bundleMain` branches on `@isAndroid(opts)` first; the remaining body is
 the Apple path. Per target:
 
 | Step | macOS | iOS sim | iOS device |
 |------|-------|---------|------------|
 | Stage `<bundle>` (rm-rf + mkdir + copy binary + set exe bit) | ✓ | ✓ | ✓ |
 | Write `Info.plist` | minimal `CFBundle*` | + `UIDeviceFamily` + `LSRequiresIPhoneOS` + `UIApplicationSceneManifest` + `DTPlatformName=iPhoneSimulator` | + same with `DTPlatformName=iPhoneOS` |
-| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `@provisioningProfile()` set |
+| Embed provisioning profile to `<bundle>/embedded.mobileprovision` | — | — | when `@provisioningProfile(opts)` set |
 | Embed `Frameworks/<Name>.framework/` (recursive `cp -R` per `-F` search path) | — | when present | when present |
-| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `@provisioningProfile()` set |
+| Extract entitlements (`security cms -D` + `plutil -extract Entitlements` + `plutil -extract ApplicationIdentifierPrefix.0` + `plutil -replace application-identifier` resolving `<TEAM>.*` → `<TEAM>.<bundleId>`) | — | — | when `@provisioningProfile(opts)` set |
 | Codesign | ad-hoc (`-`) | ad-hoc | `--sign <identity> --entitlements <ent>` |
 
 ### Android `.apk` flow (`bundle.sx::androidBundleMain`)
@@ -6225,7 +6225,7 @@ The Android branch:
 1. **Discover SDK** — `$ANDROID_HOME` → `$ANDROID_SDK_ROOT` → `$HOME/Library/Android/sdk`.
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
 3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copyFile` from the linked output.
-4. **Manifest** — user-supplied via `@setManifestPath()`, or synthesized:
+4. **Manifest** — user-supplied via `@setManifestPath(opts, path)`, or synthesized:
    - `NativeActivity` shape when no `main = true` is declared.
    - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
 5. **Compile `main = true` Java sources** — write each entry's `javaSource` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.

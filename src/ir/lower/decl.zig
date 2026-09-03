@@ -1675,7 +1675,7 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 
 /// Serialize a top-level global's initializer into a static `ConstantValue`.
 /// Extern globals (external symbol) and value-less declarations carry no
-/// payload — they default to zero/extern at @link, which is correct. An
+/// payload — they default to zero/extern at link, which is correct. An
 /// identifier initializer that names a module constant is materialized from
 /// the recorded constant (`K : A : 42; g : A = K;` → 42); a
 /// global initialized from an identifier that resolves to no usable constant

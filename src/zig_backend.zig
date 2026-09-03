@@ -1,4 +1,4 @@
-//! Discovery for the bundled-`zig` @link backend.
+//! Discovery for the bundled-`zig` link backend.
 //!
 //! When `sx build` links a native binary, it can drive a bundled `zig` as
 //! `zig cc` instead of the host's system `cc`. `zig cc` brings its own lld,

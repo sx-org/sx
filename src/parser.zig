@@ -175,7 +175,7 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .comptime_expr = .{ .expr = expr } });
         }
 
-        // Top-level @framework directive: @link against an Apple framework.
+        // Top-level @framework directive: link against an Apple framework.
         if (self.tokens.tag(self.tok) == .at_framework) {
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
@@ -529,7 +529,7 @@ pub const Parser = struct {
 
         if (self.tokens.tag(self.tok) == .kw_extern) {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
-            // at @link time)
+            // at link time)
             self.advance();
             const tail = self.parseLinkageTail(true);
             try self.expectStatementEnd();

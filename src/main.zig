@@ -172,7 +172,7 @@ pub fn main(init: std.process.Init) !void {
     target_config.framework_paths = try framework_paths.toOwnedSlice(allocator);
     target_config.extra_link_flags = try link_flags.toOwnedSlice(allocator);
 
-    // Auto-discover iOS SDK once so both the C compile path and the @link
+    // Auto-discover iOS SDK once so both the C compile path and the link
     // path see the same sysroot. Honors any explicit --sysroot.
     if (target_config.isIOS() and target_config.sysroot == null) {
         const sdk_name: []const u8 = if (target_config.isIOSSimulator()) "iphonesimulator" else "iphoneos";
@@ -181,8 +181,8 @@ pub fn main(init: std.process.Init) !void {
 
     // Same idea for Android — the NDK root must be visible to BOTH the
     // C-import compile path (so `--sysroot ndk/.../sysroot` finds bionic
-    // headers) and the @link path. By convention, target_config.sysroot
-    // holds the NDK root on Android (target.zig's @link branch + c_import.zig
+    // headers) and the link path. By convention, target_config.sysroot
+    // holds the NDK root on Android (target.zig's link branch + c_import.zig
     // both read it). Honors any explicit --sysroot.
     if (target_config.isAndroid() and target_config.sysroot == null) {
         target_config.sysroot = sx.target.discoverAndroidNdk(allocator, io) catch null;
@@ -577,7 +577,7 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
 }
 
 /// Driver-side adapter behind the `@link` build-pipeline primitive. The
-/// comptime VM can't @link itself (it must not depend on `target`), so it
+/// comptime VM can't link itself (it must not depend on `target`), so it
 /// dispatches `@link(...)` through a `BuildHooks` whose `ctx` is one of these. The
 /// VM passes the full object list; `target.link` takes (first object, rest), but
 /// treats both as plain inputs, so the split is immaterial.
@@ -814,8 +814,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
 
     // Post-link build driver. Either the user registered an `@onBuild(cb)`
     // override (bundling is `@run @onBuild(bundleMain);` — bundleMain runs the
-    // emit+@link core then wraps the `.app`/`.apk`), or we run the stdlib
-    // `defaultPipeline` (emit + @link; it fails with a precise hint if a bundle was
+    // emit+link core then wraps the `.app`/`.apk`), or we run the stdlib
+    // `defaultPipeline` (emit + link; it fails with a precise hint if a bundle was
     // requested via `--bundle`/`--apk` but no bundler was registered). The CLI
     // bundle flags only feed `BuildConfig` (bundle_path/id/…) — there is no Zig
     // bundler shim; bundling is entirely sx-driven. A `false` return fails the build.
@@ -853,7 +853,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     std.debug.print("compiled: {s}\n", .{final_output});
 
     // Clean up temp directory and all build artifacts. Under --emit-obj, keep
-    // the object (DWARF for lldb/gdb) at its @link-time path — the binary's
+    // the object (DWARF for lldb/gdb) at its link-time path — the binary's
     // debug map resolves to it — and skip removing the temp dir.
     const shell_tmp = std.fmt.allocPrint(allocator, "{s}.shell.html", .{obj_path}) catch null;
     if (shell_tmp) |sp| std.Io.Dir.deleteFile(.cwd(), io, sp) catch {};
@@ -1000,7 +1000,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
     var seen = std.StringHashMap(void).init(allocator);
     // Aliased imports lower to namespace_decl nodes and NEST when a
     // namespaced module aliases its own imports, so the walk must recurse —
-    // a `@library` at any namespace depth belongs on the @link line / in the
+    // a `@library` at any namespace depth belongs on the link line / in the
     // JIT dlopen list.
     const walker = struct {
         fn walk(l: *std.ArrayList([]const u8), s: *std.StringHashMap(void), a: std.mem.Allocator, decls: []const *sx.ast.Node) !void {

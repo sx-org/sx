@@ -105,7 +105,7 @@ pub fn resolveImportPath(allocator: std.mem.Allocator, io: std.Io, base_dir: []c
     if (std.mem.eql(u8, canon, resolved)) return canon;
     // The respelling must still name the SAME file on disk. `resolved` was
     // probed for existence, but a lexical `..` collapse through a SYMLINKED
-    // component changes which file the string denotes (`@link/../other.sx`
+    // component changes which file the string denotes (`link/../other.sx`
     // resolves through the symlink's target dir in the kernel, but collapses
     // to the sibling `other.sx` lexically) — and a re-relativization against
     // a stale `$PWD` can respell it to a different or nonexistent path.
