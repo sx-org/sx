@@ -693,14 +693,15 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
             explicit_tag_vals = vals.items;
         }
 
-        return .{ .@"enum" = .{
+        var info: TypeInfo = .{ .@"enum" = .{
             .name = name_id,
             .variants = fields.items,
             .tag_type = tag_type orelse .i64,
             .layout = backing_type,
             .values = explicit_tag_vals,
-            .else_member = if (ed.else_name) |n| table.internString(n) else null,
         } };
+        info.@"enum".else_member = elseMemberIfLegal(ed, table, info.@"enum");
+        return info;
     }
 
     // Plain enum (no payloads)
@@ -749,14 +750,26 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
         }
     }
 
-    return .{ .@"enum" = .{
+    var info: TypeInfo = .{ .@"enum" = .{
         .name = name_id,
         .variants = variants.items,
         .is_flags = ed.is_flags,
         .values = explicit_vals,
         .tag_type = enum_backing orelse .i64,
-        .else_member = if (ed.else_name) |n| table.internString(n) else null,
     } };
+    info.@"enum".else_member = elseMemberIfLegal(ed, table, info.@"enum");
+    return info;
+}
+
+/// The declared `else` member, recorded only where it is legal: a payload-less
+/// enum with an integer tag and no layout. An illegal one is recorded nowhere,
+/// so no construction or match routes through it; the declaration sites
+/// diagnose it.
+pub fn elseMemberIfLegal(ed: *const ast.EnumDecl, table: *TypeTable, e: TypeInfo.EnumInfo) ?StringId {
+    const name = ed.else_name orelse return null;
+    const struct_backing = if (ed.backing_type) |bt| bt.data == .struct_decl else false;
+    if (e.hasPayload() or e.layout != null or struct_backing or !table.isIntegerType(e.tag_type)) return null;
+    return table.internString(name);
 }
 
 /// Inline-struct resolution for a FIELD-type position (`x: struct {...}`). Field

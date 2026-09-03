@@ -1,4 +1,4 @@
-error: an 'else' member needs an enum that is its integer backing type — 'E' carries payloads, states a layout, or has a non-integer backing type
+error: 'else' member can only be used for integer enums
   --> examples/diagnostics/2322-diagnostics-enum-else-member-float-backing.sx:5:25
    |
  5 | E :: enum f32 { a; else rest; }

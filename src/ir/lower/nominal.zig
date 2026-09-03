@@ -1175,22 +1175,20 @@ pub fn registerEnumDecl(self: *Lowering, ed: *const ast.EnumDecl) void {
     // NAME resolves in the enum's OWN module visibility context (own author wins
     // over a namespaced same-name import), not via a global `findByName`
     // first-match.
-    var info = type_bridge.buildEnumInfo(ed, table, self);
-    // An else member belongs to an enum that IS an integer: payload-less, no
-    // layout struct, integer tag. An illegal declaration is diagnosed and
-    // records no else member, so no later site routes through one.
-    if (ed.else_name != null) {
-        const e = info.@"enum";
-        const struct_backing = if (ed.backing_type) |bt| bt.data == .struct_decl else false;
-        if (e.hasPayload() or e.layout != null or struct_backing or !table.isIntegerType(e.tag_type)) {
-            if (self.diagnostics) |d| {
-                const span = ast.Span{ .start = ed.else_name_start, .end = ed.else_name_start + @as(u32, @intCast(ed.else_name.?.len)) };
-                d.addFmt(.err, span, "an 'else' member needs an enum that is its integer backing type — '{s}' carries payloads, states a layout, or has a non-integer backing type", .{ed.name});
-            }
-            info.@"enum".else_member = null;
-        }
-    }
+    const info = type_bridge.buildEnumInfo(ed, table, self);
+    self.refuseIllegalElseMember(ed, info.@"enum");
     _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+}
+
+/// The declared `else` member the bridge recorded nowhere: the enum carries
+/// payloads, states a layout, or has a non-integer backing type.
+pub fn refuseIllegalElseMember(self: *Lowering, ed: *const ast.EnumDecl, e: types.TypeInfo.EnumInfo) void {
+    const name = ed.else_name orelse return;
+    if (e.else_member != null) return;
+    if (self.diagnostics) |d| {
+        const span = ast.Span{ .start = ed.else_name_start, .end = ed.else_name_start + @as(u32, @intCast(name.len)) };
+        d.addFmt(.err, span, "'else' member can only be used for integer enums", .{});
+    }
 }
 
 /// Register a top-level UNION decl under a per-decl nominal identity — the
