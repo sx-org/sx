@@ -1,0 +1,13 @@
+// `@assert(ok, msg)` is a no-op when `ok` holds and a panic at the call site
+// otherwise, with `msg` or the default text.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+main :: () {
+    @assert(1 + 1 == 2);
+    @assert(true, "never shown");
+    print("held\n");
+    @assert(1 > 2, "one is not greater than two");
+    print("unreached\n");
+}

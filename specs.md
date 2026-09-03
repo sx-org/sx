@@ -1461,9 +1461,8 @@ The table is built per `Q` when a re-erasure to `Q`, a runtime
 conformance `is` against `Q`, or a `p.(?Q)` probe on an erased
 receiver exists; construction waits on the impl facts of §6.9.
 
-All three temperaments read the same null: unconsumed `p.(Q)` panics,
-`try p.(Q)` raises, `p.(?Q)` answers null. `Q == I` is the identity
-handle copy of §5.2.
+Both forms read the same null: unconsumed `p.(Q)` panics, `p.(?Q)`
+answers null. `Q == I` is the identity handle copy of §5.2.
 
 ##### 6.5 Equality
 
@@ -5585,6 +5584,8 @@ An `any` is accepted because it can hold either a value or a `Type`. `@typeName`
 - `@as($T: Type, v: $S) -> T` — the compiler's conversions of `v` to `T`: every arm of the coercion ladder except `Into` and the unchecked unbox. A boxed `v` converts by its runtime type; a pairing with no conversion stops the program naming both types.
 - `@tag(v: $T)` — an enum value's tag: a typed enum's tag in its tag type; a boxed one as an `any` view typed by its tag type.
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
+- `@conforms($I: Type, v: $S) -> bool` — whether `v` conforms to interface `I`: a concrete `S` folds at compile time; an interface handle or a boxed `v` reads `I`'s conformance table by the referent's type.
+- `@assert(ok: bool, msg: ?string = null, site: @SourceSite = @caller)` — stops the program at `site` through `@panic` unless `ok`. `p.(Q)` between interfaces is the handle build plus `@assert(<row present>, "re-erasure to 'Q' failed")` at the site.
 
 ### Vectors
 - `@Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`

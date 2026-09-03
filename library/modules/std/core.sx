@@ -64,6 +64,10 @@ anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 // ladder except `Into` and the unchecked unbox. A boxed `v` converts by its
 // runtime type; a pairing with no conversion stops the program.
 @as :: ($T: Type, v: $S) -> T;
+// Whether `v` conforms to interface `I`: a concrete `S` folds at compile
+// time; an interface handle or a boxed `v` reads the interface's conformance
+// table by the referent's type.
+@conforms :: ($I: Type, v: $S) -> bool;
 
 // ── Raw `any` access (the view's two words) ─────────────────────────────────
 // The `{data, typeId}` layout is private; these two are the stable contract
@@ -150,6 +154,11 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
         c.exit(1);
     }
     c.abort()
+}
+
+// Stop the program at `site` unless `ok`.
+@assert :: (ok: bool, msg: ?string = null, site: @SourceSite = @caller) {
+    if !ok { @panic(msg ?? "assertion failed", site); }
 }
 
 // ── The checked read of boxed storage ──────────────────────────────────────

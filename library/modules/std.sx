@@ -71,8 +71,6 @@ writeEach     :: writer.writeEach;
 print  :: fmt.print;
 format :: fmt.format;
 
-// The unconsumed interface re-erasure `p.(Q)`: the compiler's rewrite target.
-__sx_reerase_or_panic :: fmt.__sx_reerase_or_panic;
 
 anyToString      :: fmt.anyToString;
 intToString      :: fmt.intToString;

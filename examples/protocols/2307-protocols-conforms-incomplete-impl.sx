@@ -1,0 +1,14 @@
+// `@conforms` folds from whether the value's methods satisfy the interface,
+// not from whether an `impl` was written: an impl that leaves a method out
+// does not conform.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; b :: (self: *Self) -> i64; }
+
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }
+
+main :: () {
+    w := W{ v = 3 };
+    print("{}\n", @conforms(I, w));
+}

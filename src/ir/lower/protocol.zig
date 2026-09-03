@@ -534,7 +534,7 @@ pub fn staticIsAnswer(self: *Lowering, subject: TypeId, node: *const Node) ?bool
 
 /// Does `concrete_ty` satisfy the contract `proto_ty` declares? Waits on the
 /// impl-contribution discipline in both polarities before publishing.
-fn conformanceAnswer(self: *Lowering, proto_ty: TypeId, concrete_ty: TypeId) ?bool {
+pub fn conformanceAnswer(self: *Lowering, proto_ty: TypeId, concrete_ty: TypeId) ?bool {
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     const cname = self.resolveConcreteTypeName(concrete_ty) orelse {
         if (implFactWaits(self, proto_ty, pd.name, concrete_ty, false)) return null;
