@@ -1410,7 +1410,7 @@ fn lowerNarrowingPanic(
     const saved = self.type_bindings;
     self.type_bindings = bindings;
     defer self.type_bindings = saved;
-    const args = self.alloc.dupe(*Node, &.{ recv_id, target }) catch @panic("out of memory");
+    const args = self.alloc.dupe(*Node, &.{ target, recv_id }) catch @panic("out of memory");
     return self.lowerCall(&.{ .callee = callee, .args = args });
 }
 
