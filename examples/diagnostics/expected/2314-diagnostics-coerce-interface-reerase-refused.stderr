@@ -1,0 +1,5 @@
+error: an interface handle re-erases through the assertion 'p.(Q)'
+  --> examples/diagnostics/2314-diagnostics-coerce-interface-reerase-refused.sx:14:10
+   |
+14 |     r := @coerce(Q, p);
+   |          ^^^^^^^

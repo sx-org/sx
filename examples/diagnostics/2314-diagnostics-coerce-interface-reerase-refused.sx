@@ -1,0 +1,16 @@
+// `@coerce` between interfaces is refused: re-erasure is the assertion
+// `p.(Q)`.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; }
+Q :: interface { q :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }
+impl Q for W { q :: (self: *W) -> i64 { self.v + 1 } }
+
+main :: () {
+    w := W{ v = 3 };
+    p : I = w;
+    r := @coerce(Q, p);
+    print("{}\n", r.q());
+}

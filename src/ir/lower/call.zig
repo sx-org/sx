@@ -4238,8 +4238,8 @@ fn lowerConvertIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
 
 /// `@coerce(T, v)` — the ladder `xx` and `.(T)` enter: `@as`, then
 /// `@convert` from the context allocator when the compiler's conversions
-/// make no progress. A boxed `v` and an interface handle at another
-/// interface are the assertion regime, refused as `xx` refuses them.
+/// make no progress. A boxed `v` converts by its runtime type as `@as` does;
+/// an interface handle at another interface is the assertion `p.(Q)`.
 fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     if (c.args.len != 2) {
         if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@coerce takes 2 arguments, got {d}", .{c.args.len});
@@ -4250,17 +4250,20 @@ fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
         if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@coerce expects a type known at compile time", .{});
         return Ref.none;
     }
+    const src = self.inferExprType(c.args[1]);
     const saved_target = self.target_type;
-    self.target_type = dst;
+    self.target_type = if (src == .any) .any else dst;
     const val = self.lowerExpr(c.args[1]);
     self.target_type = saved_target;
     const src_ty = self.builder.getRefType(val);
+    if (src_ty == .any) return boxedAs(self, val, dst, c.callee.span);
     const xx_plan = self.coercionResolver().classifyXX(src_ty, dst);
-    if (xx_plan == .unbox_any or xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) {
-        const saved_postfix = self.xx_is_postfix;
-        self.xx_is_postfix = false;
-        defer self.xx_is_postfix = saved_postfix;
-        return self.lowerXX(val, c.args[1]);
+    if (xx_plan == .reerase_protocol or xx_plan == .reerase_protocol_wrap) {
+        if (self.diagnostics) |d| {
+            const target = if (!dst.isBuiltin() and self.module.types.get(dst) == .optional) self.module.types.get(dst).optional.child else dst;
+            d.addFmt(.err, c.callee.span, "an interface handle re-erases through the assertion 'p.({s})'", .{self.formatTypeName(target)});
+        }
+        return self.builder.constUndef(dst);
     }
     return self.lowerCoerce(val, c.args[1], src_ty, dst);
 }
