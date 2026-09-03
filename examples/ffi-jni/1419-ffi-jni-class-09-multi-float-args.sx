@@ -9,6 +9,7 @@
 // the calls.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 MotionEvent :: @JniClass("android/view/MotionEvent") extern {
     getAction :: (self: *Self) -> i32;

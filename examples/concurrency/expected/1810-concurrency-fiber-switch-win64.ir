@@ -7,7 +7,7 @@ module asm "    call fib_body"
 module asm "    ud2"
 
 @gOut = internal global ptr null
-@__sx_default_context = internal constant { ptr } zeroinitializer
+@__sx_default_context = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 declare ptr @GetStdHandle(i32) #0

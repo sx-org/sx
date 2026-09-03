@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant { ptr } zeroinitializer
+@__sx_default_context = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 define internal i64 @addAsm(ptr %0, i64 %1, i64 %2) #0 {

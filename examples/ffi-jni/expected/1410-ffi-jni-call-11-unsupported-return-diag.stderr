@@ -1,5 +1,5 @@
 error: JNI method 'Buf.get' returns 'u32', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers
-  --> examples/ffi-jni/1410-ffi-jni-call-11-unsupported-return-diag.sx:14:14
+  --> examples/ffi-jni/1410-ffi-jni-call-11-unsupported-return-diag.sx:15:14
    |
-14 |         _ := b.get();
+15 |         _ := b.get();
    |              ^^^^^

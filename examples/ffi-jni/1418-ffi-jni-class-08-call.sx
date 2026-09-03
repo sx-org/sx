@@ -4,6 +4,7 @@
 // installs the handle on `context.jni` for DSL calls.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 Activity :: @JniClass("android/app/Activity") extern {
     getWindow :: (self: *Self) -> *void;

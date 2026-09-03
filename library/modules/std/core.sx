@@ -615,10 +615,6 @@ Io :: interface {
 
 Context :: struct {}
 
-// The JNIEnv* the JVM hands a native method. `null` is the unchecked
-// sentinel. DSL dispatch and helpers read `context.jni`.
-@context.extend jni: *void = null;
-
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)`,
 // falls through the built-in conversion ladder to an `impl Into(T) for
 // Source` lookup; the compiler monomorphises `convert` for the (Source, T)
