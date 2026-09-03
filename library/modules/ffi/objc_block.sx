@@ -53,7 +53,7 @@ _NSConcreteStackBlock : *void extern;
 
 // Shared descriptor for the 48-byte sx-block layout. All Into impls below
 // point their `descriptor` field at this.
-__sx_block_descriptor : BlockDescriptor = .{
+kBlockDescriptor : BlockDescriptor = .{
     reserved = 0,
     size = 48,
 };
@@ -142,7 +142,7 @@ buildBlockConvert :: (args: []Type, $ret: Type) -> string {
     code = concat(code, "flags = 0, ");
     code = concat(code, "reserved = 0, ");
     code = concat(code, "invoke = (*__invoke).(*void), ");
-    code = concat(code, "descriptor = *__sx_block_descriptor, ");
+    code = concat(code, "descriptor = *kBlockDescriptor, ");
     code = concat(code, "sxEnv = self.env, ");
     code = concat(code, "sxFn = self.fnPtr, ");
     code = concat(code, "};");
