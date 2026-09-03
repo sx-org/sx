@@ -1,5 +1,5 @@
-// `p.(Q)` in a parameter's declared default fails like one in a body: the
-// assertion carries the default's site.
+// `p.(Q)` in a parameter's declared default panics at the
+// default's site.
 //
 // aborts (exit 134) after the message — aarch64-macOS-pinned.
 @import "modules/std.sx";
