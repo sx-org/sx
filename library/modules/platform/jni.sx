@@ -1,0 +1,3 @@
+// The JNIEnv* the JVM hands a native method. `null` is the unchecked
+// sentinel. DSL dispatch and helpers read `context.jni`.
+@context.extend jni: *void = null;

@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant { ptr } zeroinitializer
+@__sx_default_context = internal constant {} zeroinitializer
 @str = private unnamed_addr constant [12 x i8] c"/tmp/x.sock\00", align 1
 
 ; Function Attrs: nounwind

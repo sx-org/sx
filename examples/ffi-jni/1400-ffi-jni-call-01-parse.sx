@@ -6,6 +6,7 @@
 // surface only.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 main :: () -> i32 {
     inline if false {

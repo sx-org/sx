@@ -6,6 +6,7 @@
 // lookup; env stays register-resident across loop bodies.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 gShouldCall : bool = false;
 

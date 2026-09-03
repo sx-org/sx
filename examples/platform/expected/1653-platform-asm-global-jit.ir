@@ -4,7 +4,7 @@ module asm "_my_sub:"
 module asm "    sub x0, x0, x1"
 module asm "    ret"
 
-@__sx_default_context = internal constant { ptr } zeroinitializer
+@__sx_default_context = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 declare i64 @my_sub(i64, i64) #0

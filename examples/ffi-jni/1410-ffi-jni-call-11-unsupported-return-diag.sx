@@ -2,6 +2,7 @@
 // or an aggregate — is a compile error at the call site.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> u32;

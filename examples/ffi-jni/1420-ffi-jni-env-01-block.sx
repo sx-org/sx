@@ -2,6 +2,7 @@
 // block. DSL calls and helpers read that field.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 main :: () -> i32 {
     synthEnv : *void = null;

@@ -12,6 +12,7 @@
 // the JNI lowering is visible to the IR snapshot.
 
 @import "modules/std.sx";
+@import "modules/platform/jni.sx";
 
 gShouldCall : bool = false;
 
