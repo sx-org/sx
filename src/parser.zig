@@ -3628,21 +3628,11 @@ pub const Parser = struct {
             } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
                 if (self.tokens.tag(self.tok) == .l_paren) {
-                    // Postfix cast `expr.(T)`. One type, plus an optional
-                    // ALLOCATOR expression naming what an `Into` conversion
-                    // funds from — validated at lowering, which refuses it
-                    // for an interface target.
+                    // Postfix cast `expr.(T)`: one type.
                     self.advance(); // '('
                     const target = try self.parseTypeExpr();
-                    var alloc_arg: ?*Node = null;
-                    if (self.tokens.tag(self.tok) == .comma) {
-                        self.advance(); // ','
-                        alloc_arg = try self.parseExpr();
-                        if (self.tokens.tag(self.tok) == .comma)
-                            return self.fail("a postfix cast takes one type and at most one allocator: '.(T)' or '.(P, alloc)'");
-                    }
                     try self.expect(.r_paren);
-                    expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
+                    expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target } });
                 } else if (self.tokens.tag(self.tok) == .l_brace) {
                     // `expr.{ |s| stmts }` — a self-trailing block binding the
                     // value's pointer to the header name or to `self`. It rides
@@ -6942,13 +6932,10 @@ test "postfix cast binds tighter than unary minus: -x.(i8)" {
     try std.testing.expect(v.data.unary_op.operand.data == .postfix_cast);
 }
 
-test "postfix cast: '.(P, alloc)' parses with the allocator argument; a third element is an error" {
+test "postfix cast takes one type: a second element is a parse error" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x.(P, alloc); }");
-    try std.testing.expect(v.data == .postfix_cast);
-    try std.testing.expect(v.data.postfix_cast.alloc_arg != null);
-    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x.(P, a, b); }"));
+    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x.(P, alloc); }"));
 }
 
 test "optional-chained cast parses: x?.(i64)" {

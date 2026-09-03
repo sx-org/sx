@@ -1,5 +1,5 @@
 // An interface handle borrows its referent, so there is no allocating
-// erasure: naming an allocator in the postfix cast is refused.
+// erasure: `@convert` at an interface target is refused.
 @import "modules/std.sx";
 
 Greeter :: interface { greet :: (self: *Self) -> i64; }
@@ -9,5 +9,5 @@ impl Greeter for Hello { greet :: (self: *Hello) -> i64 { self.n } }
 
 main :: () {
     h := Hello{ n = 7 };
-    _ = h.(Greeter, context.allocator);
+    _ = @convert(Greeter, h);
 }

@@ -128,11 +128,11 @@ main :: () -> i32 {
     // A box of a set holds the member, so there is no set in it to unbox.
     slot: View = Label{ text = "boxed" };
     boxed: any = slot;
-    unboxed: View = xx boxed;
+    unboxed := @unbox(View, boxed);
     print("{}\n", unboxed.render());
 
     // An allocator has nothing to fund here.
-    allocated := Label{ text = "x" }.(View, context.allocator);
+    allocated := @convert(View, Label{ text = "x" });
     print("{}\n", allocated.render());
 
     print("{}\n", intoLabel(Label{ text = "widen" }));

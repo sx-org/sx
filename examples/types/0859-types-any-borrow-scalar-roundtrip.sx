@@ -9,22 +9,22 @@
 @import "modules/std.sx";
 
 main :: () -> i64 {
-    a : i8  = -8;    aa : any = a;   ra : i8  = xx aa;
-    b : i16 = -1616; ab : any = b;   rb : i16 = xx ab;
-    c : i32 = -32;   ac : any = c;   rc : i32 = xx ac;
-    d : i64 = -64;   ad : any = d;   rd : i64 = xx ad;
+    a : i8  = -8;    aa : any = a;   ra := @unbox(i8, aa);
+    b : i16 = -1616; ab : any = b;   rb := @unbox(i16, ab);
+    c : i32 = -32;   ac : any = c;   rc := @unbox(i32, ac);
+    d : i64 = -64;   ad : any = d;   rd := @unbox(i64, ad);
     print("{} {} {} {}\n", ra, rb, rc, rd);
 
-    e : u8  = 255;   ae : any = e;   re : u8  = xx ae;
-    f : u16 = 65535; af : any = f;   rf : u16 = xx af;
-    g : u32 = 4294967295; ag : any = g; rg : u32 = xx ag;
-    h : u64 = 18446744073709551615;  ah : any = h; rh : u64 = xx ah;
+    e : u8  = 255;   ae : any = e;   re := @unbox(u8, ae);
+    f : u16 = 65535; af : any = f;   rf := @unbox(u16, af);
+    g : u32 = 4294967295; ag : any = g; rg := @unbox(u32, ag);
+    h : u64 = 18446744073709551615;  ah : any = h; rh := @unbox(u64, ah);
     print("{} {} {} {}\n", re, rf, rg, rh);
 
-    x : f32 = 2.25;  ax : any = x;   rx : f32 = xx ax;
-    y : f64 = -3.5;  ay : any = y;   ry : f64 = xx ay;
-    z := true;       az : any = z;   rz : bool = xx az;
-    s := "view";     as : any = s;   rs : string = xx as;
+    x : f32 = 2.25;  ax : any = x;   rx := @unbox(f32, ax);
+    y : f64 = -3.5;  ay : any = y;   ry := @unbox(f64, ay);
+    z := true;       az : any = z;   rz := @unbox(bool, az);
+    s := "view";     as : any = s;   rs := @unbox(string, as);
     print("{} {} {} {}\n", rx, ry, rz, rs);
 
     // Rvalue boxing spills to a frame temp — the view stays valid for

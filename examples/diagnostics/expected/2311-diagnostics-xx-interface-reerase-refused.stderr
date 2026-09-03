@@ -1,0 +1,5 @@
+error: an interface handle re-erases through the assertion 'p.(Q)', not 'xx'
+  --> examples/diagnostics/2311-diagnostics-xx-interface-reerase-refused.sx:14:13
+   |
+14 |     r : Q = xx p;
+   |             ^^^^

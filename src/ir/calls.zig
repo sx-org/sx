@@ -216,6 +216,13 @@ pub const CallResolver = struct {
             }
             // `@as(T, v)` types as `T`; `@tag(v)` as the enum's tag type, or
             // `any` for a boxed `v`.
+            if (std.mem.eql(u8, bare_name, "@convert") or std.mem.eql(u8, bare_name, "@coerce")) {
+                const target = if (c.args.len >= 2 and self.l.isStaticTypeArg(c.args[0]))
+                    self.l.resolveTypeArg(c.args[0])
+                else
+                    TypeId.unresolved;
+                return refl(bare_name, target);
+            }
             if (std.mem.eql(u8, bare_name, "@as")) {
                 const target = if (c.args.len == 2 and self.l.isStaticTypeArg(c.args[0]))
                     self.l.resolveTypeArg(c.args[0])

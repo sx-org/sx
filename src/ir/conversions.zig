@@ -276,8 +276,7 @@ pub const CoercionResolver = struct {
     /// a pointer field "data" and a `Type` field "typeId"? Same
     /// name-AND-shape gate as `isProtocolViewDst`. Consulted ONLY by the
     /// POSTFIX arm (`av.(@Any)` is the raw-view retrieval): `xx av`
-    /// keeps its unbox meaning for EVERY target, @Any included — a generic
-    /// `(av: any) -> $T { xx av }` relies on the unbox being universal.
+    /// `@unbox(T, av)` reads every target, @Any included.
     pub fn isAnyViewDst(self: CoercionResolver, dst_ty: TypeId) bool {
         if (dst_ty.isBuiltin()) return false;
         const info = self.l.module.types.get(dst_ty);

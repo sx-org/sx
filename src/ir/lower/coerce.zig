@@ -71,24 +71,13 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // PLANNING: the `xx`-head decision (conversions.zig). `.coerce` falls
     // through to the built-in ladder + the user-`Into` fallback below.
     switch (self.coercionResolver().classifyXX(src_ty, dst_ty)) {
-        // Any → concrete type: unbox.
+        // A boxed value has three spelled readings; `xx` is none of them.
         .unbox_any => {
-            // Inside an int-category match arm (`case int:`), the tag set
-            // spans several widths — an unbox is an exact-width load, so a
-            // widening `xx val` needs a per-tag dispatch (load own width,
-            // extend per signedness).
-            if (dst_ty == .i64 or dst_ty == .u64 or dst_ty == .isize or dst_ty == .usize) {
-                if (self.current_match_tags) |tags| {
-                    return lowerAnyToIntDispatch(self, operand, dst_ty, tags);
-                }
+            if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'xx' does not read a boxed value: '@as({s}, av)' converts it, 'av.({s})' asserts it, '@unbox({s}, av)' reads it unchecked", .{ self.formatTypeName(dst_ty), self.formatTypeName(dst_ty), self.formatTypeName(dst_ty) });
             }
-            // An f32 view holds 4 bytes, so a float arm's f64 reading is per-tag.
-            if (dst_ty == .f64) {
-                if (self.current_match_tags) |tags| return widenAnyToF64(self, operand, tags);
-            }
-            return self.builder.emit(.{ .unbox_any = .{
-                .operand = operand,
-            } }, dst_ty);
+            return self.builder.constUndef(dst_ty);
         },
         // Same type: postfix `.(T)` is a no-op. Dest-inferred `xx` is an
         // error when the operand's own type is already dest; a literal
@@ -103,17 +92,20 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                     }
                 }
             }
-            if (self.into_alloc_ref != null) return refuseUnusedIntoAlloc(self, dst_ty);
             return operand;
         },
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
         // Interface → interface: one row of the target's conformance table
         // supplies the new dispatch word; ctx and typeId ride across unchanged.
-        // An absent row panics here — the consumed temperaments read it as a
-        // value instead.
-        .reerase_protocol => return reeraseHandle(self, operand, src_ty, dst_ty, .panic),
+        // An absent row panics here — the soft form reads it as a value
+        // instead. Re-erasure is the assertion regime, spelled `p.(Q)`.
+        .reerase_protocol => {
+            if (!self.xx_is_postfix) return refuseInferredReerase(self, dst_ty);
+            return reeraseHandle(self, operand, src_ty, dst_ty, .panic);
+        },
         .reerase_protocol_wrap => {
+            if (!self.xx_is_postfix) return refuseInferredReerase(self, dst_ty);
             const child = self.module.types.get(dst_ty).optional.child;
             return self.builder.optionalWrap(reeraseHandle(self, operand, src_ty, child, .absent), dst_ty);
         },
@@ -187,18 +179,32 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         }
     }
 
+    if (!target_explicit) return self.coerceExplicit(operand, src_ty, dst_ty);
+    return self.lowerCoerce(operand, operand_node, src_ty, dst_ty);
+}
+
+fn refuseInferredReerase(self: *Lowering, dst_ty: TypeId) Ref {
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        const target = if (!dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional) self.module.types.get(dst_ty).optional.child else dst_ty;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an interface handle re-erases through the assertion 'p.({s})', not 'xx'", .{self.formatTypeName(target)});
+    }
+    return self.builder.constUndef(dst_ty);
+}
+
+/// `@coerce(T, v)`, the ladder `xx` and `.(T)` enter: the compiler's
+/// conversions, then `@convert` funded from the context allocator when they
+/// make no progress. A pair neither rung takes is a diagnostic.
+pub fn lowerCoerce(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {
     const result = self.coerceExplicit(operand, src_ty, dst_ty);
 
-    // User-space `impl Into(Target)` — dest-inferred `xx` and postfix `.(T)`.
-    if (target_explicit and src_ty != dst_ty and result == operand) {
-        if (self.tryUserConversion(operand, operand_node, src_ty, dst_ty)) |converted| {
+    if (src_ty != dst_ty and result == operand) {
+        if (self.lowerConvert(operand, operand_node, src_ty, dst_ty, null)) |converted| {
             return converted;
         }
     }
 
-    if (self.into_alloc_ref != null) return refuseUnusedIntoAlloc(self, dst_ty);
-
-    if (target_explicit and src_ty != dst_ty and result == operand) {
+    if (src_ty != dst_ty and result == operand) {
         if (self.diagnostics) |d| {
             const plan = self.coercionResolver().classify(src_ty, dst_ty);
             const allowed_reinterpret = plan == .ptr_int_bitcast or plan == .unbox_any or
@@ -224,36 +230,11 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     return result;
 }
 
-fn refuseUnusedIntoAlloc(self: *Lowering, dst_ty: TypeId) Ref {
-    if (self.diagnostics) |d| {
-        const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an allocator argument only applies to Into", .{});
-    }
-    return self.builder.constUndef(dst_ty);
-}
-
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     return switch (plan) {
         .widen, .int_to_float, .array_to_slice, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .string_to_cstring, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
         else => false,
     };
-}
-
-/// Detect the `xx closure : Block` cast pattern so `tryUserConversion`
-/// can emit a focused diagnostic when no `Into(Block) for Closure(...)`
-/// impl is reachable. Replaces what was briefly a compiler-synthesised
-/// trampoline path with a "declare an impl" requirement — the stdlib
-/// covers common signatures (see modules/ffi/objc_block.sx), users
-/// add their own for unusual ones.
-pub fn isClosureToBlockCast(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
-    if (src_ty.isBuiltin()) return false;
-    const src_info = self.module.types.get(src_ty);
-    if (src_info != .closure) return false;
-    if (dst_ty.isBuiltin()) return false;
-    const dst_info = self.module.types.get(dst_ty);
-    if (dst_info != .@"struct") return false;
-    const block_name = self.module.types.internString("Block");
-    return dst_info.@"struct".name == block_name;
 }
 
 /// Pack-variadic impl matching. Walks `param_impl_pack_map[pack_key]`
@@ -273,6 +254,7 @@ pub fn tryPackImplMatch(
     proto_name: []const u8,
     pack_key: []const u8,
     guard_key: u64,
+    alloc: ?Ref,
 ) ?Ref {
     // PLANNING: select the matching pack impl + its `convert` (registry).
     const match = self.protocolResolver().matchPackImpl(src_ty, pack_key) orelse return null;
@@ -307,8 +289,8 @@ pub fn tryPackImplMatch(
         self.mangleTypeName(src_ty), self.mangleTypeName(dst_ty),
     }) catch return null;
 
-    self.xx_reentrancy.put(guard_key, {}) catch {};
-    defer _ = self.xx_reentrancy.remove(guard_key);
+    self.convert_reentrancy.put(guard_key, {}) catch {};
+    defer _ = self.convert_reentrancy.remove(guard_key);
 
     if (!self.lowered_functions.contains(mangled)) {
         const saved_pack = self.pack_bindings;
@@ -321,7 +303,7 @@ pub fn tryPackImplMatch(
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
-    const final_args = intoConvertArgs(self, operand, operand_node, func) orelse return operand;
+    const final_args = intoConvertArgs(self, operand, operand_node, func, alloc) orelse return operand;
     self.coerceCallArgs(final_args, params);
     return self.builder.call(fid, final_args, ret_ty);
 }
@@ -330,12 +312,16 @@ pub fn tryPackImplMatch(
 /// the impl's `convert` method and emit a direct call. Returns null when
 /// no impl matches (caller falls back to the built-in result, which is
 /// the unchanged operand emits no diagnostic for v0).
-pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) ?Ref {
+/// `@convert(T, v, alloc)`: the `impl Into(T) for S` call, `convert`
+/// monomorphized for the pair and funded from `alloc` (the context allocator
+/// when null). Null when no impl exists; a visibility or duplicate fault is a
+/// diagnostic.
+pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId, alloc: ?Ref) ?Ref {
     // Reentrancy guard — pack (src, dst) into a u64.
     const guard_key: u64 = (@as(u64, src_ty.index()) << 32) | @as(u64, dst_ty.index());
-    if (self.xx_reentrancy.contains(guard_key)) {
+    if (self.convert_reentrancy.contains(guard_key)) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, operand_node.span, "recursive xx conversion from '{s}' to '{s}'", .{
+            diags.addFmt(.err, operand_node.span, "recursive conversion from '{s}' to '{s}'", .{
                 self.mangleTypeName(src_ty), self.mangleTypeName(dst_ty),
             });
         }
@@ -367,17 +353,8 @@ pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Nod
     const has_concrete = entries_opt != null and entries_opt.?.items.len > 0;
     if (!has_concrete) {
         // Concrete miss — try the pack map before emitting a diagnostic.
-        if (self.tryPackImplMatch(operand, operand_node, src_ty, dst_ty, proto_name, pack_key, guard_key)) |result| {
+        if (self.tryPackImplMatch(operand, operand_node, src_ty, dst_ty, proto_name, pack_key, guard_key, alloc)) |result| {
             return result;
-        }
-        if (self.isClosureToBlockCast(src_ty, dst_ty)) {
-            if (self.diagnostics) |diags| {
-                const saved = diags.current_source_file;
-                diags.current_source_file = operand_node.source_file orelse self.current_source_file;
-                defer diags.current_source_file = saved;
-                diags.addFmt(.err, operand_node.span, "no `Into(Block) for {s}` impl — add a per-signature `__block_invoke_<sig>` trampoline + Into impl alongside the existing ones in modules/ffi/objc_block.sx, or declare it in your own code", .{self.mangleTypeName(src_ty)});
-            }
-            return operand;
         }
         return null;
     }
@@ -435,8 +412,8 @@ pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Nod
         self.mangleTypeName(src_ty), self.mangleTypeName(dst_ty),
     }) catch return null;
 
-    self.xx_reentrancy.put(guard_key, {}) catch {};
-    defer _ = self.xx_reentrancy.remove(guard_key);
+    self.convert_reentrancy.put(guard_key, {}) catch {};
+    defer _ = self.convert_reentrancy.remove(guard_key);
 
     if (!self.lowered_functions.contains(mangled)) {
         self.monomorphizeFunction(fd, mangled, &bindings);
@@ -446,17 +423,17 @@ pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Nod
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
-    const final_args = intoConvertArgs(self, operand, operand_node, func) orelse return operand;
+    const final_args = intoConvertArgs(self, operand, operand_node, func, alloc) orelse return operand;
     self.coerceCallArgs(final_args, params);
     return self.builder.call(fid, final_args, ret_ty);
 }
 
 /// `convert(self, alloc)` — named `.(T, alloc)` or `context.allocator`.
-fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, func: *const Function) ?[]Ref {
+fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, func: *const Function, alloc: ?Ref) ?[]Ref {
     const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator"));
-    const alloc_ref = if (self.into_alloc_ref) |r| r else self.ambientAllocator() orelse {
+    const alloc_ref = if (alloc) |r| r else self.ambientAllocator() orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, operand_node.span, "this conversion funds from context.allocator — import std or write '.(T, <alloc>)'", .{});
+            d.addFmt(.err, operand_node.span, "this conversion funds from context.allocator — import std or write '@convert(T, v, <alloc>)'", .{});
         }
         return null;
     };

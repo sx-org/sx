@@ -8,7 +8,7 @@ fn testIo() std.Io {
 }
 
 // The stdlib never writes dest-inferred `xx`. Every opt-in conversion
-// names the dest with `.(T)` / `.(T, alloc)`.
+// names the dest with `.(T)`.
 test "library contains no xx" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

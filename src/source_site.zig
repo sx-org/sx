@@ -667,7 +667,6 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
         .postfix_cast => |p| {
             try walk(b, p.operand);
             try walk(b, p.type_expr);
-            if (p.alloc_arg) |a| try walk(b, a);
         },
         .while_expr => |w| {
             try walk(b, w.condition);

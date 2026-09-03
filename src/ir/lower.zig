@@ -909,12 +909,13 @@ pub const Lowering = struct {
     /// order does not matter.
     comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
-    xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
+    /// `(src, dst)` pairs an `Into` conversion is being lowered for: a `convert`
+    /// body that re-enters the same pair is refused rather than monomorphized forever.
+    convert_reentrancy: std.AutoHashMap(u64, void),
     /// True while lowering postfix `expr.(T)` — dest is written on the value.
     /// Prefix `xx` uses the slot dest and is an error when implicit already applies.
     xx_is_postfix: bool = false,
     /// Allocator for `Into` / `.(T, alloc)`. Null means `context.allocator`.
-    into_alloc_ref: ?Ref = null,
     /// Whole-program-converged inferred error sets: top-level
     /// bare-`!` function name → its sorted escape-tag ids (literal raises +
     /// pure-failable `try` edges, fix-pointed across the call graph). The
@@ -1395,7 +1396,7 @@ pub const Lowering = struct {
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
-            .xx_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
+            .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
             .inferred_error_sets = std.StringHashMap([]const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
@@ -3715,9 +3716,9 @@ pub const Lowering = struct {
     pub const lowerXX = lower_coerce.lowerXX;
     pub const refuseRvalueInterfaceErasure = lower_coerce.refuseRvalueInterfaceErasure;
     pub const refuseNullAtNonOptional = lower_coerce.refuseNullAtNonOptional;
-    pub const isClosureToBlockCast = lower_coerce.isClosureToBlockCast;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;
-    pub const tryUserConversion = lower_coerce.tryUserConversion;
+    pub const lowerConvert = lower_coerce.lowerConvert;
+    pub const lowerCoerce = lower_coerce.lowerCoerce;
     pub const isLvalueExpr = lower_coerce.isLvalueExpr;
     pub const refStorageAddress = lower_coerce.refStorageAddress;
     pub const arrayToSliceView = lower_coerce.arrayToSliceView;

@@ -1,5 +1,5 @@
-error: '.(Greeter, alloc)' allocates, but an interface handle borrows its referent — write '.(Greeter)'
+error: '@convert(Greeter, …)' allocates, but an interface handle borrows its referent — write 'v.(Greeter)'
   --> examples/diagnostics/2232-diagnostics-interface-erasure-allocator-refused.sx:12:9
    |
-12 |     _ = h.(Greeter, context.allocator);
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |     _ = @convert(Greeter, h);
+   |         ^^^^^^^^

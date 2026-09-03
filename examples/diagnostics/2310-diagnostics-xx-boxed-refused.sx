@@ -1,0 +1,9 @@
+// `xx` does not read a boxed value: the readings are `@as` (convert),
+// `av.(T)` (assert) and `@unbox` (unchecked).
+@import "modules/std.sx";
+
+main :: () {
+    av : any = 7;
+    n : i64 = xx av;
+    print("{}\n", n);
+}

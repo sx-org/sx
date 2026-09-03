@@ -1239,8 +1239,8 @@ largest :: (xs: []$T/Ord) -> T { … }          // bound: any T conforming to Or
 Into :: constraint(Target: Type) {
     convert :: (self: *Self, alloc: Allocator) -> Target;
 }
-// Dest-inferred `xx val` at a `T` slot, or `val.(T)` / `val.(T, alloc)`,
-// falls through the built-in conversion ladder to an `impl Into(T) for
+// Dest-inferred `xx val` at a `T` slot, or `val.(T)`, falls through the
+// built-in conversion ladder to an `impl Into(T) for
 // Source` lookup; the compiler monomorphizes `convert` for the (Source, T)
 // pair and emits a direct call. `.(T)` funds from `context.allocator`.
 ```
@@ -3064,7 +3064,7 @@ An explicit cast pair with **no conversion** is a compile error
 (`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
 when the value is already the slot type (`already 'i64'`) and when an
 implicit conversion already applies (`already converts to '*void'`).
-The remaining reinterprets are modeled: unchecked `any` unbox, pointer
+The remaining reinterprets are modeled: pointer
 ↔ integer, same-size aggregate pun (e.g. `string` ↔ `@Slice`), pointer
 or function-pointer pun, and same-width integer pun. There is no spill
 fallback. User `Into` conversions run when the built-in ladder makes no
@@ -3156,8 +3156,8 @@ target exempt from the three temperaments: it answers the view's own
 `{data, typeId}` pair, built field-wise (name-AND-shape gated, so only
 the std `@Any` shape triggers). The exemption is the bare postfix
 target only: the soft form `.(?@Any)` still asserts the boxed payload,
-and `xx av` keeps its unchecked-unbox meaning for EVERY target, `@Any`
-included (a generic `(av: any) -> $T { xx av }` depends on it).
+and `@unbox(T, av)` is the unchecked read for EVERY target, `@Any`
+included (a generic `(av: any) -> $T { @unbox(T, av) }` depends on it).
 `rawMakeAny(r.typeId, r.data)` reassembles a working view from the
 pair.
 
@@ -3172,7 +3172,8 @@ present mismatch, and `o?.(?i64)` conflates chain-null and mismatch-null.
 An optional TARGET flattens — `ap?.(?i64)` is `?i64`, one null level, never
 `??i64`. An unchained `.(T)` on an optional receiver is a compile error
 pointing at `?.(T)` / unwrap-first, and `x?.(T)` on a non-optional receiver
-is likewise refused. Unchecked unboxing stays `xx`.
+is likewise refused. Unchecked unboxing is `@unbox`; `xx av` is refused
+naming the three readings.
 An **interface-handle** receiver's checked downcast (`p.(Square)`) is live:
 a handle carries its referent's `typeId` word and reads as its
 `{ctx, typeId}` prefix view, and the check is a compare against that
@@ -4018,7 +4019,7 @@ What formation **refuses**:
 | `v: View = Plain{}` | `Plain` never declared itself into `View`; no conversion stands in for a declaration |
 | `v: View = Alien{}` | `Alien` is a member of another set, and a type belongs to one |
 | `v: View = xx Plain{}` | a cast asks for the same conversion, and is not a way past a declaration |
-| `value.(View, alloc)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
+| `@convert(View, value)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
 
 An open set sits outside interface coercion entirely: there is no `xx`-style
 erasure, no heap box, and no compiler-selected storage anywhere in formation.
@@ -5580,10 +5581,12 @@ The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `isFla
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
 ### Type Conversion
-- Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. Runtime-typed data travels as `any` and comes back through the assertion forms.
+- Conversions are implicit, or they name the type with `expr.(T)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. Both lower to `@coerce`. Runtime-typed data travels as `any` and comes back through the assertion forms.
 - `@as($T: Type, v: $S) -> T` — the compiler's conversions of `v` to `T`: every arm of the coercion ladder except `Into` and the unchecked unbox. A boxed `v` converts by its runtime type; a pairing with no conversion stops the program naming both types.
 - `@tag(v: $T)` — an enum value's tag: a typed enum's tag in its tag type; a boxed one as an `any` view typed by its tag type.
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
+- `@convert($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T` — the `impl Into(T) for S` conversion, funded from `alloc`.
+- `@coerce($T: Type, v: $S) -> T` — the ladder `xx` and `.(T)` enter: `@as`, then `@convert` from the context allocator when the compiler's conversions make no progress.
 - `@conforms($I: Type, v: $S) -> bool` — whether `v` conforms to interface `I`: a concrete `S` folds at compile time; an interface handle or a boxed `v` reads `I`'s conformance table by the referent's type.
 - `@assert(ok: bool, msg: ?string = null, site: @SourceSite = @caller)` — stops the program at `site` through `@panic` unless `ok`. `p.(Q)` between interfaces is the handle build plus `@assert(<row present>, "re-erasure to 'Q' failed")` at the site.
 
