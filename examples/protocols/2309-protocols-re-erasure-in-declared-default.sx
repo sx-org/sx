@@ -1,0 +1,20 @@
+// `p.(Q)` in a parameter's declared default fails like one in a body: the
+// assertion carries the default's site.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; }
+Q :: interface { q :: (self: *Self) -> i64; }
+V :: struct { n: i64; }
+impl I for V { a :: (self: *V) -> i64 { self.n } }
+
+gv : V = V{ n = 9 };
+
+get :: () -> I { gv }
+
+take :: (q: Q = get().(Q)) -> i64 { q.q() }
+
+main :: () {
+    print("{}\n", take());
+}

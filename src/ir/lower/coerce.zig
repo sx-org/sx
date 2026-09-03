@@ -12,6 +12,7 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
+const Scope = lower.Scope;
 const ParamImplEntry = Lowering.ParamImplEntry;
 
 /// Lower the `xx` operator (type coercion).
@@ -842,12 +843,18 @@ fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
     const cs = self.builder.current_span;
     const span = ast.Span{ .start = cs.start, .end = cs.end };
     const src = self.current_source_file;
-    const scope = self.scope orelse return;
+    // A declared default lowers with no scope; the bound bool lives on a
+    // child scope installed for the synthesized call.
+    var tmp = Scope.init(self.alloc, self.scope);
+    defer tmp.deinit();
+    const saved = self.scope;
+    self.scope = &tmp;
+    defer self.scope = saved;
     var buf: [48]u8 = undefined;
     const nm = std.fmt.bufPrint(&buf, "$conforms_{d}", .{self.block_counter}) catch "$conforms";
     self.block_counter += 1;
     const owned = self.alloc.dupe(u8, nm) catch return;
-    scope.put(owned, .{ .ref = present, .ty = .bool, .is_alloca = false });
+    tmp.put(owned, .{ .ref = present, .ty = .bool, .is_alloca = false });
     const ok = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
     const text = std.fmt.allocPrint(self.alloc, "re-erasure to '{s}' failed", .{self.formatTypeName(dst_ty)}) catch return;
     const msg = self.synthNode(.{ .string_literal = .{ .raw = text, .is_raw = true } }, span, src);
