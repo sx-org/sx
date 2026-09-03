@@ -411,16 +411,23 @@ pub const ResolvedModule = struct {
     /// first-wins winner. NAMED types and every non-function `const_decl` (type
     /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
     /// const caches) are per-source — that is what prevents same-name collapse for
-    /// types/aliases and supports same-name value consts. Everything
+    /// types/aliases and supports same-name value consts. So is every
+    /// compiler-gated declaration — an `@` name, or an `intrinsic` body — whose
+    /// declaration-site gate (the contract registry, the intrinsic registry) runs
+    /// in lowering and must see each author. Everything
     /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed
     /// author stays reachable via its qualified name / SelectedFunc), and crucially
     /// `var_decl`s, including a `extern` extern global declared in two files
     /// (e.g. `__stdinp : *void extern;`) that MUST resolve to the ONE libSystem
     /// symbol, not split into a duplicate `__stdinp.1`.
     pub fn isPerSourceDecl(decl: *const Node) bool {
+        if (decl.data.declName()) |name| {
+            if (name.len > 0 and name[0] == '@') return true;
+        }
         return switch (decl.data) {
             .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
-            .const_decl => |cd| cd.value.data != .fn_decl,
+            .fn_decl => |fd| fd.body.data == .intrinsic_expr,
+            .const_decl => |cd| cd.value.data != .fn_decl or cd.value.data.fn_decl.body.data == .intrinsic_expr,
             else => false,
         };
     }

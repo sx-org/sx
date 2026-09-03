@@ -1,0 +1,11 @@
+// A wrong-module `@` declaration is rejected even when the owning module's
+// declaration already sits in the flat import graph: a compiler-gated
+// declaration registers per source, so its gate reads this author too.
+@import "modules/std/core.sx";
+
+@sizeOf :: ($T: Type) -> i64;
+
+main :: () {
+    x := @sizeOf(i64);
+    if x == 8 { return; }
+}

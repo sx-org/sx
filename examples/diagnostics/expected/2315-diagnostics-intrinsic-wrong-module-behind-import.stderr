@@ -1,0 +1,11 @@
+error: intrinsic '@sizeOf' is declared by modules/std/core.sx, not by this module
+  --> examples/diagnostics/2315-diagnostics-intrinsic-wrong-module-behind-import.sx:6:1
+   |
+ 6 | @sizeOf :: ($T: Type) -> i64;
+   | ^^^^^^^
+
+error: '@sizeOf' is a compiler-maintained contract declared by 'modules/std/core.sx' — this module cannot declare it
+  --> examples/diagnostics/2315-diagnostics-intrinsic-wrong-module-behind-import.sx:6:1
+   |
+ 6 | @sizeOf :: ($T: Type) -> i64;
+   | ^^^^^^^
