@@ -747,7 +747,7 @@ fn preludeBeforeReturn(body: *const Node) []const *const Node {
 /// would otherwise panic at codegen). `span` locates both diagnostics.
 pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?TypeId {
     // The scan-time context comes from the EARLY-emitted
-    // `__sx_default_context` (see `evalComptimeType` — assembly + emission
+    // `kDefaultContext` (see `evalComptimeType` — assembly + emission
     // run before the body lowers, and the emission's erasure folds force the
     // protocol thunks). No separate thunk-forcing here.
 
@@ -1821,7 +1821,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // through here — and it (or a lazily-lowered callee) may read
     // `context.allocator`, which only exists once the Context is ASSEMBLED
     // and whose VALUE the VM materializes from the EMITTED
-    // `__sx_default_context` constant. Best-effort early assembly +
+    // `kDefaultContext` constant. Best-effort early assembly +
     // emission at the one choke point; both defer silently when something
     // isn't registered yet.
     self.assembleContextEarly();
@@ -1883,7 +1883,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // Build params: implicit `__sx_ctx` at slot 0 when the program
     // uses Context (so the body's `context.X` reads + transitive calls
     // resolve cleanly). The comptime function's top-level invocation
-    // supplies `&__sx_default_context` (interp via callWithDefaultContext;
+    // supplies `&kDefaultContext` (interp via callWithDefaultContext;
     // codegen via the comptime-eval glue in emit_llvm).
     const wants_ctx = self.implicit_ctx_enabled;
     const params_slice = blk: {

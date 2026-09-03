@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 define i64 @cb(i64 %0) #0 {
@@ -24,7 +24,7 @@ entry:
 ; Function Attrs: nounwind
 define i32 @main() #0 {
 entry:
-  %call = call i64 @tramp(ptr @__sx_default_context, i64 41)
+  %call = call i64 @tramp(ptr @kDefaultContext, i64 41)
   %ca.tr = trunc i64 %call to i32
   ret i32 %ca.tr
 }

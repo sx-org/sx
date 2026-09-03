@@ -479,7 +479,7 @@ const Expansion = struct {
     /// against an open set whose layout is not final. Once nothing can
     /// contribute, the decided space registers (incrementally — a declaration is
     /// scanned once), the Context layout assembles, and the exact
-    /// `__sx_default_context` is emitted. A field type a taken group has not
+    /// `kDefaultContext` is emitted. A field type a taken group has not
     /// declared yet is the same wait: another driver's group can still supply
     /// it.
     fn contextReady(ex: *Expansion) bool {
@@ -495,7 +495,7 @@ const Expansion = struct {
             return false;
         }
         self.emitDefaultContextGlobalEarly();
-        if (!self.program_index.global_names.contains("__sx_default_context")) {
+        if (!self.program_index.global_names.contains("kDefaultContext")) {
             ex.awaitContext();
             return false;
         }

@@ -1,6 +1,6 @@
 // A `@run` body executes in the comptime VM under the same assembled default
 // context the binary gets: an added field's default is readable at comptime.
-// One source of truth — the VM materializes `__sx_default_context`, so the
+// One source of truth — the VM materializes `kDefaultContext`, so the
 // constant the LLVM backend emits and the value `@run` sees cannot diverge.
 @import "modules/std.sx";
 

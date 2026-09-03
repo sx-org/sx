@@ -524,7 +524,7 @@ IoErr :: error { Failed; Canceled }
 //
 // `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
 // protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
-// is installed in the process-wide `__sx_default_context`. Async runtime
+// is installed in the process-wide `kDefaultContext`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
 // minimum the fiber scheduler needs; everything ergonomic
@@ -589,7 +589,7 @@ Io :: interface {
 // compiler assembles 100% of its fields from the program's `@context.extend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
-// like any user field. `__sx_default_context` is emitted from the assembled
+// like any user field. `kDefaultContext` is emitted from the assembled
 // layout with each declaration's folded default; compiler-internal accesses
 // resolve fields BY NAME, never by index. This empty declaration is ALSO the
 // implicit-context mode marker: a compilation without a `Context` struct

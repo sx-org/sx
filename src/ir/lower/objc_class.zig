@@ -262,7 +262,7 @@ pub fn ensureCRuntimeDecl(self: *Lowering, name: []const u8, param_tys: []const 
 ///   1. Loads the cached ivar handle from `@__<Cls>_state_ivar`.
 ///   2. Calls `object_getIvar(obj, ivar)` to get the `*<Cls>State`
 ///      state pointer.
-///   3. Calls the sx body `@<Cls>.<method>(__sx_default_context,
+///   3. Calls the sx body `@<Cls>.<method>(kDefaultContext,
 ///      state, ...user_args)` (default sx convention).
 ///   4. Returns the result (or `ret void`).
 ///
@@ -714,7 +714,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
 
     const ctx_ref: ?Ref = blk: {
         if (!self.implicit_ctx_enabled) break :blk null;
-        const dctx_gi = self.program_index.global_names.get("__sx_default_context") orelse break :blk null;
+        const dctx_gi = self.program_index.global_names.get("kDefaultContext") orelse break :blk null;
         break :blk self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
     };
 
@@ -759,7 +759,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
 ///
 /// Body:
 ///   %instance = class_createInstance(cls, 0)
-///   %ctx_addr = &__sx_default_context
+///   %ctx_addr = &kDefaultContext
 ///   %state    = ctx_addr.allocator.alloc(STATE_SIZE)
 ///   memset(state, 0, STATE_SIZE)
 ///   state[0]  = allocator                    ← capture for -dealloc
@@ -800,14 +800,14 @@ pub fn emitObjcDefinedClassAllocImp(self: *Lowering, fcd: *const ast.RuntimeClas
     const entry = self.builder.appendBlock(entry_name, &.{});
     self.builder.switchToBlock(entry);
 
-    // ctx_addr = &__sx_default_context — IMP runs in Apple's runtime
+    // ctx_addr = &kDefaultContext — IMP runs in Apple's runtime
     // context, no implicit sx ctx to inherit, so use the process-wide
     // default allocator. Sx-side callers bypass this IMP entirely
     // (compiler intercepts Cls.alloc()) and use their own
     // `context.allocator`.
-    const default_ctx_gi = self.program_index.global_names.get("__sx_default_context") orelse {
+    const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassAllocImp: __sx_default_context global missing for class '{s}' (compiler bug — scan pass did not register the default context)", .{fcd.name});
+            d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassAllocImp: kDefaultContext global missing for class '{s}' (compiler bug — scan pass did not register the default context)", .{fcd.name});
         }
         return;
     };
@@ -844,7 +844,7 @@ fn dispatchAllocator(
 
 /// Shared inline sequence: allocate Obj-C instance + sx state struct,
 /// capture the allocator, bind to the `__sx_state` ivar. Used by both
-/// the `+alloc` IMP (ctx_addr = &__sx_default_context) and the sx-side
+/// the `+alloc` IMP (ctx_addr = &kDefaultContext) and the sx-side
 /// `Cls.alloc()` interception (ctx_addr = current_ctx_ref).
 ///
 /// Returns the new instance pointer, or `null` if a required global is
@@ -977,7 +977,7 @@ pub fn emitObjcDefinedAllocAndInit(
 /// C-ABI: `(cls: Class, _cmd: SEL, ...user_args) -> ret`
 ///
 /// Body:
-///   call @<Cls>.<method>(__sx_default_context, ...user_args)
+///   call @<Cls>.<method>(kDefaultContext, ...user_args)
 ///   ret <result>
 ///
 /// No ivar read — class methods have no per-instance state.
@@ -1034,7 +1034,7 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const ctx_ref: ?Ref = blk: {
         if (!self.implicit_ctx_enabled) break :blk null;
-        const dctx_gi = self.program_index.global_names.get("__sx_default_context") orelse break :blk null;
+        const dctx_gi = self.program_index.global_names.get("kDefaultContext") orelse break :blk null;
         break :blk self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
     };
 
@@ -1230,9 +1230,9 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     // Default-context address for the implicit __sx_ctx the dealloc
     // fn-ptr takes as its first arg (the dealloc body might allocate
     // internally; default GPA is the safe baseline).
-    const default_ctx_gi = self.program_index.global_names.get("__sx_default_context") orelse {
+    const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: __sx_default_context global missing for class '{s}'", .{fcd.name});
+            d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: kDefaultContext global missing for class '{s}'", .{fcd.name});
         }
         return;
     };

@@ -93,7 +93,7 @@ Fiber :: struct {
     next: *Fiber;          // intrusive FIFO ready-queue link
     // The dynamic `context` in force when this fiber was SPAWNED, captured by
     // value. `fibDispatch` re-pushes it around the body so the fiber runs under
-    // its spawner's context — not the static `__sx_default_context` the `abi(.c)`
+    // its spawner's context — not the static `kDefaultContext` the `abi(.c)`
     // dispatch would otherwise leave in force. This is what lets a fiber-backed
     // `Io` scheduler be reached as `context.io` INSIDE a worker (the whole point
     // of folding the scheduler behind `context.io`): a worker's
@@ -833,7 +833,7 @@ T
 // not a public symbol. `abi(.c)` states that intent and keeps the symbol private.
 //
 // The C-ABI boundary means this frame has no implicit `context` param, so the
-// body would otherwise run under the static `__sx_default_context`. To make a
+// body would otherwise run under the static `kDefaultContext`. To make a
 // fiber inherit its SPAWNER's context (so `context.io` reaches a fiber-backed
 // scheduler, and `context.allocator` plus every `@context.extend` field carry
 // through), `spawn`
@@ -849,7 +849,7 @@ fibDispatch :: (self: *Fiber) abi(.c) {
     // Run the body under the context captured at spawn (`Fiber.dctx`), so the
     // fiber inherits its spawner's `context` — notably `context.io` resolves to a
     // fiber-backed scheduler installed as `context.io`, not the static
-    // `__sx_default_context` this `abi(.c)` frame would otherwise leave in force.
+    // `kDefaultContext` this `abi(.c)` frame would otherwise leave in force.
     push self.dctx { self.body(); }
     self.state = .done;
     swapContext(*self.ctx, *self.sched.schedCtx);

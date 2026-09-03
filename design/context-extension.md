@@ -35,7 +35,7 @@ libraries, and the application all extend it through one mechanism.
 
 - **Defaults are mandatory and comptime-evaluable.** A declaration without a
   default is an error ("the default context must be constructible before `main`
-  runs"). Defaults fold into the emitted `__sx_default_context` constant.
+  runs"). Defaults fold into the emitted `kDefaultContext` constant.
   `?T = null` is the idiom for handle fields; the root `push` in `main` is the
   wiring idiom for real values. An erasure default is spelled WITHOUT `xx` — a
   bare identifier at the protocol-typed position, since the declared type states
@@ -79,7 +79,7 @@ restriction.
 
 Threads and fibers inherit by copying the spawner's whole context value
 (`sched.sx` `dctx`), so added fields ride along. The comptime VM lays the
-emitted `__sx_default_context` into comptime memory, so one definition serves
+emitted `kDefaultContext` into comptime memory, so one definition serves
 both the LLVM constant and the interpreter. `type_info(Context)` reports added
 fields with no special casing.
 
@@ -108,9 +108,9 @@ never a second implementation — which gives:
 3. Context struct finalization before any lowering resolves it —
    `findByName("Context")` is the single authority that `lowerPush`, field
    access, and hidden-param typing all follow.
-4. `__sx_default_context` emission from the evaluated declaration defaults.
+4. `kDefaultContext` emission from the evaluated declaration defaults.
 5. Diagnostics: collision (both sites), missing default, non-comptime default,
    and the no-context field enumeration.
 
-The fiber `.ir` goldens print `__sx_default_context`, so they shift once per
+The fiber `.ir` goldens print `kDefaultContext`, so they shift once per
 layout change.

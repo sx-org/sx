@@ -1,7 +1,7 @@
 // std.io — the `Io` capability's default impl + the async ergonomic layer.
 //
 // `Io` itself (the protocol) lives in std/core.sx next to `Allocator`, so
-// the compiler-coupled `Context` field + the `__sx_default_context`
+// the compiler-coupled `Context` field + the `kDefaultContext`
 // materializers can reference it. This file carries the parts that are
 // pure library sx: the stateless blocking impl (`CBlockingIo`, the mirror
 // of `CAllocator`) + the generic free-fns layered over the protocol
@@ -29,7 +29,7 @@ time :: @import "modules/std/time.sx";
 // --- CBlockingIo: stateless Io that runs tasks synchronously ---
 //
 // Zero-sized struct (mirror of CAllocator). Used as the default
-// `context.io` at program start (see `__sx_default_context` in codegen).
+// `context.io` at program start (see `kDefaultContext` in codegen).
 // The thunks never dereference `self`.
 
 CBlockingIo :: struct {}

@@ -529,7 +529,7 @@ pub fn lowerObjcStaticCall(
     // Intercept `Cls.alloc()` for sx-defined classes — emit the
     // inline alloc-and-init sequence using the caller's `context.allocator`
     // instead of going through `objc_msgSend` (which would land in the
-    // +alloc IMP and use `__sx_default_context.allocator`). This honors
+    // +alloc IMP and use `kDefaultContext.allocator`). This honors
     // a surrounding `push Context{ allocator = ... }`.
     if (!fcd.is_extern and
         fcd.runtime == .objc_class and
@@ -541,9 +541,9 @@ pub fn lowerObjcStaticCall(
         else blk: {
             // Fallback: no current ctx (e.g. compiler-internal callers).
             // Use the default context — same as the IMP would.
-            const default_ctx_gi = self.program_index.global_names.get("__sx_default_context") orelse {
+            const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
                 if (self.diagnostics) |d| {
-                    d.addFmt(.err, span, "Cls.alloc() on sx-defined class '{s}': no current context and __sx_default_context missing", .{fcd.name});
+                    d.addFmt(.err, span, "Cls.alloc() on sx-defined class '{s}': no current context and kDefaultContext missing", .{fcd.name});
                 }
                 return Ref.none;
             };
@@ -1331,7 +1331,7 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     const saved_ctx_ref_jni = self.current_ctx_ref;
     defer self.current_ctx_ref = saved_ctx_ref_jni;
     if (self.implicit_ctx_enabled) {
-        if (self.program_index.global_names.get("__sx_default_context")) |dctx_gi| {
+        if (self.program_index.global_names.get("kDefaultContext")) |dctx_gi| {
             self.current_ctx_ref = self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
         }
     }

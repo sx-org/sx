@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@kDefaultContext = internal constant {} zeroinitializer
 
 ; Function Attrs: nounwind
 define internal i64 @sysWrite(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
@@ -23,7 +23,7 @@ entry:
   %alloca = alloca [3 x i8], align 1
   store [3 x i8] c"ok\0A", ptr %alloca, align 1
   %igp.ptr = getelementptr i8, ptr %alloca, i64 0
-  %call = call i64 @sysWrite(ptr @__sx_default_context, i64 1, ptr %igp.ptr, i64 3)
+  %call = call i64 @sysWrite(ptr @kDefaultContext, i64 1, ptr %igp.ptr, i64 3)
   %allocaN = alloca i64, align 8
   store i64 %call, ptr %allocaN, align 8
   ret i32 0

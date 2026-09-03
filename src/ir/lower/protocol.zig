@@ -845,7 +845,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 
 /// Emit the process-wide default Context as an LLVM static constant.
 ///
-///   @__sx_default_context = internal constant %Context {
+///   @kDefaultContext = internal constant %Context {
 ///     %Allocator { ptr null, i64 <CAllocator typeId>,       (each field in
 ///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
 ///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
@@ -870,7 +870,7 @@ pub fn emitDefaultContextGlobal(self: *Lowering) void {
 /// Early, ALL-OR-NOTHING emission for comptime evaluation that runs during
 /// `scanDecls` (a type-fn const): once the Context is assembled, the same
 /// constant pass 1c would emit is emitted now, so the VM's one materializer —
-/// laying out `__sx_default_context` — serves scan time too (no hand-built
+/// laying out `kDefaultContext` — serves scan time too (no hand-built
 /// shadow context, no hardcoded thunk tables). Quiet by construction:
 /// diagnostics are suspended, and if ANY field's default fails to serialize
 /// (e.g. its backing global isn't registered yet) nothing is emitted — the
@@ -885,7 +885,7 @@ pub fn emitDefaultContextGlobalEarly(self: *Lowering) void {
 
 fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) void {
     // Already emitted (possibly early) — never emit twice.
-    if (self.program_index.global_names.contains("__sx_default_context")) return;
+    if (self.program_index.global_names.contains("kDefaultContext")) return;
     const saved_edc = self.emitting_default_context;
     self.emitting_default_context = true;
     defer self.emitting_default_context = saved_edc;
@@ -922,7 +922,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
         };
     }
 
-    const global_name = "__sx_default_context";
+    const global_name = "kDefaultContext";
     const global_name_id = tbl.internString(global_name);
     const gid = self.module.addGlobal(.{
         .name = global_name_id,

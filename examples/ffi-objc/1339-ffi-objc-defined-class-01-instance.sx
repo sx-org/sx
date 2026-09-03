@@ -11,7 +11,7 @@
 //    objc_msgSend(f, selBump). Runtime dispatches to the IMP
 //    trampoline, which reads __sx_state to find
 //    the state pointer and forwards to the sx body
-//    `SxFoo.bump(__sx_default_context, state)`. Body mutates
+//    `SxFoo.bump(kDefaultContext, state)`. Body mutates
 //    self.counter.
 // 3. Repeat to confirm the state persists across calls.
 // 4. release — synthesized -dealloc frees the state
