@@ -1,0 +1,7 @@
+// An `else` member names the rest of an INTEGER backing type: a float-backed
+// enum has no integer word for the rest to be.
+@import "modules/std.sx";
+
+E :: enum f32 { a; else rest; }
+
+main :: () { }

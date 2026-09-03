@@ -16,6 +16,9 @@
 
 libc :: @library "c";
 
+// A POSIX descriptor: the standard streams by name, any other as itself.
+Fd :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+
 // ── memory ────────────────────────────────────────────────────────────────
 // Raw libc allocation + block ops. The Allocator protocol (std/mem.sx) is the
 // real allocation surface; these are the escape hatch allocators build on.
@@ -31,19 +34,19 @@ memset  :: (dst: *void, val: i64, size: i64) -> void extern libc;
 memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
 
 // ── file / io ───────────────────────────────────────────────────────────────
-read   :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc;
-write  :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc;
-close  :: (fd: i32) -> i32 extern libc;
+read   :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc;
+write  :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc;
+close  :: (fd: Fd) -> i32 extern libc;
 open   :: (path: [:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
-lseek  :: (fd: i32, offset: i64, whence: i32) -> i64 extern libc;
+lseek  :: (fd: Fd, offset: i64, whence: i32) -> i64 extern libc;
 unlink :: (path: [:0]u8) -> i32 extern libc;
 rmdir  :: (path: [:0]u8) -> i32 extern libc;
 mkdir  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
 access :: (path: [:0]u8, mode: i32) -> i32 extern libc;
 chmod  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
 rename :: (oldp: [:0]u8, newp: [:0]u8) -> i32 extern libc;
-fstat  :: (fd: i32, output: *void) -> i32 extern libc;
-fcntl  :: (fd: i32, cmd: i32, ..args: []i32) -> i32 extern libc;
+fstat  :: (fd: Fd, output: *void) -> i32 extern libc;
+fcntl  :: (fd: Fd, cmd: i32, ..args: []i32) -> i32 extern libc;
 
 // ── time ────────────────────────────────────────────────────────────────────
 // std/time.sx owns the clock-id policy; this module owns the raw C ABI type.
@@ -100,7 +103,7 @@ inline match @host.os {
 }
 
 // ── virtual memory ──────────────────────────────────────────────────────────
-mmap     :: (addr: *void, len: i64, prot: i32, flags: i32, fd: i32, off: i64) -> *void extern libc;
+mmap     :: (addr: *void, len: i64, prot: i32, flags: i32, fd: Fd, off: i64) -> *void extern libc;
 mprotect :: (addr: *void, len: i64, prot: i32) -> i32 extern libc;
 munmap   :: (addr: *void, len: i64) -> i32 extern libc;
 
@@ -114,10 +117,10 @@ exit :: (code: i32) -> noreturn extern libc "_exit";
 // fork/exec + reaping. `execvp` resolves `file` through $PATH and hands the
 // child the parent's environment — there is no envp marshalling anywhere.
 // `argv` is NUL-terminated: the last slot is null.
-pipe    :: (fds: *[2]i32) -> i32 extern libc;
+pipe    :: (fds: *[2]Fd) -> i32 extern libc;
 fork    :: () -> i32 extern libc;
 execvp  :: (file: cstring, argv: [*]?cstring) -> i32 extern libc;
-dup2    :: (oldfd: i32, newfd: i32) -> i32 extern libc;
+dup2    :: (oldfd: Fd, newfd: Fd) -> i32 extern libc;
 waitpid :: (pid: i32, status: *i32, options: i32) -> i32 extern libc;
 kill    :: (pid: i32, sig: i32) -> i32 extern libc;
 signal  :: (sig: i32, handler: usize) -> usize extern libc;

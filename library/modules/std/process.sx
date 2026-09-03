@@ -283,7 +283,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !SpawnErr) {
         if slot == 1 { mode = opts.stdout; }
         if slot == 2 { mode = opts.stderr; }
         if mode == .pipe {
-            fds : [2]i32 = ---;
+            fds : [2]c.Fd = ---;
             if c.pipe(*fds) != 0 { raise .Pipe; }
             // Both ends CLOEXEC immediately: a sibling spawn's exec then
             // drops them, so no run's pipe ends leak into another's child.

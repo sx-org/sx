@@ -1,0 +1,5 @@
+error: the 'else' member's name is a variant's
+  --> examples/diagnostics/2324-diagnostics-enum-else-member-name-taken.sx:4:30
+   |
+ 4 | E :: enum i32 { a :: 0; else a; }
+   |                              ^

@@ -215,21 +215,10 @@ Writer :: interface {
     flush :: (self: *Self) -> void { }
 }
 
-// A POSIX descriptor: the standard streams by name, any other by number.
-Fd :: enum { stdin; stdout; stderr; raw: i32; }
-
 FdWriter :: struct {
-    raw: i32;
+    fd: c.Fd;
 
-    init :: (fd: Fd) -> FdWriter {
-        raw : i32 = match fd {
-            case .stdin: 0;
-            case .stdout: 1;
-            case .stderr: 2;
-            case .raw: |n| { n }
-        };
-        .{ raw = raw }
-    }
+    init :: (fd: c.Fd) -> FdWriter => .{ fd = fd };
 }
 
 impl Writer for FdWriter {
@@ -237,7 +226,7 @@ impl Writer for FdWriter {
     write :: (self: *FdWriter, s: string) -> void {
         off := 0;
         while off < s.len {
-            n := c.write(self.raw, *s[off], s.len - off);
+            n := c.write(self.fd, *s[off], s.len - off);
             if n <= 0 { return; }
             off += n.(i64);
         }

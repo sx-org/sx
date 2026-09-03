@@ -1,0 +1,9 @@
+// An `else` member on an inline payload enum is diagnosed where the type
+// is spelled.
+// The declaration records no member for a construction to reach.
+@import "modules/std.sx";
+
+main :: () {
+    s : enum { dot; circle: f32; else other; } = .other(1);
+    _ = s;
+}

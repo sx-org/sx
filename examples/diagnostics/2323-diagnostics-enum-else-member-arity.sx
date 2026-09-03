@@ -1,0 +1,12 @@
+// The else member has no value of its own: it is spelled with exactly the
+// value it names.
+@import "modules/std.sx";
+
+Desc :: enum i32 { stdin :: 0; else raw; }
+
+main :: () {
+    x := Desc.raw();
+    y := Desc.raw(1, 2);
+    _ = x;
+    _ = y;
+}

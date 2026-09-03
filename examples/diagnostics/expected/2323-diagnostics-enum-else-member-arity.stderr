@@ -1,0 +1,11 @@
+error: 'raw' takes the value it names: Desc.raw(v)
+  --> examples/diagnostics/2323-diagnostics-enum-else-member-arity.sx:8:10
+   |
+ 8 |     x := Desc.raw();
+   |          ^^^^^^^^
+
+error: 'raw' takes the value it names: Desc.raw(v)
+  --> examples/diagnostics/2323-diagnostics-enum-else-member-arity.sx:9:10
+   |
+ 9 |     y := Desc.raw(1, 2);
+   |          ^^^^^^^^

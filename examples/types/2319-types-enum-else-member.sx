@@ -1,0 +1,27 @@
+// An integer-backed enum's `else` member names the rest of the backing type:
+// the type is the integer, a named member covers its tag, and every other
+// value reaches the else member, whose arm binds the word.
+@import "modules/std.sx";
+
+Desc :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+
+number :: (d: Desc) -> i32 {
+    match d {
+        case .stdin: 0;
+        case .stdout: 1;
+        case .stderr: 2;
+        case .raw: |n| { n }
+    }
+}
+
+main :: () {
+    seven := Desc.raw(7);
+    one : Desc = .raw(1);
+    print("{} {} {}\n", @sizeOf(Desc), @tag(seven), one == Desc.stdout);
+    print("{} {}\n", number(seven), number(one));
+    doubled := match seven { case Desc.raw: |n| { n * 2 } };
+    print("{}\n", doubled);
+    implicit : Desc = 9;
+    back : i32 = implicit;
+    print("{} {}\n", number(implicit), back);
+}

@@ -1,0 +1,11 @@
+// A match over an enum with an `else` member covers the rest only through the
+// else member's arm or an `else:` arm.
+@import "modules/std.sx";
+
+Desc :: enum i32 { stdin :: 0; stdout :: 1; else raw; }
+
+main :: () {
+    d := Desc.raw(5);
+    n := match d { case .stdin: 0; case .stdout: 1; };
+    print("{}\n", n);
+}

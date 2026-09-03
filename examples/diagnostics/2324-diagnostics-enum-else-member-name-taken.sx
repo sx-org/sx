@@ -1,0 +1,6 @@
+// The else member's name is its own: a variant already spells it.
+@import "modules/std.sx";
+
+E :: enum i32 { a :: 0; else a; }
+
+main :: () { }

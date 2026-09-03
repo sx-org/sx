@@ -2211,7 +2211,11 @@ pub const Lowering = struct {
             // uses. Delegating to the flat `else` below
             // dropped `self`, leaving inline-decl payloads on the global
             // `findByName` first-match.
-            .enum_decl => return type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self),
+            .enum_decl => {
+                const ty = type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self);
+                if (ty != .unresolved) self.refuseIllegalElseMember(&node.data.enum_decl, self.module.types.get(ty).@"enum");
+                return ty;
+            },
             .struct_decl => return type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self),
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
@@ -3635,6 +3639,7 @@ pub const Lowering = struct {
     pub const ensurePlainStructMethodLowered = lower_nominal.ensurePlainStructMethodLowered;
     pub const followAliasChain = lower_nominal.followAliasChain;
     pub const registerEnumDecl = lower_nominal.registerEnumDecl;
+    pub const refuseIllegalElseMember = lower_nominal.refuseIllegalElseMember;
     pub const registerUnionDecl = lower_nominal.registerUnionDecl;
     pub const qualifyAnonType = lower_nominal.qualifyAnonType;
     pub const nominalIdOf = lower_nominal.nominalIdOf;
@@ -3987,6 +3992,9 @@ pub const Lowering = struct {
     pub const emitBadVariant = lower_expr.emitBadVariant;
     pub const emitBadEnumVariant = lower_expr.emitBadEnumVariant;
     pub const isPayloadlessVariant = lower_expr.isPayloadlessVariant;
+    pub const isElseMember = lower_expr.isElseMember;
+    pub const elseMemberCall = lower_expr.elseMemberCall;
+    pub const refuseBareElseMember = lower_expr.refuseBareElseMember;
     pub const dedupeExternSymbol = lower_decl.dedupeExternSymbol;
     pub const resolveVariantValue = lower_expr.resolveVariantValue;
     pub const resolveVariantIndex = lower_expr.resolveVariantIndex;

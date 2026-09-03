@@ -1200,6 +1200,10 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         const shadowed = if (self.scope) |s| s.lookup(oname) != null else false;
         if (!shadowed and !self.program_index.global_names.contains(oname)) {
             if (self.module.types.findByName(self.module.types.internString(oname))) |ty| {
+                if (!ty.isBuiltin() and self.isElseMember(ty, fa.field)) {
+                    self.refuseBareElseMember(ty, fa.field, span);
+                    return self.builder.enumInit(0, Ref.none, ty);
+                }
                 if (!ty.isBuiltin() and self.isPayloadlessVariant(ty, fa.field)) {
                     const synth = self.alloc.create(Node) catch null;
                     if (synth) |n| {
@@ -2092,7 +2096,13 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
                         break;
                     }
                 }
-                if (!known_variant) self.emitBadEnumVariant(target, e, el.name, span);
+                if (!known_variant) {
+                    if (self.isElseMember(target, el.name)) {
+                        self.refuseBareElseMember(target, el.name, span);
+                        return self.builder.enumInit(0, Ref.none, target);
+                    }
+                    self.emitBadEnumVariant(target, e, el.name, span);
+                }
             },
             else => {},
         }
@@ -2112,6 +2122,34 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
 
     const tag = self.resolveVariantValue(target, el.name);
     return self.builder.enumInit(tag, Ref.none, target);
+}
+
+/// Is `name` the `else` member of enum `ty`?
+pub fn isElseMember(self: *Lowering, ty: TypeId, name: []const u8) bool {
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .@"enum" => |e| if (e.else_member) |m| std.mem.eql(u8, self.module.types.getString(m), name) else false,
+        else => false,
+    };
+}
+
+/// `E.rest(v)` when `name` is the else member of `ty`: the value IS `v` in
+/// the backing integer, retyped as `E`. Any other argument count is the bare
+/// spelling's error. Null when `name` is not the else member.
+pub fn elseMemberCall(self: *Lowering, ty: TypeId, name: []const u8, args: []const Ref, span: ast.Span) ?Ref {
+    if (!self.isElseMember(ty, name)) return null;
+    if (args.len != 1) {
+        self.refuseBareElseMember(ty, name, span);
+        return self.builder.enumInit(0, Ref.none, ty);
+    }
+    const backing = self.enumBackingType(ty).?;
+    const as_backing = self.coerceToType(args[0], self.builder.getRefType(args[0]), backing);
+    return self.builder.emit(.{ .bitcast = .{ .operand = as_backing, .from = backing, .to = ty } }, ty);
+}
+
+/// The else member spelled without its value.
+pub fn refuseBareElseMember(self: *Lowering, ty: TypeId, name: []const u8, span: ast.Span) void {
+    if (self.diagnostics) |d| d.addFmt(.err, span, "'{s}' takes the value it names: {s}.{s}(v)", .{ name, self.formatTypeName(ty), name });
 }
 
 /// Is `field` a variant of enum `ty` whose payload is `void`? Used by

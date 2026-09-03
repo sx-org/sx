@@ -202,6 +202,10 @@ pub const TypeInfo = union(enum) {
         layout: ?TypeId = null,
         /// Explicit variant values (flags, custom values, explicit tags).
         values: ?[]const i64 = null,
+        /// The `else NAME;` member: every value of the backing integer the named
+        /// variants do not cover. Not a variant — layout, reflection and the
+        /// member count see the named variants only.
+        else_member: ?StringId = null,
         is_flags: bool = false,
         nominal_id: u32 = 0, // stable nominal identity; 0 == structural
         /// False only for a `declare(...)` forward placeholder not yet
@@ -818,6 +822,8 @@ pub const TypeTable = struct {
                 if (e.values) |vals| for (vals) |v| {
                     key.appendSlice(self.alloc, std.mem.asBytes(&v)) catch unreachable;
                 };
+                key.append(self.alloc, if (e.else_member != null) 1 else 0) catch unreachable;
+                if (e.else_member) |m| key.appendSlice(self.alloc, std.mem.asBytes(&m)) catch unreachable;
             },
             // Only anonymous nominal shapes route here; a non-nominal info
             // is a caller bug.

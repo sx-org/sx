@@ -1,0 +1,12 @@
+// An `else` member needs an enum that is its integer backing type: a payload
+// enum has a tag word and a payload area, so nothing else remains to name.
+// The declaration is diagnosed and records no else member, so a use of the
+// name is an ordinary unknown-variant error.
+@import "modules/std.sx";
+
+Shape :: enum { dot; circle: f32; else other; }
+
+main :: () {
+    s := Shape.other(1);
+    _ = s;
+}
