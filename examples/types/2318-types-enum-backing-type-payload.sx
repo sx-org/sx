@@ -1,0 +1,12 @@
+// A payload enum with an integer backing type is that tag followed by the
+// payload area, sized and aligned by the tag.
+@import "modules/std.sx";
+
+E :: enum i16 { a; b: u8; }
+S :: struct { e: E; x: u8; }
+
+main :: () {
+    s := S{ e = E.b(9), x = 3 };
+    v := match s.e { case .a: 0; case .b: |p| { p } };
+    print("{} {} {} {}\n", @sizeOf(E), @alignOf(E), @sizeOf(S), v);
+}
