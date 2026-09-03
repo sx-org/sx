@@ -1,1 +1,5 @@
-type assertion failed at 2109-fluent-init-from-set-tag-mismatch.sx:26: expected Label, got Button
+error: cannot infer generic type parameter 'T' for '@cast' from this call's arguments
+  --> examples/fluent/2109-fluent-init-from-set-tag-mismatch.sx:26:15
+   |
+26 |     takeLabel(v);
+   |               ^

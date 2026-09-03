@@ -1393,7 +1393,7 @@ fn lowerNarrowingPanic(
     const callee = self.synthNode(.{ .identifier = .{ .name = "@cast" } }, span, source_file);
 
     if (type_node) |target| {
-        const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(target) }) catch @panic("out of memory");
+        const args = self.alloc.dupe(*Node, &.{ @constCast(target), recv_id }) catch @panic("out of memory");
         return self.lowerCall(&.{ .callee = callee, .args = args });
     }
 

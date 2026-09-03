@@ -1,4 +1,4 @@
-// The spelled assertion `@cast(av, T)` is the unconsumed temperament: a
+// The spelled assertion `@cast(T, av)` is the unconsumed temperament: a
 // match yields the value, a mismatch stops the program naming the call site.
 @import "modules/std.sx";
 
@@ -6,7 +6,7 @@ main :: () {
     n : any = 7;
     f : any = 2.5;
 
-    print("cast {}\n", @cast(n, i64));
-    v := @cast(f, i64);
+    print("cast {}\n", @cast(i64, n));
+    v := @cast(i64, f);
     print("unreached {}\n", v);
 }

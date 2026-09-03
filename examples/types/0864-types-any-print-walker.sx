@@ -30,7 +30,7 @@ printAny :: (av: any) {
             i := 0;
             while i < ai.len {
                 if i > 0 { print(", "); }
-                printAny(anyElement(av, ai.elem, i));
+                printAny(anyElement(ai.elem, av, i));
                 i += 1;
             }
             print("]");
@@ -40,7 +40,7 @@ printAny :: (av: any) {
             i := 0;
             while i < vi.lanes {
                 if i > 0 { print(", "); }
-                printAny(anyElement(av, vi.elem, i));
+                printAny(anyElement(vi.elem, av, i));
                 i += 1;
             }
             print("]");

@@ -33,7 +33,7 @@ vectorLanes :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
 // `{ elem,  rawAnyData(av) + idx * @sizeOf(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
-anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+anyElement :: (elem: Type, av: any, idx: i64) -> any intrinsic;
 
 // ── Boxed-value views: a value's parts, read in place ──────────────────────
 // The receiver is boxed, so its kind is a runtime tag. `@len` counts the parts:
@@ -56,7 +56,7 @@ anyElement :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 // tag check, so `T` must be the boxed type and a wider one overreads. The
 // checked forms are the postfix assertions (`v.(T)` / `try v.(T)` / `v.(?T)`).
 @typeEq :: ($A: Type, $B: Type) -> bool;
-@unbox :: (v: any, $T: Type) -> T;
+@unbox :: ($T: Type, v: any) -> T;
 // An enum value's tag: a typed enum's tag in its tag type; a boxed one as a
 // view typed by its tag type.
 @tag :: (v: $T) -> $R;
@@ -157,7 +157,7 @@ rawMakeAny :: (tp: Type, data: *void) -> any intrinsic;
 // unconsumed one, and a mismatch stops the program naming the call site.
 CastError :: error { mismatch }
 
-@cast :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
+@cast :: ($T: Type, av: any, site: @SourceSite = @caller) -> T {
     if !@typeEq(@typeOf(av), T) {
         w := FdWriter.init(.stderr);
         w.write("type assertion failed at ");
@@ -171,7 +171,7 @@ CastError :: error { mismatch }
         w.write("\n");
         c.exit(1);
     }
-    return @unbox(av, T);
+    return @unbox(T, av);
 }
 
 // The sequential ordinal of a boxed enum value's variant: the tag when it is
