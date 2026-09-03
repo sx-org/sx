@@ -614,8 +614,8 @@ pub const BuiltinId = enum(u16) {
     // negative = sign-extend). Internal — serves the boxed `@tag` view.
     rt_variant_tag_width,
     // The packed length-word row (bit width / signedness / header offset) a
-    // runtime fat-pointer read needs. Internal — serves fmt's
-    // `__sx_any_len_word`.
+    // runtime fat-pointer read needs. Internal — serves the boxed `@len` /
+    // `@field` read.
     rt_slice_len_info,
     // The byte offset of an optional's has_value flag, or -1 when its null
     // state is the leading pointer word. Serves `@inner`'s presence probe.
