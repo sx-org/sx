@@ -915,7 +915,6 @@ pub const Lowering = struct {
     /// True while lowering postfix `expr.(T)` — dest is written on the value.
     /// Prefix `xx` uses the slot dest and is an error when implicit already applies.
     xx_is_postfix: bool = false,
-    /// Allocator for `Into` / `.(T, alloc)`. Null means `context.allocator`.
     /// Whole-program-converged inferred error sets: top-level
     /// bare-`!` function name → its sorted escape-tag ids (literal raises +
     /// pure-failable `try` edges, fix-pointed across the call graph). The

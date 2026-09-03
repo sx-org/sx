@@ -17,7 +17,7 @@ const ParamImplEntry = Lowering.ParamImplEntry;
 
 /// Lower the `xx` operator (type coercion).
 /// Uses self.target_type for context when available. Handles:
-/// - Any → concrete type: unbox_any
+/// - Any → concrete type: compile error naming `@as` / `av.(T)` / `@unbox`
 /// - int → int: widen/narrow
 /// - int ↔ float: int_to_float/float_to_int
 pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
@@ -308,10 +308,6 @@ pub fn tryPackImplMatch(
     return self.builder.call(fid, final_args, ret_ty);
 }
 
-/// Look up `Into(dst_ty)` impl for `src_ty` and, if found, monomorphise
-/// the impl's `convert` method and emit a direct call. Returns null when
-/// no impl matches (caller falls back to the built-in result, which is
-/// the unchanged operand emits no diagnostic for v0).
 /// `@convert(T, v, alloc)`: the `impl Into(T) for S` call, `convert`
 /// monomorphized for the pair and funded from `alloc` (the context allocator
 /// when null). Null when no impl exists; a visibility or duplicate fault is a
@@ -428,7 +424,7 @@ pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, sr
     return self.builder.call(fid, final_args, ret_ty);
 }
 
-/// `convert(self, alloc)` — named `.(T, alloc)` or `context.allocator`.
+/// `convert(self, alloc)` — `alloc` or `context.allocator`.
 fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, func: *const Function, alloc: ?Ref) ?[]Ref {
     const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator"));
     const alloc_ref = if (alloc) |r| r else self.ambientAllocator() orelse {

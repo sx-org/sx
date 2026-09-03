@@ -897,8 +897,6 @@ pub const PostfixCast = struct {
     operand: *Node,
     type_expr: *Node,
     is_optional_chain: bool = false,
-    // `expr.(T, alloc)` — the allocator an `Into` conversion funds from
-    // (lvalue-only; an interface target refuses it, both at lowering).
     // A checked assertion claimed by `try` / `??` / `catch`: it types and
     // lowers as the failable `(T, !CastError)` instead of the panic form.
     consumed: bool = false,

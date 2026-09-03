@@ -1242,7 +1242,8 @@ Into :: constraint(Target: Type) {
 // Dest-inferred `xx val` at a `T` slot, or `val.(T)`, falls through the
 // built-in conversion ladder to an `impl Into(T) for
 // Source` lookup; the compiler monomorphizes `convert` for the (Source, T)
-// pair and emits a direct call. `.(T)` funds from `context.allocator`.
+// pair and emits a direct call. `.(T)` funds from `context.allocator`;
+// `@convert(T, val, alloc)` names another.
 ```
 
 **A constraint makes no value.** Every value spelling — a
@@ -5581,7 +5582,7 @@ The type-only builtins — `@sizeOf`, `@alignOf`, `@typeName`, `@typeEq`, `isFla
 An `any` is accepted because it can hold either a value or a `Type`. `@typeName` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `@typeName(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `@typeOf(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `@typeName(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
 ### Type Conversion
-- Conversions are implicit, or they name the type with `expr.(T)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. Both lower to `@coerce`. Runtime-typed data travels as `any` and comes back through the assertion forms.
+- Conversions are implicit, or they name the type with `expr.(T)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. After the classifier's special arms, a remaining conversion lowers to `@coerce`. Runtime-typed data travels as `any` and comes back through the assertion forms.
 - `@as($T: Type, v: $S) -> T` — the compiler's conversions of `v` to `T`: every arm of the coercion ladder except `Into` and the unchecked unbox. A boxed `v` converts by its runtime type; a pairing with no conversion stops the program naming both types.
 - `@tag(v: $T)` — an enum value's tag: a typed enum's tag in its tag type; a boxed one as an `any` view typed by its tag type.
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.

@@ -274,9 +274,8 @@ pub const CoercionResolver = struct {
 
     /// Is `dst_ty` the `@Any` view — the declared contract struct with
     /// a pointer field "data" and a `Type` field "typeId"? Same
-    /// name-AND-shape gate as `isProtocolViewDst`. Consulted ONLY by the
-    /// POSTFIX arm (`av.(@Any)` is the raw-view retrieval): `xx av`
-    /// `@unbox(T, av)` reads every target, @Any included.
+    /// name-AND-shape gate as `isProtocolViewDst`. Consulted only by postfix
+    /// `av.(@Any)` (the view's own pair); `@unbox` is the payload read.
     pub fn isAnyViewDst(self: CoercionResolver, dst_ty: TypeId) bool {
         if (dst_ty.isBuiltin()) return false;
         const info = self.l.module.types.get(dst_ty);
