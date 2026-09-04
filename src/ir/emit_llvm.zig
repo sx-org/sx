@@ -459,7 +459,6 @@ pub const LLVMEmitter = struct {
 
     pub fn deinit(self: *LLVMEmitter) void {
         if (self.reach) |*r| r.deinit();
-        self.build_config.deinit(self.alloc);
         self.ref_map.deinit();
         self.func_map.deinit();
         var jni_it = self.jni_slots.keyIterator();
@@ -507,6 +506,10 @@ pub const LLVMEmitter = struct {
         for (self.ir_mod.global_asm.items) |asm_text| {
             c.LLVMAppendModuleInlineAsm(self.llvm_module, asm_text.ptr, asm_text.len);
         }
+
+        // The `@BuildOptions` type the build config snapshots, when the program
+        // declares it (every std program reaches modules/build.sx).
+        self.build_config.options_ty = self.ir_mod.types.findByName(@constCast(&self.ir_mod.types).internString("@BuildOptions")) orelse .unresolved;
 
         // Pass 0: Declare and initialize globals
         self.emitGlobals();
@@ -746,12 +749,12 @@ pub const LLVMEmitter = struct {
     /// binary with CWD=/.
     ///
     /// Only a build that asks for a bundle gets it: `--bundle` lands on
-    /// `target_config`, `@run @setBundlePath` on `build_config`, and either
+    /// `target_config`, `opts.bundlePath` set in `@run` on `build_config`, and either
     /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;
         if (!self.target_config.isMacOS()) return;
-        if (self.target_config.bundle_path == null and self.build_config.bundle_path == null) return;
+        if (self.target_config.bundle_path == null and self.build_config.getString(&self.ir_mod.types, "bundlePath").len == 0) return;
 
         const ptr_ty = self.cached_ptr;
         const i32_ty = self.cached_i32;

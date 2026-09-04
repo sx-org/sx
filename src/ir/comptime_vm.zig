@@ -262,6 +262,8 @@ pub const Evaluation = struct {
     /// evaluation hands the compiler its target ABI back until it resumes.
     target_pointer_size: u8,
     vm: Vm,
+    /// Storage for the explicit callback argument (the `@BuildOptions` address).
+    extra_arg: [1]Reg = .{null_addr},
     future: std.Io.Future(Error!Reg),
     state: State,
 
@@ -337,8 +339,25 @@ pub const Evaluation = struct {
                 last_bail_reason = e.vm.detail orelse @errorName(err);
                 break :blk null;
             };
+        // The evaluation's `@BuildOptions` instance becomes the build config's
+        // snapshot; a copy-out failure fails the evaluation like a bridge failure.
+        var result = value;
+        snapshot: {
+            const addr = e.vm.build_options_addr orelse break :snapshot;
+            const bc = e.vm.build_config orelse break :snapshot;
+            if (e.vm.snapshotValue(e.gpa, &e.module.types, addr, bc.options_ty)) |snap| {
+                bc.options = e.gpa.dupe(Value, snap.aggregate) catch oom: {
+                    last_bail_reason = "build options snapshot: out of memory";
+                    result = null;
+                    break :oom null;
+                };
+            } else |err| {
+                last_bail_reason = e.vm.detail orelse @errorName(err);
+                result = null;
+            }
+        }
         e.restoreTargetWidth();
-        e.state = .{ .completed = value };
+        e.state = .{ .completed = result };
     }
 
     fn restoreTargetWidth(e: *Evaluation) void {
@@ -346,14 +365,15 @@ pub const Evaluation = struct {
     }
 };
 
-/// Begin an owned evaluation of `func_id` with `extra` explicit arg words.
+/// Begin an owned evaluation of `func_id`; `pass_options` hands it the
+/// `@BuildOptions` instance as its explicit arg.
 fn startEvaluation(
     gpa: std.mem.Allocator,
     module: *const Module,
     func_id: FuncId,
     build_config: ?*compiler_hooks.BuildConfig,
     source_map: ?*const std.StringHashMap([:0]const u8),
-    extra: []const Reg,
+    pass_options: bool,
     scheduler: ?FactScheduler,
 ) *Evaluation {
     last_bail_reason = null;
@@ -383,6 +403,14 @@ fn startEvaluation(
     // Lay those temporary values out with the host pointer width; lowering and
     // emission see the restored target width and retain the target ABI.
     @constCast(&module.types).pointer_size = @sizeOf(usize);
+    const extra: []const Reg = if (pass_options) blk: {
+        e.extra_arg[0] = e.vm.buildOptionsAddr() catch |err| {
+            last_bail_reason = e.vm.detail orelse @errorName(err);
+            e.restoreTargetWidth();
+            return e;
+        };
+        break :blk &e.extra_arg;
+    } else &.{};
     e.future = comptime_async.io().async(evaluationTask, .{ &e.vm, func_id, extra });
     e.pump();
     return e;
@@ -410,18 +438,17 @@ fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
 /// param) as a zeroed Context in its own comptime memory — VM-local, never
 /// shared with another evaluation, and alive for as long as this one is.
 pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), scheduler: ?FactScheduler) *Evaluation {
-    return startEvaluation(gpa, module, func_id, build_config, source_map, &.{}, scheduler);
+    return startEvaluation(gpa, module, func_id, build_config, source_map, false, scheduler);
 }
 
 /// Run a post-link build callback on the VM (the post-codegen build driver — see
 /// `core.invokeByFuncId`). Like `tryEval`, but for a callback that may take the
-/// opaque `BuildOptions` handle as an explicit arg (the `@onBuild(cb)` form,
-/// `cb: (opt: BuildOptions) -> bool`): when `pass_options` is set, the handle (a
-/// null sentinel — the real state is the threaded `BuildConfig`) is passed after
-/// the implicit ctx.
+/// `*@BuildOptions` handle as an explicit arg (the `@onBuild(cb)` form,
+/// `cb: (opt: *@BuildOptions) -> bool`): when `pass_options` is set, the
+/// instance is materialized from the build config's snapshot and its address
+/// is passed after the implicit ctx.
 pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), pass_options: bool, scheduler: ?FactScheduler) *Evaluation {
-    const extra: []const Reg = if (pass_options) &.{null_addr} else &.{};
-    return startEvaluation(gpa, module, func_id, build_config, source_map, extra, scheduler);
+    return startEvaluation(gpa, module, func_id, build_config, source_map, pass_options, scheduler);
 }
 
 // ── Executor ────────────────────────────────────────────────────────────────
@@ -471,40 +498,6 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
     return @bitCast((@as(i64, @bitCast(raw)) << shift) >> shift);
 }
 
-// ── BuildOptions target predicates ───────────────────────────────
-// Computed from the `--target` triple, mirroring `compiler_hooks`'s hooks
-// (which mirror `TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}()`).
-
-fn tripleHas(triple: ?[]const u8, needle: []const u8) bool {
-    const t = triple orelse return false;
-    return std.mem.indexOf(u8, t, needle) != null;
-}
-fn predIsIOS(triple: ?[]const u8) bool {
-    return tripleHas(triple, "apple-ios");
-}
-fn predIsMacOS(triple: ?[]const u8) bool {
-    if (predIsIOS(triple)) return false;
-    return tripleHas(triple, "apple-macosx") or tripleHas(triple, "apple-macos") or tripleHas(triple, "apple-darwin");
-}
-fn predIsIOSDevice(triple: ?[]const u8) bool {
-    return predIsIOS(triple) and !tripleHas(triple, "simulator");
-}
-fn predIsIOSSimulator(triple: ?[]const u8) bool {
-    return predIsIOS(triple) and tripleHas(triple, "simulator");
-}
-fn predIsAndroid(triple: ?[]const u8) bool {
-    return tripleHas(triple, "android");
-}
-
-/// Map a BuildOptions predicate name (`@isMacos`/…) to its triple-test, or null.
-fn boolPredicate(name: []const u8) ?*const fn (?[]const u8) bool {
-    if (std.mem.eql(u8, name, "@BuildOptions.isMacos")) return predIsMacOS;
-    if (std.mem.eql(u8, name, "@BuildOptions.isIos")) return predIsIOS;
-    if (std.mem.eql(u8, name, "@BuildOptions.isIosDevice")) return predIsIOSDevice;
-    if (std.mem.eql(u8, name, "@BuildOptions.isIosSimulator")) return predIsIOSSimulator;
-    if (std.mem.eql(u8, name, "@BuildOptions.isAndroid")) return predIsAndroid;
-    return null;
-}
 
 pub const Vm = struct {
     machine: Machine,
@@ -523,6 +516,9 @@ pub const Vm = struct {
     /// (e.g. `@setOutputPath`) records into it directly. Null at lowering-time
     /// type-fn evals (no build config exists yet); such a function bails loudly.
     build_config: ?*compiler_hooks.BuildConfig = null,
+    /// This evaluation's `@BuildOptions` instance, materialized from the
+    /// build config's snapshot on first use and copied back out on completion.
+    build_options_addr: ?Addr = null,
     /// File → source text (the diagnostics' `import_sources`), threaded from the host
     /// so `trace_resolve` can turn a packed `(func_id, span.start)` comptime frame into
     /// `file:line:col` + the source line. Null → line/col degrade to 1 / "".
@@ -2125,12 +2121,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.registerTypeVm(args, frame, ref_types);
         }
         // ── BuildOptions ───────────────────────────────────────────────────
-        // `@buildOptions()` hands back an opaque, zero-field `BuildOptions` handle;
-        // the real state lives on the threaded `BuildConfig`. Return the null
-        // sentinel word (the handle is never dereferenced — every operation takes it
-        // as an ignored `self`).
+        // `@buildOptions()` — the evaluation's `@BuildOptions` instance.
         if (intr == .@"@buildOptions") {
-            return @as(Reg, null_addr);
+            return try self.buildOptionsAddr();
         }
         // `@onBuild(cb)` — register the build callback (`cb: (opt:
         // BuildOptions) -> bool`). The callback receives the `BuildOptions`
@@ -2176,23 +2169,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime emitObject: object emission failed");
             return try self.makeStringValue(table, path);
         }
-        // Build-config metadata the sx driver passes to `@link`. Read-only data
-        // forwarded by `main.zig` (the merged CLI + `@run` build config).
-        if (intr == .@"@buildOutput") {
-            if (args.len != 0) return self.failMsg("comptime buildOutput: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime buildOutput: no build config");
-            return try self.makeStringValue(table, bc.output_path orelse "");
-        }
-        if (intr == .@"@buildTarget") {
-            if (args.len != 0) return self.failMsg("comptime buildTarget: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime buildTarget: no build config");
-            return try self.makeStringValue(table, bc.target_triple orelse "");
-        }
-        if (intr == .@"@buildFrameworks") {
-            if (args.len != 0) return self.failMsg("comptime buildFrameworks: expected no args");
-            const bc = self.build_config orelse return self.failMsg("comptime buildFrameworks: no build config");
-            return try self.makeStringList(table, result_ty, bc.target_frameworks);
-        }
+        // The merged CLI + `@run` link flags the sx driver passes to `@link`.
         if (intr == .@"@buildFlags") {
             if (args.len != 0) return self.failMsg("comptime buildFlags: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime buildFlags: no build config");
@@ -2219,12 +2196,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime link: linking failed");
             return @as(Reg, null_addr); // void
         }
-        // ── BuildOptions accessors ──────────────────────────────────────────
-        // `self` (the opaque BuildOptions handle) is args[0] and ignored; the
-        // real state lives on the threaded `BuildConfig`. SETTERS dupe the string arg into the
-        // PERSISTENT `self.gpa` (the Compilation allocator — NOT the per-eval VM
-        // arena, whose bytes die at `Vm.deinit`) so it survives to post-link.
-        if (try self.callBuildOptionFn(name, args, frame)) |r| return r;
         // The caller only routes here for a registry entry whose mode is
         // `evaluate`, so reaching this point means a registered intrinsic has no
         // VM handler. Returning null would drop it to the dlsym path, where it
@@ -2233,119 +2204,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return self.failMissingOp(name);
     }
 
-    /// Read string arg `idx` (a `{ptr,len}` fat pointer) and DUPE it into the
-    /// persistent `self.gpa`. The VM-arena view dies at `Vm.deinit`, so a
-    /// BuildConfig string set at `@run` must own a persistent copy.
-    fn dupeArgStr(self: *Vm, args: []const Ref, frame: *Frame, idx: usize) Error![]const u8 {
-        const table = try self.requireTable();
-        const view = try self.readStringArg(table, frame.get(args[idx].index()));
-        return self.gpa.dupe(u8, view) catch return self.failMsg("comptime BuildOptions setter: out of memory");
-    }
-
-    /// VM-native `BuildOptions` accessors. Returns null when `name` is
-    /// not a BuildOptions accessor (the caller then yields null → "unknown").
-    fn callBuildOptionFn(self: *Vm, name: []const u8, args: []const Ref, frame: *Frame) Error!?Reg {
-        const table = try self.requireTable();
-        // A getter/setter on a string field: `name` → the `?[]const u8` field. A
-        // setter (one extra arg) writes a persistent dupe; a getter returns the
-        // value (or "" when unset). Both ignore the `self` handle at args[0].
-        const StrField = struct { set: []const u8, get: []const u8, field: *?[]const u8 };
-        // A BuildOptions accessor is only ever reached from a `@run` / post-link
-        // eval, which always threads a `BuildConfig`. A null `bc` here means this
-        // isn't a BuildOptions call at all (e.g. a lowering-time type-fn) — yield
-        // null so the caller treats it as unknown (it then bails loudly).
-        const bc = self.build_config orelse return null;
-        const str_fields = [_]StrField{
-            .{ .set = "@BuildOptions.setOutputPath", .get = "", .field = &bc.output_path },
-            .{ .set = "@BuildOptions.setWasmShell", .get = "", .field = &bc.wasm_shell_path },
-            .{ .set = "@BuildOptions.setPostLinkModule", .get = "", .field = &bc.post_link_module },
-            .{ .set = "@BuildOptions.setBundlePath", .get = "@BuildOptions.bundlePath", .field = &bc.bundle_path },
-            .{ .set = "@BuildOptions.setBundleId", .get = "@BuildOptions.bundleId", .field = &bc.bundle_id },
-            .{ .set = "@BuildOptions.setCodesignIdentity", .get = "@BuildOptions.codesignIdentity", .field = &bc.codesign_identity },
-            .{ .set = "@BuildOptions.setProvisioningProfile", .get = "@BuildOptions.provisioningProfile", .field = &bc.provisioning_profile },
-            .{ .set = "@BuildOptions.setManifestPath", .get = "@BuildOptions.manifestPath", .field = &bc.manifest_path },
-            .{ .set = "@BuildOptions.setKeystorePath", .get = "@BuildOptions.keystorePath", .field = &bc.keystore_path },
-            .{ .set = "_", .get = "@BuildOptions.binaryPath", .field = &bc.binary_path },
-            .{ .set = "_", .get = "@BuildOptions.targetTriple", .field = &bc.target_triple },
-        };
-        for (str_fields) |sf| {
-            if (sf.set.len > 1 and std.mem.eql(u8, name, sf.set)) {
-                if (args.len != 2) return self.failMsg("comptime BuildOptions setter: expected (self, value)");
-                sf.field.* = try self.dupeArgStr(args, frame, 1);
-                return @as(Reg, null_addr);
-            }
-            if (sf.get.len > 0 and std.mem.eql(u8, name, sf.get)) {
-                if (args.len != 1) return self.failMsg("comptime BuildOptions getter: expected (self)");
-                return try self.makeStringValue(table, sf.field.* orelse "");
-            }
-        }
-        // List-appending setters (dupe + append into the persistent gpa).
-        if (std.mem.eql(u8, name, "@BuildOptions.addLinkFlag")) {
-            if (args.len != 2) return self.failMsg("comptime addLinkFlag: expected (self, flag)");
-            bc.link_flags.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
-                return self.failMsg("comptime addLinkFlag: out of memory");
-            return @as(Reg, null_addr);
-        }
-        if (std.mem.eql(u8, name, "@BuildOptions.addFramework")) {
-            if (args.len != 2) return self.failMsg("comptime addFramework: expected (self, name)");
-            bc.frameworks.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
-                return self.failMsg("comptime addFramework: out of memory");
-            return @as(Reg, null_addr);
-        }
-        if (std.mem.eql(u8, name, "@BuildOptions.addAssetDir")) {
-            if (args.len != 3) return self.failMsg("comptime addAssetDir: expected (self, src, dest)");
-            const src = try self.dupeArgStr(args, frame, 1);
-            const dest = try self.dupeArgStr(args, frame, 2);
-            bc.asset_dirs.append(self.gpa, .{ .src = src, .dest = dest }) catch
-                return self.failMsg("comptime addAssetDir: out of memory");
-            return @as(Reg, null_addr);
-        }
-        // Count getters (i64).
-        if (std.mem.eql(u8, name, "@BuildOptions.assetDirCount"))
-            return @as(Reg, @bitCast(@as(i64, @intCast(bc.asset_dirs.items.len))));
-        if (std.mem.eql(u8, name, "@BuildOptions.frameworkCount"))
-            return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_frameworks.len))));
-        if (std.mem.eql(u8, name, "@BuildOptions.frameworkPathCount"))
-            return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
-        if (std.mem.eql(u8, name, "@BuildOptions.jniMainCount"))
-            return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
-        // Indexed string getters (out-of-range → "").
-        // Asset dirs are `{src,dest}` structs, so read the field directly.
-        const want_src = std.mem.eql(u8, name, "@BuildOptions.assetDirSrcAt");
-        if (want_src or std.mem.eql(u8, name, "@BuildOptions.assetDirDestAt")) {
-            if (args.len != 2) return self.failMsg("comptime assetDir getter: expected (self, i)");
-            const idx: i64 = @bitCast(frame.get(args[1].index()));
-            if (idx < 0 or @as(usize, @intCast(idx)) >= bc.asset_dirs.items.len)
-                return try self.makeStringValue(table, "");
-            const ad = bc.asset_dirs.items[@intCast(idx)];
-            return try self.makeStringValue(table, if (want_src) ad.src else ad.dest);
-        }
-        if (std.mem.eql(u8, name, "@BuildOptions.frameworkAt"))
-            return try self.indexedStr(args, frame, bc.target_frameworks);
-        if (std.mem.eql(u8, name, "@BuildOptions.frameworkPathAt"))
-            return try self.indexedStr(args, frame, bc.target_framework_paths);
-        if (std.mem.eql(u8, name, "@BuildOptions.jniMainRuntimePathAt"))
-            return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
-        if (std.mem.eql(u8, name, "@BuildOptions.jniMainJavaSourceAt"))
-            return try self.indexedStr(args, frame, bc.jni_main_java_sources);
-        // Target predicates (computed from the triple).
-        if (boolPredicate(name)) |pred| {
-            if (args.len != 1) return self.failMsg("comptime BuildOptions predicate: expected (self)");
-            return @as(Reg, if (pred(bc.target_triple)) 1 else 0);
-        }
-        return null; // not a BuildOptions accessor
-    }
-
-    /// Read index arg 1, bounds-check against `items`, and return the element
-    /// string (or "" when out of range).
-    fn indexedStr(self: *Vm, args: []const Ref, frame: *Frame, items: []const []const u8) Error!Reg {
-        const table = try self.requireTable();
-        if (args.len != 2) return self.failMsg("comptime BuildOptions indexed getter: expected (self, i)");
-        const idx: i64 = @bitCast(frame.get(args[1].index()));
-        if (idx < 0 or @as(usize, @intCast(idx)) >= items.len)
-            return try self.makeStringValue(table, "");
-        return try self.makeStringValue(table, items[@intCast(idx)]);
-    }
 
     /// VM-native `register_type(handle: Type, kind: i64, members: []Member) -> Type`
     /// — fill a `declare_type`'d forward slot, branching on `kind` in the compiler
@@ -3342,6 +3200,20 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         };
         const idx: u64 = @bitCast(idx_word); // non-negative comptime index
         return data +% idx *% @as(u64, @intCast(elem_size));
+    }
+
+    /// The evaluation's `@BuildOptions` instance: materialized from the build
+    /// config's snapshot on first use, one per evaluation.
+    pub fn buildOptionsAddr(self: *Vm) Error!Addr {
+        if (self.build_options_addr) |a| return a;
+        const table = try self.requireTable();
+        const bc = self.build_config orelse
+            return self.failMsg("comptime buildOptions: no build config threaded into the VM");
+        if (bc.options_ty == .unresolved)
+            return self.failMsg("comptime buildOptions: '@BuildOptions' is not declared (import modules/build.sx)");
+        const addr = try self.materializeValue(table, bc.options_ty, bc.snapshot());
+        self.build_options_addr = addr;
+        return addr;
     }
 
     /// Write a host `Value` of type `ty` into fresh comptime memory and return its

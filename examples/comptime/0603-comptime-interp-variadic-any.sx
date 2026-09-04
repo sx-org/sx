@@ -10,7 +10,7 @@
 
 puts :: (s: [:0]u8) -> i32 extern libc;
 
-cb :: (opt: @BuildOptions) -> bool {
+cb :: (opt: *@BuildOptions) -> bool {
     a := format("{}", "x");
     puts("1-arg ok");
     b := format("{} {}", "x", "y");

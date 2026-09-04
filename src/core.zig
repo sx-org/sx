@@ -212,8 +212,8 @@ pub const Compilation = struct {
 
     /// Re-enter the evaluator and call an already-resolved function id. The
     /// post-link build callback, captured at `@run` time by `@onBuild`.
-    /// `pass_options` passes the opaque `BuildOptions` handle as the callback's
-    /// arg (`cb: (opt: BuildOptions) -> bool`); false for the no-arg form.
+    /// `pass_options` passes the `*@BuildOptions` instance as the callback's
+    /// arg (`cb: (opt: *@BuildOptions) -> bool`); false for the no-arg form.
     pub fn invokeByFuncId(self: *Compilation, id: ir.FuncId, pass_options: bool) !ir.Value {
         const mod = self.ir_module orelse return error.NoIRModule;
         // The build driver (post-link callback) runs on the comptime VM. There
@@ -227,28 +227,39 @@ pub const Compilation = struct {
         return evaluation.completed() orelse error.ComptimeVmBail;
     }
 
-    /// Get link flags accumulated from @run build blocks.
+    fn buildTable(self: *Compilation) ?*const ir.types.TypeTable {
+        const mod = self.ir_module orelse return null;
+        return &mod.types;
+    }
+
+    /// `@BuildOptions.linkFlags` as accumulated by `@run`.
     pub fn getBuildLinkFlags(self: *Compilation) []const []const u8 {
-        if (self.ir_emitter) |*e| return e.build_config.link_flags.items;
-        return &.{};
+        const e = if (self.ir_emitter) |*e| e else return &.{};
+        const table = self.buildTable() orelse return &.{};
+        return e.build_config.getStrings(self.allocator, table, "linkFlags") catch &.{};
     }
 
-    /// Get frameworks accumulated from @run build blocks (BuildOptions.addFramework).
+    /// `@BuildOptions.frameworks` as accumulated by `@run`.
     pub fn getBuildFrameworks(self: *Compilation) []const []const u8 {
-        if (self.ir_emitter) |*e| return e.build_config.frameworks.items;
-        return &.{};
+        const e = if (self.ir_emitter) |*e| e else return &.{};
+        const table = self.buildTable() orelse return &.{};
+        return e.build_config.getStrings(self.allocator, table, "frameworks") catch &.{};
     }
 
-    /// Get output path set from @run build blocks, if any.
+    /// `@BuildOptions.outputPath` when `@run` set it.
     pub fn getBuildOutputPath(self: *Compilation) ?[]const u8 {
-        if (self.ir_emitter) |*e| return e.build_config.output_path;
-        return null;
+        const e = if (self.ir_emitter) |*e| e else return null;
+        const table = self.buildTable() orelse return null;
+        const p = e.build_config.getString(table, "outputPath");
+        return if (p.len == 0) null else p;
     }
 
-    /// Get custom WASM shell template path set from @run build blocks, if any.
+    /// `@BuildOptions.wasmShell` when `@run` set it.
     pub fn getBuildWasmShell(self: *Compilation) ?[]const u8 {
-        if (self.ir_emitter) |*e| return e.build_config.wasm_shell_path;
-        return null;
+        const e = if (self.ir_emitter) |*e| e else return null;
+        const table = self.buildTable() orelse return null;
+        const p = e.build_config.getString(table, "wasmShell");
+        return if (p.len == 0) null else p;
     }
 
     /// Get the post-link callback function id (set via `@onBuild(fn)`), if any.
@@ -257,18 +268,11 @@ pub const Compilation = struct {
         return null;
     }
 
-    /// Whether the post-link callback takes the `BuildOptions` handle arg (the
+    /// Whether the post-link callback takes the `*@BuildOptions` handle arg (the
     /// `@onBuild(cb)` form). Drives the `pass_options` flag at invocation.
     pub fn getPostLinkTakesOptions(self: *Compilation) bool {
         if (self.ir_emitter) |*e| return e.build_config.post_link_takes_options;
         return false;
-    }
-
-    /// Get the post-link module name (set via
-    /// `BuildOptions.setPostLinkModule("name")`), if any.
-    pub fn getPostLinkModule(self: *Compilation) ?[]const u8 {
-        if (self.ir_emitter) |*e| return e.build_config.post_link_module;
-        return null;
     }
 
     /// Collect C import source info — both from user-written `@import c { ... }`
