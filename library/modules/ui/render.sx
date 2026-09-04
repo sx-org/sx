@@ -2,6 +2,7 @@
 @import "modules/math";
 @import "modules/ui/types.sx";
 @import "modules/ui/input.sx";
+@import "modules/ui/paragraph.sx";
 
 RenderNodeType :: enum {
     rect;
@@ -26,8 +27,9 @@ RenderNode :: struct {
     strokeWidth: f32;
     cornerRadius: f32;
 
-    // Text
+    // Text: the glyphs are laid out in the frame's space, baselines included.
     text: string;
+    glyphs: []PositionedGlyph;
     fontSize: f32;
     textColor: Color;
 
@@ -183,11 +185,17 @@ RenderContext :: struct {
         self.depth += 1;
     }
 
+    // One line of text.
     addText :: (self: *RenderContext, frame: Frame, text: string, fontSize: f32, color: Color) {
+        self.addParagraph(frame, paragraphFor(text, fontSize, null), text, fontSize, color);
+    }
+
+    addParagraph :: (self: *RenderContext, frame: Frame, para: *Paragraph, text: string, fontSize: f32, color: Color) {
         self.tree.add(.{
             type = .text,
             frame = frame,
             text = text,
+            glyphs = para.glyphs.items,
             fontSize = fontSize,
             textColor = color,
             opacity = self.opacity,

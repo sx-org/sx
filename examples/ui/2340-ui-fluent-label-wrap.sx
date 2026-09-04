@@ -1,0 +1,46 @@
+// A label wraps to the width its container proposes: a column proposes its
+// width, a row proposes none. The text node carries the laid-out glyphs, and
+// a rebuilt frame lays nothing out again.
+//
+// Fontless metrics: every byte advances 8 at 16 pt and a line is 16 tall.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+
+show :: (tag: string, root: *UiRoot) {
+    print("{}\n", tag);
+    for n in root.snapshot.scene.nodes {
+        lines := 0;
+        lastTop : f32 = -1.0;
+        for g in n.glyphs {
+            if g.y != lastTop { lines += 1; lastTop = g.y; }
+        }
+        print("  {} \"{}\" at {},{} {}x{} glyphs {} lines {}\n", n.type, n.text,
+            n.frame.origin.x.(i64), n.frame.origin.y.(i64),
+            n.frame.size.width.(i64), n.frame.size.height.(i64), n.glyphs.len, lines);
+    }
+}
+
+main :: () -> i32 {
+    root := UiRoot.init(Size{ width = 64.0, height = 80.0 }, context.allocator);
+    loop := FrameLoop.init(*root, closure(|| -> View {
+        v : View = vstack(4.0) {
+            Label{ text = "wrap me please" };
+            hstack(0.0) {
+                Label{ text = "wrap me please" };
+            };
+        };
+        v
+    }), context.allocator);
+
+    loop.frame();
+    show("built", *root);
+    print("misses {}\n", root.paragraphs.misses);
+    loop.frame();
+    show("rebuilt", *root);
+    print("misses {} hits {}\n", root.paragraphs.misses, root.paragraphs.hits);
+
+    root.deinit();
+    loop.deinit();
+    0
+}

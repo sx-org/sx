@@ -48,13 +48,3 @@ shapeRun :: (text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Alloc
         i += 1;
     }
 }
-
-// Convenience measurement function for views
-measureText :: (text: string, fontSize: f32) -> Size {
-    if gFont == null {
-        // Fallback approximate measurement
-        scale := fontSize / 16.0;
-        return Size{ width = text.len * 8.0 * scale, height = fontSize };
-    }
-    gFont.measureText(text, fontSize)
-}

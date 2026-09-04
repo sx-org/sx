@@ -1,0 +1,74 @@
+// A paragraph cache answers by bytes, size and width, keeps what the current
+// frame touched, and sheds the least-recently-touched rest past its byte cap.
+//
+// Fontless metrics: every byte advances 8 at 16 pt. An entry costs its text
+// bytes plus its glyphs and lines, so the caps below are set from one entry's
+// measured cost.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/paragraph.sx";
+
+report :: (tag: string, c: *ParagraphCache) {
+    print("{} hits {} misses {} entries {}\n", tag, c.hits, c.misses, c.entries.len);
+}
+
+main :: () {
+    cache := ParagraphCache.init(context.allocator);
+
+    // The same bytes at the same size and width hit; any of the three
+    // differing misses. A rewritten buffer is the bytes now in it.
+    buf : [2]u8 = .['a', 'b'];
+    run : string = ---;
+    run.ptr = *buf[0];
+    run.len = 2;
+    first := cache.get(run, 16.0, 40.0);
+    cache.get("ab", 16.0, 40.0);
+    report("same", *cache);
+    cache.get("ab", 16.0, null);
+    cache.get("ab", 20.0, 40.0);
+    report("other width, other size", *cache);
+    buf[0] = 'c';
+    cache.get(run, 16.0, 40.0);
+    report("rewritten buffer", *cache);
+    one := cache.bytes / cache.entries.len;
+    print("first still lays out \"ab\": {} glyphs\n", first.glyphs.len);
+
+    // Past the cap, the entry touched longest ago goes first — unless the
+    // current frame touched it.
+    small := ParagraphCache.init(context.allocator, one * 2);
+    small.beginFrame();
+    small.get("aa", 16.0, null);
+    small.get("bb", 16.0, null);
+    small.get("aa", 16.0, null);
+    small.beginFrame();
+    small.get("cc", 16.0, null);
+    small.get("aa", 16.0, null);
+    small.get("bb", 16.0, null);
+    report("evicted the older-frame entry touched longest ago", *small);
+
+    small.beginFrame();
+    small.get("dd", 16.0, null);
+    small.get("ee", 16.0, null);
+    small.get("ff", 16.0, null);
+    small.get("dd", 16.0, null);
+    report("over cap within one frame, nothing goes", *small);
+    print("over cap {}\n", small.bytes > small.byteCap);
+
+    // A list that scrolls lays the same paragraphs out at the same width every
+    // frame: after the first frame there are no misses.
+    scroll := ParagraphCache.init(context.allocator);
+    rows := .["one row of text", "another row", "the last row"];
+    frame := 0;
+    while frame < 5 {
+        scroll.beginFrame();
+        for r in rows { scroll.get(r, 16.0, 80.0); }
+        if frame == 0 { report("warm-up", *scroll); scroll.misses = 0; }
+        frame += 1;
+    }
+    report("steady scroll", *scroll);
+
+    cache.deinit();
+    small.deinit();
+    scroll.deinit();
+}

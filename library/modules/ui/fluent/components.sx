@@ -1,9 +1,9 @@
 // The fluent library's leaf components.
 //
 // Each declares itself into `fluent.View` and answers the three methods the set
-// declares, at the types the set declares them. Text measures through the
-// foundation's `measureText`, so a component sizes on the metrics the renderer
-// will draw with.
+// declares, at the types the set declares them. Text lays out through the
+// foundation's paragraphs, so a component sizes on the glyphs the renderer
+// will draw.
 //
 // A component that owns a surface owns the padding inside it; what a caller puts
 // around that surface is placement.
@@ -11,7 +11,7 @@
 @import "modules/std/mem.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
-@import "modules/ui/font.sx";
+@import "modules/ui/paragraph.sx";
 @import "modules/ui/input.sx";
 @import "modules/ui/fluent/view.sx";
 @import "modules/ui/fluent/modifier.sx";
@@ -32,19 +32,21 @@ paintBox :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border:
     }
 }
 
+// Text that wraps to the width it is proposed and is as tall as its lines.
 Label :: @OpenVariant(View) {
     text: string = "";
     fontSize: f32 = 16.0;
     color: Color = COLOR_WHITE;
 
     fit :: (self: *Label, proposal: ProposedSize) -> Size {
-        measureText(self.text, self.fontSize)
+        paragraphFor(self.text, self.fontSize, proposal.width).size
     }
 
     layout :: (self: *Label, bounds: Frame) {}
 
     render :: (self: *Label, rc: *RenderContext, frame: Frame) {
-        rc.addText(frame, self.text, self.fontSize, self.color);
+        para := paragraphFor(self.text, self.fontSize, frame.size.width);
+        rc.addParagraph(frame, para, self.text, self.fontSize, self.color);
     }
 }
 

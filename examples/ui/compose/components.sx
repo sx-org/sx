@@ -10,7 +10,7 @@
 @import "modules/std.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
-@import "modules/ui/font.sx";
+@import "modules/ui/paragraph.sx";
 @import "examples/ui/compose/view.sx";
 
 // One box, one command: a stroke rides ON the fill, a radius rounds what is
