@@ -561,7 +561,7 @@ suggests a wider storage type (`u32` holds any Unicode scalar), rather than
 truncation.
 
 Because a char literal *is* an integer code point, it is accepted anywhere an
-integer literal is: as an explicit enum value (`esc :: '\x1b'` → tag 27), as a
+integer literal is: as an explicit enum value (`esc = '\x1b'` → tag 27), as a
 compile-time value argument to a parametrized type (`Buf('A')` binds `$N = 65`),
 as an array dimension (`['A']u8`), and in `match` / `inline if` const comparisons.
 

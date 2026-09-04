@@ -1,7 +1,7 @@
 // A module-global initialized with an enum literal (`.Variant`) reads back the
 // declared tag — scalar, inside a global array, and as a struct field, for both
 // a plain enum (tag == declaration index) and an explicit-value enum (`enum u16
-// { ok :: 200; ... }`, larger backing for element-stride coverage).
+// { ok = 200; ... }`, larger backing for element-stride coverage).
 // `globalInitValue` serializes the enum literal to its tag value (respecting
 // explicit variant values) against the destination enum type, for the scalar
 // global, the array element, and the nested aggregate field.
