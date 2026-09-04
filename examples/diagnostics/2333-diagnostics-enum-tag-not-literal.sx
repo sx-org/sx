@@ -1,0 +1,8 @@
+// A stated tag is an integer or char literal, optionally negated; a named
+// constant is diagnosed where it is written.
+@import "modules/std.sx";
+
+K :: 5;
+E :: enum { a = K; b; }
+
+main :: () { }

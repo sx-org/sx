@@ -1,0 +1,12 @@
+// An unstated tag is the previous member's tag plus one, from 0; in a flags
+// enum it is the bit above the previous tag, from 1.
+@import "modules/std.sx";
+
+E :: enum { a; b = 10; c; d = 3; e; }
+F :: enum flags { p; q = 64; r; }
+
+main :: () {
+    print("{} {} {} {} {}\n", @tag(E.a), @tag(E.b), @tag(E.c), @tag(E.d), @tag(E.e));
+    print("{} {} {}\n", @tag(F.p), @tag(F.q), @tag(F.r));
+    print("{} {}\n", @typeInfo(E).enum.fields[2].value, @typeInfo(F).enum.fields[2].value);
+}

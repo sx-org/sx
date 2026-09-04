@@ -6,7 +6,7 @@ rt @isFlags: true false
 rt count: 3
 rt live color: .green
 rt live prio: .mid
-rt live neg: .minus (vv 0)
+rt live neg: .minus (vv -3)
 rt live wire: .data(42)
 shape name: circle payload: 2.500000
 ev live: .key(7)

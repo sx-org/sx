@@ -1,0 +1,17 @@
+// A negated literal is a stated tag: it is the member's value in reflection,
+// in `match`, in `@tag`, and through the integer ladder, at an i8 and at the
+// default i64 tag width.
+@import "modules/std.sx";
+
+Neg :: enum i8 { minus = -3; zero = 0; plus = 3; }
+Wide :: enum { lo = -1; hi = 1; }
+
+main :: () {
+    n := Neg.minus;
+    k := match n { case .minus: 1; case .zero: 2; case .plus: 3; };
+    back : Neg = -3;
+    print("{} {} {} {}\n", @tag(n), k, n, back == Neg.minus);
+    w := Wide.lo;
+    j := match w { case .lo: 10; case .hi: 20; };
+    print("{} {} {} {}\n", @tag(w), j, w, @typeInfo(Wide).enum.fields[0].value);
+}

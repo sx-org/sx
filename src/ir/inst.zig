@@ -463,7 +463,7 @@ pub const Aggregate = struct {
 };
 
 pub const EnumInit = struct {
-    tag: u32,
+    tag: i64,
     payload: Ref, // Ref.none if no payload
 };
 

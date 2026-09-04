@@ -1,0 +1,11 @@
+error: tag 6 already used
+  --> examples/diagnostics/2332-diagnostics-enum-tag-collision.sx:5:23
+   |
+ 5 | E :: enum { a = 5; b; c = 6; }
+   |                       ^
+
+note: by 'b'
+  --> examples/diagnostics/2332-diagnostics-enum-tag-collision.sx:5:20
+   |
+ 5 | E :: enum { a = 5; b; c = 6; }
+   |                    ^

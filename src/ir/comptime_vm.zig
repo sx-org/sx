@@ -1277,7 +1277,7 @@ pub const Vm = struct {
             .enum_init => |ei| {
                 const uty = ins.ty;
                 const is_union = !uty.isBuiltin() and (try self.requireTable()).get(uty) == .@"enum" and (try self.requireTable()).get(uty).@"enum".hasPayload();
-                if (ei.payload.isNone() and !is_union) return .{ .value = @as(Reg, ei.tag) };
+                if (ei.payload.isNone() and !is_union) return .{ .value = @as(Reg, @bitCast(ei.tag)) };
                 // Payload enum { tag@0, payload@tag_size } — `{ header, [N x i8] }`
                 // in the LLVM layout (see backend/llvm/types.zig). Allocate the
                 // whole value (zeroed: the payload area is max-payload sized, so a
@@ -1298,7 +1298,7 @@ pub const Vm = struct {
                 const size = table.typeSizeBytes(uty);
                 const addr = self.machine.allocBytes(size, table.typeAlignBytes(uty));
                 @memset(try self.machine.bytes(addr, size), 0);
-                try self.writeField(table, addr, tu.tag_type, @as(Reg, ei.tag));
+                try self.writeField(table, addr, tu.tag_type, @as(Reg, @bitCast(ei.tag)));
                 if (!ei.payload.isNone()) {
                     const tag_size: Addr = @intCast(table.typeSizeBytes(tu.tag_type));
                     const payload_ty = try self.refTy(ref_types, ei.payload);

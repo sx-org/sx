@@ -1177,6 +1177,7 @@ pub fn registerEnumDecl(self: *Lowering, ed: *const ast.EnumDecl) void {
     // first-match.
     const info = type_bridge.buildEnumInfo(ed, table, self);
     self.refuseIllegalElseMember(ed, info.@"enum");
+    self.refuseIllegalTags(ed, info.@"enum");
     _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
 }
 
@@ -1189,6 +1190,32 @@ pub fn refuseIllegalElseMember(self: *Lowering, ed: *const ast.EnumDecl, e: type
         const span = ast.Span{ .start = ed.else_name_start, .end = ed.else_name_start + @as(u32, @intCast(name.len)) };
         d.addFmt(.err, span, "'else' member can only be used for integer enums", .{});
     }
+}
+
+/// A stated tag that is not a literal, or else two members with one tag: the
+/// later member is the error, the holder the note.
+pub fn refuseIllegalTags(self: *Lowering, ed: *const ast.EnumDecl, e: types.TypeInfo.EnumInfo) void {
+    const d = self.diagnostics orelse return;
+    var unread = false;
+    for (ed.variant_values) |vv| if (vv) |node| if (type_bridge.enumVariantConst(node) == null) {
+        d.addFmt(.err, node.span, "an enum tag is an integer or char literal", .{});
+        unread = true;
+    };
+    if (unread) return;
+    const vals = e.values orelse return;
+    for (vals, 0..) |tag, i| {
+        for (vals[0..i], 0..) |held, j| {
+            if (held != tag) continue;
+            const id = d.addFmtId(.err, memberSpan(ed, i), "tag {d} already used", .{tag});
+            d.addNoteFmt(id, memberSpan(ed, j), "by '{s}'", .{ed.variant_names[j]});
+            break;
+        }
+    }
+}
+
+fn memberSpan(ed: *const ast.EnumDecl, i: usize) ast.Span {
+    const start = ed.variant_name_starts[i];
+    return .{ .start = start, .end = start + @as(u32, @intCast(ed.variant_names[i].len)) };
 }
 
 /// Register a top-level UNION decl under a per-decl nominal identity — the
