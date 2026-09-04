@@ -1,32 +1,32 @@
-// Char literals as explicit enum values. A char literal `::`-assigned to an
-// enum variant is its integer code point — read back by `xx`, it yields that
+// Char literals as explicit enum values. A char literal as a variant's stated
+// tag is its integer code point — read back by `xx`, it yields that
 // value, NOT the variant's positional index. Covers plain enums, sized
 // backing (`enum u32`), and `enum flags`.
 //
 // `type_bridge.buildEnumInfo` extracts explicit values from a `char_literal`
-// as well as an `int_literal`, so `esc :: '\x1b'` ships tag 27.
+// as well as an `int_literal`, so `esc = '\x1b'` ships tag 27.
 
 @import "modules/std.sx";
 
 Key :: enum {
-    esc   :: '\x1b';
-    a     :: 'a';
-    space :: ' ';
+    esc   = '\x1b';
+    a     = 'a';
+    space = ' ';
 }
 
 // Sized backing + a mix of char and int values (auto-increment does NOT apply
 // across explicit values here; each is set explicitly).
 Ascii :: enum u32 {
-    nul :: '\0';
-    tab :: '\t';
-    nl  :: '\n';
+    nul = '\0';
+    tab = '\t';
+    nl  = '\n';
 }
 
 // Flags enum: char literals spell the bit values directly.
 Bits :: enum flags u32 {
-    one   :: '\x01';
-    two   :: '\x02';
-    eight :: '\x08';
+    one   = '\x01';
+    two   = '\x02';
+    eight = '\x08';
 }
 
 main :: () -> i64 {

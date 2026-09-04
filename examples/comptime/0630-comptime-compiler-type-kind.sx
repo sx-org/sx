@@ -20,7 +20,7 @@ TypeId   :: u32;
 
 
 Color       :: enum { red; green; blue; }
-WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
+WindowFlags :: enum flags u32 { vsync = 64; resizable = 4; hidden = 128; }
 Point       :: struct { x: i64; y: i64; }
 
 colorKind :: @run @rawTypeKind(@rawFindType(@rawIntern("Color")));   // 2 = enum

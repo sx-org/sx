@@ -3,9 +3,9 @@
 // a `u8`, an `i16`, or a layout struct's tag word.
 @import "modules/std.sx";
 
-Small :: enum u8 { a; b :: 200; }
-Wide :: enum i16 { lo :: 3; hi :: 700; }
-Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
+Small :: enum u8 { a; b = 200; }
+Wide :: enum i16 { lo = 3; hi = 700; }
+Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit = 0x100; key = 0x300 : i32; }
 
 main :: () -> i32 {
     s := Small.b;

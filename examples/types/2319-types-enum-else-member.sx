@@ -3,7 +3,7 @@
 // value reaches the else member, whose arm binds the word.
 @import "modules/std.sx";
 
-Desc :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+Desc :: enum i32 { stdin = 0; stdout = 1; stderr = 2; raw = else; }
 
 number :: (d: Desc) -> i32 {
     match d {

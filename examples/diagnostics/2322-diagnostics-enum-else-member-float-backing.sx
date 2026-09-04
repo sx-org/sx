@@ -2,6 +2,6 @@
 // enum has no integer word for the rest to be.
 @import "modules/std.sx";
 
-E :: enum f32 { a; else rest; }
+E :: enum f32 { a; rest = else; }
 
 main :: () { }

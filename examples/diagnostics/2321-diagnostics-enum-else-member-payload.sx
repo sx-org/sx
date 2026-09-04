@@ -4,7 +4,7 @@
 // name is an ordinary unknown-variant error.
 @import "modules/std.sx";
 
-Shape :: enum { dot; circle: f32; else other; }
+Shape :: enum { dot; circle: f32; other = else; }
 
 main :: () {
     s := Shape.other(1);

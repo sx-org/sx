@@ -1,18 +1,18 @@
 // Printing a payload-less enum variant that carries an EXPLICIT value
-// (`K :: 7`). The formatter recovers the name by scanning the reflected
+// (`K = 7`). The formatter recovers the name by scanning the reflected
 // `.fields[i].value` for the value's tag, so the name is read at the
 // SEQUENTIAL ordinal `i` and never at the raw explicit value.
 //
-// `K :: 7` inside an enum body is an explicit-valued variant (specs.md §7,
-// `esc :: '\x1b'`), not an associated constant.
+// `K = 7` inside an enum body is an explicit-valued variant (specs.md §7,
+// `esc = '\x1b'`), not an associated constant.
 
 @import "modules/std.sx";
 
 // Mix of auto (A=0, B=1) and explicit (K=7) values.
-E :: enum { A; B; K :: 7; }
+E :: enum { A; B; K = 7; }
 
 // Every variant explicit, none coinciding with its ordinal.
-F :: enum { X :: 3; Y :: 7; Z :: 11; }
+F :: enum { X = 3; Y = 7; Z = 11; }
 
 main :: () {
     // Read each variant by name.

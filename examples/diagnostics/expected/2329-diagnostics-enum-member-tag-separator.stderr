@@ -1,0 +1,5 @@
+error: expected ';'
+  --> examples/diagnostics/2329-diagnostics-enum-member-tag-separator.sx:5:19
+   |
+ 5 | Ev :: enum { quit :: 0x100; key :: 0x300: i32; }
+   |                   ^^

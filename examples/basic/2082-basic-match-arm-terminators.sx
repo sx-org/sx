@@ -11,14 +11,14 @@
 @import "modules/std.sx";
 
 Color :: enum {
-    Red
-    Green
-    Blue
+    Red;
+    Green;
+    Blue;
 }
 
 Shape :: enum {
-    rect: i64
-    dot
+    rect: i64;
+    dot;
 }
 
 // Three statements per arm, each ended by its `;`.

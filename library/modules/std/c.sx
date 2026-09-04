@@ -17,7 +17,7 @@
 libc :: @library "c";
 
 // A POSIX descriptor: the standard streams by name, any other as itself.
-Fd :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; raw = else; }
 
 // ── memory ────────────────────────────────────────────────────────────────
 // Raw libc allocation + block ops. The Allocator protocol (std/mem.sx) is the

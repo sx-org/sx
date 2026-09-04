@@ -1,11 +1,11 @@
 error: 'else' member can only be used for integer enums
-  --> examples/diagnostics/2325-diagnostics-enum-else-member-inline-payload.sx:7:39
+  --> examples/diagnostics/2325-diagnostics-enum-else-member-inline-payload.sx:7:34
    |
- 7 |     s : enum { dot; circle: f32; else other; } = .other(1);
-   |                                       ^^^^^
+ 7 |     s : enum { dot; circle: f32; other = else; } = .other(1);
+   |                                  ^^^^^
 
 error: 'other' is not a variant of '__anon' (variants are: dot, circle)
-  --> examples/diagnostics/2325-diagnostics-enum-else-member-inline-payload.sx:7:50
+  --> examples/diagnostics/2325-diagnostics-enum-else-member-inline-payload.sx:7:52
    |
- 7 |     s : enum { dot; circle: f32; else other; } = .other(1);
-   |                                                  ^^^^^^
+ 7 |     s : enum { dot; circle: f32; other = else; } = .other(1);
+   |                                                    ^^^^^^

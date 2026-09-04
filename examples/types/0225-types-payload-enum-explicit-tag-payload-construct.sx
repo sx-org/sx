@@ -16,7 +16,7 @@ K :: struct { a: i64; b: i64; }
 
 // Explicit-tag payload enum: payload-less `quit`, scalar-payload `key`, and
 // struct-payload `mouse`. None of the explicit values equal a small ordinal.
-Ev :: enum { quit :: 0x100; key :: 0x300: i64; mouse :: 0x400: K; }
+Ev :: enum { quit = 0x100; key = 0x300 : i64; mouse = 0x400 : K; }
 
 handle :: (e: Ev) -> i64 {
     r := match e {
