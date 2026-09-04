@@ -504,36 +504,20 @@ UIRenderer :: struct {
     renderText :: (self: *UIRenderer, node: RenderNode) {
         font := gFont;
         if font == null { return; }
-
-        // Shape text into positioned glyphs. This may rasterize new glyphs
-        // AND grow the atlas, which creates a new GPU texture under
-        // `font.textureId`. Re-bind the font atlas after shaping so the
-        // upcoming text quads sample the texture that actually holds the
-        // glyphs we just rasterized.
-        font.shapeText(node.text, node.fontSize);
-
-        // Flush any new glyphs to the atlas texture
-        font.flush();
-
-        // If the atlas grew (or otherwise changed handle), switch the
-        // current texture so the next flush samples the right one.
         self.bindTexture(font.textureId);
 
         tc := node.textColor;
-        ascent := font.getAscent(node.fontSize);
         rasterSize := node.fontSize * font.dpiScale;
         invDpi := font.invDpi;
 
-        i : i64 = 0;
-        while i < font.shapedBuf.len {
-            shaped := font.shapedBuf.items[i];
-            cached := font.getOrRasterize(shaped.glyphIndex, rasterSize);
+        for glyph in node.glyphs {
+            cached := font.getOrRasterize(glyph.glyphIndex, rasterSize);
 
             if cached != null {
                 if cached.width > 0.0 {
                     // Scale physical pixel dimensions back to logical units
-                    gx0 := node.frame.origin.x + shaped.x + cached.offsetX * invDpi;
-                    gy0 := node.frame.origin.y + ascent + shaped.y + cached.offsetY * invDpi;
+                    gx0 := node.frame.origin.x + glyph.x + cached.offsetX * invDpi;
+                    gy0 := node.frame.origin.y + glyph.y + cached.offsetY * invDpi;
                     gx1 := gx0 + cached.width * invDpi;
                     gy1 := gy0 + cached.height * invDpi;
 
@@ -557,7 +541,6 @@ UIRenderer :: struct {
                     self.writeVertex(gx0, gy1, uMin, vMax, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
                 }
             }
-            i += 1;
         }
 
         // Flush any glyphs rasterized during this text draw

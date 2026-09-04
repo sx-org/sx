@@ -1,0 +1,317 @@
+// Multi-line text layout over shaped glyphs.
+//
+// A paragraph is shaped once per '\n'-separated segment and each segment is
+// then broken greedily: a space is a break opportunity and the break falls
+// after it, a run wider than the width breaks at glyph granularity, and a
+// segment always yields at least one line. A space that ends a wrapped line
+// stays on that line and does not count toward the line's width.
+//
+// Offsets are UTF-8 bytes. A caret byte draws on the FIRST line whose
+// `caretEnd` it does not exceed: a caret at a soft-wrap boundary is the next
+// line's start. Caret math is LTR-only.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/hash.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/glyph_cache.sx";
+@import "modules/ui/font.sx";
+
+// One glyph placed in paragraph space: `y` is its baseline.
+PositionedGlyph :: struct {
+    glyphIndex: u16;
+    byteOffset: i64;
+    x: f32;
+    y: f32;
+    advance: f32;
+}
+
+// `caretEnd` is the last caret byte that draws on this line: before the last
+// glyph of a soft-wrapped line, the segment's end otherwise.
+ParaLine :: struct {
+    firstGlyph: i64;
+    glyphCount: i64;
+    byteStart: i64;
+    caretEnd: i64;
+    width: f32;
+    top: f32;
+}
+
+Paragraph :: struct {
+    text: string = "";
+    glyphs: List(PositionedGlyph) = .{};
+    lines: List(ParaLine) = .{};
+    size: Size = .{ width = 0.0, height = 0.0 };
+    lineHeight: f32 = 0.0;
+
+    deinit :: (self: *Paragraph, alloc: Allocator = context.allocator) {
+        self.glyphs.deinit(alloc);
+        self.lines.deinit(alloc);
+    }
+
+    lineOf :: (self: *Paragraph, byte: i64) -> i64 {
+        i : i64 = 0;
+        while i + 1 < self.lines.len and byte > self.lines.items[i].caretEnd { i += 1; }
+        i
+    }
+
+    // A zero-width frame at the caret, one line tall.
+    caretRect :: (self: *Paragraph, byte: i64) -> Frame {
+        line := self.lines.items[self.lineOf(byte)];
+        x : f32 = 0.0;
+        i := line.firstGlyph;
+        end := line.firstGlyph + line.glyphCount;
+        while i < end {
+            g := self.glyphs.items[i];
+            if g.byteOffset >= byte { return Frame.make(g.x, line.top, 0.0, self.lineHeight); }
+            x = g.x + g.advance;
+            i += 1;
+        }
+        Frame.make(x, line.top, 0.0, self.lineHeight)
+    }
+
+    // The caret byte nearest to a paragraph-space point: the line at its `y`
+    // (clamped), then the glyph boundary nearest its `x`.
+    indexAt :: (self: *Paragraph, point: Point) -> i64 {
+        row : i64 = if point.y <= 0.0 then 0 else (point.y / self.lineHeight).(i64);
+        if row >= self.lines.len { row = self.lines.len - 1; }
+        line := self.lines.items[row];
+        i := line.firstGlyph;
+        end := line.firstGlyph + line.glyphCount;
+        while i < end {
+            g := self.glyphs.items[i];
+            if point.x < g.x + g.advance * 0.5 { return g.byteOffset; }
+            i += 1;
+        }
+        line.caretEnd
+    }
+}
+
+layoutParagraph :: (text: string, fontSize: f32, maxWidth: ?f32, alloc: Allocator = context.allocator) -> Paragraph {
+    metrics := lineMetrics(fontSize);
+    para := Paragraph{ text = text, lineHeight = metrics.height };
+    shaped := List(ShapedGlyph){};
+    segStart : i64 = 0;
+    while true {
+        segEnd := segStart;
+        while segEnd < text.len and text[segEnd] != '\n' { segEnd += 1; }
+        shaped.len = 0;
+        shapeRun(text[segStart..segEnd], fontSize, *shaped, alloc);
+        breakSegment(*para, shaped.items, text[segStart..segEnd], segStart, maxWidth, metrics.ascent, alloc);
+        if segEnd == text.len { break; }
+        segStart = segEnd + 1;
+        if segStart == text.len {
+            para.lines.append(ParaLine{
+                firstGlyph = para.glyphs.len, glyphCount = 0,
+                byteStart = segStart, caretEnd = segStart,
+                width = 0.0, top = para.lines.len * para.lineHeight,
+            }, alloc);
+            break;
+        }
+    }
+    shaped.deinit(alloc);
+    for line in para.lines {
+        if line.width > para.size.width { para.size.width = line.width; }
+    }
+    para.size.height = para.lines.len * para.lineHeight;
+    para
+}
+
+// Breaks one shaped segment into lines. Glyph positions are rebased to the
+// pen at each line's first glyph; byte offsets are rebased to the paragraph.
+private breakSegment :: (para: *Paragraph, shaped: []ShapedGlyph, seg: string, segStart: i64, maxWidth: ?f32, ascent: f32, alloc: Allocator) {
+    top := para.lines.len * para.lineHeight;
+    if shaped.len == 0 {
+        para.lines.append(ParaLine{
+            firstGlyph = para.glyphs.len, glyphCount = 0,
+            byteStart = segStart, caretEnd = segStart + seg.len,
+            width = 0.0, top = top,
+        }, alloc);
+        return;
+    }
+    lineStart : i64 = 0;
+    pen : f32 = 0.0;
+    while lineStart < shaped.len {
+        i := lineStart;
+        width : f32 = 0.0;
+        ink : f32 = 0.0;
+        opportunity : i64 = -1;
+        inkAtOpportunity : f32 = 0.0;
+        while i < shaped.len {
+            g := shaped[i];
+            space := seg[g.byteOffset] == ' ';
+            if !space and i > lineStart {
+                if w := maxWidth { if width + g.advance > w { break; } }
+            }
+            width += g.advance;
+            i += 1;
+            if space {
+                opportunity = i;
+                inkAtOpportunity = ink;
+            } else {
+                ink = width;
+            }
+        }
+        end := i;
+        lineInk := ink;
+        soft := end < shaped.len;
+        if soft and opportunity > lineStart {
+            end = opportunity;
+            lineInk = inkAtOpportunity;
+        }
+        first := para.glyphs.len;
+        linePen := pen;
+        j := lineStart;
+        while j < end {
+            g := shaped[j];
+            para.glyphs.append(PositionedGlyph{
+                glyphIndex = g.glyphIndex,
+                byteOffset = segStart + g.byteOffset,
+                x = g.x - linePen,
+                y = top + ascent + g.y,
+                advance = g.advance,
+            }, alloc);
+            pen += g.advance;
+            j += 1;
+        }
+        para.lines.append(ParaLine{
+            firstGlyph = first, glyphCount = end - lineStart,
+            byteStart = segStart + shaped[lineStart].byteOffset,
+            caretEnd = if soft then segStart + shaped[end - 1].byteOffset else segStart + seg.len,
+            width = lineInk, top = top,
+        }, alloc);
+        lineStart = end;
+        top += para.lineHeight;
+    }
+}
+
+// The size a run takes on one line.
+measureText :: (text: string, fontSize: f32) -> Size {
+    paragraphFor(text, fontSize, null).size
+}
+
+PARAGRAPH_CACHE_BYTES :: 4 * 1024 * 1024;
+
+// An unbounded layout is keyed at an infinite width.
+ParaKey :: struct {
+    hash: u64;
+    sizeQ: u16;
+    width: f32;
+}
+
+ParaEntry :: struct {
+    key: ParaKey;
+    text: string;
+    para: Paragraph;
+    bytes: i64;
+    frame: i64;
+    touched: i64;
+}
+
+// Laid-out paragraphs by (text bytes, quantized size, width). Entries are
+// least-recently-touched evicted past `byteCap`, except those touched in the
+// current frame: a paragraph handed out this frame stays valid until the
+// next `beginFrame`.
+ParagraphCache :: struct {
+    gpa: Allocator;
+    byteCap: i64 = PARAGRAPH_CACHE_BYTES;
+    bytes: i64 = 0;
+    frame: i64 = 0;
+    tick: i64 = 0;
+    hits: i64 = 0;
+    misses: i64 = 0;
+    index: HashMap(ParaKey, *ParaEntry) = .{};
+    entries: List(*ParaEntry) = .{};
+
+    init :: (gpa: Allocator, byteCap: i64 = PARAGRAPH_CACHE_BYTES) -> ParagraphCache {
+        ParagraphCache{ gpa = gpa, byteCap = byteCap }
+    }
+
+    beginFrame :: (self: *ParagraphCache) {
+        self.frame += 1;
+    }
+
+    get :: (self: *ParagraphCache, text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
+        key := ParaKey{ hash = fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? f32.inf };
+        self.tick += 1;
+        if e := self.index.get(key) {
+            if sameBytes(e.text, text) {
+                self.hits += 1;
+                e.frame = self.frame;
+                e.touched = self.tick;
+                return *e.para;
+            }
+            self.drop(e);
+        }
+        self.misses += 1;
+        e := self.gpa.create(ParaEntry);
+        e.key = key;
+        e.text = text.clone(self.gpa);
+        e.para = layoutParagraph(e.text, fontSize, maxWidth, self.gpa);
+        e.bytes = text.len + e.para.glyphs.len * @sizeOf(PositionedGlyph) + e.para.lines.len * @sizeOf(ParaLine);
+        e.frame = self.frame;
+        e.touched = self.tick;
+        self.entries.append(e, self.gpa);
+        self.index.put(key, e, self.gpa);
+        self.bytes += e.bytes;
+        self.evict();
+        *e.para
+    }
+
+    // Drops least-recently-touched entries of earlier frames until the cap
+    // holds or none is left to drop.
+    evict :: (self: *ParagraphCache) {
+        while self.bytes > self.byteCap {
+            victim : ?*ParaEntry = null;
+            for e in self.entries {
+                if e.frame == self.frame { continue; }
+                if v := victim { if e.touched >= v.touched { continue; } }
+                victim = e;
+            }
+            if v := victim { self.drop(v); } else { return; }
+        }
+    }
+
+    drop :: (self: *ParagraphCache, e: *ParaEntry) {
+        i : i64 = 0;
+        while self.entries.items[i] != e { i += 1; }
+        self.entries.swapRemove(i);
+        self.index.remove(e.key, self.gpa);
+        self.bytes -= e.bytes;
+        self.release(e);
+    }
+
+    release :: (self: *ParagraphCache, e: *ParaEntry) {
+        e.para.deinit(self.gpa);
+        e.text.free(self.gpa);
+        self.gpa.destroy(e);
+    }
+
+    deinit :: (self: *ParagraphCache) {
+        for e in self.entries { self.release(e); }
+        self.entries.deinit(self.gpa);
+        self.index.deinit(self.gpa);
+    }
+}
+
+private sameBytes :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i : i64 = 0;
+    while i < a.len {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+// The cache a frame lays its text out through; with none, a layout lives on
+// the ambient allocator.
+@context.extend paragraphs: ?*ParagraphCache = null;
+
+paragraphFor :: (text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
+    if cache := context.paragraphs {
+        return cache.get(text, fontSize, maxWidth);
+    }
+    p := context.allocator.create(Paragraph);
+    p.* = layoutParagraph(text, fontSize, maxWidth, context.allocator);
+    p
+}

@@ -1,0 +1,8 @@
+built
+  .text "wrap me please" at 0,0 56x32 glyphs 14 lines 2
+  .text "wrap me please" at 0,36 112x16 glyphs 14 lines 1
+misses 4
+rebuilt
+  .text "wrap me please" at 0,0 56x32 glyphs 14 lines 2
+  .text "wrap me please" at 0,36 112x16 glyphs 14 lines 1
+misses 4 hits 24

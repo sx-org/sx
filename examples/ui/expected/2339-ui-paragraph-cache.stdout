@@ -1,0 +1,9 @@
+same hits 1 misses 1 entries 1
+other width, other size hits 1 misses 3 entries 3
+rewritten buffer hits 1 misses 4 entries 4
+first still lays out "ab": 2 glyphs
+evicted the older-frame entry touched longest ago hits 2 misses 4 entries 3
+over cap within one frame, nothing goes hits 3 misses 7 entries 3
+over cap true
+warm-up hits 0 misses 3 entries 3
+steady scroll hits 12 misses 0 entries 3

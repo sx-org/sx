@@ -1,0 +1,64 @@
+// A paragraph breaks at a space, at '\n', or inside a run wider than the
+// width, and each kind of break places the caret differently.
+//
+// Fontless metrics: every byte advances 8 at 16 pt and a line is 16 tall.
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/paragraph.sx";
+
+show :: (tag: string, p: *Paragraph) {
+    print("{} {}x{}\n", tag, p.size.width.(i64), p.size.height.(i64));
+    for line in p.lines {
+        print("  bytes {}..{} glyphs {} width {} top {}\n",
+            line.byteStart, line.caretEnd, line.glyphCount, line.width.(i64), line.top.(i64));
+    }
+}
+
+caret :: (p: *Paragraph, byte: i64) {
+    r := p.caretRect(byte);
+    print("  caret {} -> line {} x {} top {}\n", byte, p.lineOf(byte), r.origin.x.(i64), r.origin.y.(i64));
+}
+
+hit :: (p: *Paragraph, x: f32, y: f32) {
+    print("  hit {},{} -> {}\n", x.(i64), y.(i64), p.indexAt(Point{ x = x, y = y }));
+}
+
+main :: () {
+    // A soft wrap: the break falls after the space, which stays on the first
+    // line without widening it.
+    soft := layoutParagraph("hello world", 16.0, 48.0);
+    show("soft", *soft);
+    caret(*soft, 5);
+    caret(*soft, 6);
+    caret(*soft, 11);
+    hit(*soft, 100.0, 8.0);
+    hit(*soft, 0.0, 100.0);
+    hit(*soft, 13.0, 20.0);
+
+    // A hard break keeps the caret before the '\n' on its own line.
+    hard := layoutParagraph("ab\ncd", 16.0, null);
+    show("hard", *hard);
+    caret(*hard, 2);
+    caret(*hard, 3);
+
+    // A run wider than the width breaks at a glyph.
+    forced := layoutParagraph("abcdefgh", 16.0, 24.0);
+    show("forced", *forced);
+    caret(*forced, 3);
+
+    // Empty text is one empty line; a trailing '\n' opens an empty last line.
+    empty := layoutParagraph("", 16.0, 40.0);
+    show("empty", *empty);
+    caret(*empty, 0);
+    trailing := layoutParagraph("a\n", 16.0, null);
+    show("trailing", *trailing);
+    caret(*trailing, 2);
+
+    // Spaces ending a wrapped line hang past its width, and the caret follows
+    // them up to the last one.
+    spaces := layoutParagraph("aa   bb", 16.0, 32.0);
+    show("spaces", *spaces);
+    caret(*spaces, 4);
+    caret(*spaces, 5);
+    hit(*spaces, 60.0, 0.0);
+}
