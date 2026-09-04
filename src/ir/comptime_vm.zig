@@ -2866,9 +2866,24 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     // memory) → a `Value`. Covers scalars + strings + structs; other aggregate
     // shapes bail loudly (added as callers surface them).
 
+    /// How a `[]E` fat pointer bridges. A RESULT escapes into the runtime image,
+    /// where a slice into comptime memory has no placement, so it does not bridge;
+    /// a SNAPSHOT stays host-side and carries the elements themselves.
+    const BridgeMode = enum { escape, snapshot };
+
     /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
     /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
     pub fn regToValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        return self.bridgeValue(alloc, table, reg, ty, .escape);
+    }
+
+    /// The snapshot form of a VM object: `regToValue` with slices as element
+    /// aggregates — the inverse of `materializeValue`.
+    pub fn snapshotValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        return self.bridgeValue(alloc, table, reg, ty, .snapshot);
+    }
+
+    fn bridgeValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId, mode: BridgeMode) Error!Value {
         switch (kindOf(table, ty)) {
             .word => {
                 if (isFloat(ty)) return .{ .float = @bitCast(reg) };
@@ -2901,7 +2916,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     const out = alloc.alloc(Value, info.@"struct".fields.len) catch return self.failMsg("reg→value: out of memory (struct)");
                     for (info.@"struct".fields, 0..) |f, i| {
                         const fr = try self.readField(table, reg + fieldOffset(table, ty, @intCast(i)), f.ty);
-                        out[i] = try self.regToValue(alloc, table, fr, f.ty);
+                        out[i] = try self.bridgeValue(alloc, table, fr, f.ty, mode);
                     }
                     return .{ .aggregate = out };
                 }
@@ -2912,10 +2927,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     for (0..n) |i| {
                         const fty = table.failableValueSlotType(f, i);
                         const fr = try self.readField(table, reg + fieldOffset(table, ty, @intCast(i)), fty);
-                        out[i] = try self.regToValue(alloc, table, fr, fty);
+                        out[i] = try self.bridgeValue(alloc, table, fr, fty, mode);
                     }
                     const er = try self.readField(table, reg + fieldOffset(table, ty, @intCast(n)), f.err);
-                    out[n] = try self.regToValue(alloc, table, er, f.err);
+                    out[n] = try self.bridgeValue(alloc, table, er, f.err, mode);
                     return .{ .aggregate = out };
                 }
                 if (info == .array) {
@@ -2932,7 +2947,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     for (0..len) |i| {
                         const elem_addr = reg + @as(Addr, @intCast(i)) * stride;
                         const er = try self.readField(table, elem_addr, elem_ty);
-                        out[i] = try self.regToValue(alloc, table, er, elem_ty);
+                        out[i] = try self.bridgeValue(alloc, table, er, elem_ty, mode);
                     }
                     return .{ .aggregate = out };
                 }
@@ -2961,10 +2976,24 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     // type, and present it as the `{ payload, i1=true }` LLVM-struct
                     // shape the host's optional serializer expects.
                     const payload_reg = try self.readField(table, reg, child);
-                    const payload = try self.regToValue(alloc, table, payload_reg, child);
+                    const payload = try self.bridgeValue(alloc, table, payload_reg, child, mode);
                     const out = alloc.alloc(Value, 2) catch return self.failMsg("reg→value: out of memory (optional)");
                     out[0] = payload;
                     out[1] = .{ .boolean = true };
+                    return .{ .aggregate = out };
+                }
+                if (info == .slice and mode == .snapshot) {
+                    // `[]E` is a `{ptr, len}` fat pointer; the Value is its
+                    // elements, read at stride `sizeof(E)`.
+                    const elem_ty = info.slice.element;
+                    const data = try self.sliceData(table, reg);
+                    const len: usize = @intCast(try self.sliceLen(table, ty, reg));
+                    const stride: Addr = @intCast(table.typeSizeBytes(elem_ty));
+                    const out = alloc.alloc(Value, len) catch return self.failMsg("reg→value: out of memory (slice)");
+                    for (0..len) |i| {
+                        const er = try self.readField(table, data + @as(Addr, @intCast(i)) * stride, elem_ty);
+                        out[i] = try self.bridgeValue(alloc, table, er, elem_ty, mode);
+                    }
                     return .{ .aggregate = out };
                 }
                 return self.failMsg("reg→value: aggregate shape not bridged yet");
@@ -3313,6 +3342,66 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         };
         const idx: u64 = @bitCast(idx_word); // non-negative comptime index
         return data +% idx *% @as(u64, @intCast(elem_size));
+    }
+
+    /// Write a host `Value` of type `ty` into fresh comptime memory and return its
+    /// register word: the scalar bits for a word type, the object's address for an
+    /// aggregate. The inverse of `regToValue` for the shapes a snapshot carries —
+    /// words, strings, slices, arrays and structs; `.undef` is zero-filled.
+    pub fn materializeValue(self: *Vm, table: *const types.TypeTable, ty: TypeId, value: Value) Error!Reg {
+        switch (kindOf(table, ty)) {
+            .word => return switch (value) {
+                .int => |v| @bitCast(v),
+                .float => |f| @bitCast(f),
+                .boolean => |b| @intFromBool(b),
+                .type_tag => |t| @as(Reg, t.index()),
+                .func_ref => |fid| funcRefWord(fid),
+                .null_val, .undef => null_addr,
+                else => self.failFmt("materialize: a '{s}' word cannot carry that value", .{table.typeName(ty)}),
+            },
+            .aggregate => {
+                if (value == .undef) return self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                if (ty == .string) {
+                    if (value != .string) return self.failMsg("materialize: a string field expects a string value");
+                    return self.makeStringValue(table, value.string);
+                }
+                const items = if (value == .aggregate) value.aggregate else
+                    return self.failFmt("materialize: a '{s}' expects an aggregate value", .{table.typeName(ty)});
+                const info = table.get(ty);
+                if (info == .slice) {
+                    const elem_ty = info.slice.element;
+                    const stride = table.typeSizeBytes(elem_ty);
+                    const data: Addr = if (items.len == 0) null_addr else self.machine.allocBytes(items.len * stride, 8);
+                    for (items, 0..) |item, i| {
+                        try self.writeField(table, data + @as(Addr, @intCast(i * stride)), elem_ty, try self.materializeValue(table, elem_ty, item));
+                    }
+                    return self.makeSlice(table, ty, data, items.len);
+                }
+                if (info == .array) {
+                    const elem_ty = info.array.element;
+                    const stride = table.typeSizeBytes(elem_ty);
+                    if (items.len != @as(usize, @intCast(info.array.length)))
+                        return self.failMsg("materialize: array value length differs from the type's");
+                    const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                    for (items, 0..) |item, i| {
+                        try self.writeField(table, addr + @as(Addr, @intCast(i * stride)), elem_ty, try self.materializeValue(table, elem_ty, item));
+                    }
+                    return addr;
+                }
+                if (info == .@"struct") {
+                    const fields = info.@"struct".fields;
+                    if (items.len != fields.len)
+                        return self.failFmt("materialize: '{s}' has {d} fields, value carries {d}", .{ table.typeName(ty), fields.len, items.len });
+                    const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                    for (fields, 0..) |f, i| {
+                        try self.writeField(table, addr + fieldOffset(table, ty, @intCast(i)), f.ty, try self.materializeValue(table, f.ty, items[i]));
+                    }
+                    return addr;
+                }
+                return self.failFmt("materialize: '{s}' is not a shape a snapshot carries", .{table.typeName(ty)});
+            },
+            .unsupported => return self.failFmt("materialize: unsupported type '{s}'", .{table.typeName(ty)}),
+        }
     }
 
     /// Materialize `text` into comptime memory as a `string` VALUE — NUL-terminated

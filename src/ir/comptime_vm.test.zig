@@ -1697,3 +1697,69 @@ test "comptime_vm: Frame register file round-trips (no stack reclaim)" {
     frame.set(2, 0x1234);
     try std.testing.expectEqual(@as(vm.Reg, 0x1234), frame.get(2));
 }
+
+// A snapshot round-trip: a host Value materialized into VM memory reads back
+// through `snapshotValue` as the same Value — string, `[]string`, a List-shaped
+// struct, and a list of a nested struct.
+test "comptime_vm bridge: materializeValue → snapshotValue round-trips a snapshot shape" {
+    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var module = Module.init(alloc);
+    defer module.deinit();
+    const table = &module.types;
+
+    const str_slice = table.intern(.{ .slice = .{ .element = .string } });
+    const list_fields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("items"), .ty = str_slice },
+        .{ .name = table.internString("cap"), .ty = .i64 },
+    };
+    const list_ty = table.intern(.{ .@"struct" = .{ .name = table.internString("List"), .fields = &list_fields } });
+    const pair_fields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("src"), .ty = .string },
+        .{ .name = table.internString("dest"), .ty = .string },
+    };
+    const pair_ty = table.intern(.{ .@"struct" = .{ .name = table.internString("Pair"), .fields = &pair_fields } });
+    const pair_slice = table.intern(.{ .slice = .{ .element = pair_ty } });
+    const state_fields = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("name"), .ty = .string },
+        .{ .name = table.internString("tags"), .ty = str_slice },
+        .{ .name = table.internString("flags"), .ty = list_ty },
+        .{ .name = table.internString("pairs"), .ty = pair_slice },
+        .{ .name = table.internString("count"), .ty = .i64 },
+    };
+    const state_ty = table.intern(.{ .@"struct" = .{ .name = table.internString("State"), .fields = &state_fields } });
+
+    const tags = [_]Value{ .{ .string = "x" }, .{ .string = "yy" } };
+    const flag_items = [_]Value{.{ .string = "-lm" }};
+    const flags = [_]Value{ .{ .aggregate = &flag_items }, .{ .int = 1 } };
+    const p0 = [_]Value{ .{ .string = "art" }, .{ .string = "Resources/art" } };
+    const pairs = [_]Value{.{ .aggregate = &p0 }};
+    const state = [_]Value{ .{ .string = "app" }, .{ .aggregate = &tags }, .{ .aggregate = &flags }, .{ .aggregate = &pairs }, .{ .int = 7 } };
+
+    var v = vm.Vm.init(alloc);
+    v.table = table;
+    v.module = &module;
+    defer v.deinit();
+    // The VM stores host pointers; lay the types out at host width.
+    table.pointer_size = @sizeOf(usize);
+    const addr = try v.materializeValue(table, state_ty, .{ .aggregate = &state });
+    const back = try v.snapshotValue(a, table, addr, state_ty);
+
+    try std.testing.expectEqualStrings("app", back.aggregate[0].string);
+    try std.testing.expectEqual(@as(usize, 2), back.aggregate[1].aggregate.len);
+    try std.testing.expectEqualStrings("yy", back.aggregate[1].aggregate[1].string);
+    try std.testing.expectEqualStrings("-lm", back.aggregate[2].aggregate[0].aggregate[0].string);
+    try std.testing.expectEqual(@as(i64, 1), back.aggregate[2].aggregate[1].int);
+    try std.testing.expectEqualStrings("Resources/art", back.aggregate[3].aggregate[0].aggregate[1].string);
+    try std.testing.expectEqual(@as(i64, 7), back.aggregate[4].int);
+
+    // An empty slice and an undef field materialize and read back as empty.
+    const empty = [_]Value{ .undef, .{ .aggregate = &.{} }, .undef, .{ .aggregate = &.{} }, .{ .int = 0 } };
+    const e_addr = try v.materializeValue(table, state_ty, .{ .aggregate = &empty });
+    const e_back = try v.snapshotValue(a, table, e_addr, state_ty);
+    try std.testing.expectEqualStrings("", e_back.aggregate[0].string);
+    try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[1].aggregate.len);
+    try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[2].aggregate[0].aggregate.len);
+}
