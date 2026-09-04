@@ -1138,6 +1138,7 @@ fn writeTimingReport(
     io: std.Io,
     repo_root: []const u8,
     label: []const u8,
+    notes: []const []const u8,
     items: []const Item,
     outcomes: []const Outcome,
 ) !void {
@@ -1163,6 +1164,7 @@ fn writeTimingReport(
     std.mem.sort(usize, order.items, Sorter{ .items = items, .outcomes = outcomes }, Sorter.lt);
 
     var buf: std.ArrayList(u8) = .empty;
+    for (notes) |n| try buf.appendSlice(a, try std.fmt.allocPrint(a, "# {s}\n", .{n}));
     try buf.appendSlice(a, "# per-example corpus timing — sorted by run phase (desc)\n");
     try buf.appendSlice(a, "# run = jit stage (JIT) / exec wall (AOT); compile = total - run\n");
     try buf.appendSlice(a, "# budget: run <= 1000.0 ms; offenders flagged OVER\n");
@@ -1195,8 +1197,6 @@ fn writeTimingReport(
         std.debug.print("[corpus-run] timing report write failed: {s} ({s})\n", .{ path, @errorName(err) });
         return;
     };
-    // The budget note is diagnostics: only surface it when asked (any stderr
-    // on a passing test makes the build runner print `failed command`).
     if (over > 0 and corpusVerbose())
         std.debug.print("[corpus-run] {s}: {d} example(s) OVER the 1s run budget — see {s}\n", .{ label, over, path });
 }
@@ -1288,12 +1288,13 @@ fn sweepRoot(
     var ran: usize = 0;
     var skipped: usize = 0;
     var updated: usize = 0;
+    var notes: std.ArrayList([]const u8) = .empty;
     for (outcomes) |*o| {
         if (o.ran) ran += 1;
         if (o.updated) updated += 1;
         if (o.skip_note) |note| {
             skipped += 1;
-            std.debug.print("[corpus-run] {s}\n", .{note});
+            try notes.append(a, try a.dupe(u8, note));
             fail_gpa.free(note);
             o.skip_note = null;
         }
@@ -1302,15 +1303,15 @@ fn sweepRoot(
             o.failure = null;
         }
     }
+    if (skipped > 0)
+        try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} marker(s) skipped", .{ root_base, skipped }));
+    if (corpus_paths.update_goldens)
+        try notes.append(a, try std.fmt.allocPrint(a, "{s}: {d} snapshot(s) regenerated", .{ root_base, updated }));
+    if (corpusVerbose()) for (notes.items) |n| std.debug.print("[corpus-run] {s}\n", .{n});
 
-    writeTimingReport(a, io, repo_root, root_base, items.items, outcomes) catch |err| {
+    writeTimingReport(a, io, repo_root, root_base, notes.items, items.items, outcomes) catch |err| {
         std.debug.print("[corpus-run] timing report failed ({s})\n", .{@errorName(err)});
     };
-
-    if (skipped > 0)
-        std.debug.print("[corpus-run] {s}: {d} marker(s) skipped\n", .{ root_base, skipped });
-    if (corpus_paths.update_goldens)
-        std.debug.print("[corpus-run] {s}: {d} snapshot(s) regenerated\n", .{ root_base, updated });
     return ran;
 }
 
