@@ -2,7 +2,7 @@
 // value it names.
 @import "modules/std.sx";
 
-Desc :: enum i32 { stdin :: 0; else raw; }
+Desc :: enum i32 { stdin = 0; raw = else; }
 
 main :: () {
     x := Desc.raw();

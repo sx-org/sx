@@ -1,8 +1,8 @@
 error: 'else' member can only be used for integer enums
-  --> examples/diagnostics/2321-diagnostics-enum-else-member-payload.sx:7:40
+  --> examples/diagnostics/2321-diagnostics-enum-else-member-payload.sx:7:35
    |
- 7 | Shape :: enum { dot; circle: f32; else other; }
-   |                                        ^^^^^
+ 7 | Shape :: enum { dot; circle: f32; other = else; }
+   |                                   ^^^^^
 
 error: 'other' is not a variant of 'Shape' (variants are: dot, circle)
   --> examples/diagnostics/2321-diagnostics-enum-else-member-payload.sx:10:10

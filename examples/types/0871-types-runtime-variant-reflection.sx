@@ -11,11 +11,11 @@
 
 Color :: enum { red; green; blue; }
 Flag :: enum flags { A; B; C; D; }
-Prio :: enum { low :: 10; mid :: 20; high :: 30; }
-Neg :: enum i8 { minus :: -3; zero :: 0; plus :: 3; }
+Prio :: enum { low = 10; mid = 20; high = 30; }
+Neg :: enum i8 { minus = -3; zero = 0; plus = 3; }
 Shape :: enum { circle: f64; square: i64; point; }
-Wire :: enum { ping :: 0x10; pong :: 0x20; data :: 0x100: i64; }
-Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
+Wire :: enum { ping = 0x10; pong = 0x20; data = 0x100 : i64; }
+Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit = 0x100; key = 0x300 : i32; }
 
 main :: () {
     // static `.value` on a payload enum with explicit tags

@@ -3,7 +3,7 @@
 // payload-free enum reports its backing type; both keep the tag first.
 @import "modules/std.sx";
 
-Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit :: 0x100; key :: 0x300: i32; }
+Ev :: enum struct { tag: u32; _: u32; payload: [4]u32; } { quit = 0x100; key = 0x300 : i32; }
 Color :: enum u8 { red; green; }
 Shape :: enum { none; circle: f64; }
 

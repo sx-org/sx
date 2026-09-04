@@ -9,9 +9,9 @@ Perms :: enum flags {
 
 // Explicit values with u32 backing type (e.g. for C interop)
 WindowFlags :: enum flags u32 {
-    vsync     :: 64;
-    resizable :: 4;
-    hidden    :: 128;
+    vsync     = 64;
+    resizable = 4;
+    hidden    = 128;
 }
 
 // Backing type on plain enums too

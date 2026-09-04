@@ -9,24 +9,24 @@
 @import "modules/std.sx";
 
 Key :: enum {
-    esc   :: '\x1b';
-    a     :: 'a';
-    space :: ' ';
+    esc   = '\x1b';
+    a     = 'a';
+    space = ' ';
 }
 
 // Sized backing + a mix of char and int values (auto-increment does NOT apply
 // across explicit values here; each is set explicitly).
 Ascii :: enum u32 {
-    nul :: '\0';
-    tab :: '\t';
-    nl  :: '\n';
+    nul = '\0';
+    tab = '\t';
+    nl  = '\n';
 }
 
 // Flags enum: char literals spell the bit values directly.
 Bits :: enum flags u32 {
-    one   :: '\x01';
-    two   :: '\x02';
-    eight :: '\x08';
+    one   = '\x01';
+    two   = '\x02';
+    eight = '\x08';
 }
 
 main :: () -> i64 {

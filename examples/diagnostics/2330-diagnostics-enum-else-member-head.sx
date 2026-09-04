@@ -1,0 +1,8 @@
+// The else member is spelled name-first, `raw = else;`; `else` heads no
+// member, so the keyword is read as a member name and the name after it
+// arrives where the separator belongs.
+@import "modules/std.sx";
+
+Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; else raw; }
+
+main :: () { }

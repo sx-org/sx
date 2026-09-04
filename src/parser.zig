@@ -1254,7 +1254,7 @@ pub const Parser = struct {
     const SetMembers = struct {
         names: []const []const u8,
         name_starts: []const u32,
-        /// The `else NAME;` member, enum variants only.
+        /// The `NAME = else;` member, enum variants only.
         else_name: ?[]const u8 = null,
         else_name_start: u32 = 0,
         /// Payload type per member, or null; empty when no member carries one.
@@ -1264,9 +1264,10 @@ pub const Parser = struct {
     };
 
     /// `set_members = set_member (';' set_member)* ';'?`, where a member is
-    /// `IDENT (':' type)?` — the grammar an enum's variants and an error set's
-    /// members share, plus the enum's `IDENT '::' expr` discriminant. Stops at
-    /// the closing `}`, which the caller consumes.
+    /// `IDENT ('=' (expr | 'else'))? (':' type)?` — the grammar an enum's
+    /// variants and an error set's members share; the `=` part (the stated
+    /// tag, or `else` for the member the rest of the backing integer reaches)
+    /// is the enum's alone. Stops at the closing `}`, which the caller consumes.
     fn parseSetMembers(self: *Parser, kind: SetKind) anyerror!SetMembers {
         var names = std.ArrayList([]const u8).empty;
         var name_starts = std.ArrayList(u32).empty;
@@ -1280,31 +1281,29 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) == .kw_private) {
                 return self.fail(kind.privateReject());
             }
-            // `else NAME;` — the member the rest of the backing integer reaches.
-            if (self.tokens.tag(self.tok) == .kw_else and self.peekTag(1) == .identifier) {
-                if (kind != .enum_variant) return self.fail("an 'else' member belongs to an enum with an integer backing type");
-                if (else_name != null) return self.fail("an enum has one 'else' member");
-                self.advance();
-                for (names.items) |taken| if (std.mem.eql(u8, taken, self.tokens.slice(self.tok))) return self.fail("the 'else' member's name is a variant's");
-                else_name = self.tokens.slice(self.tok);
-                else_name_start = self.tokens.start(self.tok);
-                self.advance();
-                try self.expectStatementEnd();
-                continue;
-            }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName(kind.nameExpected());
             }
             if (else_name) |en| if (std.mem.eql(u8, en, self.tokens.slice(self.tok))) return self.fail("the 'else' member's name is a variant's");
-            try names.append(self.allocator, self.tokens.slice(self.tok));
-            try name_starts.append(self.allocator, self.tokens.start(self.tok));
+            const name = self.tokens.slice(self.tok);
+            const name_start = self.tokens.start(self.tok);
             self.advance();
             var value: ?*Node = null;
-            if (self.tokens.tag(self.tok) == .colon_colon) {
+            if (self.tokens.tag(self.tok) == .equal) {
                 if (kind == .error_member) {
                     return self.fail("an error set member takes no explicit value — its identity is the pair (set, tag)");
                 }
                 self.advance();
+                if (self.tokens.tag(self.tok) == .kw_else) {
+                    if (kind != .enum_variant) return self.fail("an 'else' member belongs to an enum with an integer backing type");
+                    if (else_name != null) return self.fail("an enum has one 'else' member");
+                    for (names.items) |taken| if (std.mem.eql(u8, taken, name)) return self.failAt(.{ .start = name_start, .end = name_start + @as(u32, @intCast(name.len)) }, "the 'else' member's name is a variant's");
+                    else_name = name;
+                    else_name_start = name_start;
+                    self.advance();
+                    try self.expectMemberSemicolon();
+                    continue;
+                }
                 value = try self.parseExpr();
                 has_value = true;
             }
@@ -1317,11 +1316,11 @@ pub const Parser = struct {
                 payload = try self.parseTypeExpr();
                 has_payload = true;
             }
+            try names.append(self.allocator, name);
+            try name_starts.append(self.allocator, name_start);
             try values.append(self.allocator, value);
             try payloads.append(self.allocator, payload);
-            if (self.tokens.tag(self.tok) == .semicolon) {
-                self.advance();
-            }
+            try self.expectMemberSemicolon();
         }
         return .{
             .names = try names.toOwnedSlice(self.allocator),

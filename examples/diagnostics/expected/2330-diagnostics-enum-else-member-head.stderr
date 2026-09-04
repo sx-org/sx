@@ -1,0 +1,5 @@
+error: expected ';'
+  --> examples/diagnostics/2330-diagnostics-enum-else-member-head.sx:6:58
+   |
+ 6 | Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; else raw; }
+   |                                                          ^^^

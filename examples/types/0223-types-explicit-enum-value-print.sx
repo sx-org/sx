@@ -9,10 +9,10 @@
 @import "modules/std.sx";
 
 // Mix of auto (A=0, B=1) and explicit (K=7) values.
-E :: enum { A; B; K :: 7; }
+E :: enum { A; B; K = 7; }
 
 // Every variant explicit, none coinciding with its ordinal.
-F :: enum { X :: 3; Y :: 7; Z :: 11; }
+F :: enum { X = 3; Y = 7; Z = 11; }
 
 main :: () {
     // Read each variant by name.

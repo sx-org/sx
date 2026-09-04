@@ -1440,7 +1440,7 @@ test "enum variant name starts point at each variant" {
         \\Kind :: enum {
         \\    none;
         \\    tagged: i32;
-        \\    fixed :: 7;
+        \\    fixed = 7;
         \\}
     ;
     var parser = try Parser.init(arena.allocator(), src);
@@ -1631,13 +1631,11 @@ test "parser: missing `;` between union fields is `expected ';'`" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
 }
 
-test "parser: enum variants without `;` still parse" {
+test "parser: enum variants are `;`-separated" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "E :: enum { a b c }");
-    const root = try parser.parse();
-    const ed = root.data.root.decls[0].data.enum_decl;
-    try std.testing.expectEqual(@as(usize, 3), ed.variant_names.len);
+    try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "parser: struct literals stay comma-separated" {

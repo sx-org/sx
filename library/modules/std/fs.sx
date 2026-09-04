@@ -11,8 +11,8 @@ inline if @host.os == .windows {
     @import "modules/std/fs/posix.sx";
 }
 
-OpenMode :: enum i32 { read :: 0; write :: 1; append :: 2; readWrite :: 3; }
-SeekFrom :: enum i32 { set :: 0; current :: 1; end :: 2; }
+OpenMode :: enum i32 { read = 0; write = 1; append = 2; readWrite = 3; }
+SeekFrom :: enum i32 { set = 0; current = 1; end = 2; }
 
 File :: struct {
     // The portable handle slot is wide enough for both a POSIX descriptor and

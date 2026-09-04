@@ -45,7 +45,7 @@ Perms :: enum flags { read; write; execute; }
 
 Status :: enum u8 { ok; err; timeout; }
 
-WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
+WindowFlags :: enum flags u32 { vsync = 64; resizable = 4; hidden = 128; }
 
 // --- Top-level functions ---
 

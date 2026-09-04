@@ -12,7 +12,7 @@
 @import "modules/std.sx";
 
 Color :: enum u8 { red; green; blue; }
-Code :: enum u16 { ok :: 200; notFound :: 404; teapot :: 418; }
+Code :: enum u16 { ok = 200; notFound = 404; teapot = 418; }
 
 Pair :: struct { a: Color; b: Color; }
 Row :: struct { status: Code; pad: i64; }

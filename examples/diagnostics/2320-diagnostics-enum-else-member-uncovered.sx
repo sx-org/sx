@@ -2,7 +2,7 @@
 // else member's arm or an `else:` arm.
 @import "modules/std.sx";
 
-Desc :: enum i32 { stdin :: 0; stdout :: 1; else raw; }
+Desc :: enum i32 { stdin = 0; stdout = 1; raw = else; }
 
 main :: () {
     d := Desc.raw(5);

@@ -1,0 +1,7 @@
+// An enum member's stated tag follows `=`; `::` after a member name is not a
+// separator, so the member ends at the name and the declaration fails there.
+@import "modules/std.sx";
+
+Ev :: enum { quit :: 0x100; key :: 0x300: i32; }
+
+main :: () { }

@@ -1,5 +1,5 @@
 error: 'else' member can only be used for integer enums
-  --> examples/diagnostics/2322-diagnostics-enum-else-member-float-backing.sx:5:25
+  --> examples/diagnostics/2322-diagnostics-enum-else-member-float-backing.sx:5:20
    |
- 5 | E :: enum f32 { a; else rest; }
-   |                         ^^^^
+ 5 | E :: enum f32 { a; rest = else; }
+   |                    ^^^^

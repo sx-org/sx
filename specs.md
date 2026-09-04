@@ -453,9 +453,9 @@ match c {
 }
 ```
 
-`else` reads two ways and a following `:` is what tells them apart: `else:`
-heads the default arm, while every other `else` — before a block, an `if`, or an
-expression — chains the `if` above it.
+In a statement, `else` reads two ways and a following `:` is what tells them
+apart: `else:` heads the default arm, while every other `else` — before a
+block, an `if`, or an expression — chains the `if` above it.
 
 A statement whose last token is a `}` that closes a block form takes no
 terminator: a statement that IS a block (`if`, `while`, `for`, `match`, a
@@ -4252,16 +4252,16 @@ For C interop with payload enums (e.g. SDL_Event), a struct can be used as the b
 ```sx
 // Inline layout
 SDL_Event :: enum struct { tag: u32; _: u32; payload: [30]u32; } {
-    quit :: 0x100;
-    keyDown :: 0x300: SDL_KeyData;
-    keyUp :: 0x301: SDL_KeyData;
+    quit = 0x100;
+    keyDown = 0x300 : SDL_KeyData;
+    keyUp = 0x301 : SDL_KeyData;
 }
 
 // Named layout
 EventLayout :: struct { tag: u32; _: u32; payload: [30]u32; }
 SDL_Event :: enum EventLayout {
-    quit :: 0x100;
-    keyDown :: 0x300: SDL_KeyData;
+    quit = 0x100;
+    keyDown = 0x300 : SDL_KeyData;
 }
 ```
 
@@ -4277,7 +4277,7 @@ This gives explicit control over the memory layout instead of relying on automat
 An integer-backed enum may name the rest of its backing type:
 
 ```sx
-Fd :: enum i32 { stdin :: 0; stdout :: 1; stderr :: 2; else raw; }
+Fd :: enum i32 { stdin = 0; stdout = 1; stderr = 2; raw = else; }
 ```
 
 Every value of the backing integer is then a value of the enum. The named
@@ -4316,8 +4316,8 @@ Flags can also specify a backing type:
 
 ```sx
 SDL_InitFlags :: enum flags u32 {
-    video :: 0x20;
-    audio :: 0x10;
+    video = 0x20;
+    audio = 0x10;
 }
 ```
 
@@ -4329,13 +4329,13 @@ if p & .execute { ... }
 print("{}\n", p);   // .read | .write
 ```
 
-Explicit values use `::` syntax (Jai-style):
+A stated value follows `=`:
 
 ```sx
 WindowFlags :: enum flags {
-    vsync     :: 64;
-    resizable :: 4;
-    hidden    :: 128;
+    vsync     = 64;
+    resizable = 4;
+    hidden    = 128;
 }
 ```
 
@@ -6832,7 +6832,10 @@ chan            = set_ref
                 | '(' set_ref ('|' set_ref)+ ')'   // a composition is parenthesized under `!`
 enum_decl       = IDENT '::' 'enum' '{' set_members '}'
 set_members     = set_member (';' set_member)* ';'?
-set_member      = IDENT (':' type)?           // the type is the member's payload
+set_member      = IDENT ('=' (expr | 'else'))? (':' type)?
+                  // the `=` part is an enum member's stated tag, or `else` for
+                  // the member the rest of the backing integer reaches; the
+                  // type is the member's payload
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
                   // members are `;`-separated; a trailing `;` before `}` is optional
