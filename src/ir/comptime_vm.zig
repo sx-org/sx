@@ -510,11 +510,11 @@ pub const Vm = struct {
     /// The module — resolves a `call`'s callee `FuncId` to its `Function`. Optional
     /// so leaf functions (no calls) need none; a `call` bails loudly if it is absent.
     module: ?*const Module = null,
-    /// The mutable build configuration (`BuildOptions` accumulator) — the SAME
-    /// `BuildConfig` `EmitLLVM` owns and `main.zig` reads post-link. Threaded in at
-    /// the `@run`/const-init eval sites so a `BuildOptions` intrinsic
-    /// (e.g. `@setOutputPath`) records into it directly. Null at lowering-time
-    /// type-fn evals (no build config exists yet); such a function bails loudly.
+    /// The build configuration — the SAME `BuildConfig` `EmitLLVM` owns and
+    /// `main.zig` reads post-link, threaded in at the `@run`/const-init eval
+    /// sites; `@buildOptions()` materializes its instance from the config's
+    /// snapshot. Null at lowering-time type-fn evals (no build config exists
+    /// yet); such a function bails loudly.
     build_config: ?*compiler_hooks.BuildConfig = null,
     /// This evaluation's `@BuildOptions` instance, materialized from the
     /// build config's snapshot on first use and copied back out on completion.
