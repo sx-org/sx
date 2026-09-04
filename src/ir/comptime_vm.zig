@@ -2967,6 +2967,20 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     out[1] = .{ .boolean = true };
                     return .{ .aggregate = out };
                 }
+                if (info == .slice) {
+                    // `[]E` is a `{ptr, len}` fat pointer; the Value is its
+                    // elements, read at stride `sizeof(E)`.
+                    const elem_ty = info.slice.element;
+                    const data = try self.sliceData(table, reg);
+                    const len: usize = @intCast(try self.sliceLen(table, ty, reg));
+                    const stride: Addr = @intCast(table.typeSizeBytes(elem_ty));
+                    const out = alloc.alloc(Value, len) catch return self.failMsg("reg→value: out of memory (slice)");
+                    for (0..len) |i| {
+                        const er = try self.readField(table, data + @as(Addr, @intCast(i)) * stride, elem_ty);
+                        out[i] = try self.regToValue(alloc, table, er, elem_ty);
+                    }
+                    return .{ .aggregate = out };
+                }
                 return self.failMsg("reg→value: aggregate shape not bridged yet");
             },
             .unsupported => return self.failMsg("reg→value: unsupported type"),
@@ -3318,6 +3332,66 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// Materialize `text` into comptime memory as a `string` VALUE — NUL-terminated
     /// bytes + a `{ptr, len}` fat pointer (len excludes the NUL). Shared by
     /// `text_of` and `@typeInfo`'s variant/field-name construction.
+    /// Write a host `Value` of type `ty` into fresh comptime memory and return its
+    /// register word: the scalar bits for a word type, the object's address for an
+    /// aggregate. The inverse of `regToValue` for the shapes a snapshot carries —
+    /// words, strings, slices, arrays and structs; `.undef` is zero-filled.
+    pub fn materializeValue(self: *Vm, table: *const types.TypeTable, ty: TypeId, value: Value) Error!Reg {
+        switch (kindOf(table, ty)) {
+            .word => return switch (value) {
+                .int => |v| @bitCast(v),
+                .float => |f| if (ty == .f32) @as(Reg, @bitCast(@as(f64, f))) else @as(Reg, @bitCast(f)),
+                .boolean => |b| @intFromBool(b),
+                .type_tag => |t| @as(Reg, t.index()),
+                .func_ref => |fid| funcRefWord(fid),
+                .null_val, .undef => null_addr,
+                else => self.failFmt("materialize: a '{s}' word cannot carry that value", .{table.typeName(ty)}),
+            },
+            .aggregate => {
+                if (value == .undef) return self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                if (ty == .string) {
+                    if (value != .string) return self.failMsg("materialize: a string field expects a string value");
+                    return self.makeStringValue(table, value.string);
+                }
+                const items = if (value == .aggregate) value.aggregate else
+                    return self.failFmt("materialize: a '{s}' expects an aggregate value", .{table.typeName(ty)});
+                const info = table.get(ty);
+                if (info == .slice) {
+                    const elem_ty = info.slice.element;
+                    const stride = table.typeSizeBytes(elem_ty);
+                    const data: Addr = if (items.len == 0) null_addr else self.machine.allocBytes(items.len * stride, 8);
+                    for (items, 0..) |item, i| {
+                        try self.writeField(table, data + @as(Addr, @intCast(i * stride)), elem_ty, try self.materializeValue(table, elem_ty, item));
+                    }
+                    return self.makeSlice(table, ty, data, items.len);
+                }
+                if (info == .array) {
+                    const elem_ty = info.array.element;
+                    const stride = table.typeSizeBytes(elem_ty);
+                    if (items.len != @as(usize, @intCast(info.array.length)))
+                        return self.failMsg("materialize: array value length differs from the type's");
+                    const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                    for (items, 0..) |item, i| {
+                        try self.writeField(table, addr + @as(Addr, @intCast(i * stride)), elem_ty, try self.materializeValue(table, elem_ty, item));
+                    }
+                    return addr;
+                }
+                if (info == .@"struct") {
+                    const fields = info.@"struct".fields;
+                    if (items.len != fields.len)
+                        return self.failFmt("materialize: '{s}' has {d} fields, value carries {d}", .{ table.typeName(ty), fields.len, items.len });
+                    const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
+                    for (fields, 0..) |f, i| {
+                        try self.writeField(table, addr + fieldOffset(table, ty, @intCast(i)), f.ty, try self.materializeValue(table, f.ty, items[i]));
+                    }
+                    return addr;
+                }
+                return self.failFmt("materialize: '{s}' is not a shape a snapshot carries", .{table.typeName(ty)});
+            },
+            .unsupported => return self.failFmt("materialize: unsupported type '{s}'", .{table.typeName(ty)}),
+        }
+    }
+
     fn makeStringValue(self: *Vm, table: *const types.TypeTable, text: []const u8) Error!Reg {
         const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
         if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
