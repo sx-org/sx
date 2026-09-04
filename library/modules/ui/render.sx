@@ -187,14 +187,14 @@ RenderContext :: struct {
 
     // One line of text.
     addText :: (self: *RenderContext, frame: Frame, text: string, fontSize: f32, color: Color) {
-        self.addParagraph(frame, paragraphFor(text, fontSize, null), text, fontSize, color);
+        self.addParagraph(frame, paragraphFor(text, fontSize, null), fontSize, color);
     }
 
-    addParagraph :: (self: *RenderContext, frame: Frame, para: *Paragraph, text: string, fontSize: f32, color: Color) {
+    addParagraph :: (self: *RenderContext, frame: Frame, para: *Paragraph, fontSize: f32, color: Color) {
         self.tree.add(.{
             type = .text,
             frame = frame,
-            text = text,
+            text = para.text,
             glyphs = para.glyphs.items,
             fontSize = fontSize,
             textColor = color,

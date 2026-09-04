@@ -193,8 +193,8 @@ GlyphCache :: struct {
     cpStarts: List(i64);
 
     // Allocator that owns every dynamically-grown buffer on this cache —
-    // entries list, hash table, cpStarts. Captured at init
-    // time so growth never accidentally lands in a transient per-frame arena.
+    // entries list, hash table, cpStarts. Captured at init time so growth
+    // never accidentally lands in a transient per-frame arena.
     parentAllocator: Allocator;
 
     // GPU protocol backend. When set, atlas creation + dirty uploads route

@@ -12,6 +12,7 @@
 types :: @import "modules/ui/types.sx";
 render :: @import "modules/ui/render.sx";
 font :: @import "modules/ui/font.sx";
+paragraph :: @import "modules/ui/paragraph.sx";
 input :: @import "modules/ui/input.sx";
 view :: @import "examples/ui/compose/view.sx";
 identity :: @import "examples/ui/compose/identity.sx";
@@ -54,7 +55,7 @@ KeyEvent :: input.KeyEvent;
 LogicalKey :: input.LogicalKey;
 
 // `setGlobalFont` points `measureText` at the renderer's glyph cache.
-measureText :: font.measureText;
+measureText :: paragraph.measureText;
 setGlobalFont :: font.setGlobalFont;
 
 // Element identity: the call site an element is built at, and the id that site

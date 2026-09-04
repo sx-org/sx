@@ -37,6 +37,7 @@ ParaLine :: struct {
 }
 
 Paragraph :: struct {
+    text: string = "";
     glyphs: List(PositionedGlyph) = .{};
     lines: List(ParaLine) = .{};
     size: Size = .{ width = 0.0, height = 0.0 };
@@ -87,7 +88,7 @@ Paragraph :: struct {
 
 layoutParagraph :: (text: string, fontSize: f32, maxWidth: ?f32, alloc: Allocator = context.allocator) -> Paragraph {
     metrics := lineMetrics(fontSize);
-    para := Paragraph{ lineHeight = metrics.height };
+    para := Paragraph{ text = text, lineHeight = metrics.height };
     shaped := List(ShapedGlyph){};
     segStart : i64 = 0;
     while true {
@@ -188,9 +189,9 @@ measureText :: (text: string, fontSize: f32) -> Size {
     paragraphFor(text, fontSize, null).size
 }
 
-UNBOUNDED_WIDTH : f32 : -1.0;
 PARAGRAPH_CACHE_BYTES :: 4 * 1024 * 1024;
 
+// An unbounded layout is keyed at an infinite width.
 ParaKey :: struct {
     hash: u64;
     sizeQ: u16;
@@ -230,7 +231,7 @@ ParagraphCache :: struct {
     }
 
     get :: (self: *ParagraphCache, text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
-        key := ParaKey{ hash = fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? UNBOUNDED_WIDTH };
+        key := ParaKey{ hash = fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? f32.inf };
         self.tick += 1;
         if e := self.index.get(key) {
             if sameBytes(e.text, text) {
@@ -245,7 +246,7 @@ ParagraphCache :: struct {
         e := self.gpa.create(ParaEntry);
         e.key = key;
         e.text = text.clone(self.gpa);
-        e.para = layoutParagraph(text, fontSize, maxWidth, self.gpa);
+        e.para = layoutParagraph(e.text, fontSize, maxWidth, self.gpa);
         e.bytes = text.len + e.para.glyphs.len * @sizeOf(PositionedGlyph) + e.para.lines.len * @sizeOf(ParaLine);
         e.frame = self.frame;
         e.touched = self.tick;

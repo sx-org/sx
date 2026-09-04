@@ -46,7 +46,7 @@ Label :: @OpenVariant(View) {
 
     render :: (self: *Label, rc: *RenderContext, frame: Frame) {
         para := paragraphFor(self.text, self.fontSize, frame.size.width);
-        rc.addParagraph(frame, para, self.text, self.fontSize, self.color);
+        rc.addParagraph(frame, para, self.fontSize, self.color);
     }
 }
 
