@@ -498,11 +498,11 @@ fn predIsAndroid(triple: ?[]const u8) bool {
 
 /// Map a BuildOptions predicate name (`@isMacos`/…) to its triple-test, or null.
 fn boolPredicate(name: []const u8) ?*const fn (?[]const u8) bool {
-    if (std.mem.eql(u8, name, "@isMacos")) return predIsMacOS;
-    if (std.mem.eql(u8, name, "@isIos")) return predIsIOS;
-    if (std.mem.eql(u8, name, "@isIosDevice")) return predIsIOSDevice;
-    if (std.mem.eql(u8, name, "@isIosSimulator")) return predIsIOSSimulator;
-    if (std.mem.eql(u8, name, "@isAndroid")) return predIsAndroid;
+    if (std.mem.eql(u8, name, "@BuildOptions.isMacos")) return predIsMacOS;
+    if (std.mem.eql(u8, name, "@BuildOptions.isIos")) return predIsIOS;
+    if (std.mem.eql(u8, name, "@BuildOptions.isIosDevice")) return predIsIOSDevice;
+    if (std.mem.eql(u8, name, "@BuildOptions.isIosSimulator")) return predIsIOSSimulator;
+    if (std.mem.eql(u8, name, "@BuildOptions.isAndroid")) return predIsAndroid;
     return null;
 }
 
@@ -1777,15 +1777,14 @@ pub const Vm = struct {
             if (try self.callMemBuiltin(name, args, frame)) |r| return r;
             // An `evaluate`-mode intrinsic: the comptime compiler-API, serviced
             // natively on comptime memory. The REGISTRY is the safety boundary —
-            // dispatch only for a name it carries, and only for an entry whose mode
-            // says the VM owns it. A `lower`/`dual` intrinsic reaching here would
+            // dispatch only for an entry whose mode says the VM owns it, under
+            // the entry's registered name. A `lower`/`dual` intrinsic reaching here would
             // be a lowering bug, so it falls through to the extern path and fails
             // loudly rather than being serviced by the wrong handler.
-            if (callee.is_intrinsic) {
-                if (intrinsics.findByName(name)) |id| {
-                    if (intrinsics.byId(id).mode == .evaluate) {
-                        if (try self.callCompilerFn(id, name, args, frame, ref_types, result_ty)) |r| return r;
-                    }
+            if (callee.intrinsic) |id| {
+                const entry = intrinsics.byId(id);
+                if (entry.mode == .evaluate) {
+                    if (try self.callCompilerFn(id, entry.name, args, frame, ref_types, result_ty)) |r| return r;
                 }
             }
             // General host-FFI escape: any other extern resolves via dlsym and is
@@ -2257,17 +2256,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // null so the caller treats it as unknown (it then bails loudly).
         const bc = self.build_config orelse return null;
         const str_fields = [_]StrField{
-            .{ .set = "@setOutputPath", .get = "", .field = &bc.output_path },
-            .{ .set = "@setWasmShell", .get = "", .field = &bc.wasm_shell_path },
-            .{ .set = "@setPostLinkModule", .get = "", .field = &bc.post_link_module },
-            .{ .set = "@setBundlePath", .get = "@bundlePath", .field = &bc.bundle_path },
-            .{ .set = "@setBundleId", .get = "@bundleId", .field = &bc.bundle_id },
-            .{ .set = "@setCodesignIdentity", .get = "@codesignIdentity", .field = &bc.codesign_identity },
-            .{ .set = "@setProvisioningProfile", .get = "@provisioningProfile", .field = &bc.provisioning_profile },
-            .{ .set = "@setManifestPath", .get = "@manifestPath", .field = &bc.manifest_path },
-            .{ .set = "@setKeystorePath", .get = "@keystorePath", .field = &bc.keystore_path },
-            .{ .set = "_", .get = "@binaryPath", .field = &bc.binary_path },
-            .{ .set = "_", .get = "@targetTriple", .field = &bc.target_triple },
+            .{ .set = "@BuildOptions.setOutputPath", .get = "", .field = &bc.output_path },
+            .{ .set = "@BuildOptions.setWasmShell", .get = "", .field = &bc.wasm_shell_path },
+            .{ .set = "@BuildOptions.setPostLinkModule", .get = "", .field = &bc.post_link_module },
+            .{ .set = "@BuildOptions.setBundlePath", .get = "@BuildOptions.bundlePath", .field = &bc.bundle_path },
+            .{ .set = "@BuildOptions.setBundleId", .get = "@BuildOptions.bundleId", .field = &bc.bundle_id },
+            .{ .set = "@BuildOptions.setCodesignIdentity", .get = "@BuildOptions.codesignIdentity", .field = &bc.codesign_identity },
+            .{ .set = "@BuildOptions.setProvisioningProfile", .get = "@BuildOptions.provisioningProfile", .field = &bc.provisioning_profile },
+            .{ .set = "@BuildOptions.setManifestPath", .get = "@BuildOptions.manifestPath", .field = &bc.manifest_path },
+            .{ .set = "@BuildOptions.setKeystorePath", .get = "@BuildOptions.keystorePath", .field = &bc.keystore_path },
+            .{ .set = "_", .get = "@BuildOptions.binaryPath", .field = &bc.binary_path },
+            .{ .set = "_", .get = "@BuildOptions.targetTriple", .field = &bc.target_triple },
         };
         for (str_fields) |sf| {
             if (sf.set.len > 1 and std.mem.eql(u8, name, sf.set)) {
@@ -2281,19 +2280,19 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             }
         }
         // List-appending setters (dupe + append into the persistent gpa).
-        if (std.mem.eql(u8, name, "@addLinkFlag")) {
+        if (std.mem.eql(u8, name, "@BuildOptions.addLinkFlag")) {
             if (args.len != 2) return self.failMsg("comptime addLinkFlag: expected (self, flag)");
             bc.link_flags.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
                 return self.failMsg("comptime addLinkFlag: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "@addFramework")) {
+        if (std.mem.eql(u8, name, "@BuildOptions.addFramework")) {
             if (args.len != 2) return self.failMsg("comptime addFramework: expected (self, name)");
             bc.frameworks.append(self.gpa, try self.dupeArgStr(args, frame, 1)) catch
                 return self.failMsg("comptime addFramework: out of memory");
             return @as(Reg, null_addr);
         }
-        if (std.mem.eql(u8, name, "@addAssetDir")) {
+        if (std.mem.eql(u8, name, "@BuildOptions.addAssetDir")) {
             if (args.len != 3) return self.failMsg("comptime addAssetDir: expected (self, src, dest)");
             const src = try self.dupeArgStr(args, frame, 1);
             const dest = try self.dupeArgStr(args, frame, 2);
@@ -2302,18 +2301,18 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return @as(Reg, null_addr);
         }
         // Count getters (i64).
-        if (std.mem.eql(u8, name, "@assetDirCount"))
+        if (std.mem.eql(u8, name, "@BuildOptions.assetDirCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.asset_dirs.items.len))));
-        if (std.mem.eql(u8, name, "@frameworkCount"))
+        if (std.mem.eql(u8, name, "@BuildOptions.frameworkCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_frameworks.len))));
-        if (std.mem.eql(u8, name, "@frameworkPathCount"))
+        if (std.mem.eql(u8, name, "@BuildOptions.frameworkPathCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
-        if (std.mem.eql(u8, name, "@jniMainCount"))
+        if (std.mem.eql(u8, name, "@BuildOptions.jniMainCount"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
         // Indexed string getters (out-of-range → "").
         // Asset dirs are `{src,dest}` structs, so read the field directly.
-        const want_src = std.mem.eql(u8, name, "@assetDirSrcAt");
-        if (want_src or std.mem.eql(u8, name, "@assetDirDestAt")) {
+        const want_src = std.mem.eql(u8, name, "@BuildOptions.assetDirSrcAt");
+        if (want_src or std.mem.eql(u8, name, "@BuildOptions.assetDirDestAt")) {
             if (args.len != 2) return self.failMsg("comptime assetDir getter: expected (self, i)");
             const idx: i64 = @bitCast(frame.get(args[1].index()));
             if (idx < 0 or @as(usize, @intCast(idx)) >= bc.asset_dirs.items.len)
@@ -2321,13 +2320,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const ad = bc.asset_dirs.items[@intCast(idx)];
             return try self.makeStringValue(table, if (want_src) ad.src else ad.dest);
         }
-        if (std.mem.eql(u8, name, "@frameworkAt"))
+        if (std.mem.eql(u8, name, "@BuildOptions.frameworkAt"))
             return try self.indexedStr(args, frame, bc.target_frameworks);
-        if (std.mem.eql(u8, name, "@frameworkPathAt"))
+        if (std.mem.eql(u8, name, "@BuildOptions.frameworkPathAt"))
             return try self.indexedStr(args, frame, bc.target_framework_paths);
-        if (std.mem.eql(u8, name, "@jniMainRuntimePathAt"))
+        if (std.mem.eql(u8, name, "@BuildOptions.jniMainRuntimePathAt"))
             return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
-        if (std.mem.eql(u8, name, "@jniMainJavaSourceAt"))
+        if (std.mem.eql(u8, name, "@BuildOptions.jniMainJavaSourceAt"))
             return try self.indexedStr(args, frame, bc.jni_main_java_sources);
         // Target predicates (computed from the triple).
         if (boolPredicate(name)) |pred| {

@@ -93,7 +93,7 @@ fn isRoot(m: *const Module, f: *const Function, name: []const u8) bool {
     // build callback has external linkage so its dead declaration verifies, but
     // the binary it produces never calls it.
     if (f.isComptimeOnly()) return false;
-    if (f.is_intrinsic) return false;
+    if (f.intrinsic != null) return false;
     _ = m;
     if (std.mem.eql(u8, name, "main")) return true;
     // Anything visible to the linker can be entered from outside this module.

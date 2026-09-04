@@ -95,16 +95,31 @@ fn collectDecls(
         try stripped.append(alloc, '\n');
     }
 
-    // Each `;` ends a statement. An `@` function declaration is marked by its
-    // sigil and ends with its signature.
-    var stmts = std.mem.splitScalar(u8, stripped.items, ';');
+    // A `{` or `}` ends a statement too, so a struct head and its closing brace
+    // stand alone and the members of an `@` struct sit between them.
+    var split: std.ArrayList(u8) = .empty;
+    for (stripped.items) |c| {
+        try split.append(alloc, c);
+        if (c == '{' or c == '}') try split.append(alloc, ';');
+    }
+
+    // The `@` struct whose body is open, if any: its bodyless members are
+    // intrinsic methods registered as `@Struct.member`.
+    var at_struct: ?[]const u8 = null;
+    var depth: usize = 0;
+    var stmts = std.mem.splitScalar(u8, split.items, ';');
     while (stmts.next()) |raw| {
         const stmt = std.mem.trim(u8, raw, " \t\r\n");
-        // The LAST `::`, not the first: splitting on `;` means this chunk may
-        // carry whole preceding declarations that never ended in one (e.g.
-        // build.sx's `BuildOptions :: struct { }` sits directly above
-        // `@buildOptions :: () -> BuildOptions;`). Taking the first
-        // `::` would name the wrong declaration.
+        if (std.mem.endsWith(u8, stmt, "}")) {
+            depth -|= 1;
+            if (depth == 0) at_struct = null;
+        }
+        const opens = std.mem.endsWith(u8, stmt, "{");
+        defer if (opens) {
+            depth += 1;
+        };
+        // The LAST `::`: a chunk may still carry a preceding declaration that
+        // ended in neither `;` nor a brace.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
         // The declared name is the last identifier before that `::`, with its
         // `@` sigil when it has one — the sigil is part of the registered name.
@@ -114,17 +129,21 @@ fn collectDecls(
         if (start > 0 and head[start - 1] == '@') start -= 1;
         const name = head[start..];
         if (name.len == 0) continue;
-        // A `(` past the `::` is what makes an `@` declaration a FUNCTION. An
-        // `@` type contract opens with the `struct` or `protocol` keyword, so
-        // it does not match and is not the intrinsic registry's to hold.
-        // Neither is an `@` function carrying a `{` body: its implementation is
-        // the sx source, not the compiler.
         const tail = std.mem.trimStart(u8, stmt[colons + 2 ..], " \t\r\n");
-        const at_fn = name[0] == '@' and
-            std.mem.startsWith(u8, tail, "(") and
-            std.mem.indexOfScalar(u8, tail, '{') == null;
-        if (!at_fn) continue;
-        try out.append(alloc, try alloc.dupe(u8, name));
+        if (opens and depth == 0 and name[0] == '@' and std.mem.startsWith(u8, tail, "struct")) {
+            at_struct = name;
+            continue;
+        }
+        // A `(` past the `::` is what makes a declaration a FUNCTION, and a `{`
+        // body means its implementation is the sx source, not the compiler. An
+        // `@` type contract opens with the `struct` or `protocol` keyword, so it
+        // does not match and is not the intrinsic registry's to hold.
+        if (opens or !std.mem.startsWith(u8, tail, "(")) continue;
+        if (name[0] == '@') {
+            try out.append(alloc, try alloc.dupe(u8, name));
+        } else if (at_struct) |owner| {
+            if (depth == 1) try out.append(alloc, try std.fmt.allocPrint(alloc, "{s}.{s}", .{ owner, name }));
+        }
     }
 }
 
@@ -171,6 +190,25 @@ test "collectDecls leaves an `@` function whose body is sx" {
     , &out);
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
     try std.testing.expectEqualStrings("@vaEnd", out.items[0]);
+}
+
+test "collectDecls registers a bodyless member of an `@` struct as `@Struct.member`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out = std.ArrayList([]const u8).empty;
+    try collectDecls(arena.allocator(),
+        \\@Handle :: struct {
+        \\    isMacos :: (self: *@Handle) -> bool;
+        \\    plain :: (self: *@Handle) -> i32 { 1 }
+        \\}
+        \\@buildOptions :: () -> @Handle;
+        \\Plain :: struct {
+        \\    alias :: (a: i32, b: i32);
+        \\}
+    , &out);
+    try std.testing.expectEqual(@as(usize, 2), out.items.len);
+    try std.testing.expectEqualStrings("@Handle.isMacos", out.items[0]);
+    try std.testing.expectEqualStrings("@buildOptions", out.items[1]);
 }
 
 var g_threaded: ?std.Io.Threaded = null;

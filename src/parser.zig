@@ -1544,6 +1544,10 @@ pub const Parser = struct {
                 self.advance(); // skip ::
                 if (self.tokens.tag(self.tok) == .l_paren and self.isFunctionDef()) {
                     try methods.append(self.allocator, try self.parseFnDecl(method_name, method_name_span, method_is_raw, method_start));
+                } else if (name[0] == '@' and self.tokens.tag(self.tok) == .l_paren) {
+                    // A bodyless signature in an `@` struct is an intrinsic
+                    // method (§Intrinsics): the type's sigil covers its members.
+                    try methods.append(self.allocator, try self.parseAtFnDecl(method_name, method_name_span, method_start, method_is_raw));
                 } else {
                     // Non-function constant: name :: value;
                     const value = try self.parseExpr();

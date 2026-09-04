@@ -22,100 +22,96 @@
 
 // An opaque compile-time build-configuration handle. `@buildOptions()` hands one
 // back; its real state lives on the compiler's threaded `BuildConfig`. The handle
-// itself is a null-sentinel word (never dereferenced) — every accessor below takes
-// it as an ignored `self` and reads/writes the `BuildConfig` instead. The accessors
-// are `@` functions taking the handle first and
-// serviced by `comptime_vm.callCompilerFn`.
-BuildOptions :: struct { }
+// itself is a null-sentinel word (never dereferenced) — every method takes it as
+// an ignored `self` and reads/writes the `BuildConfig` instead. The methods are
+// bodyless signatures — intrinsics — serviced by `comptime_vm.callCompilerFn`.
+@BuildOptions :: struct {
+    addLinkFlag :: (self: *@BuildOptions, flag: [:0]u8);
+    addFramework :: (self: *@BuildOptions, name: [:0]u8);
+    setOutputPath :: (self: *@BuildOptions, path: [:0]u8);
+    setWasmShell :: (self: *@BuildOptions, path: [:0]u8);
 
-@buildOptions :: () -> BuildOptions;
+    // Register a directory of runtime assets to bundle alongside the
+    // binary. `src` is the path on disk (relative to the CWD at build
+    // time); `dest` is the relative location inside the bundle / APK.
+    // Apple .app: copied to `<bundle>/<dest>/`. Android APK: zipped under
+    // `<dest>/` at the APK root.
+    addAssetDir :: (self: *@BuildOptions, src: [:0]u8, dest: [:0]u8);
+    assetDirCount :: (self: *@BuildOptions) -> i64;
+    assetDirSrcAt :: (self: *@BuildOptions, i: i64) -> string;
+    assetDirDestAt :: (self: *@BuildOptions, i: i64) -> string;
 
-// ── BuildOptions accessors ───────────────────────────────────────────────────
+    // Name-based alternative to `@onBuild`. The compiler resolves
+    // `<moduleName>.bundleMain` after linking.
+    setPostLinkModule :: (self: *@BuildOptions, moduleName: [:0]u8);
 
-@addLinkFlag :: (self: BuildOptions, flag: [:0]u8);
-@addFramework :: (self: BuildOptions, name: [:0]u8);
-@setOutputPath :: (self: BuildOptions, path: [:0]u8);
-@setWasmShell :: (self: BuildOptions, path: [:0]u8);
+    // Path of the freshly-linked binary, only meaningful while a
+    // post-link callback is running. Returns "" before linking.
+    binaryPath :: (self: *@BuildOptions) -> string;
 
-// Register a directory of runtime assets to bundle alongside the
-// binary. `src` is the path on disk (relative to the CWD at build
-// time); `dest` is the relative location inside the bundle / APK.
-// Apple .app: copied to `<bundle>/<dest>/`. Android APK: zipped under
-// `<dest>/` at the APK root. Idiomatic form is
-// `@addAssetDir(opts, "assets", "assets")`.
-@addAssetDir :: (self: BuildOptions, src: [:0]u8, dest: [:0]u8);
-@assetDirCount :: (self: BuildOptions) -> i64;
-@assetDirSrcAt :: (self: BuildOptions, i: i64) -> string;
-@assetDirDestAt :: (self: BuildOptions, i: i64) -> string;
+    // Apple `.app` / Android `.apk` bundling parameters. Accessors
+    // return "" when unset so the bundler can use a single string
+    // type. macOS bundling needs `bundlePath` and `bundleId`;
+    // codesign / provisioning are iOS-device-only.
+    setBundlePath :: (self: *@BuildOptions, path: [:0]u8);
+    setBundleId :: (self: *@BuildOptions, id: [:0]u8);
+    setCodesignIdentity :: (self: *@BuildOptions, identity: [:0]u8);
+    setProvisioningProfile :: (self: *@BuildOptions, path: [:0]u8);
 
-// Name-based alternative to `@onBuild`. The compiler resolves
-// `<moduleName>.bundleMain` after linking.
-@setPostLinkModule :: (self: BuildOptions, moduleName: [:0]u8);
+    bundlePath :: (self: *@BuildOptions) -> string;
+    bundleId :: (self: *@BuildOptions) -> string;
+    codesignIdentity :: (self: *@BuildOptions) -> string;
+    provisioningProfile :: (self: *@BuildOptions) -> string;
 
-// Path of the freshly-linked binary, only meaningful while a
-// post-link callback is running. Returns "" before linking.
-@binaryPath :: (self: BuildOptions) -> string;
+    // Target accessors. Empty triple before linking; predicates mirror
+    // TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}() on the Zig
+    // side. Used by the sx bundler to switch Info.plist shape and
+    // codesigning ceremony per platform.
+    targetTriple :: (self: *@BuildOptions) -> string;
+    isMacos :: (self: *@BuildOptions) -> bool;
+    isIos :: (self: *@BuildOptions) -> bool;
+    isIosDevice :: (self: *@BuildOptions) -> bool;
+    isIosSimulator :: (self: *@BuildOptions) -> bool;
+    isAndroid :: (self: *@BuildOptions) -> bool;
 
-// Apple `.app` / Android `.apk` bundling parameters. Accessors
-// return "" when unset so the bundler can use a single string
-// type. macOS bundling needs `@bundlePath` and `@bundleId`;
-// codesign / provisioning are iOS-device-only.
-@setBundlePath :: (self: BuildOptions, path: [:0]u8);
-@setBundleId :: (self: BuildOptions, id: [:0]u8);
-@setCodesignIdentity :: (self: BuildOptions, identity: [:0]u8);
-@setProvisioningProfile :: (self: BuildOptions, path: [:0]u8);
+    // Framework list accessors. The bundler walks `frameworkCount() *
+    // frameworkAt(i)` to find each `-framework` name and recursively
+    // copies its `<Name>.framework` directory from one of
+    // `frameworkPathAt(0..frameworkPathCount())` into
+    // `<bundle>/Frameworks/`.
+    frameworkCount :: (self: *@BuildOptions) -> i64;
+    frameworkAt :: (self: *@BuildOptions, i: i64) -> string;
+    frameworkPathCount :: (self: *@BuildOptions) -> i64;
+    frameworkPathAt :: (self: *@BuildOptions, i: i64) -> string;
 
-@bundlePath :: (self: BuildOptions) -> string;
-@bundleId :: (self: BuildOptions) -> string;
-@codesignIdentity :: (self: BuildOptions) -> string;
-@provisioningProfile :: (self: BuildOptions) -> string;
+    // Android APK bundling parameters. `manifestPath` overrides the
+    // bundler's auto-generated AndroidManifest.xml; `keystorePath`
+    // overrides the default `$HOME/.android/debug.keystore`. Accessors
+    // return "" when unset.
+    setManifestPath :: (self: *@BuildOptions, path: [:0]u8);
+    setKeystorePath :: (self: *@BuildOptions, path: [:0]u8);
+    manifestPath :: (self: *@BuildOptions) -> string;
+    keystorePath :: (self: *@BuildOptions) -> string;
 
-// Target accessors. Empty triple before linking; predicates mirror
-// TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}() on the Zig
-// side. Used by the sx bundler to switch Info.plist shape and
-// codesigning ceremony per platform.
-@targetTriple :: (self: BuildOptions) -> string;
-@isMacos :: (self: BuildOptions) -> bool;
-@isIos :: (self: BuildOptions) -> bool;
-@isIosDevice :: (self: BuildOptions) -> bool;
-@isIosSimulator :: (self: BuildOptions) -> bool;
-@isAndroid :: (self: BuildOptions) -> bool;
+    // `@JniClass("path") { ... }` decls collected during
+    // lowering. The Android bundler walks `0..jniMainCount()` and
+    // for each entry writes a `.java` file at
+    // `<stage>/java/<runtimePath>.java`, compiles via javac + d8, and
+    // bundles the resulting classes.dex into the APK.
+    jniMainCount :: (self: *@BuildOptions) -> i64;
+    jniMainRuntimePathAt :: (self: *@BuildOptions, i: i64) -> string;
+    jniMainJavaSourceAt :: (self: *@BuildOptions, i: i64) -> string;
+}
 
-// Framework list accessors. The bundler walks `@frameworkCount() *
-// @frameworkAt(i)` to find each `-framework` name and recursively
-// copies its `<Name>.framework` directory from one of
-// `@frameworkPathAt(0..@frameworkPathCount())` into
-// `<bundle>/Frameworks/`. Indexed form — the bundler walks these by index.
-@frameworkCount :: (self: BuildOptions) -> i64;
-@frameworkAt :: (self: BuildOptions, i: i64) -> string;
-@frameworkPathCount :: (self: BuildOptions) -> i64;
-@frameworkPathAt :: (self: BuildOptions, i: i64) -> string;
-
-// Android APK bundling parameters. `@manifestPath` overrides the
-// bundler's auto-generated AndroidManifest.xml; `@keystorePath`
-// overrides the default `$HOME/.android/debug.keystore`. Accessors
-// return "" when unset.
-@setManifestPath :: (self: BuildOptions, path: [:0]u8);
-@setKeystorePath :: (self: BuildOptions, path: [:0]u8);
-@manifestPath :: (self: BuildOptions) -> string;
-@keystorePath :: (self: BuildOptions) -> string;
-
-// `@JniClass("path") { ... }` decls collected during
-// lowering. The Android bundler walks `0..@jniMainCount()` and
-// for each entry writes a `.java` file at
-// `<stage>/java/<runtimePath>.java`, compiles via javac + d8, and
-// bundles the resulting classes.dex into the APK.
-@jniMainCount :: (self: BuildOptions) -> i64;
-@jniMainRuntimePathAt :: (self: BuildOptions, i: i64) -> string;
-@jniMainJavaSourceAt :: (self: BuildOptions, i: i64) -> string;
+@buildOptions :: () -> @BuildOptions;
 
 // The build callback registrar. Registers the sx function that drives
-// the build — the compiler invokes it after codegen with the `BuildOptions`
+// the build — the compiler invokes it after codegen with the `@BuildOptions`
 // handle. `@run @onBuild(build);` (from inside a `@run` block) is the override
-// form, where `build :: (opt: BuildOptions) -> bool { … }`; the
+// form, where `build :: (opt: @BuildOptions) -> bool { … }`; the
 // last registration wins. With no override the compiler auto-invokes the stdlib
 // `defaultPipeline` (below). This is the sole post-build callback mechanism.
-@onBuild :: (cb: (opt: BuildOptions) -> bool);
+@onBuild :: (cb: (opt: @BuildOptions) -> bool);
 
 // ── The default build script ────────────────────────────────────────────────
 //
@@ -124,7 +120,7 @@ BuildOptions :: struct { }
 // flags / target. Shared by `defaultPipeline` AND `platform.bundle.bundleMain`
 // (which wraps it with the per-target `.app` / `.apk` bundling) so a bundler
 // override doesn't re-implement emit+link.
-emitAndLink :: (opt: BuildOptions) -> bool {
+emitAndLink :: (opt: @BuildOptions) -> bool {
     obj := @emitObject();
     objs := @cObjectPaths();
     objs.append(obj);
@@ -141,11 +137,11 @@ emitAndLink :: (opt: BuildOptions) -> bool {
 // The compiler FORCE-LOWERS this well-known name and auto-invokes it after codegen
 // when no `@onBuild` override was registered (no library `@run` needed).
 //
-// When a bundle was requested (`--bundle`/`--apk` or `@setBundlePath`), delegate
+// When a bundle was requested (`--bundle`/`--apk` or `setBundlePath`), delegate
 // to the per-target bundler (`bundleMain` runs the emit+link core then wraps the
 // `.app`/`.apk`); otherwise just emit + link.
-defaultPipeline :: (opt: BuildOptions) -> bool {
-    if @bundlePath(opt).len > 0 {
+defaultPipeline :: (opt: @BuildOptions) -> bool {
+    if opt.bundlePath().len > 0 {
         return bundleMain(opt);
     }
     return emitAndLink(opt);

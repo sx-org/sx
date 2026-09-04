@@ -749,7 +749,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         e.build_config.build_hooks = &build_hooks;
         // `--apk <path>` is a transitional alias for the bundle_path
         // → post_link_module = "platform.bundle" auto-fallback. The
-        // sx Android bundler reads `@bundlePath()` regardless of which
+        // sx Android bundler reads `opts.bundlePath()` regardless of which
         // CLI flag the user typed.
         if (e.build_config.bundle_path == null) e.build_config.bundle_path = merged_config.bundle_path orelse merged_config.apk_path;
         if (e.build_config.bundle_id == null) e.build_config.bundle_id = merged_config.bundle_id;
@@ -763,9 +763,9 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
             e.build_config.target_triple = std.mem.span(t);
         } else {
             // Host build (no `--target`): expose the HOST triple so the sx
-            // bundler's `@isMacos()`/`@isIos()`/… predicates resolve correctly.
+            // bundler's `opts.isMacos()`/`opts.isIos()`/… predicates resolve correctly.
             // Left empty, a host macOS `.app` would get the flat iOS-style layout
-            // (@isMacos() == false) instead of `Contents/MacOS/`.
+            // (`opts.isMacos()` == false) instead of `Contents/MacOS/`.
             const host = sx.llvm_api.c.LLVMGetDefaultTargetTriple();
             defer sx.llvm_api.c.LLVMDisposeMessage(host);
             e.build_config.target_triple = allocator.dupe(u8, std.mem.span(host)) catch null;

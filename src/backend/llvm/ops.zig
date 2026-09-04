@@ -1460,7 +1460,7 @@ pub const Ops = struct {
         // wrapper, `is_comptime`) is fine — that body is interp-evaluated and its
         // LLVM emission is dead, so skip the gate there.
         const enclosing = &self.e.ir_mod.functions.items[self.e.current_func_idx];
-        if (callee_func.is_intrinsic and !enclosing.isComptimeOnly()) {
+        if (callee_func.intrinsic != null and !enclosing.isComptimeOnly()) {
             const fname = self.e.ir_mod.types.getString(callee_func.name);
             std.debug.print("error: '{s}' runs only at compile time — it cannot be called from the runtime call graph (use it inside @run or a comptime '::')\n", .{fname});
             self.reportRuntimePath(fname);
@@ -1474,7 +1474,7 @@ pub const Ops = struct {
         // instead of a real `call` (which would leave an undefined reference for the
         // AOT linker). The comptime VALUE is produced by the VM, not this dead
         // body.
-        if (callee_func.is_intrinsic) {
+        if (callee_func.intrinsic != null) {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
         }

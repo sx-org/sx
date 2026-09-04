@@ -1476,7 +1476,7 @@ pub const LLVMEmitter = struct {
         // dead declaration would land in every module. Emit nothing, and register
         // nothing in func_map: a call that reached here would be a lowering bug,
         // and an absent entry surfaces it instead of resolving to a dead symbol.
-        if (func.is_intrinsic) return;
+        if (func.intrinsic != null) return;
 
         // Skip builtins that are declared via getOrDeclare* with correct C-compatible types.
         // The IR lowering creates extern stubs with IR types (e.g. memset → void return),

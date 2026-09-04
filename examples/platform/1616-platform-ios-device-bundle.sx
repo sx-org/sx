@@ -31,7 +31,7 @@ UIApplicationMain :: (argc: i32, argv: *void, principalClass: *NSString, delegat
 
 configure :: () {
     opts := @buildOptions();
-    @setBundlePath(opts, "/tmp/SxDeviceProbe.app");
+    opts.setBundlePath("/tmp/SxDeviceProbe.app");
     @onBuild(bundleMain);
 }
 @run configure();

@@ -18,7 +18,7 @@ bug :: (cmd: [:0]u8) -> ?R {
     R{ x = 1 }
 }
 
-postLink :: (opt: BuildOptions) -> bool {
+postLink :: (opt: @BuildOptions) -> bool {
     if r := bug("echo hi") { puts("ok"); } else { puts("null"); }
     true
 }

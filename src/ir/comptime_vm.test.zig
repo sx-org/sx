@@ -987,7 +987,7 @@ test "comptime_vm exec: compiler-fn intern/text_of round-trip (native)" {
     const ip = [_]Function.Param{.{ .name = module.types.internString("s"), .ty = .string }};
     var ifb = Fb.init(alloc, &ip, .u32);
     ifb.func.is_extern = true;
-    ifb.func.is_intrinsic = true;
+    ifb.func.intrinsic = .@"@rawIntern";
     ifb.func.name = module.types.internString("@rawIntern");
     const intern_id = module.addFunction(ifb.func);
 
@@ -995,7 +995,7 @@ test "comptime_vm exec: compiler-fn intern/text_of round-trip (native)" {
     const tp = [_]Function.Param{.{ .name = module.types.internString("id"), .ty = .u32 }};
     var tfb = Fb.init(alloc, &tp, .string);
     tfb.func.is_extern = true;
-    tfb.func.is_intrinsic = true;
+    tfb.func.intrinsic = .@"@rawTextOf";
     tfb.func.name = module.types.internString("@rawTextOf");
     const textof_id = module.addFunction(tfb.func);
 
@@ -1037,7 +1037,7 @@ test "comptime_vm exec: compiler-fn find_type + type_field_count (native reflect
     const fp = [_]Function.Param{.{ .name = module.types.internString("name"), .ty = .u32 }};
     var ffb = Fb.init(alloc, &fp, .u32);
     ffb.func.is_extern = true;
-    ffb.func.is_intrinsic = true;
+    ffb.func.intrinsic = .@"@rawFindType";
     ffb.func.name = module.types.internString("@rawFindType");
     const find_id = module.addFunction(ffb.func);
 
@@ -1045,7 +1045,7 @@ test "comptime_vm exec: compiler-fn find_type + type_field_count (native reflect
     const cp = [_]Function.Param{.{ .name = module.types.internString("t"), .ty = .u32 }};
     var cfb = Fb.init(alloc, &cp, .i64);
     cfb.func.is_extern = true;
-    cfb.func.is_intrinsic = true;
+    cfb.func.intrinsic = .@"@rawFieldCount";
     cfb.func.name = module.types.internString("@rawFieldCount");
     const count_id = module.addFunction(cfb.func);
 
@@ -1106,7 +1106,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     const fnp = [_]Function.Param{ param(.u32), param(.i64) };
     var fnb = Fb.init(alloc, &fnp, .u32);
     fnb.func.is_extern = true;
-    fnb.func.is_intrinsic = true;
+    fnb.func.intrinsic = .@"@rawFieldName";
     fnb.func.name = module.types.internString("@rawFieldName");
     const fname_id = module.addFunction(fnb.func);
 
@@ -1114,7 +1114,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     const ftp = [_]Function.Param{ param(.u32), param(.i64) };
     var ftb = Fb.init(alloc, &ftp, .u32);
     ftb.func.is_extern = true;
-    ftb.func.is_intrinsic = true;
+    ftb.func.intrinsic = .@"@rawFieldType";
     ftb.func.name = module.types.internString("@rawFieldType");
     const ftype_id = module.addFunction(ftb.func);
 
@@ -1122,7 +1122,7 @@ test "comptime_vm exec: compiler-fn type_field_name/type/nominal_name (native re
     const nnp = [_]Function.Param{param(.u32)};
     var nnb = Fb.init(alloc, &nnp, .u32);
     nnb.func.is_extern = true;
-    nnb.func.is_intrinsic = true;
+    nnb.func.intrinsic = .@"@rawTypeName";
     nnb.func.name = module.types.internString("@rawTypeName");
     const nname_id = module.addFunction(nnb.func);
 
@@ -1179,7 +1179,7 @@ test "comptime_vm exec: compiler-fn type_kind + type_field_value (native reflect
     const kp = [_]Function.Param{param(.u32)};
     var kb = Fb.init(alloc, &kp, .i64);
     kb.func.is_extern = true;
-    kb.func.is_intrinsic = true;
+    kb.func.intrinsic = .@"@rawTypeKind";
     kb.func.name = module.types.internString("@rawTypeKind");
     const kind_id = module.addFunction(kb.func);
 
@@ -1187,7 +1187,7 @@ test "comptime_vm exec: compiler-fn type_kind + type_field_value (native reflect
     const vp = [_]Function.Param{ param(.u32), param(.i64) };
     var vb = Fb.init(alloc, &vp, .i64);
     vb.func.is_extern = true;
-    vb.func.is_intrinsic = true;
+    vb.func.intrinsic = .@"@rawVariantValue";
     vb.func.name = module.types.internString("@rawVariantValue");
     const val_id = module.addFunction(vb.func);
 

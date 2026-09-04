@@ -3598,7 +3598,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     func.is_get = fd.is_get;
     func.is_set = fd.is_set;
     // An intrinsic has no symbol at all — the backend must not declare it.
-    if (fd.body.data == .intrinsic_expr) func.is_intrinsic = true;
+    if (fd.body.data == .intrinsic_expr) {
+        if (intrinsics.find(name, self.current_source_file)) |e| func.intrinsic = e.id;
+    }
 
     // A non-generic `-> Type` builder is a comptime type constructor — only ever
     // evaluated at lowering time (`runComptimeTypeFunc`) to mint a type, never

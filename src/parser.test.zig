@@ -1669,3 +1669,39 @@ test "parser: a for-capture type may contain a brace group" {
     try std.testing.expect(second.captures[0].type_annotation != null);
     try std.testing.expect(second.captures[0].type_annotation.?.data == .parameterized_type_expr);
 }
+
+// A bodyless signature inside an `@` struct body is an intrinsic method: a
+// `.fn_decl` in `methods` with the `.intrinsic_expr` body.
+test "parser: bodyless member of an `@` struct parses as an intrinsic method" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\@Handle :: struct {
+        \\    addLinkFlag :: (self: *@Handle, flag: [:0]u8);
+        \\    isMacos :: (self: *@Handle) -> bool;
+        \\    plain :: (self: *@Handle) -> i32 { 1 }
+        \\}
+        \\
+    ;
+    var parser = try Parser.init(alloc, src);
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), decls.len);
+    try std.testing.expect(decls[0].data == .struct_decl);
+    const sd = decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 3), sd.methods.len);
+
+    const add = sd.methods[0].data.fn_decl;
+    try std.testing.expectEqualStrings("addLinkFlag", add.name);
+    try std.testing.expect(add.body.data == .intrinsic_expr);
+    try std.testing.expectEqual(@as(usize, 2), add.params.len);
+
+    const mac = sd.methods[1].data.fn_decl;
+    try std.testing.expectEqualStrings("isMacos", mac.name);
+    try std.testing.expect(mac.body.data == .intrinsic_expr);
+    try std.testing.expect(mac.return_type != null);
+
+    try std.testing.expect(sd.methods[2].data.fn_decl.body.data != .intrinsic_expr);
+}

@@ -15,7 +15,7 @@
 
 c_marker :: () -> i64 extern;
 
-build :: (opt: BuildOptions) -> bool {
+build :: (opt: @BuildOptions) -> bool {
     objs := @cObjectPaths();
     if objs.len != 1 { return false; }
     if objs.items[0].len == 0 { return false; }

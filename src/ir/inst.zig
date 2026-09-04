@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const intrinsics = @import("intrinsics.zig");
 const TypeId = types.TypeId;
 const StringId = types.StringId;
 
@@ -755,15 +756,16 @@ pub const Function = struct {
     /// `abi(.c)` functions have it false.
     has_implicit_ctx: bool = false,
 
-    /// True for a declaration whose body the compiler provides (`.intrinsic_expr`) — its
-    /// implementation lives in the compiler (see `ir/intrinsics.zig`).
+    /// The registry entry of a declaration whose body the compiler provides
+    /// (`.intrinsic_expr`); null for every other function. Dispatch keys on
+    /// the id, so no name lookup happens at evaluation time.
     ///
     /// An intrinsic has NO symbol of any kind: `@sizeOf` folds to a constant,
     /// the atomics lower to ops, the evaluate-mode ones are serviced by the VM.
     /// So the backend must not emit a declaration for one — a `declare i32
     /// @intern(ptr)` is dead weight in every module that transitively sees the
     /// declaring file, which for std/core.sx means all of them.
-    is_intrinsic: bool = false,
+    intrinsic: ?intrinsics.Id = null,
 
 
     /// For a body-local `@run` wrapper (`L :: @run f()` → an `is_comptime`

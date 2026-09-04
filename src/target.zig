@@ -180,7 +180,7 @@ pub const TargetConfig = struct {
     }
 
     /// Check if target triple indicates Linux (NOT Android — Android uses
-    /// "linux-android" too but @isAndroid() must take precedence).
+    /// "linux-android" too but isAndroid() must take precedence).
     pub fn isLinux(self: TargetConfig) bool {
         if (self.isAndroid()) return false;
         return self.tripleContains("linux");

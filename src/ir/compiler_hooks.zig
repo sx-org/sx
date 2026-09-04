@@ -42,7 +42,7 @@ pub const BuildConfig = struct {
 
     /// Path of the freshly-linked binary, populated by `main.zig`
     /// right before the post-link callback runs. The sx-side bundler
-    /// reads this via `@binaryPath(opts)` to know what file to wrap.
+    /// reads this via `opts.binaryPath()` to know what file to wrap.
     binary_path: ?[]const u8 = null,
 
     // Apple `.app` / Android `.apk` bundling parameters. Set either
