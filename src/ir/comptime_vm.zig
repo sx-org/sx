@@ -3329,9 +3329,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return data +% idx *% @as(u64, @intCast(elem_size));
     }
 
-    /// Materialize `text` into comptime memory as a `string` VALUE — NUL-terminated
-    /// bytes + a `{ptr, len}` fat pointer (len excludes the NUL). Shared by
-    /// `text_of` and `@typeInfo`'s variant/field-name construction.
     /// Write a host `Value` of type `ty` into fresh comptime memory and return its
     /// register word: the scalar bits for a word type, the object's address for an
     /// aggregate. The inverse of `regToValue` for the shapes a snapshot carries —
@@ -3340,7 +3337,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         switch (kindOf(table, ty)) {
             .word => return switch (value) {
                 .int => |v| @bitCast(v),
-                .float => |f| if (ty == .f32) @as(Reg, @bitCast(@as(f64, f))) else @as(Reg, @bitCast(f)),
+                .float => |f| @bitCast(f),
                 .boolean => |b| @intFromBool(b),
                 .type_tag => |t| @as(Reg, t.index()),
                 .func_ref => |fid| funcRefWord(fid),
@@ -3392,6 +3389,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
     }
 
+    /// Materialize `text` into comptime memory as a `string` VALUE — NUL-terminated
+    /// bytes + a `{ptr, len}` fat pointer (len excludes the NUL). Shared by
+    /// `text_of` and `@typeInfo`'s variant/field-name construction.
     fn makeStringValue(self: *Vm, table: *const types.TypeTable, text: []const u8) Error!Reg {
         const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
         if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
