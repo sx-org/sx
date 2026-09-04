@@ -1,0 +1,84 @@
+// Host-GPU pixel golden for a wrapped paragraph: a label narrower than its
+// text lays out on several lines, and the renderer draws every line from the
+// paragraph's glyphs.
+//
+// macOS renders through the windowless Metal backend:
+//     sx run examples/ui/2341-ui-pixel-paragraph-wrap.sx
+// Other desktops go GL over a hidden SDL window:
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/2341-ui-pixel-paragraph-wrap.sx
+// Regenerate the reference:
+//     SX_UPDATE_PIXELS=1 sx run examples/ui/2341-ui-pixel-paragraph-wrap.sx
+//
+// The corpus compiles this file but does not run it: the pixel comparison
+// is a manual host gate, and where no display or GPU exists
+// openPixelSurface returns null and this reports a clean skip.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/surface.sx";
+@import "modules/ui/surface_select.sx";
+@import "modules/ui/pixeltest.sx";
+ui :: @import "modules/ui/types.sx";
+
+BACKDROP :: ui.Color{ r = 20, g = 20, b = 20, a = 255 };
+
+// True when some pixel of the rows [y0, y1) carries ink: a channel well above
+// the backdrop.
+inked :: (px: string, w: i64, y0: i64, y1: i64) -> bool {
+    y := y0;
+    while y < y1 {
+        x := 0;
+        while x < w {
+            if px[(y * w + x) * 4].(i64) > 128 { return true; }
+            x += 1;
+        }
+        y += 1;
+    }
+    false
+}
+
+main :: () {
+    surface := openPixelSurface(200, 120);
+    if surface == null {
+        print("pixels skipped: no display/GPU on this host\n");
+        return;
+    }
+    s := surface?!;
+
+    tree := RenderTree.init();
+    ctx := RenderContext.init(*tree);
+    ctx.addRect(Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
+
+    column : View = place(
+        vstack(0.0) {
+            Label{ text = "the quick brown fox jumps over the lazy dog" };
+        },
+        Mod{ margin = EdgeInsets.all(10.0), width = 120.0 });
+    renderRoot(*column, Size{ width = 200.0, height = 120.0 }, *tree);
+
+    // The label's node holds glyphs on more than one baseline.
+    lines := 0;
+    lastY : f32 = -1.0;
+    for n in tree.nodes {
+        for g in n.glyphs {
+            if g.y != lastY { lines += 1; lastY = g.y; }
+        }
+    }
+    process.assert(lines > 1, "the label wrapped");
+    print("lines {}\n", lines);
+
+    s.render(*tree);
+    pixels := s.readRgba(context.allocator);
+    w := s.width();
+
+    ok := true;
+    // Ink lands below the first line: the second line was drawn.
+    line := lineMetrics(16.0).height.(i64);
+    if !inked(pixels, w, 10 + line, 10 + line * 2) {
+        print("pixel FAIL: no ink on the second line\n");
+        ok = false;
+    }
+    if !pixelGolden(pixels, w, s.height(), "examples/ui/pixels/2341-paragraph-wrap.png") { ok = false; }
+    if !ok { process.exit(1); }
+}
