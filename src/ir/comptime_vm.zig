@@ -2866,13 +2866,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     // memory) → a `Value`. Covers scalars + strings + structs; other aggregate
     // shapes bail loudly (added as callers surface them).
 
-    /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
-    /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
     /// How a `[]E` fat pointer bridges. A RESULT escapes into the runtime image,
     /// where a slice into comptime memory has no placement, so it does not bridge;
     /// a SNAPSHOT stays host-side and carries the elements themselves.
     const BridgeMode = enum { escape, snapshot };
 
+    /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
+    /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
     pub fn regToValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
         return self.bridgeValue(alloc, table, reg, ty, .escape);
     }
