@@ -1314,6 +1314,15 @@ pub const UnknownTypeChecker = struct {
                 fieldTypeMatches(p.pointee_type, want[1..]),
             .many_pointer_type_expr => |m| want.len > 3 and std.mem.eql(u8, want[0..3], "[*]") and
                 fieldTypeMatches(m.element_type, want[3..]),
+            .slice_type_expr => |st| want.len > 2 and std.mem.eql(u8, want[0..2], "[]") and
+                fieldTypeMatches(st.element_type, want[2..]),
+            // `Name(Arg)` — one type argument, spelled inside the parens.
+            .parameterized_type_expr => |pt| blk: {
+                const open = std.mem.indexOfScalar(u8, want, '(') orelse break :blk false;
+                if (want[want.len - 1] != ')' or pt.args.len != 1) break :blk false;
+                break :blk std.mem.eql(u8, want[0..open], pt.name) and
+                    fieldTypeMatches(pt.args[0], want[open + 1 .. want.len - 1]);
+            },
             else => false,
         };
     }

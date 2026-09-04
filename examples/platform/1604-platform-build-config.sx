@@ -11,7 +11,7 @@ configureBuild :: () {
     // These calls are intercepted by the compiler at compile time.
     // On a normal (non-wasm) target, inline if gates them off.
     inline if @host.os == .wasm {
-        opts.setOutputPath(".sx-tmp/1604-platform-build-config/test.html");
+        opts.outputPath = ".sx-tmp/1604-platform-build-config/test.html";
         opts.addLinkFlag("-sUSE_SDL=3");
     }
 }

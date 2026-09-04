@@ -11,8 +11,8 @@
 
 configure :: () {
     opts := @buildOptions();
-    opts.setBundlePath(".sx-tmp/1615-platform-ios-sim-bundle.app");
-    opts.setBundleId("co.example.iossim");
+    opts.bundlePath = ".sx-tmp/1615-platform-ios-sim-bundle.app";
+    opts.bundleId = "co.example.iossim";
     @onBuild(bundleMain);
 }
 @run configure();

@@ -9,7 +9,7 @@
 
 puts :: (s: [:0]u8) -> i32 extern libc;
 
-postLink :: (opt: @BuildOptions) -> bool {
+postLink :: (opt: *@BuildOptions) -> bool {
     puts("[post-link] callback fired");
     true
 }

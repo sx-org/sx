@@ -9,8 +9,8 @@
 
 configure :: () {
     opts := @buildOptions();
-    opts.setBundlePath(".sx-tmp/1614-platform-macos-bundle.app");
-    opts.setBundleId("co.example.hello");
+    opts.bundlePath = ".sx-tmp/1614-platform-macos-bundle.app";
+    opts.bundleId = "co.example.hello";
     @onBuild(bundleMain);
 }
 @run configure();

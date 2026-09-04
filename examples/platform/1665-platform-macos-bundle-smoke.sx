@@ -10,8 +10,8 @@
 
 configure :: () {
     opts := @buildOptions();
-    opts.setBundlePath(".sx-tmp/1665-platform-macos-bundle-smoke.app");
-    opts.setBundleId("co.example.bundlesmoke");
+    opts.bundlePath = ".sx-tmp/1665-platform-macos-bundle-smoke.app";
+    opts.bundleId = "co.example.bundlesmoke";
 }
 @run configure();
 
