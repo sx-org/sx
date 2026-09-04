@@ -346,9 +346,10 @@ pub const Evaluation = struct {
             const addr = e.vm.build_options_addr orelse break :snapshot;
             const bc = e.vm.build_config orelse break :snapshot;
             if (e.vm.snapshotValue(e.gpa, &e.module.types, addr, bc.options_ty)) |snap| {
-                bc.options = e.gpa.dupe(Value, snap.aggregate) catch {
+                bc.options = e.gpa.dupe(Value, snap.aggregate) catch oom: {
                     last_bail_reason = "build options snapshot: out of memory";
                     result = null;
+                    break :oom null;
                 };
             } else |err| {
                 last_bail_reason = e.vm.detail orelse @errorName(err);
