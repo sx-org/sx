@@ -2203,25 +2203,25 @@ pub const Ops = struct {
             const ty_kind = c.LLVMGetTypeKind(ty);
             if (ty_kind == c.LLVMIntegerTypeKind) {
                 // Plain enum or builtin integer → integer constant
-                self.e.mapRef(c.LLVMConstInt(ty, ei.tag, 0));
+                self.e.mapRef(c.LLVMConstInt(ty, @bitCast(ei.tag), 0));
             } else if (ty_kind == c.LLVMStructTypeKind) {
                 // Payload enum with no payload — header field 0 holds the tag
                 const header_ty = c.LLVMStructGetTypeAtIndex(ty, 0);
-                const tag_val = c.LLVMConstInt(header_ty, ei.tag, 0);
+                const tag_val = c.LLVMConstInt(header_ty, @bitCast(ei.tag), 0);
                 var result = c.LLVMGetUndef(ty);
                 result = c.LLVMBuildInsertValue(self.e.builder, result, tag_val, 0, "ei.tag");
                 self.e.mapRef(result);
             } else {
-                self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, ei.tag, 0));
+                self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(ei.tag), 0));
             }
         } else if (self.e.ir_mod.types.isPayloadCarryingChannel(instruction.ty)) {
-            const tag = c.LLVMConstInt(self.e.cached_i32, ei.tag, 0);
+            const tag = c.LLVMConstInt(self.e.cached_i32, @bitCast(ei.tag), 0);
             self.e.mapRef(self.e.channelWithPayload(instruction.ty, tag, self.e.resolveRef(ei.payload)));
         } else {
             // Payload enum with payload — { header, payload_bytes }
             const union_ty = self.e.toLLVMType(instruction.ty);
             const header_ty = c.LLVMStructGetTypeAtIndex(union_ty, 0);
-            const tag_val = c.LLVMConstInt(header_ty, ei.tag, 0);
+            const tag_val = c.LLVMConstInt(header_ty, @bitCast(ei.tag), 0);
             const payload_val = self.e.resolveRef(ei.payload);
 
             // alloca union, store tag, bitcast payload area, store payload

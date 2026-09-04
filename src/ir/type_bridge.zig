@@ -581,18 +581,32 @@ pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anyt
     return id;
 }
 
-/// Decode an explicit enum-variant value node (`esc :: '\x1b'`, `quit :: 0x100`)
-/// to its integer, or `null` if it isn't a constant the enum machinery
-/// understands (the caller supplies the positional / power-of-2 fallback).
-/// A `char_literal` value is an integer code point — without this arm it falls
-/// through to the ordinal fallback, shipping the wrong tag value with no
-/// diagnostic. (Negated values like `lo :: -1` are deliberately NOT handled
-/// here: they take the positional fallback, because the downstream
-/// `@bitCast`-to-u64 tag path cannot represent a signed tag value.)
-fn enumVariantConst(vv: *const Node) ?i64 {
+/// Every member's tag: a stated one is its constant, an unstated one is the
+/// previous tag's successor — plus one, or in a flags enum the bit above the
+/// previous tag — and a bare first member is 0 (a flag, 1). Null when the tags
+/// are the member indices, which every reader takes as the default.
+pub fn memberTags(ed: *const ast.EnumDecl, alloc: std.mem.Allocator) ?[]const i64 {
+    var any_stated = false;
+    for (ed.variant_values) |v| any_stated = any_stated or v != null;
+    if (!ed.is_flags and !any_stated) return null;
+    var vals = std.ArrayList(i64).empty;
+    var next: i64 = if (ed.is_flags) 1 else 0;
+    for (0..ed.variant_names.len) |i| {
+        const stated: ?i64 = if (i < ed.variant_values.len) (if (ed.variant_values[i]) |vv| enumVariantConst(vv) else null) else null;
+        const tag = stated orelse next;
+        vals.append(alloc, tag) catch unreachable;
+        next = if (!ed.is_flags) (std.math.add(i64, tag, 1) catch tag) else if (tag <= 0) 1 else @as(i64, 1) << @intCast(64 - @clz(@as(u64, @bitCast(tag))));
+    }
+    return vals.items;
+}
+
+/// The integer a stated tag spells — an int or char literal, optionally
+/// negated; null for any other expression, which registration diagnoses.
+pub fn enumVariantConst(vv: *const Node) ?i64 {
     return switch (vv.data) {
         .int_literal => |il| il.value,
         .char_literal => |cl| cl.value,
+        .unary_op => |uo| if (uo.op == .negate) (if (enumVariantConst(uo.operand)) |v| -v else null) else null,
         else => null,
     };
 }
@@ -675,30 +689,12 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
             }
         }
 
-        // Build explicit tag values from variant_values (e.g., quit :: 0x100)
-        var explicit_tag_vals: ?[]const i64 = null;
-        if (ed.variant_values.len > 0) {
-            var vals = std.ArrayList(i64).empty;
-            for (0..ed.variant_names.len) |i| {
-                if (i < ed.variant_values.len) {
-                    if (ed.variant_values[i]) |vv| {
-                        if (enumVariantConst(vv)) |v| {
-                            vals.append(alloc, v) catch unreachable;
-                            continue;
-                        }
-                    }
-                }
-                vals.append(alloc, @intCast(i)) catch unreachable;
-            }
-            explicit_tag_vals = vals.items;
-        }
-
         var info: TypeInfo = .{ .@"enum" = .{
             .name = name_id,
             .variants = fields.items,
             .tag_type = tag_type orelse .i64,
             .layout = backing_type,
-            .values = explicit_tag_vals,
+            .values = memberTags(ed, alloc),
         } };
         info.@"enum".else_member = elseMemberIfLegal(ed, table, info.@"enum");
         return info;
@@ -709,38 +705,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
     for (ed.variant_names) |vn| {
         variants.append(alloc, .{ .name = table.internString(vn) }) catch unreachable;
     }
-    // Build explicit values for flags (power-of-2) or custom values
-    var explicit_vals: ?[]const i64 = null;
-    if (ed.is_flags) {
-        var vals = std.ArrayList(i64).empty;
-        for (ed.variant_names, 0..) |_, i| {
-            if (i < ed.variant_values.len) {
-                if (ed.variant_values[i]) |vv| {
-                    if (enumVariantConst(vv)) |v| {
-                        vals.append(alloc, v) catch unreachable;
-                        continue;
-                    }
-                }
-            }
-            // Auto power-of-2: 1, 2, 4, 8, ...
-            vals.append(alloc, @as(i64, 1) << @intCast(i)) catch unreachable;
-        }
-        explicit_vals = vals.items;
-    } else if (ed.variant_values.len > 0) {
-        var vals = std.ArrayList(i64).empty;
-        for (0..ed.variant_names.len) |i| {
-            if (i < ed.variant_values.len) {
-                if (ed.variant_values[i]) |vv| {
-                    if (enumVariantConst(vv)) |v| {
-                        vals.append(alloc, v) catch unreachable;
-                        continue;
-                    }
-                }
-            }
-            vals.append(alloc, @intCast(i)) catch unreachable;
-        }
-        explicit_vals = vals.items;
-    }
+    const explicit_vals = memberTags(ed, alloc);
     // Resolve backing type for sized enums (e.g. enum u32 { ... })
     var enum_backing: ?TypeId = null;
     if (ed.backing_type) |bt| {

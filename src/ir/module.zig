@@ -604,7 +604,7 @@ pub const Builder = struct {
 
     // ── Enum ops ────────────────────────────────────────────────────
 
-    pub fn enumInit(self: *Builder, tag: u32, payload: Ref, ty: TypeId) Ref {
+    pub fn enumInit(self: *Builder, tag: i64, payload: Ref, ty: TypeId) Ref {
         return self.emit(.{ .enum_init = .{ .tag = tag, .payload = payload } }, ty);
     }
 

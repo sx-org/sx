@@ -1,0 +1,5 @@
+error: an enum tag is an integer or char literal
+  --> examples/diagnostics/2333-diagnostics-enum-tag-not-literal.sx:6:17
+   |
+ 6 | E :: enum { a = K; b; }
+   |                 ^

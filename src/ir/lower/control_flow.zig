@@ -1231,7 +1231,7 @@ fn claimCase(
     }
     claimed.put(value, span) catch unreachable;
     cases.append(self.alloc, .{
-        .value = @intCast(value),
+        .value = @bitCast(value),
         .target = target,
         .args = &.{},
     }) catch unreachable;

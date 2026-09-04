@@ -4228,6 +4228,10 @@ Name :: enum {
 Defines a new enum type with the given variants. A trailing `;` before the
 closing brace is optional.
 
+A member's tag is the constant after `=`. An unstated tag is the previous
+member's tag plus one, and a bare first member is 0: `enum { a; b = 10; c; }`
+is 0, 10, 11. Two members with one tag are an error.
+
 ### Enum Backing Type
 
 An optional backing type can be specified after the `enum` keyword (Jai-style):
@@ -4321,7 +4325,7 @@ SDL_InitFlags :: enum flags u32 {
 }
 ```
 
-The `flags` modifier assigns auto power-of-2 values (1, 2, 4, 8, ...) instead of sequential indices (0, 1, 2, ...). Flags can be combined with `|` and tested with `&`:
+In a flags enum an unstated tag is the bit above the previous tag, and a bare first member is 1: `flags { p; q = 64; r; }` is 1, 64, 128. Flags can be combined with `|` and tested with `&`:
 
 ```sx
 p :Perms = .read | .write;

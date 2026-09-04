@@ -2365,8 +2365,8 @@ pub fn findTaggedVariant(
 }
 
 
-/// Resolve a variant name to its runtime value (flags: power-of-2, regular: index).
-pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8) u32 {
+/// A variant's tag by name.
+pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8) i64 {
     if (ty.isBuiltin()) return 0;
     const info = self.module.types.get(ty);
     const name_id = self.module.types.internString(variant_name);
@@ -2375,7 +2375,7 @@ pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8
             for (e.variants, 0..) |v, i| {
                 if (v.name == name_id) {
                     if (e.values) |vals| {
-                        if (i < vals.len) return @intCast(@as(u64, @bitCast(vals[i])));
+                        if (i < vals.len) return vals[i];
                     }
                     return @intCast(i);
                 }

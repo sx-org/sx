@@ -1714,7 +1714,7 @@ pub fn bindEnumValueParam(
     }
 
     const tag = self.resolveVariantValue(constraint_ty, variant_name);
-    self.recordComptimeTag(int_store, name, @intCast(tag));
+    self.recordComptimeTag(int_store, name, tag);
 
     if (self.scope) |scope| {
         const enum_val = self.builder.enumInit(tag, Ref.none, constraint_ty);

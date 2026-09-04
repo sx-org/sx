@@ -1,0 +1,7 @@
+// The successor of the largest i64 is not representable, so an unstated
+// member after it reaches the same tag and is diagnosed as a collision.
+@import "modules/std.sx";
+
+E :: enum { a = 9223372036854775807; b; }
+
+main :: () { }

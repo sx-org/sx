@@ -1,0 +1,7 @@
+// A collision is read in the backing word: in a `u8` enum, 256 stores as 0,
+// the tag the bare first member holds.
+@import "modules/std.sx";
+
+E :: enum u8 { a; b = 256; }
+
+main :: () { }

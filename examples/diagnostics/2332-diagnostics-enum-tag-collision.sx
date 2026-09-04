@@ -1,0 +1,7 @@
+// Two members with one tag: `b` follows `a = 5` so it is 6, which `c` then
+// states. The later member is the error, the holder the note.
+@import "modules/std.sx";
+
+E :: enum { a = 5; b; c = 6; }
+
+main :: () { }

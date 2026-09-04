@@ -2213,7 +2213,10 @@ pub const Lowering = struct {
             // `findByName` first-match.
             .enum_decl => {
                 const ty = type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self);
-                if (ty != .unresolved) self.refuseIllegalElseMember(&node.data.enum_decl, self.module.types.get(ty).@"enum");
+                if (ty != .unresolved) {
+                    self.refuseIllegalElseMember(&node.data.enum_decl, self.module.types.get(ty).@"enum");
+                    self.refuseIllegalTags(&node.data.enum_decl, self.module.types.get(ty).@"enum");
+                }
                 return ty;
             },
             .struct_decl => return type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self),
@@ -3640,6 +3643,7 @@ pub const Lowering = struct {
     pub const followAliasChain = lower_nominal.followAliasChain;
     pub const registerEnumDecl = lower_nominal.registerEnumDecl;
     pub const refuseIllegalElseMember = lower_nominal.refuseIllegalElseMember;
+    pub const refuseIllegalTags = lower_nominal.refuseIllegalTags;
     pub const registerUnionDecl = lower_nominal.registerUnionDecl;
     pub const qualifyAnonType = lower_nominal.qualifyAnonType;
     pub const nominalIdOf = lower_nominal.nominalIdOf;
