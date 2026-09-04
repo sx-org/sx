@@ -742,8 +742,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     // The `@BuildOptions` snapshot the post-link callback reads: the linked
     // binary's path, the target facts, and the CLI bundle flags (which fill a
     // field the `@run` configuration left unset), so the sx bundler has one
-    // state to read. Slice fields point into the long-lived target_config /
-    // CLI argv buffers, which outlive the post-link callback.
+    // state to read.
     if (comp.ir_emitter) |*e| {
         const table = &comp.ir_module.?.types;
         const bc = &e.build_config;
@@ -767,9 +766,9 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
         try bc.setStrings(allocator, table, "targetFrameworks", fws);
         try bc.setStrings(allocator, table, "targetFrameworkPaths", merged_config.framework_paths);
-        // C companion objects / `@library` names / output path for the sx driver's
-        // `@cObjectPaths()` / `@linkLibraries()` primitives. Slices
-        // reference compileWithTimer locals that outlive the callback.
+        // C companion objects / `@library` names for the sx driver's
+        // `@cObjectPaths()` / `@linkLibraries()` primitives. Slices reference
+        // compileWithTimer locals that outlive the callback.
         bc.c_object_paths = c_obj_paths;
         bc.link_libraries = libs;
         try bc.setString(allocator, table, "outputPath", final_output);

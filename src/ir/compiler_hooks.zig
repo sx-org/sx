@@ -70,10 +70,6 @@ pub const BuildConfig = struct {
         return null;
     }
 
-    fn fieldType(self: *const BuildConfig, table: *const TypeTable, idx: usize) TypeId {
-        return table.get(self.options_ty).@"struct".fields[idx].ty;
-    }
-
     /// The snapshot's fields, mutable; an absent snapshot becomes one `.undef`
     /// per field. Null when `@BuildOptions` is unresolved.
     fn fields(self: *BuildConfig, alloc: Allocator, table: *const TypeTable) !?[]Value {

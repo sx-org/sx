@@ -342,10 +342,14 @@ pub const Evaluation = struct {
         // The evaluation's `@BuildOptions` instance becomes the build config's
         // snapshot; a copy-out failure fails the evaluation like a bridge failure.
         var result = value;
-        if (e.vm.build_options_addr) |addr| {
+        snapshot: if (e.vm.build_options_addr) |addr| {
             if (e.vm.build_config) |bc| {
                 if (e.vm.snapshotValue(e.gpa, &e.module.types, addr, bc.options_ty)) |snap| {
-                    bc.options = e.gpa.dupe(Value, snap.aggregate) catch null;
+                    bc.options = e.gpa.dupe(Value, snap.aggregate) catch {
+                        last_bail_reason = "build options snapshot: out of memory";
+                        result = null;
+                        break :snapshot;
+                    };
                 } else |err| {
                     last_bail_reason = e.vm.detail orelse @errorName(err);
                     result = null;
