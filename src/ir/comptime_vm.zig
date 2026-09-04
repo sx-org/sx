@@ -2868,7 +2868,22 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
     /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
+    /// How a `[]E` fat pointer bridges. A RESULT escapes into the runtime image,
+    /// where a slice into comptime memory has no placement, so it does not bridge;
+    /// a SNAPSHOT stays host-side and carries the elements themselves.
+    const BridgeMode = enum { escape, snapshot };
+
     pub fn regToValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        return self.bridgeValue(alloc, table, reg, ty, .escape);
+    }
+
+    /// The snapshot form of a VM object: `regToValue` with slices as element
+    /// aggregates — the inverse of `materializeValue`.
+    pub fn snapshotValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        return self.bridgeValue(alloc, table, reg, ty, .snapshot);
+    }
+
+    fn bridgeValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId, mode: BridgeMode) Error!Value {
         switch (kindOf(table, ty)) {
             .word => {
                 if (isFloat(ty)) return .{ .float = @bitCast(reg) };
@@ -2901,7 +2916,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     const out = alloc.alloc(Value, info.@"struct".fields.len) catch return self.failMsg("reg→value: out of memory (struct)");
                     for (info.@"struct".fields, 0..) |f, i| {
                         const fr = try self.readField(table, reg + fieldOffset(table, ty, @intCast(i)), f.ty);
-                        out[i] = try self.regToValue(alloc, table, fr, f.ty);
+                        out[i] = try self.bridgeValue(alloc, table, fr, f.ty, mode);
                     }
                     return .{ .aggregate = out };
                 }
@@ -2912,10 +2927,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     for (0..n) |i| {
                         const fty = table.failableValueSlotType(f, i);
                         const fr = try self.readField(table, reg + fieldOffset(table, ty, @intCast(i)), fty);
-                        out[i] = try self.regToValue(alloc, table, fr, fty);
+                        out[i] = try self.bridgeValue(alloc, table, fr, fty, mode);
                     }
                     const er = try self.readField(table, reg + fieldOffset(table, ty, @intCast(n)), f.err);
-                    out[n] = try self.regToValue(alloc, table, er, f.err);
+                    out[n] = try self.bridgeValue(alloc, table, er, f.err, mode);
                     return .{ .aggregate = out };
                 }
                 if (info == .array) {
@@ -2932,7 +2947,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     for (0..len) |i| {
                         const elem_addr = reg + @as(Addr, @intCast(i)) * stride;
                         const er = try self.readField(table, elem_addr, elem_ty);
-                        out[i] = try self.regToValue(alloc, table, er, elem_ty);
+                        out[i] = try self.bridgeValue(alloc, table, er, elem_ty, mode);
                     }
                     return .{ .aggregate = out };
                 }
@@ -2961,13 +2976,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     // type, and present it as the `{ payload, i1=true }` LLVM-struct
                     // shape the host's optional serializer expects.
                     const payload_reg = try self.readField(table, reg, child);
-                    const payload = try self.regToValue(alloc, table, payload_reg, child);
+                    const payload = try self.bridgeValue(alloc, table, payload_reg, child, mode);
                     const out = alloc.alloc(Value, 2) catch return self.failMsg("reg→value: out of memory (optional)");
                     out[0] = payload;
                     out[1] = .{ .boolean = true };
                     return .{ .aggregate = out };
                 }
-                if (info == .slice) {
+                if (info == .slice and mode == .snapshot) {
                     // `[]E` is a `{ptr, len}` fat pointer; the Value is its
                     // elements, read at stride `sizeof(E)`.
                     const elem_ty = info.slice.element;
@@ -2977,7 +2992,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     const out = alloc.alloc(Value, len) catch return self.failMsg("reg→value: out of memory (slice)");
                     for (0..len) |i| {
                         const er = try self.readField(table, data + @as(Addr, @intCast(i)) * stride, elem_ty);
-                        out[i] = try self.regToValue(alloc, table, er, elem_ty);
+                        out[i] = try self.bridgeValue(alloc, table, er, elem_ty, mode);
                     }
                     return .{ .aggregate = out };
                 }

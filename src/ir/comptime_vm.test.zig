@@ -1699,9 +1699,9 @@ test "comptime_vm: Frame register file round-trips (no stack reclaim)" {
 }
 
 // A snapshot round-trip: a host Value materialized into VM memory reads back
-// through `regToValue` as the same Value — string, `[]string`, a List-shaped
+// through `snapshotValue` as the same Value — string, `[]string`, a List-shaped
 // struct, and a list of a nested struct.
-test "comptime_vm bridge: materializeValue → regToValue round-trips a snapshot shape" {
+test "comptime_vm bridge: materializeValue → snapshotValue round-trips a snapshot shape" {
     const alloc = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -1745,7 +1745,7 @@ test "comptime_vm bridge: materializeValue → regToValue round-trips a snapshot
     // The VM stores host pointers; lay the types out at host width.
     table.pointer_size = @sizeOf(usize);
     const addr = try v.materializeValue(table, state_ty, .{ .aggregate = &state });
-    const back = try v.regToValue(a, table, addr, state_ty);
+    const back = try v.snapshotValue(a, table, addr, state_ty);
 
     try std.testing.expectEqualStrings("app", back.aggregate[0].string);
     try std.testing.expectEqual(@as(usize, 2), back.aggregate[1].aggregate.len);
@@ -1758,7 +1758,7 @@ test "comptime_vm bridge: materializeValue → regToValue round-trips a snapshot
     // An empty slice and an undef field materialize and read back as empty.
     const empty = [_]Value{ .undef, .{ .aggregate = &.{} }, .undef, .{ .aggregate = &.{} }, .{ .int = 0 } };
     const e_addr = try v.materializeValue(table, state_ty, .{ .aggregate = &empty });
-    const e_back = try v.regToValue(a, table, e_addr, state_ty);
+    const e_back = try v.snapshotValue(a, table, e_addr, state_ty);
     try std.testing.expectEqualStrings("", e_back.aggregate[0].string);
     try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[1].aggregate.len);
     try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[2].aggregate[0].aggregate.len);
