@@ -77,7 +77,6 @@ Paragraph :: struct {
         end := line.firstGlyph + line.glyphCount;
         while i < end {
             g := self.glyphs.items[i];
-            if g.byteOffset > line.caretEnd { break; }
             if point.x < g.x + g.advance * 0.5 { return g.byteOffset; }
             i += 1;
         }
