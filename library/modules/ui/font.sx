@@ -1,4 +1,5 @@
 @import "modules/std.sx";
+@import "modules/std/mem.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/glyph_cache.sx";
 
@@ -7,6 +8,45 @@ gFont : *GlyphCache = null;
 
 setGlobalFont :: (font: *GlyphCache) {
     gFont = font;
+}
+
+// The vertical metrics one line of `fontSize` text takes: the baseline sits
+// `ascent` below the line's top.
+LineMetrics :: struct {
+    ascent: f32;
+    height: f32;
+}
+
+// With no face loaded, a line is `fontSize` tall and every byte advances 8 at
+// 16 pt.
+FONTLESS_ASCENT :: 0.8;
+FONTLESS_ADVANCE :: 0.5;
+
+lineMetrics :: (fontSize: f32) -> LineMetrics {
+    if gFont == null {
+        return LineMetrics{ ascent = fontSize * FONTLESS_ASCENT, height = fontSize };
+    }
+    LineMetrics{ ascent = gFont.getAscent(fontSize), height = gFont.getLineHeight(fontSize) }
+}
+
+// Appends the shaped glyphs of one run to `into`.
+shapeRun :: (text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator = context.allocator) {
+    if gFont != null {
+        gFont.shapeInto(text, fontSize, into, alloc);
+        return;
+    }
+    adv := fontSize * FONTLESS_ADVANCE;
+    i : i64 = 0;
+    while i < text.len {
+        into.append(ShapedGlyph{
+            glyphIndex = text[i],
+            byteOffset = i,
+            x = adv * i,
+            y = 0.0,
+            advance = adv,
+        }, alloc);
+        i += 1;
+    }
 }
 
 // Convenience measurement function for views

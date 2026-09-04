@@ -46,9 +46,20 @@ makeGlyphKey :: (glyphIndex: u16, sizeQuantized: u16) -> u32 {
 // Shaped glyph — output of text shaping (positioned glyph with index)
 ShapedGlyph :: struct {
     glyphIndex: u16;
+    byteOffset: i64;  // first byte of the codepoint this glyph comes from
     x: f32;       // horizontal position (logical units, cumulative)
     y: f32;       // vertical offset (logical units)
     advance: f32; // advance width (logical units)
+}
+
+// The byte at which each codepoint of `text` starts, in codepoint order.
+codepointStarts :: (text: string, into: *List(i64), alloc: Allocator) {
+    into.len = 0;
+    i : i64 = 0;
+    while i < text.len {
+        if (text[i] & 0xC0) != 0x80 { into.append(i, alloc); }
+        i += 1;
+    }
 }
 
 isAscii :: (text: string) -> bool {
@@ -185,6 +196,8 @@ GlyphCache :: struct {
     // shaped run is its bytes.
     lastShapeText: List(u8);
     lastShapeSizeQ: u16;
+    // Scratch for the kbts path: codepoint index → byte offset.
+    cpStarts: List(i64);
 
     // Allocator that owns every dynamically-grown buffer on this cache —
     // entries list, hash table, shapedBuf, lastShapeText. Captured at init
@@ -578,13 +591,7 @@ GlyphCache :: struct {
         if sizeQ == self.lastShapeSizeQ and self.shapedTextIs(text) { return; }
 
         self.shapedBuf.len = 0;
-        if text.len > 0 {
-            if isAscii(text) {
-                self.shapeAscii(text, fontSize);
-            } else {
-                self.shapeWithKb(text, fontSize);
-            }
-        }
+        self.shapeInto(text, fontSize, *self.shapedBuf, self.parentAllocator);
 
         self.lastShapeText.ensureCapacity(text.len, self.parentAllocator);
         self.lastShapeText.len = text.len;
@@ -604,7 +611,18 @@ GlyphCache :: struct {
         true
     }
 
-    shapeAscii :: (self: *GlyphCache, text: string, fontSize: f32) {
+    // Appends the shaped glyphs of `text` to `into`: the ASCII fast path
+    // (stbtt byte by byte) for pure ASCII, the kb_text_shape pipeline otherwise.
+    shapeInto :: (self: *GlyphCache, text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator) {
+        if text.len == 0 { return; }
+        if isAscii(text) {
+            self.shapeAscii(text, fontSize, into, alloc);
+        } else {
+            self.shapeWithKb(text, fontSize, into, alloc);
+        }
+    }
+
+    shapeAscii :: (self: *GlyphCache, text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator) {
         scale := stbtt_ScaleForPixelHeight(self.fontInfo, fontSize);
         total : f32 = 0.0;
         i : i64 = 0;
@@ -617,22 +635,24 @@ GlyphCache :: struct {
             stbtt_GetGlyphHMetrics(self.fontInfo, glyphIndex, *advanceI, *lsbI);
             adv : f32 = (advanceI * scale).(f32);
 
-            self.shapedBuf.append(ShapedGlyph{
+            into.append(ShapedGlyph{
                 glyphIndex = glyphIndex,
+                byteOffset = i,
                 x = total,
                 y = 0.0,
                 advance = adv
-            }, self.parentAllocator);
+            }, alloc);
             total += adv;
             i += 1;
         }
     }
 
-    shapeWithKb :: (self: *GlyphCache, text: string, fontSize: f32) {
+    shapeWithKb :: (self: *GlyphCache, text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator) {
         if self.shapeCtx == null {
-            self.shapeAscii(text, fontSize);
+            self.shapeAscii(text, fontSize, into, alloc);
             return;
         }
+        codepointStarts(text, *self.cpStarts, self.parentAllocator);
 
         // kbts advances are font design units, the same space stbtt's advances
         // live in — so they take the SAME scale the ASCII path and the
@@ -655,12 +675,13 @@ GlyphCache :: struct {
                 gy : f32 = (glyphPtr.offsetY * scale).(f32);
                 adv : f32 = (glyphPtr.advanceX * scale).(f32);
 
-                self.shapedBuf.append(ShapedGlyph{
+                into.append(ShapedGlyph{
                     glyphIndex = glyphPtr.id,
+                    byteOffset = self.cpStarts.items[glyphPtr.userIdOrCodepointIndex],
                     x = gx,
                     y = gy,
                     advance = adv
-                }, self.parentAllocator);
+                }, alloc);
                 total += adv;
             }
         }

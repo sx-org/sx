@@ -1,0 +1,32 @@
+soft 40x32
+  bytes 0..5 glyphs 6 width 40 top 0
+  bytes 6..11 glyphs 5 width 40 top 16
+  caret 5 -> line 0 x 40 top 0
+  caret 6 -> line 1 x 0 top 16
+  caret 11 -> line 1 x 40 top 16
+  hit 100,8 -> 5
+  hit 0,100 -> 6
+  hit 13,20 -> 8
+hard 16x32
+  bytes 0..2 glyphs 2 width 16 top 0
+  bytes 3..5 glyphs 2 width 16 top 16
+  caret 2 -> line 0 x 16 top 0
+  caret 3 -> line 1 x 0 top 16
+forced 24x48
+  bytes 0..2 glyphs 3 width 24 top 0
+  bytes 3..5 glyphs 3 width 24 top 16
+  bytes 6..8 glyphs 2 width 16 top 32
+  caret 3 -> line 1 x 0 top 16
+empty 0x16
+  bytes 0..0 glyphs 0 width 0 top 0
+  caret 0 -> line 0 x 0 top 0
+trailing 8x32
+  bytes 0..1 glyphs 1 width 8 top 0
+  bytes 2..2 glyphs 0 width 0 top 16
+  caret 2 -> line 1 x 0 top 16
+spaces 16x32
+  bytes 0..4 glyphs 5 width 16 top 0
+  bytes 5..7 glyphs 2 width 16 top 16
+  caret 4 -> line 0 x 32 top 0
+  caret 5 -> line 1 x 0 top 16
+  hit 60,0 -> 4
