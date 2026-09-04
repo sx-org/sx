@@ -739,56 +739,49 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         .link = BuildHooksCtx.link,
     };
 
-    // Make the linked binary's path + bundling config visible to the
-    // post-link callback via `BuildOptions.binaryPath()`,
-    // `BuildOptions.bundlePath()`, etc. CLI flags
-    // (`--bundle Foo.app`, `--bundle-id`, ...) feed in here so the sx
-    // bundler doesn't need a separate code path.
+    // The `@BuildOptions` snapshot the post-link callback reads: the linked
+    // binary's path, the target facts, and the CLI bundle flags (which fill a
+    // field the `@run` configuration left unset), so the sx bundler has one
+    // state to read. Slice fields point into the long-lived target_config /
+    // CLI argv buffers, which outlive the post-link callback.
     if (comp.ir_emitter) |*e| {
-        e.build_config.binary_path = final_output;
-        e.build_config.build_hooks = &build_hooks;
-        // `--apk <path>` is a transitional alias for the bundle_path
-        // → post_link_module = "platform.bundle" auto-fallback. The
-        // sx Android bundler reads `opts.bundlePath()` regardless of which
-        // CLI flag the user typed.
-        if (e.build_config.bundle_path == null) e.build_config.bundle_path = merged_config.bundle_path orelse merged_config.apk_path;
-        if (e.build_config.bundle_id == null) e.build_config.bundle_id = merged_config.bundle_id;
-        if (e.build_config.codesign_identity == null) e.build_config.codesign_identity = merged_config.codesign_identity;
-        if (e.build_config.provisioning_profile == null) e.build_config.provisioning_profile = merged_config.provisioning_profile;
+        const table = &comp.ir_module.?.types;
+        const bc = &e.build_config;
+        try bc.setString(allocator, table, "binaryPath", final_output);
+        bc.build_hooks = &build_hooks;
+        try bc.setStringIfUnset(allocator, table, "bundlePath", merged_config.bundle_path orelse merged_config.apk_path);
+        try bc.setStringIfUnset(allocator, table, "bundleId", merged_config.bundle_id);
+        try bc.setStringIfUnset(allocator, table, "codesignIdentity", merged_config.codesign_identity);
+        try bc.setStringIfUnset(allocator, table, "provisioningProfile", merged_config.provisioning_profile);
         // Target triple + framework lists drive the sx bundler's per-platform
         // branching (iOS device vs simulator vs macOS) and `Frameworks/`
-        // embedding. Slice fields point into the long-lived target_config /
-        // CLI argv buffers, which outlive the post-link callback.
+        // embedding. A host build (no `--target`) exposes the HOST triple so the
+        // bundler's `isMacos()`/`isIos()`/… predicates resolve; left empty, a
+        // host macOS `.app` would get the flat iOS-style layout.
         if (merged_config.triple) |t| {
-            e.build_config.target_triple = std.mem.span(t);
+            try bc.setString(allocator, table, "targetTriple", std.mem.span(t));
         } else {
-            // Host build (no `--target`): expose the HOST triple so the sx
-            // bundler's `opts.isMacos()`/`opts.isIos()`/… predicates resolve correctly.
-            // Left empty, a host macOS `.app` would get the flat iOS-style layout
-            // (`opts.isMacos()` == false) instead of `Contents/MacOS/`.
             const host = sx.llvm_api.c.LLVMGetDefaultTargetTriple();
             defer sx.llvm_api.c.LLVMDisposeMessage(host);
-            e.build_config.target_triple = allocator.dupe(u8, std.mem.span(host)) catch null;
+            try bc.setString(allocator, table, "targetTriple", std.mem.span(host));
         }
-        e.build_config.target_frameworks = fws;
-        e.build_config.target_framework_paths = merged_config.framework_paths;
-        // The sx-driven build pipeline reads these via the
-        // `@cObjectPaths()` / `@linkLibraries()` / `@buildOutput()` primitives. Slices
+        try bc.setStrings(allocator, table, "targetFrameworks", fws);
+        try bc.setStrings(allocator, table, "targetFrameworkPaths", merged_config.framework_paths);
+        // C companion objects / `@library` names / output path for the sx driver's
+        // `@cObjectPaths()` / `@linkLibraries()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
-        e.build_config.c_object_paths = c_obj_paths;
-        e.build_config.link_libraries = libs;
-        e.build_config.output_path = final_output;
-        e.build_config.merged_link_flags = merged_config.extra_link_flags;
-        // Android-specific bundling state.
-        if (e.build_config.manifest_path == null) e.build_config.manifest_path = merged_config.manifest_path;
-        if (e.build_config.keystore_path == null) e.build_config.keystore_path = merged_config.keystore_path;
+        bc.c_object_paths = c_obj_paths;
+        bc.link_libraries = libs;
+        try bc.setString(allocator, table, "outputPath", final_output);
+        bc.merged_link_flags = merged_config.extra_link_flags;
+        try bc.setStringIfUnset(allocator, table, "manifestPath", merged_config.manifest_path);
+        try bc.setStringIfUnset(allocator, table, "keystorePath", merged_config.keystore_path);
         // `main = true` decls flow from the compiler's lowering pass —
-        // pre-rendered Java sources + the runtime_path for each. Build
-        // two parallel slices since BuildConfig hooks return strings.
+        // pre-rendered Java sources + the runtime_path for each.
         const jni_decls = comp.getJniMainEmissions();
         if (jni_decls.len > 0) {
-            // If the output path was set via `BuildOptions.setOutputPath`
-            // (i.e. from a @run block, not CLI -o), the Java sources were
+            // If the output path was set via `opts.outputPath` in `@run`
+            // (not CLI -o), the Java sources were
             // rendered during lowering before we knew the .so basename and
             // they're missing the `static { System.loadLibrary(...); }`
             // block. Inject it now using the final resolved output.
@@ -807,8 +800,8 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
                 else
                     em.java_source;
             }
-            e.build_config.jni_main_runtime_paths = fps;
-            e.build_config.jni_main_java_sources = srcs;
+            try bc.setStrings(allocator, table, "jniMainRuntimePaths", fps);
+            try bc.setStrings(allocator, table, "jniMainJavaSources", srcs);
         }
     }
 

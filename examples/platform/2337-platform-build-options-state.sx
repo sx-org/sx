@@ -1,0 +1,23 @@
+@import "modules/std.sx";
+@import "modules/build.sx";
+
+// The state set in `@run` is the state the build callback reads: a string
+// field and an appended link flag survive the hop between the two evaluations,
+// next to the `binaryPath` the compiler fills in before the callback runs.
+
+configure :: () {
+    opts := @buildOptions();
+    opts.keystorePath = "probe.keystore";
+    opts.addLinkFlag("-lm");
+}
+@run configure();
+
+build :: (opt: *@BuildOptions) -> bool {
+    if opt.keystorePath != "probe.keystore" { return false; }
+    if opt.linkFlags.len != 1 or opt.linkFlags.items[0] != "-lm" { return false; }
+    if opt.binaryPath.len == 0 { return false; }
+    return defaultPipeline(opt);
+}
+@run @onBuild(build);
+
+main :: () { print("state round-trips\n"); }

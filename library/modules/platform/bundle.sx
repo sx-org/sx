@@ -18,8 +18,8 @@
 //
 //     @run {
 //         opts := @buildOptions();
-//         opts.setBundlePath("MyApp.app");
-//         opts.setBundleId("co.example.myapp");
+//         opts.bundlePath = "MyApp.app";
+//         opts.bundleId = "co.example.myapp";
 //         @onBuild(bundleMain);
 //     }
 // =====================================================================
@@ -30,22 +30,22 @@
 // not emit it and its `@buildOptions()`
 // compiler-API call is permitted (it would otherwise be rejected as a
 // comptime-only function called at runtime).
-bundleMain :: (opts: @BuildOptions) -> bool {
+bundleMain :: (opts: *@BuildOptions) -> bool {
     // Run the standard build core first (emit the object + link the binary) — an
     // `@onBuild` override REPLACES defaultPipeline, so the bundler owns the whole
     // pipeline: emit + link, then wrap the linked binary into the `.app` / `.apk`.
     if !emitAndLink(opts) { return false; }
 
-    binary := opts.binaryPath();
-    bundle := opts.bundlePath();
-    bid    := opts.bundleId();
+    binary := opts.binaryPath;
+    bundle := opts.bundlePath;
+    bid    := opts.bundleId;
 
     if bundle.len == 0 {
         // No bundle requested — emit+link already done. Build succeeded.
         return true;
     }
     if bid.len == 0 {
-        @printf("error: bundle requires bundleId (set via opts.setBundleId() or --bundle-id)\n");
+        @printf("error: bundle requires bundleId (set opts.bundleId or pass --bundle-id)\n");
         return false;
     }
     if binary.len == 0 {
@@ -60,7 +60,7 @@ bundleMain :: (opts: @BuildOptions) -> bool {
     // Device builds without a real identity will be rejected by the
     // device, so fail fast with a clear hint.
     if opts.isIosDevice() {
-        if opts.codesignIdentity().len == 0 or opts.provisioningProfile().len == 0 {
+        if opts.codesignIdentity.len == 0 or opts.provisioningProfile.len == 0 {
             @printf("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
             return false;
         }
@@ -127,7 +127,7 @@ bundleMain :: (opts: @BuildOptions) -> bool {
 
     // Embed the provisioning profile if supplied. Required for device
     // installs; harmless (and usually omitted) elsewhere.
-    profile := opts.provisioningProfile();
+    profile := opts.provisioningProfile;
     if profile.len > 0 {
         if !embedProvisioningProfile(profile, bundle) {
             return false;
@@ -138,11 +138,11 @@ bundleMain :: (opts: @BuildOptions) -> bool {
     // macOS: `<bundle>/Contents/Resources/<dest>/`. iOS: `<bundle>/<dest>/`.
     // Android (Week 7) will zip them into the APK at the same relative path.
     // Recursive copy shells out to `cp -R` until fs.sx grows `listDir`.
-    assetCount := opts.assetDirCount();
+    assetCount := opts.assetDirs.len;
     j : i64 = 0;
     while j < assetCount {
-        src := opts.assetDirSrcAt(j);
-        dest := opts.assetDirDestAt(j);
+        src := opts.assetDirs.items[j].src;
+        dest := opts.assetDirs.items[j].dest;
         if !copyAssetDir(src, dest, assetRoot) {
             @printf("error: bundle: failed to copy asset dir '");
             @printf("{}", src);
@@ -159,8 +159,8 @@ bundleMain :: (opts: @BuildOptions) -> bool {
     // Only `-F` paths can contain frameworks that belong in the app. SDK
     // system frameworks (UIKit/Foundation/Metal/...) are linked from the OS
     // and must not be copied or warned about as "not embedded".
-    if opts.isIos() and opts.frameworkPathCount() > 0 {
-        fwCount := opts.frameworkCount();
+    if opts.isIos() and opts.targetFrameworkPaths.len > 0 {
+        fwCount := opts.targetFrameworks.len;
         if fwCount > 0 {
             fwDir := concat(bundle, "/Frameworks");
             fwDirZ := strToCstr(fwDir);
@@ -170,7 +170,7 @@ bundleMain :: (opts: @BuildOptions) -> bool {
             }
             i : i64 = 0;
             while i < fwCount {
-                fwName := opts.frameworkAt(i);
+                fwName := opts.targetFrameworks.items[i];
                 // A framework present in a user `-F` path is copied. Names not
                 // found there are SDK system frameworks and need no embedding.
                 embedFramework(opts, fwName, fwDir);
@@ -181,7 +181,7 @@ bundleMain :: (opts: @BuildOptions) -> bool {
 
     // Codesign. Device builds need real identity + extracted
     // entitlements; sim/macOS default to ad-hoc ("-").
-    identity := opts.codesignIdentity();
+    identity := opts.codesignIdentity;
     if identity.len == 0 { identity = "-"; }
     entPath := "";
     if opts.isIosDevice() {
@@ -229,7 +229,7 @@ IOS_MIN_OS : string : "14.0";
 // CADisableMinimumFrameDurationOnPhone lifts the 60 Hz CADisplayLink cap
 // on ProMotion phones; without it the display link ignores any preferred
 // rate above 60.
-buildInfoPlist :: (opts: @BuildOptions, exeName: string, bundleId: string) -> string {
+buildInfoPlist :: (opts: *@BuildOptions, exeName: string, bundleId: string) -> string {
     if opts.isIos() {
         platformKey := if opts.isIosSimulator() then "iPhoneSimulator" else "iPhoneOS";
         return format(@string PLIST
@@ -379,12 +379,12 @@ copyAssetDir :: (src: string, dest: string, bundle: string) -> bool {
 // paths into `<destDir>`. Walks the framework paths in order; first
 // hit wins. Falls back to a `cp -R` subprocess because fs.sx
 // doesn't expose `listDir` / `walk` yet.
-embedFramework :: (opts: @BuildOptions, name: string, destDir: string) -> bool {
+embedFramework :: (opts: *@BuildOptions, name: string, destDir: string) -> bool {
     subdir := concat(name, ".framework");
-    pathCount := opts.frameworkPathCount();
+    pathCount := opts.targetFrameworkPaths.len;
     i : i64 = 0;
     while i < pathCount {
-        base := opts.frameworkPathAt(i);
+        base := opts.targetFrameworkPaths.items[i];
         candidate := concat(base, "/");
         candidate = concat(candidate, subdir);
         candidateZ := strToCstr(candidate);
@@ -634,7 +634,7 @@ codesign :: (bundle: string, identity: string, entPath: string) -> bool {
 //      a dex was produced + zip each registered asset dir.
 //   7. `zipalign -f 4 <unaligned> <aligned>`.
 //   8. Ensure debug keystore (via `keytool`) at $HOME/.android or
-//      `setKeystorePath()` override.
+//      `keystorePath` override.
 //   9. `apksigner sign --ks ... --out <apk> <aligned>`.
 // =====================================================================
 
@@ -657,7 +657,7 @@ absolutify :: (path: string) -> string {
     path
 }
 
-androidBundleMain :: (opts: @BuildOptions, binary: string, apkPath: string, bundleId: string) -> bool {
+androidBundleMain :: (opts: *@BuildOptions, binary: string, apkPath: string, bundleId: string) -> bool {
     // The bundler `cd`s into the stage dir for `zip` steps, so any
     // relative path the caller gave us would resolve against the wrong
     // cwd. Pin everything to absolute paths up front.
@@ -721,7 +721,7 @@ androidBundleMain :: (opts: @BuildOptions, binary: string, apkPath: string, bund
     }
 
     // Manifest: user-supplied or auto-generated.
-    manifest := opts.manifestPath();
+    manifest := opts.manifestPath;
     manifestUsed := "";
     libName := libNameFromSoBasename(soBasename);
     if manifest.len > 0 {
@@ -737,7 +737,7 @@ androidBundleMain :: (opts: @BuildOptions, binary: string, apkPath: string, bund
     }
 
     // Compile each `main = true` decl's Java source.
-    jmCount := opts.jniMainCount();
+    jmCount := opts.jniMainRuntimePaths.len;
     if jmCount > 0 {
         if !compileJniMainSources(opts, stage, androidJar, d8Path) {
             return false;
@@ -782,11 +782,11 @@ androidBundleMain :: (opts: @BuildOptions, binary: string, apkPath: string, bund
     // Asset dirs go in at their `dest` path inside the APK. The Zig
     // path used a hardcoded `assets/` walk; the sx form respects every
     // `addAssetDir(src, dest)` pair the user registered.
-    assetCount := opts.assetDirCount();
+    assetCount := opts.assetDirs.len;
     j : i64 = 0;
     while j < assetCount {
-        src := opts.assetDirSrcAt(j);
-        dest := opts.assetDirDestAt(j);
+        src := opts.assetDirs.items[j].src;
+        dest := opts.assetDirs.items[j].dest;
         if !zipAssetDir(src, dest, unaligned) {
             return false;
         }
@@ -813,7 +813,7 @@ androidBundleMain :: (opts: @BuildOptions, binary: string, apkPath: string, bund
     }
 
     // Debug keystore (auto-generated on first use) + apksigner.
-    keystore := opts.keystorePath();
+    keystore := opts.keystorePath;
     if keystore.len == 0 {
         if home := env("HOME") {
             keystore = pathJoin(home, ".android/debug.keystore");
@@ -949,14 +949,14 @@ libNameFromSoBasename :: (basename: string) -> string {
 // `android:hasCode="true"` so Android loads the bundled classes.dex.
 // Otherwise it falls back to the legacy NativeActivity shape with an
 // `android.app.lib_name` meta-data entry pointing at the .so.
-buildAndroidManifest :: (opts: @BuildOptions, package: string, libName: string) -> string {
+buildAndroidManifest :: (opts: *@BuildOptions, package: string, libName: string) -> string {
     pkgEsc := xml.escape(package);
     libEsc := xml.escape(libName);
-    if opts.jniMainCount() > 0 {
+    if opts.jniMainRuntimePaths.len > 0 {
         // First `main = true` decl drives the Activity. The runtimePath
         // uses `/` separators; Java fully-qualified class names use
         // `.` so we rewrite.
-        runtimePath := opts.jniMainRuntimePathAt(0);
+        runtimePath := opts.jniMainRuntimePaths.items[0];
         cls := slashToDot(runtimePath);
         clsEsc := xml.escape(cls);
         return format(@string MANIFEST
@@ -1046,7 +1046,7 @@ dirPart :: (path: string) -> string {
 // the resulting class files via `d8 --release --lib <android.jar>
 // --output <stage>` so `<stage>/classes.dex` lands where the
 // orchestrator can zip it into the APK.
-compileJniMainSources :: (opts: @BuildOptions, stage: string, androidJar: string, d8Path: string) -> bool {
+compileJniMainSources :: (opts: *@BuildOptions, stage: string, androidJar: string, d8Path: string) -> bool {
     javaRoot := pathJoin(stage, "java");
     classesRoot := pathJoin(stage, "classes");
     if !createDirAll(strToCstr(javaRoot)) {
@@ -1069,11 +1069,11 @@ compileJniMainSources :: (opts: @BuildOptions, stage: string, androidJar: string
     // javac argv + class path to d8 argv.
     javacFiles := "";
     d8Files := "";
-    count := opts.jniMainCount();
+    count := opts.jniMainRuntimePaths.len;
     i : i64 = 0;
     while i < count {
-        runtimePath := opts.jniMainRuntimePathAt(i);
-        javaSource := opts.jniMainJavaSourceAt(i);
+        runtimePath := opts.jniMainRuntimePaths.items[i];
+        javaSource := opts.jniMainJavaSources.items[i];
         pkg := dirPart(runtimePath);
         cls := lastSlashComponent(runtimePath);
 

@@ -25,12 +25,8 @@
 // ACTION — the sx driver calls this; the compiler does not emit on its own.
 @emitObject :: () -> string;
 
-// Build-config metadata the sx driver passes to `link` (the merged CLI + `@run`
-// build config the compiler accumulated for this build).
-@buildOutput     :: () -> string;        // the output binary path
-@buildTarget     :: () -> string;        // the target triple ("" = host)
-@buildFrameworks :: () -> List(string);  // `-framework` names
-@buildFlags      :: () -> List(string);  // extra link flags
+// The merged CLI + `@run` link flags the sx driver passes to `link`.
+@buildFlags :: () -> List(string);
 
 // Link `objects` into `output`, with the given libraries / frameworks / link
 // flags / target triple. The one genuine ACTION primitive — the compiler owns
