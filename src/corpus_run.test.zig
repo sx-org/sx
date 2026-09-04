@@ -1285,8 +1285,6 @@ fn sweepRoot(
 
     // Report strictly in collection order — deterministic regardless of the
     // pool's completion order.
-    // Notes go into the timing report; stderr on a passing test is noise
-    // (see `corpusVerbose`).
     var ran: usize = 0;
     var skipped: usize = 0;
     var updated: usize = 0;

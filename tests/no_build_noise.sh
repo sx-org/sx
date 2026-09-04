@@ -5,8 +5,7 @@
 # test binary that writes to stderr, even when every test passes and the build
 # exits 0. Automated verifiers grep build output for failure words, so an
 # unconditional `std.debug.print` in any `*.test.zig` turns every green build into
-# a false failure. The corpus runner's notes (environment skips, counts) go into
-# `.sx-tmp/corpus-timing-<label>.txt`; test-time prints stay behind an env gate.
+# a false failure. Test-time prints stay behind an env gate.
 
 set -uo pipefail
 
