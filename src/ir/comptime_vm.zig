@@ -3202,6 +3202,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return data +% idx *% @as(u64, @intCast(elem_size));
     }
 
+    /// `List(T)`'s layout: `items: []T` then `cap`.
+    fn isListShape(table: *const types.TypeTable, fields: []const types.TypeInfo.StructInfo.Field) bool {
+        return fields.len == 2 and
+            std.mem.eql(u8, table.getString(fields[0].name), "items") and table.sliceInfoOf(fields[0].ty) != null and
+            std.mem.eql(u8, table.getString(fields[1].name), "cap");
+    }
+
     /// The evaluation's `@BuildOptions` instance: materialized from the build
     /// config's snapshot on first use, one per evaluation.
     pub fn buildOptionsAddr(self: *Vm) Error!Addr {
@@ -3267,6 +3274,13 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
                     for (fields, 0..) |f, i| {
                         try self.writeField(table, addr + fieldOffset(table, ty, @intCast(i)), f.ty, try self.materializeValue(table, f.ty, items[i]));
+                    }
+                    // A List's backing holds exactly its live elements, so its
+                    // `cap` is their count: a spare cap would let the next append
+                    // skip the realloc and write past the backing.
+                    if (isListShape(table, fields)) {
+                        const n = try self.sliceLen(table, fields[0].ty, addr + fieldOffset(table, ty, 0));
+                        try self.writeField(table, addr + fieldOffset(table, ty, 1), fields[1].ty, n);
                     }
                     return addr;
                 }

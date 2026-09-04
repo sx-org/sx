@@ -1755,6 +1755,14 @@ test "comptime_vm bridge: materializeValue → snapshotValue round-trips a snaps
     try std.testing.expectEqualStrings("Resources/art", back.aggregate[3].aggregate[0].aggregate[1].string);
     try std.testing.expectEqual(@as(i64, 7), back.aggregate[4].int);
 
+    // A List's spare cap does not survive the hop: the backing holds the live
+    // elements, so the rematerialized cap is their count.
+    const grown = [_]Value{ .{ .aggregate = &flag_items }, .{ .int = 4 } };
+    const g_addr = try v.materializeValue(table, list_ty, .{ .aggregate = &grown });
+    const g_back = try v.snapshotValue(a, table, g_addr, list_ty);
+    try std.testing.expectEqualStrings("-lm", g_back.aggregate[0].aggregate[0].string);
+    try std.testing.expectEqual(@as(i64, 1), g_back.aggregate[1].int);
+
     // An empty slice and an undef field materialize and read back as empty.
     const empty = [_]Value{ .undef, .{ .aggregate = &.{} }, .undef, .{ .aggregate = &.{} }, .{ .int = 0 } };
     const e_addr = try v.materializeValue(table, state_ty, .{ .aggregate = &empty });
