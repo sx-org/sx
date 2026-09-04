@@ -6066,7 +6066,7 @@ a warnings-only build still exits 0.
 | `--target <target>` | Target triple or shorthand (default: host) |
 | `--cpu <name>` | CPU name (default: generic) |
 | `--opt <level>` | Optimization: `none`/`0`, `less`/`1`, `default`/`2`, `aggressive`/`3` |
-| `-o <path>` | Output path (overrides `setOutputPath`) |
+| `-o <path>` | Output path (overrides `outputPath`) |
 
 ### Target Shorthands
 
