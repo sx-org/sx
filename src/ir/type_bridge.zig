@@ -595,7 +595,7 @@ pub fn memberTags(ed: *const ast.EnumDecl, alloc: std.mem.Allocator) ?[]const i6
         const stated: ?i64 = if (i < ed.variant_values.len) (if (ed.variant_values[i]) |vv| enumVariantConst(vv) else null) else null;
         const tag = stated orelse next;
         vals.append(alloc, tag) catch unreachable;
-        next = if (!ed.is_flags) tag + 1 else if (tag <= 0) 1 else @as(i64, 1) << @intCast(64 - @clz(@as(u64, @bitCast(tag))));
+        next = if (!ed.is_flags) (std.math.add(i64, tag, 1) catch tag) else if (tag <= 0) 1 else @as(i64, 1) << @intCast(64 - @clz(@as(u64, @bitCast(tag))));
     }
     return vals.items;
 }

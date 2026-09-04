@@ -1,0 +1,11 @@
+error: tag 9223372036854775807 already used
+  --> examples/diagnostics/2335-diagnostics-enum-tag-successor-saturates.sx:5:38
+   |
+ 5 | E :: enum { a = 9223372036854775807; b; }
+   |                                      ^
+
+note: by 'a'
+  --> examples/diagnostics/2335-diagnostics-enum-tag-successor-saturates.sx:5:13
+   |
+ 5 | E :: enum { a = 9223372036854775807; b; }
+   |             ^

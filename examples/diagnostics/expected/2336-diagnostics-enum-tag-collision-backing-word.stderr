@@ -1,0 +1,11 @@
+error: tag 0 already used
+  --> examples/diagnostics/2336-diagnostics-enum-tag-collision-backing-word.sx:5:19
+   |
+ 5 | E :: enum u8 { a; b = 256; }
+   |                   ^
+
+note: by 'a'
+  --> examples/diagnostics/2336-diagnostics-enum-tag-collision-backing-word.sx:5:16
+   |
+ 5 | E :: enum u8 { a; b = 256; }
+   |                ^
