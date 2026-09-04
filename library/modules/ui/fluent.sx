@@ -13,6 +13,7 @@ types :: @import "modules/ui/types.sx";
 render :: @import "modules/ui/render.sx";
 font :: @import "modules/ui/font.sx";
 input :: @import "modules/ui/input.sx";
+paragraph :: @import "modules/ui/paragraph.sx";
 view :: @import "modules/ui/fluent/view.sx";
 identity :: @import "modules/ui/fluent/identity.sx";
 state :: @import "modules/ui/fluent/state.sx";
@@ -64,7 +65,10 @@ CompositionEvent :: input.CompositionEvent;
 TextInputSession :: input.TextInputSession;
 LogicalKey :: input.LogicalKey;
 
-measureText :: font.measureText;
+measureText :: paragraph.measureText;
+Paragraph :: paragraph.Paragraph;
+ParagraphCache :: paragraph.ParagraphCache;
+paragraphFor :: paragraph.paragraphFor;
 setGlobalFont :: font.setGlobalFont;
 
 SiteId :: identity.SiteId;

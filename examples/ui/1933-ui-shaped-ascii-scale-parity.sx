@@ -13,7 +13,7 @@
 // and a host without a display/GPU reports a clean skip.
 @import "modules/std.sx";
 @import "modules/ui/types.sx";
-@import "modules/ui/font.sx";
+@import "modules/ui/paragraph.sx";
 @import "modules/ui/surface.sx";
 @import "modules/ui/surface_select.sx";
 

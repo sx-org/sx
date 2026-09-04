@@ -1,9 +1,9 @@
 // The fluent library's frame loop.
 //
 // A `UiRoot` owns everything that outlives a build — the identity tally, the
-// state store, both routers, the input queue and the committed snapshot. A
-// `FrameLoop` owns the builder closure it was handed, so its `deinit` frees
-// that closure's captured environment.
+// state store, both routers, the input queue, the paragraph cache and the
+// committed snapshot. A `FrameLoop` owns the builder closure it was handed, so
+// its `deinit` frees that closure's captured environment.
 //
 // Every carrier takes its allocator where it is made and frees through that
 // one, so a teardown lands where the allocation did whatever the ambient
@@ -27,6 +27,7 @@
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
 @import "modules/ui/input.sx";
+@import "modules/ui/paragraph.sx";
 @import "modules/ui/fluent/view.sx";
 @import "modules/ui/fluent/identity.sx";
 @import "modules/ui/fluent/state.sx";
@@ -47,6 +48,7 @@ UiRoot :: struct {
     focus: FocusRouter = .{};
     queue: InputQueue;
     snapshot: CommittedUiSnapshot;
+    paragraphs: ParagraphCache;
     arenas: [2]Arena;
     parity: i64 = 0;
 
@@ -61,6 +63,7 @@ UiRoot :: struct {
             taps = Router.init(gpa),
             queue = InputQueue.init(gpa),
             snapshot = CommittedUiSnapshot.init(gpa),
+            paragraphs = ParagraphCache.init(gpa),
             arenas = .[Arena.init(gpa, FRAME_ARENA_BYTES), Arena.init(gpa, FRAME_ARENA_BYTES)],
         }
     }
@@ -94,6 +97,7 @@ UiRoot :: struct {
         self.store.teardown();
         self.identity.deinit();
         self.snapshot.deinit();
+        self.paragraphs.deinit();
         self.arenas[0].deinit();
         self.arenas[1].deinit()
     }
@@ -124,8 +128,10 @@ FrameLoop :: struct {
         // before this one committed over it.
         r.parity = 1 - r.parity;
         r.arenas[r.parity].reset();
+        r.paragraphs.beginFrame();
         push .{
             allocator = r.arenas[r.parity],
+            paragraphs = *r.paragraphs,
             fluentUi = *r.identity,
             fluentState = *r.store,
             fluentInput = *r.taps,

@@ -189,19 +189,12 @@ GlyphCache :: struct {
     shapeFont: *void;
     unitsPerEm: u16;
     fontDataSize: i32;
-    shapedBuf: List(ShapedGlyph);
-
-    // Shape cache: the bytes and size shapedBuf holds the shape of. A text
-    // buffer keeps one address as its contents change, so the identity of a
-    // shaped run is its bytes.
-    lastShapeText: List(u8);
-    lastShapeSizeQ: u16;
     // Scratch for the kbts path: codepoint index → byte offset.
     cpStarts: List(i64);
 
     // Allocator that owns every dynamically-grown buffer on this cache —
-    // entries list, hash table, shapedBuf, lastShapeText. Captured at init
-    // time so growth never accidentally lands in a transient per-frame arena.
+    // entries list, hash table, cpStarts. Captured at init time so growth
+    // never accidentally lands in a transient per-frame arena.
     parentAllocator: Allocator;
 
     // GPU protocol backend. When set, atlas creation + dirty uploads route
@@ -240,7 +233,7 @@ GlyphCache :: struct {
         linegapI : i32 = 0;
         stbtt_GetFontVMetrics(self.fontInfo, *ascentI, *descentI, *linegapI);
 
-        // Store unscaled metrics — we'll scale per fontSize in measureText
+        // Unscaled metrics; getAscent / getLineHeight scale them per fontSize.
         self.ascent = ascentI;
         self.descent = descentI;
         self.lineGap = linegapI;
@@ -582,35 +575,6 @@ GlyphCache :: struct {
         (self.ascent - self.descent + self.lineGap) * s
     }
 
-    // Shape text into positioned glyphs.
-    // Uses ASCII fast-path (stbtt byte-by-byte) for pure ASCII,
-    // full kb_text_shape pipeline for Unicode/complex scripts.
-    // Results stored in self.shapedBuf (reused across calls).
-    shapeText :: (self: *GlyphCache, text: string, fontSize: f32) {
-        sizeQ := quantizeSize(fontSize);
-        if sizeQ == self.lastShapeSizeQ and self.shapedTextIs(text) { return; }
-
-        self.shapedBuf.len = 0;
-        self.shapeInto(text, fontSize, *self.shapedBuf, self.parentAllocator);
-
-        self.lastShapeText.ensureCapacity(text.len, self.parentAllocator);
-        self.lastShapeText.len = text.len;
-        if text.len > 0 {
-            c.memcpy(self.lastShapeText.items.ptr, text.ptr, text.len);
-        }
-        self.lastShapeSizeQ = sizeQ;
-    }
-
-    shapedTextIs :: (self: *GlyphCache, text: string) -> bool {
-        if text.len != self.lastShapeText.len { return false; }
-        i : i64 = 0;
-        while i < text.len {
-            if text[i] != self.lastShapeText.items[i] { return false; }
-            i += 1;
-        }
-        true
-    }
-
     // Appends the shaped glyphs of `text` to `into`: the ASCII fast path
     // (stbtt byte by byte) for pure ASCII, the kb_text_shape pipeline otherwise.
     shapeInto :: (self: *GlyphCache, text: string, fontSize: f32, into: *List(ShapedGlyph), alloc: Allocator) {
@@ -685,18 +649,5 @@ GlyphCache :: struct {
                 total += adv;
             }
         }
-    }
-
-    // Measure text at a logical font size using text shaping.
-    // Rasterizes at physical resolution (fontSize * dpiScale), returns logical dimensions.
-    measureText :: (self: *GlyphCache, text: string, fontSize: f32) -> Size {
-        self.shapeText(text, fontSize);
-        width : f32 = 0.0;
-        i : i64 = 0;
-        while i < self.shapedBuf.len {
-            width += self.shapedBuf.items[i].advance;
-            i += 1;
-        }
-        Size{ width = width, height = self.getLineHeight(fontSize) }
     }
 }

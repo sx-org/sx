@@ -14,6 +14,7 @@
 @import "modules/ui/types.sx";
 @import "modules/ui/glyph_cache.sx";
 @import "modules/ui/font.sx";
+@import "modules/std/hash.sx";
 
 // One glyph placed in paragraph space: `y` is its baseline.
 PositionedGlyph :: struct {
@@ -36,6 +37,7 @@ ParaLine :: struct {
 }
 
 Paragraph :: struct {
+    text: string = "";
     glyphs: List(PositionedGlyph) = .{};
     lines: List(ParaLine) = .{};
     size: Size = .{ width = 0.0, height = 0.0 };
@@ -86,7 +88,7 @@ Paragraph :: struct {
 
 layoutParagraph :: (text: string, fontSize: f32, maxWidth: ?f32, alloc: Allocator = context.allocator) -> Paragraph {
     metrics := lineMetrics(fontSize);
-    para := Paragraph{ lineHeight = metrics.height };
+    para := Paragraph{ text = text, lineHeight = metrics.height };
     shaped := List(ShapedGlyph){};
     segStart : i64 = 0;
     while true {
@@ -180,4 +182,136 @@ private breakSegment :: (para: *Paragraph, shaped: []ShapedGlyph, seg: string, s
         lineStart = end;
         top += para.lineHeight;
     }
+}
+
+// The size a run takes on one line.
+measureText :: (text: string, fontSize: f32) -> Size {
+    paragraphFor(text, fontSize, null).size
+}
+
+PARAGRAPH_CACHE_BYTES :: 4 * 1024 * 1024;
+
+// An unbounded layout is keyed at an infinite width.
+ParaKey :: struct {
+    hash: u64;
+    sizeQ: u16;
+    width: f32;
+}
+
+ParaEntry :: struct {
+    key: ParaKey;
+    text: string;
+    para: Paragraph;
+    bytes: i64;
+    frame: i64;
+    touched: i64;
+}
+
+// Laid-out paragraphs by (text bytes, quantized size, width). Entries are
+// least-recently-touched evicted past `byteCap`, except those touched in the
+// current frame: a paragraph handed out this frame stays valid until the
+// next `beginFrame`.
+ParagraphCache :: struct {
+    gpa: Allocator;
+    byteCap: i64 = PARAGRAPH_CACHE_BYTES;
+    bytes: i64 = 0;
+    frame: i64 = 0;
+    tick: i64 = 0;
+    hits: i64 = 0;
+    misses: i64 = 0;
+    index: HashMap(ParaKey, *ParaEntry) = .{};
+    entries: List(*ParaEntry) = .{};
+
+    init :: (gpa: Allocator, byteCap: i64 = PARAGRAPH_CACHE_BYTES) -> ParagraphCache {
+        ParagraphCache{ gpa = gpa, byteCap = byteCap }
+    }
+
+    beginFrame :: (self: *ParagraphCache) {
+        self.frame += 1;
+    }
+
+    get :: (self: *ParagraphCache, text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
+        key := ParaKey{ hash = fnv1a(text), sizeQ = quantizeSize(fontSize), width = maxWidth ?? f32.inf };
+        self.tick += 1;
+        if e := self.index.get(key) {
+            if sameBytes(e.text, text) {
+                self.hits += 1;
+                e.frame = self.frame;
+                e.touched = self.tick;
+                return *e.para;
+            }
+            self.drop(e);
+        }
+        self.misses += 1;
+        e := self.gpa.create(ParaEntry);
+        e.key = key;
+        e.text = text.clone(self.gpa);
+        e.para = layoutParagraph(e.text, fontSize, maxWidth, self.gpa);
+        e.bytes = text.len + e.para.glyphs.len * @sizeOf(PositionedGlyph) + e.para.lines.len * @sizeOf(ParaLine);
+        e.frame = self.frame;
+        e.touched = self.tick;
+        self.entries.append(e, self.gpa);
+        self.index.put(key, e, self.gpa);
+        self.bytes += e.bytes;
+        self.evict();
+        *e.para
+    }
+
+    // Drops least-recently-touched entries of earlier frames until the cap
+    // holds or none is left to drop.
+    evict :: (self: *ParagraphCache) {
+        while self.bytes > self.byteCap {
+            victim : ?*ParaEntry = null;
+            for e in self.entries {
+                if e.frame == self.frame { continue; }
+                if v := victim { if e.touched >= v.touched { continue; } }
+                victim = e;
+            }
+            if v := victim { self.drop(v); } else { return; }
+        }
+    }
+
+    drop :: (self: *ParagraphCache, e: *ParaEntry) {
+        i : i64 = 0;
+        while self.entries.items[i] != e { i += 1; }
+        self.entries.swapRemove(i);
+        self.index.remove(e.key, self.gpa);
+        self.bytes -= e.bytes;
+        self.release(e);
+    }
+
+    release :: (self: *ParagraphCache, e: *ParaEntry) {
+        e.para.deinit(self.gpa);
+        e.text.free(self.gpa);
+        self.gpa.destroy(e);
+    }
+
+    deinit :: (self: *ParagraphCache) {
+        for e in self.entries { self.release(e); }
+        self.entries.deinit(self.gpa);
+        self.index.deinit(self.gpa);
+    }
+}
+
+private sameBytes :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i : i64 = 0;
+    while i < a.len {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+// The cache a frame lays its text out through; with none, a layout lives on
+// the ambient allocator.
+@context.extend paragraphs: ?*ParagraphCache = null;
+
+paragraphFor :: (text: string, fontSize: f32, maxWidth: ?f32) -> *Paragraph {
+    if cache := context.paragraphs {
+        return cache.get(text, fontSize, maxWidth);
+    }
+    p := context.allocator.create(Paragraph);
+    p.* = layoutParagraph(text, fontSize, maxWidth, context.allocator);
+    p
 }
