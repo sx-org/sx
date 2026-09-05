@@ -507,6 +507,10 @@ pub const ProtocolResolver = struct {
         if (self.l.registered_protocol_decls.contains(pd)) return;
         self.l.registered_protocol_decls.put(pd, {}) catch @panic("out of memory");
 
+        // An interface call dispatches erased, through a table that carries no
+        // declaration to fill a default from.
+        if (pd.kind == .erased) refuseParamDefaults(self.l, pd.methods, "an interface");
+
         // Soft-convention warning: a type-arg and a method (the
         // "runtime accessor" namespace — protocols have no fields) sharing a
         // name is allowed, but `..pack.<name>` then resolves by *position*
@@ -928,6 +932,7 @@ pub const ProtocolResolver = struct {
         for (ib.methods) |method_node| {
             if (method_node.data == .fn_decl) {
                 const method_fd = &method_node.data.fn_decl;
+                self.inheritParamDefaults(proto.decl, method_fd);
                 const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ ib.target_type, method_fd.name }) catch continue;
                 // Compatibility map: keep a coherent first AST/first FuncId
                 // winner. Exact protocol dispatch uses the identity map below.
@@ -964,7 +969,7 @@ pub const ProtocolResolver = struct {
                     // synthetic `self: *Target` in that foreign domain.
                     const default_source: ?[]const u8 = if (method.default_body.?.source_file) |src| src else pd.source_file;
                     if (concrete_ty) |cty| {
-                        self.l.protocol_impl_receiver_types.put(synth_fd, self.l.module.types.ptrTo(cty)) catch @panic("out of memory");
+                        self.l.protocol_impl_receiver_types.put(synth_fd, if (method.receiver_is_pointer) self.l.module.types.ptrTo(cty) else cty) catch @panic("out of memory");
                     }
                     const saved_source = self.l.current_source_file;
                     if (default_source) |src| self.l.setCurrentSourceFile(src);
@@ -1483,30 +1488,52 @@ fn carrierMatches(
     }
 
     /// Synthesize a fn_decl from a protocol default method for a concrete type.
+    /// A parameter default lives on the declaration alone: an impl method
+    /// takes the declaration's defaults for the parameters it names, and one
+    /// that writes its own is refused.
+    fn inheritParamDefaults(self: ProtocolResolver, pd: *const ast.ProtocolDecl, method_fd: *const ast.FnDecl) void {
+        for (pd.methods) |m| {
+            if (!std.mem.eql(u8, m.name, method_fd.name)) continue;
+            if (m.param_defaults.len == 0) return;
+            const params: []ast.Param = @constCast(method_fd.params);
+            for (params, 0..) |*p, i| {
+                if (i == 0) continue;
+                if (p.default_expr != null) {
+                    if (self.l.diagnostics) |d| d.addFmt(.err, p.name_span, "a parameter default belongs to the declaration of '{s}', not to an impl", .{m.name});
+                    continue;
+                }
+                if (i - 1 < m.param_defaults.len) p.default_expr = m.param_defaults[i - 1];
+            }
+            return;
+        }
+    }
+
+    /// The default body's declaration for one conformer: the receiver in the
+    /// form the declaration wrote it, every `Self` in the signature spelled as
+    /// the conformer, and the declaration's parameter defaults.
     fn synthesizeDefaultMethod(self: ProtocolResolver, method: ast.ProtocolMethodDecl, target_type: []const u8) *const ast.FnDecl {
-        // Build parameter list: self: *TargetType, then the protocol method params
         var params_list = std.ArrayList(ast.Param).empty;
         defer params_list.deinit(self.l.alloc);
 
-        // Add self parameter: self: *TargetType
-        const self_type_node = self.l.alloc.create(ast.Node) catch unreachable;
         const pointee_node = self.l.alloc.create(ast.Node) catch unreachable;
         pointee_node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = target_type } } };
-        self_type_node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .pointer_type_expr = .{
-            .pointee_type = pointee_node,
-        } } };
+        const self_type_node = if (method.receiver_is_pointer) blk: {
+            const ptr = self.l.alloc.create(ast.Node) catch unreachable;
+            ptr.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .pointer_type_expr = .{ .pointee_type = pointee_node } } };
+            break :blk ptr;
+        } else pointee_node;
         params_list.append(self.l.alloc, .{
             .name = "self",
             .name_span = .{ .start = 0, .end = 0 },
             .type_expr = self_type_node,
         }) catch unreachable;
 
-        // Add remaining params from the protocol method
-        for (method.params, method.param_names) |pty, pname| {
+        for (method.params, method.param_names, 0..) |pty, pname, i| {
             params_list.append(self.l.alloc, .{
                 .name = pname,
                 .name_span = .{ .start = 0, .end = 0 },
-                .type_expr = pty,
+                .type_expr = substSelf(self.l.alloc, pty, target_type),
+                .default_expr = if (i < method.param_defaults.len) method.param_defaults[i] else null,
             }) catch unreachable;
         }
 
@@ -1515,8 +1542,55 @@ fn carrierMatches(
             .name = method.name,
             .params = self.l.alloc.dupe(ast.Param, params_list.items) catch unreachable,
             .body = method.default_body.?,
-            .return_type = method.return_type,
+            .return_type = if (method.return_type) |rt| substSelf(self.l.alloc, rt, target_type) else null,
         };
         return fd;
     }
 };
+
+/// `node` with every `Self` in it spelled as `target`: a copy where anything
+/// changes, the node itself where nothing does.
+fn substSelf(alloc: std.mem.Allocator, node: *const ast.Node, target: []const u8) *ast.Node {
+    const mutable: *ast.Node = @constCast(node);
+    if (!program_index_mod.typeNodeContainsSelf(node)) return mutable;
+    const out = alloc.create(ast.Node) catch unreachable;
+    out.* = node.*;
+    switch (node.data) {
+        .type_expr => |te| if (std.mem.eql(u8, te.name, "Self")) {
+            out.data = .{ .type_expr = .{ .name = target } };
+        },
+        .identifier => out.data = .{ .type_expr = .{ .name = target } },
+        .pointer_type_expr => |pt| out.data = .{ .pointer_type_expr = .{ .pointee_type = substSelf(alloc, pt.pointee_type, target) } },
+        .many_pointer_type_expr => |mp| out.data = .{ .many_pointer_type_expr = .{ .element_type = substSelf(alloc, mp.element_type, target) } },
+        .optional_type_expr => |ot| out.data = .{ .optional_type_expr = .{ .inner_type = substSelf(alloc, ot.inner_type, target) } },
+        .slice_type_expr => |st| {
+            var d = st;
+            d.element_type = substSelf(alloc, st.element_type, target);
+            out.data = .{ .slice_type_expr = d };
+        },
+        .array_type_expr => |at| {
+            var d = at;
+            d.element_type = substSelf(alloc, at.element_type, target);
+            out.data = .{ .array_type_expr = d };
+        },
+        .parameterized_type_expr => |pt| {
+            var d = pt;
+            const args = alloc.alloc(*ast.Node, pt.args.len) catch unreachable;
+            for (pt.args, 0..) |a, i| args[i] = substSelf(alloc, a, target);
+            d.args = args;
+            out.data = .{ .parameterized_type_expr = d };
+        },
+        else => {},
+    }
+    return out;
+}
+
+/// Refuses every parameter default in `methods`, naming what they belong to.
+pub fn refuseParamDefaults(l: *Lowering, methods: []const ast.ProtocolMethodDecl, what: []const u8) void {
+    for (methods) |m| {
+        for (m.param_defaults, 0..) |dflt, i| {
+            const node = dflt orelse continue;
+            if (l.diagnostics) |d| d.addFmt(.err, node.span, "{s} method takes no parameter default — its calls dispatch without the declaration; '{s}' declares one on '{s}'", .{ what, m.name, m.param_names[i] });
+        }
+    }
+}

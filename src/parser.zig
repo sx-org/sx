@@ -1792,6 +1792,7 @@ pub const Parser = struct {
             var param_names = std.ArrayList([]const u8).empty;
             var param_name_spans = std.ArrayList(ast.Span).empty;
             var param_name_is_raw = std.ArrayList(bool).empty;
+            var param_defaults = std.ArrayList(?*Node).empty;
 
             while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
@@ -1808,8 +1809,18 @@ pub const Parser = struct {
                 self.advance();
                 try self.expect(.colon);
                 const ptype = try self.parseTypeExpr();
+                // A default, as a function parameter takes one.
+                var pdefault: ?*Node = null;
+                if (self.tokens.tag(self.tok) == .equal) {
+                    self.advance();
+                    const saved_in_default = self.in_param_default;
+                    self.in_param_default = true;
+                    defer self.in_param_default = saved_in_default;
+                    pdefault = try self.parseBinary(Prec.none, .bit_or);
+                }
                 try param_names.append(self.allocator, pname);
                 try param_types.append(self.allocator, ptype);
+                try param_defaults.append(self.allocator, pdefault);
             }
             try self.expect(.r_paren);
 
@@ -1859,6 +1870,7 @@ pub const Parser = struct {
             const all_param_names = try param_names.toOwnedSlice(self.allocator);
             const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
             const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
+            const all_param_defaults = try param_defaults.toOwnedSlice(self.allocator);
 
             try methods.append(self.allocator, .{
                 .name = method_name,
@@ -1866,6 +1878,7 @@ pub const Parser = struct {
                 .param_names = all_param_names[1..],
                 .param_name_spans = all_param_name_spans[1..],
                 .param_name_is_raw = all_param_name_is_raw[1..],
+                .param_defaults = all_param_defaults[1..],
                 .receiver_is_pointer = receiver_is_pointer,
                 .return_type = return_type,
                 .default_body = default_body,

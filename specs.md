@@ -959,9 +959,18 @@ parameters keep their declared concrete types; only the receiver erases.
 it (or override it by providing their own). Default bodies are compiled
 **per conformer**, against the concrete `Self`, so a call
 `self.method(…)` inside a default body resolves statically against the
-conformer. Dynamic dispatch happens at the outer call site only — the
-vtable slot for a defaulted method points at that conformer's compiled
-instance.
+conformer, and a by-value receiver or return spelled `Self` is the
+conformer's value (`padded :: (self: Self, p: f32) -> Self { b := self; …; b }`).
+Dynamic dispatch happens at the outer call site only — the vtable slot
+for a defaulted method points at that conformer's compiled instance.
+
+**Parameter defaults.** A constraint method's parameter may carry a
+default (`rounded :: (self: Self, r: f32 = 4.0) -> Self`), written on the
+declaration alone: a call that omits the argument fills it from there,
+whether the conformer answers with the default body or with its own
+method, and an impl method that writes a default is refused. An interface
+or open-set method takes none — its calls dispatch without the
+declaration.
 
 **Parameters.** The head may declare type and value parameters, exactly
 as generic structs do (`constraint(T: Type) …`, `interface(N: u32) …`).

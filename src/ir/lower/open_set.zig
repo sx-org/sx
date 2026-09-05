@@ -42,6 +42,7 @@
 //! tag space and writes its `tag → member Type` table.
 
 const std = @import("std");
+const protocols = @import("../protocols.zig");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
@@ -123,6 +124,7 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
         .layout = backingType(self, 0, effectiveAlign(self, options.alignment)),
     } }, self.shadowNominalId(name_id));
     table.type_decl_tids.put(@ptrCast(decl), ty) catch {};
+    protocols.refuseParamDefaults(self, decl.methods, "an open set's");
     self.open_sets.put(decl, .{
         .decl = decl,
         .ty = ty,
