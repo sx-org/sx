@@ -23,21 +23,6 @@ ui :: @import "modules/ui/types.sx";
 
 BACKDROP :: ui.Color{ r = 20, g = 20, b = 20, a = 255 };
 
-// True when some pixel of the rows [y0, y1) carries ink: a channel well above
-// the backdrop.
-inked :: (px: string, w: i64, y0: i64, y1: i64) -> bool {
-    y := y0;
-    while y < y1 {
-        x := 0;
-        while x < w {
-            if px[(y * w + x) * 4].(i64) > 128 { return true; }
-            x += 1;
-        }
-        y += 1;
-    }
-    false
-}
-
 main :: () {
     surface := openPixelSurface(200, 120);
     if surface == null {
@@ -75,7 +60,7 @@ main :: () {
     ok := true;
     // Ink lands below the first line: the second line was drawn.
     line := lineMetrics(16.0).height.(i64);
-    if !inked(pixels, w, 10 + line, 10 + line * 2) {
+    if !inkedRows(pixels, w, 10 + line, 10 + line * 2) {
         print("pixel FAIL: no ink on the second line\n");
         ok = false;
     }
