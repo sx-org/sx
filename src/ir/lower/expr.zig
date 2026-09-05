@@ -44,6 +44,93 @@ pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field
     return true;
 }
 
+const InferredLiteral = struct { ty: TypeId, refs: []const Ref };
+
+/// The instance a bare generic literal names, inferred from its fields, with
+/// the initializers lowered once on the way: each written field lowers against
+/// its declared type where that type names no parameter, and against nothing
+/// where it does — a lambda then IS its env struct, and that is the type its
+/// parameter binds. A parameter no written field carries, two fields that
+/// disagree on one, or a value parameter refuse at the literal.
+fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate, span: ast.Span) InferredLiteral {
+    const failed = InferredLiteral{ .ty = .unresolved, .refs = &.{} };
+    var tb = std.StringHashMap(TypeId).init(self.alloc);
+    var refs = std.ArrayList(Ref).empty;
+    // Which parameter bound from which field, for the conflict diagnostic.
+    var bound_by = std.StringHashMap([]const u8).init(self.alloc);
+    defer bound_by.deinit();
+    var ok = true;
+
+    // A value parameter sits in a dimension or a default, where no field's
+    // type can bind it; nothing lowers against a template it cannot fit.
+    for (tmpl.type_params) |tp| {
+        if (!tp.is_type_param) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "'{s}' takes the value parameter '${s}', which no field can infer — write the type arguments", .{ tmpl.name, tp.name });
+            return failed;
+        }
+    }
+
+    for (sl.field_inits, 0..) |fi, i| {
+        const idx: ?usize = if (fi.name) |n| blk: {
+            for (tmpl.field_names, 0..) |fname, k| if (std.mem.eql(u8, fname, n)) break :blk k;
+            break :blk null;
+        } else if (i < tmpl.field_names.len) i else null;
+        var target: ?TypeId = null;
+        var type_node: ?*const Node = null;
+        if (idx) |k| {
+            const node = tmpl.field_type_nodes[k];
+            type_node = node;
+            var generic = false;
+            for (tmpl.type_params) |tp| {
+                if (self.matchTypeParam(node, tp.name)) generic = true;
+            }
+            if (!generic) {
+                const saved_src = self.current_source_file;
+                defer self.setCurrentSourceFile(saved_src);
+                if (tmpl.source_file) |sf| self.setCurrentSourceFile(sf);
+                target = self.resolveTypeWithBindings(node);
+            }
+        }
+        const saved_tt = self.target_type;
+        self.target_type = target;
+        const val = self.lowerExpr(fi.value);
+        self.target_type = saved_tt;
+        refs.append(self.alloc, val) catch unreachable;
+
+        const node = type_node orelse continue;
+        const arg_ty = self.valueTypeOfRef(val, self.builder.getRefType(val));
+        for (tmpl.type_params) |tp| {
+            if (!tp.is_type_param or !self.matchTypeParam(node, tp.name)) continue;
+            const ety = self.extractTypeParam(node, arg_ty, tp.name) orelse continue;
+            if (tb.get(tp.name)) |prev| {
+                if (prev != ety) {
+                    if (self.diagnostics) |d| d.addFmt(.err, span, "'{s}' binds '${s}' to '{s}', but '{s}' bound it to '{s}'", .{
+                        tmpl.field_names[idx.?], tp.name, self.formatTypeName(ety), bound_by.get(tp.name) orelse "an earlier field", self.formatTypeName(prev),
+                    });
+                    ok = false;
+                }
+            } else {
+                tb.put(tp.name, ety) catch {};
+                bound_by.put(tp.name, tmpl.field_names[idx.?]) catch {};
+            }
+        }
+    }
+
+    for (tmpl.type_params) |tp| {
+        if (tb.get(tp.name) == null) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "'{s}' leaves '${s}' unbound: no written field carries it — write it, or write the type arguments", .{ tmpl.name, tp.name });
+            ok = false;
+        }
+    }
+    if (!ok) return failed;
+
+    const mangled = self.mangledInstanceName(tmpl, &tb);
+    const cvb = std.StringHashMap(i64).init(self.alloc);
+    const pb = std.StringHashMap([]const TypeId).init(self.alloc);
+    const ty = self.instantiateGenericStructBound(tmpl, tb, cvb, pb, mangled, span);
+    return .{ .ty = ty, .refs = refs.items };
+}
+
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
     // `.{ }` is a struct literal. It is not a handle and not `?I` absence.
     if (sl.type_expr == null and sl.field_inits.len == 0) {
@@ -189,7 +276,28 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
-    const ty: TypeId = if (sl.struct_name) |name|
+    // A bare generic head (`Pair{ a = 1, b = "x" }`) infers its type arguments
+    // from the written fields; the initializers it lowered are reused below.
+    var prelowered: ?[]const Ref = null;
+    var inferred_ty: TypeId = .unresolved;
+    if (sl.struct_name) |name| {
+        if (sl.type_expr == null) {
+            switch (self.selectGenericStructHead(name, null, false, span)) {
+                .template => |tmpl| {
+                    const inferred = inferGenericLiteral(self, sl, &tmpl, span);
+                    if (inferred.ty == .unresolved) return self.builder.constUndef(.unresolved);
+                    inferred_ty = inferred.ty;
+                    prelowered = inferred.refs;
+                },
+                .poisoned => return self.builder.constUndef(.unresolved),
+                .not_generic => {},
+            }
+        }
+    }
+
+    const ty: TypeId = if (inferred_ty != .unresolved)
+        inferred_ty
+    else if (sl.struct_name) |name|
         // Source-aware: a bare struct-literal type name resolves to the
         // querying source's OWN same-name author, not the global `findByName`
         // first-match — so `Box{...}` in module B builds B's `Box`, never a
@@ -385,8 +493,9 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Look up field defaults from AST
-    const struct_name_for_defaults = if (sl.struct_name) |n| n else if (!ty.isBuiltin()) blk: {
+    // Look up field defaults from AST. An inferred instance is keyed by its
+    // own mangled name, like any generic instance.
+    const struct_name_for_defaults = if (sl.struct_name != null and inferred_ty == .unresolved) sl.struct_name else if (!ty.isBuiltin()) blk: {
         const ti = self.module.types.get(ty);
         break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else @as(?[]const u8, null);
     } else @as(?[]const u8, null);
@@ -457,7 +566,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // First, lower all field values in source order (to preserve evaluation order)
         var lowered = std.ArrayList(struct { val: Ref, index: ?u32, node: *const Node }).empty;
         defer lowered.deinit(self.alloc);
-        for (sl.field_inits) |fi| {
+        for (sl.field_inits, 0..) |fi, k| {
             const saved_tt = self.target_type;
             var index: ?u32 = null;
             // Set target_type to the field's declared type so array literals
@@ -477,7 +586,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
             }
-            const val = self.lowerExpr(fi.value);
+            const val = if (prelowered) |pl| pl[k] else self.lowerExpr(fi.value);
             self.target_type = saved_tt;
             lowered.append(self.alloc, .{
                 .val = val,
@@ -583,7 +692,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else
             fatPointerSlotType(self, ty, fi.name, i) orelse .unresolved;
         if (elem_target != .unresolved) self.target_type = elem_target;
-        var val = self.lowerExpr(fi.value);
+        var val = if (prelowered) |pl| pl[i] else self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         // Coerce field value to match the destination field/element type.
         // Coerce from the value's ACTUAL lowered type (`getRefType`) rather

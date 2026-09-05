@@ -1,0 +1,40 @@
+// A generic struct literal written without type arguments takes them from its
+// fields: each parameter binds to what the field naming it was given. A
+// capturing lambda binds its own env type, so the literal holds it inline and
+// calls it; a default on a field that names no parameter fills as declared;
+// a positional literal binds by position.
+@import "modules/std.sx";
+
+Pair :: struct ($A: Type, $B: Type) {
+    a: A;
+    b: B;
+    tag: string = "pair";
+}
+
+Holder :: struct ($F: Type) {
+    on: F;
+    run :: (self: *Holder(F)) { self.on() }
+}
+
+Shape :: @OpenSet(.{ max = 64, align = 8 }) {
+    fire :: (self: *Self);
+}
+Tap :: @OpenVariant(Shape) ($F: Type) {
+    on: F;
+    fire :: (self: *Tap(F)) { self.on() }
+}
+
+main :: () -> i32 {
+    p := Pair{ a = 1, b = "x" };
+    print("{} {} {}\n", p.a, p.b, p.tag);
+    q := Pair{ 2.5, true };
+    print("{} {}\n", q.a, q.b);
+
+    n := 41;
+    h := Holder{ on = ||_{ n } print("held {}\n", n + 1) };
+    h.run();
+
+    v : Shape = Tap{ on = ||_{ n } print("member {}\n", n + 2) };
+    v.fire();
+    0
+}
