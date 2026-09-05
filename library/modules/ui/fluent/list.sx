@@ -17,16 +17,29 @@
 // A row in the window is measured every frame, so its cached height is
 // current; a row outside it is estimated from the cache, else from
 // `estimatedRowHeight`.
+//
+// A drag leaves a velocity behind it, and each layout carries the offset on
+// by it, decaying it millisecond by millisecond on the frame clock until it
+// falls under the floor or the content meets an end.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";
 @import "modules/ui/fluent/view.sx";
 @import "modules/ui/fluent/identity.sx";
+@import "modules/ui/fluent/loop.sx";
 
 ESTIMATED_ROW_HEIGHT :: 44.0;
 // Points per wheel unit.
 WHEEL_STEP :: 40.0;
+// What a fling keeps of its velocity per millisecond.
+FLING_DECAY :: 0.998;
+// Points per second under which a fling has come to rest.
+FLING_FLOOR :: 20.0;
+// A release this long after the last move flings nothing.
+FLING_HOLD_NS :: 100_000_000;
+// A frame this late advances a fling as if it were this late.
+FLING_STEP_CAP_NS :: 250_000_000;
 
 ListState :: struct {
     gpa: Allocator;
@@ -43,6 +56,11 @@ ListState :: struct {
     first: i64 = 0;
     last: i64 = -1;
     built: i64 = 0;
+    // Points per second along the axis, and the clock readings the velocity
+    // and the fling were last advanced at.
+    velocity: f32 = 0.0;
+    lastMoveNs: u64 = 0;
+    lastFrameNs: ?i64 = null;
 
     init :: (gpa: Allocator, reversed: bool = false) -> ListState => .{ gpa = gpa, reversed = reversed };
 
@@ -58,14 +76,53 @@ ListState :: struct {
 
     // A pointer's movement on screen: the content follows a drag, and a
     // wheel unit is `wheelStep`. Down the screen is toward earlier rows,
-    // which a reversed list puts above.
+    // which a reversed list puts above. A drag's moves set the velocity its
+    // release keeps, unless the finger rested first; a wheel or a cancel
+    // stops any fling.
     gesture :: (self: *ListState, g: *ScrollGesture) {
         dir : f32 = if self.reversed then 1.0 else -1.0;
         match g.phase {
-            case .wheel: { self.offset += dir * g.delta.y * self.wheelStep; }
-            case .cancel: {}
-            else: { self.offset += dir * g.delta.y; }
+            case .wheel: {
+                self.offset += dir * g.delta.y * self.wheelStep;
+                self.velocity = 0.0;
+            }
+            case .dragStart: {
+                self.offset += dir * g.delta.y;
+                self.velocity = 0.0;
+                self.lastMoveNs = g.timeNs;
+            }
+            case .dragMove: {
+                dy := dir * g.delta.y;
+                self.offset += dy;
+                if g.timeNs > self.lastMoveNs {
+                    self.velocity = dy / ((g.timeNs - self.lastMoveNs).(f32) / 1_000_000_000.0);
+                }
+                self.lastMoveNs = g.timeNs;
+            }
+            case .dragEnd: {
+                self.offset += dir * g.delta.y;
+                if g.timeNs > self.lastMoveNs + FLING_HOLD_NS { self.velocity = 0.0; }
+            }
+            case .cancel: { self.velocity = 0.0; }
         }
+    }
+
+    // Carries a fling on to the frame clock's reading.
+    advance :: (self: *ListState, nowNs: i64) {
+        if last := self.lastFrameNs {
+            if self.velocity != 0.0 {
+                step := nowNs - last;
+                if step > FLING_STEP_CAP_NS { step = FLING_STEP_CAP_NS; }
+                ms := step / 1_000_000;
+                while ms > 0 {
+                    self.offset += self.velocity * 0.001;
+                    self.velocity *= FLING_DECAY;
+                    ms -= 1;
+                }
+                if self.velocity < FLING_FLOOR and self.velocity > -FLING_FLOOR { self.velocity = 0.0; }
+            }
+        }
+        self.lastFrameNs = nowNs;
     }
 
     // The index space changed: rows inserted at or before the anchor push it
@@ -164,6 +221,7 @@ LazyList :: @OpenVariant(View) {
             st.offset = 0.0;
         }
         if st.anchor < 0 { st.anchor = 0; }
+        st.advance(context.fluentFrameNs);
 
         // Forward: rows the viewport has left are estimated. Backward: a row
         // the viewport has entered is measured.
@@ -183,6 +241,7 @@ LazyList :: @OpenVariant(View) {
         }
         if y < h {
             st.offset -= h - y;
+            st.velocity = 0.0;
             self.pullBack();
         }
 
@@ -213,6 +272,7 @@ LazyList :: @OpenVariant(View) {
         while st.offset < 0.0 {
             if st.anchor == 0 {
                 st.offset = 0.0;
+                st.velocity = 0.0;
                 return;
             }
             st.anchor -= 1;
