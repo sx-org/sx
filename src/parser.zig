@@ -923,6 +923,7 @@ pub const Parser = struct {
             // `parameterized_type_expr` so resolution skips the builtin
             // classifier and looks up a `` `i32 ``-declared type.
             const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            const name_tok = self.tok;
             const name = try self.parseQualifiedName();
 
             // Only a `Closure` IMMEDIATELY followed by `(` builds the type; a
@@ -950,7 +951,7 @@ pub const Parser = struct {
                 }
             }
             if (std.mem.eql(u8, name, "Self") and self.type_body_name != null) {
-                return self.fail("'Self' is the conformer in a constraint or interface; a type names itself '@This()'");
+                return self.failAt(self.tokens.token(name_tok).loc, "'Self' is the conformer in a constraint or interface; a type names itself '@This()'");
             }
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = is_struct_generic, .is_raw = atom_is_raw } });
         }

@@ -467,14 +467,13 @@ pub const ExprTyper = struct {
                     // (`BoxI :: Box(i64)`) infers the type it names — the
                     // global `findByName` below knows only registered type
                     // NAMES and would mint a stub under the alias spelling.
-                    if (self.l.current_source_file) |from| {
-                        switch (self.l.selectNominalLeaf(name, from, false)) {
-                            .resolved => |tid| if (self.l.hasPlainStructAuthor(tid) or sl.type_expr != null) return tid,
-                            else => {},
-                        }
-                    }
+                    const leaf: ?TypeId = if (self.l.current_source_file) |from| switch (self.l.selectNominalLeaf(name, from, false)) {
+                        .resolved => |tid| tid,
+                        else => null,
+                    } else null;
+                    if (leaf) |tid| if (self.l.hasPlainStructAuthor(tid)) return tid;
                     // A bare generic head is the instance its fields infer.
-                    if (sl.type_expr == null) {
+                    {
                         const saved_diag = self.l.diagnostics;
                         self.l.diagnostics = null;
                         defer self.l.diagnostics = saved_diag;
@@ -483,12 +482,7 @@ pub const ExprTyper = struct {
                             else => {},
                         }
                     }
-                    if (self.l.current_source_file) |from| {
-                        switch (self.l.selectNominalLeaf(name, from, false)) {
-                            .resolved => |tid| return tid,
-                            else => {},
-                        }
-                    }
+                    if (leaf) |tid| return tid;
                     const name_id = self.l.module.types.internString(name);
                     return self.l.module.types.findByName(name_id) orelse
                         self.l.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
