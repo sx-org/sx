@@ -18,46 +18,34 @@ Line comments start with `//` and extend to end of line.
 A spelling that names a builtin type — the eight integer aliases `i8` / `i16` /
 `i32` / `i64` / `u8` / `u16` / `u32` / `u64`, plus `bool`, `string`, `cstring`,
 `void`, `f32`, `f64`, `usize`, `isize`, `any` —
-is reserved. A bare reserved spelling is rejected at **value-binding and
-declaration-name sites**: a value binding (`:=` / typed local / parameter), a
-`::` **constant** or **function** declaration, an `impl` method **definition**,
-and a `::` **type** declaration (`struct` / `enum` / `union` / `error` / type
-alias / `constraint` / `interface` / runtime class / ufcs alias / namespaced
-import). A
-value-spelled-as-type parses as a *type*, not a value, so its address-of /
-autoref paths would mis-lower; a type / const / function / method name spelled as
-a builtin would shadow the builtin. The exemptions are the backtick escape
-(below), `@import c` extern decls, and **member-name positions** (next) — it is
-**not** rejected at every place a name appears.
+is reserved: bare, it is not a value or declaration name. A value spelled as a
+type parses as a *type*, not a value, so its address-of / autoref paths would
+mis-lower; a declaration spelled as a builtin would shadow the builtin. The
+exemptions are the backtick escape (below), `@import c` extern decls, and
+member-name positions.
 
-**Member-name positions are exempt.** A struct **field** name, a union **tag**
-name, and a **method-signature** name in a `constraint` or `interface` body may
-be a bare reserved spelling.
-These sit in a member slot (`name: T` / `name :: (…)`) and are reached only via
-`obj.name` (or dispatched by string), so they are never type-classified and never
-mis-lower. The backtick form is optional there and names the same member — `obj.i32`
-and `` obj.`i32 `` both resolve. The exemption covers member *signatures* only: an
-`impl` method **definition** is a real function (a declaration site, not a member
-slot), so a reserved-spelled impl method still needs the backtick
-(`` `i32 :: (self) ``), exactly like a free function. See `examples/0158`.
+**Member-name positions are exempt.** A struct **field**, a union **tag**, and a
+**method signature** in a `constraint` or `interface` body may be a bare
+reserved spelling: a member slot is reached only via `obj.name` (or dispatched
+by string), so it is never type-classified and never mis-lowers. The backtick
+form is optional there and names the same member — `obj.i32` and
+`` obj.`i32 `` both resolve. An `impl` method **definition** is a real
+function, not a member slot, so a reserved-spelled impl method still needs the
+backtick (`` `i32 :: (self) ``).
 
 **Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
-`f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
-**method or constant**, a `constraint` or `interface` **method**, and an
-enum
-**variant** (`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo`
-is the canonical case), and is reached bare after a dot: field access
-(`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
-`case .struct:`), and optional chaining (`o?.if`). Declaration position
-is unambiguous — struct, `constraint`, `interface`, and `impl` bodies hold only
-declarations —
-and access is dot-disambiguated. Unlike the type-spelling rule above, keyword
-names are bare-legal in `impl` method **definitions** as well: a keyword-named
-interface method must be implementable without ceremony, and a keyword has no
-builtin to shadow. The one exception is **`inline`**, which stays
-backtick-only (`` `inline ``); a bare `inline` in member position rejects with
-a targeted escape-hint. A **literal field label** is an identifier: in `.{ … }`
+`f32`, `f64`, `try`, `defer`, … — may bare-name a member slot: a struct field,
+method, or constant, a `constraint` or `interface` method, an enum variant
+(`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo` is the
+canonical case) — reached bare after a dot (`q.push(…)`, `case .struct:`,
+`o?.if`). A member body holds only declarations, and access is
+dot-disambiguated. Unlike the type-spelling rule above, keyword names are
+bare-legal in `impl` method **definitions** as well: a keyword-named interface
+method must be implementable without ceremony, and a keyword has no builtin to
+shadow. **`inline`** stays backtick-only (`` `inline ``); a bare `inline` in
+member position rejects with a targeted escape-hint. A **literal field label**
+is an identifier: in `.{ … }`
 and `T { … }` a keyword label takes the backtick raw escape
 (`` .{ `push = 1, `if = 2 } ``), and a bare keyword there heads a positional
 expression, so `.{ if x > 1 then 10 else 20, 2 }` is an if-expression element.
@@ -69,30 +57,19 @@ annotation, a parameter, a field, a return, a type argument — and directly
 after `::`, where the exact token pair `Closure`+`(` opens a type alias
 (`CB :: Closure(i32) -> i32`). Everywhere else `Closure` is an ordinary
 identifier: a function named `Closure` is called as `Closure(5)` with no
-escape. `Tuple` is an ordinary identifier in every position.
-
-Every reserved spelling except `inline` bare-names member slots — the
-identifier-classified spellings (the eight integer aliases, `bool`, `string`,
-`cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
-`f64` alike: `` struct { f32: i64; } `` and
-`` interface { f32 :: (self: *Self) -> i64; } `` are legal as written; the
-backtick forms remain available but are never required for them.
+escape. `Tuple` is an ordinary identifier.
 
 ```sx
 i32 := 2.5;                         // ERROR: 'i32' is a reserved type name and cannot be used as an identifier
-i32 :: 5;                           // ERROR — a `::` constant name is a binding site too
-i32 :: (n: i64) -> i64 { n }        // ERROR — so is a function name
-i32 :: struct { x: i64; }           // ERROR — and a type-declaration name
 ```
 
 A width the aliases do not name is an ordinary identifier: `i2 := 42;` binds a
-value and `i2 :: struct { x: i64; }` declares a type, while `x : i7 = 0` is
-`unknown type 'i7'` — that width is spelled `@int(7, .signed)`.
+value, while `x : i7 = 0` is `unknown type 'i7'` — that width is spelled
+`@int(7, .signed)`.
 
-(There is no exception for the stdlib: a reserved type name is reserved
-everywhere. `string` is a language primitive, the type `[]u8` under its own
-name — the compiler resolves it by name, it is declared nowhere, and it
-cannot be re-bound.)
+There is no exception for the stdlib. `string` is a language primitive, the
+type `[]u8` under its own name — resolved by name, declared nowhere, never
+re-bound.
 
 #### The `@` namespace
 
@@ -170,8 +147,8 @@ type is.
 A leading backtick makes the following token a **raw identifier**: `` `name `` is
 the **literal identifier** `name` — "treat this token as a plain identifier, never
 the reserved keyword/type." The backtick is not part of the name's text (the text
-is `name`), and the escape is usable in **every position**: value, declaration,
-**and type**. It is the only way handwritten sx can spell a reserved name.
+is `name`), and the escape is usable in every identifier position, type position
+included. It is the only way handwritten sx can spell a reserved name.
 
 ```sx
 `i32 := 2.5;            // OK — identifier "i32", distinct from the i32 type
@@ -181,52 +158,26 @@ x : i32 = 3;            // bare `i32` in TYPE position is still the i32 int type
 ```
 
 **Type position.** A backtick in type position is the literal name used as a type
-reference: it resolves to a `` `i32 ``-declared type (struct / enum / union / type
-alias / …), and never the builtin. A bare `i32` in type position stays the builtin
-int; a backtick name with no matching declaration is a normal `unknown type 'i32'`
-error. A raw type reference flows through the **same continuations** as a bare type
-name, so it parameterizes a reserved-spelled generic template (`` `i32(i64) ``) and
-composes under the pointer / optional / slice wrappers (`` *`i32 ``, `` ?`i32 ``).
+reference: it resolves to a `` `i32 ``-declared type and never the builtin; a
+backtick name with no matching declaration is a normal `unknown type 'i32'`
+error. A raw type reference is an ordinary type name from there on — it
+parameterizes and takes wrappers:
 
 ```sx
 `i32 :: struct($T: Type) { x: $T; }   // generic template with a reserved-spelled name
 v : `i32(i64) = ---;                  // parameterized raw type reference
-v.x = 7;
 p : *`i32(i64) = *v;                  // wrappers compose over a raw type
-x : i32 = 3;                          // bare `i32` is still the 32-bit signed int
 ```
 
-**Declaration position.** A *bare* reserved-name declaration of every kind still
-errors (a value binding, a `::` constant / function, and a `::` type / alias /
-constraint / interface / runtime-class / ufcs / namespaced-import name); the
-backtick form is
-exempt. The escape works in **every identifier position** — local, global,
-parameter, struct field, union tag, function name, type/alias/import name, a later
-reference, and every control-flow / capture / binding form (destructure name,
-`if` / `while` optional binding, `for` capture and index, match-arm capture, and a
-`catch` error binding):
+**Declaration position.** In a member-name position the backtick is optional;
+at every value-binding and declaration-name site — a capture included — it is
+required:
 
 ```sx
-`u8 := 100;                       // global
-`i32 :: 2.5;                      // constant declaration
-`i32 : i64 : 5;                   // typed constant declaration
 `u8 :: (`i8: i64) -> i64 { `i8 }  // function name + parameter
-P :: struct { `i32: f64; }        // struct field
-H :: struct { `i32 :: 5; }        // struct-body constant (untyped + `: T :` typed)
-M :: union { `i8: i32; }          // union tag
 `u16 :: enum { A; B; }            // type-declaration name
-`u8, rest := pair();              // destructure name
-if `i16 := maybe() { }            // optional binding
-for `bool, `u16 in xs, 0.. { }    // for captures
-x catch |`i32| { }                // catch tag binding
+if `i16 := maybe() { }            // a capture is a binding site
 ```
-
-In the **member-name positions** among these — struct field, union tag, and
-method signature in a `constraint` or `interface` body — the backtick is
-*optional*: the bare reserved
-spelling is already legal there (see "Member-name positions are exempt" above).
-Everywhere else (value bindings and declaration names, including an `impl` method
-definition) the backtick is *required* to spell a reserved name.
 
 A reserved-spelled **function** is bare-callable: `` `i32 :: (n: i64) -> i64 { … } ``
 can be invoked as `i32(10)` (the bare callee spelling parses as a type but resolves
@@ -560,125 +511,60 @@ typed module-level `::` const: the diagnostic names it as a char literal and
 suggests a wider storage type (`u32` holds any Unicode scalar), rather than
 truncation.
 
-Because a char literal *is* an integer code point, it is accepted anywhere an
-integer literal is: as an explicit enum value (`esc = '\x1b'` → tag 27), as a
-compile-time value argument to a parametrized type (`Buf('A')` binds `$N = 65`),
-as an array dimension (`['A']u8`), and in `match` / `inline if` const comparisons.
-
 ### Numeric Limits
 
-A field-like access on a builtin **integer** type folds, at compile time, to
-that type's smallest/largest representable value:
+`T.min` / `T.max` on a builtin **integer** type fold, at compile time, to the
+type's smallest and largest representable value, as a constant of the queried
+type:
 
 ```sx
 maxS64 := i64.max;                // 9223372036854775807
 minS32 := i32.min;                // -2147483648
-maxU8  := u8.max;                 // 255
-minU8  := u8.min;                 // 0
 m3     := @int(3, .signed).max;   // 3   (arbitrary width)
 n      := u64.max;                // 18446744073709551615 (all-ones)
 ```
 
 - **Receiver.** Any builtin integer type: one of the eight aliases, the
   constructor `@int(N, .signed)` / `@int(N, .unsigned)`, plus `usize`/`isize`
-  (target-width — `u64`/`i64` on a 64-bit host).
+  (target-width).
 - **Value.** Pure `(width, signedness)` arithmetic — never a per-name table:
-  - signed `N`: `min = -(2^(N-1))`, `max = 2^(N-1) - 1`
-  - unsigned `N`: `min = 0`, `max = 2^N - 1`
-- **Result type.** The constant has the **queried** type: `@int(3, .signed).max`
-  is an `@int(3, .signed)`, `u64.max` is a `u64`. So it is usable anywhere a
-  constant of that type is legal — initializers, `:=` bindings, and larger
-  expressions — and in array-dimension / count position via the compile-time
-  integer path (`[u8.max]T` is a 255-element array;
-  `[@int(2, .unsigned).max]T` a 3-element one). A count that does not fit
-  (`[u64.max]T`) is rejected as an oversized dimension.
-- **Representation note.** `u64.max` / `usize.max` is the all-ones 64-bit value
-  (`18446744073709551615`), which exceeds the signed `i64` range used for
-  integer constants; it is stored as that exact bit pattern carrying the `u64`
-  type (it reinterprets to `-1` as an `i64`). It cannot be written as a decimal
-  literal. The default integer formatter is signedness-aware:
-  `print("{}", u64.max)` renders the full unsigned decimal
-  `18446744073709551615` (and any unsigned value across all 64 bits), while a
-  signed value — including `i64.min` — prints with all its digits. A bit
-  reinterpret (`union { u: u64; s: i64; }`) is still a valid way to inspect the
-  raw bits, but is not needed merely to print the value.
-- **Non-numeric receivers.** `.min` / `.max` on a non-numeric type (`bool`,
-  `string`, a pointer, a `struct`, `void`, an `enum`) is a compile error, never
-  a silent value.
+  signed `N` has `min = -(2^(N-1))`, `max = 2^(N-1) - 1`; unsigned `N` has
+  `min = 0`, `max = 2^N - 1`.
+- **`u64.max`** exceeds the signed `i64` range of integer constants: it is
+  stored as the exact all-ones bit pattern carrying the `u64` type and cannot be
+  written as a decimal literal. The default integer formatter is
+  signedness-aware, so `print("{}", u64.max)` renders `18446744073709551615`.
+- `.min` / `.max` on a non-numeric type (`bool`, `string`, a pointer, a
+  `struct`, `void`, an `enum`) is a compile error.
 
-The **float** types `f32` and `f64` expose the same `.min` / `.max` plus a set of
-float-only accessors. Each folds, at compile time, to a constant of the queried
-float type (the same `lowerNumericLimit` intercept, via `builder.constFloat`):
+The **float** types `f32` and `f64` expose `.min` / `.max` plus a set of
+float-only accessors, each folding to a constant of the queried float type:
 
 ```sx
 hi  := f64.max;           // largest finite double
-lo  := f64.min;           // most-NEGATIVE finite = -max  (NOT C's DBL_MIN)
+lo  := f64.min;           // most-negative finite = -max
 eps := f64.epsilon;       // ULP of 1.0  (f64 = 2^-52, f32 = 2^-23)
-mp  := f64.minPositive;   // smallest positive NORMAL  (= C DBL_MIN / Rust MIN_POSITIVE)
-tm  := f64.trueMin;       // smallest positive SUBNORMAL (next value above 0.0)
+mp  := f64.minPositive;   // smallest positive NORMAL  (f64 = 2^-1022, f32 = 2^-126)
+tm  := f64.trueMin;       // smallest positive SUBNORMAL  (f64 = 2^-1074, f32 = 2^-149)
 pin := f64.inf;           // +infinity
 qn  := f64.nan;           // a quiet NaN
 ```
 
-- **Receiver.** `f32` or `f64`.
-- **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
-  types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
-  the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
-  smallest positive normal; that is `.minPositive` here.
-- **Float-only accessors.**
-  - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
-    representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
-    **machine epsilon** used for relative-tolerance comparisons, **NOT** C#'s
-    `Double.Epsilon` (which is the smallest denormal — that is `.trueMin` here).
-    Defining property: `1.0 + epsilon != 1.0` while `1.0 + epsilon/2.0 == 1.0`.
-  - `.minPositive` — the smallest positive **NORMAL** value (`f64 = 2^-1022`,
-    `f32 = 2^-126`). Equals C's `DBL_MIN` / Rust's `MIN_POSITIVE`.
-  - `.trueMin` — the smallest positive **SUBNORMAL**: the next value above `0.0`
-    (`f64` bits `0x0000000000000001 = 2^-1074`, `f32` bits `0x00000001 = 2^-149`).
-    Named `trueMin` (after Zig's `floatTrueMin`) to avoid the Java/Go/JS
-    `MIN_VALUE` footgun, where a bare `MIN_VALUE` names the smallest *subnormal*
-    yet reads like the most-negative value.
-    - **FTZ/DAZ caveat.** Subnormals are exactly the values that vanish under
-      flush-to-zero (FTZ) / denormals-are-zero (DAZ) CPU modes. If such a mode is
-      active, a loaded `.trueMin` can flush to `0.0` on the **first arithmetic
-      operation** that touches it. The folded constant always carries the exact
-      subnormal bit pattern; read or store it through a bit reinterpret *before*
-      any arithmetic if you need the true value to survive. Numerical-library
-      authors who toggle FTZ/DAZ should not be surprised when `trueMin * 1.0`
-      reads back as `0.0`.
-  - `.inf` — positive infinity (`inf > max`).
-  - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
-    guaranteed property is that it is unequal to everything, itself included
-    (`nan != nan` is `true` — native float `!=` lowers unordered).
-- **Float-only on an integer is an error.** `.epsilon` / `.minPositive` /
-  `.trueMin` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
-  `u8.inf`, `i64.trueMin`) is a clean compile error — integer types expose
-  only `.min` / `.max`.
-- **Pinning the values.** The lexer has no exponent notation and the default
-  float formatter is crude, so float limits can be asserted neither
-  by literal comparison nor by printing. Reinterpret the bits through a
-  union (`union { f: f64; bits: u64; }`) and compare against the exact IEEE-754
-  pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
-  `epsilon = 0x3CB0000000000000`, `minPositive = 0x0010000000000000`,
-  `trueMin = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
-  `0x7F7FFFFF` / `0xFF7FFFFF` / `0x34000000` / `0x00800000` / `0x00000001` /
-  `0x7F800000`.
-- **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
-  only when the receiver is a builtin numeric **type** — a name (`f64.epsilon`,
-  `i32.max`, `u8.max`) or the `@int` constructor. A backtick raw identifier
-  that binds a *value* whose spelling shadows a type name is an ordinary value:
-  `` `f64.epsilon `` reads that value's `epsilon` field — it does **not** fold
-  to the limit. This holds for **every** value-binding kind — a `` `f64 := … ``
-  local, a module-scope global, or a `` `f64 :: … `` module constant — so the
-  fold can never silently hijack a raw value, whatever its scope. The two never
-  collide: a bare builtin name in expression position is always a type, and only
-  the raw `` `…` `` spelling can bind a value under it. The same rule governs the
-  compile-time **narrowing and count** contexts: a raw value-shadow field read
-  is an ordinary *runtime* read there too — never a compile-time numeric-limit
-  leaf — so `` `f64.epsilon `` narrowing into an integer binding truncates like
-  any runtime float (its field value, not the limit), and `` `i8.max `` used as
-  an array dimension is rejected as a non-constant count rather than folding to
-  the builtin `127`.
+- `.min` is the most-negative finite value, `-max`, consistent with the integer
+  `.min`; the smallest positive normal is `.minPositive`.
+- `.epsilon` is the machine epsilon: `1.0 + epsilon != 1.0` while
+  `1.0 + epsilon/2.0 == 1.0`.
+- `.trueMin` carries the exact subnormal bit pattern; under a flush-to-zero CPU
+  mode the first arithmetic operation on it reads `0.0`.
+- `.nan` pins no mantissa bits; its one guaranteed property is `nan != nan`
+  (native float `!=` lowers unordered).
+- A float-only accessor on an integer type (`i32.epsilon`, `u8.inf`) is a
+  compile error.
+
+A limit folds only when the receiver is a builtin numeric **type** — a name or
+the `@int` constructor. A backtick raw identifier binding a *value* under a
+type's spelling is an ordinary value: `` `f64.epsilon `` reads that value's
+`epsilon` field at runtime and never folds to the limit.
 
 ### Enum Types
 User-defined sum types with named variants. Variants may optionally carry typed data. One layout rule: the tag sits in its tag type at its offset, followed by a payload area sized by the widest payload — empty when every variant is void, so a payload-free enum is its tag word alone.
@@ -1207,9 +1093,14 @@ inline for T in SERIALIZABLE {
 Each unrolled iteration is an ordinary impl with a concrete `T`:
 membership, coherence (two iterations landing on one pair are the
 ordinary duplicate error, naming the unrolled sites), and every
-downstream rule apply to the expanded program unchanged. The
-bound-blanket (`impl Show for $T/Ord`) is not a supported form — the
-`for` target names a type constructor.
+downstream rule apply to the expanded program unchanged. The list's
+elements are concrete types; a `@run`-computed list is legal and
+expansion-driving (§6.9). A duplicate element or a nested unroll
+diagnoses with cursor provenance ("T = Point, i = 1"). A type declared
+inside the body flattens to module scope, so declaring it per iteration
+is the duplicate-declaration error — parameterize it instead
+(`Vec :: struct($N: u32)`). The bound-blanket (`impl Show for $T/Ord`)
+is not a supported form — the `for` target names a type constructor.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
 conformances — nothing retracts. Expansion-driving comptime may consult
@@ -1258,23 +1149,13 @@ error: cannot make a value of 'Ord' — a constraint has no runtime
        interface where a handle is needed
 ```
 
-The same refusal applies wherever a constraint is used as a *storable*
-type: a field, array element, or generic type argument of a constraint
-type diagnoses at the declaration or instantiation site.
-
 **Emission: none.** A constraint produces no vtables, no tables, no
 metadata. Its methods exist only as monomorphized direct calls at use
 sites. Default methods are shared code in source only; each bound
 instantiation compiles them against the concrete `Self`.
 
-**Edge cases.**
-- A marker constraint (empty body) is legal; it partitions types for
-  overload/bound purposes and costs nothing.
-- `Self`-in-signature methods are unrestricted — every use site knows
-  the concrete type.
-- A constraint is a legal comptime `is` left operand: `Ord is interface`
-  and `Ord is struct` are both false, and a constraint matches no
-  category (§The `is` Operator).
+A marker constraint (empty body) is legal; it partitions types for
+overload/bound purposes and costs nothing.
 
 #### 5. Interfaces
 
@@ -1312,10 +1193,9 @@ never allocated or freed at runtime.
 
 ##### 5.2 View coercion
 
-An interface-typed **target position** coerces its operand into a handle
-over the operand's own storage. The positions are: a call argument, a
-binding, a struct- or array-literal field initializer, a `push` field,
-an assignment, and the operand of a `?I` wrap.
+An interface-typed **target position** — any slot of type `I`, the operand
+of a `?I` wrap included — coerces its operand into a handle over the
+operand's own storage.
 
 | operand | result |
 |---|---|
@@ -1325,11 +1205,8 @@ an assignment, and the operand of a `?I` wrap.
 | a value already of type `I` | the handle, copied |
 
 There is no rvalue arm. An I-typed target never invents a temp: a
-concrete rvalue has no storage of its own to borrow, so every such
-position is a compile error — including a `..xs: []I` element and the
-operand of a `?I` wrap. Optional is not an escape hatch:
-`g : ?Sizable = Widget{ value = 2 }` is the same error as
-`t : Sizable = Widget{ value = 2 }`.
+concrete rvalue has no storage of its own to borrow, so it is a compile
+error.
 
 The `*I` arm is read before the pointer arm, so a `*I` operand yields
 the stored handle rather than a handle over the pointer.
@@ -1355,11 +1232,7 @@ measure(p);                         // *T arm
 ```
 
 ```sx
-t : Sizable = Widget{ value = 8 };          // error
-measure(Widget{ value = 8 });               // error
-g : ?Sizable = Widget{ value = 2 };         // error — wrap operand is an I target
-return Widget{ value = 1 };                 // error at `-> Sizable`
-return S{ inner = Widget{ value = 1 } };    // error — field init is an I target
+measure(Widget{ value = 8 });               // error — a concrete rvalue at an I target
 ```
 ```
 error: cannot borrow a temporary into a 'Sizable' handle — bind the
@@ -1367,29 +1240,23 @@ error: cannot borrow a temporary into a 'Sizable' handle — bind the
        use the handle over that
 ```
 
-`$T/I` is not an I-typed target. `pretty(v: $T/Sizable)` plus a concrete
-literal is a Widget argument. `measure(v: Sizable)` plus a concrete
-literal is the error.
-
 **Explicit coercion.** `x.(I)` states the same coercion, over the same
 arms, at any expression position. There is no allocating form: `.(I,
 alloc)` is not a spelling. The postfix is optional when the destination
 is already I-typed: `measure(w)` and `measure(w.(Sizable))` are the same
-coercion. On a concrete rvalue it is the same error.
+coercion.
 
 **`.{ }` is a struct literal.** It never forms a handle and is never
-`?T` absence. `x : I = .{}` and `x : ?I = .{}` are compile errors.
+`?T` absence: `x : ?I = .{}` is a compile error.
 
 **`?T` none is `null`.** Absence of `?I` is spelled `null`, the same as
-`?i32` and `?Closure`. `null` does not type at a non-optional slot:
-`x : I = null` and `x : i64 = null` are compile errors (the diagnostic
-names `?I` / `?i64`). `*T = null` is the null pointer.
+`?i32` and `?Closure`. `null` does not type at a non-optional slot
+(`x : I = null` is a compile error naming `?I`); `*T = null` is the null
+pointer.
 
 **`---` is uninit.** A non-optional I slot may be `---` (LLVM undef, no
 handle). `parentAllocator: Allocator = ---` is the GPU dummy: `init`
-writes the field. A statically-constructed struct cannot take `---` at
-an I field — the operand of a static position names a module-scope
-global (§6.6).
+writes the field.
 
 ##### 5.3 `free`
 
@@ -1478,8 +1345,7 @@ Interface types are ordinary storable types: struct fields, array
 elements, returns, and **generic type arguments** — `List(Show)` and
 `List(Hasher)` are both lists of 3-word handles, and `@sizeOf` answers
 per §5.1. An interface type may itself be an instantiation argument of
-another (`Series(View)`). Constraints are refused in every storable
-position (§4).
+another (`Series(View)`).
 
 **Static positions.** Four positions build their handle before `main`
 runs: a module-scope global's initializer, an `@context.extend` default,
@@ -1496,10 +1362,8 @@ fallback : Allocator = mem.cAllocator;                // module-qualified
 The initializer is a bare or module-qualified path whose **root** is a
 module namespace, with `xx` recursing into it. A path rooted at a global
 *value* (`g.field`) is refused — the coercion needs the global's own
-symbol. Every other operand refuses, `@run` included: the position is
-judged on the written shape. `.{ }` is a struct literal, never a handle,
-and is refused here as at every other I-typed target. `---` is uninit and
-is refused at a static I field: the operand names a module-scope global.
+symbol. Every other operand refuses, `@run` and `---` included: the
+position is judged on the written shape.
 
 `push .{ allocator = arena }` is not a static position: a `push` field
 is an ordinary interface-typed target over a frame-scoped Context.
@@ -1716,50 +1580,7 @@ the Obj-C `+alloc`/`-dealloc` IMPs) find the allocator by NAME on the
 assembled `Context` and go through ordinary dispatch, so the library
 owns the declaration and no compiler change follows an edit to it.
 
-
-#### 9. Edge-case catalog
-
-| case | disposition |
-|---|---|
-| marker declaration (empty body) | constraint: free partition. interface: erases with empty vtable; RTTI works |
-| `Self` past the receiver in an interface body | compile error at the declaration; the constraint form carries it |
-| duplicate impl `(instantiation, conformer)` | import-scoped (§3). Both impls in one module: error at the impls |
-| impl for a structural type (`impl Series($T) for []T`) | legal — conformer identity is canonical type identity |
-| `impl C for I` (`C` a constraint, `I` an interface) | legal; the interface's own methods satisfy exact-signature members, so the body may be empty |
-| `impl Q for I` (both interfaces) | refused — an interface handle is not a concrete conformer; `p.(Q)` is the conversion |
-| impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |
-| interface-typed member (`m :: (self: *Self, v: View)`) | ordinary — the parameter coerces per §5.2 at the call |
-| rvalue at `I` | compile error — an I-typed target never invents a temp (§5.2) |
-| rvalue at `?I` | compile error — the wrap operand is an I-typed target |
-| `.{ }` at an I-typed target (`I` or `?I`) | compile error — `.{ }` is a struct literal, not a handle |
-| `null` at a non-optional value (`I`, `i64`, …) | compile error — `null` is the absence of `?T`; `*T = null` stays |
-| `.{ }` at a static interface position | compile error (§6.6) — same struct-literal refusal |
-| `---` at a static I field | compile error — a static operand names a module-scope global |
-| `---` at a runtime I slot | uninit (LLVM undef, no handle) |
-| static interface position whose initializer is `g.field` | compile error — the path root must be a module namespace |
-| `free` on: an interface handle / constraint-typed anything | compile error in each case (a handle owns nothing; a constraint has no values at all) |
-| `p.(@Interface)` | field-wise build per layout |
-| `p.(Q)`, different interface | runtime read of the `(typeId, Q)` table (§6.4); all three temperaments read the same null |
-| `s.(I)`, operand already `I` | the handle, copied |
-| `any` holding an interface handle | never arises from boxing a handle (that boxes the referent) |
-| `av.(I)` — interface target on an `any` receiver | compile error; a constraint target refuses as a constraint |
-| `==` on handles / handles as map keys | compile error |
-| `?I` | null ctx = absent; the vtable word is meaningless while null |
-| generic type argument `List(I)` | legal, element = the 3-word handle. `List(C)`: refused at the instantiation site |
-| interface as an instantiation argument (`Series(View)`) | legal — a type argument like any other |
-| value parameters in a head (`interface(N: u32)`) | as generic structs; canonicalized by folded value equality |
-| handles inside `@run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, re-erasures (both polarities), and name-lookup misses suspend until finality |
-| scheduler quiesces with parked evaluations (self-feeding or mutual) | compile error — expansion deadlock, every parked evaluation and its awaited facts named (§6.9) |
-| comptime handle escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing (§6.9) |
-| type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
-| `inline for` conformance-list elements | concrete types only — a curated-list element resolves through the concrete-impl path; `@run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
-| conformer method name colliding with an existing member of the type | exact signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
-| default method on an interface conformer | legal — defaults compile per conformer against concrete `Self` (§2) |
-| comptime observation of conformances | no conformer list exists at any phase; the askable facts are per-pair: `T is B` / `x is B`, the probe `x.(?I)`, a conversion — comptime under §6.9, runtime reading the impl tables |
-| the probe (`x.(?I)` on a concrete receiver) | site-local impl visibility; arms the instantiation's coherence diagnostics but reaches nothing for emission (§6.9) |
-
 Design notes and rejected directions: `design/protocols.md` (appendix).
-
 
 ### Anonymous products
 
@@ -1860,22 +1681,11 @@ grid : @Array(2, [3]f32);      // equivalent to [2][3]f32
 ```
 
 A **count** is a compile-time integer used as an array dimension, a `@Vector`
-lane count, or a generic value-param count. Every count must be **integral**: an
-integral compile-time float folds to its integer (`[4.0]i64` ≡ `[4]i64`), while a
-non-integral float is rejected (an array dimension reports "array dimension must
-be an integer, but '4.5' is a non-integral float"). This holds however the float
-is written — a literal (`4.0`), a float-typed const (`N : f64 : 4.0`), or a
-const **expression** whose value is integral, including one built from a
-non-integral float-const leaf (`F : f64 : 2.5; [F + 1.5]i64` ≡ `[4]i64`, and
-likewise through a const, `K : i64 : F + 1.5; [K]i64`), a builtin float
-numeric-limit accessor (`[f64.max - f64.max]i64` → length 0), a float `%`, or a
-float `/` whose quotient is integral (`[6.0 / 2.0]i64` ≡ `[3]i64`; a non-integral
-quotient like `[5.0 / 2.0]i64` = 2.5 is rejected — a float `/` is always float
-division, never integer truncation, even when both operands are integral). A
-count and a typed
-binding's float→integer initializer share the *same* compile-time float
-evaluation, so they agree at every site — direct, through a const, or via a type
-alias (see "Implicit float → integer", §2 Type Conversions).
+lane count, or a generic value-param count. A count is an integer-typed slot
+under the narrowing rule of "Implicit float → integer" (§2 Type Conversions):
+an integral compile-time float folds (`[4.0]i64` ≡ `[4]i64`) and a non-integral
+one is rejected ("array dimension must be an integer, but '4.5' is a
+non-integral float"). A count has no `xx` / `.(T)` escape.
 The accepted *range* of a count is **context-dependent** — zero is legal for
 some counts and not others:
 
@@ -1893,12 +1703,9 @@ some counts and not others:
 
 A **range bound** — the start/end of an `inline for` or `for` range — is a
 range *endpoint*, not a count, so the count rules above do not apply. A bound
-accepts any compile-time **integer**, including a negative one; an integral
-float (`-2.0`) folds to its integer. A non-integral float (`4.5`) is still
-rejected, because the loop cursor must be a compile-time integer. Negative
-endpoints are valid: `inline for -2..1` iterates `-2, -1, 0`. An empty or
-inverted range (start ≥ end, e.g. `0..(-2.0)`) simply runs zero iterations
-rather than being an error.
+accepts any compile-time **integer**, including a negative one: `inline for
+-2..1` iterates `-2, -1, 0`. An empty or inverted range (start ≥ end) runs zero
+iterations rather than being an error.
 
 ### Slice Types
 A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
@@ -2987,40 +2794,23 @@ isReady : ValueListenable(bool) = map(
 - Integer literals can convert to any numeric type implicitly
 - `*T` / `[*]T` / `cstring` → `*void`
 
-**Implicit float → integer (the unified narrowing rule)** — a float flowing into
-an integer-typed binding without `xx`/`.(T)` is governed by the SAME rule an
-array dimension / lane count uses (see "Array dimensions are integral", §2):
+**Implicit float → integer** — a float flowing into an integer-typed slot
+without `xx` / `.(T)`:
 
 - An **integral** compile-time float **folds** to its integer, whether written
-  as a literal or a const expression: `y : i64 = 4.0` ≡ `y : i64 = 4`,
-  `n : i64 = -2.0` ≡ `-2`, `y : i64 = M + 2.0` → 4 (`M :: 2`). A const expression
-  here is *any* compile-time-constant float expression — an integer-const leaf
-  (`M + 2.0`), a float-typed const leaf (`F : f64 : 2.5; y : i64 = F + 1.5` → 4),
-  a builtin float numeric-limit accessor (`f64.max - f64.max` → 0), a float `%`
-  (`6.0 % 4.0` → 2), or a float `/` whose quotient is integral (`6.0 / 2.0` → 3),
-  or any combination of them. The compile-time float evaluator recognises every
-  leaf/operator shape the integer evaluator does (literal, named const,
-  numeric-limit accessor, `+ - * / %`, unary negate), so no constant float form
-  folds at one site while truncating at another. A float `/` is always FLOAT
-  division even when both operands are integral — `6.0 / 2.0` is `3.0` (folds),
-  but `5.0 / 2.0` is `2.5` (errors) — never integer truncating division.
-- A **non-integral** compile-time float — literal OR const expression — is a
-  **compile error** with one uniform wording at every site:
-  `y : i64 = 1.5`, `y : i64 = M + 0.5`, `y : i64 = F + 0.25` (= 2.75),
-  `y : i64 = f64.trueMin + 0.5` (= 0.5), `y : i64 = 5.5 % 2.0` (= 1.5), and
-  `y : i64 = 5.0 / 2.0` (= 2.5) all →
-  "cannot implicitly narrow non-integral float '…' to 'i64'; use an explicit
-  cast (`xx`/`.(T)`)".
-- This applies uniformly to a typed **local**, a function **param default**, a
-  struct **field default**, a call **argument**, a typed module **constant**
-  (`K : i64 : 4.0` → 4; `K : i64 : M + 2.0` → 4; `N : i64 : 1.5` and
-  `N : i64 : M + 0.5` → error), and an array **dimension** / count (`[F + 1.5]i64`
-  ≡ `[4]i64`; `[F + 0.25]i64` → error). All five sites fold the *same* set of
-  compile-time float expressions through one evaluator — only the dimension/count
-  site phrases its rejection as "array dimension must be an integer, but '…' is a
-  non-integral float", since the `xx`/`.(T)` escape does not apply in a count
-  position. A **runtime** float (one with no compile-time value) is unaffected —
-  narrow it explicitly with `xx` / postfix `.(T)`.
+  as a literal or as a const expression: `y : i64 = 4.0` ≡ `y : i64 = 4`,
+  `y : i64 = M + 2.0` → 4 (`M :: 2`). The compile-time float evaluator folds
+  every leaf and operator the integer evaluator does (literal, named const,
+  numeric-limit accessor, `+ - * / %`, unary negate). A float `/` is always
+  FLOAT division even when both operands are integral — `6.0 / 2.0` is `3.0`
+  (folds), `5.0 / 2.0` is `2.5` (errors) — never integer truncating division.
+- A **non-integral** compile-time float — literal or const expression — is a
+  **compile error**: `y : i64 = 1.5` → "cannot implicitly narrow non-integral
+  float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)". A count slot has
+  no cast escape and phrases its rejection as "array dimension must be an
+  integer, but '…' is a non-integral float".
+- A **runtime** float (one with no compile-time value) is unaffected — narrow
+  it explicitly with `xx` / postfix `.(T)`.
 
 **Explicit (narrowing)** — requires `xx` prefix (or postfix `x.(T)`):
 - Integer to narrower integer (`i32` → `u8`)
@@ -3030,7 +2820,7 @@ array dimension / lane count uses (see "Array dimensions are integral", §2):
   (`y : i64 = xx 1.5` → 1); this is the escape hatch from the implicit rule above
 - Unsigned to signed of same or narrower width (`u8` → `i8`)
 
-The `xx` prefix operator marks an expression for auto-conversion to the expected type from context (assignment, declaration, argument, return):
+The `xx` prefix operator marks an expression for auto-conversion to the type its context expects:
 ```sx
 large: f64 = 5999.5;
 x : u16 = xx large;       // f64 → u16
@@ -3056,10 +2846,8 @@ are not written onward.
 
 An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted
-`t : <type of a> = xx b; a == t`. A comparison yields `bool`, and that `bool` is
-the value the surrounding context expects — it is never the target of an
-operand, so the comparison reads the same inferred, as an `if` condition, and
-in a `bool` declaration, argument or return.
+`t : <type of a> = xx b; a == t`. A comparison yields `bool`; the surrounding
+context is never the target of an operand.
 
 An explicit cast pair with **no conversion** is a compile error
 (`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
@@ -3224,13 +3012,10 @@ With an explicit annotation, the initializer must be compatible with the
 annotated type, or the declaration is a compile-time `type mismatch` error: an
 integer fits any integer or float type (`W : f32 : 800`), a float a float type, a
 boolean `bool`, a string `string`, `null` a pointer or optional, and `---` any
-type. The check is type-based, so it applies equally to a literal and to a
-constant expression: both `N : string : 4` and `N : string : M + 2` (with
-`M :: 2`) are rejected at the declaration — neither registers a usable constant.
-A constant expression's type is its promoted result type (see
-[Arithmetic](#arithmetic)), so a mixed int+float initializer is a float in either
-operand order: `C : i64 : M + 0.5` and `C : i64 : 0.5 + M` are both rejected, and
-`F : f64 : M + 0.5` is accepted and folds to `2.5`.
+type. The check is type-based: `N : string : M + 2` (with `M :: 2`) is rejected
+at the declaration and registers no usable constant. A constant expression's
+type is its promoted result type (see [Arithmetic](#arithmetic)): `C : i64 : M +
+0.5` is rejected and `F : f64 : M + 0.5` folds to `2.5`.
 
 #### Array Constants
 
@@ -3405,26 +3190,19 @@ main :: () {
 #### Block values
 
 A block's **value** is its last statement, whenever that statement is an
-expression. A last statement that is a declaration — or an empty block — leaves
-the block with no value. The terminator plays no part: `;` separates statements
-and decides nothing, so a block ends in the same value with it and without it.
+expression (`a := { f(); g() };` is `g()`). A last statement that is a
+declaration — or an empty block — leaves the block with no value.
 
-```sx
-a := { f(); g() };    // value is g()
-b := { f(); g(); };   // value is g() — the `;` only separates
-```
-
-**The value flows to whatever the position demands.** A block's value is
-demanded by a `-> T` function body (it becomes the return), by value position
-(`x := { … }`, an `if`/`else` used as a value, a `catch` body, an argument), and
-by a build body's statement position (it publishes — see
-[`@BuildBlock(P)`](#buildblockp)). Where nothing demands a value — a `-> void`
-body, a `defer` cleanup body, a loop body, a statement `if` — the
-expression still runs and its value is silently discarded.
+**The value flows to whatever the position demands.** A `-> T` function body,
+a value position (`x := { … }`, an `if` used as a value, a `catch` body, an
+argument), and a build body's statement position (see
+[`@BuildBlock(P)`](#buildblockp)) each demand it. Where nothing demands a
+value — a `-> void` body, a loop body, a statement `if` — the expression still
+runs and its value is discarded.
 
 ```sx
 double :: (n: i32) -> i32 {
-  n * 2;   // the return value; the `;` changes nothing
+  n * 2;   // the return value
 }
 
 logSize :: () {
@@ -3437,6 +3215,8 @@ return is the error channel — so only a trailing ERROR value is demanded there
 A tail of any other type is discarded like any other undemanded expression, and
 the function takes the ordinary success exit. Because nothing in such a body is
 in return position, the return-position restrictions do not reach its tail.
+Where the tail is an `if` or a `match`, each arm is its own tail: an error arm
+returns, any other arm discards and reaches the success exit.
 
 ```sx
 check :: (n: i32) -> !ParseErr {
@@ -3447,45 +3227,25 @@ check :: (n: i32) -> !ParseErr {
 fail :: () -> !ParseErr {
   ParseErr.BadDigit;       // an ERROR tail IS the return
 }
-```
 
-This is a property of the SIGNATURE, so every body form reads it the same way —
-a closure body reads like a named one, and so do a generic instance, a nested
-local function and an inlined comptime callee:
-
-```sx
-report := || -> !ParseErr measure();   // discarded, then the success exit
-raiseIt := || -> !ParseErr ParseErr.BadDigit;
-```
-
-It is also decided per live path: where the tail is an `if` or a `match`, each
-arm is its own tail. An arm that yields an error returns it; an arm that yields
-anything else is discarded and reaches the success exit, whichever order the
-arms are written in.
-
-```sx
 pick :: (b: bool) -> !ParseErr {
   if b { fail() } else { measure() }   // error arm returns; value arm discards
 }
 ```
 
 A block in **value position** that produces no value is a compile error (rather
-than silently returning a zero default). Both spellings of the ending are
-refused, because both are the same statement:
+than silently returning a zero default):
 
 ```sx
 double :: (n: i32) -> i32 {
   total := n * 2;   // error: the body produces no value — end it with a
 }                   //        trailing expression, or use `return`
-
-c := { f(); x := 1 };  // error: this block is used as a value but produces none
 ```
 
 An EMPTY block is exempt — `{}` is how the void value itself is written, as in
 `.{ {}, 9 }` for a positional product of `void` and `i32`.
 
-An arm's last expression is the arm's value. Every arm statement takes its `;`;
-the last statement of the last arm sits before the match's `}` and may drop it:
+An arm's last expression is the arm's value:
 
 ```sx
 classify :: (n: i32) -> i32 {
@@ -3870,15 +3630,10 @@ head is an ordinary bare name: it reaches what the file that wrote it can SEE, s
 module that imported no such set is told so rather than handed one, and one that can
 see two is asked which.
 
-Every position that names a type asks that same question, and gets the same answer:
-a member's head, a bound's head, a downcast's target — the soft form's and the hard
-form's alike, whose refusal is about the member the target named. A module that declares a name
-of its own reaches its own — asking `v.(?Panel)` where this module declares `Panel`
-is asking about this module's, whatever other modules spell it. A qualified target
-reaches the module it names, so a consumer that imported a package under a name asks
-about that package's member with it (`v.(?compose.Row)`). A facade's
-re-exported name reaches what it names, so a bound written on it asks the set's own
-question.
+Every position that names a type asks that same question. A module that declares
+a name of its own reaches its own — asking `v.(?Panel)` where this module declares
+`Panel` is asking about this module's, whatever other modules spell it — and a
+qualified target reaches the module it names (`v.(?compose.Row)`).
 
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `@sizeOf`, its own methods, and no wrapper around it. `Self` inside
@@ -3956,8 +3711,7 @@ and writes its `tag → member Type` table.
 So `@sizeOf(P)` is **not a literal baked where it is written**. Wherever it is a
 value — a body, a `@run`, an argument — it is answered from the frozen layout, and
 one program therefore has **one** answer for it everywhere: a body lowered before a
-generic member's instantiation and a body lowered after it agree. The same holds for
-any type whose layout a set decides, such as a plain struct with a `P` field.
+generic member's instantiation and a body lowered after it agree.
 
 A position the compiler must fold **earlier** than the freeze is **refused** rather
 than answered:
@@ -4026,10 +3780,8 @@ An open set sits outside interface coercion entirely: there is no `xx`-style
 erasure, no heap box, and no compiler-selected storage anywhere in formation.
 
 What may fill a set slot is decided by **membership, never by width**: a non-member
-the size of the slot is still not the slot. The question is asked the same way
-wherever the value is going — an annotated slot, an assignment, a **field
-initializer**, an **argument**, a **return** — so a type that never declared itself
-into the set is refused at each of them rather than reinterpreted into one.
+the size of the slot is still not the slot, and is refused wherever the value is
+going rather than reinterpreted into one.
 
 #### Consuming a set value
 
@@ -5638,7 +5390,7 @@ An `any` is accepted because it can hold either a value or a `Type`. `@typeName`
 
 ### `@run` Directive
 
-`@run expr` evaluates `expr` at compile time using lazy JIT execution. It can appear in two contexts:
+`@run expr` evaluates `expr` at compile time using lazy JIT execution, wherever it is written. Its two uses:
 
 **Compile-time constants** — bind a compile-time value to a name:
 ```sx
@@ -5653,10 +5405,9 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 @run print("compiling...");
 ```
 
-`@run` evaluates at compile time at every site — a module constant, a
-top-level side effect, and a body-local binding. The value the evaluator
-produces is the program's value (a struct, array, or optional is baked the
-same way a scalar is). If the evaluator cannot complete it, or the result
+The value the evaluator produces is the program's value (a struct, array, or
+optional is baked the same way a scalar is). If the evaluator cannot complete
+it, or the result
 cannot be serialized as a constant, the compile fails
 (`error: comptime init of '…' failed: …`). There is no runtime-call
 consolation. An operation the evaluator does not implement is named
