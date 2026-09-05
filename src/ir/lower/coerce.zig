@@ -1820,7 +1820,21 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 const cs = self.builder.current_span;
                 const span = ast.Span{ .start = cs.start, .end = cs.end };
                 const id = d.addFmtId(.err, span, "a capturing lambda does not erase to '{s}' — its environment has no home here", .{self.module.types.formatTypeName(self.alloc, dst_ty, null)});
-                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator", .{});
+                d.addHelpFmt(id, span, null, "persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing", .{});
+            }
+            return val;
+        },
+        // The pointer IS the env word: the pair is {fn, ptr}, and the env lives
+        // where the pointer says, for as long as it does.
+        .lambda_ptr_to_closure => {
+            const u = self.uniqueLambdaThrough(src_ty).?;
+            return self.builder.closureCreate(u.func, val, dst_ty);
+        },
+        .lambda_ptr_to_closure_reject => {
+            if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                const span = ast.Span{ .start = cs.start, .end = cs.end };
+                d.addFmt(.err, span, "a pointer to this lambda does not erase to '{s}': the signatures differ", .{self.module.types.formatTypeName(self.alloc, dst_ty, null)});
             }
             return val;
         },

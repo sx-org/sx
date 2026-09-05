@@ -1,0 +1,14 @@
+// A pointer to a lambda erases only to a Closure of the lambda's own
+// signature; a lambda value still has no home in a Closure slot.
+@import "modules/std.sx";
+
+takes :: (h: Closure(i64) -> i64) -> i64 => h(1);
+plain :: (h: Closure()) {}
+
+main :: () -> i32 {
+    n := 1;
+    f := ||_{ n } print("{}\n", n);
+    _ = takes(*f);
+    plain(f);
+    0
+}
