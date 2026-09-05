@@ -4819,7 +4819,18 @@ h : Closure(i64) -> i64 = |x|_{ n } x + n;
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
        environment has no home here
 help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the
-      allocator
+      allocator; a pointer to it ('*f') erases by borrowing
+```
+
+A **pointer** to a capturing lambda does erase: `*f` is the env's address, so
+the pair is `{ fnPtr, *f }` and nothing is allocated. Taking the address is
+what states that the referent outlives the `Closure`; the signatures must
+agree, and the lambda value itself still does not promote.
+```sx
+n := 41;
+f := ||_{ n } print("{}\n", n + 1);
+keep :: (h: Closure()) -> Closure() => h;
+h := keep(*f);      // borrows f's env; valid while f is
 ```
 
 #### Persisting — `closure`
