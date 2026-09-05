@@ -38,7 +38,7 @@ Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`
 `f32`, `f64`, `try`, `defer`, … — may bare-name a member slot: a struct field,
 method, or constant, a `constraint` or `interface` method, an enum variant
 (`enum { struct: StructInfo; bool; }` — the prelude's `TypeInfo` is the
-canonical case) — reached bare after a dot (`q.push(…)`, `case .struct:`,
+canonical case), reached bare after a dot (`q.push(…)`, `case .struct:`,
 `o?.if`). A member body holds only declarations, and access is
 dot-disambiguated. Unlike the type-spelling rule above, keyword names are
 bare-legal in `impl` method **definitions** as well: a keyword-named interface
@@ -555,7 +555,7 @@ qn  := f64.nan;           // a quiet NaN
 - `.epsilon` is the machine epsilon: `1.0 + epsilon != 1.0` while
   `1.0 + epsilon/2.0 == 1.0`.
 - `.trueMin` carries the exact subnormal bit pattern; under a flush-to-zero CPU
-  mode the first arithmetic operation on it reads `0.0`.
+  mode it can flush to `0.0` on the first arithmetic operation that touches it.
 - `.nan` pins no mantissa bits; its one guaranteed property is `nan != nan`
   (native float `!=` lowers unordered).
 - A float-only accessor on an integer type (`i32.epsilon`, `u8.inf`) is a
