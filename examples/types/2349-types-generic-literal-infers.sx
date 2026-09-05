@@ -2,7 +2,7 @@
 // fields: each parameter binds to what the field naming it was given. A
 // capturing lambda binds its own env type, so the literal holds it inline and
 // calls it; a default on a field that names no parameter fills as declared;
-// a positional literal binds by position.
+// a positional literal binds by position, punned bare names included.
 @import "modules/std.sx";
 
 Pair :: struct ($A: Type, $B: Type) {
@@ -29,6 +29,10 @@ main :: () -> i32 {
     print("{} {} {}\n", p.a, p.b, p.tag);
     q := Pair{ 2.5, true };
     print("{} {}\n", q.a, q.b);
+    x := 3;
+    y := "y";
+    r := Pair{ x, y };
+    print("{} {}\n", r.a, r.b);
 
     n := 41;
     h := Holder{ on = ||_{ n } print("held {}\n", n + 1) };
