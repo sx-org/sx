@@ -3892,6 +3892,7 @@ pub const Lowering = struct {
 
     // --- lower/generic.zig (lower_generic) ---
     pub const monomorphizeFunction = lower_generic.monomorphizeFunction;
+    pub const genericLiteralType = lower_expr.genericLiteralType;
     pub const instantiateGenericStruct = lower_generic.instantiateGenericStruct;
     pub const instantiateGenericStructBound = lower_generic.instantiateGenericStructBound;
     pub const mangledInstanceName = lower_generic.mangledInstanceName;

@@ -3302,6 +3302,31 @@ Defaults are only consulted for **trailing** missing positional args; once
 a position is provided, all earlier positions must also be provided. There
 is no named-argument syntax for skipping middle defaults.
 
+#### `@This()`
+
+`@This()` is the type whose body it is written in — a struct, union, enum, or
+`@OpenVariant` member — legal in any type position of that body: a receiver,
+a parameter, a return, a field. Inside a generic body it is the instantiation
+that body is compiled for.
+
+```sx
+Node :: struct {
+    value: i64 = 0;
+    next: ?*@This() = null;
+    with :: (self: @This(), v: i64) -> @This() { n := self; n.value = v; n }
+}
+
+Box :: struct ($T: Type) {
+    item: T;
+    twice :: (self: @This()) -> @This() { b := self; b.item = self.item * 2; b }
+}
+```
+
+Outside a type body it names nothing and is refused. `Self` is a different
+word: it is the conformer in a constraint, an interface, or an open set's
+declaration, and the class in a runtime-class declaration; written in a
+struct body it is refused, naming `@This()`.
+
 #### `@caller`
 
 `@caller` is a compiler-provided value legal **only inside a parameter's
@@ -3638,7 +3663,8 @@ qualified target reaches the module it names (`v.(?compose.Row)`).
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `@sizeOf`, its own methods, and no wrapper around it. `Self` inside
 the set declaration denotes the member type; each required method is monomorphized
-per member, and a member spells its own concrete receiver (`self: *Label`).
+per member, and a member spells its own concrete receiver (`self: *Label`, or
+`self: *@This()`).
 
 #### Declaring a set and its members
 
