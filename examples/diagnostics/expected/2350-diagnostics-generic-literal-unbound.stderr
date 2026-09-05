@@ -1,0 +1,17 @@
+error: 'Pair' leaves '$B' unbound: no written field carries it — write it, or write the type arguments
+  --> examples/diagnostics/2350-diagnostics-generic-literal-unbound.sx:19:10
+   |
+19 |     p := Pair{ a = 1 };
+   |          ^^^^^^^^^^^^^
+
+error: 'y' binds '$T' to 'string', but 'x' bound it to 'i64'
+  --> examples/diagnostics/2350-diagnostics-generic-literal-unbound.sx:20:10
+   |
+20 |     s := Same{ x = 1, y = "one" };
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Buf' takes the value parameter '$N', which no field can infer — write the type arguments
+  --> examples/diagnostics/2350-diagnostics-generic-literal-unbound.sx:21:10
+   |
+21 |     b := Buf{ bytes = .[1, 2] };
+   |          ^^^^^^^^^^^^^^^^^^^^^^

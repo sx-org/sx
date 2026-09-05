@@ -1,0 +1,24 @@
+// A generic literal that leaves a parameter unbound, binds one parameter from
+// two disagreeing fields, or names a value parameter is refused at the
+// literal, never at a later field access.
+@import "modules/std.sx";
+
+Pair :: struct ($A: Type, $B: Type) {
+    a: A;
+    b: B;
+}
+Same :: struct ($T: Type) {
+    x: T;
+    y: T;
+}
+Buf :: struct ($N: u32) {
+    bytes: [N]u8;
+}
+
+main :: () -> i32 {
+    p := Pair{ a = 1 };
+    s := Same{ x = 1, y = "one" };
+    b := Buf{ bytes = .[1, 2] };
+    _ = p; _ = s; _ = b;
+    0
+}

@@ -2410,9 +2410,20 @@ pub fn assertInstanceMapsCoincide(self: *Lowering) void {
     }
 }
 
-pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, args: []const *const Node) TypeId {
-    const table = &self.module.types;
+/// The instance name a template takes under `tb`: the template's identity and
+/// one mangled fragment per type parameter, in declaration order.
+pub fn mangledInstanceName(self: *Lowering, tmpl: *const StructTemplate, tb: *const std.StringHashMap(TypeId)) []const u8 {
+    var name_parts = std.ArrayList(u8).empty;
+    name_parts.appendSlice(self.alloc, self.declIdentityName(tmpl.name, tmpl.decl)) catch @panic("out of memory while mangling generic struct");
+    for (tmpl.type_params) |tp| {
+        const ty = tb.get(tp.name) orelse .unresolved;
+        name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
+        name_parts.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling generic struct");
+    }
+    return name_parts.items;
+}
 
+pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, args: []const *const Node) TypeId {
     // Build mangled name dynamically: StructName__arg1_arg2. The base carries
     // the TEMPLATE's declaration identity and every argument fragment is the
     // nominal-aware `mangleTypeName` — two same-display-name templates, or one
@@ -2482,7 +2493,36 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         }
     }
 
-    const mangled_name = name_parts.items;
+    // Restore bindings; the core installs the instance's own.
+    self.type_bindings = saved_type_bindings;
+    self.comptime_value_bindings = saved_value_bindings;
+    self.pack_bindings = saved_pack_bindings;
+    self.pack_arg_types = saved_pack_arg_types;
+
+    const site = if (args.len > 0) args[0].span else ast.Span{ .start = 0, .end = 0 };
+    return instantiateGenericStructBound(self, tmpl, tb, cvb, pb, name_parts.items, site);
+}
+
+/// Instantiate a template from RESOLVED bindings: `tb` / `cvb` / `pb` are the
+/// type, value and pack bindings by parameter name, and `mangled_name` is the
+/// instance's mangled name. A literal that inferred its arguments from its
+/// fields reaches this with no type-argument nodes at all — a unique lambda has
+/// none to write.
+pub fn instantiateGenericStructBound(
+    self: *Lowering,
+    tmpl: *const StructTemplate,
+    tb_in: std.StringHashMap(TypeId),
+    cvb: std.StringHashMap(i64),
+    pb: std.StringHashMap([]const TypeId),
+    mangled_name: []const u8,
+    site: ast.Span,
+) TypeId {
+    const table = &self.module.types;
+    var tb = tb_in;
+    const saved_type_bindings = self.type_bindings;
+    const saved_value_bindings = self.comptime_value_bindings;
+    const saved_pack_bindings = self.pack_bindings;
+    const saved_pack_arg_types = self.pack_arg_types;
 
     // Check if already instantiated
     const name_id = table.internString(mangled_name);
@@ -2641,7 +2681,6 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     // diagnosed at this site — the declaration is not at fault, since another
     // instantiation may be perfectly admissible.
     if (tmpl.decl.open_variant_of != null) {
-        const site = if (args.len > 0) args[0].span else ast.Span{ .start = 0, .end = 0 };
         // The head names what the TEMPLATE's module can see, not what this
         // instantiation's site can: a member joins the set it was declared into.
         const saved_head_source = self.current_source_file;
