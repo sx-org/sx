@@ -1,0 +1,75 @@
+// An element built under its item's key keeps its id and its state when the
+// window it is built in shifts; built positionally it takes over the id and
+// state of whatever held that occurrence before. A view that claims state
+// while it lays out claims it inside the build transaction, so the entry is
+// there again next frame. The frame's clock rides the context.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+fv :: @import "modules/ui/fluent/view.sx";
+
+// What the last build handed each item.
+ids : [4]u64 = .[0, 0, 0, 0];
+counts : [4]i64 = .[0, 0, 0, 0];
+start : i64 = 0;
+keyed : bool = true;
+
+// Three rows from `start`, each claiming a counter seeded at ten times its
+// item.
+rows :: () -> View {
+    for i in start..start + 3 {
+        prev : u64 = 0;
+        if keyed { prev = context.fluentUi.enterKey(i.(u64)); }
+        id := elementId();
+        n := useState(i64, i * 10);
+        n.set(n.get() + 1);
+        if keyed { context.fluentUi.leaveKey(prev); }
+        ids[i] = id.value;
+        counts[i] = n.get();
+    }
+    v : View = Rect{};
+    v
+}
+
+// A view that claims its counter in `layout`.
+Ticker :: @OpenVariant(fv.View) {
+    fit :: (self: *Ticker, proposal: ProposedSize) -> Size => Size.zero();
+
+    layout :: (self: *Ticker, bounds: Frame) {
+        n := useState(i64, 0);
+        n.set(n.get() + 1);
+        print("  laid out {} times, at {} ns\n", n.get(), context.fluentFrameNs);
+    }
+
+    render :: (self: *Ticker, rc: *RenderContext, frame: Frame) {}
+}
+
+main :: () -> i32 {
+    // Frame one builds items 0–2, frame two items 1–3: item 1 goes from the
+    // second occurrence to the first.
+    mode := 0;
+    while mode < 2 {
+        k := mode == 0;
+        keyed = k;
+        root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+        loop := FrameLoop.init(*root, closure(|| -> View { rows() }), context.allocator);
+        start = 0;
+        loop.frame(0);
+        before := ids[1];
+        start = 1;
+        loop.frame(0);
+        print("{}: item 1 keeps its id {}, counter {}\n",
+            if k then "keyed" else "positional", ids[1] == before, counts[1]);
+        root.deinit();
+        loop.deinit();
+        mode += 1;
+    }
+
+    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+    ticks := FrameLoop.init(*root, closure(|| -> View { v : View = Ticker{}; v }), context.allocator);
+    ticks.frame(16_000_000);
+    ticks.frame(32_000_000);
+    root.deinit();
+    ticks.deinit();
+    0
+}
