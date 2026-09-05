@@ -1,0 +1,30 @@
+start: anchor 0 offset 0 window 0..3 built 4
+  row at 0 100x20
+  row at 20 100x30
+  row at 50 100x40
+  row at 90 100x20
+scrolled into row 1: anchor 1 offset 15 window 1..4 built 4
+  row at -15 100x30
+  row at 15 100x40
+  row at 55 100x20
+  row at 75 100x30
+back past the start: anchor 0 offset 0 window 0..3 built 4
+  row at 0 100x20
+  row at 20 100x30
+  row at 50 100x40
+  row at 90 100x20
+past the end: anchor 16 offset 20 window 16..19 built 4
+  row at -20 100x30
+  row at 10 100x40
+  row at 50 100x20
+  row at 70 100x30
+inserted above: first key 5 then 5, anchor 7
+reversed: anchor 0 offset 0 window 0..3 built 4
+  row at 80 100x20
+  row at 50 100x30
+  row at 10 100x40
+  row at -10 100x20
+prepend at the end: bottom key 200
+prepend while scrolled up: bottom key 1 then 1, anchor 3
+down: window 71..74 at most 5 built per frame, misses 75
+back: window 0..3 misses 0

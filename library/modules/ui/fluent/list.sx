@@ -1,0 +1,241 @@
+// The fluent library's virtualized list.
+//
+// `lazyList(state, count, key, build)` is the VIEW of a `ListState` the app
+// owns, the way a field is the view of a session. Rows are built where the
+// list learns its viewport — in `layout` — and only the rows that intersect
+// it, on the frame arena, each under its item's key so its ids and state
+// follow the item.
+//
+// The position is an anchor: the index of one row and the pixels from that
+// row's start edge to the viewport's start edge. Scrolling moves the offset;
+// layout normalizes it back into the anchor row — forward past rows the
+// viewport has left, backward into rows it has entered — and clamps at both
+// ends. Content space runs from item 0; a reversed list lays it from the
+// bottom edge up, so item 0 at offset 0 is the newest message at the bottom
+// and a prepend leaves a scrolled-up reader where they were.
+//
+// A row in the window is measured every frame, so its cached height is
+// current; a row outside it is estimated from the cache, else from
+// `estimatedRowHeight`.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/fluent/view.sx";
+@import "modules/ui/fluent/identity.sx";
+
+ESTIMATED_ROW_HEIGHT :: 44.0;
+// Points per wheel unit.
+WHEEL_STEP :: 40.0;
+
+ListState :: struct {
+    gpa: Allocator;
+    anchor: i64 = 0;
+    offset: f32 = 0.0;
+    reversed: bool = false;
+    estimatedRowHeight: f32 = ESTIMATED_ROW_HEIGHT;
+    wheelStep: f32 = WHEEL_STEP;
+    // Measured heights by item key, at `heightsWidth`.
+    heights: HashMap(u64, f32) = .{};
+    heightsWidth: f32 = 0.0;
+    // The window the last layout built: `first`..`last` inclusive, and how
+    // many rows that layout built.
+    first: i64 = 0;
+    last: i64 = -1;
+    built: i64 = 0;
+
+    init :: (gpa: Allocator, reversed: bool = false) -> ListState => .{ gpa = gpa, reversed = reversed };
+
+    deinit :: (self: *ListState) {
+        self.heights.deinit(self.gpa)
+    }
+
+    // Moves the content along the list's axis: a positive amount brings
+    // later rows in.
+    scrollBy :: (self: *ListState, dy: f32) {
+        self.offset += dy;
+    }
+
+    // A pointer's movement on screen: the content follows a drag, and a
+    // wheel unit is `wheelStep`. Down the screen is toward earlier rows,
+    // which a reversed list puts above.
+    gesture :: (self: *ListState, g: *ScrollGesture) {
+        dir : f32 = if self.reversed then 1.0 else -1.0;
+        match g.phase {
+            case .wheel: { self.offset += dir * g.delta.y * self.wheelStep; }
+            case .cancel: {}
+            else: { self.offset += dir * g.delta.y; }
+        }
+    }
+
+    // The index space changed: rows inserted at or before the anchor push it
+    // along, so the same item stays anchored — unless the reader sits at the
+    // very start, who stays at the start and sees what arrived there.
+    inserted :: (self: *ListState, at: i64, n: i64) {
+        if self.anchor == 0 and self.offset == 0.0 { return; }
+        if at <= self.anchor { self.anchor += n; }
+    }
+
+    // Rows removed before the anchor pull it back; removing the anchor row
+    // itself anchors what took its index.
+    removed :: (self: *ListState, at: i64, n: i64) {
+        if at + n <= self.anchor {
+            self.anchor -= n;
+        } else if at <= self.anchor {
+            self.anchor = at;
+            self.offset = 0.0;
+        }
+    }
+
+    cachedHeight :: (self: *ListState, key: u64) -> f32 {
+        self.heights.get(key) ?? self.estimatedRowHeight
+    }
+}
+
+Row :: struct {
+    index: i64;
+    view: View;
+    height: f32;
+    frame: Frame;
+}
+
+LazyList :: @OpenVariant(View) {
+    state: *ListState;
+    count: i64;
+    key: Closure(i64) -> u64;
+    build: Closure(i64) -> View;
+    id: ElementId = .{};
+    // The rows this frame built, in index order; those with a frame are the
+    // window.
+    rows: List(Row) = .{};
+
+    // A list fills what it is offered.
+    fit :: (self: *LazyList, proposal: ProposedSize) -> Size {
+        Size{ width = proposal.width ?? 0.0, height = proposal.height ?? 0.0 }
+    }
+
+    // Builds row `i` under its key and measures it at the list's width; a row
+    // already built this frame is answered from `rows`.
+    measure :: (self: *LazyList, i: i64, width: f32) -> f32 {
+        for r in self.rows {
+            if r.index == i { return r.height; }
+        }
+        k := self.key(i);
+        prev := context.fluentUi.enterKey(k);
+        v := self.build(i);
+        context.fluentUi.leaveKey(prev);
+        h := v.fit(ProposedSize{ width = width, height = null }).height;
+        self.state.heights.put(k, h, self.state.gpa);
+        self.state.built += 1;
+        // Rows arrive in index order from every walk that builds them.
+        at := self.rows.len;
+        while at > 0 and self.rows.items[at - 1].index > i { at -= 1; }
+        self.rows.insert(at, Row{ index = i, view = v, height = h, frame = Frame.zero() });
+        h
+    }
+
+    // The height of a row the window does not reach.
+    estimate :: (self: *LazyList, i: i64) -> f32 {
+        for r in self.rows {
+            if r.index == i { return r.height; }
+        }
+        self.state.cachedHeight(self.key(i))
+    }
+
+    layout :: (self: *LazyList, bounds: Frame) {
+        st := self.state;
+        w := bounds.size.width;
+        h := bounds.size.height;
+        self.rows.len = 0;
+        st.built = 0;
+        if w != st.heightsWidth {
+            st.heights.clear();
+            st.heightsWidth = w;
+        }
+        if self.count == 0 {
+            st.anchor = 0;
+            st.offset = 0.0;
+            st.first = 0;
+            st.last = -1;
+            return;
+        }
+        if st.anchor >= self.count {
+            st.anchor = self.count - 1;
+            st.offset = 0.0;
+        }
+        if st.anchor < 0 { st.anchor = 0; }
+
+        // Forward: rows the viewport has left are estimated. Backward: a row
+        // the viewport has entered is measured.
+        while st.anchor + 1 < self.count and st.offset >= self.estimate(st.anchor) {
+            st.offset -= self.estimate(st.anchor);
+            st.anchor += 1;
+        }
+        self.pullBack();
+
+        // Content shorter than the viewport past the anchor pulls the window
+        // back so the last row ends at the viewport's end.
+        y := -st.offset;
+        i := st.anchor;
+        while y < h and i < self.count {
+            y += self.measure(i, w);
+            i += 1;
+        }
+        if y < h {
+            st.offset -= h - y;
+            self.pullBack();
+        }
+
+        // The window.
+        y = -st.offset;
+        i = st.anchor;
+        st.first = st.anchor;
+        st.last = st.anchor - 1;
+        while y < h and i < self.count {
+            rh := self.measure(i, w);
+            top := if st.reversed then bounds.maxY() - (y + rh) else bounds.origin.y + y;
+            for *r in self.rows {
+                if r.index == i {
+                    r.frame = Frame.make(bounds.origin.x, top, w, rh);
+                    r.view.layout(r.frame);
+                }
+            }
+            st.last = i;
+            y += rh;
+            i += 1;
+        }
+    }
+
+    // A negative offset steps the anchor back into the row above, whose
+    // height is measured; the first row clamps at zero.
+    pullBack :: (self: *LazyList) {
+        st := self.state;
+        while st.offset < 0.0 {
+            if st.anchor == 0 {
+                st.offset = 0.0;
+                return;
+            }
+            st.anchor -= 1;
+            st.offset += self.measure(st.anchor, st.heightsWidth);
+        }
+    }
+
+    // The scroll region is declared before the rows, so a row's own regions
+    // win the points they cover; the rows draw under the list's clip.
+    render :: (self: *LazyList, rc: *RenderContext, frame: Frame) {
+        st := self.state;
+        rc.scrollRegion(self.id.value, frame, closure(|g: *ScrollGesture|_{ st } { st.gesture(g) }));
+        rc.pushClip(frame);
+        for *r in self.rows {
+            if r.index >= st.first and r.index <= st.last {
+                r.view.render(rc, r.frame);
+            }
+        }
+        rc.popClip();
+    }
+}
+
+// The one way a state becomes a list. The id is minted at THIS call site.
+lazyList :: (state: *ListState, count: i64, key: Closure(i64) -> u64, build: Closure(i64) -> View, site: SiteId = siteOf(@caller)) -> LazyList {
+    LazyList{ state = state, count = count, key = key, build = build, id = elementId(site) }
+}
