@@ -9,6 +9,7 @@ const program_index = @import("program_index.zig");
 const Node = ast.Node;
 const TypeId = types.TypeId;
 const intrinsics = @import("intrinsics.zig");
+const init_plan = @import("lower/init_plan.zig");
 const FuncId = inst.FuncId;
 const BuiltinId = inst.BuiltinId;
 const Lowering = lower.Lowering;
@@ -368,6 +369,15 @@ pub const CallResolver = struct {
                 self.l.inferExprType(cfa.object)
             else
                 TypeId.unresolved;
+            // `value.site()` on an `@Init(T)` and `content.site()` on a build
+            // block answer `?@SourceSite`; the lowering decides both on the
+            // receiver's type ahead of every name-keyed path, and so does the
+            // plan.
+            if (std.mem.eql(u8, cfa.field, init_plan.site_method) and
+                (self.l.initTargetOf(recv_ty) != null or self.l.module.types.blockSite(recv_ty) != null))
+            {
+                if (self.l.sourceSiteType()) |tid| return refl(cfa.field, self.l.module.types.optionalOf(tid));
+            }
             // Receiver is a protocol type → protocol method dispatch. The
             // receiver may be erased directly (`P`), a view (`*P`), or the
             // optional of either (`?P` / `?*P` — the

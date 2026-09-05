@@ -1,0 +1,38 @@
+// A build-block initializer's `site()` is an optional `@SourceSite`: it binds
+// in an `if`, its fields read, and it passes to a function taking one.
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+
+Cell :: constraint {
+    name :: (self: *Self) -> string;
+}
+Text :: struct { body: string = ""; }
+impl Cell for Text {
+    name :: (self: *Text) -> string => self.body;
+}
+
+column :: (s: @SourceSite) -> i32 => s.column;
+
+Lines :: struct {
+    n: i64 = 0;
+    expression :: (self: *Lines, value: $I/@Init($V/Cell)) {
+        if s := value.site() {
+            print("statement at {}:{}\n", s.line, column(s));
+        }
+        self.n += 1;
+    }
+}
+
+collect :: (content: $B/@BuildBlock(Cell)) -> i64 {
+    sink := Lines{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    print("{}\n", collect() {
+        Text{ body = "a" };
+          Text{ body = "b" };
+    });
+    0
+}
