@@ -1,0 +1,86 @@
+// Host-GPU pixel golden for a lazy list scrolled mid-row: the first visible
+// row is cut by the list's clip, so its top half draws nothing above the
+// list's edge and the rest of the window draws beneath it.
+//
+// macOS renders through the windowless Metal backend:
+//     sx run examples/ui/2346-ui-pixel-lazy-list-clip.sx
+// Other desktops go GL over a hidden SDL window:
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/2346-ui-pixel-lazy-list-clip.sx
+// Regenerate the reference:
+//     SX_UPDATE_PIXELS=1 sx run examples/ui/2346-ui-pixel-lazy-list-clip.sx
+//
+// The corpus compiles this file but does not run it: the pixel comparison
+// is a manual host gate, and where no display or GPU exists
+// openPixelSurface returns null and this reports a clean skip.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/surface.sx";
+@import "modules/ui/surface_select.sx";
+@import "modules/ui/pixeltest.sx";
+ui :: @import "modules/ui/types.sx";
+
+BACKDROP :: ui.Color{ r = 20, g = 20, b = 20, a = 255 };
+MARGIN :: 10.0;
+ROW_PAD :: 4.0;
+
+rowFill :: (i: i64) -> Color =>
+    if i % 2 == 0 then Color.rgb(70, 110, 200) else Color.rgb(200, 120, 70);
+
+main :: () {
+    surface := openPixelSurface(200, 120);
+    if surface == null {
+        print("pixels skipped: no display/GPU on this host\n");
+        return;
+    }
+    s := surface?!;
+
+    line := lineMetrics(16.0).height;
+    rowHeight := line + ROW_PAD * 2.0;
+
+    st := ListState.init(context.allocator);
+    root := UiRoot.init(Size{ width = 200.0, height = 120.0 }, context.allocator);
+    loop := FrameLoop.init(*root, closure(||_{ st = *st } -> View {
+        v : View = zstack(ALIGN_TOP_LEADING) {
+            Rect{ fill = BACKDROP };
+            place(lazyList(st, 30,
+                closure(|i: i64| -> u64 { i.(u64) }),
+                closure(|i: i64| -> View {
+                    r : View = place(Label{ text = concat("row ", intToString(i)) },
+                        Mod{ bg = rowFill(i), padding = EdgeInsets.symmetric(8.0, ROW_PAD) });
+                    r
+                })), Mod{ margin = EdgeInsets.all(MARGIN) });
+        };
+        v
+    }), context.allocator);
+
+    loop.frame(0);
+    // Half a row scrolled away: the first visible row starts above the
+    // list's top edge.
+    st.scrollBy(rowHeight * 0.5);
+    loop.frame(0);
+    print("window {}..{} anchor {} offset {}\n", st.first, st.last, st.anchor, st.offset.(i64));
+
+    s.render(*root.snapshot.scene);
+    pixels := s.readRgba(context.allocator);
+    w := s.width();
+
+    ok := true;
+    margin := MARGIN.(i64);
+    // Nothing draws in the margin above the list, and the cut row draws
+    // right under the edge.
+    if inkedRows(pixels, w, 0, margin) {
+        print("pixel FAIL: ink above the list's edge\n");
+        ok = false;
+    }
+    if !inkedRows(pixels, w, margin, margin + 4) {
+        print("pixel FAIL: the cut row does not reach the edge\n");
+        ok = false;
+    }
+    if !pixelGolden(pixels, w, s.height(), "examples/ui/pixels/2346-lazy-list-clip.png") { ok = false; }
+    st.deinit();
+    root.deinit();
+    loop.deinit();
+    if !ok { process.exit(1); }
+}
