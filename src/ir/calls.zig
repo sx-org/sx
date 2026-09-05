@@ -48,6 +48,8 @@ pub const CallPlan = struct {
         /// the callee expression as the receiver.
         callable_nominal,
         protocol_dispatch,
+        /// A required method of an open set, dispatched on the receiver's tag.
+        open_set_dispatch,
         struct_method,
         /// Free-function UFCS: `recv.fn(args)` → `fn(recv, args)`, where `fn`
         /// is a plain free function and `recv` is a value (not a namespace /
@@ -390,6 +392,23 @@ pub const CallResolver = struct {
                             .prepends_receiver = true,
                         };
                     }
+                }
+            }
+            // Receiver is an open set (or a pointer to one) and the field names
+            // a method the set requires: the call types as that method's
+            // return, the way lowering dispatches it.
+            {
+                var set_recv = recv_ty;
+                if (!set_recv.isBuiltin()) {
+                    const si = self.l.module.types.get(set_recv);
+                    if (si == .pointer) set_recv = si.pointer.pointee;
+                }
+                if (self.l.openSetOf(set_recv)) |set| {
+                    if (Lowering.openSetRequiredMethod(set, cfa.field)) |m| return .{
+                        .kind = .open_set_dispatch,
+                        .return_type = self.l.openSetMethodReturnType(set, m),
+                        .prepends_receiver = true,
+                    };
                 }
             }
             // Runtime-class instance method: look up the method's declared

@@ -1224,6 +1224,16 @@ pub fn requiredMethod(set: *const Set, name: []const u8) ?ast.ProtocolMethodDecl
     return null;
 }
 
+/// The type a call of a required method evaluates to, read in the set's own
+/// source so its spellings resolve where they were written.
+pub fn methodReturnType(self: *Lowering, set: *const Set, method: ast.ProtocolMethodDecl) TypeId {
+    const rt = method.return_type orelse return .void;
+    const saved = self.current_source_file;
+    defer self.setCurrentSourceFile(saved);
+    self.setCurrentSourceFile(set.source_file);
+    return self.resolveTypeWithBindings(rt);
+}
+
 // ── Formation: a member value becomes a set value ────────────────────────
 
 /// Write `value` into the set slot `slot` points at: the member's tag in the tag
