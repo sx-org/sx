@@ -1,0 +1,4 @@
+keyed: item 1 keeps its id true, counter 12
+positional: item 1 keeps its id false, counter 2
+  laid out 1 times, at 16000000 ns
+  laid out 2 times, at 32000000 ns
