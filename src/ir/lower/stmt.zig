@@ -2688,14 +2688,17 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     }
                 }
             }
-            // Auto-deref: if the object is a pointer field from a non-identifier
-            // (i.e., result of structGep on a pointer slot), load the pointer value.
-            if (fa.object.data != .identifier and !obj_ty.isBuiltin()) {
+            // A pointer held in a field or an element arrives as its slot's
+            // address, so the pointer is loaded out of it; a call's pointer
+            // result IS the address.
+            if ((fa.object.data == .field_access or fa.object.data == .index_expr) and !obj_ty.isBuiltin()) {
                 const pinfo = self.module.types.get(obj_ty);
                 if (pinfo == .pointer) {
                     obj_ptr = self.builder.load(obj_ptr, obj_ty);
                     obj_ty = pinfo.pointer.pointee;
                 }
+            } else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .pointer) {
+                obj_ty = self.module.types.get(obj_ty).pointer.pointee;
             }
 
             // Reject a direct write to a payload enum variant: it
