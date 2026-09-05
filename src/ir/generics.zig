@@ -332,6 +332,15 @@ pub const GenericResolver = struct {
                 const matched = self.l.matchTypeParam(param.type_expr, tp.name);
                 if (matched) {
                     if (s2_arg_idx < args_ast.len) {
+                        // A written lambda literal IS its env struct; the
+                        // binder takes that type before the literal lowers.
+                        const arg_node = args_ast[s2_arg_idx];
+                        if (Lowering.boundOnBinder(param.type_expr, tp.name) and arg_node.data == .lambda and arg_node.data.lambda.has_env) {
+                            if (self.l.lambdaEnvType(&arg_node.data.lambda)) |env_ty| {
+                                if (inferred_ty == null) inferred_ty = env_ty;
+                                continue;
+                            }
+                        }
                         // A guard-narrowed container argument binds through its
                         // payload — `[]$T` against `[]i64`, not `?[]i64`.
                         const inferred = self.l.narrowedContainerChild(args_ast[s2_arg_idx]) orelse
