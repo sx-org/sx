@@ -1,0 +1,185 @@
+// iOS-only: a reversed lazy list as a chat history on a UIKitPlatform in
+// Metal mode. Three hundred messages of varying length, newest at the
+// bottom; a drag scrolls, a release flings, a tap marks a message (state
+// keyed by the message, so it follows it), and every few seconds a new
+// message arrives at the bottom — a reader at the end sees it, a reader
+// scrolled up stays put.
+//
+// Build + run:
+//   sx build --target ios-sim examples/platform/2347-platform-lazy-chat.sx \
+//     -o /tmp/SxLazyChat --bundle /tmp/SxLazyChat.app \
+//     --bundle-id co.swipelab.sxlazychat
+//   codesign --force --sign - --timestamp=none /tmp/SxLazyChat.app
+//   xcrun simctl install booted /tmp/SxLazyChat.app
+//   xcrun simctl launch --terminate-running-process booted co.swipelab.sxlazychat
+
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/fs.sx";
+@import "modules/build.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
+@import "modules/platform/api.sx";
+@import "modules/platform/uikit.sx";
+@import "modules/platform/uikit_app.sx";
+@import "modules/ui/glyph_cache.sx";
+@import "modules/ui/renderer.sx";
+@import "modules/ui/fluent.sx";
+
+@framework "UIKit";
+@framework "QuartzCore";
+@framework "OpenGLES";
+
+HOST_FACE :: "/System/Library/Fonts/Supplemental/Arial.ttf";
+STAGE_DIR :: ".sx-tmp/2347-lazy-chat";
+STAGE_FACE :: ".sx-tmp/2347-lazy-chat/Arial.ttf";
+BUNDLE_FACE :: "assets/Arial.ttf";
+
+// A host without the face builds an app without one; the runtime answers
+// that with a non-zero exit.
+configure :: () {
+    opts := @buildOptions();
+    opts.addAssetDir(STAGE_DIR, "assets");
+    if !exists(HOST_FACE) { return; }
+    if !createDirAll(STAGE_DIR) { return; }
+    copyFile(HOST_FACE, STAGE_FACE);
+}
+@run configure();
+
+FONT_SIZE :: 17.0;
+ARRIVAL_NS :: 4_000_000_000;
+
+Message :: struct {
+    id: u64;
+    text: string;
+}
+
+gPlat     : *UIKitPlatform = null;
+gGpu      : *MetalGPU      = null;
+gRenderer : *UIRenderer    = null;
+gGlyphs   : *GlyphCache    = null;
+gRoot     : *UiRoot        = null;
+gLoop     : *FrameLoop     = null;
+gState    : *ListState     = null;
+gMessages : *List(Message) = null;
+gNextId   : u64 = 0;
+gLastArrivalNs : i64 = 0;
+
+// Messages cycle through five lengths, so rows wrap to one to four lines.
+messageText :: (id: u64) -> string {
+    body : string = match id % 5 {
+        case 0: "ok";
+        case 1: "see you at the usual place around seven";
+        case 2: "the build is green again after the fix landed, and the pixel golden on this Mac agrees with the reference";
+        case 3: "sounds good";
+        else: "can you send me the link to the doc we talked about yesterday? I lost it when the tab closed";
+    };
+    concat("#", intToString(id.(i64)), "  ", body)
+}
+
+// The newest message is item 0.
+arrive :: () {
+    gMessages.insert(0, Message{ id = gNextId, text = messageText(gNextId) });
+    gNextId += 1;
+    gState.inserted(0, 1);
+}
+
+row :: (i: i64) -> View {
+    m := gMessages.items[i];
+    marked := useState(bool, false);
+    mine := m.id % 3 == 0;
+    fill := if marked.get() then Color.rgb(230, 180, 60)
+        else if mine then Color.rgb(48, 120, 210)
+        else Color.rgb(58, 66, 84);
+    v : View = place(tappable(
+        place(Label{ text = m.text, fontSize = FONT_SIZE },
+            Mod{ bg = fill, corner = 12.0, padding = EdgeInsets.symmetric(12.0, 8.0) }),
+        closure(||_{ marked } { marked.set(!marked.get()) })),
+        Mod{ margin = EdgeInsets{ top = 3.0, left = if mine then 60.0 else 12.0, bottom = 3.0, right = if mine then 12.0 else 60.0 } });
+    v
+}
+
+frame :: () {
+    fc := gPlat.beginFrame();
+
+    // The layer is created during the scene connect, which fires after
+    // main() has returned into UIApplicationMain.
+    if gGpu.layer == null {
+        glLayer := gPlat.glLayer;
+        if glLayer == null { return; }
+        if !gGpu.init(glLayer, gPlat.pixelW, gPlat.pixelH) { return; }
+        gGlyphs.setDpiScale(fc.dpiScale);
+        gRenderer.dpiScale = fc.dpiScale;
+    }
+
+    events := gPlat.pollEvents();
+    i : i64 = 0;
+    while i < events.len {
+        match events.ptr[i] {
+            case .input: |ie| { gRoot.queue.push(ie); }
+            else: {}
+        }
+        i += 1;
+    }
+
+    now := time.monoNs();
+    if now - gLastArrivalNs > ARRIVAL_NS {
+        arrive();
+        gLastArrivalNs = now;
+    }
+
+    bg : ClearColor = .{ r = 0.07, g = 0.09, b = 0.13, a = 1.0 };
+    if !gGpu.beginFrame(bg) { return; }
+    gRoot.viewport = Size{ width = fc.viewportW, height = fc.viewportH };
+    gLoop.frame(now);
+
+    gRenderer.begin(fc.viewportW, fc.viewportH, gGlyphs.textureId);
+    gRenderer.process(*gRoot.snapshot.scene);
+    gGlyphs.uploadAtlasToGpu();
+    gRenderer.flush();
+    gGpu.endFrame(0);
+    gPlat.endFrame();
+}
+
+main :: () -> i32 {
+    inline if @host.os != .ios { return 0; }
+
+    plat := context.allocator.make(UIKitPlatform{ gpuMode = .metal });
+    if !plat.init("Sx Lazy Chat", 0, 0) { return 1; }
+    gPlat = plat;
+
+    gGpu = context.allocator.make(MetalGPU{});
+    if !gGpu.init(null, 0, 0) { return 1; }
+
+    gRenderer = context.allocator.make(UIRenderer{});
+    gRenderer.gpu = gGpu.(GPU);
+    gRenderer.init();
+
+    gGlyphs = context.allocator.make(GlyphCache{});
+    gGlyphs.gpu = gGpu.(GPU);
+    if !gGlyphs.init(BUNDLE_FACE, FONT_SIZE) { return 1; }
+    setGlobalFont(gGlyphs);
+
+    gMessages = context.allocator.make(List(Message){});
+    gState = context.allocator.make(ListState.init(context.allocator, true));
+    for 0..300 { arrive(); }
+    gLastArrivalNs = time.monoNs();
+
+    gRoot = context.allocator.make(UiRoot.init(Size{ width = 0.0, height = 0.0 }, context.allocator));
+    gLoop = context.allocator.make(FrameLoop.init(gRoot, closure(|| -> View {
+        insets := gPlat.safeInsets();
+        v : View = zstack(ALIGN_TOP_LEADING) {
+            Rect{ fill = Color.rgb(18, 23, 33) };
+            place(lazyList(gState, gMessages.len,
+                closure(|i: i64| -> u64 { gMessages.items[i].id }),
+                closure(|i: i64| -> View { row(i) })),
+                Mod{ margin = EdgeInsets{ top = insets.top, left = 0.0, bottom = insets.bottom, right = 0.0 } });
+        };
+        v
+    }), context.allocator));
+
+    uikitAppRun(plat, frame);
+    plat.shutdown();
+    0
+}

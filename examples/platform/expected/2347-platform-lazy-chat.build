@@ -1,0 +1,1 @@
+{ "target": "ios-sim", "compile_only": true, "host_os": "macos" }
