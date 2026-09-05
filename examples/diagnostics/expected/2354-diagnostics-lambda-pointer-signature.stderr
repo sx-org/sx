@@ -1,0 +1,16 @@
+error: a pointer to this lambda does not erase to 'Closure(i64) -> i64': the signatures differ
+  --> examples/diagnostics/2354-diagnostics-lambda-pointer-signature.sx:11:9
+   |
+11 |     _ = takes(*f);
+   |         ^^^^^^^^^
+
+error: a capturing lambda does not erase to 'Closure()' — its environment has no home here
+  --> examples/diagnostics/2354-diagnostics-lambda-pointer-signature.sx:12:5
+   |
+12 |     plain(f);
+   |     ^^^^^^^^
+
+help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the allocator; a pointer to it ('*f') erases by borrowing
+   |
+12 |     plain(f);
+   |     ^^^^^^^^

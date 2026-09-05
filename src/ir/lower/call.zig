@@ -3929,7 +3929,7 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     switch (self.coercionResolver().classify(src_ty, dst)) {
         .no_op => return val,
         .unbox_any => unreachable,
-        .closure_to_fn_reject, .unique_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => return refuseAs(self, src_ty, dst, c.callee.span),
+        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => return refuseAs(self, src_ty, dst, c.callee.span),
         else => {
             // The explicit ladder carries the modeled puns (same-width integer
             // signedness, pointer words); a value it passes through untyped has

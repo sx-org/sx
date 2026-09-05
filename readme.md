@@ -10,7 +10,7 @@ interfaces, and an LLVM backend — compiled to native code.
 
 Point :: struct {
     x, y: i32;
-    magnitude :: (self: *Point) -> f32 { @sqrt(self.x * self.x + self.y * self.y); }
+    magnitude :: (self: *@This()) -> f32 { @sqrt(self.x * self.x + self.y * self.y); }
 }
 
 main :: () {

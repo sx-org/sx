@@ -1,0 +1,11 @@
+error: a parameter default belongs to the declaration of 'tag', not to an impl
+  --> examples/diagnostics/2356-diagnostics-param-default-belongs-to-the-declaration.sx:12:27
+   |
+12 |     tag :: (self: *Plain, n: i64 = 2) -> i64 => self.v + n;
+   |                           ^
+
+error: an interface method takes no parameter default — its calls dispatch without the declaration; 'name' declares one on 'upper'
+  --> examples/diagnostics/2356-diagnostics-param-default-belongs-to-the-declaration.sx:16:41
+   |
+16 |     name :: (self: *Self, upper: bool = false) -> string;
+   |                                         ^^^^^

@@ -34,6 +34,9 @@ pub const Parser = struct {
     diagnostics: ?*errors.DiagnosticList = null,
     /// Type param names from enclosing generic struct (set while parsing methods)
     struct_type_params: []const []const u8 = &.{},
+    /// The name of the struct, union, enum or member whose body is being
+    /// parsed — what `@This()` spells; null outside a type body.
+    type_body_name: ?[]const u8 = null,
     /// The statement header being parsed, with the `{` `(` `[` depth it was
     /// taken at: the header reserves exactly the group written at that depth,
     /// so `{` opens the statement body (`if x != .{1, 2} { … }`,
@@ -614,6 +617,17 @@ pub const Parser = struct {
                     .args = try self.parseTypeArgList(),
                 } });
             }
+            // `@This()` is the enclosing type's own name: a generic body's
+            // template name resolves to the instantiation being compiled.
+            if (std.mem.eql(u8, at_name, "@This") and self.peekTag(1) == .l_paren) {
+                const at_this = self.tok;
+                self.advance();
+                self.advance();
+                try self.expect(.r_paren);
+                const owner = self.type_body_name orelse
+                    return self.failAt(self.tokens.token(at_this).loc, "'@This()' names the enclosing type; there is none here");
+                return try self.createNode(start, .{ .type_expr = .{ .name = owner } });
+            }
             const at_idx = self.tok;
             self.advance();
             // A type-argument list is what a compiler-formed type takes; a
@@ -909,6 +923,7 @@ pub const Parser = struct {
             // `parameterized_type_expr` so resolution skips the builtin
             // classifier and looks up a `` `i32 ``-declared type.
             const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            const name_tok = self.tok;
             const name = try self.parseQualifiedName();
 
             // Only a `Closure` IMMEDIATELY followed by `(` builds the type; a
@@ -934,6 +949,9 @@ pub const Parser = struct {
                     is_struct_generic = true;
                     break;
                 }
+            }
+            if (std.mem.eql(u8, name, "Self") and self.type_body_name != null) {
+                return self.failAt(self.tokens.token(name_tok).loc, "'Self' is the conformer in a constraint or interface; a type names itself '@This()'");
             }
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = is_struct_generic, .is_raw = atom_is_raw } });
         }
@@ -1349,6 +1367,9 @@ pub const Parser = struct {
         }
 
         try self.expect(.l_brace);
+        const saved_body_name = self.type_body_name;
+        self.type_body_name = name;
+        defer self.type_body_name = saved_body_name;
         const members = try self.parseSetMembers(if (is_flags) .enum_flag else .enum_variant);
         try self.expect(.r_brace);
         // Always produce enum_decl; variant_types distinguishes payload-less from payload-bearing
@@ -1392,6 +1413,9 @@ pub const Parser = struct {
     fn parseUnionDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         self.advance(); // skip 'union'
         try self.expect(.l_brace);
+        const saved_body_name = self.type_body_name;
+        self.type_body_name = name;
+        defer self.type_body_name = saved_body_name;
         var field_names = std.ArrayList([]const u8).empty;
         var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
@@ -1507,6 +1531,9 @@ pub const Parser = struct {
         const saved_struct_type_params = self.struct_type_params;
         self.struct_type_params = tp_names.items;
         defer self.struct_type_params = saved_struct_type_params;
+        const saved_body_name = self.type_body_name;
+        self.type_body_name = name;
+        defer self.type_body_name = saved_body_name;
 
         var field_names = std.ArrayList([]const u8).empty;
         var field_name_starts = std.ArrayList(u32).empty;
@@ -1765,6 +1792,7 @@ pub const Parser = struct {
             var param_names = std.ArrayList([]const u8).empty;
             var param_name_spans = std.ArrayList(ast.Span).empty;
             var param_name_is_raw = std.ArrayList(bool).empty;
+            var param_defaults = std.ArrayList(?*Node).empty;
 
             while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
@@ -1781,8 +1809,18 @@ pub const Parser = struct {
                 self.advance();
                 try self.expect(.colon);
                 const ptype = try self.parseTypeExpr();
+                // A default, as a function parameter takes one.
+                var pdefault: ?*Node = null;
+                if (self.tokens.tag(self.tok) == .equal) {
+                    self.advance();
+                    const saved_in_default = self.in_param_default;
+                    self.in_param_default = true;
+                    defer self.in_param_default = saved_in_default;
+                    pdefault = try self.parseBinary(Prec.none, .bit_or);
+                }
                 try param_names.append(self.allocator, pname);
                 try param_types.append(self.allocator, ptype);
+                try param_defaults.append(self.allocator, pdefault);
             }
             try self.expect(.r_paren);
 
@@ -1832,6 +1870,7 @@ pub const Parser = struct {
             const all_param_names = try param_names.toOwnedSlice(self.allocator);
             const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
             const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
+            const all_param_defaults = try param_defaults.toOwnedSlice(self.allocator);
 
             try methods.append(self.allocator, .{
                 .name = method_name,
@@ -1839,6 +1878,7 @@ pub const Parser = struct {
                 .param_names = all_param_names[1..],
                 .param_name_spans = all_param_name_spans[1..],
                 .param_name_is_raw = all_param_name_is_raw[1..],
+                .param_defaults = all_param_defaults[1..],
                 .receiver_is_pointer = receiver_is_pointer,
                 .return_type = return_type,
                 .default_body = default_body,

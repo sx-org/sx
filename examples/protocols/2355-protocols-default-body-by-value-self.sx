@@ -1,0 +1,48 @@
+// A constraint's default body is compiled against each conformer: a by-value
+// `Self` receiver and a `Self` return are the conformer, so a chain of
+// defaults reads and returns it. A parameter default on the declaration
+// fills a call that omits the argument, on a conformer's own method as on a
+// default, and through a bound.
+@import "modules/std.sx";
+
+Mod :: struct {
+    pad: f32 = 0.0;
+    corner: f32 = 0.0;
+}
+
+Boxed :: constraint {
+    box :: (self: *Self) -> *Mod;
+    padded :: (self: Self, p: f32) -> Self { b := self; b.box().pad = p; b }
+    rounded :: (self: Self, r: f32 = 4.0) -> Self { b := self; b.box().corner = r; b }
+    describe :: (self: *Self, unit: string = "pt") -> string;
+}
+
+Card :: struct {
+    m: Mod = .{};
+    title: string = "card";
+}
+impl Boxed for Card {
+    box :: (self: *Card) -> *Mod => *self.m;
+    describe :: (self: *Card, unit: string) -> string => concat(self.title, " ", unit);
+}
+
+Chip :: struct ($T: Type) {
+    m: Mod = .{};
+    value: T;
+}
+impl Boxed for Chip($T) {
+    box :: (self: *Chip(T)) -> *Mod => *self.m;
+    describe :: (self: *Chip(T), unit: string) -> string => concat("chip ", unit);
+}
+
+trim :: (v: $V/Boxed) -> V => v.padded(1.0).rounded();
+
+main :: () -> i32 {
+    c := Card{}.padded(4.0).rounded();
+    print("{} {} {}\n", c.m.pad.(i64), c.m.corner.(i64), c.describe());
+    d := Card{}.rounded(9.0);
+    print("{} {}\n", d.m.corner.(i64), d.describe("px"));
+    ch := trim(Chip{ value = 7 });
+    print("{} {} {} {}\n", ch.m.pad.(i64), ch.m.corner.(i64), ch.value, ch.describe());
+    0
+}

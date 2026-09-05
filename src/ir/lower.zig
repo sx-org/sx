@@ -428,6 +428,10 @@ pub fn nameVisibleOverEdges(
 
 // ── Lowering ────────────────────────────────────────────────────────────
 
+/// A written literal in the function it is lowered in: one instantiation of a
+/// generic body types its literals apart from another's.
+pub const LambdaKey = struct { lam: *const ast.Lambda, func: u32 };
+
 pub const Lowering = struct {
     module: *Module,
     builder: Builder,
@@ -684,6 +688,13 @@ pub const Lowering = struct {
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    /// A written lambda literal's env struct, interned once for the typer and
+    /// the lowering alike, keyed by the literal.
+    lambda_env_types: std.AutoHashMap(LambdaKey, TypeId),
+    /// The literal each such env type was named for.
+    env_lambdas: std.AutoHashMap(TypeId, *const ast.Lambda),
+    /// The env type whose function is being materialized on demand.
+    materializing_lambda: ?TypeId = null,
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@vaStart` reads its `..` tail from it
@@ -1392,6 +1403,8 @@ pub const Lowering = struct {
             .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
             .narrowed = std.StringHashMap(void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
+            .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
+            .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
@@ -3892,7 +3905,10 @@ pub const Lowering = struct {
 
     // --- lower/generic.zig (lower_generic) ---
     pub const monomorphizeFunction = lower_generic.monomorphizeFunction;
+    pub const genericLiteralType = lower_expr.genericLiteralType;
     pub const instantiateGenericStruct = lower_generic.instantiateGenericStruct;
+    pub const instantiateGenericStructBound = lower_generic.instantiateGenericStructBound;
+    pub const mangledInstanceName = lower_generic.mangledInstanceName;
     pub const instantiateTypeFunction = lower_generic.instantiateTypeFunction;
     pub const instantiateTypeUnion = lower_generic.instantiateTypeUnion;
     pub const findStructInBody = lower_generic.findStructInBody;
@@ -4040,6 +4056,7 @@ pub const Lowering = struct {
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;
     pub const collectCaptures = lower_closure.collectCaptures;
     pub const uniqueLambdaOf = lower_closure.uniqueLambdaOf;
+    pub const lambdaEnvType = lower_closure.lambdaEnvType;
     pub const uniqueLambdaThrough = lower_closure.uniqueLambdaThrough;
     pub const callableSigOf = lower_closure.callableSigOf;
     pub const callableShapeOf = lower_closure.callableShapeOf;

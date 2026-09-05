@@ -1,0 +1,27 @@
+// A pointer to a capturing lambda erases to a Closure by borrowing: the
+// pointer is the env word, nothing is allocated, and the Closure is good for
+// as long as the lambda it points at is. A struct holding its handler inline
+// hands a region the pointer the same way. The lambda value itself still does
+// not erase.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+
+keep :: (h: Closure()) -> Closure() => h;
+maybe :: (h: ?Closure(i64) -> i64) -> i64 { if hh := h { hh(2) } else { -1 } }
+
+Tap :: struct ($F: Type) {
+    on: F;
+    fire :: (self: *@This()) { keep(*self.on)() }
+}
+
+main :: () -> i32 {
+    n := 41;
+    f := ||_{ n } print("n is {}\n", n + 1);
+    h := keep(*f);
+    h();
+    g := |x: i64|_{ n } -> i64 x * n;
+    print("optional slot {}\n", maybe(*g));
+    t := Tap{ on = ||_{ n } print("inline {}\n", n + 2) };
+    t.fire();
+    0
+}

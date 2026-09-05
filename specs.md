@@ -959,9 +959,18 @@ parameters keep their declared concrete types; only the receiver erases.
 it (or override it by providing their own). Default bodies are compiled
 **per conformer**, against the concrete `Self`, so a call
 `self.method(…)` inside a default body resolves statically against the
-conformer. Dynamic dispatch happens at the outer call site only — the
-vtable slot for a defaulted method points at that conformer's compiled
-instance.
+conformer, and a by-value receiver or return spelled `Self` is the
+conformer's value (`padded :: (self: Self, p: f32) -> Self { b := self; …; b }`).
+Dynamic dispatch happens at the outer call site only — the vtable slot
+for a defaulted method points at that conformer's compiled instance.
+
+**Parameter defaults.** A constraint method's parameter may carry a
+default (`rounded :: (self: Self, r: f32 = 4.0) -> Self`), written on the
+declaration alone: a call that omits the argument fills it from there,
+whether the conformer answers with the default body or with its own
+method, and an impl method that writes a default is refused. An interface
+or open-set method takes none — its calls dispatch without the
+declaration.
 
 **Parameters.** The head may declare type and value parameters, exactly
 as generic structs do (`constraint(T: Type) …`, `interface(N: u32) …`).
@@ -3302,6 +3311,31 @@ Defaults are only consulted for **trailing** missing positional args; once
 a position is provided, all earlier positions must also be provided. There
 is no named-argument syntax for skipping middle defaults.
 
+#### `@This()`
+
+`@This()` is the type whose body it is written in — a struct, union, enum, or
+`@OpenVariant` member — legal in any type position of that body: a receiver,
+a parameter, a return, a field. Inside a generic body it is the instantiation
+that body is compiled for.
+
+```sx
+Node :: struct {
+    value: i64 = 0;
+    next: ?*@This() = null;
+    with :: (self: @This(), v: i64) -> @This() { n := self; n.value = v; n }
+}
+
+Box :: struct ($T: Type) {
+    item: T;
+    twice :: (self: @This()) -> @This() { b := self; b.item = self.item * 2; b }
+}
+```
+
+Outside a type body it names nothing and is refused. `Self` is a different
+word: it is the conformer in a constraint, an interface, or an open set's
+declaration, and the class in a runtime-class declaration; written in a
+struct body it is refused, naming `@This()`.
+
 #### `@caller`
 
 `@caller` is a compiler-provided value legal **only inside a parameter's
@@ -3638,7 +3672,8 @@ qualified target reaches the module it names (`v.(?compose.Row)`).
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `@sizeOf`, its own methods, and no wrapper around it. `Self` inside
 the set declaration denotes the member type; each required method is monomorphized
-per member, and a member spells its own concrete receiver (`self: *Label`).
+per member, and a member spells its own concrete receiver (`self: *Label`, or
+`self: *@This()`).
 
 #### Declaring a set and its members
 
@@ -4793,7 +4828,18 @@ h : Closure(i64) -> i64 = |x|_{ n } x + n;
 error: a capturing lambda does not erase to 'Closure(i64) -> i64' — its
        environment has no home here
 help: persist it with 'closure(f)', or 'closure(f, alloc)' to choose the
-      allocator
+      allocator; a pointer to it ('*f') erases by borrowing
+```
+
+A **pointer** to a capturing lambda does erase: `*f` is the env's address, so
+the pair is `{ fnPtr, *f }` and nothing is allocated. Taking the address is
+what states that the referent outlives the `Closure`; the signatures must
+agree, and the lambda value itself still does not promote.
+```sx
+n := 41;
+f := ||_{ n } print("{}\n", n + 1);
+keep :: (h: Closure()) -> Closure() => h;
+h := keep(*f);      // borrows f's env; valid while f is
 ```
 
 #### Persisting — `closure`

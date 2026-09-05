@@ -1,0 +1,23 @@
+// A parameter default lives on the constraint's declaration: an impl method
+// that writes one is refused, and an interface method cannot declare one
+// because its calls dispatch without the declaration.
+@import "modules/std.sx";
+
+Tagged :: constraint {
+    tag :: (self: *Self, n: i64 = 1) -> i64;
+}
+
+Plain :: struct { v: i64 = 0; }
+impl Tagged for Plain {
+    tag :: (self: *Plain, n: i64 = 2) -> i64 => self.v + n;
+}
+
+Named :: interface {
+    name :: (self: *Self, upper: bool = false) -> string;
+}
+
+main :: () -> i32 {
+    p := Plain{};
+    print("{}\n", p.tag());
+    0
+}

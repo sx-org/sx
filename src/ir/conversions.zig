@@ -35,6 +35,8 @@ pub const CoercionResolver = struct {
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
         unique_to_closure, // empty-env unique lambda → Closure ({fn, null})
         unique_to_closure_reject, // capturing unique lambda → Closure (diagnostic; the env has no home)
+        lambda_ptr_to_closure, // *F, F a unique lambda → Closure borrowing the env the pointer names
+        lambda_ptr_to_closure_reject, // *F → Closure of another signature (diagnostic)
         struct_elementwise, // anon struct → anon struct, same arity, element-wise
         optional_unwrap, // ?T → concrete (narrowing)
         optional_to_bool_reject, // ?T → bool (no presence-test coercion; diagnostic)
@@ -98,6 +100,16 @@ pub const CoercionResolver = struct {
             if (self.l.uniqueLambdaOf(src_ty) != null and self.l.module.types.get(dst_ty) == .closure) {
                 const env = self.l.module.types.get(src_ty).@"struct";
                 return if (env.fields.len == 0) .unique_to_closure else .unique_to_closure_reject;
+            }
+            // A pointer to a unique lambda erases by borrowing: the pointer is
+            // the env word, and the caller taking the address is what gives the
+            // env a home. The signatures must agree.
+            if (self.l.module.types.get(src_ty) == .pointer and self.l.module.types.get(dst_ty) == .closure) {
+                if (self.l.uniqueLambdaOf(self.l.module.types.get(src_ty).pointer.pointee)) |u| {
+                    const want = self.l.module.types.get(dst_ty).closure;
+                    if (u.ret == want.ret and std.mem.eql(TypeId, u.params, want.params)) return .lambda_ptr_to_closure;
+                    return .lambda_ptr_to_closure_reject;
+                }
             }
         }
 
