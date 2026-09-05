@@ -1,0 +1,17 @@
+// `Self` is the conformer of a constraint, interface or set; a struct's own
+// body names itself `@This()`, and `@This()` outside a type body names
+// nothing.
+@import "modules/std.sx";
+
+Counter :: struct {
+    n: i64 = 0;
+    bump :: (self: *Self) { self.n += 1; }
+}
+
+orphan :: (x: @This()) -> i64 { 0 }
+
+main :: () -> i32 {
+    c := Counter{};
+    c.bump();
+    0
+}

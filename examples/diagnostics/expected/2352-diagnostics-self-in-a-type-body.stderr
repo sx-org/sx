@@ -1,0 +1,5 @@
+error: 'Self' is the conformer in a constraint or interface; a type names itself '@This()'
+  --> examples/diagnostics/2352-diagnostics-self-in-a-type-body.sx:8:25
+   |
+ 8 |     bump :: (self: *Self) { self.n += 1; }
+   |                         ^

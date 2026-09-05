@@ -469,6 +469,22 @@ pub const ExprTyper = struct {
                     // NAMES and would mint a stub under the alias spelling.
                     if (self.l.current_source_file) |from| {
                         switch (self.l.selectNominalLeaf(name, from, false)) {
+                            .resolved => |tid| if (self.l.hasPlainStructAuthor(tid) or sl.type_expr != null) return tid,
+                            else => {},
+                        }
+                    }
+                    // A bare generic head is the instance its fields infer.
+                    if (sl.type_expr == null) {
+                        const saved_diag = self.l.diagnostics;
+                        self.l.diagnostics = null;
+                        defer self.l.diagnostics = saved_diag;
+                        switch (self.l.selectGenericStructHead(name, null, false, null)) {
+                            .template => |tmpl| if (self.l.genericLiteralType(&sl, &tmpl)) |tid| return tid,
+                            else => {},
+                        }
+                    }
+                    if (self.l.current_source_file) |from| {
+                        switch (self.l.selectNominalLeaf(name, from, false)) {
                             .resolved => |tid| return tid,
                             else => {},
                         }

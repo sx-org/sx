@@ -1,0 +1,42 @@
+// `@This()` is the type whose body it is written in: a receiver, a by-value
+// parameter or return, a field pointing back at its own type, and — inside a
+// generic — the instantiation that body is compiled for.
+@import "modules/std.sx";
+
+Node :: struct {
+    value: i64 = 0;
+    next: ?*@This() = null;
+
+    with :: (self: @This(), v: i64) -> @This() { n := self; n.value = v; n }
+    sum :: (self: *@This()) -> i64 {
+        total := self.value;
+        if nx := self.next { total += nx.sum(); }
+        total
+    }
+}
+
+Box :: struct ($T: Type) {
+    item: T;
+    twice :: (self: @This()) -> @This() { b := self; b.item = self.item * 2; b }
+    peek :: (self: *@This()) -> T => self.item;
+}
+
+Shape :: @OpenSet(.{ max = 64, align = 8 }) {
+    area :: (self: *Self) -> i64;
+}
+Square :: @OpenVariant(Shape) {
+    side: i64 = 3;
+    area :: (self: *@This()) -> i64 => self.side * self.side;
+    grown :: (self: @This(), by: i64) -> @This() { s := self; s.side += by; s }
+}
+
+main :: () -> i32 {
+    tail := Node{}.with(2);
+    head := Node{ value = 1, next = *tail };
+    print("chain {}\n", head.sum());
+    b := Box{ item = 21 }.twice();
+    print("box {}\n", b.peek());
+    v : Shape = Square{}.grown(1);
+    print("square {}\n", v.area());
+    0
+}
