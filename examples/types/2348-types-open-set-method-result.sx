@@ -1,0 +1,25 @@
+// A call of a method the set requires evaluates to that method's declared
+// return type, so a field access chains on it as it does on a local holding
+// the result.
+@import "modules/std.sx";
+
+Size :: struct { width: f32; height: f32; }
+
+Shape :: @OpenSet(.{ max = 64, align = 8 }) {
+    fit :: (self: *Self, w: f32) -> Size;
+}
+
+Box :: @OpenVariant(Shape) {
+    h: f32 = 3.0;
+    fit :: (self: *Box, w: f32) -> Size => Size{ width = w, height = self.h };
+}
+
+main :: () -> i32 {
+    v : Shape = Box{};
+    two := v.fit(2.0);
+    print("split {}\n", two.height.(i64));
+    print("chained {}\n", v.fit(2.0).height.(i64));
+    p := *v;
+    print("through a pointer {}\n", p.fit(4.0).width.(i64));
+    0
+}

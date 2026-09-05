@@ -1,9 +1,10 @@
 // The fluent library's per-site state.
 //
 // A `useState` call site owns one entry in the root's store, keyed the way an
-// element is: the site's fingerprint folded with that site's occurrence in the
-// build. The build that first reaches the site fills the entry from `default`;
-// every rebuild that reaches it again is handed back what the last one left.
+// element is: the site's fingerprint folded with the key scope in force and
+// that site's occurrence in the build. The build that first reaches the site
+// fills the entry from `default`; every rebuild that reaches it again is
+// handed back what the last one left.
 //
 // A `State(T)` borrows its entry's payload. The borrow stands until a committed
 // build stops reaching the site, which is when the entry goes.
@@ -98,7 +99,7 @@ useState :: ($T: Type, default: T, site: SiteId = siteOf(@caller)) -> State(T) {
     store := context.fluentState;
     process.assert(store.inBuild, "useState outside a build transaction — call beginBuild first");
 
-    hasher := siteHasher(site, STATE_DOMAIN);
+    hasher := siteHasher(site, STATE_DOMAIN, context.fluentUi.scope);
     hasher.writeU64Le(context.fluentUi.nextOccurrence(site.key).(u64));
     key := hasher.state;
 

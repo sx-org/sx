@@ -74,3 +74,18 @@ pixelGolden :: (actual: string, w: i64, h: i64, refPath: [:0]u8,
     print("pixels ok {}x{}\n", w, h);
     true
 }
+
+// Whether some pixel of the rows [y0, y1) carries ink: a channel well above
+// a dark backdrop.
+inkedRows :: (px: string, w: i64, y0: i64, y1: i64) -> bool {
+    y := y0;
+    while y < y1 {
+        x := 0;
+        while x < w {
+            if px[(y * w + x) * 4].(i64) > 128 { return true; }
+            x += 1;
+        }
+        y += 1;
+    }
+    false
+}

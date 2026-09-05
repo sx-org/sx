@@ -1,0 +1,9 @@
+released at velocity 499
+flung: rested after 99 frames at anchor 8 offset 16
+rested release: velocity 0
+into the end: rested after 1 frames at anchor 96 offset 20
+  row at -20 to 10
+  row at 10 to 40
+  row at 40 to 70
+  row at 70 to 100
+wheel: velocity 0

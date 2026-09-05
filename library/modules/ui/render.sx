@@ -113,38 +113,87 @@ HitRegion :: struct {
     onTap: ?Closure() = null;
 }
 
+ScrollPhase :: enum {
+    wheel;
+    dragStart;
+    dragMove;
+    dragEnd;
+    cancel;
+}
+
+// What the router hands a scroll region. `delta` is the pointer's movement
+// since the previous delivery of the same sequence — from the down point on
+// a `dragStart` — or the wheel's units on a `wheel`.
+ScrollGesture :: struct {
+    phase: ScrollPhase;
+    delta: Point = .{ x = 0.0, y = 0.0 };
+    timeNs: u64 = 0;
+}
+
+// A scrollable region declared during render, paint-ordered like hit regions:
+// the last one containing a point is the one a wheel or a drag there reaches.
+ScrollRegion :: struct {
+    id: u64;
+    frame: Frame;
+    onScroll: ?Closure(*ScrollGesture) = null;
+}
+
+// How deep clips nest.
+CLIP_STACK :: 16;
+
 // Stateful builder — views use this to emit render nodes
 
 RenderContext :: struct {
     tree: *RenderTree;
-    clipDepth: i64;
     opacity: f32;
     depth: i64;
-    // Optional hit/focus sinks: the frame loop points these at the
+    // The clips in force, innermost last; each holds the intersection of
+    // every clip around it.
+    clips: [CLIP_STACK]Frame = .{};
+    clipCount: i64 = 0;
+    // Optional hit/focus/scroll sinks: the frame loop points these at the
     // committed snapshot's lists; null (the default) makes
     // declarations no-ops.
     hits: *List(HitRegion) = null;
     focuses: *List(FocusRegion) = null;
+    scrolls: *List(ScrollRegion) = null;
 
     init :: (tree: *RenderTree) -> RenderContext {
         RenderContext{
             tree = tree,
-            clipDepth = 0,
             opacity = 1.0,
             depth = 0
         }
     }
 
+    // A region declared inside a clip is bounded by it, and one the clip
+    // leaves nothing of is not declared.
+    bounded :: (self: *RenderContext, frame: Frame) -> ?Frame {
+        if self.clipCount == 0 { return frame; }
+        f := frame.intersection(self.clips[self.clipCount - 1]);
+        if f.size.width <= 0.0 or f.size.height <= 0.0 { return null; }
+        f
+    }
+
     hitRegion :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null, onTap: ?Closure() = null) {
-        if self.hits != null {
-            self.hits.append(.{ id = id, frame = frame, policy = policy, onTap = onTap });
+        if self.hits == null { return; }
+        if f := self.bounded(frame) {
+            self.hits.append(.{ id = id, frame = f, policy = policy, onTap = onTap });
         }
     }
 
     focusRegion :: (self: *RenderContext, id: u64, frame: Frame, onKey: ?Closure(*KeyEvent) = null, onText: ?Closure(string) = null, wantsKeyboard: bool = false, onComposition: ?Closure(*CompositionEvent) = null, onDeleteBackward: ?Closure() = null) {
-        if self.focuses != null {
-            self.focuses.append(.{ id = id, frame = frame, onKey = onKey, onText = onText,
+        if self.focuses == null { return; }
+        if f := self.bounded(frame) {
+            self.focuses.append(.{ id = id, frame = f, onKey = onKey, onText = onText,
                 onComposition = onComposition, onDeleteBackward = onDeleteBackward, wantsKeyboard = wantsKeyboard });
+        }
+    }
+
+    scrollRegion :: (self: *RenderContext, id: u64, frame: Frame, onScroll: ?Closure(*ScrollGesture) = null) {
+        if self.scrolls == null { return; }
+        if f := self.bounded(frame) {
+            self.scrolls.append(.{ id = id, frame = f, onScroll = onScroll });
         }
     }
 
@@ -255,21 +304,33 @@ RenderContext :: struct {
         self.depth += 1;
     }
 
+    // A clip inside a clip is their intersection; a pop restores the clip
+    // around it, since the renderer's pop lifts the scissor whole.
     pushClip :: (self: *RenderContext, frame: Frame) {
+        process.assert(self.clipCount < CLIP_STACK, "clips nest deeper than CLIP_STACK");
+        f := if self.clipCount > 0 then frame.intersection(self.clips[self.clipCount - 1]) else frame;
+        self.clips[self.clipCount] = f;
+        self.clipCount += 1;
         self.tree.add(.{
             type = .clipPush,
-            frame = frame,
+            frame = f,
             depth = self.depth,
         });
-        self.clipDepth += 1;
     }
 
     popClip :: (self: *RenderContext) {
+        self.clipCount -= 1;
         self.tree.add(.{
             type = .clipPop,
             depth = self.depth,
         });
-        self.clipDepth -= 1;
+        if self.clipCount > 0 {
+            self.tree.add(.{
+                type = .clipPush,
+                frame = self.clips[self.clipCount - 1],
+                depth = self.depth,
+            });
+        }
     }
 
     pushOpacity :: (self: *RenderContext, alpha: f32) {

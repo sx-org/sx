@@ -13,7 +13,8 @@
 // frame that committed BEFORE it, the builder then rebuilds under the state
 // those handlers left, and the result becomes the frame the next one routes
 // against. That is what lets a tap taken in frame N be read by frame N+1's
-// build.
+// build. The state transaction closes after the commit, so a view that builds
+// during layout claims its state inside it.
 //
 // A frame's memory comes from an arena pushed as the ambient allocator for the
 // whole frame, so the tree, the handler environments and the snapshot lists are
@@ -38,6 +39,9 @@
 // What a frame arena starts with. A reset keeps the largest chunk, so the pair
 // settles at the high-water mark of one frame and allocates nothing after.
 FRAME_ARENA_BYTES :: 8192;
+
+// The clock the frame runs on, for whatever advances by time between frames.
+@context.extend fluentFrameNs: i64 = 0;
 
 UiRoot :: struct {
     id: UiRootId = .{ value = 0 };
@@ -121,7 +125,7 @@ FrameLoop :: struct {
         free(self.build, self.buildAllocator)
     }
 
-    frame :: (self: *FrameLoop) {
+    frame :: (self: *FrameLoop, now: i64 = time.monoNs()) {
         r := self.root;
         // The frame takes the arena the committed snapshot does NOT hold, so
         // the reset falls on memory two frames old — dead since the frame
@@ -136,13 +140,14 @@ FrameLoop :: struct {
             fluentState = *r.store,
             fluentInput = *r.taps,
             fluentFocus = *r.focus,
+            fluentFrameNs = now,
         } {
             r.pump();
             r.identity.beginBuild();
             r.store.beginBuild();
             tree := self.build();
-            r.store.commitBuild();
-            r.commit(*tree)
+            r.commit(*tree);
+            r.store.commitBuild()
         }
         self.frames += 1;
     }

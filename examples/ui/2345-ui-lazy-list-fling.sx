@@ -1,0 +1,79 @@
+// A drag leaves the list moving: its last moves set a velocity, the release
+// keeps it, and each frame carries the offset on by it, decaying, until it
+// rests. A release after the finger has rested flings nothing, and a fling
+// that meets the end stops there.
+//
+// The clock is synthetic: gestures and frames carry their own nanoseconds.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+
+MS :: 1_000_000;
+
+drag :: (st: *ListState, phase: ScrollPhase, dy: f32, atMs: i64) {
+    g := ScrollGesture{ phase = phase, delta = .{ x = 0.0, y = dy }, timeNs = (atMs * MS).(u64) };
+    st.gesture(*g);
+}
+
+// Frames at 16 ms until the list rests; reports where it got to.
+settle :: (tag: string, st: *ListState, loop: *FrameLoop, fromMs: i64) -> i64 {
+    now := fromMs;
+    frames := 0;
+    while true {
+        loop.frame(now * MS);
+        frames += 1;
+        if st.velocity == 0.0 { break; }
+        now += 16;
+    }
+    print("{}: rested after {} frames at anchor {} offset {}\n", tag, frames, st.anchor, st.offset.(i64));
+    now
+}
+
+main :: () -> i32 {
+    st := ListState.init(context.allocator);
+    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+    loop := FrameLoop.init(*root, closure(||_{ st = *st } -> View {
+        v : View = lazyList(st, 100,
+            closure(|i: i64| -> u64 { i.(u64) }),
+            closure(|i: i64| -> View { r : View = Rect{ height = 30.0 }; r }));
+        v
+    }), context.allocator);
+    loop.frame(0);
+
+    // Eight points up every 16 ms is 500 points a second.
+    drag(*st, .dragStart, 0.0, 0);
+    drag(*st, .dragMove, -8.0, 16);
+    drag(*st, .dragMove, -8.0, 32);
+    drag(*st, .dragEnd, 0.0, 40);
+    print("released at velocity {}\n", st.velocity.(i64));
+    now := settle("flung", *st, *loop, 48);
+
+    // The finger rests before it lifts.
+    drag(*st, .dragStart, 0.0, now);
+    drag(*st, .dragMove, -8.0, now + 16);
+    drag(*st, .dragEnd, 0.0, now + 400);
+    print("rested release: velocity {}\n", st.velocity.(i64));
+
+    // A fling into the end stops at the last row.
+    st.anchor = 95;
+    st.offset = 0.0;
+    st.velocity = 500.0;
+    now = settle("into the end", *st, *loop, now + 416);
+    for n in root.snapshot.scene.nodes {
+        if n.type == .rect { print("  row at {} to {}\n", n.frame.origin.y.(i64), n.frame.maxY().(i64)); }
+    }
+
+    // A wheel stops a fling.
+    st.anchor = 0;
+    st.offset = 0.0;
+    st.velocity = 500.0;
+    loop.frame((now + 16) * MS);
+    w := ScrollGesture{ phase = .wheel, delta = .{ x = 0.0, y = -1.0 } };
+    st.gesture(*w);
+    print("wheel: velocity {}\n", st.velocity.(i64));
+
+    st.deinit();
+    root.deinit();
+    loop.deinit();
+    0
+}
