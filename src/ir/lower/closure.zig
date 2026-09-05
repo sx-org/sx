@@ -498,15 +498,19 @@ pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda 
 
 /// The env struct a written literal IS: one field per `_{ … }` entry, typed as
 /// the entry's expression, interned once so the typer and the lowering agree.
-pub fn lambdaEnvType(self: *Lowering, lam: *const ast.Lambda) TypeId {
+/// Null when an entry's type is not known before lowering; the literal then
+/// names its env struct as it lowers.
+pub fn lambdaEnvType(self: *Lowering, lam: *const ast.Lambda) ?TypeId {
     const key = lower.LambdaKey{ .lam = lam, .func = if (self.builder.func) |f| @intFromEnum(f) else std.math.maxInt(u32) };
     if (self.lambda_env_types.get(key)) |ty| return ty;
     const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, lam.env.len) catch unreachable;
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
     for (lam.env, 0..) |f, i| {
-        fields[i] = .{
-            .name = self.module.types.internString(f.name),
-            .ty = self.inferExprType(f.value),
-        };
+        const ty = self.inferExprType(f.value);
+        if (ty == .unresolved) return null;
+        fields[i] = .{ .name = self.module.types.internString(f.name), .ty = ty };
     }
     var env_buf: [64]u8 = undefined;
     const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
