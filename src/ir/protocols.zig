@@ -1487,7 +1487,6 @@ fn carrierMatches(
         }
     }
 
-    /// Synthesize a fn_decl from a protocol default method for a concrete type.
     /// A parameter default lives on the declaration alone: an impl method
     /// takes the declaration's defaults for the parameters it names, and one
     /// that writes its own is refused.
