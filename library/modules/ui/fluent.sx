@@ -60,6 +60,9 @@ RenderContext :: render.RenderContext;
 HitRegion :: render.HitRegion;
 HitPolicy :: render.HitPolicy;
 FocusRegion :: render.FocusRegion;
+ScrollRegion :: render.ScrollRegion;
+ScrollGesture :: render.ScrollGesture;
+ScrollPhase :: render.ScrollPhase;
 KeyEvent :: input.KeyEvent;
 CompositionEvent :: input.CompositionEvent;
 TextInputSession :: input.TextInputSession;
@@ -88,6 +91,8 @@ Router :: router.Router;
 HitTarget :: router.HitTarget;
 Tappable :: router.Tappable;
 tappable :: router.tappable;
+Scrollable :: router.Scrollable;
+scrollable :: router.scrollable;
 isPressed :: router.isPressed;
 
 FocusRouter :: focus.FocusRouter;

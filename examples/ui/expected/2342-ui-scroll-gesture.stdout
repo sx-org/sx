@@ -1,0 +1,19 @@
+regions hit 3 scroll 1
+  hit at 0,0 100x200
+  hit at 0,100 100x40
+  hit at 0,140 100x20
+wheel
+  .wheel 0,-3
+under the slop
+  tap
+past the slop
+  .dragStart 0,10
+  .dragMove 0,15
+  .dragEnd 0,5
+cancelled
+  .dragStart 0,20
+  .cancel 0,0
+clipped rows
+  tap row 1
+  tap row 2
+  tap
