@@ -1,0 +1,24 @@
+// A field assigned through a call that returns a pointer stores into the
+// pointee the call named, exactly as it does through a local holding that
+// pointer, or through a pointer held in a field.
+@import "modules/std.sx";
+
+Mod :: struct { pad: f32 = 0.0; }
+Card :: struct {
+    m: Mod = .{};
+    box :: (self: *@This()) -> *Mod => *self.m;
+}
+Holder :: struct { inner: *Mod; }
+
+main :: () -> i32 {
+    c := Card{};
+    c.box().pad = 4.0;
+    print("{}\n", c.m.pad.(i64));
+    p := c.box();
+    p.pad = 5.0;
+    print("{}\n", c.m.pad.(i64));
+    h := Holder{ inner = *c.m };
+    h.inner.pad = 6.0;
+    print("{}\n", c.m.pad.(i64));
+    0
+}
