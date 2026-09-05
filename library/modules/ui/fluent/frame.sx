@@ -1,20 +1,20 @@
 // What one fluent build commits.
 //
-// Rendering a tree produces three things at once: the scene the platform
-// renderer draws, the hit regions the tree declared, and the focus regions it
-// declared. A snapshot holds all three together, because input resolves against
-// the SAME frame that was drawn — never against a tree being rebuilt.
+// Rendering a tree produces four things at once: the scene the platform
+// renderer draws, and the hit, focus and scroll regions the tree declared. A
+// snapshot holds all four together, because input resolves against the SAME
+// frame that was drawn — never against a tree being rebuilt.
 //
-// The hit list is paint-ordered, so the last region containing a point is the
-// top one there. The focus list is declaration-ordered, which is the traversal
-// order.
+// The hit and scroll lists are paint-ordered, so the last region containing a
+// point is the top one there. The focus list is declaration-ordered, which is
+// the traversal order.
 //
-// A snapshot names the allocator its three buffers come from. A project fills
-// them under that allocator and `deinit` hands them back to it, so a snapshot
+// A snapshot names the allocator its buffers come from. A project fills them
+// under that allocator and `deinit` hands them back to it, so a snapshot
 // released under some other ambient allocator still returns its memory where it
 // took it.
 //
-// A project refills the three lists in place and keeps their buffers, so a
+// A project refills the lists in place and keeps their buffers, so a
 // snapshot projected over and over settles at one frame's memory. A caller
 // whose fills come from an arena calls `discard` first: those buffers are the
 // arena's to reclaim, and reusing them past its reset would hand out released
@@ -30,7 +30,8 @@ CommittedUiSnapshot :: struct {
     scene: RenderTree = .{};
     hitList: List(HitRegion) = .{};
     focusList: List(FocusRegion) = .{};
-    // What made the buffers the three lists hold, and what they go back to.
+    scrollList: List(ScrollRegion) = .{};
+    // What made the buffers the lists hold, and what they go back to.
     buffers: Allocator;
 
     init :: (buffers: Allocator) -> CommittedUiSnapshot => .{ buffers = buffers };
@@ -40,6 +41,7 @@ CommittedUiSnapshot :: struct {
         self.scene.clear();
         self.hitList.len = 0;
         self.focusList.len = 0;
+        self.scrollList.len = 0;
     }
 
     // Drops the buffers instead of reusing them, for a caller whose fills come
@@ -50,19 +52,22 @@ CommittedUiSnapshot :: struct {
         self.scene.nodes.detach();
         self.hitList.detach();
         self.focusList.detach();
+        self.scrollList.detach();
         self.buffers = next;
     }
 
     deinit :: (self: *CommittedUiSnapshot) {
         self.scene.nodes.deinit(self.buffers);
         self.hitList.deinit(self.buffers);
-        self.focusList.deinit(self.buffers)
+        self.focusList.deinit(self.buffers);
+        self.scrollList.deinit(self.buffers)
     }
 }
 
-// Lays the root out over the viewport and projects it into the snapshot: scene,
-// hit list and focus list all fill from the one render pass, under the
-// snapshot's own allocator, and the revision names the frame they belong to.
+// Lays the root out over the viewport and projects it into the snapshot: the
+// scene and the three region lists all fill from the one render pass, under
+// the snapshot's own allocator, and the revision names the frame they belong
+// to.
 project :: (root: *View, viewport: Size, snap: *CommittedUiSnapshot) {
     snap.reset();
     bounds := Frame.make(0.0, 0.0, viewport.width, viewport.height);
@@ -71,6 +76,7 @@ project :: (root: *View, viewport: Size, snap: *CommittedUiSnapshot) {
         rc := RenderContext.init(*snap.scene);
         rc.hits = *snap.hitList;
         rc.focuses = *snap.focusList;
+        rc.scrolls = *snap.scrollList;
         root.render(*rc, bounds)
     }
     snap.revision += 1;

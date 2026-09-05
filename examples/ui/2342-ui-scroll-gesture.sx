@@ -1,0 +1,79 @@
+// A wheel event reaches the scroll region under its position. A pointer that
+// moves past the slop while a scroll region holds it becomes a drag: the tap
+// it captured is cancelled and the region receives the movement, from the down
+// point on the start, then per move, then on the up. A pointer that stays
+// under the slop taps. A region declared inside a clip is bounded by it, so a
+// tap on the clipped-away part of a row falls to what lies beneath.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+
+at :: (x: f32, y: f32) -> InputEvent => .pointerDown(.{ position = .{ x = x, y = y } });
+to :: (x: f32, y: f32) -> InputEvent => .pointerMove(.{ position = .{ x = x, y = y } });
+lift :: (x: f32, y: f32) -> InputEvent => .pointerUp(.{ position = .{ x = x, y = y } });
+wheel :: (x: f32, y: f32, dy: f32) -> InputEvent =>
+    .scroll(.{ position = .{ x = x, y = y }, delta = .{ x = 0.0, y = dy } });
+
+// One event per frame: the queue merges consecutive moves of one pointer.
+step :: (loop: *FrameLoop, ev: InputEvent) {
+    loop.root.queue.push(ev);
+    loop.frame();
+}
+
+main :: () -> i32 {
+    root := UiRoot.init(Size{ width = 100.0, height = 200.0 }, context.allocator);
+    loop := FrameLoop.init(*root, closure(|| -> View {
+        v : View = zstack(ALIGN_TOP_LEADING) {
+            scrollable(Rect{ fill = Color.rgb(20, 20, 20) }, closure(|g: *ScrollGesture| {
+                print("  {} {},{}\n", g.phase, g.delta.x.(i64), g.delta.y.(i64))
+            }));
+            tappable(Rect{}, closure(|| { print("  tap\n") }));
+            // Two 40-tall rows under a 60-tall clip: the second row shows
+            // its top half only.
+            place(vstack(0.0) {
+                tappable(Rect{ height = 40.0 }, closure(|| { print("  tap row 1\n") }));
+                tappable(Rect{ height = 40.0 }, closure(|| { print("  tap row 2\n") }));
+            }, Mod{ margin = EdgeInsets{ top = 100.0, left = 0.0, bottom = 0.0, right = 0.0 },
+                height = 60.0, clip = true });
+        };
+        v
+    }), context.allocator);
+
+    loop.frame();
+    print("regions hit {} scroll {}\n", root.snapshot.hitList.len, root.snapshot.scrollList.len);
+    for r in root.snapshot.hitList {
+        print("  hit at {},{} {}x{}\n", r.frame.origin.x.(i64), r.frame.origin.y.(i64),
+            r.frame.size.width.(i64), r.frame.size.height.(i64));
+    }
+
+    print("wheel\n");
+    step(*loop, wheel(50.0, 50.0, -3.0));
+
+    print("under the slop\n");
+    step(*loop, at(20.0, 20.0));
+    step(*loop, to(24.0, 22.0));
+    step(*loop, lift(24.0, 22.0));
+
+    print("past the slop\n");
+    step(*loop, at(20.0, 20.0));
+    step(*loop, to(20.0, 30.0));
+    step(*loop, to(20.0, 45.0));
+    step(*loop, lift(20.0, 50.0));
+
+    print("cancelled\n");
+    step(*loop, at(60.0, 60.0));
+    step(*loop, to(60.0, 80.0));
+    step(*loop, .pointerCancel(.{ position = .{ x = 60.0, y = 80.0 } }));
+
+    print("clipped rows\n");
+    step(*loop, at(50.0, 120.0));
+    step(*loop, lift(50.0, 120.0));
+    step(*loop, at(50.0, 150.0));
+    step(*loop, lift(50.0, 150.0));
+    step(*loop, at(50.0, 170.0));
+    step(*loop, lift(50.0, 170.0));
+
+    root.deinit();
+    loop.deinit();
+    0
+}
