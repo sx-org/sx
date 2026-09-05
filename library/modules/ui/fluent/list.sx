@@ -245,7 +245,7 @@ LazyList :: @OpenVariant(View) {
             self.pullBack();
         }
 
-        // The window.
+        // The rows the viewport reaches, framed.
         y = -st.offset;
         i = st.anchor;
         st.first = st.anchor;
