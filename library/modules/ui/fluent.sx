@@ -28,6 +28,7 @@ placement :: @import "modules/ui/fluent/placement.sx";
 runtime :: @import "modules/ui/fluent/runtime.sx";
 modifier :: @import "modules/ui/fluent/modifier.sx";
 storage :: @import "modules/ui/fluent/storage.sx";
+lazy :: @import "modules/ui/fluent/list.sx";
 
 // Geometry
 Point :: types.Point;
@@ -118,6 +119,9 @@ HStack :: containers.HStack;
 ZStack :: containers.ZStack;
 Spacer :: containers.Spacer;
 Modifier :: modifier.Modifier;
+ListState :: lazy.ListState;
+LazyList :: lazy.LazyList;
+lazyList :: lazy.lazyList;
 
 Mod :: placement.Mod;
 ModBox :: placement.ModBox;

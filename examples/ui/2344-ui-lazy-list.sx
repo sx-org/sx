@@ -1,0 +1,137 @@
+// A lazy list builds the rows that intersect its viewport and no others, and
+// keeps its place as an anchor: one row's index and the pixels from that row's
+// start edge to the viewport's. Scrolling moves the offset; layout carries it
+// forward past rows the viewport has left, back into rows it has entered, and
+// clamps at both ends. An insertion above the anchor leaves the same item on
+// screen. A reversed list lays item 0 at the bottom edge, so a prepend at the
+// end shows the new row and a prepend above a scrolled-up reader leaves them
+// where they were. Over a steady scroll a frame builds one window, and the
+// paragraph cache reports no misses once every row on the way has been laid
+// out.
+//
+// Fontless metrics: every byte advances 8 at 16 pt and a line is 16 tall.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent.sx";
+
+// Items are ids; a row is a box whose height its id decides: 20, 30 or 40.
+items : *List(u64) = null;
+
+rowHeight :: (id: u64) -> f32 => 20.0 + (id % 3).(f32) * 10.0;
+
+show :: (tag: string, st: *ListState, root: *UiRoot) {
+    print("{}: anchor {} offset {} window {}..{} built {}\n", tag, st.anchor, st.offset.(i64), st.first, st.last, st.built);
+    for n in root.snapshot.scene.nodes {
+        if n.type == .rect {
+            print("  row at {} {}x{}\n", n.frame.origin.y.(i64), n.frame.size.width.(i64), n.frame.size.height.(i64));
+        }
+    }
+}
+
+firstKey :: (st: *ListState) -> u64 => items.items[st.first];
+
+main :: () -> i32 {
+    ids := List(u64){};
+    items = *ids;
+    for i in 0..20 { items.append(i.(u64)); }
+
+    st := ListState.init(context.allocator);
+    root := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+    loop := FrameLoop.init(*root, closure(||_{ st = *st } -> View {
+        v : View = lazyList(st, items.len,
+            closure(|i: i64| -> u64 { items.items[i] }),
+            closure(|i: i64| -> View { r : View = Rect{ height = rowHeight(items.items[i]) }; r }));
+        v
+    }), context.allocator);
+
+    loop.frame(0);
+    show("start", *st, *root);
+
+    st.scrollBy(35.0);
+    loop.frame(0);
+    show("scrolled into row 1", *st, *root);
+
+    st.scrollBy(-40.0);
+    loop.frame(0);
+    show("back past the start", *st, *root);
+
+    st.scrollBy(10000.0);
+    loop.frame(0);
+    show("past the end", *st, *root);
+
+    st.anchor = 5;
+    st.offset = 10.0;
+    loop.frame(0);
+    before := firstKey(*st);
+    items.insert(0, 100);
+    items.insert(0, 101);
+    st.inserted(0, 2);
+    loop.frame(0);
+    print("inserted above: first key {} then {}, anchor {}\n", before, firstKey(*st), st.anchor);
+    st.deinit();
+    root.deinit();
+    loop.deinit();
+
+    // Reversed: item 0 sits at the bottom edge.
+    items.len = 0;
+    for i in 0..20 { items.append(i.(u64)); }
+    rv := ListState.init(context.allocator, true);
+    rroot := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+    rloop := FrameLoop.init(*rroot, closure(||_{ rv = *rv } -> View {
+        v : View = lazyList(rv, items.len,
+            closure(|i: i64| -> u64 { items.items[i] }),
+            closure(|i: i64| -> View { r : View = Rect{ height = rowHeight(items.items[i]) }; r }));
+        v
+    }), context.allocator);
+    rloop.frame(0);
+    show("reversed", *rv, *rroot);
+    items.insert(0, 200);
+    rv.inserted(0, 1);
+    rloop.frame(0);
+    print("prepend at the end: bottom key {}\n", firstKey(*rv));
+    rv.scrollBy(60.0);
+    rloop.frame(0);
+    before = firstKey(*rv);
+    items.insert(0, 201);
+    rv.inserted(0, 1);
+    rloop.frame(0);
+    print("prepend while scrolled up: bottom key {} then {}, anchor {}\n", before, firstKey(*rv), rv.anchor);
+    rv.deinit();
+    rroot.deinit();
+    rloop.deinit();
+
+    // A long list of labels, scrolled down and back: each frame builds its
+    // window, and the way back lays nothing out again.
+    lv := ListState.init(context.allocator);
+    lroot := UiRoot.init(Size{ width = 100.0, height = 100.0 }, context.allocator);
+    lloop := FrameLoop.init(*lroot, closure(||_{ lv = *lv } -> View {
+        v : View = lazyList(lv, 10000,
+            closure(|i: i64| -> u64 { i.(u64) }),
+            closure(|i: i64| -> View {
+                r : View = Label{ text = concat("row ", intToString(i), " of many rows") };
+                r
+            }));
+        v
+    }), context.allocator);
+    lloop.frame(0);
+    maxBuilt := lv.built;
+    f := 0;
+    while f < 100 {
+        lv.scrollBy(23.0);
+        lloop.frame(0);
+        if lv.built > maxBuilt { maxBuilt = lv.built; }
+        f += 1;
+    }
+    print("down: window {}..{} at most {} built per frame, misses {}\n", lv.first, lv.last, maxBuilt, lroot.paragraphs.misses);
+    lroot.paragraphs.misses = 0;
+    while f > 0 {
+        lv.scrollBy(-23.0);
+        lloop.frame(0);
+        f -= 1;
+    }
+    print("back: window {}..{} misses {}\n", lv.first, lv.last, lroot.paragraphs.misses);
+    lv.deinit();
+    lroot.deinit();
+    lloop.deinit();
+    0
+}
