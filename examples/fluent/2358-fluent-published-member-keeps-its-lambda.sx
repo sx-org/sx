@@ -1,0 +1,33 @@
+// A written lambda literal is its env struct wherever a generic binder asks
+// about it: a statement forming a generic member from one publishes the same
+// instance the direct formation builds, and the member's method names the
+// lambda's type even when it compiles before the literal has lowered.
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/fluent.sx";
+
+Shape :: @OpenSet(.{ max = 64, align = 8 }) {
+    fire :: (self: *Self);
+}
+
+Tap :: @OpenVariant(Shape) ($F: Type) {
+    on: F;
+    fire :: (self: *@This()) { keep(*self.on)() }
+}
+keep :: (h: Closure()) -> Closure() => h;
+tap :: (on: $F/() -> void) -> Tap(F) => .{ on = on };
+
+collect :: (content: $B/@BuildBlock(Shape)) -> List(Shape) {
+    sink := Sink(Shape){};
+    content.run(*sink);
+    sink.children
+}
+
+main :: () -> i32 {
+    n := 41;
+    direct : Shape = tap(||_{ n } print("direct {}\n", n + 1));
+    direct.fire();
+    kids := collect() { tap(||_{ n } print("published {}\n", n + 1)); };
+    for *k in kids { k.fire(); }
+    0
+}

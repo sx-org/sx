@@ -4195,7 +4195,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .array_literal => |al| self.lowerArrayLiteral(&al),
         .index_expr => |ie| self.lowerIndexExpr(&ie),
         .slice_expr => |se| self.lowerSliceExpr(&se),
-        .lambda => |lam| self.lowerLambda(&lam),
+        // The literal's identity is its node: the env type memo keys on it.
+        .lambda => self.lowerLambda(&node.data.lambda),
         .force_unwrap => |fu| self.lowerForceUnwrap(&fu),
         .null_coalesce => |nc| self.lowerNullCoalesce(&nc),
         .deref_expr => |de| self.lowerDerefExpr(&de),

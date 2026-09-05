@@ -41,7 +41,7 @@ pub const UniqueLambda = struct {
 
 /// The unique lambda `ty` IS, or null when `ty` is any other type.
 pub fn uniqueLambdaOf(self: *Lowering, ty: TypeId) ?UniqueLambda {
-    return self.unique_lambdas.get(ty);
+    return self.unique_lambdas.get(ty) orelse materializeLambdaFunction(self, ty);
 }
 
 /// `uniqueLambdaOf` reaching through one level of `*T`, so `*$F` calls the
@@ -182,103 +182,19 @@ fn unreportedUnboundBinder(self: *Lowering, node: *const Node, errors_before: us
     return unboundSignatureBinder(self, node, true);
 }
 
-pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
-    return lowerLambdaTyped(self, lam, .literal, null);
-}
+/// The function a lambda body lowers to, against the env struct the value IS:
+/// its params from the annotations, the target's shape, or `sig_target`, its
+/// return from the annotation, the target, or the body. Captures reach the body
+/// through the env parameter by name and type alone, so the same body lowers
+/// from a literal in place or from its env type on demand.
+const LambdaFn = struct {
+    func_id: FuncId,
+    user_params: []const TypeId,
+    ret_ty: TypeId,
+    wants_ctx: bool,
+};
 
-/// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
-/// `LambdaKind` it is, and which type the resulting `{fnPtr, env}` value
-/// carries. `result_ty` must have the same closure shape the lambda lowers to —
-/// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
-pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
-    // A written `_{ … }` makes the literal's value its own env struct. Every
-    // field is evaluated HERE, in the forming frame, before the guard below
-    // retires the enclosing flow state.
-    var written_env = std.ArrayList(CaptureInfo).empty;
-    defer written_env.deinit(self.alloc);
-    {
-        const saved_env_target = self.target_type;
-        self.target_type = null;
-        defer self.target_type = saved_env_target;
-        for (lam.env) |f| {
-            const ref = self.lowerExpr(f.value);
-            const ty = self.builder.getRefType(ref);
-            // A build block's environment points at the frame that formed it,
-            // and a literal may outlive that frame. Refused, but still bound:
-            // the diagnostic halts before codegen, and binding it keeps the
-            // body from cascading.
-            self.rejectBlockCapture(ty, f.name, f.value.span);
-            written_env.append(self.alloc, .{
-                .name = f.name,
-                .ty = ty,
-                .ref = ref,
-                .is_alloca = false,
-            }) catch {};
-        }
-    }
-    // Flow narrowing does NOT cross into the lambda body: the
-    // body is a separate function whose `Ref` space overlaps the enclosing
-    // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
-    // (unsound unwrap of a captured-but-not-proven-present optional). The body
-    // builds its own narrowing from scratch; the outer state is restored on
-    // return (re-arming narrowing for the rest of the enclosing expression).
-    const sig_target = self.lambda_sig_target;
-    var nested_guard = Lowering.NestedBodyGuard.enter(self);
-    defer nested_guard.restore();
-
-    // Lower the lambda body as a new anonymous function
-    var buf: [64]u8 = undefined;
-    const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
-    self.block_counter += 1;
-
-    // A recipe's body is an expression the compiler moved, so its free names
-    // are collected from the frame that still holds them. A written literal is
-    // sealed: `written_env` IS the whole environment.
-    var captures = std.ArrayList(CaptureInfo).empty;
-    defer captures.deinit(self.alloc);
-    captures.appendSlice(self.alloc, written_env.items) catch {};
-    if (kind == .init_recipe) {
-        var param_names = std.StringHashMap(void).init(self.alloc);
-        defer param_names.deinit();
-        for (lam.params) |p| param_names.put(p.name, {}) catch {};
-        for (lam.env) |f| param_names.put(f.name, {}) catch {};
-        self.collectCaptures(lam.body, &param_names, &captures);
-    }
-
-    // Deduplicate captures
-    var seen = std.StringHashMap(void).init(self.alloc);
-    defer seen.deinit();
-    var deduped = std.ArrayList(CaptureInfo).empty;
-    defer deduped.deinit(self.alloc);
-    for (captures.items) |cap| {
-        if (!seen.contains(cap.name)) {
-            seen.put(cap.name, {}) catch {};
-            deduped.append(self.alloc, cap) catch {};
-        }
-    }
-    const capture_list = deduped.items;
-
-    // The env struct. A unique literal always has one — an empty env is a
-    // zero-field struct, which is the whole value.
-    const is_unique = lam.has_env or capture_list.len > 0;
-    var env_struct_ty: TypeId = .void;
-    if (is_unique) {
-        const env_field_data = self.alloc.alloc(types.TypeInfo.StructInfo.Field, capture_list.len) catch unreachable;
-        for (capture_list, 0..) |cap, i| {
-            env_field_data[i] = .{
-                .name = self.module.types.internString(cap.name),
-                .ty = cap.ty,
-            };
-        }
-        var env_buf: [64]u8 = undefined;
-        const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
-        const env_name_id = self.module.types.internString(env_name);
-        env_struct_ty = self.module.types.intern(.{ .@"struct" = .{
-            .name = env_name_id,
-            .fields = env_field_data,
-        } });
-    }
-
+fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8, env_struct_ty: TypeId, capture_list: []const CaptureInfo, sig_target: ?CallableSig) LambdaFn {
     // Save current builder state
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
@@ -552,6 +468,183 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     self.builder.inst_counter = saved_counter;
     self.current_ctx_ref = saved_ctx_ref_lam;
 
+    const user_base: usize = if (lambda_wants_ctx) 2 else 1;
+    var user_params = std.ArrayList(TypeId).empty;
+    for (params.items[user_base..]) |p| user_params.append(self.alloc, p.ty) catch unreachable;
+    return .{ .func_id = func_id, .user_params = user_params.items, .ret_ty = ret_ty, .wants_ctx = lambda_wants_ctx };
+}
+
+/// The function of a written literal whose env type is known but whose literal
+/// has not lowered yet: a member holding it may compile first.
+pub fn materializeLambdaFunction(self: *Lowering, env_ty: TypeId) ?UniqueLambda {
+    const lam = self.env_lambdas.get(env_ty) orelse return null;
+    if (self.materializing_lambda != null) return null;
+    self.materializing_lambda = env_ty;
+    defer self.materializing_lambda = null;
+    const fields = self.module.types.get(env_ty).@"struct".fields;
+    const caps = self.alloc.alloc(CaptureInfo, fields.len) catch unreachable;
+    for (fields, 0..) |f, i| caps[i] = .{ .name = self.module.types.getString(f.name), .ty = f.ty, .ref = Ref.none, .is_alloca = false };
+    var buf: [64]u8 = undefined;
+    const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
+    self.block_counter += 1;
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+    const fnp = lowerLambdaFunction(self, lam, name, env_ty, caps, null);
+    const u = UniqueLambda{ .func = fnp.func_id, .params = fnp.user_params, .ret = fnp.ret_ty };
+    self.unique_lambdas.put(env_ty, u) catch {};
+    return u;
+}
+
+/// The env struct a written literal IS: one field per `_{ … }` entry, typed as
+/// the entry's expression, interned once so the typer and the lowering agree.
+pub fn lambdaEnvType(self: *Lowering, lam: *const ast.Lambda) TypeId {
+    const key = lower.LambdaKey{ .lam = lam, .func = if (self.builder.func) |f| @intFromEnum(f) else std.math.maxInt(u32) };
+    if (self.lambda_env_types.get(key)) |ty| return ty;
+    const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, lam.env.len) catch unreachable;
+    for (lam.env, 0..) |f, i| {
+        fields[i] = .{
+            .name = self.module.types.internString(f.name),
+            .ty = self.inferExprType(f.value),
+        };
+    }
+    var env_buf: [64]u8 = undefined;
+    const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
+    self.block_counter += 1;
+    const ty = self.module.types.intern(.{ .@"struct" = .{
+        .name = self.module.types.internString(env_name),
+        .fields = fields,
+    } });
+    self.lambda_env_types.put(key, ty) catch {};
+    self.env_lambdas.put(ty, lam) catch {};
+    return ty;
+}
+
+pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
+    return lowerLambdaTyped(self, lam, .literal, null);
+}
+
+/// `lowerLambda` with the two knobs a compiler-formed recipe needs: which
+/// `LambdaKind` it is, and which type the resulting `{fnPtr, env}` value
+/// carries. `result_ty` must have the same closure shape the lambda lowers to —
+/// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
+pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKind, result_ty: ?TypeId) Ref {
+    const saved_func_for_key = self.builder.func;
+    // A written `_{ … }` makes the literal's value its own env struct. Every
+    // field is evaluated HERE, in the forming frame, before the guard below
+    // retires the enclosing flow state.
+    var written_env = std.ArrayList(CaptureInfo).empty;
+    defer written_env.deinit(self.alloc);
+    {
+        const saved_env_target = self.target_type;
+        self.target_type = null;
+        defer self.target_type = saved_env_target;
+        for (lam.env) |f| {
+            const ref = self.lowerExpr(f.value);
+            const ty = self.builder.getRefType(ref);
+            // A build block's environment points at the frame that formed it,
+            // and a literal may outlive that frame. Refused, but still bound:
+            // the diagnostic halts before codegen, and binding it keeps the
+            // body from cascading.
+            self.rejectBlockCapture(ty, f.name, f.value.span);
+            written_env.append(self.alloc, .{
+                .name = f.name,
+                .ty = ty,
+                .ref = ref,
+                .is_alloca = false,
+            }) catch {};
+        }
+    }
+    // Flow narrowing does NOT cross into the lambda body: the
+    // body is a separate function whose `Ref` space overlaps the enclosing
+    // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
+    // (unsound unwrap of a captured-but-not-proven-present optional). The body
+    // builds its own narrowing from scratch; the outer state is restored on
+    // return (re-arming narrowing for the rest of the enclosing expression).
+    const sig_target = self.lambda_sig_target;
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
+
+    // Lower the lambda body as a new anonymous function
+    var buf: [64]u8 = undefined;
+    const name = std.fmt.bufPrint(&buf, "__lambda_{d}", .{self.block_counter}) catch "__lambda";
+    self.block_counter += 1;
+
+    // A recipe's body is an expression the compiler moved, so its free names
+    // are collected from the frame that still holds them. A written literal is
+    // sealed: `written_env` IS the whole environment.
+    var captures = std.ArrayList(CaptureInfo).empty;
+    defer captures.deinit(self.alloc);
+    captures.appendSlice(self.alloc, written_env.items) catch {};
+    if (kind == .init_recipe) {
+        var param_names = std.StringHashMap(void).init(self.alloc);
+        defer param_names.deinit();
+        for (lam.params) |p| param_names.put(p.name, {}) catch {};
+        for (lam.env) |f| param_names.put(f.name, {}) catch {};
+        self.collectCaptures(lam.body, &param_names, &captures);
+    }
+
+    // Deduplicate captures
+    var seen = std.StringHashMap(void).init(self.alloc);
+    defer seen.deinit();
+    var deduped = std.ArrayList(CaptureInfo).empty;
+    defer deduped.deinit(self.alloc);
+    for (captures.items) |cap| {
+        if (!seen.contains(cap.name)) {
+            seen.put(cap.name, {}) catch {};
+            deduped.append(self.alloc, cap) catch {};
+        }
+    }
+    const capture_list = deduped.items;
+
+    // The env struct. A unique literal always has one — an empty env is a
+    // zero-field struct, which is the whole value.
+    const is_unique = lam.has_env or capture_list.len > 0;
+    var env_struct_ty: TypeId = .void;
+    // A written literal the planner already named keeps that env type, its
+    // captured values taking the fields' shapes; otherwise the env is the
+    // captures as lowered, and the name is recorded for anyone asking later.
+    const memo_key = lower.LambdaKey{ .lam = lam, .func = if (saved_func_for_key) |f| @intFromEnum(f) else std.math.maxInt(u32) };
+    if (is_unique and kind == .literal and lam.has_env and self.lambda_env_types.get(memo_key) != null) {
+        env_struct_ty = self.lambda_env_types.get(memo_key).?;
+        const env_fields = self.module.types.get(env_struct_ty).@"struct".fields;
+        for (capture_list, 0..) |*cap, i| {
+            if (i >= env_fields.len or cap.ty == env_fields[i].ty) continue;
+            const val = if (cap.is_alloca) self.builder.load(cap.ref, cap.ty) else cap.ref;
+            cap.ref = self.coerceToType(val, cap.ty, env_fields[i].ty);
+            cap.is_alloca = false;
+            cap.ty = env_fields[i].ty;
+        }
+    } else if (is_unique) {
+        const env_field_data = self.alloc.alloc(types.TypeInfo.StructInfo.Field, capture_list.len) catch unreachable;
+        for (capture_list, 0..) |cap, i| {
+            env_field_data[i] = .{
+                .name = self.module.types.internString(cap.name),
+                .ty = cap.ty,
+            };
+        }
+        var env_buf: [64]u8 = undefined;
+        const env_name = std.fmt.bufPrint(&env_buf, "__env_{d}", .{self.block_counter}) catch "__env";
+        self.block_counter += 1;
+        const env_name_id = self.module.types.internString(env_name);
+        env_struct_ty = self.module.types.intern(.{ .@"struct" = .{
+            .name = env_name_id,
+            .fields = env_field_data,
+        } });
+        if (kind == .literal and lam.has_env) {
+            self.lambda_env_types.put(memo_key, env_struct_ty) catch {};
+            self.env_lambdas.put(env_struct_ty, lam) catch {};
+        }
+    }
+
+    // A literal whose function already lowered on demand keeps it.
+    const fnp: LambdaFn = if (is_unique and kind == .literal and lam.has_env and self.unique_lambdas.get(env_struct_ty) != null) blk: {
+        const u = self.unique_lambdas.get(env_struct_ty).?;
+        break :blk .{ .func_id = u.func, .user_params = u.params, .ret_ty = u.ret, .wants_ctx = self.implicit_ctx_enabled };
+    } else lowerLambdaFunction(self, lam, name, env_struct_ty, capture_list, sig_target);
+    const func_id = fnp.func_id;
+    const ret_ty = fnp.ret_ty;
+
     // Closure flowing into a BARE function-pointer slot (`(T) -> U`, no env):
     // the slot is called without the closure env arg, so the closure fn can't
     // be passed directly. For a capture-free closure whose return type matches
@@ -578,13 +671,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
         }
     }
 
-    // Create proper closure type (user-visible params only — skip ctx + env).
-    const skip_count: usize = if (lambda_wants_ctx) 2 else 1;
-    var param_types_list = std.ArrayList(TypeId).empty;
-    for (params.items[skip_count..]) |p| {
-        param_types_list.append(self.alloc, p.ty) catch unreachable;
-    }
-    const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
+    const closure_ty = result_ty orelse self.module.types.closureType(fnp.user_params, ret_ty);
 
     // A nonescaping `@Init(T)` recipe is the erased pair its site names, and
     // §12.1 forbids the compiler from choosing heap storage for it: the env
@@ -604,7 +691,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, kind: LambdaKin
     if (is_unique) {
         self.unique_lambdas.put(env_struct_ty, .{
             .func = func_id,
-            .params = self.alloc.dupe(TypeId, param_types_list.items) catch unreachable,
+            .params = fnp.user_params,
             .ret = ret_ty,
         }) catch {};
         const env_local = self.builder.alloca(env_struct_ty);
