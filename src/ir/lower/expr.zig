@@ -71,9 +71,12 @@ fn inferGenericLiteral(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *con
     }
 
     for (sl.field_inits, 0..) |fi, i| {
+        // A punned bare identifier that names no field is a positional
+        // element the parser named (`Pair{ x, y }`).
         const idx: ?usize = if (fi.name) |n| blk: {
             for (tmpl.field_names, 0..) |fname, k| if (std.mem.eql(u8, fname, n)) break :blk k;
-            break :blk null;
+            const punned = fi.value.data == .identifier and std.mem.eql(u8, fi.value.data.identifier.name, n);
+            break :blk if (punned and i < tmpl.field_names.len) i else null;
         } else if (i < tmpl.field_names.len) i else null;
         var target: ?TypeId = null;
         var type_node: ?*const Node = null;
@@ -281,7 +284,16 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     var prelowered: ?[]const Ref = null;
     var inferred_ty: TypeId = .unresolved;
     if (sl.struct_name) |name| {
-        if (sl.type_expr == null) {
+        // The source-aware leaf answers first: a concrete struct this file can
+        // see owns its name over a same-name generic template imported flat.
+        const concrete = blk: {
+            const from = self.current_source_file orelse self.main_file orelse break :blk false;
+            break :blk switch (self.selectNominalLeaf(name, from, false)) {
+                .resolved => |lt| self.hasPlainStructAuthor(lt),
+                else => false,
+            };
+        };
+        if (sl.type_expr == null and !concrete) {
             switch (self.selectGenericStructHead(name, null, false, span)) {
                 .template => |tmpl| {
                     const inferred = inferGenericLiteral(self, sl, &tmpl, span);
