@@ -1143,6 +1143,9 @@ pub const ProtocolMethodDecl = struct {
     /// The stripped receiver's form: the declaration wrote `self: *Self` rather
     /// than `self: Self`.
     receiver_is_pointer: bool = true,
+    /// One per `params` entry: the parameter's default, where the declaration
+    /// wrote one. Empty for synthesized methods (treated as all-null).
+    param_defaults: []const ?*Node = &.{},
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
 };
