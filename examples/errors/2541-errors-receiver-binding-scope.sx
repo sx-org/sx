@@ -22,11 +22,26 @@ tail :: () -> ! {
     b.go()
 }
 
+pair :: () -> (i32, m.Box) { return 7, m.Box{}; }
+
+destructured :: () -> ! {
+    n, b := pair();
+    try b.go();
+}
+
+iterated :: () -> ! {
+    boxes : [1]m.Box = .{};
+    b : Decoy = .{};
+    for b in boxes { try b.go(); }
+}
+
 main :: () -> i32 {
     b : Decoy = .{};
     first := forward(*b);
     second := tail();
-    print("shadow={} tail={}\n", first == .Missing, second == .Missing);
-    if first == .Missing and second == .Missing { return 0; }
+    third := destructured();
+    fourth := iterated();
+    print("shadow={} tail={} destructured={} iterated={}\n", first == .Missing, second == .Missing, third == .Missing, fourth == .Missing);
+    if first == .Missing and second == .Missing and third == .Missing and fourth == .Missing { return 0; }
     1
 }

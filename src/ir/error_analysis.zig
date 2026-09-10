@@ -32,7 +32,8 @@ pub const ErrorAnalysis = struct {
     locals: ?*const LocalScope = null,
 
     const LocalScope = struct {
-        preceding: []const *Node,
+        preceding: []const *Node = &.{},
+        loop: ?*const ast.ForExpr = null,
         parent: ?*const LocalScope,
     };
 
@@ -195,6 +196,19 @@ pub const ErrorAnalysis = struct {
             while (i > 0) {
                 i -= 1;
                 const node = current.preceding[i];
+                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent, .loop = current.loop };
+                var initializer = self;
+                initializer.locals = &preceding;
+                if (node.data == .destructure_decl) {
+                    const d = node.data.destructure_decl;
+                    for (d.names, 0..) |target, index| {
+                        if (!std.mem.eql(u8, target, name)) continue;
+                        const ty = initializer.receiverType(fd, d.value);
+                        const len = self.l.module.types.productLen(ty) orelse return .unresolved;
+                        return if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved;
+                    }
+                    continue;
+                }
                 const binding: struct { name: []const u8, annotation: ?*Node, value: ?*Node } = switch (node.data) {
                     .var_decl => |v| .{ .name = v.name, .annotation = v.type_annotation, .value = v.value },
                     .const_decl => |c| .{ .name = c.name, .annotation = c.type_annotation, .value = @as(?*Node, c.value) },
@@ -203,10 +217,22 @@ pub const ErrorAnalysis = struct {
                 if (!std.mem.eql(u8, binding.name, name)) continue;
                 if (binding.annotation) |annotation| return self.l.resolveType(annotation);
                 const value = binding.value orelse return .unresolved;
-                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent };
-                var initializer = self;
-                initializer.locals = &preceding;
                 return initializer.receiverType(fd, value);
+            }
+            if (current.loop) |loop| {
+                for (loop.captures, 0..) |capture, index| {
+                    if (!std.mem.eql(u8, capture.name, name)) continue;
+                    const iterable = loop.iterables[index];
+                    var outer = self;
+                    outer.locals = current.parent;
+                    const element = if (capture.type_annotation) |annotation|
+                        self.l.resolveType(annotation)
+                    else if (iterable.is_range)
+                        TypeId.i64
+                    else
+                        outer.iterableElementType(fd, iterable.expr);
+                    return if (capture.by_ref) self.l.module.types.ptrTo(element) else element;
+                }
             }
         }
         const decl = fd orelse return null;
@@ -214,6 +240,26 @@ pub const ErrorAnalysis = struct {
             if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
         }
         return null;
+    }
+
+    fn iterableElementType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, expr: *const Node) TypeId {
+        var ty = self.receiverType(fd, expr);
+        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .pointer)
+            ty = self.l.module.types.get(ty).pointer.pointee;
+        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .@"struct") {
+            const fields = self.l.module.types.get(ty).@"struct".fields;
+            for (fields) |field| {
+                if (!std.mem.eql(u8, self.l.module.types.getString(field.name), "items")) continue;
+                if (self.l.module.types.sliceInfoOf(field.ty)) |slice| return slice.element;
+                if (!field.ty.isBuiltin() and self.l.module.types.get(field.ty) == .many_pointer) {
+                    for (fields) |other| {
+                        if (std.mem.eql(u8, self.l.module.types.getString(other.name), "len"))
+                            return self.l.module.types.get(field.ty).many_pointer.element;
+                    }
+                }
+            }
+        }
+        return self.l.getElementType(ty);
     }
 
     fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
@@ -284,7 +330,10 @@ pub const ErrorAnalysis = struct {
                     self.collectErrorSites(it.expr, tags, edges, dyn, enclosing_fd);
                     if (it.range_end) |re| self.collectErrorSites(re, tags, edges, dyn, enclosing_fd);
                 }
-                self.collectErrorSites(f.body, tags, edges, dyn, enclosing_fd);
+                const scope = LocalScope{ .loop = &f, .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                nested.collectErrorSites(f.body, tags, edges, dyn, enclosing_fd);
             },
             .return_stmt => |r| if (r.value) |v| {
                 // `return callee(...)` FORWARDS the callee's error channel, so
