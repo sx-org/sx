@@ -1,0 +1,32 @@
+@import "modules/std.sx";
+m :: @import "2540-errors-local-receiver-channel/mod.sx";
+
+Other :: error { Wrong; }
+Decoy :: struct {
+    go :: (self: *Decoy) -> !Other { raise Other.Wrong; }
+}
+
+go :: () -> !Other { raise Other.Wrong; }
+
+forward :: (b: *Decoy) -> ! {
+    {
+        b : m.Box = .{};
+        alias := *b;
+        return alias.go();
+    }
+}
+
+tail :: () -> ! {
+    b : m.Box = .{};
+    { b : Decoy = .{}; }
+    b.go()
+}
+
+main :: () -> i32 {
+    b : Decoy = .{};
+    first := forward(*b);
+    second := tail();
+    print("shadow={} tail={}\n", first == .Missing, second == .Missing);
+    if first == .Missing and second == .Missing { return 0; }
+    1
+}
