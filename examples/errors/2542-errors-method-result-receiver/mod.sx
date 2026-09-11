@@ -5,3 +5,6 @@ Stmt :: struct {
 Db :: struct {
     prepare :: (self: *Db) -> (Stmt, !Failure) { return Stmt{}; }
 }
+Factory :: struct {
+    make :: () -> Stmt { return Stmt{}; }
+}

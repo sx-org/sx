@@ -285,15 +285,15 @@ pub const ErrorAnalysis = struct {
             .identifier => |id| if (self.bindingType(fd, id.name)) |ty| return ty,
             .unary_op => |op| if (op.op == .address_of)
                 return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
-            .call => |call| {
-                if (self.calleeEdge(call.callee, fd)) |edge| {
-                    if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |callee| {
-                        if (callee.type_params.len == 0) {
-                            if (callee.return_type) |ret|
-                                return self.l.resolveTypeInSource(callee.body.source_file, ret);
-                        }
-                    }
-                }
+            .call => |call| result: {
+                if (call.callee.data != .field_access) break :result;
+                const receiver = call.callee.data.field_access.object;
+                if (receiver.data != .identifier or self.bindingType(fd, receiver.data.identifier.name) == null) break :result;
+                const edge = self.calleeEdge(call.callee, fd) orelse break :result;
+                const callee = self.l.edgeCalleeDecl(edge, self.l.current_source_file) orelse break :result;
+                if (callee.type_params.len != 0) break :result;
+                const ret = callee.return_type orelse break :result;
+                return self.l.resolveTypeInSource(callee.body.source_file, ret);
             },
             .try_expr => |attempt| {
                 if (attempt.operand.data == .block) return self.receiverType(fd, attempt.operand);

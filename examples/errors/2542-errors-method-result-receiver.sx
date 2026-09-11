@@ -1,7 +1,11 @@
 @import "modules/std.sx";
 m :: @import "2542-errors-method-result-receiver/mod.sx";
 E :: error { Missing; }
-Stmt :: struct { value: i32; }
+Other :: error { Wrong; }
+Decoy :: struct {
+    step :: (self: *Decoy) -> (i32, !Other) { raise Other.Wrong; }
+}
+make :: () -> Decoy { return Decoy{}; }
 
 propagate :: (db: *m.Db) -> ! {
     st := try db.prepare();
@@ -15,11 +19,18 @@ handle :: (db: *m.Db) -> ! {
     if rc == 0 { raise E.Missing; }
 }
 
+qualified :: () -> ! {
+    st := m.Factory.make();
+    rc := try st.step();
+    if rc == 0 { raise E.Missing; }
+}
+
 main :: () -> i32 {
     db : m.Db = .{};
     first := propagate(*db);
     second := handle(*db);
-    print("try={} catch={}\n", first == .Missing, second == .Missing);
-    if first == .Missing and second == .Missing { return 0; }
+    third := qualified();
+    print("try={} catch={} qualified={}\n", first == .Missing, second == .Missing, third == .Missing);
+    if first == .Missing and second == .Missing and third == .Missing { return 0; }
     1
 }
