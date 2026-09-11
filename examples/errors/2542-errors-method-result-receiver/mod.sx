@@ -1,0 +1,7 @@
+Failure :: error { Failed; }
+Stmt :: struct {
+    step :: (self: *Stmt) -> (i32, !Failure) { return 0; }
+}
+Db :: struct {
+    prepare :: (self: *Db) -> (Stmt, !Failure) { return Stmt{}; }
+}

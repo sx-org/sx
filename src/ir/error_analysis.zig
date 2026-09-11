@@ -281,12 +281,44 @@ pub const ErrorAnalysis = struct {
     }
 
     fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
-        if (node.data == .identifier) {
-            if (self.bindingType(fd, node.data.identifier.name)) |ty| return ty;
+        switch (node.data) {
+            .identifier => |id| if (self.bindingType(fd, id.name)) |ty| return ty,
+            .unary_op => |op| if (op.op == .address_of)
+                return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
+            .call => |call| {
+                if (self.calleeEdge(call.callee, fd)) |edge| {
+                    if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |callee| {
+                        if (callee.type_params.len == 0) {
+                            if (callee.return_type) |ret|
+                                return self.l.resolveTypeInSource(callee.body.source_file, ret);
+                        }
+                    }
+                }
+            },
+            .try_expr => |attempt| {
+                if (attempt.operand.data == .block) return self.receiverType(fd, attempt.operand);
+                return self.successType(fd, attempt.operand);
+            },
+            .catch_expr => |handler| {
+                const attempted = Lowering.catchAttempted(&handler);
+                return if (attempted.boundary) self.receiverType(fd, attempted.node) else self.successType(fd, attempted.node);
+            },
+            .block => |block| {
+                if (!block.produces_value or block.stmts.len == 0) return .void;
+                const scope = LocalScope{ .preceding = block.stmts[0 .. block.stmts.len - 1], .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                return nested.receiverType(fd, block.stmts[block.stmts.len - 1]);
+            },
+            else => {},
         }
-        if (node.data == .unary_op and node.data.unary_op.op == .address_of)
-            return self.l.module.types.ptrTo(self.receiverType(fd, node.data.unary_op.operand));
         return self.l.inferExprType(node);
+    }
+
+    fn successType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, operand: *const Node) TypeId {
+        const ty = self.receiverType(fd, operand);
+        const channel = self.l.errorChannelOf(ty) orelse return .unresolved;
+        return if (ty == channel) .void else self.l.failableSuccessType(ty);
     }
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for

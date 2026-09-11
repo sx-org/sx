@@ -1,0 +1,25 @@
+@import "modules/std.sx";
+m :: @import "2542-errors-method-result-receiver/mod.sx";
+E :: error { Missing; }
+Stmt :: struct { value: i32; }
+
+propagate :: (db: *m.Db) -> ! {
+    st := try db.prepare();
+    rc := try st.step();
+    if rc == 0 { raise E.Missing; }
+}
+
+handle :: (db: *m.Db) -> ! {
+    st :: db.prepare() catch { raise E.Missing; };
+    rc := try st.step();
+    if rc == 0 { raise E.Missing; }
+}
+
+main :: () -> i32 {
+    db : m.Db = .{};
+    first := propagate(*db);
+    second := handle(*db);
+    print("try={} catch={}\n", first == .Missing, second == .Missing);
+    if first == .Missing and second == .Missing { return 0; }
+    1
+}
