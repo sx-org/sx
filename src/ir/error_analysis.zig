@@ -57,15 +57,10 @@ pub const ErrorAnalysis = struct {
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
                     if (self.bindingType(enclosing_fd, obj)) |ty| {
-                        if (self.nominalName(ty)) |tn| {
-                            if (self.qualifiedEdge(tn, fa.field)) |q| return q;
-                        }
+                        return self.receiverEdge(ty, fa.field);
                     } else if (self.qualifiedEdge(obj, fa.field)) |q| return q;
                 }
-                // A UFCS free function lives under the BARE method name.
-                const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) return bare;
-                return null;
+                return self.ufcsEdge(fa.field);
             },
             else => return null,
         }
@@ -180,6 +175,18 @@ pub const ErrorAnalysis = struct {
         return qualified;
     }
 
+    fn receiverEdge(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?[]const u8 {
+        if (self.nominalName(ty)) |name| {
+            if (self.qualifiedEdge(name, method)) |edge| return edge;
+        }
+        return self.ufcsEdge(method);
+    }
+
+    fn ufcsEdge(self: ErrorAnalysis, method: []const u8) ?[]const u8 {
+        const bare = self.l.ufcsAliasTarget(method) orelse method;
+        return if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) bare else null;
+    }
+
     fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
         var ty = original;
         if (ty.isBuiltin()) return null;
@@ -288,8 +295,9 @@ pub const ErrorAnalysis = struct {
             .call => |call| result: {
                 if (call.callee.data != .field_access) break :result;
                 const receiver = call.callee.data.field_access.object;
-                if (receiver.data != .identifier or self.bindingType(fd, receiver.data.identifier.name) == null) break :result;
-                const edge = self.calleeEdge(call.callee, fd) orelse break :result;
+                if (receiver.data != .identifier) break :result;
+                const ty = self.bindingType(fd, receiver.data.identifier.name) orelse break :result;
+                const edge = self.receiverEdge(ty, call.callee.data.field_access.field) orelse break :result;
                 const callee = self.l.edgeCalleeDecl(edge, self.l.current_source_file) orelse break :result;
                 if (callee.type_params.len != 0) break :result;
                 const ret = callee.return_type orelse break :result;
