@@ -4030,6 +4030,7 @@ pub const Lowering = struct {
     pub const lowerDerefExpr = lower_expr.lowerDerefExpr;
     pub const lowerForceUnwrap = lower_expr.lowerForceUnwrap;
     pub const diagOptionalOperand = lower_expr.diagOptionalOperand;
+    pub const unwrapOptionalOperand = lower_expr.unwrapOptionalOperand;
     pub const lowerNullCoalesce = lower_expr.lowerNullCoalesce;
     pub const castErrorSet = lower_expr.castErrorSet;
     pub const resolveOptionalInner = lower_expr.resolveOptionalInner;

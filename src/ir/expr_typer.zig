@@ -65,7 +65,7 @@ pub const ExprTyper = struct {
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
-                .negate => self.l.inferExprType(uop.operand),
+                .negate => self.payloadType(self.l.inferExprType(uop.operand)),
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
