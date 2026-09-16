@@ -1,0 +1,13 @@
+// A guard-narrowed optional stays unwrapped inside a nested arithmetic
+// operand: `a * 16` types at the payload, so the outer `+` sees an `i64`.
+
+@import "modules/std.sx";
+
+scale :: (a: ?i64) -> i64 {
+    if a == null { return -1; }
+    a * 16 + 1
+}
+
+main :: () {
+    print("{} {}\n", scale(3), scale(null));
+}
