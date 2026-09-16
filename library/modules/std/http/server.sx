@@ -7,6 +7,7 @@
 // Stats/EventKind under `http`.
 @import "modules/std/core.sx";         // out, @sizeOf, Allocator, Context
 @import "modules/std/mem.sx";          // Arena
+@import "modules/std/encoding.sx";     // hexValue
 clib   :: @import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
 socket :: @import "modules/std/socket.sx";
 thread :: @import "modules/std/thread.sx";
@@ -2569,12 +2570,8 @@ Server :: struct {
                 p : i64 = 0;
                 bad := false;
                 while p < e {
-                    ch := c.readBuf[p];
-                    hv : i64 = -1;
-                    if '0' <= ch <= '9' { hv = (ch - '0').(i64); }
-                    else if 'a' <= ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
-                    else if 'A' <= ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
-                    if hv < 0 { break; }
+                    hv := hexValue(c.readBuf[p]);
+                    if hv == null { break; }
                     if size > 0x07FFFFFFFFFFFFFF { bad = true; break; }   // would wrap i64
                     size = size * 16 + hv;
                     digits += 1;
@@ -3035,11 +3032,12 @@ Server :: struct {
             sc += 1;
         }
         if !dirty { return true; }
-        np := normalizePath(*c.readBuf[pathOff], qoff);
-        if np < 0 {
+        canon := normalizePath(*c.readBuf[pathOff], qoff);
+        if canon == null {
             self.respondErrorClose(slot, 400);
             return false;
         }
+        np : i64 = canon;
         if qoff < req.path.len {
             // slide "?query" left against the canonical path end
             qlen := req.path.len - qoff;

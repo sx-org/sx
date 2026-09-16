@@ -5,6 +5,7 @@
 // the facade (../http.sx) re-exports the public surface under `http`.
 @import "modules/std/core.sx";
 @import "modules/std/fmt.sx";    // concat (Response.addHeader)
+@import "modules/std/encoding.sx"; // hexValue
 c :: @import "modules/std/c.sx"; // c.memmove (overlap-safe chunked-decode compaction)
 
 // A content coding the blocking client can decode transparently. Identity is
@@ -314,12 +315,8 @@ decodeChunkedPass :: (src: [*]u8, avail: i64, maxBody: i64, commit: bool, resume
         // need at least one byte for a size digit
         if rp >= avail { return ChunkResult{ status = ChunkStatus.NEED_MORE, resumeRp = cpRp, resumeDecoded = cpDecoded }; }
         while rp < avail {
-            ch := src[rp];
-            hv : i64 = -1;
-            if '0' <= ch <= '9' { hv = (ch - '0').(i64); }
-            else if 'a' <= ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
-            else if 'A' <= ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
-            if hv < 0 { break; }
+            hv := hexValue(src[rp]);
+            if hv == null { break; }
             // Overflow guard: this protects ONLY against an i64 wrap in the
             // `size*16 + hv` shift below. The maxBody ceiling is a separate,
             // higher-level concern enforced by the TOO_BIG (413) check after
@@ -452,7 +449,7 @@ formatImfDate :: (secs: i64, dst: [*]u8) {
 //
 // Percent-decode + dot-segment-normalize a request PATH (no query part)
 // IN PLACE. `buf[0..len)` must start with '/'. Returns the canonical
-// length (≤ len), or -1 when the path must be rejected (400):
+// length (≤ len), or null when the path must be rejected (400):
 //   • a malformed escape — '%' not followed by two hex digits;
 //   • a decoded control byte (NUL, CR/LF, any < 0x20, 0x7F) — request
 //     splitting / log injection;
@@ -467,29 +464,21 @@ formatImfDate :: (secs: i64, dst: [*]u8) {
 // Both passes only ever write at-or-behind the read cursor, so the
 // in-place rewrite is safe; the caller re-views the buffer at the
 // returned length.
-normalizePath :: (buf: [*]u8, len: i64) -> i64 {
+normalizePath :: (buf: [*]u8, len: i64) -> ?i64 {
     // Pass 1: percent-decode (output can only shrink).
     rp : i64 = 0;
     wp : i64 = 0;
     while rp < len {
         c := buf[rp];
         if c == '%' {
-            if rp + 2 >= len { return -1; }   // truncated escape
-            hi : i64 = -1;
-            lo : i64 = -1;
-            h := buf[rp + 1];
-            l := buf[rp + 2];
-            if '0' <= h <= '9' { hi = (h - '0').(i64); }
-            else if 'a' <= h <= 'f' { hi = (h - 'a' + 10).(i64); }
-            else if 'A' <= h <= 'F' { hi = (h - 'A' + 10).(i64); }
-            if '0' <= l <= '9' { lo = (l - '0').(i64); }
-            else if 'a' <= l <= 'f' { lo = (l - 'a' + 10).(i64); }
-            else if 'A' <= l <= 'F' { lo = (l - 'A' + 10).(i64); }
-            if hi < 0 or lo < 0 { return -1; }   // non-hex escape
+            if rp + 2 >= len { return null; }   // truncated escape
+            hi := hexValue(buf[rp + 1]);
+            lo := hexValue(buf[rp + 2]);
+            if hi == null or lo == null { return null; }   // non-hex escape
             d : i64 = hi * 16 + lo;
-            if d < ' ' or d == '\x7f' { return -1; } // control (incl. NUL/CR/LF)
-            if d == '/' { return -1; }            // segmentation change
-            if d == '?' { return -1; }            // unrepresentable
+            if d < ' ' or d == '\x7f' { return null; }      // control (incl. NUL/CR/LF)
+            if d == '/' { return null; }                     // segmentation change
+            if d == '?' { return null; }                     // unrepresentable
             buf[wp] = d;
             wp += 1;
             rp += 3;
@@ -514,7 +503,7 @@ normalizePath :: (buf: [*]u8, len: i64) -> i64 {
         if sl == 1 and buf[rp + 1] == '.' {            // "."
             if se == dl { buf[wp] = '/'; wp += 1; }    // trailing → keep '/'
         } else if sl == 2 and buf[rp + 1] == '.' and buf[rp + 2] == '.' {   // ".."
-            if wp == 0 { return -1; }                  // above the root
+            if wp == 0 { return null; }                // above the root
             wp -= 1;
             while wp > 0 and buf[wp] != '/' { wp -= 1; }
             if se == dl { buf[wp] = '/'; wp += 1; }     // trailing → keep '/'

@@ -51,6 +51,33 @@ impl Writer for StringBuilder {
     }
 }
 
+// Text written into a caller-owned buffer. `len` is the length the text
+// needs; bytes past the end of `dst` are counted but not stored.
+FixedWriter :: struct {
+    dst: []u8;
+    len: i64 = 0;
+
+    init :: (dst: []u8) -> FixedWriter => .{ dst = dst };
+
+    // The bytes, or null when they did not fit — `len` is then the size that
+    // would.
+    written :: (self: *FixedWriter) -> ?string {
+        if self.len > self.dst.len { return null; }
+        self.dst[..self.len]
+    }
+}
+
+impl Writer for FixedWriter {
+    write :: (self: *FixedWriter, s: string) -> void {
+        room := self.dst.len - self.len;
+        if room > 0 {
+            n := if s.len < room then s.len else room;
+            c.memcpy(*self.dst[self.len], s.ptr, n);
+        }
+        self.len += s.len;
+    }
+}
+
 // Write `n` items with `sep` between them; `body(i)` writes item `i`. The call
 // consumes `body` before returning, so a capturing lambda stays on the stack.
 writeEach :: ufcs (w: Writer, n: i64, sep: string, body: $F/(i64) -> void) {

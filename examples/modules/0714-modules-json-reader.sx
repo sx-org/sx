@@ -7,7 +7,7 @@
 //
 //   1. STRUCTURE — the parsed tree has the expected keys (in INSERTION
 //      order), values, and nesting.
-//   2. HEAP DISCIPLINE — an un-escaped string value is a zero-copy VIEW
+//   2. OWNERSHIP — an un-escaped string value is a zero-copy VIEW
 //      into the input buffer (its bytes lie inside `src`), while an
 //      escaped string is DECODED into a fresh `alloc`-ed buffer (its
 //      bytes lie OUTSIDE `src`). Composite nodes + the decoded string are
@@ -85,7 +85,7 @@ main :: () -> ! {
     sub := o.items[5].val.object;
     report("nested-pair", sub.items[0].key == "k" and sub.items[0].val.str == "v");
 
-    // ── 2. Heap discipline: view vs decoded ──────────────────────────
+    // ── 2. Ownership: view vs decoded ────────────────────────────────
     base : i64 = xx src.ptr;
     stop := base + src.len;
     pPlain : i64 = xx o.items[0].val.str.ptr;   // "plain": no escape -> VIEW into src
@@ -95,9 +95,10 @@ main :: () -> ! {
 
     // ── 3. Round-trip back through the writer ────────────────────────
     buf : [256]u8 = ---;
-    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 256 });
-    rt := string{ ptr = *buf[0], len = n };
-    report("round-trip", rt == src);
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    try jw.write(root);
+    report("round-trip", fw.written()?! == src);
 
     // ── 4. Leading/trailing/inner whitespace is insignificant ────────
     wsv := try parse("  [ 1 , 2 , 3 ]  ", arena);
@@ -108,8 +109,10 @@ main :: () -> ! {
 
     fbuf : [32]u8 = ---;
     fv := try parse("1.5", arena);
-    fn := try writeToBuffer(fv, string{ ptr = *fbuf[0], len = 32 });
-    report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
+    ffw := FixedWriter.init(fbuf[..]);
+    fjw := JsonWriter.init(ffw);
+    try fjw.write(fv);
+    report("fraction-round-trips", ffw.written()?! == "1.5");
 
     // Empty container literals (the manifest/db.json use these).
     ea := try parse("[]", arena);

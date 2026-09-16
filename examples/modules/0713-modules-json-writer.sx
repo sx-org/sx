@@ -4,18 +4,17 @@
 // every escape kind (quote, newline, tab, backslash, a raw control byte),
 // integers spanning zero / a small negative / a small positive / i64 MIN
 // (-9223372036854775808) / i64 MAX (9223372036854775807), a bool, null, an
-// array, and a nested object — then serializes it two ways and asserts the
+// array, and a nested object — then serializes it three ways and asserts the
 // EXACT bytes:
 //
-//   1. into a caller-owned `[]u8` buffer (returns bytes written),
-//   2. streaming straight to a file through an 8-byte staging buffer
-//      (small on purpose, so the writer flushes many times and no
-//      whole-document string is ever held).
+//   1. into a roomy caller-owned buffer through a `FixedWriter`,
+//   2. into a file, built through a `StringBuilder` and written whole,
+//   3. into a `FixedWriter` whose buffer is exactly the document's length.
 //
-// Both must yield byte-for-byte the same pinned document, with keys in
-// INSERTION ORDER. A too-small buffer must raise `JsonError.Overflow` rather
-// than truncate. The model is built through an explicit Arena allocator
-// and freed in one `deinit`; the writer path allocates nothing.
+// All three must yield byte-for-byte the same pinned document, with keys in
+// INSERTION ORDER. A too-small buffer yields no document, and `len` names the
+// size that would fit. The model is built through an explicit Arena allocator
+// and freed in one `deinit`; `JsonWriter` itself allocates nothing.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
@@ -73,35 +72,40 @@ main :: () -> ! {
 
     root := build(arena);
 
-    // 1. Write into a caller buffer; assert exact bytes + byte count.
+    // 1. Write into a roomy caller buffer; assert exact bytes.
     buf : [512]u8 = ---;
-    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 512 });
-    view := string{ ptr = *buf[0], len = n };
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    try jw.write(root);
+    view := fw.written()?!;
     print("doc: {}\n", view);
     report("buffer-exact", view == EXPECT);
-    report("buffer-len",   n == EXPECT.len);
 
-    // 2. A buffer that is one byte too small must raise Overflow.
-    tight : []u8 = string{ ptr = *buf[256], len = EXPECT.len - 1 };
-    _, oerr := writeToBuffer(root, tight);
-    report("overflow-raised", oerr == .Overflow);
+    // A buffer one byte too small yields no document and names the size.
+    tight := FixedWriter.init(buf[256..256 + EXPECT.len - 1]);
+    tjw := JsonWriter.init(tight);
+    try tjw.write(root);
+    report("overflow-detected", tight.written() == null and tight.len == EXPECT.len);
 
-    // 3. Stream to a file through a tiny staging buffer (forces flushes);
-    //    read it back and assert it equals the same document. Write into the
+    // 2. Write the document to a file and read it back. Write into the
     //    repo-local, gitignored scratch dir and unlink afterwards so nothing
     //    leaks and concurrent runs don't fight over a shared /tmp name.
     if !createDirAll(".sx-tmp") { print("mkdir: FAIL\n"); return; }
     path := ".sx-tmp/sx_0713_json.json";
-    fh := openFile(path, .write);
-    if fh == null { print("open: FAIL\n"); return; }
-    f := fh?!;
-    stage : [8]u8 = ---;
-    try writeToFile(root, *f, string{ ptr = *stage[0], len = 8 });
-    f.close();
+    fsb := StringBuilder.init(arena);
+    fjw := JsonWriter.init(fsb);
+    try fjw.write(root);
+    if !writeFile(path, fsb.finish()) { print("write: FAIL\n"); return; }
 
     back := readFile(path);
     deleteFile(path);
     if back == null { print("file-read: FAIL\n"); return; }
     report("file-exact", back?! == EXPECT);
+
+    // 3. A buffer of exactly the document's length holds all of it.
+    exact := FixedWriter.init(buf[256..256 + EXPECT.len]);
+    ejw := JsonWriter.init(exact);
+    try ejw.write(root);
+    report("exact-fit", exact.written()?! == EXPECT);
     return;
 }

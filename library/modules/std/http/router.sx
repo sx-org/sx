@@ -36,6 +36,8 @@
 
 @import "modules/std/fmt.sx";          // concat
 @import "modules/std/mem.sx";
+@import "modules/std/writer.sx";       // StringBuilder
+@import "modules/std/encoding.sx";     // hexValue
 types :: @import "modules/std/http/types.sx";
 json  :: @import "modules/std/json.sx";   // router uses `json.Value` / `json.parse` (namespaced)
 
@@ -180,19 +182,16 @@ RouteCtx :: struct {
 
     // ── JSON response ────────────────────────────────────────────────
     // Send `v` as the response body: sets Content-Type application/json
-    // and serializes via std/json into the per-request arena. `status`
-    // sets the response status. Returns false if serialization overflows
-    // the scratch (huge document) — the caller can fall back.
+    // and serializes via std/json into a `StringBuilder` on the
+    // per-request arena. `status` sets the response status. Returns
+    // false if serialization raises (`JsonError.NonFinite`).
     jsonSend :: (self: *RouteCtx, status: i64, v: json.Value) -> bool {
-        // Stage into an arena-backed buffer sized generously; json.sx's
-        // writer reports overflow rather than truncating.
-        cap : i64 = 65536;
-        buf : [*]u8 = context.allocator.alloc(u8, cap).ptr;
-        n, e := json.writeToBuffer(v, string{ ptr = buf, len = cap });
-        if e { return false; }
+        sb := StringBuilder.init();
+        jw := json.JsonWriter.init(sb);
+        jw.write(v) catch { return false; };
         self.resp.status = status;
         self.resp.contentType = "application/json";
-        self.resp.body = string{ ptr = buf, len = n };
+        self.resp.body = sb.finish();
         return true;
     }
 }
@@ -248,13 +247,6 @@ queryStringOf :: (path: string) -> string {
 
 // ── percent / '+' decoding ───────────────────────────────────────────
 
-hexNibble :: (c: u8) -> i64 {
-    if c >= '0' and c <= '9' { return c.(i64) - '0'; }
-    if c >= 'a' and c <= 'f' { return c.(i64) - 'a' + 10; }
-    if c >= 'A' and c <= 'F' { return c.(i64) - 'A' + 10; }
-    return -1;
-}
-
 // Decode one urlencoded token (`%XX` → byte, `+` → space, others verbatim)
 // from `s` into `dst` (must be >= s.len bytes — decoding only shrinks).
 // Returns the decoded byte length. A malformed `%` (truncated or non-hex)
@@ -265,9 +257,9 @@ urlDecodeInto :: (s: string, dst: [*]u8) -> i64 {
     while i < s.len {
         c := s[i];
         if c == '%' and i + 2 < s.len {   // '%' with two more chars
-            hi := hexNibble(s[i + 1]);
-            lo := hexNibble(s[i + 2]);
-            if hi >= 0 and lo >= 0 {
+            hi := hexValue(s[i + 1]);
+            lo := hexValue(s[i + 2]);
+            if hi != null and lo != null {
                 dst[di] = (hi * 16 + lo).(u8);
                 di += 1;
                 i += 3;

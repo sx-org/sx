@@ -11,9 +11,11 @@ report :: (label: string, ok: bool) {
 
 emits :: (f: f64, want: string) -> bool {
     buf : [64]u8 = ---;
-    n, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
-    if e { return false; }
-    string{ ptr = *buf[0], len = n } == want
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    jw.write(.float(f)) catch { return false; };
+    if text := fw.written() { return text == want; }
+    false
 }
 
 // Reciprocals distinguish -0.0 from 0.0.
@@ -31,18 +33,24 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 
 writeRaises :: (f: f64, want: JsonError) -> bool {
     buf : [64]u8 = ---;
-    _, e := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
-    e == want
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    jw.write(.float(f)) catch |e| { return e == want; };
+    false
 }
 
 roundTrips :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
-    n, we := writeToBuffer(.float(f), string{ ptr = *buf[0], len = 64 });
-    if we { return false; }
-    v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
-    if pe { return false; }
-    if v.float != f { return false; }
-    (1.0 / v.float) == (1.0 / f)
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    jw.write(.float(f)) catch { return false; };
+    if text := fw.written() {
+        v, pe := parse(text, alloc);
+        if pe { return false; }
+        if v.float != f { return false; }
+        return (1.0 / v.float) == (1.0 / f);
+    }
+    false
 }
 
 FAR_ZEROS :: 12000;
@@ -120,8 +128,10 @@ main :: () -> ! {
 
     tree := try parse(MIXED, arena);
     buf : [256]u8 = ---;
-    n := try writeToBuffer(tree, string{ ptr = *buf[0], len = 256 });
-    report("mixed-document-round-trips", string{ ptr = *buf[0], len = n } == MIXED);
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    try jw.write(tree);
+    report("mixed-document-round-trips", fw.written()?! == MIXED);
     o := tree.object;
     report("bare-integer-stays-int", o.items[0].val.int == 0 - 7);
     report("fraction-becomes-float", o.items[1].val.float == 1.5);

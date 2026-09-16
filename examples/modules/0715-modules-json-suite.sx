@@ -1,7 +1,7 @@
 // Comprehensive pinned suite for `modules/std/json.sx` (writer + reader),
 // the counterpart of 0711 for std.hash: it LOCKS IN the full round-trip and
 // the complete malformed-input matrix as one coherent pinned example.
-// (0713/0714 are the focused writer/reader demos with their heap-discipline
+// (0713/0714 are the focused writer/reader demos with their ownership
 // narrative; this file is the correctness lock-in.)
 //
 //   PART A — ROUND-TRIP. Build a representative document covering EVERY
@@ -105,18 +105,21 @@ main :: () -> ! {
     root := build(a);
 
     buf : [512]u8 = ---;
-    n := try writeToBuffer(root, string{ ptr = *buf[0], len = 512 });
-    canon := string{ ptr = *buf[0], len = n };
+    fw := FixedWriter.init(buf[..]);
+    jw := JsonWriter.init(fw);
+    try jw.write(root);
+    canon := fw.written()?!;
     print("doc: {}\n", canon);                 // golden pins the exact bytes
     report("rt-exact", canon == EXPECT);
-    report("rt-len",   n == EXPECT.len);
 
     // parse the writer's output, then re-serialize: must reproduce it byte
     // for byte (writer/reader are inverses on the canonical form).
     tree2 := try parse(canon, a);
     buf2 : [512]u8 = ---;
-    n2 := try writeToBuffer(tree2, string{ ptr = *buf2[0], len = 512 });
-    canon2 := string{ ptr = *buf2[0], len = n2 };
+    fw2 := FixedWriter.init(buf2[..]);
+    jw2 := JsonWriter.init(fw2);
+    try jw2.write(tree2);
+    canon2 := fw2.written()?!;
     report("rt-idempotent", canon2 == canon);
 
     // Structure of the parsed tree: insertion order + every value kind.
@@ -181,8 +184,10 @@ main :: () -> ! {
     ubytes[3] = 0xF0; ubytes[4] = 0x9F; ubytes[5] = 0x98; ubytes[6] = 0x80;
     uval : Value = .str(string{ ptr = ubytes, len = 7 });
     ubuf : [64]u8 = ---;
-    un := try writeToBuffer(uval, string{ ptr = *ubuf[0], len = 64 });
-    uback := try parse(string{ ptr = *ubuf[0], len = un }, a);
+    ufw := FixedWriter.init(ubuf[..]);
+    ujw := JsonWriter.init(ufw);
+    try ujw.write(uval);
+    uback := try parse(ufw.written()?!, a);
     report("rt-utf8", uback.str == string{ ptr = *ubytes[0], len = 7 });
 
     fbuf : [64]u8 = ---;
@@ -190,8 +195,10 @@ main :: () -> ! {
     fexp := try parse("2.5E-3", a);
     report("fraction-is-float", ffrac.float == 1.5);
     report("exponent-is-float", fexp.float == 0.0025);
-    fn := try writeToBuffer(ffrac, string{ ptr = *fbuf[0], len = 64 });
-    report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
+    ffw := FixedWriter.init(fbuf[..]);
+    fjw := JsonWriter.init(ffw);
+    try fjw.write(ffrac);
+    report("fraction-round-trips", ffw.written()?! == "1.5");
 
     // ── PART C. malformed-input matrix — one assertion per variant + edge ─
     // UnexpectedToken: bad literal, non-string key, missing comma.
