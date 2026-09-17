@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+divide :: (a: @Vector(2, i32), b: @Vector(2, i32)) -> @Vector(2, i32) { a / b }
+main :: () {
+    a: @Vector(2, i32) = .[-6, 8];
+    b: @Vector(2, i32) = .[2, 2];
+    c := divide(a, b);
+    print("{} {}\n", c.x, c.y);
+}

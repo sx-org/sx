@@ -60,7 +60,7 @@ pub const ExprTyper = struct {
                     const lhs_ty = self.payloadType(self.l.inferExprType(bop.lhs));
                     const rhs_ty = self.payloadType(self.l.inferExprType(bop.rhs));
                     if (self.l.pointerArithResultType(bop.op, lhs_ty, rhs_ty)) |ptr_ty| break :blk ptr_ty;
-                    break :blk Lowering.arithResultType(lhs_ty, rhs_ty);
+                    break :blk self.l.arithResultType(lhs_ty, rhs_ty);
                 },
             },
             .unary_op => |uop| switch (uop.op) {

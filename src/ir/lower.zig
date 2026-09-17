@@ -2667,17 +2667,8 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
-    /// Result type of an arithmetic / bitwise / shift binary op over two
-    /// scalar operand types. This is the single promotion rule shared by the
-    /// value path (`lowerBinaryOp`) and AST-level inference
-    /// (`ExprTyper.inferType`'s binary-op arm), so static typing reports
-    /// exactly the type the lowered value carries. An integer LHS with a
-    /// floating-point RHS promotes to the float (`i64 + f64` → `f64`); every
-    /// other pairing — including vectors / structs, whose `isInt` is false —
-    /// takes the LHS type. Comparison / logical ops never reach here (they
-    /// are `.bool` at both sites).
-    pub fn arithResultType(lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
-        if (isInt(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
+    pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
+        if (self.isIntEx(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
         return lhs_ty;
     }
 
@@ -2708,13 +2699,6 @@ pub const Lowering = struct {
         if (l_elem != null) return if (self.isIntEx(rhs_ty)) lhs_ty else null;
         if (r_elem != null and op == .add) return if (self.isIntEx(lhs_ty)) rhs_ty else null;
         return null;
-    }
-
-    fn isInt(ty: TypeId) bool {
-        return switch (ty) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => true,
-            else => false,
-        };
     }
 
     /// Carry-rule resolution outcome for a namespace alias, diagnostic-free.
@@ -3094,15 +3078,7 @@ pub const Lowering = struct {
     }
 
     pub fn isIntEx(self: *Lowering, ty: TypeId) bool {
-        if (isInt(ty)) return true;
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            return switch (info) {
-                .signed, .unsigned => true,
-                else => false,
-            };
-        }
-        return false;
+        return self.module.types.integerLayout(ty) != null;
     }
 
     /// The integer type a payload-less enum's value IS — its declared backing
@@ -3209,10 +3185,10 @@ pub const Lowering = struct {
     /// under `* / %` and is rejected.
     pub fn isArithOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or isFloat(ty)) return true;
+        if (self.isIntEx(ty) or isFloat(ty)) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .vector => true,
+            .vector => true,
             else => false,
         };
     }
@@ -3224,10 +3200,10 @@ pub const Lowering = struct {
     /// un-inferable operand is never falsely diagnosed.
     pub fn isOrderingOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or isFloat(ty) or ty == .bool) return true;
+        if (self.isIntEx(ty) or isFloat(ty) or ty == .bool) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .@"enum", .pointer, .many_pointer, .vector => true,
+            .@"enum", .pointer, .many_pointer, .vector => true,
             else => false,
         };
     }
@@ -3238,10 +3214,10 @@ pub const Lowering = struct {
     /// passes (see `isOrderingOperand`).
     pub fn isBitwiseOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or ty == .bool) return true;
+        if (self.isIntEx(ty) or ty == .bool) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .@"enum", .vector => true,
+            .@"enum", .vector => true,
             else => false,
         };
     }
@@ -3297,33 +3273,14 @@ pub const Lowering = struct {
         };
     }
 
-    fn typeBits(ty: TypeId) u32 {
+    pub fn typeBitsEx(self: *Lowering, ty: TypeId) u32 {
+        if (self.module.types.integerLayout(ty)) |layout| return layout.width;
         return switch (ty) {
             .bool => 1,
-            .i8, .u8 => 8,
-            .i16, .u16 => 16,
-            .i32, .u32 => 32,
-            .i64, .u64 => 64,
-            .usize, .isize => 0, // target-dependent — use typeBitsEx
             .f32 => 32,
             .f64 => 64,
             else => 0,
         };
-    }
-
-    pub fn typeBitsEx(self: *Lowering, ty: TypeId) u32 {
-        if (ty == .usize or ty == .isize) return @as(u32, self.module.types.pointer_size) * 8;
-        const b = typeBits(ty);
-        if (b > 0) return b;
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            return switch (info) {
-                .signed => |w| @as(u32, w),
-                .unsigned => |w| @as(u32, w),
-                else => 0,
-            };
-        }
-        return 0;
     }
 
     // --- lower/error.zig (lower_error) ---

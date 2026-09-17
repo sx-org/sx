@@ -974,3 +974,29 @@ test "integerLimit: min/max across widths and extremes" {
     try std.testing.expect(table.integerLimit(.f64, true) == null);
     try std.testing.expect(table.integerLimit(.bool, false) == null);
 }
+
+test "integer register normalization uses semantic bits within the ABI slot" {
+    var table = TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const signed24 = table.internInteger(24, true);
+    try std.testing.expectEqual(@as(u32, 4), table.typeSizeBytes(signed24));
+    try std.testing.expectEqual(@as(u64, @bitCast(@as(i64, -6))), table.integerLayout(signed24).?.normalize(0xaafffffa));
+    try std.testing.expectEqual(@as(u64, 0xfffffa), table.integerLayout(table.internInteger(24, false)).?.normalize(0xaafffffa));
+    try std.testing.expectEqual(std.math.maxInt(u64), table.integerLayout(table.internInteger(1, true)).?.normalize(1));
+    try std.testing.expectEqual(@as(u64, 1), table.integerLayout(table.internInteger(1, false)).?.normalize(3));
+    try std.testing.expectEqual(std.math.maxInt(u64), table.integerLayout(.u64).?.normalize(std.math.maxInt(u64)));
+}
+
+test "integer lane facts do not admit vectors or bool as scalar integers" {
+    var table = TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const lane = table.internInteger(24, true);
+    const vector = table.vectorOf(lane, 2);
+    try std.testing.expectEqual(table.integerLayout(lane), table.integerLaneLayout(vector));
+    try std.testing.expect(table.integerLayout(vector) == null);
+    try std.testing.expect(table.integerLaneLayout(.bool) == null);
+    try std.testing.expect(table.integerLaneLayout(table.vectorOf(.f32, 2)) == null);
+    table.pointer_size = 4;
+    try std.testing.expectEqual(@as(u8, 32), table.integerLaneLayout(.usize).?.width);
+    try std.testing.expect(table.integerLaneLayout(.isize).?.signed);
+}

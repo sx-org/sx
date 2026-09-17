@@ -79,6 +79,12 @@ pub const IntLayout = struct {
     width: u8,
     signed: bool,
 
+    pub fn normalize(self: IntLayout, raw: u64) u64 {
+        const shift: u6 = @intCast(64 - self.width);
+        const low = raw << shift;
+        return if (self.signed) @bitCast(@as(i64, @bitCast(low)) >> shift) else low >> shift;
+    }
+
     /// The layout's `.min`/`.max` as a raw two's-complement `i64` bit pattern.
     /// `u64.max` (18446744073709551615) exceeds `i64`, so it comes back as the
     /// all-ones pattern (`-1`); the caller pairs it with the unsigned `TypeId`
@@ -1312,6 +1318,14 @@ pub const TypeTable = struct {
                 else => null,
             },
         };
+    }
+
+    pub fn integerLaneLayout(self: *const TypeTable, ty: TypeId) ?IntLayout {
+        if (!ty.isBuiltin()) {
+            const info = self.get(ty);
+            if (info == .vector) return self.integerLayout(info.vector.element);
+        }
+        return self.integerLayout(ty);
     }
 
     /// `<IntType>.min` / `.max` as a raw `i64` bit pattern (see

@@ -1,0 +1,4 @@
+@import "modules/std.sx";
+positive :: (x: u64) -> bool { x.(f64) > 0.0 }
+C :: @run positive(u64.max);
+main :: () { print("comptime={} runtime={}\n", C, positive(u64.max)); }

@@ -23,7 +23,6 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const binOpSymbol = Lowering.binOpSymbol;
-const arithResultType = Lowering.arithResultType;
 const exprIsFailable = Lowering.exprIsFailable;
 const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
@@ -5411,7 +5410,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
-    var ty = arithResultType(lhs_ty, rhs_ty);
+    var ty = self.arithResultType(lhs_ty, rhs_ty);
 
     if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
         lhs = payload;

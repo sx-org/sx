@@ -1,0 +1,7 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+divide :: (a: I, b: I) -> I { a / b }
+shift :: (a: I, b: I) -> I { a >> b }
+main :: () {
+    print("{} {}\n", divide(-6, 2).(i64), shift(-6, 1).(i64));
+}

@@ -268,7 +268,7 @@ pub const Ops = struct {
         const is_float = emit.isFloatOrVecFloat(instruction.ty, &self.e.ir_mod.types);
         const result = if (is_float)
             c.LLVMBuildFDiv(self.e.builder, lhs, rhs, "fdiv")
-        else if (emit.isSignedType(instruction.ty))
+        else if (self.e.ir_mod.types.integerLaneLayout(instruction.ty).?.signed)
             c.LLVMBuildSDiv(self.e.builder, lhs, rhs, "sdiv")
         else
             c.LLVMBuildUDiv(self.e.builder, lhs, rhs, "udiv");
@@ -282,7 +282,7 @@ pub const Ops = struct {
         const is_float = emit.isFloatOrVecFloat(instruction.ty, &self.e.ir_mod.types);
         const result = if (is_float)
             c.LLVMBuildFRem(self.e.builder, lhs, rhs, "fmod")
-        else if (emit.isSignedType(instruction.ty))
+        else if (self.e.ir_mod.types.integerLaneLayout(instruction.ty).?.signed)
             c.LLVMBuildSRem(self.e.builder, lhs, rhs, "srem")
         else
             c.LLVMBuildURem(self.e.builder, lhs, rhs, "urem");
@@ -337,8 +337,8 @@ pub const Ops = struct {
         var lhs = self.e.resolveRef(bin.lhs);
         var rhs = self.e.resolveRef(bin.rhs);
         self.e.matchBinOpTypes(&lhs, &rhs, instruction.ty);
-        // Use arithmetic shift right for signed, logical for unsigned
-        const result = if (emit.isSignedType(instruction.ty))
+        const layout = self.e.ir_mod.types.integerLaneLayout(instruction.ty);
+        const result = if (layout != null and layout.?.signed)
             c.LLVMBuildAShr(self.e.builder, lhs, rhs, "ashr")
         else
             c.LLVMBuildLShr(self.e.builder, lhs, rhs, "lshr");
@@ -810,7 +810,7 @@ pub const Ops = struct {
     pub fn emitIntToFloat(self: Ops, conv: Conversion) void {
         const operand = self.e.resolveRef(conv.operand);
         const to_ty = self.e.toLLVMType(conv.to);
-        const result = if (emit.isSignedType(conv.from))
+        const result = if (self.e.ir_mod.types.integerLaneLayout(conv.from).?.signed)
             c.LLVMBuildSIToFP(self.e.builder, operand, to_ty, "sitofp")
         else
             c.LLVMBuildUIToFP(self.e.builder, operand, to_ty, "uitofp");
@@ -820,7 +820,7 @@ pub const Ops = struct {
     pub fn emitFloatToInt(self: Ops, conv: Conversion) void {
         const operand = self.e.resolveRef(conv.operand);
         const to_ty = self.e.toLLVMType(conv.to);
-        const result = if (emit.isSignedType(conv.to))
+        const result = if (self.e.ir_mod.types.integerLaneLayout(conv.to).?.signed)
             c.LLVMBuildFPToSI(self.e.builder, operand, to_ty, "fptosi")
         else
             c.LLVMBuildFPToUI(self.e.builder, operand, to_ty, "fptoui");

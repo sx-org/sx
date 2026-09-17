@@ -75,17 +75,14 @@ test "expr_typer: mixed int+float arithmetic promotes to float, order-independen
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&mul_if));
 }
 
-// The shared promotion helper itself (single source of truth for both
-// `lowerBinaryOp`'s value type and `inferExprType`): an integer LHS with a
-// floating-point RHS promotes to the float; every other pairing keeps the LHS.
-test "arithResultType: int×float promotes to float, else takes lhs" {
-    try std.testing.expectEqual(TypeId.f64, Lowering.arithResultType(.i64, .f64));
-    try std.testing.expectEqual(TypeId.f32, Lowering.arithResultType(.u32, .f32));
-    try std.testing.expectEqual(TypeId.f32, Lowering.arithResultType(.i64, .f32));
-    // Non-promoting pairings keep the LHS type.
-    try std.testing.expectEqual(TypeId.i64, Lowering.arithResultType(.i64, .i64));
-    try std.testing.expectEqual(TypeId.f64, Lowering.arithResultType(.f64, .i64));
-    try std.testing.expectEqual(TypeId.f32, Lowering.arithResultType(.f32, .f64));
+test "arithResultType promotes scalar integers with a float rhs" {
+    var module = ir_mod.Module.init(std.testing.allocator);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const signed24 = module.types.internInteger(24, true);
+    const vector = module.types.vectorOf(signed24, 2);
+    try std.testing.expectEqual(TypeId.f64, l.arithResultType(signed24, .f64));
+    try std.testing.expectEqual(vector, l.arithResultType(vector, .f64));
 }
 
 test "expr_typer: unary not is bool, negate preserves operand type" {

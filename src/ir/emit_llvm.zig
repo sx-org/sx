@@ -2375,12 +2375,7 @@ pub const LLVMEmitter = struct {
         if (kind == c.LLVMIntegerTypeKind and rhs_kind == c.LLVMIntegerTypeKind) {
             const lw = c.LLVMGetIntTypeWidth(lhs_ty);
             const rw = c.LLVMGetIntTypeWidth(rhs_ty);
-            const is_unsigned = self.isRefUnsigned(bin.lhs) or self.isRefUnsigned(bin.rhs);
-            if (is_unsigned) {
-                if (lw < rw) lhs = c.LLVMBuildZExt(self.builder, lhs, rhs_ty, "cmp.ext") else if (rw < lw) rhs = c.LLVMBuildZExt(self.builder, rhs, lhs_ty, "cmp.ext");
-            } else {
-                if (lw < rw) lhs = c.LLVMBuildSExt(self.builder, lhs, rhs_ty, "cmp.ext") else if (rw < lw) rhs = c.LLVMBuildSExt(self.builder, rhs, lhs_ty, "cmp.ext");
-            }
+            if (lw < rw) lhs = self.emitConversion(lhs, self.getRefIRType(bin.lhs).?, self.getRefIRType(bin.rhs).?, rhs_ty) else if (rw < lw) rhs = self.emitConversion(rhs, self.getRefIRType(bin.rhs).?, self.getRefIRType(bin.lhs).?, lhs_ty);
         }
         // Pointer vs integer: coerce int to null pointer
         if (kind == c.LLVMPointerTypeKind and rhs_kind == c.LLVMIntegerTypeKind) {
@@ -2401,8 +2396,9 @@ pub const LLVMEmitter = struct {
         var rhs = self.resolveRef(bin.rhs);
         const lhs_ty = c.LLVMTypeOf(lhs);
         const kind = c.LLVMGetTypeKind(lhs_ty);
-        // Determine signedness from IR operand type
-        const is_unsigned = self.isRefUnsigned(bin.lhs) or self.isRefUnsigned(bin.rhs);
+        const lhs_layout = self.ir_mod.types.integerLaneLayout(self.getRefIRType(bin.lhs).?);
+        const rhs_layout = self.ir_mod.types.integerLaneLayout(self.getRefIRType(bin.rhs).?);
+        const is_unsigned = (lhs_layout != null and !lhs_layout.?.signed) or (rhs_layout != null and !rhs_layout.?.signed);
         // Coerce operands to same type if needed
         if (kind == c.LLVMIntegerTypeKind) {
             const rhs_ty = c.LLVMTypeOf(rhs);
@@ -2410,11 +2406,7 @@ pub const LLVMEmitter = struct {
             if (rhs_kind == c.LLVMIntegerTypeKind) {
                 const lw = c.LLVMGetIntTypeWidth(lhs_ty);
                 const rw = c.LLVMGetIntTypeWidth(rhs_ty);
-                if (is_unsigned) {
-                    if (lw < rw) lhs = c.LLVMBuildZExt(self.builder, lhs, rhs_ty, "cmp.ext") else if (rw < lw) rhs = c.LLVMBuildZExt(self.builder, rhs, lhs_ty, "cmp.ext");
-                } else {
-                    if (lw < rw) lhs = c.LLVMBuildSExt(self.builder, lhs, rhs_ty, "cmp.ext") else if (rw < lw) rhs = c.LLVMBuildSExt(self.builder, rhs, lhs_ty, "cmp.ext");
-                }
+                if (lw < rw) lhs = self.emitConversion(lhs, self.getRefIRType(bin.lhs).?, self.getRefIRType(bin.rhs).?, rhs_ty) else if (rw < lw) rhs = self.emitConversion(rhs, self.getRefIRType(bin.rhs).?, self.getRefIRType(bin.lhs).?, lhs_ty);
             }
         }
         const result = if (kind == c.LLVMFloatTypeKind or kind == c.LLVMDoubleTypeKind)
@@ -2487,6 +2479,8 @@ pub const LLVMEmitter = struct {
     pub fn emitConversion(self: *LLVMEmitter, operand: c.LLVMValueRef, from: TypeId, to: TypeId, to_ty: c.LLVMTypeRef) c.LLVMValueRef {
         const from_float = isFloatOrVecFloat(from, &self.ir_mod.types);
         const to_float = isFloatOrVecFloat(to, &self.ir_mod.types);
+        const from_integer = self.ir_mod.types.integerLaneLayout(from);
+        const to_integer = self.ir_mod.types.integerLaneLayout(to);
 
         if (from_float and to_float) {
             // float→float: FPExt or FPTrunc
@@ -2499,30 +2493,23 @@ pub const LLVMEmitter = struct {
         }
 
         if (from_float and !to_float) {
-            return if (isSignedType(to))
+            return if (to_integer != null and to_integer.?.signed)
                 c.LLVMBuildFPToSI(self.builder, operand, to_ty, "fptosi")
             else
                 c.LLVMBuildFPToUI(self.builder, operand, to_ty, "fptoui");
         }
 
         if (!from_float and to_float) {
-            return if (self.isSignedTypeEx(from))
+            return if (from_integer != null and from_integer.?.signed)
                 c.LLVMBuildSIToFP(self.builder, operand, to_ty, "sitofp")
             else
                 c.LLVMBuildUIToFP(self.builder, operand, to_ty, "uitofp");
         }
 
-        // int→int: SExt, ZExt, or Trunc. Arbitrary-width int TypeIds carry
-        // their width in the type table — `intBits` only knows builtins and
-        // would misclassify e.g. an `@int(1, .unsigned)`→`u32` widen as a 64→32 truncation.
-        const ptr_bits: u32 = @as(u32, self.ir_mod.types.pointer_size) * 8;
-        const from_bits = intBitsEx(self, from) orelse ptr_bits;
-        const to_bits = intBitsEx(self, to) orelse ptr_bits;
+        const from_bits = if (from_integer) |integer| integer.width else self.conversionStorageBits(from, c.LLVMTypeOf(operand));
+        const to_bits = if (to_integer) |integer| integer.width else self.conversionStorageBits(to, to_ty);
         if (to_bits > from_bits) {
-            // Sign check must be table-aware: an arbitrary-width `.signed`
-            // TypeId is not a builtin, and the builtin-only `isSignedType`
-            // would zero-extend it (i1 -1 → 1).
-            return if (self.isSignedTypeEx(from))
+            return if (from_integer != null and from_integer.?.signed)
                 c.LLVMBuildSExt(self.builder, operand, to_ty, "sext")
             else
                 c.LLVMBuildZExt(self.builder, operand, to_ty, "zext");
@@ -2531,6 +2518,15 @@ pub const LLVMEmitter = struct {
         }
         // Same width — no-op (bitcast or just return)
         return operand;
+    }
+
+    fn conversionStorageBits(self: *LLVMEmitter, ty: TypeId, llvm_ty: c.LLVMTypeRef) u32 {
+        if (ty == .bool) return 1;
+        return switch (c.LLVMGetTypeKind(llvm_ty)) {
+            c.LLVMPointerTypeKind => @as(u32, self.ir_mod.types.pointer_size) * 8,
+            c.LLVMIntegerTypeKind => c.LLVMGetIntTypeWidth(llvm_ty),
+            else => unreachable,
+        };
     }
 
     // ── Malloc/Free declarations ────────────────────────────────────
@@ -2695,16 +2691,6 @@ pub const LLVMEmitter = struct {
     }
 
     // ── Value coercion helpers ──────────────────────────────────────
-
-    /// Check if a TypeId represents a signed integer type (including arbitrary-width).
-    pub fn isSignedTypeEx(self: *LLVMEmitter, ty: TypeId) bool {
-        if (isSignedType(ty)) return true;
-        if (!ty.isBuiltin()) {
-            const info = self.ir_mod.types.get(ty);
-            return info == .signed;
-        }
-        return false;
-    }
 
     /// Map a TypeId to its Any tag value.
     /// Uses TypeId.index() directly — this matches resolveTypeCategoryTags in lower.zig
@@ -3394,25 +3380,6 @@ pub const LLVMEmitter = struct {
             return error.EmitFailed;
         }
     }
-    /// Check if an IR Ref's type is an unsigned integer (u8, u16, u32, u64).
-    fn isRefUnsigned(self: *LLVMEmitter, ref: Ref) bool {
-        if (ref.isNone()) return false;
-        const func = &self.ir_mod.functions.items[self.current_func_idx];
-        const ref_idx = ref.index();
-        // Check function parameters first (refs 0..N-1)
-        if (ref_idx < func.params.len) {
-            const ty = func.params[ref_idx].ty;
-            return ty == .u8 or ty == .u16 or ty == .u32 or ty == .u64;
-        }
-        for (func.blocks.items) |*block| {
-            const first = block.first_ref;
-            if (ref_idx >= first and ref_idx < first + @as(u32, @intCast(block.insts.items.len))) {
-                const ty = block.insts.items[ref_idx - first].ty;
-                return ty == .u8 or ty == .u16 or ty == .u32 or ty == .u64;
-            }
-        }
-        return false;
-    }
 };
 
 // ── Type classification helpers ─────────────────────────────────────
@@ -3431,43 +3398,10 @@ pub fn isFloatOrVecFloat(ty: TypeId, types: *const TypeTable) bool {
     return false;
 }
 
-pub fn isSignedType(ty: TypeId) bool {
-    return switch (ty) {
-        .i8, .i16, .i32, .i64, .isize => true,
-        else => false,
-    };
-}
-
 fn floatBits(ty: TypeId) u32 {
     return switch (ty) {
         .f32 => 32,
         .f64 => 64,
         else => 0,
     };
-}
-
-fn intBits(ty: TypeId) u32 {
-    return switch (ty) {
-        .i8, .u8 => 8,
-        .i16, .u16 => 16,
-        .i32, .u32 => 32,
-        .i64, .u64 => 64,
-        .bool => 1,
-        .usize, .isize => 0, // target-dependent — caller must query pointer_size
-        else => 64,
-    };
-}
-
-/// Table-aware int width: arbitrary-width int TypeIds (`.signed`/`.unsigned`
-/// infos) answer their declared width; builtins go through `intBits`. Null
-/// means target-pointer width (usize/isize).
-fn intBitsEx(self: *LLVMEmitter, ty: TypeId) ?u32 {
-    if (!ty.isBuiltin()) {
-        switch (self.ir_mod.types.get(ty)) {
-            .signed, .unsigned => |w| return w,
-            else => {},
-        }
-    }
-    const b = intBits(ty);
-    return if (b == 0) null else b;
 }
