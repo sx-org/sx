@@ -1,5 +1,5 @@
-// Generic `Into(Block)` impl with a `string`-typed arg in the closure
-// signature. The block trampoline declares the param with abi(.c).
+// A `string`-typed arg in the block signature. The emitted trampoline
+// declares the param with abi(.c).
 //
 // `abiCoerceParamTypeEx` owns the rule: the `string`/`slice` → `ptr`
 // collapse applies only to `is_extern` extern decls (libc interop).
@@ -13,11 +13,12 @@
 gS: string = "";
 
 main :: () -> i32 {
-    cl := |s: string| { gS = s; };
-    b : Block = xx cl;
-    invokeFn : (*Block, string) -> void abi(.c) = xx b.invoke;
-    invokeFn(*b, "hello");
-    if gS.len == 0 { print("FAIL: empty\n"); return 1; }
-    print("got: <{}>\n", gS);
-    0
+  keep :: (s: string) { gS = s; }
+  b := blockCreate(keep);
+  invokeFn : (*Block, string) -> void abi(.c) = xx b.invoke;
+  invokeFn(b, "hello");
+  if gS.len == 0 { print("FAIL: empty\n"); return 1; }
+  print("got: <{}>\n", gS);
+  blockRelease(b);
+  0
 }

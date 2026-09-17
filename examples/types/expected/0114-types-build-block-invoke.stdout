@@ -1,0 +1,10 @@
+--- void / 0 args ---
+invoke :: (blockSelf: *Block) -> void abi(.c) { storage := blockSelf.(*BlockStorage(F)); storage.callable(); }
+--- void / bool ---
+invoke :: (blockSelf: *Block, arg0: bool) -> void abi(.c) { storage := blockSelf.(*BlockStorage(F)); storage.callable(arg0); }
+--- void / i64, string ---
+invoke :: (blockSelf: *Block, arg0: i64, arg1: string) -> void abi(.c) { storage := blockSelf.(*BlockStorage(F)); storage.callable(arg0, arg1); }
+--- i32 / f64 ---
+invoke :: (blockSelf: *Block, arg0: f64) -> i32 abi(.c) { storage := blockSelf.(*BlockStorage(F)); return storage.callable(arg0); }
+--- build done ---
+rt

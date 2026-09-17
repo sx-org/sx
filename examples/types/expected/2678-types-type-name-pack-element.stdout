@@ -1,0 +1,3 @@
+dynamic: i64 *i64
+static:  i64 *i64
+--- build done ---

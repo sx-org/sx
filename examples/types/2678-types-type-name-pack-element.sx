@@ -1,0 +1,29 @@
+// `@typeName` of a `[]Type` element — the dynamic arm, reached by indexing a
+// `$args`-derived slice with a loop variable — spells a compound type
+// structurally, the same name the statically spelled form folds to.
+
+@import "modules/std.sx";
+
+names :: (types: []Type) -> string {
+    out := "";
+    i : i64 = 0;
+    while i < types.len {
+        if i > 0 { out = concat(out, " "); }
+        out = concat(out, @typeName(types[i]));
+        i = i + 1;
+    }
+    return out;
+}
+
+shapeOf :: (..$args) -> string {
+    return names($args);
+}
+
+report :: () {
+    p : *i64 = null;
+    print("dynamic: {}\n", shapeOf(1, p));
+    print("static:  {} {}\n", @typeName(i64), @typeName(*i64));
+}
+@run report();
+
+main :: () { }

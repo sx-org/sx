@@ -498,7 +498,6 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
     return @bitCast((@as(i64, @bitCast(raw)) << shift) >> shift);
 }
 
-
 pub const Vm = struct {
     machine: Machine,
     gpa: std.mem.Allocator,
@@ -2024,9 +2023,9 @@ pub const Vm = struct {
     }
 
     /// Service an `evaluate`-mode intrinsic. Dispatch is keyed by the registry `id`;
-/// `name` is carried only for diagnostics. The caller has already checked the
-/// mode, so an id that is not evaluate-only cannot arrive here.
-fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []const Ref, frame: *Frame, ref_types: []const TypeId, result_ty: TypeId) Error!?Reg {
+    /// `name` is carried only for diagnostics. The caller has already checked the
+    /// mode, so an id that is not evaluate-only cannot arrive here.
+    fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []const Ref, frame: *Frame, ref_types: []const TypeId, result_ty: TypeId) Error!?Reg {
         const table = try self.requireTable();
         if (intr == .@"@rawIntern") {
             if (args.len != 1) return self.failMsg("comptime intern: expected one string arg");
@@ -2204,7 +2203,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return self.failMissingOp(name);
     }
 
-
     /// VM-native `register_type(handle: Type, kind: i64, members: []Member) -> Type`
     /// — fill a `declare_type`'d forward slot, branching on `kind` in the compiler
     /// (mirrors `compiler_lib.handleRegisterType`, but reads `[]Member` from comptime
@@ -2348,7 +2346,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime type_name: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
-                return try self.makeStringValue(table, table.typeName(tid));
+                return try self.makeStringValue(table, table.formatTypeName(self.machine.arena.allocator(), tid, null));
             },
             // type_is_unsigned(x) → is x's type an unsigned int? Resolves the TypeId
             // the same way as type_name (a `.type_value` word, or an Any box whose tag
@@ -3244,8 +3242,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     if (value != .string) return self.failMsg("materialize: a string field expects a string value");
                     return self.makeStringValue(table, value.string);
                 }
-                const items = if (value == .aggregate) value.aggregate else
-                    return self.failFmt("materialize: a '{s}' expects an aggregate value", .{table.typeName(ty)});
+                const items = if (value == .aggregate) value.aggregate else return self.failFmt("materialize: a '{s}' expects an aggregate value", .{table.typeName(ty)});
                 const info = table.get(ty);
                 if (info == .slice) {
                     const elem_ty = info.slice.element;

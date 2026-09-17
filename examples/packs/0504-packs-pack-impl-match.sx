@@ -11,14 +11,13 @@
 impl Into(Block) for Closure(..$args) -> $R {
     convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {
         _ = alloc;
+        _ = self;
         .{
             isa = *_NSConcreteStackBlock,
             flags = 0,
             reserved = 0,
             invoke = null,
-            descriptor = *kBlockDescriptor,
-            sxEnv = self.env,
-            sxFn = self.fnPtr,
+            descriptor = null,
         }
     }
 }

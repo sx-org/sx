@@ -1,0 +1,15 @@
+// A block owns the callable it copies, and a `Closure` is a borrow: its
+// `{ fnPtr, env }` names an environment living elsewhere, so a block holding
+// that pair reads past the life of what it borrows. `blockCreate` refuses it.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
+
+main :: () -> i32 {
+    n : i64 = 42;
+    f := ||_{ n } -> i64 n;
+    cl : Closure() -> i64 = *f;
+    b := blockCreate(cl);
+    blockRelease(b);
+    0
+}

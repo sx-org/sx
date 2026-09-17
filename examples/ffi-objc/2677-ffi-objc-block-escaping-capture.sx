@@ -1,0 +1,40 @@
+// A block outlives the frame that built it. `blockCreate` copies the callable
+// and its captures into the block instance, so the invoke trampoline reads the
+// captured values from the block itself — the frame they were formed in is
+// gone by the time the block runs, exactly as it is for a completion handler.
+// The instance addresses its own descriptor, the block's other interior
+// pointer, so the whole instance is self-contained.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
+
+makeCounter :: () -> *Block {
+    base : i64 = 40;
+    bump : i64 = 2;
+    return blockCreate(||_{ base, bump } -> i64 base + bump);
+}
+
+// Overwrites the frame `makeCounter` left behind.
+churn :: () -> i64 {
+    a : i64 = 111111;
+    b : i64 = 222222;
+    c : i64 = 333333;
+    d : i64 = 444444;
+    a + b + c + d
+}
+
+main :: () -> i32 {
+    blk := makeCounter();
+    if churn() == 0 { print("FAIL: churn\n"); return 1; }
+
+    invokeFn : (*Block) -> i64 abi(.c) = xx blk.invoke;
+    got := invokeFn(blk);
+    if got != 42 { print("FAIL: escaped block saw {}\n", got); return 1; }
+
+    inside := blk.(*BlockHead);
+    if inside.header.descriptor != *inside.shape { print("FAIL: descriptor is not the block's own\n"); return 1; }
+
+    print("escaped block ok: {}\n", got);
+    blockRelease(blk);
+    0
+}

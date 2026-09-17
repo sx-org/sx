@@ -1,0 +1,11 @@
+error: a block owns the callable it copies, and a 'Closure' only borrows its environment — write the lambda's env ('||_{ }' when it captures nothing) so it carries its own, or hand 'blockCreate' a function
+  --> examples/ffi-objc/2679-ffi-objc-block-refuses-borrowed-closure.sx:12:10
+   |
+12 |     b := blockCreate(cl);
+   |          ^^^^^^^^^^^
+
+note: raised by '@error' here
+  --> library/modules/ffi/objc_block.sx:81:23
+   |
+81 |         case closure: @error("a block owns the callable it copies, and a 'Closure' only borrows its environment — write the lambda's env ('||_{ }' when it captures nothing) so it carries its own, or hand 'blockCreate' a function");
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
