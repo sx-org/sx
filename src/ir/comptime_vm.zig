@@ -483,28 +483,11 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
 /// shape of the compiler-API `Member` that `@rawRegisterType` takes.
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
-/// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
-/// SIGN-extended into the register (a scalar `.int` is i64).
-fn isSignedInt(ty: TypeId) bool {
-    return switch (ty) {
-        .i8, .i16, .i32, .i64, .isize => true,
-        else => false,
-    };
-}
-
-/// Sign-extend a `sz`-byte (1/2/4) value (zero-extended in `raw`) to a 64-bit reg.
-fn signExtendWord(raw: Reg, sz: usize) Reg {
-    const shift: u6 = @intCast((8 - sz) * 8);
-    return @bitCast((@as(i64, @bitCast(raw)) << shift) >> shift);
-}
-
 pub const Vm = struct {
     machine: Machine,
     gpa: std.mem.Allocator,
-    /// The type table — supplies layout for memory + aggregate ops. VM entry
-    /// temporarily selects host pointer width because stored addresses are real
-    /// host pointers; the target width is restored on return. Optional so
-    /// scalar-only runs need no table; memory ops bail loudly if it is absent.
+    /// Integer semantics and memory layout. Evaluation selects host pointer
+    /// width while stored addresses are host pointers, then restores target width.
     table: ?*const types.TypeTable = null,
     /// The module — resolves a `call`'s callee `FuncId` to its `Function`. Optional
     /// so leaf functions (no calls) need none; a `call` bails loudly if it is absent.
@@ -659,6 +642,11 @@ pub const Vm = struct {
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
+                if (ty == .any) {
+                    try self.layoutConst(table, fields[0], .u64, addr);
+                    try self.layoutConst(table, fields[1], .type_value, addr + 8);
+                    return;
+                }
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");
                 switch (table.get(ty)) {
                     .@"struct" => |s| for (fields, 0..) |fv, i| {
@@ -738,7 +726,7 @@ pub const Vm = struct {
             return addr;
         }
         return switch (cv) {
-            .int => |v| @bitCast(v),
+            .int => |v| normalizeWord(table, ty, @bitCast(v)),
             .boolean => |b| @intFromBool(b),
             .float => |v| @bitCast(v),
             .null_val, .zeroinit, .undef => null_addr,
@@ -807,7 +795,7 @@ pub const Vm = struct {
 
         var frame = Frame.init(self.gpa, total);
         defer frame.deinit();
-        for (args, 0..) |a, i| frame.set(i, a);
+        for (args, 0..) |a, i| frame.set(i, normalizeWord(try self.requireTable(), func.params[i].ty, a));
 
         var current = BlockId.fromIndex(0);
         // Branch args are passed as Refs (not resolved values): the same frame
@@ -863,7 +851,7 @@ pub const Vm = struct {
     fn exec(self: *Vm, ins: *const Inst, frame: *Frame, ref_types: []const TypeId) Error!Step {
         switch (ins.op) {
             // ── Constants ───────────────────────────────────────
-            .const_int => |v| return .{ .value = @bitCast(v) },
+            .const_int => |v| return .{ .value = normalizeWord(try self.requireTable(), ins.ty, @bitCast(v)) },
             .const_bool => |v| return .{ .value = @intFromBool(v) },
             .const_float => |v| return .{ .value = @bitCast(v) },
             .const_null, .const_undef => return .{ .value = null_addr },
@@ -934,17 +922,16 @@ pub const Vm = struct {
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{
-                .value = try arith(std.meta.activeTag(ins.op), ins.ty, frame.get(b.lhs.index()), frame.get(b.rhs.index())),
+                .value = try self.arith(std.meta.activeTag(ins.op), ins.ty, frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
-            // ── Bitwise + shift (i64) ───────────────────────────
             .bit_and, .bit_or, .bit_xor, .shl, .shr => |b| return .{
-                .value = bitwise(std.meta.activeTag(ins.op), frame.get(b.lhs.index()), frame.get(b.rhs.index())),
+                .value = try self.bitwise(std.meta.activeTag(ins.op), ins.ty, frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
-            .bit_not => |u| return .{ .value = @bitCast(~@as(i64, @bitCast(frame.get(u.operand.index())))) },
+            .bit_not => |u| return .{ .value = normalizeWord(try self.requireTable(), ins.ty, ~frame.get(u.operand.index())) },
             .neg => |u| {
                 const x = frame.get(u.operand.index());
                 if (isFloat(ins.ty)) return .{ .value = @bitCast(-@as(f64, @bitCast(x))) };
-                return .{ .value = @bitCast(-%@as(i64, @bitCast(x))) };
+                return .{ .value = (try self.intLayout(ins.ty)).normalize(0 -% x) };
             },
 
             // ── Comparison (operand type drives signedness/kind) ─
@@ -959,11 +946,26 @@ pub const Vm = struct {
             .bool_not => |u| return .{ .value = @intFromBool(frame.get(u.operand.index()) == 0) },
 
             // ── Conversions ─────────────────────────────────────
-            // widen/narrow/bitcast pass the bits through (comptime values don't
-            // truncate). int↔float DO convert.
-            .widen, .narrow, .bitcast => |c| return .{ .value = frame.get(c.operand.index()) },
-            .int_to_float => |c| return .{ .value = @bitCast(@as(f64, @floatFromInt(@as(i64, @bitCast(frame.get(c.operand.index())))))) },
-            .float_to_int => |c| return .{ .value = @bitCast(@as(i64, @intFromFloat(@as(f64, @bitCast(frame.get(c.operand.index())))))) },
+            .widen, .narrow, .bitcast => |c| {
+                const table = try self.requireTable();
+                const raw = frame.get(c.operand.index());
+                if (table.integerLayout(c.from)) |from| {
+                    if (table.integerLayout(c.to)) |to| return .{ .value = to.normalize(from.normalize(raw)) };
+                }
+                return .{ .value = raw };
+            },
+            .int_to_float => |c| {
+                const from = try self.intLayout(c.from);
+                const raw = from.normalize(frame.get(c.operand.index()));
+                const value: f64 = if (from.signed) @floatFromInt(@as(i64, @bitCast(raw))) else @floatFromInt(raw);
+                return .{ .value = @bitCast(value) };
+            },
+            .float_to_int => |c| {
+                const to = try self.intLayout(c.to);
+                const value: f64 = @bitCast(frame.get(c.operand.index()));
+                const raw: Reg = if (to.signed) @bitCast(@as(i64, @intFromFloat(value))) else @intFromFloat(value);
+                return .{ .value = to.normalize(raw) };
+            },
 
             // ── Memory + structs (flat layout, target-aware) ────
             .alloca => |t| {
@@ -1550,17 +1552,20 @@ pub const Vm = struct {
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
+                if (sb.integer_cases.len > 0) {
+                    const tid = TypeId.fromIndex(try self.typeIdxOf(@bitCast(operand)));
+                    if ((try self.requireTable()).integerLayout(tid)) |layout| {
+                        for (sb.integer_cases) |case| {
+                            if (layout.signed == case.signed) return .{ .jump = .{ .target = case.target, .args = &.{} } };
+                        }
+                    }
+                }
                 return .{ .jump = .{ .target = sb.default, .args = sb.default_args } };
             },
             .ret => |u| return .{ .ret = frame.get(u.operand.index()) },
             .ret_void => return .ret_void,
 
-            // T → any: a 16-byte view `{ data: addr @0, typeId: i64 @8 }` (the
-            // borrow representation — the LLVM layout; Odin Raw_Any order,
-            // prefix-shared with protocol values). The operand IS the
-            // value's comptime ADDRESS (lowering borrows lvalue storage or
-            // spills to an alloca); the typeId is the source TypeId index
-            // (lowering pre-normalizes arbitrary-width ints).
+            // The any header stores an address at +0 and its exact TypeId at +8.
             .box_any => |ba| {
                 const table = try self.requireTable();
                 const sz = table.typeSizeBytes(.any); // 16
@@ -1614,12 +1619,15 @@ pub const Vm = struct {
         }
     }
 
-    /// 64-bit integer (wrapping) or f64 arithmetic, keyed on the result type.
-    /// Integer `/` and `%` truncate toward zero and take their signedness from
-    /// that type, matching codegen's `sdiv`/`srem` and `udiv`/`urem`. Float
-    /// `/` is IEEE (0/0 is NaN, n/0 is ±inf), matching codegen's `fdiv`.
-    /// Integer `+ - *` wrap identically under either signedness.
-    fn arith(tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
+    fn intLayout(self: *Vm, ty: TypeId) Error!types.IntLayout {
+        return (try self.requireTable()).integerLayout(ty) orelse error.TypeError;
+    }
+
+    fn normalizeWord(table: *const types.TypeTable, ty: TypeId, raw: Reg) Reg {
+        return if (table.integerLayout(ty)) |layout| layout.normalize(raw) else raw;
+    }
+
+    fn arith(self: *Vm, tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
             const rf: f64 = @bitCast(r);
@@ -1633,45 +1641,42 @@ pub const Vm = struct {
             };
             return @bitCast(res);
         }
-        if (!isSignedInt(ty)) switch (tag) {
-            .div, .mod => {
+        const layout = try self.intLayout(ty);
+        const raw: Reg = switch (tag) {
+            .add => l +% r,
+            .sub => l -% r,
+            .mul => l *% r,
+            .div, .mod => blk: {
                 if (r == 0) return error.DivisionByZero;
-                return if (tag == .div) l / r else l % r;
+                if (!layout.signed) break :blk if (tag == .div) l / r else l % r;
+                const li: i64 = @bitCast(l);
+                const ri: i64 = @bitCast(r);
+                break :blk @bitCast(if (tag == .div) @divTrunc(li, ri) else @rem(li, ri));
             },
-            else => {},
-        };
-        const li: i64 = @bitCast(l);
-        const ri: i64 = @bitCast(r);
-        const res: i64 = switch (tag) {
-            .add => li +% ri,
-            .sub => li -% ri,
-            .mul => li *% ri,
-            .div => if (ri == 0) return error.DivisionByZero else @divTrunc(li, ri),
-            .mod => if (ri == 0) return error.DivisionByZero else @rem(li, ri),
             else => unreachable,
         };
-        return @bitCast(res);
+        return layout.normalize(raw);
     }
 
-    /// 64-bit bitwise AND/OR/XOR and shifts over the i64 model: shifts clamp the
-    /// amount to `@min(rhs, 63)` and `shr` is an ARITHMETIC right shift (signed
-    /// `>>`, sign-extending).
-    fn bitwise(tag: OpTag, l: Reg, r: Reg) Reg {
+    fn bitwise(self: *Vm, tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
+        const table = try self.requireTable();
+        const layout = table.integerLayout(ty);
         const li: i64 = @bitCast(l);
         const ri: i64 = @bitCast(r);
-        const res: i64 = switch (tag) {
-            .bit_and => li & ri,
-            .bit_or => li | ri,
-            .bit_xor => li ^ ri,
-            .shl => li << @as(u6, @intCast(@min(ri, 63))),
-            .shr => li >> @as(u6, @intCast(@min(ri, 63))),
+        const raw: Reg = switch (tag) {
+            .bit_and => l & r,
+            .bit_or => l | r,
+            .bit_xor => l ^ r,
+            .shl => @bitCast(li << @as(u6, @intCast(@min(ri, 63)))),
+            .shr => if (layout != null and !layout.?.signed)
+                l >> @as(u6, @intCast(@min(r, 63)))
+            else
+                @bitCast(li >> @as(u6, @intCast(@min(ri, 63)))),
             else => unreachable,
         };
-        return @bitCast(res);
+        return if (layout) |integer| integer.normalize(raw) else raw;
     }
 
-    /// Comparison keyed on the operand type: f64 for floats, == / != only for
-    /// bool, else signed i64.
     fn cmp(self: *Vm, tag: OpTag, lty: TypeId, l: Reg, r: Reg) Error!bool {
         if (isFloat(lty)) {
             const lf: f64 = @bitCast(l);
@@ -1698,6 +1703,16 @@ pub const Vm = struct {
                 },
             };
         }
+        const layout = (try self.requireTable()).integerLayout(lty);
+        if (layout != null and !layout.?.signed) return switch (tag) {
+            .cmp_eq => l == r,
+            .cmp_ne => l != r,
+            .cmp_lt => l < r,
+            .cmp_le => l <= r,
+            .cmp_gt => l > r,
+            .cmp_ge => l >= r,
+            else => unreachable,
+        };
         const li: i64 = @bitCast(l);
         const ri: i64 = @bitCast(r);
         return switch (tag) {
@@ -1713,7 +1728,7 @@ pub const Vm = struct {
 
     fn requireTable(self: *Vm) Error!*const types.TypeTable {
         return self.table orelse {
-            self.detail = "comptime VM: memory/aggregate op needs a type table (not provided)";
+            self.detail = "comptime VM: typed operation needs a type table (not provided)";
             return error.Unsupported;
         };
     }
@@ -1900,7 +1915,7 @@ pub const Vm = struct {
             try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, @intFromBool(r != 0));
             return @as(Reg, addr);
         }
-        return @as(Reg, r);
+        return normalizeWord(table, word_ty, r);
     }
 
     /// Marshal one extern arg (of IR type `aty`, register value `reg`) to the `usize`
@@ -2348,6 +2363,14 @@ pub const Vm = struct {
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.makeStringValue(table, table.formatTypeName(self.machine.arena.allocator(), tid, null));
             },
+            .read_integer => {
+                const table = try self.requireTable();
+                const av = frame.get(bi.args[0].index());
+                const data = try self.machine.readWord(av, 8);
+                const tag = try self.machine.readWord(av + 8, 8);
+                const tid = TypeId.fromIndex(try self.typeIdxOf(tag));
+                return try self.readField(table, data, tid);
+            },
             // type_is_unsigned(x) → is x's type an unsigned int? Resolves the TypeId
             // the same way as type_name (a `.type_value` word, or an Any box whose tag
             // IS the boxed value's type), then queries `isUnsignedInt`.
@@ -2476,10 +2499,12 @@ pub const Vm = struct {
             }
         };
 
-        const ptr_bits: i64 = @intCast(table.typeSizeBytes(.usize) * 8);
         var vname: []const u8 = undefined;
         var payload: Payload = .none;
-        if (tid.isBuiltin()) {
+        if (table.integerLayout(tid)) |integer| {
+            vname = "int";
+            payload = .{ .int = .{ .bits = integer.width, .signed = integer.signed } };
+        } else if (tid.isBuiltin()) {
             switch (tid) {
                 .bool => vname = "bool",
                 .void => vname = "void",
@@ -2488,10 +2513,6 @@ pub const Vm = struct {
                 .any => vname = "any",
                 .noreturn => vname = "noreturn",
                 .type_value => vname = "typeValue",
-                .usize, .isize => {
-                    vname = "int";
-                    payload = .{ .int = .{ .bits = ptr_bits, .signed = tid == .isize } };
-                },
                 .f32 => {
                     vname = "float";
                     payload = .{ .float = .{ .bits = 32 } };
@@ -2500,29 +2521,10 @@ pub const Vm = struct {
                     vname = "float";
                     payload = .{ .float = .{ .bits = 64 } };
                 },
-                .i8, .i16, .i32, .i64 => {
-                    vname = "int";
-                    payload = .{ .int = .{ .bits = @intCast(table.typeSizeBytes(tid) * 8), .signed = true } };
-                },
-                .u8, .u16, .u32, .u64 => {
-                    vname = "int";
-                    payload = .{ .int = .{ .bits = @intCast(table.typeSizeBytes(tid) * 8), .signed = false } };
-                },
                 else => return self.failMsg("comptime @typeInfo: unclassified builtin type"),
             }
         } else switch (table.get(tid)) {
-            .signed => |w| {
-                vname = "int";
-                payload = .{ .int = .{ .bits = w, .signed = true } };
-            },
-            .unsigned => |w| {
-                vname = "int";
-                payload = .{ .int = .{ .bits = w, .signed = false } };
-            },
-            .usize, .isize => {
-                vname = "int";
-                payload = .{ .int = .{ .bits = ptr_bits, .signed = table.get(tid) == .isize } };
-            },
+            .signed, .unsigned, .usize, .isize => unreachable,
             .f32 => {
                 vname = "float";
                 payload = .{ .float = .{ .bits = 32 } };
@@ -2759,7 +2761,7 @@ pub const Vm = struct {
                 if (escapePointee(table, ty)) |pointee| return self.escapePointer(alloc, table, reg, pointee);
                 if (isPointerish(table, ty))
                     return self.failFmt("escape: a '{s}' referent has no layout to walk", .{table.typeName(ty)});
-                return .{ .int = @bitCast(reg) };
+                return .{ .int = @bitCast(normalizeWord(table, ty, reg)) };
             },
             .aggregate => {
                 if (ty == .string) {
@@ -2958,8 +2960,9 @@ pub const Vm = struct {
     }
 
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {
+        if (table.integerLayout(ty) != null) return .word;
         switch (ty) {
-            .bool, .i8, .u8, .i16, .u16, .i32, .u32, .f32, .i64, .u64, .f64, .usize, .isize, .cstring => return .word,
+            .bool, .f32, .f64, .cstring => return .word,
             // A comptime `Type` value is an 8-byte handle (a `TypeId` in a word) —
             // distinct from the 16-byte boxed `.any`. It rides as a word.
             .type_value => return .word,
@@ -3046,12 +3049,7 @@ pub const Vm = struct {
 
     /// Read a value of type `ty` from comptime address `addr`: a scalar reads its
     /// bytes; an aggregate value IS its address (it lives inline at `addr`).
-    /// `f32` is special: float REGISTERS hold f64 bits, but memory holds the 4-byte
-    /// IEEE-754 single — so read 4 bytes as
-    /// `f32` and widen to the f64 register form. A SIGNED sub-64-bit integer
-    /// (`i8`/`i16`/`i32`/`isize`) is SIGN-extended into the 64-bit register — a
-    /// scalar `.int` is i64, so a stored-and-reloaded negative value must
-    /// stay negative (else e.g. `i32 -1` reloads as `0xFFFFFFFF` and `< 0` is false).
+    /// Float registers hold f64 bits; f32 memory holds IEEE-754 single bits.
     fn readField(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!Reg {
         if (ty == .f32) {
             const bits: u32 = @truncate(try self.machine.readWord(addr, 4));
@@ -3062,7 +3060,7 @@ pub const Vm = struct {
             .word => {
                 const sz = wordBytes(table, ty);
                 const raw = try self.machine.readWord(addr, sz);
-                return if (isSignedInt(ty) and sz < 8) signExtendWord(raw, sz) else raw;
+                return normalizeWord(table, ty, raw);
             },
             .aggregate => addr,
             .unsupported => {
@@ -3228,7 +3226,7 @@ pub const Vm = struct {
     pub fn materializeValue(self: *Vm, table: *const types.TypeTable, ty: TypeId, value: Value) Error!Reg {
         switch (kindOf(table, ty)) {
             .word => return switch (value) {
-                .int => |v| @bitCast(v),
+                .int => |v| normalizeWord(table, ty, @bitCast(v)),
                 .float => |f| @bitCast(f),
                 .boolean => |b| @intFromBool(b),
                 .type_tag => |t| @as(Reg, t.index()),

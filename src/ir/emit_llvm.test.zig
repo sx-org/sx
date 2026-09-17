@@ -1660,3 +1660,41 @@ test "a strided kind's member tables cost its member ROW, not its length" {
         try std.testing.expect(c.LLVMGetArrayLength(ty) < length);
     }
 }
+
+test "integer predicates expand late types into reachable exact-width loads" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+    var b = Builder.init(&module);
+    _ = b.beginFunction(str(&module, "integer_read"), &.{.{ .name = str(&module, "view"), .ty = .any }}, .i64);
+    const entry = b.appendBlock(str(&module, "entry"), &.{});
+    const exact = b.appendBlock(str(&module, "exact"), &.{});
+    const integer = b.appendBlock(str(&module, "integer"), &.{});
+    const refuse = b.appendBlock(str(&module, "refuse"), &.{});
+    b.switchToBlock(entry);
+    const av = Ref.fromIndex(0);
+    const tag = b.structGet(av, 1, .type_value);
+    b.integerSwitchBr(tag, &.{.{ .value = TypeId.i32.index(), .target = exact, .args = &.{} }}, &.{ .{ .signed = true, .target = integer }, .{ .signed = false, .target = integer } }, refuse);
+    b.switchToBlock(exact);
+    b.ret(b.constInt(71, .i64), .i64);
+    b.switchToBlock(integer);
+    b.ret(b.callBuiltin(.read_integer, &.{av}, .i64), .i64);
+    b.switchToBlock(refuse);
+    b.emitUnreachable();
+    b.finalize();
+    const late = module.types.internInteger(40, true);
+    _ = module.types.internInteger(40, false);
+    var emitter = LLVMEmitter.init(alloc, &module, "integer_predicates", .{});
+    defer emitter.deinit();
+    emitter.emit();
+    try std.testing.expect(emitter.verify());
+    const text = emitter.dumpToString();
+    const edge = try std.fmt.allocPrint(alloc, "i64 {d}, label %integer", .{late.index()});
+    defer alloc.free(edge);
+    try std.testing.expect(std.mem.indexOf(u8, text, edge) != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "i64 4, label %exact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "i64 4, label %integer") == null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "load i40") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "sext i40") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "zext i40") != null);
+}

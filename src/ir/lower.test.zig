@@ -3288,6 +3288,10 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
                     .switch_br => |b| {
                         try std.testing.expect(b.default.index() < func.blocks.items.len);
                         for (b.cases) |case| try std.testing.expect(case.target.index() < func.blocks.items.len);
+                        for (b.integer_cases) |case| {
+                            try std.testing.expect(case.target.index() < func.blocks.items.len);
+                            try std.testing.expectEqual(@as(usize, 0), func.blocks.items[case.target.index()].params.len);
+                        }
                     },
                     else => {},
                 }
@@ -3337,6 +3341,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
             .switch_br => |b| blk: {
                 if (b.default.index() == join_idx) break :blk true;
                 for (b.cases) |case| if (case.target.index() == join_idx) break :blk true;
+                for (b.integer_cases) |case| if (case.target.index() == join_idx) break :blk true;
                 break :blk false;
             },
             else => false,
@@ -3437,7 +3442,6 @@ test "inline exit: every inlined body form exits to its own destination, never t
         .{ .name = "Nfall", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\"); } 11", .body = "c :: ($t: string) -> noreturn { spin(); }" },
         .{ .name = "Nret", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return; } spin(); }" },
         .{ .name = "NretD", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return spin(); } spin(); }" },
-
     };
 
     for (cells) |cell| {

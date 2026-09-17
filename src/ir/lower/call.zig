@@ -143,7 +143,6 @@ fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeI
     return self.firstUnimplementedMethod(want, cname, recv_ty) == null;
 }
 
-
 /// A destination-first target cannot be dispatched from the fall-through arm: the
 /// receiver was lowered on the way down, and that parameter takes the expression
 /// rather than its value (§5.2). The dot-call spelling is re-read as an ordinary
@@ -949,7 +948,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return Ref.none;
         }
     }
-
 
     // Early detection of comptime-expanded calls (e.g. print) — skip arg evaluation
     // since lowerComptimeCall re-evaluates args from AST (avoiding double evaluation)
@@ -2256,7 +2254,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         var gbindings = callBindings(self, gen_fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
 
-                        const generic_base =if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
+                        const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
                         const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
                         if (!self.lowered_functions.contains(gmangled)) {
                             self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
@@ -3867,10 +3865,10 @@ fn lowerTagIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
 /// The integer types a runtime tag width names, sign-encoded as
 /// `variantTagWidth` does: positive widths are unsigned, negative signed.
 const tag_width_types = [_]struct { width: i64, ty: TypeId }{
-    .{ .width = 1, .ty = .u8 },   .{ .width = -1, .ty = .i8 },
-    .{ .width = 2, .ty = .u16 },  .{ .width = -2, .ty = .i16 },
-    .{ .width = 4, .ty = .u32 },  .{ .width = -4, .ty = .i32 },
-    .{ .width = 8, .ty = .u64 },  .{ .width = -8, .ty = .i64 },
+    .{ .width = 1, .ty = .u8 },  .{ .width = -1, .ty = .i8 },
+    .{ .width = 2, .ty = .u16 }, .{ .width = -2, .ty = .i16 },
+    .{ .width = 4, .ty = .u32 }, .{ .width = -4, .ty = .i32 },
+    .{ .width = 8, .ty = .u64 }, .{ .width = -8, .ty = .i64 },
 };
 
 /// A view of a boxed enum's tag word, typed by its tag type.
@@ -3946,8 +3944,7 @@ fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
     return self.builder.constUndef(dst);
 }
 
-/// The scalar sources a boxed `@as` dispatches over.
-const boxed_as_sources = [_]TypeId{ .bool, .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .isize, .usize, .f32, .f64 };
+const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 
 /// Whether a boxed source of type `s` converts to `dst` without a diagnostic:
 /// the modeled scalar plans, the same-width integer pun the explicit ladder
@@ -3986,13 +3983,29 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         if (!seen) candidates.append(self.alloc, s) catch return Ref.none;
     }
     for (candidates.items) |s| {
+        if (self.module.types.integerLayout(s) != null) continue;
         if (!boxedAsConverts(self, s, dst)) continue;
         const bb = self.freshBlock("as.from");
         cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
         srcs.append(self.alloc, s) catch return Ref.none;
         blocks.append(self.alloc, bb) catch return Ref.none;
     }
-    b.switchBr(type_word, cases.items, refuse_bb, &.{});
+    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
+    defer integer_cases.deinit(self.alloc);
+    for ([_]TypeId{ .i64, .u64 }) |word| {
+        if (!boxedAsConverts(self, word, dst)) continue;
+        const bb = self.freshBlock("as.integer");
+        integer_cases.append(self.alloc, .{ .signed = word == .i64, .target = bb }) catch return Ref.none;
+    }
+    b.integerSwitchBr(type_word, cases.items, integer_cases.items, refuse_bb);
+    for (integer_cases.items) |case| {
+        b.switchToBlock(case.target);
+        const args = self.alloc.dupe(Ref, &.{av}) catch return Ref.none;
+        const word: TypeId = if (case.signed) .i64 else .u64;
+        const loaded = b.callBuiltin(.read_integer, args, word);
+        b.store(slot, self.coerceExplicit(loaded, word, dst));
+        b.br(merge_bb, &.{});
+    }
     for (srcs.items, blocks.items) |s, bb| {
         b.switchToBlock(bb);
         const loaded = b.emit(.{ .unbox_any = .{ .operand = av } }, s);

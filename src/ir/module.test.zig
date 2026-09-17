@@ -219,3 +219,30 @@ test "objcDefinedAncestors visits a cycle's names once, not until the buffer fil
 
     try expectAncestors(&mod, "B", &.{ "B", "A" });
 }
+
+test "integer switch owns descriptor slices and integer reader retains its typed operand" {
+    var m = Module.init(std.testing.allocator);
+    defer m.deinit();
+    var b = Builder.init(&m);
+    const fid = b.beginFunction(.empty, &.{.{ .name = .empty, .ty = .any }}, .u64);
+    const entry = b.appendBlock(.empty, &.{});
+    const yes = b.appendBlock(.empty, &.{});
+    const no = b.appendBlock(.empty, &.{});
+    b.switchToBlock(entry);
+    const tag = b.structGet(Ref.fromIndex(0), 1, .type_value);
+    var descriptors = [_]inst_mod.SwitchBranch.IntegerCase{.{ .signed = false, .target = yes }};
+    b.integerSwitchBr(tag, &.{}, &descriptors, no);
+    descriptors[0].target = no;
+    b.switchToBlock(yes);
+    const result = b.callBuiltin(.read_integer, &.{Ref.fromIndex(0)}, .u64);
+    try std.testing.expectEqual(TypeId.any, b.getRefType(Ref.fromIndex(0)));
+    try std.testing.expectEqual(TypeId.u64, b.getRefType(result));
+    b.ret(result, .u64);
+    b.switchToBlock(no);
+    b.emitUnreachable();
+    b.finalize();
+    const function = m.getFunction(fid);
+    const sw = function.blocks.items[entry.index()].insts.items[1].op.switch_br;
+    try std.testing.expectEqual(yes, sw.integer_cases[0].target);
+    try std.testing.expectEqual(@as(usize, 0), function.blocks.items[yes.index()].params.len);
+}

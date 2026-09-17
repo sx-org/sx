@@ -1,0 +1,9 @@
+@import "modules/std.sx";
+less :: (a: u64, b: u64) -> bool { a < b }
+shr :: (a: u64, n: u64) -> u64 { a >> n }
+C :: @run less(u64.max, 1);
+S :: @run shr(u64.max, 1);
+main :: () {
+    print("compare comptime={} runtime={}\n", C, less(u64.max, 1));
+    print("shift comptime={} runtime={}\n", S, shr(u64.max, 1));
+}

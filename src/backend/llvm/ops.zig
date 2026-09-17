@@ -268,7 +268,7 @@ pub const Ops = struct {
         const is_float = emit.isFloatOrVecFloat(instruction.ty, &self.e.ir_mod.types);
         const result = if (is_float)
             c.LLVMBuildFDiv(self.e.builder, lhs, rhs, "fdiv")
-        else if (emit.isSignedType(instruction.ty))
+        else if (self.e.ir_mod.types.integerLaneLayout(instruction.ty).?.signed)
             c.LLVMBuildSDiv(self.e.builder, lhs, rhs, "sdiv")
         else
             c.LLVMBuildUDiv(self.e.builder, lhs, rhs, "udiv");
@@ -282,7 +282,7 @@ pub const Ops = struct {
         const is_float = emit.isFloatOrVecFloat(instruction.ty, &self.e.ir_mod.types);
         const result = if (is_float)
             c.LLVMBuildFRem(self.e.builder, lhs, rhs, "fmod")
-        else if (emit.isSignedType(instruction.ty))
+        else if (self.e.ir_mod.types.integerLaneLayout(instruction.ty).?.signed)
             c.LLVMBuildSRem(self.e.builder, lhs, rhs, "srem")
         else
             c.LLVMBuildURem(self.e.builder, lhs, rhs, "urem");
@@ -337,8 +337,8 @@ pub const Ops = struct {
         var lhs = self.e.resolveRef(bin.lhs);
         var rhs = self.e.resolveRef(bin.rhs);
         self.e.matchBinOpTypes(&lhs, &rhs, instruction.ty);
-        // Use arithmetic shift right for signed, logical for unsigned
-        const result = if (emit.isSignedType(instruction.ty))
+        const layout = self.e.ir_mod.types.integerLaneLayout(instruction.ty);
+        const result = if (layout != null and layout.?.signed)
             c.LLVMBuildAShr(self.e.builder, lhs, rhs, "ashr")
         else
             c.LLVMBuildLShr(self.e.builder, lhs, rhs, "lshr");
@@ -810,7 +810,7 @@ pub const Ops = struct {
     pub fn emitIntToFloat(self: Ops, conv: Conversion) void {
         const operand = self.e.resolveRef(conv.operand);
         const to_ty = self.e.toLLVMType(conv.to);
-        const result = if (emit.isSignedType(conv.from))
+        const result = if (self.e.ir_mod.types.integerLaneLayout(conv.from).?.signed)
             c.LLVMBuildSIToFP(self.e.builder, operand, to_ty, "sitofp")
         else
             c.LLVMBuildUIToFP(self.e.builder, operand, to_ty, "uitofp");
@@ -820,7 +820,7 @@ pub const Ops = struct {
     pub fn emitFloatToInt(self: Ops, conv: Conversion) void {
         const operand = self.e.resolveRef(conv.operand);
         const to_ty = self.e.toLLVMType(conv.to);
-        const result = if (emit.isSignedType(conv.to))
+        const result = if (self.e.ir_mod.types.integerLaneLayout(conv.to).?.signed)
             c.LLVMBuildFPToSI(self.e.builder, operand, to_ty, "fptosi")
         else
             c.LLVMBuildFPToUI(self.e.builder, operand, to_ty, "fptoui");
@@ -1893,6 +1893,38 @@ pub const Ops = struct {
                 const result = c.LLVMBuildLoad2(self.e.builder, string_ty, gep, "tn.load");
                 self.e.mapRef(result);
             },
+            .read_integer => {
+                const av = self.e.resolveRef(bi.args[0]);
+                const raw = c.LLVMBuildExtractValue(self.e.builder, av, 0, "ri.data");
+                const tag = c.LLVMBuildExtractValue(self.e.builder, av, 1, "ri.tag");
+                const ptr = c.LLVMBuildIntToPtr(self.e.builder, raw, self.e.cached_ptr, "ri.ptr");
+                const function = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.e.builder));
+                const invalid = c.LLVMAppendBasicBlockInContext(self.e.context, function, "ri.invalid");
+                const merge = c.LLVMAppendBasicBlockInContext(self.e.context, function, "ri.merge");
+                const dispatch = c.LLVMBuildSwitch(self.e.builder, tag, invalid, 0);
+                c.LLVMPositionBuilderAtEnd(self.e.builder, invalid);
+                _ = c.LLVMBuildUnreachable(self.e.builder);
+                c.LLVMPositionBuilderAtEnd(self.e.builder, merge);
+                const result = c.LLVMBuildPhi(self.e.builder, self.e.cached_i64, "ri.value");
+                for (0..self.e.ir_mod.types.infos.items.len) |idx| {
+                    const tid = TypeId.fromIndex(@intCast(idx));
+                    const layout = self.e.ir_mod.types.integerLayout(tid) orelse continue;
+                    const bb = c.LLVMAppendBasicBlockInContext(self.e.context, function, "ri.load");
+                    c.LLVMAddCase(dispatch, c.LLVMConstInt(self.e.cached_i64, idx, 0), bb);
+                    c.LLVMPositionBuilderAtEnd(self.e.builder, bb);
+                    const loaded = c.LLVMBuildLoad2(self.e.builder, self.e.toLLVMType(tid), ptr, "ri.exact");
+                    const value = if (layout.width == 64) loaded else if (layout.signed)
+                        c.LLVMBuildSExt(self.e.builder, loaded, self.e.cached_i64, "ri.signed")
+                    else
+                        c.LLVMBuildZExt(self.e.builder, loaded, self.e.cached_i64, "ri.unsigned");
+                    _ = c.LLVMBuildBr(self.e.builder, merge);
+                    var values = [_]c.LLVMValueRef{value};
+                    var blocks = [_]c.LLVMBasicBlockRef{bb};
+                    c.LLVMAddIncoming(result, &values, &blocks, 1);
+                }
+                c.LLVMPositionBuilderAtEnd(self.e.builder, merge);
+                self.e.mapRef(result);
+            },
             .is_unsigned => {
                 // Dynamic `type_is_unsigned(t)`: resolve the TypeId the arg
                 // denotes (reading an `Any`'s runtime type-tag, not its
@@ -2797,7 +2829,7 @@ pub const Ops = struct {
             @panic("emitBoxAny: operand is not an address — box_any takes the value's ADDRESS (route the site through Lowering.boxAnyOf)");
         }
         const any_ty = self.e.getAnyStructType();
-        const tag = c.LLVMConstInt(self.e.cached_i64, self.e.anyTag(ba.source_type), 0);
+        const tag = c.LLVMConstInt(self.e.cached_i64, ba.source_type.index(), 0);
         const data = c.LLVMBuildPtrToInt(self.e.builder, addr, self.e.cached_i64, "ba.data");
         var result = c.LLVMGetUndef(any_ty);
         result = c.LLVMBuildInsertValue(self.e.builder, result, data, 0, "ba.val");
@@ -2967,6 +2999,20 @@ pub const Ops = struct {
             c.LLVMAddCase(switch_inst, case_val, case_bb);
         }
         self.e.advanceRefCounter();
+        if (sw.integer_cases.len > 0) {
+            for (0..self.e.ir_mod.types.infos.items.len) |idx| {
+                const tid = TypeId.fromIndex(@intCast(idx));
+                const layout = self.e.ir_mod.types.integerLayout(tid) orelse continue;
+                var claimed = false;
+                for (sw.cases) |case| claimed = claimed or case.value == @as(i64, @intCast(idx));
+                if (claimed) continue;
+                for (sw.integer_cases) |case| {
+                    if (case.signed != layout.signed) continue;
+                    c.LLVMAddCase(switch_inst, c.LLVMConstInt(c.LLVMTypeOf(operand), idx, 0), self.e.getBlock(func_idx, case.target));
+                    break;
+                }
+            }
+        }
     }
 
     // ── Closure creation ───────────────────────────────────

@@ -1860,17 +1860,16 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
 fn anyGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node) ?inst_mod.ConstantValue {
     const src_ty = self.inferExprType(v);
     if (src_ty == .unresolved or src_ty == .any) return self.diagnoseNonConstGlobal(vd, v);
-    const box_ty = self.anyBoxType(src_ty);
-    const payload = self.globalInitValuePayload(vd, v, box_ty) orelse return null;
+    const payload = self.globalInitValuePayload(vd, v, src_ty) orelse return null;
     const name = std.fmt.allocPrint(self.alloc, "{s}.any", .{vd.name}) catch @panic("out of memory");
     const gid = self.module.addGlobal(.{
         .name = self.module.types.internString(name),
-        .ty = box_ty,
+        .ty = src_ty,
         .init_val = payload,
     });
     const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch @panic("out of memory");
     fields[0] = .{ .global_ref = gid };
-    fields[1] = .{ .int = @intCast(box_ty.index()) };
+    fields[1] = .{ .int = @intCast(src_ty.index()) };
     return .{ .aggregate = fields };
 }
 

@@ -1,0 +1,2 @@
+compare comptime=false runtime=false
+shift comptime=9223372036854775807 runtime=9223372036854775807
