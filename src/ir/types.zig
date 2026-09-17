@@ -1086,16 +1086,29 @@ pub const TypeTable = struct {
         };
     }
 
+    /// Byte stride between the members of a STRIDED kind — array elements and
+    /// vector lanes share one member type and step by its size, so their
+    /// runtime member tables hold a single row and the reader scales it by the
+    /// index. -1 for a kind that tables each member on its own row.
+    pub fn memberStride(self: *const TypeTable, id: TypeId) i64 {
+        if (id.index() >= self.infos.items.len) return -1;
+        return switch (self.get(id)) {
+            .array => |a| @intCast(self.typeSizeBytes(a.element)),
+            .vector => |v| @intCast(self.typeSizeBytes(v.element)),
+            else => -1,
+        };
+    }
+
     /// Row count of the runtime member tables for `id` — `memberCount` where
-    /// a count exists, plus ONE row for the kinds that answer a member TYPE
-    /// without a static count (slice element / string byte / optional child at row 0).
+    /// a count exists, ONE row for a strided kind and for the kinds that
+    /// answer a member TYPE without a static count (slice element / string
+    /// byte / optional child at row 0).
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
-    /// a null or short row (runtime slice tags dereferenced a
-    /// null row).
+    /// a null or short row.
     pub fn memberTableLen(self: *const TypeTable, id: TypeId) ?i64 {
-        if (self.memberCount(id)) |n| return n;
+        if (self.memberCount(id)) |n| return if (self.memberStride(id) >= 0) @min(n, 1) else n;
         if (self.memberType(id, 0) != null) return 1;
         return null;
     }

@@ -303,6 +303,8 @@ pub const LLVMEmitter = struct {
     slice_len_info_array_len: u32 = 0,
     optional_flag_array: ?c.LLVMValueRef = null,
     optional_flag_array_len: u32 = 0,
+    member_stride_array: ?c.LLVMValueRef = null,
+    member_stride_array_len: u32 = 0,
     // Member-view master-index tables: [N x ptr] → per-type arrays.
     member_type_ptrs: ?c.LLVMValueRef = null,
     member_type_ptrs_len: u32 = 0,
