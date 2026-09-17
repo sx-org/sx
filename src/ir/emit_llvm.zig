@@ -54,6 +54,7 @@ pub const Jni = struct {
     pub const FindClass: u32 = 6;
     pub const NewGlobalRef: u32 = 21;
     pub const DeleteGlobalRef: u32 = 22;
+    pub const DeleteLocalRef: u32 = 23;
     pub const NewObject: u32 = 28;
     pub const GetObjectClass: u32 = 31;
     pub const GetMethodID: u32 = 33;
@@ -100,6 +101,7 @@ pub const Jni = struct {
     pub const CallStaticFloatMethod: u32 = 135;
     pub const CallStaticDoubleMethod: u32 = 138;
     pub const CallStaticVoidMethod: u32 = 141;
+    pub const ExceptionCheck: u32 = 228;
 
     pub const CallKind = enum { instance, static, nonvirtual };
 
@@ -161,6 +163,81 @@ pub const Jni = struct {
             },
             else => null,
         };
+    }
+};
+
+/// One lowered JNI dispatch — the vtable chain that resolves a method and
+/// invokes it. Almost every JNI function is undefined while the thread has a
+/// pending exception, and a failed lookup returns null exactly when it threw,
+/// so the chain runs only while no exception is pending and every handle it
+/// looks up resolves. An abandoned chain releases the local references it
+/// still owns, yields zero, and leaves the exception for the JVM to see when
+/// the native frame returns.
+pub const JniChain = struct {
+    e: *LLVMEmitter,
+    ifs: c.LLVMValueRef,
+    env: c.LLVMValueRef,
+    skip_bb: c.LLVMBasicBlockRef,
+    done_bb: c.LLVMBasicBlockRef,
+
+    pub fn open(e: *LLVMEmitter, ifs: c.LLVMValueRef, env: c.LLVMValueRef) JniChain {
+        const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(e.builder));
+        const run_bb = c.LLVMAppendBasicBlockInContext(e.context, cur_fn, "jni.chain");
+        const chain: JniChain = .{
+            .e = e,
+            .ifs = ifs,
+            .env = env,
+            .skip_bb = c.LLVMAppendBasicBlockInContext(e.context, cur_fn, "jni.skip"),
+            .done_bb = c.LLVMAppendBasicBlockInContext(e.context, cur_fn, "jni.done"),
+        };
+        const check = e.loadJniFn(ifs, Jni.ExceptionCheck, "jni.ExceptionCheck");
+        var check_params = [_]c.LLVMTypeRef{e.cached_ptr};
+        const check_ty = c.LLVMFunctionType(e.cached_i8, &check_params, 1, 0);
+        var check_args = [_]c.LLVMValueRef{env};
+        const pending = c.LLVMBuildCall2(e.builder, check_ty, check, &check_args, 1, "jni.pending");
+        const is_pending = c.LLVMBuildICmp(e.builder, c.LLVMIntNE, pending, c.LLVMConstInt(e.cached_i8, 0, 0), "jni.is.pending");
+        _ = c.LLVMBuildCondBr(e.builder, is_pending, chain.skip_bb, run_bb);
+        c.LLVMPositionBuilderAtEnd(e.builder, run_bb);
+        return chain;
+    }
+
+    /// Carry on only while `handle` resolved. `release` is the local
+    /// reference the chain owns at this point, deleted on the way out.
+    pub fn require(self: JniChain, handle: c.LLVMValueRef, release: ?c.LLVMValueRef, label: [*:0]const u8) void {
+        const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.e.builder));
+        const next_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.resolved");
+        const resolved = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, handle, c.LLVMConstNull(self.e.cached_ptr), label);
+        if (release) |local| {
+            const drop_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.drop.local");
+            _ = c.LLVMBuildCondBr(self.e.builder, resolved, next_bb, drop_bb);
+            c.LLVMPositionBuilderAtEnd(self.e.builder, drop_bb);
+            self.e.emitJniDeleteLocalRef(self.ifs, self.env, local);
+            _ = c.LLVMBuildBr(self.e.builder, self.skip_bb);
+        } else {
+            _ = c.LLVMBuildCondBr(self.e.builder, resolved, next_bb, self.skip_bb);
+        }
+        c.LLVMPositionBuilderAtEnd(self.e.builder, next_bb);
+    }
+
+    /// Land the invoked and the abandoned path on one block. `result` is what
+    /// the call produced; `ret_ty` is null for a void dispatch, which has no
+    /// value to merge.
+    pub fn close(self: JniChain, result: c.LLVMValueRef, ret_ty: ?c.LLVMTypeRef) c.LLVMValueRef {
+        const invoke_bb = c.LLVMGetInsertBlock(self.e.builder);
+        _ = c.LLVMBuildBr(self.e.builder, self.done_bb);
+
+        c.LLVMMoveBasicBlockAfter(self.skip_bb, invoke_bb);
+        c.LLVMPositionBuilderAtEnd(self.e.builder, self.skip_bb);
+        _ = c.LLVMBuildBr(self.e.builder, self.done_bb);
+
+        c.LLVMMoveBasicBlockAfter(self.done_bb, self.skip_bb);
+        c.LLVMPositionBuilderAtEnd(self.e.builder, self.done_bb);
+        const ty = ret_ty orelse return result;
+        const phi = c.LLVMBuildPhi(self.e.builder, ty, "jni.result");
+        var vals = [_]c.LLVMValueRef{ result, c.LLVMConstNull(ty) };
+        var blocks = [_]c.LLVMBasicBlockRef{ invoke_bb, self.skip_bb };
+        c.LLVMAddIncoming(phi, &vals, &blocks, 2);
+        return phi;
     }
 };
 
@@ -863,6 +940,14 @@ pub const LLVMEmitter = struct {
         var idx = [_]c.LLVMValueRef{offset_val};
         const slot = c.LLVMBuildInBoundsGEP2(self.builder, self.cached_ptr, ifs, &idx, 1, "");
         return c.LLVMBuildLoad2(self.builder, self.cached_ptr, slot, name);
+    }
+
+    pub fn emitJniDeleteLocalRef(self: *LLVMEmitter, ifs: c.LLVMValueRef, env: c.LLVMValueRef, local: c.LLVMValueRef) void {
+        const delete_local_ref = self.loadJniFn(ifs, Jni.DeleteLocalRef, "jni.DeleteLocalRef");
+        var params = [_]c.LLVMTypeRef{ self.cached_ptr, self.cached_ptr };
+        const fn_ty = c.LLVMFunctionType(self.cached_void, &params, 2, 0);
+        var args = [_]c.LLVMValueRef{ env, local };
+        _ = c.LLVMBuildCall2(self.builder, fn_ty, delete_local_ref, &args, 2, "");
     }
 
     /// Lazily look up / declare the shared `@objc_msgSend` function.
@@ -3109,6 +3194,7 @@ pub const LLVMEmitter = struct {
         const name_ptr = self.extractSlicePtr(self.resolveRef(msg.name));
 
         const ifs = c.LLVMBuildLoad2(self.builder, self.cached_ptr, env, "jni.ifs");
+        const chain = JniChain.open(self, ifs, env);
 
         const path = msg.parent_class_path orelse "";
         const path_global = self.emitCStringGlobal(path, "jni.ctor.path");
@@ -3117,12 +3203,14 @@ pub const LLVMEmitter = struct {
         const fc_ty = c.LLVMFunctionType(self.cached_ptr, &fc_params, 2, 0);
         var fc_args = [_]c.LLVMValueRef{ env, path_global };
         const cls = c.LLVMBuildCall2(self.builder, fc_ty, find_class, &fc_args, 2, "jni.ctor.cls");
+        chain.require(cls, null, "jni.ctor.cls.ok");
 
         const get_mid = self.loadJniFn(ifs, Jni.GetMethodID, "jni.GetMethodID");
         var gmid_params = [_]c.LLVMTypeRef{ self.cached_ptr, self.cached_ptr, self.cached_ptr, self.cached_ptr };
         const gmid_ty = c.LLVMFunctionType(self.cached_ptr, &gmid_params, 4, 0);
         var gmid_args = [_]c.LLVMValueRef{ env, cls, name_ptr, sig_ptr };
         const mid = c.LLVMBuildCall2(self.builder, gmid_ty, get_mid, &gmid_args, 4, "jni.ctor.mid");
+        chain.require(mid, cls, "jni.ctor.mid.ok");
 
         const new_object = self.loadJniFn(ifs, Jni.NewObject, "jni.NewObject");
         const raw_ret = self.toLLVMType(ret_ty_id);
@@ -3146,7 +3234,8 @@ pub const LLVMEmitter = struct {
         }
         const call_fn_ty = c.LLVMFunctionType(raw_ret, call_param_types.ptr, @intCast(total_call_params), 0);
         const result = c.LLVMBuildCall2(self.builder, call_fn_ty, new_object, call_args.ptr, @intCast(total_call_params), "jni.new.obj");
-        self.mapRef(result);
+        self.emitJniDeleteLocalRef(ifs, env, cls);
+        self.mapRef(chain.close(result, raw_ret));
     }
 
     /// Failable main entry-point wrapper. At the LLVM level main

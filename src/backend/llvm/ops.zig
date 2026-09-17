@@ -960,6 +960,12 @@ pub const Ops = struct {
         const sig_ptr = self.e.extractSlicePtr(self.e.resolveRef(msg.sig));
 
         const ifs = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, env, "jni.ifs");
+        const chain = emit.JniChain.open(self.e, ifs, env);
+
+        // The class a nonvirtual dispatch binds to: the extra argument
+        // `CallNonvirtual<T>Method` takes, and a local reference the chain
+        // owns until the call returns.
+        var bound_cls: ?c.LLVMValueRef = null;
 
         // Method-ID resolution. When `name` and `sig` are both
         // string literals the call site participates in slot
@@ -1004,6 +1010,9 @@ pub const Ops = struct {
             const ngref_ty = c.LLVMFunctionType(self.e.cached_ptr, &ngref_params, 2, 0);
             var ngref_args = [_]c.LLVMValueRef{ env, local_cls };
             const global_cls = c.LLVMBuildCall2(self.e.builder, ngref_ty, new_global_ref, &ngref_args, 2, "jni.global.cls");
+            // A static site's `target` is the caller's own reference, not one
+            // this chain made.
+            if (!msg.is_static) self.e.emitJniDeleteLocalRef(ifs, env, local_cls);
             const cls_cas = c.LLVMBuildAtomicCmpXchg(
                 self.e.builder,
                 pair.cls_slot,
@@ -1056,7 +1065,10 @@ pub const Ops = struct {
                 var fc_params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr };
                 const fc_ty = c.LLVMFunctionType(self.e.cached_ptr, &fc_params, 2, 0);
                 var fc_args = [_]c.LLVMValueRef{ env, path_global };
-                break :nonvirt_cls c.LLVMBuildCall2(self.e.builder, fc_ty, find_class, &fc_args, 2, "jni.parent.cls");
+                const found = c.LLVMBuildCall2(self.e.builder, fc_ty, find_class, &fc_args, 2, "jni.parent.cls");
+                chain.require(found, null, "jni.parent.cls.ok");
+                bound_cls = found;
+                break :nonvirt_cls found;
             } else inst_cls: {
                 const get_obj_cls = self.e.loadJniFn(ifs, emit.Jni.GetObjectClass, "jni.GetObjectClass");
                 var gocls_params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr };
@@ -1069,75 +1081,41 @@ pub const Ops = struct {
             const gmid_ty = c.LLVMFunctionType(self.e.cached_ptr, &gmid_params, 4, 0);
             var gmid_args = [_]c.LLVMValueRef{ env, cls, name_ptr, sig_ptr };
             const mid_val = c.LLVMBuildCall2(self.e.builder, gmid_ty, get_mid, &gmid_args, 4, "jni.mid");
-            if (msg.is_nonvirtual) {
-                // Stash cls in a dummy slot so the call site below
-                // can pick it up. Easiest path: do the call right
-                // here and return Ref.none, but we need to keep the
-                // outer phi shape. Instead, return both via tuple
-                // through an auxiliary local — simplest is to attach
-                // `cls` to a per-invocation slot. Use a stack alloca.
-                const cls_slot = self.e.buildEntryAlloca(self.e.cached_ptr, "jni.parent.cls.slot");
-                _ = c.LLVMBuildStore(self.e.builder, cls, cls_slot);
-                // Tag the slot pointer onto the phi result via the
-                // generated metadata: we'll re-extract by re-running
-                // FindClass — actually simpler: lower nonvirtual on
-                // the spot below. Drop the implicit `break` here:
-                const call_fn = self.e.loadJniFn(ifs, call_method_offset, "jni.callfn.nonvirtual");
-                const raw_ret = self.e.toLLVMType(ret_ty_id);
-                const total_call_params_nv: usize = 4 + msg.args.len;
-                const call_param_types_nv = self.e.alloc.alloc(c.LLVMTypeRef, total_call_params_nv) catch unreachable;
-                defer self.e.alloc.free(call_param_types_nv);
-                const call_args_nv = self.e.alloc.alloc(c.LLVMValueRef, total_call_params_nv) catch unreachable;
-                defer self.e.alloc.free(call_args_nv);
-                call_param_types_nv[0] = self.e.cached_ptr;
-                call_param_types_nv[1] = self.e.cached_ptr;
-                call_param_types_nv[2] = self.e.cached_ptr;
-                call_param_types_nv[3] = self.e.cached_ptr;
-                call_args_nv[0] = env;
-                call_args_nv[1] = target;
-                call_args_nv[2] = cls;
-                call_args_nv[3] = mid_val;
-                for (msg.args, 0..) |arg_ref, i| {
-                    const raw_ty = self.e.argIRTypeOrFail(arg_ref);
-                    const raw_llvm = self.e.toLLVMType(raw_ty);
-                    const coerced_ty = self.e.abiCoerceParamType(raw_ty, raw_llvm);
-                    call_param_types_nv[i + 4] = coerced_ty;
-                    call_args_nv[i + 4] = self.e.coerceArg(self.e.resolveRef(arg_ref), coerced_ty);
-                }
-                const call_fn_ty_nv = c.LLVMFunctionType(raw_ret, call_param_types_nv.ptr, @intCast(total_call_params_nv), 0);
-                const label_nv: [*:0]const u8 = if (ret_ty_id == .void) "" else "jni.nonvirtual.ret";
-                const result_nv = c.LLVMBuildCall2(self.e.builder, call_fn_ty_nv, call_fn, call_args_nv.ptr, @intCast(total_call_params_nv), label_nv);
-                self.e.mapRef(result_nv);
-                return;
-            }
+            // An instance site's class is the chain's own local reference,
+            // and the call needs only the method ID from it.
+            if (!msg.is_static and !msg.is_nonvirtual) self.e.emitJniDeleteLocalRef(ifs, env, cls);
             break :blk mid_val;
         };
+        chain.require(mid, bound_cls, "jni.mid.ok");
 
-        // Call<Type>Method: (JNIEnv*, jobject, jmethodID, args...) -> RetTy
+        // Call<Type>Method: (JNIEnv*, jobject, jmethodID, args...) -> RetTy.
+        // CallNonvirtual<Type>Method takes the class it binds to between the
+        // receiver and the method ID.
         const call_fn = self.e.loadJniFn(ifs, call_method_offset, "jni.callfn");
         const raw_ret = self.e.toLLVMType(ret_ty_id);
-        const total_call_params: usize = 3 + msg.args.len;
+        const fixed_params: usize = if (bound_cls != null) 4 else 3;
+        const total_call_params: usize = fixed_params + msg.args.len;
         const call_param_types = self.e.alloc.alloc(c.LLVMTypeRef, total_call_params) catch unreachable;
         defer self.e.alloc.free(call_param_types);
         const call_args = self.e.alloc.alloc(c.LLVMValueRef, total_call_params) catch unreachable;
         defer self.e.alloc.free(call_args);
-        call_param_types[0] = self.e.cached_ptr;
-        call_param_types[1] = self.e.cached_ptr;
-        call_param_types[2] = self.e.cached_ptr;
         call_args[0] = env;
         call_args[1] = target;
-        call_args[2] = mid;
+        if (bound_cls) |cls| call_args[2] = cls;
+        call_args[fixed_params - 1] = mid;
+        for (call_param_types[0..fixed_params]) |*ty| ty.* = self.e.cached_ptr;
         for (msg.args, 0..) |arg_ref, i| {
             const raw_ty = self.e.argIRTypeOrFail(arg_ref);
             const raw_llvm = self.e.toLLVMType(raw_ty);
             const coerced_ty = self.e.abiCoerceParamType(raw_ty, raw_llvm);
-            call_param_types[i + 3] = coerced_ty;
-            call_args[i + 3] = self.e.coerceArg(self.e.resolveRef(arg_ref), coerced_ty);
+            call_param_types[i + fixed_params] = coerced_ty;
+            call_args[i + fixed_params] = self.e.coerceArg(self.e.resolveRef(arg_ref), coerced_ty);
         }
         const call_fn_ty = c.LLVMFunctionType(raw_ret, call_param_types.ptr, @intCast(total_call_params), 0);
         const label: [*:0]const u8 = if (ret_ty_id == .void) "" else "jni.ret";
         const result = c.LLVMBuildCall2(self.e.builder, call_fn_ty, call_fn, call_args.ptr, @intCast(total_call_params), label);
-        self.e.mapRef(result);
+        if (bound_cls) |cls| self.e.emitJniDeleteLocalRef(ifs, env, cls);
+        self.e.mapRef(chain.close(result, if (ret_ty_id == .void) null else raw_ret));
     }
 
     /// Inline assembly — the port of Zig's `airAssembly`. Builds the LLVM
