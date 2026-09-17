@@ -332,8 +332,7 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty_in: TypeId) 
                 // the compiler must append the success error slot (0). Mirror the
                 // explicit-`return EXPR;` path; a plain `coerceToType` would leave
                 // the error-tag slot uninitialized (phantom catch on success).
-                if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .failable)
-                {
+                if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .failable) {
                     self.lowerFailableSuccessReturn(val, ret_ty, span);
                     return;
                 }
@@ -1693,12 +1692,6 @@ pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
     return self.emitPlaceholder("pre-decrement");
 }
 
-pub fn diagDecrementPointer(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot pre-decrement pointer target '{s}' — use '-= 1' for pointer arithmetic", .{self.formatTypeName(ty)});
-    return self.emitPlaceholder("pre-decrement");
-}
-
 pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "pre-decrement needs an integer target; got '{s}'", .{self.formatTypeName(ty)});
@@ -2199,8 +2192,7 @@ fn tryLowerQualifiedGlobalStore(
     return .handled;
 }
 
-/// Map a compound-assignment op to the binary op it folds with, for the
-/// get-modify-set rewrite of `obj.prop OP= x` (a `@set` property).
+/// Map a compound-assignment op to the binary op it folds with.
 fn compoundAssignToBinaryOp(op: ast.Assignment.Op) ast.BinaryOp.Op {
     return switch (op) {
         .add_assign => .add,
@@ -3607,8 +3599,10 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
 }
 
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
-    if (op != .assign and self.pointerElement(ty) != null) return emitPointerCompoundOp(self, lhs, rhs, op, ty);
     const rhs_ty = self.builder.getRefType(rhs);
+    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
+    if (op != .assign and self.diagOperandTypes(compoundAssignToBinaryOp(op), ty, rhs_ty, span))
+        return self.emitPlaceholder("operand-type-mismatch");
     const rhs_c = if (rhs_ty != ty and rhs_ty != .void and ty != .void)
         self.coerceToType(rhs, rhs_ty, ty)
     else
@@ -3626,23 +3620,6 @@ pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op
         .shr_assign => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
         else => self.emitError("compound_assign", null),
     };
-}
-
-/// A compound `OP=` whose target is a pointer. Only `+=` / `-=` by an integer
-/// have a pointer form — they fold through the same pointer-arithmetic
-/// lowering as `p + n` / `p - n`; every other operator, and a pointer RHS
-/// (whose difference is a count, not an address), is rejected here.
-fn emitPointerCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
-    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
-    const rhs_ty = self.builder.getRefType(rhs);
-    if ((op == .add_assign or op == .sub_assign) and self.pointerElement(rhs_ty) == null) {
-        return self.lowerPointerArith(compoundAssignToBinaryOp(op), lhs, ty, rhs, rhs_ty, span) orelse
-            self.emitError("compound_assign", span);
-    }
-    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}=' to '{s}': a pointer target takes only '+=' / '-=' by an integer", .{
-        Lowering.binOpSymbol(compoundAssignToBinaryOp(op)), self.formatTypeName(ty),
-    });
-    return self.emitPlaceholder("pointer-compound-assign");
 }
 
 // ── Defer / cleanup ─────────────────────────────────────────────

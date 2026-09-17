@@ -1,9 +1,9 @@
 // Targets that are NOT an addressable storage place still take `OP=` through
 // their own path. A `@get`/`@set` property is a call pair: `obj.prop += 1`
 // reads via the getter and writes via the setter, with the receiver evaluated
-// exactly once. A slice's `.len` / `.ptr` are the two header words, so `OP=`
-// retargets the view itself. A comptime tuple or struct index is a
-// heterogeneous member, reached by a typed field GEP rather than a stride.
+// exactly once. A slice's `.len` is a header word, so `OP=` resizes the view
+// itself. A comptime tuple or struct index is a heterogeneous member, reached
+// by a typed field GEP rather than a stride.
 @import "modules/std.sx";
 
 Temp :: struct {
@@ -39,8 +39,6 @@ main :: () -> i32 {
     s := arr[0..5];
     s.len -= 2;
     print("len={} last={}\n", s.len, s[s.len - 1]);  // 3 3
-    s.ptr += 1;
-    print("ptr={} len={}\n", s[0], s.len);           // 2 3
 
     tup := .{a = 1, b = 2};
     tup[0] += 40;
