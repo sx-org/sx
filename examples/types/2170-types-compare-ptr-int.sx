@@ -4,12 +4,12 @@
 @import "modules/std.sx";
 
 main :: () {
-    x := 1;
-    p := *x;
+    xs : [2]i64 = .[1, 2];
+    p := *xs[0];
     print("failed={}\n", p == -1);
     print("nonzero={}\n", p != 0);
     q : *void = p;
     print("same={}\n", p == q);
-    end := p + 1;
+    end := *xs[1];
     print("ordered={}\n", p < end);
 }

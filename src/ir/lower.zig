@@ -2672,35 +2672,6 @@ pub const Lowering = struct {
         return lhs_ty;
     }
 
-    /// The element type a pointer addresses — the pointee of `*T`, the element
-    /// of `[*]T`. Null for every non-pointer type.
-    pub fn pointerElement(self: *Lowering, ty: TypeId) ?TypeId {
-        if (ty.isBuiltin()) return null;
-        return switch (self.module.types.get(ty)) {
-            .pointer => |p| p.pointee,
-            .many_pointer => |p| p.element,
-            else => null,
-        };
-    }
-
-    /// Result type of a `+` / `-` that is POINTER arithmetic: an offset
-    /// (`ptr ± int`, either operand order for `+`) yields the pointer type, a
-    /// same-element difference yields `isize`. Null for every other pairing,
-    /// including the invalid ones — `lowerPointerArith` rejects those with a
-    /// diagnostic. Shared by `lowerBinaryOp` and AST-level inference so a
-    /// static type matches the value produced.
-    pub fn pointerArithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ?TypeId {
-        if (op != .add and op != .sub) return null;
-        const l_elem = self.pointerElement(lhs_ty);
-        const r_elem = self.pointerElement(rhs_ty);
-        if (l_elem != null and r_elem != null) {
-            return if (op == .sub and l_elem.? == r_elem.?) .isize else null;
-        }
-        if (l_elem != null) return if (self.isIntEx(rhs_ty)) lhs_ty else null;
-        if (r_elem != null and op == .add) return if (self.isIntEx(lhs_ty)) rhs_ty else null;
-        return null;
-    }
-
     /// Carry-rule resolution outcome for a namespace alias, diagnostic-free.
     pub const AliasVerdict = union(enum) {
         /// No edge anywhere visible from the current file binds this alias.
@@ -3180,9 +3151,6 @@ pub const Lowering = struct {
     /// custom widths), floats, and SIMD vectors. `.unresolved` returns true so
     /// a type we couldn't infer is never diagnosed — the check only fires on a
     /// concretely incompatible operand (e.g. `string`, a struct, an enum).
-    /// A pointer is not an arithmetic operand: `lowerBinaryOp` routes `+` / `-`
-    /// to `lowerPointerArith` before this check, so a pointer reaching it is
-    /// under `* / %` and is rejected.
     pub fn isArithOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
         if (self.isIntEx(ty) or isFloat(ty)) return true;
@@ -3246,6 +3214,34 @@ pub const Lowering = struct {
         if (init_ty == .bool) return "a boolean expression";
         if (init_ty == .string) return "a string expression";
         return "an expression of an incompatible type";
+    }
+
+    /// The type an operand carries into an op: an optional shows the payload,
+    /// which is what lowering unwraps it to.
+    pub fn operandType(self: *Lowering, ty: TypeId) TypeId {
+        if (ty.isBuiltin()) return ty;
+        const info = self.module.types.get(ty);
+        return if (info == .optional) info.optional.child else ty;
+    }
+
+    /// Reject a scalar op whose operands are incompatible with it (e.g.
+    /// `i64 + string`, `[*]i32 + i64`, `i64 & string`). The result type is
+    /// derived from the LHS, so without this the op lowers as `<op> : <lhs>`
+    /// and either reinterprets the RHS bytes (arithmetic / bitwise → garbage)
+    /// or feeds mismatched LLVM types to `icmp` (ordering → verifier failure).
+    /// True when the pairing was diagnosed.
+    pub fn diagOperandTypes(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId, span: ast.Span) bool {
+        const ok = switch (op) {
+            .add, .sub, .mul, .div, .mod => self.isArithOperand(lhs_ty) and self.isArithOperand(rhs_ty),
+            .lt, .lte, .gt, .gte => self.isOrderingOperand(lhs_ty) and self.isOrderingOperand(rhs_ty),
+            .bit_and, .bit_or, .bit_xor, .shl, .shr => self.isBitwiseOperand(lhs_ty) and self.isBitwiseOperand(rhs_ty),
+            else => true,
+        };
+        if (ok) return false;
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to operands of type '{s}' and '{s}'", .{
+            binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+        });
+        return true;
     }
 
     pub fn binOpSymbol(op: ast.BinaryOp.Op) []const u8 {
@@ -3470,7 +3466,6 @@ pub const Lowering = struct {
     pub const diagContextRootWrite = lower_stmt.diagContextRootWrite;
     pub const diagNonstoreRootWrite = lower_stmt.diagNonstoreRootWrite;
     pub const diagDecrementTarget = lower_stmt.diagDecrementTarget;
-    pub const diagDecrementPointer = lower_stmt.diagDecrementPointer;
     pub const diagDecrementNonInteger = lower_stmt.diagDecrementNonInteger;
     pub const lowerMultiAssign = lower_stmt.lowerMultiAssign;
     pub const lowerDestructureDecl = lower_stmt.lowerDestructureDecl;
@@ -3996,7 +3991,6 @@ pub const Lowering = struct {
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
     pub const lowerIs = lower_expr.lowerIs;
     pub const conformanceAsk = lower_expr.conformanceAsk;
-    pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;
     pub const lowerStructEquality = lower_expr.lowerStructEquality;

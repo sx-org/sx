@@ -1,0 +1,14 @@
+// A pointer is stepped by an index (`mp[i]`), so a pointer operand under
+// `+` / `-` is rejected as an incompatible arithmetic pairing — in the binary
+// form and in the compound-assignment fold alike.
+
+@import "modules/std.sx";
+
+main :: () -> i32 {
+    ints : [4]i32 = .[1, 2, 3, 4];
+    p : [*]i32 = *ints[0];
+
+    q := p + 1;
+    p += 1;
+    0
+}

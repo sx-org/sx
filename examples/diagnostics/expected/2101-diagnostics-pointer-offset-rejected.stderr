@@ -1,0 +1,11 @@
+error: cannot apply '+' to operands of type '[*]i32' and 'i64'
+  --> examples/diagnostics/2101-diagnostics-pointer-offset-rejected.sx:11:10
+   |
+11 |     q := p + 1;
+   |          ^
+
+error: cannot apply '+' to operands of type '[*]i32' and 'i64'
+  --> examples/diagnostics/2101-diagnostics-pointer-offset-rejected.sx:12:5
+   |
+12 |     p += 1;
+   |     ^^^^^^^

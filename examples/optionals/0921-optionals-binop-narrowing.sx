@@ -1,5 +1,6 @@
-// Flow narrowing extends to binary-op OPERANDS: a `?T` proven present by a
-// `!= null` guard reads as its concrete payload in arithmetic / comparison.
+// Flow narrowing extends to binary-op and compound-assignment OPERANDS: a
+// `?T` proven present by a `!= null` guard reads as its concrete payload in
+// arithmetic / comparison.
 //
 // Narrowing is the only implicit operand unwrap; everything else is a
 // compile error (see 0922).
@@ -16,6 +17,9 @@ main :: () {
     if x != null and y != null {
         print("add {}\n", x + y);     // 42
         print("lt {}\n", x < y);      // false
+        acc : i64 = 1;
+        acc += x;
+        print("acc {}\n", acc);       // 31
     }
     print("sum 11: {}\n", sum(5, 6));     // 11
     print("sum null: {}\n", sum(5, null)); // -1
