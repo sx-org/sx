@@ -3216,6 +3216,14 @@ pub const Lowering = struct {
         return "an expression of an incompatible type";
     }
 
+    /// The type an operand carries into an op: an optional shows the payload,
+    /// which is what lowering unwraps it to.
+    pub fn operandType(self: *Lowering, ty: TypeId) TypeId {
+        if (ty.isBuiltin()) return ty;
+        const info = self.module.types.get(ty);
+        return if (info == .optional) info.optional.child else ty;
+    }
+
     /// Reject a scalar op whose operands are incompatible with it (e.g.
     /// `i64 + string`, `[*]i32 + i64`, `i64 & string`). The result type is
     /// derived from the LHS, so without this the op lowers as `<op> : <lhs>`

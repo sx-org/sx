@@ -5504,16 +5504,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // The RHS type the operand rules see: a narrowed optional shows its payload.
-    const eff_rhs_ty = blk: {
-        if (!rhs_ty.isBuiltin()) {
-            const ri = self.module.types.get(rhs_ty);
-            if (ri == .optional) break :blk ri.optional.child;
-        }
-        break :blk rhs_ty;
-    };
-
-    if (self.diagOperandTypes(bop.op, ty, eff_rhs_ty, bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
+    if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
 
     // Comparison operands meet at a comparison type — not a store.
     // Numeric pairs widen / promote to float; two pointers meet at `*void`;

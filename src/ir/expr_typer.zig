@@ -52,16 +52,15 @@ pub const ExprTyper = struct {
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order. An optional operand
-                // types at its payload, which lowering unwraps.
+                // as `f64` regardless of operand order.
                 else => self.l.arithResultType(
-                    self.payloadType(self.l.inferExprType(bop.lhs)),
-                    self.payloadType(self.l.inferExprType(bop.rhs)),
+                    self.l.operandType(self.l.inferExprType(bop.lhs)),
+                    self.l.operandType(self.l.inferExprType(bop.rhs)),
                 ),
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,
-                .negate => self.payloadType(self.l.inferExprType(uop.operand)),
+                .negate => self.l.operandType(self.l.inferExprType(uop.operand)),
                 .xx => self.l.target_type orelse .unresolved,
                 .address_of => blk: {
                     const inner = self.l.inferExprType(uop.operand);
@@ -757,14 +756,6 @@ pub const ExprTyper = struct {
             .destructure_decl,
             => .void,
             else => .unresolved,
-        };
-    }
-
-    fn payloadType(self: ExprTyper, ty: TypeId) TypeId {
-        if (ty.isBuiltin()) return ty;
-        return switch (self.l.module.types.get(ty)) {
-            .optional => |o| o.child,
-            else => ty,
         };
     }
 };

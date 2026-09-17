@@ -3601,7 +3601,7 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
     const rhs_ty = self.builder.getRefType(rhs);
     const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
-    if (op != .assign and self.diagOperandTypes(compoundAssignToBinaryOp(op), ty, rhs_ty, span))
+    if (op != .assign and self.diagOperandTypes(compoundAssignToBinaryOp(op), ty, self.operandType(rhs_ty), span))
         return self.emitPlaceholder("operand-type-mismatch");
     const rhs_c = if (rhs_ty != ty and rhs_ty != .void and ty != .void)
         self.coerceToType(rhs, rhs_ty, ty)
