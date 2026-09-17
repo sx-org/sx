@@ -932,6 +932,27 @@ test "pack projection: same-name type-arg + method warns" {
     try std.testing.expectEqual(Lowering.PackProjection{ .method = 0 }, lowering.resolvePackProjection("Shadowy", "value", .value_position));
 }
 
+test "a declaration reached twice keeps one function, and its name resolves to it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+
+    const body = alloc.create(Node) catch unreachable;
+    body.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
+    const fd = ast.FnDecl{ .name = "connRead", .params = &.{}, .return_type = null, .body = body };
+    lowering.program_index.registerFunction("connRead", &fd, null);
+
+    // A module reached along two import paths is scanned once per path.
+    lowering.declareFunction(&fd, "connRead");
+    lowering.declareFunction(&fd, "connRead");
+
+    try std.testing.expectEqual(lowering.declFuncId(&fd).?, lowering.resolveFuncByName("connRead").?);
+    try std.testing.expectEqual(@as(usize, 1), module.functions.items.len);
+}
+
 test "converge inferred error sets: empty -> warning, raising -> converged set" {
     // The compile driver renders diagnostics only on failure, so the
     // empty-inferred warning is validated on the DiagnosticList directly —
