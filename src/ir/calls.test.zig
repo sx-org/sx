@@ -192,7 +192,7 @@ test "plan: lazy free fn classifies as direct_fn and flags default-arg expansion
         .{ .name = "b", .name_span = .{ .start = 0, .end = 0 }, .type_expr = typeExpr(alloc, "i64"), .default_expr = intLit(alloc, 0) },
     };
     const fd = ast.FnDecl{ .name = "greet", .params = &params, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) };
-    l.program_index.fn_ast_map.put("greet", &fd) catch unreachable;
+    l.program_index.registerFunction("greet", &fd, null);
 
     // greet(1) — omits `b`, so its default is spliced in.
     {
@@ -329,7 +329,7 @@ test "plan: runtime-class instance vs static dispatch" {
         .{ .method = .{ .name = "stringWithUTF8String", .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "i64"), .is_static = true } },
     };
     var fcd = ast.RuntimeClassDecl{ .name = "NSString", .runtime_path = "NSString", .runtime = .objc_class, .members = &members };
-    l.program_index.runtime_class_map.put("NSString", &fcd) catch unreachable;
+    l.program_index.put(.runtime_class, l.program_index.synthetic("NSString", null), "NSString", &fcd);
     _ = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("NSString"), .fields = &.{} } });
 
     // Instance: `_.(NSString).length` — receiver prepended.
@@ -408,7 +408,7 @@ test "plan: free-function UFCS prepends receiver, distinct from namespace_fn" {
     const ret_stmt = mk(alloc, .{ .return_stmt = .{ .value = intLit(alloc, 7) } });
     const body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{ret_stmt} } });
     const fd = ast.FnDecl{ .name = "bump", .params = &params, .return_type = typeExpr(alloc, "i32"), .body = body, .is_ufcs = true };
-    l.program_index.fn_ast_map.put("bump", &fd) catch unreachable;
+    l.program_index.registerFunction("bump", &fd, null);
     l.lowerFunction(&fd, "bump", false);
     const fid = l.resolveFuncByName("bump").?;
     module.functions.items[@intFromEnum(fid)].has_implicit_ctx = true;
@@ -440,7 +440,7 @@ test "plan: qualified namespace function" {
 
     // mathlib.square :: () -> i64  — registered under its qualified name, lazy.
     const fd = ast.FnDecl{ .name = "mathlib.square", .params = &.{}, .return_type = typeExpr(alloc, "i64"), .body = emptyBody(alloc) };
-    l.program_index.fn_ast_map.put("mathlib.square", &fd) catch unreachable;
+    l.program_index.registerFunction("mathlib.square", &fd, null);
 
     const call = callNode(alloc, fieldAccess(alloc, ident(alloc, "mathlib"), "square"), &.{});
     const p = cr.plan(&call.data.call);

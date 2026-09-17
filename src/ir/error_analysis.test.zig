@@ -43,8 +43,8 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     const c_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{c_try} } });
     const caller_fd = ast.FnDecl{ .name = "caller", .params = &.{}, .return_type = c_rt, .body = c_body };
 
-    lowering.program_index.fn_ast_map.put("raiser", &raiser_fd) catch unreachable;
-    lowering.program_index.fn_ast_map.put("caller", &caller_fd) catch unreachable;
+    lowering.program_index.registerFunction("raiser", &raiser_fd, null);
+    lowering.program_index.registerFunction("caller", &caller_fd, null);
 
     ea.convergeInferredErrorSets();
 
@@ -80,7 +80,7 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     const host_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{lambda} } });
     const host_fd = ast.FnDecl{ .name = "host", .params = &.{}, .return_type = null, .body = host_body };
 
-    lowering.program_index.fn_ast_map.put("host", &host_fd) catch unreachable;
+    lowering.program_index.registerFunction("host", &host_fd, null);
 
     ea.convergeClosureShapeSets();
 
@@ -120,7 +120,7 @@ test "error_analysis: empty-inferred warnings are emitted in source order, not h
         fds[i] = ast.FnDecl{ .name = name, .params = &.{}, .return_type = rt, .body = body };
     }
     for (&names, 0..) |name, i| {
-        lowering.program_index.fn_ast_map.put(name, &fds[i]) catch unreachable;
+        lowering.program_index.registerFunction(name, &fds[i], null);
     }
 
     ea.convergeInferredErrorSets();

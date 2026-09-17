@@ -292,7 +292,7 @@ pub const CallResolver = struct {
             }
             if (!author_declines) {
                 // Generic function — infer return type via type bindings.
-                if (self.l.program_index.fn_ast_map.get(name)) |fd| {
+                if (self.l.program_index.lookup(.function, name)) |fd| {
                     if (fd.type_params.len > 0) {
                         return .{
                             .kind = .generic_fn,
@@ -310,13 +310,13 @@ pub const CallResolver = struct {
                         .return_type = func.ret,
                         .target = .{ .func = fid },
                         .prepends_ctx = func.has_implicit_ctx,
-                        .expands_defaults = if (self.l.program_index.fn_ast_map.get(name)) |fd| defaultsFor(fd, c.args.len) else false,
+                        .expands_defaults = if (self.l.program_index.lookup(.function, name)) |fd| defaultsFor(fd, c.args.len) else false,
                     };
                 }
                 // Not lowered yet (lazy lowering): take the return type from the
                 // declared AST. A void/return-less fn is void — not an
                 // `.unresolved` guess.
-                if (self.l.program_index.fn_ast_map.get(name)) |fd| {
+                if (self.l.program_index.lookup(.function, name)) |fd| {
                     return .{
                         .kind = .direct_fn,
                         .return_type = if (fd.return_type) |rt| self.l.resolveType(rt) else .void,
@@ -437,7 +437,7 @@ pub const CallResolver = struct {
                     const inner_info = self.l.module.types.get(recv_inner);
                     if (inner_info == .@"struct") {
                         const sn = self.l.module.types.getString(inner_info.@"struct".name);
-                        if (self.l.program_index.runtime_class_map.get(sn)) |fcd| {
+                        if (self.l.program_index.lookup(.runtime_class, sn)) |fcd| {
                             if (self.l.findRuntimeMethodInChain(fcd, cfa.field)) |found| {
                                 if (!found.method.is_static) return .{
                                     .kind = .runtime_instance,
@@ -511,7 +511,7 @@ pub const CallResolver = struct {
                                     .target = .{ .func = fid },
                                     .prepends_receiver = true,
                                     .prepends_ctx = func.has_implicit_ctx,
-                                    .expands_defaults = if (self.l.program_index.fn_ast_map.get(qualified)) |fd| defaultsFor(fd, c.args.len + 1) else false,
+                                    .expands_defaults = if (self.l.program_index.lookup(.function, qualified)) |fd| defaultsFor(fd, c.args.len + 1) else false,
                                 };
                             }
                         }
@@ -532,7 +532,7 @@ pub const CallResolver = struct {
                 // not-a-ufcs-function diagnostic).
                 const alias_target = self.l.ufcsAliasTarget(cfa.field);
                 const eff_field = alias_target orelse cfa.field;
-                const ufcs_fd = self.l.program_index.fn_ast_map.get(eff_field);
+                const ufcs_fd = self.l.program_index.lookup(.function, eff_field);
                 const opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
                 if (!opted_in) return .{ .kind = .unresolved, .return_type = .unresolved };
                 // Generic ufcs target: infer the return type with the
@@ -632,7 +632,7 @@ pub const CallResolver = struct {
             };
             if (type_name) |tn| {
                 // Runtime-class static method: `Alias.static_method(args)`.
-                if (self.l.program_index.runtime_class_map.get(tn)) |fcd| {
+                if (self.l.program_index.lookup(.runtime_class, tn)) |fcd| {
                     for (fcd.members) |m| switch (m) {
                         .method => |md| if (md.is_static and std.mem.eql(u8, md.name, cfa.field)) {
                             return .{
@@ -669,10 +669,10 @@ pub const CallResolver = struct {
                         .return_type = func.ret,
                         .target = .{ .func = fid },
                         .prepends_ctx = func.has_implicit_ctx,
-                        .expands_defaults = if (self.l.program_index.fn_ast_map.get(qualified)) |fd| defaultsFor(fd, c.args.len) else false,
+                        .expands_defaults = if (self.l.program_index.lookup(.function, qualified)) |fd| defaultsFor(fd, c.args.len) else false,
                     };
                 }
-                if (self.l.program_index.fn_ast_map.get(qualified)) |qfd| {
+                if (self.l.program_index.lookup(.function, qualified)) |qfd| {
                     // Generic callee: the declared return type is the unbound
                     // `T` stub — infer through the call's bindings, exactly
                     // like the bare-identifier path above.
@@ -684,14 +684,14 @@ pub const CallResolver = struct {
                     };
                     return .{
                         .kind = .namespace_fn,
-                        .return_type = if (qfd.return_type) |rt| self.l.resolveTypeInSource(self.l.program_index.qualified_fn_source.get(qualified), rt) else .void,
+                        .return_type = if (qfd.return_type) |rt| self.l.resolveTypeInSource(self.l.program_index.functionSource(qualified), rt) else .void,
                         .target = .{ .named = qualified },
                         .expands_defaults = defaultsFor(qfd, c.args.len),
                     };
                 }
                 // Namespace aliases sometimes register the function under its
                 // bare name (matches `lowerCall`'s effective-name resolution).
-                if (self.l.program_index.fn_ast_map.get(cfa.field)) |bfd| {
+                if (self.l.program_index.lookup(.function, cfa.field)) |bfd| {
                     if (bfd.type_params.len > 0) return .{
                         .kind = .generic_fn,
                         .return_type = self.l.genericResolver().inferGenericReturnType(bfd, c),
@@ -828,15 +828,13 @@ pub const CallResolver = struct {
     }
 
     fn selectedGlobal(self: CallResolver, sel: Lowering.QualifiedMember) ?program_index.GlobalInfo {
-        if (self.l.program_index.globals_by_source.get(sel.author.source)) |inner| {
-            if (inner.get(sel.member)) |g| return g;
-        }
+        if (self.l.program_index.lookupInSource(.global, sel.author.source, sel.member)) |g| return g;
         // Duplicate extern declarations may intentionally share the one
         // registered symbol.  The raw selected author still proves that this
         // fallback denotes the same global domain, rather than a same-spelled
         // value from another module.
         if (sel.author.raw == .var_decl)
-            return self.l.program_index.global_names.get(sel.member);
+            return self.l.program_index.lookup(.global, sel.member);
         return null;
     }
 
@@ -884,7 +882,7 @@ pub const CallResolver = struct {
         // runtime-class registration is still positive proof of a type/static
         // receiver and must win before terminal-name UFCS fallback (`Cls.alloc`
         // must never bind std.mem.alloc).
-        if (self.l.program_index.runtime_class_map.contains(root) and self.l.isNameVisible(root)) {
+        if (self.l.program_index.contains(.runtime_class, root) and self.l.isNameVisible(root)) {
             self.l.alloc.free(path);
             return .type_prefix;
         }
@@ -972,7 +970,7 @@ pub const CallResolver = struct {
         if (self.l.current_source_file == null and self.l.main_file == null and fa.object.data == .identifier) {
             const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch
                 @panic("out of memory while classifying source-less qualified call");
-            if (self.l.program_index.fn_ast_map.contains(qualified)) return .type_prefix;
+            if (self.l.program_index.contains(.function, qualified)) return .type_prefix;
         }
         return switch (self.l.staticStructHead(fa.object)) {
             .resolved, .ambiguous, .not_visible => .type_prefix,

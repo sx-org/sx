@@ -274,7 +274,7 @@ pub fn tryPackImplMatch(
 
     var bindings = std.StringHashMap(TypeId).init(self.alloc);
     defer bindings.deinit();
-    const pd = self.program_index.protocol_ast_map.get(proto_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, proto_name) orelse return null;
     bindings.put(pd.type_params[0].name, dst_ty) catch return null;
     if (entry.ret_var_name) |rv| bindings.put(rv, src_ret) catch return null;
 
@@ -329,7 +329,7 @@ pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, sr
     // parameterised protocols would walk protocol_decl_map looking for
     // protocols that take a single type-param and have a `convert` method.
     const proto_name = "Into";
-    const pd = self.program_index.protocol_ast_map.get(proto_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, proto_name) orelse return null;
     if (pd.type_params.len != 1) return null;
 
     var key_buf = std.ArrayList(u8).empty;
@@ -1500,7 +1500,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     if (self.ufcsAliasTarget(name) != null) return null;
     const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
         .func => |sf| sf.decl,
-        .none => self.program_index.fn_ast_map.get(name) orelse return null,
+        .none => self.program_index.lookup(.function, name) orelse return null,
         .ambiguous, .not_callable => return null,
     };
     if (fd.type_params.len > 0) return null;
@@ -1986,7 +1986,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
         },
-        .int_to_float =>return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        .int_to_float => return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .float_to_int => {
             // Implicit float→int narrowing follows the unified rule (the
             // same `floatToIntExact` the array-dim / `$K: Count` paths use):

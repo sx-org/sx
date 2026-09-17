@@ -334,7 +334,7 @@ pub const ExprTyper = struct {
                 if (fa.object.data == .identifier) {
                     const oname = fa.object.data.identifier.name;
                     const shadowed = if (self.l.scope) |s| s.lookup(oname) != null else false;
-                    if (!shadowed and !self.l.program_index.global_names.contains(oname)) {
+                    if (!shadowed and !self.l.program_index.contains(.global, oname)) {
                         if (self.l.module.types.findByName(self.l.module.types.internString(oname))) |ty| {
                             if (!ty.isBuiltin() and self.l.isPayloadlessVariant(ty, fa.field)) return ty;
                         }
@@ -375,7 +375,7 @@ pub const ExprTyper = struct {
                                 const saved_src = self.l.current_source_file;
                                 self.l.setCurrentSourceFile(sel.target.target_module_path);
                                 var global_info: ?program_index_mod.GlobalInfo = null;
-                                if (self.l.program_index.global_names.get(sel.member)) |fallback| {
+                                if (self.l.program_index.lookup(.global, sel.member)) |fallback| {
                                     switch (self.l.selectGlobalAuthor(sel.member)) {
                                         .resolved => |g| global_info = g,
                                         .untracked => global_info = fallback,
@@ -413,7 +413,7 @@ pub const ExprTyper = struct {
                 // source-aware: infer the AUTHOR's global type,
                 // never an unrelated module's same-named one. `.not_a_global`
                 // falls through to the const / fn arms below.
-                if (self.l.program_index.global_names.get(id.name)) |gi| {
+                if (self.l.program_index.lookup(.global, id.name)) |gi| {
                     switch (self.l.selectGlobalAuthor(id.name)) {
                         .resolved => |g| return g.ty,
                         .untracked => return gi.ty,
@@ -430,7 +430,7 @@ pub const ExprTyper = struct {
                 // registration-only author with no per-source partition (emit its
                 // global type), and an ambiguous bare reference yields `.unresolved`
                 // (the emission path diagnoses the ambiguity loudly).
-                if (self.l.program_index.module_const_map.get(id.name)) |ci_global| {
+                if (self.l.program_index.lookup(.module_const, id.name)) |ci_global| {
                     return switch (self.l.selectModuleConst(id.name)) {
                         .resolved => |sel| sel.info.ty,
                         .none => ci_global.ty,

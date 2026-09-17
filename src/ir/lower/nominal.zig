@@ -833,7 +833,7 @@ pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8
 pub fn bareVisibleStructDecl(self: *Lowering, name: []const u8) ?VisibleStructAuthor {
     if (self.emitting_default_context) return null;
     const from = self.current_source_file orelse return null;
-    const canon = self.program_index.struct_template_map.get(name) orelse return null;
+    const canon = self.program_index.lookup(.struct_template, name) orelse return null;
     const canon_src = canon.source_file orelse "";
 
     var res_walk = self.resolver();
@@ -881,13 +881,12 @@ pub fn bareVisibleStructTemplate(self: *Lowering, name: []const u8) ?StructTempl
 /// second nominal type. `BufF :: Buffer(f32)` and `Buffer(f32)` are the same
 /// interned type, so `@typeEq`, a `case BufF:` arm, `v.(BufF)`, and an
 /// `impl … for BufF` head all agree with the instantiation spelling.
-pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl: *const StructTemplate, args: []const *const Node) void {
+pub fn registerGenericStructAlias(self: *Lowering, cd: *const ast.ConstDecl, tmpl: *const StructTemplate, args: []const *const Node) void {
     const inst_id = self.instantiateGenericStruct(tmpl, args);
     if (self.module.types.get(inst_id) != .@"struct") return;
     // A generic-struct instantiation alias IS a type author: route it through
-    // the unified writer so it lands in `type_aliases_by_source` and the
-    // bare-TYPE gate treats it like any other alias.
-    self.putTypeAlias(self.current_source_file, alias_name, inst_id);
+    // the unified writer so the bare-TYPE gate treats it like any other alias.
+    self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, inst_id);
 }
 
 pub const PromotedPrivate = struct { name: types.StringId, source: ?[]const u8 };
@@ -920,19 +919,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         // no layout, and every instantiation the program spells is another member.
         if (sd.open_variant_of) |head| self.noteOpenSetGenericMember(sd, head, source_file);
         const tmpl = self.buildGenericStructTemplate(sd, source_file) orelse return;
-        self.program_index.struct_template_map.put(tmpl.name, tmpl) catch {};
+        self.program_index.put(.struct_template, self.declId(.{ .struct_decl = sd }, source_file), tmpl.name, tmpl);
 
-        // Key the template by DeclId in parallel; `struct_template_map` is
-        // the selection consumer. A template whose decl is not in the table
-        // (comptime / block-local registration with facts unwired) keeps only
-        // the name-keyed entry.
-        if (self.program_index.decl_table) |dt| {
-            if (dt.declIdForStructDecl(sd)) |id| {
-                self.program_index.struct_template_by_decl.put(id, tmpl) catch {};
-            }
-        }
-
-        // Register methods under "TemplateName.method" in fn_ast_map
         for (sd.methods) |method_node| {
             if (method_node.data == .fn_decl) {
                 const method_fd = &method_node.data.fn_decl;
@@ -940,7 +928,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
                 // clobbers a same-name `@get` (issue: get+set coexistence).
                 const eff = self.accessorEffName(method_fd);
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, eff }) catch continue;
-                self.program_index.fn_ast_map.put(qualified, method_fd) catch {};
+                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
             }
         }
         return;
@@ -1110,8 +1098,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             // compatibility AST map coherent with that first author; every
             // later same-name method remains reachable through its decl-
             // identity `fn_decl_fids` slot and nominal author dispatch.
-            if (!self.program_index.fn_ast_map.contains(qualified))
-                self.program_index.fn_ast_map.put(qualified, method_fd) catch {};
+            if (!self.program_index.contains(.function, qualified))
+                self.program_index.registerFunction(qualified, method_fd, self.current_source_file);
             // Declare extern stub (body is lowered lazily on demand)
             self.declareFunction(method_fd, qualified);
         }

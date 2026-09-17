@@ -9,19 +9,9 @@ const inst = @import("inst.zig");
 test "ProgramIndex.init starts empty with unset borrowed views" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
-    try std.testing.expectEqual(@as(u32, 0), idx.import_flags.count());
+    try std.testing.expectEqual(@as(u32, 0), idx.nameIndex(.function).count());
     try std.testing.expect(idx.module_scopes == null);
     try std.testing.expect(idx.import_graph == null);
-}
-
-test "ProgramIndex.import_flags round-trips imported vs local" {
-    var idx = ProgramIndex.init(std.testing.allocator);
-    defer idx.deinit();
-    try idx.import_flags.put("printf", true);
-    try idx.import_flags.put("main", false);
-    try std.testing.expectEqual(@as(?bool, true), idx.import_flags.get("printf"));
-    try std.testing.expectEqual(@as(?bool, false), idx.import_flags.get("main"));
-    try std.testing.expect(idx.import_flags.get("absent") == null);
 }
 
 test "ProgramIndex borrows module_scopes / import_graph without owning them" {
@@ -45,31 +35,26 @@ test "ProgramIndex borrows module_scopes / import_graph without owning them" {
     try std.testing.expectEqual(@as(u32, 0), idx.module_scopes.?.count());
 }
 
-test "ProgramIndex declaration maps round-trip" {
+test "ProgramIndex declaration facts round-trip through their identity" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
 
     // Minimal AST node reused wherever a *Node is required.
     var blk = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
 
-    // fn_ast_map: function name → AST decl.
     const fd = ast.FnDecl{ .name = "main", .params = &.{}, .return_type = null, .body = &blk };
-    try idx.fn_ast_map.put("main", &fd);
-    try std.testing.expect(idx.fn_ast_map.get("main").? == &fd);
+    idx.put(.function, idx.synthetic("main", "a.sx"), "main", &fd);
+    try std.testing.expect(idx.lookup(.function, "main").? == &fd);
 
-    // type_alias_map: alias name → target TypeId.
-    try idx.type_alias_map.put("ShaderHandle", .i64);
-    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.type_alias_map.get("ShaderHandle"));
+    idx.put(.type_alias, idx.synthetic("ShaderHandle", "a.sx"), "ShaderHandle", .i64);
+    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.lookup(.type_alias, "ShaderHandle"));
 
-    // global_names: @run global name → GlobalInfo.
-    try idx.global_names.put("g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
-    try std.testing.expect(idx.global_names.get("g").?.id == inst.GlobalId.fromIndex(0));
+    idx.put(.global, idx.synthetic("g", "a.sx"), "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
+    try std.testing.expect(idx.lookup(.global, "g").?.id == inst.GlobalId.fromIndex(0));
 
-    // module_const_map: const name → ModuleConstInfo.
-    try idx.module_const_map.put("AF_INET", .{ .value = &blk, .ty = .i32 });
-    try std.testing.expect(idx.module_const_map.get("AF_INET").?.value == &blk);
+    idx.put(.module_const, idx.synthetic("AF_INET", "a.sx"), "AF_INET", .{ .value = &blk, .ty = .i32 });
+    try std.testing.expect(idx.lookup(.module_const, "AF_INET").?.value == &blk);
 
-    // runtime_class_map: sx alias → RuntimeClassDecl.
     const fcd = ast.RuntimeClassDecl{
         .name = "NSString",
         .runtime_path = "NSString",
@@ -78,73 +63,63 @@ test "ProgramIndex declaration maps round-trip" {
         .is_extern = true,
         .is_main = false,
     };
-    try idx.runtime_class_map.put("NSString", &fcd);
-    try std.testing.expect(idx.runtime_class_map.get("NSString").? == &fcd);
+    idx.put(.runtime_class, idx.synthetic("NSString", "a.sx"), "NSString", &fcd);
+    try std.testing.expect(idx.lookup(.runtime_class, "NSString").? == &fcd);
 
-    // protocol_decl_map: protocol name → ProtocolDeclInfo.
-    try idx.protocol_decl_map.put("Show", .{ .name = "Show", .kind = .erased, .methods = &.{} });
-    try std.testing.expectEqualStrings("Show", idx.protocol_decl_map.get("Show").?.name);
-
-    // protocol_ast_map: protocol name → AST decl.
+    // One declaration carries both protocol facts.
     const pd = ast.ProtocolDecl{ .name = "Show", .methods = &.{} };
-    try idx.protocol_ast_map.put("Show", &pd);
-    try std.testing.expect(idx.protocol_ast_map.get("Show").? == &pd);
+    const show = idx.synthetic("Show", "a.sx");
+    idx.put(.protocol, show, "Show", .{ .name = "Show", .kind = .erased, .methods = &.{} });
+    idx.put(.protocol_ast, show, "Show", &pd);
+    try std.testing.expectEqualStrings("Show", idx.lookup(.protocol, "Show").?.name);
+    try std.testing.expect(idx.lookup(.protocol_ast, "Show").? == &pd);
 
-    // struct_template_map: generic struct name → template.
     const list_sd = ast.StructDecl{ .name = "List", .field_names = &.{}, .field_name_starts = &.{}, .field_types = &.{}, .field_defaults = &.{} };
-    try idx.struct_template_map.put("List", .{ .name = "List", .type_params = &.{}, .field_names = &.{}, .field_type_nodes = &.{}, .decl = &list_sd });
-    try std.testing.expectEqualStrings("List", idx.struct_template_map.get("List").?.name);
+    idx.put(.struct_template, idx.synthetic("List", "a.sx"), "List", .{ .name = "List", .type_params = &.{}, .field_names = &.{}, .field_type_nodes = &.{}, .decl = &list_sd });
+    try std.testing.expectEqualStrings("List", idx.lookup(.struct_template, "List").?.name);
 
-    // ufcs_alias_map: alias name → target function name.
-    try idx.ufcs_alias_map.put("len", "list_len");
-    try std.testing.expectEqualStrings("list_len", idx.ufcs_alias_map.get("len").?);
+    idx.put(.ufcs_alias, idx.synthetic("len", "a.sx"), "len", .{ .target = "list_len" });
+    try std.testing.expectEqualStrings("list_len", idx.lookup(.ufcs_alias, "len").?.target);
 }
 
-// The source-keyed caches partition by declaring source, so the SAME name
-// authored in two different modules lands two DISTINCT entries under two source
-// keys — never last-wins. The global maps stay single-keyed by name.
-test "ProgramIndex source-keyed caches partition same-name authors by source" {
+// Facts belong to identities, so the SAME name authored in two modules holds
+// two independent facts. The per-source index reaches each author's own; the
+// program-wide index selects ONE identity without overwriting the other's fact.
+test "ProgramIndex keeps same-name authors' facts separate" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
 
     var blk_a = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
     var blk_b = ast.Node{ .span = .{ .start = 1, .end = 1 }, .data = .{ .block = .{ .stmts = &.{} } } };
 
-    // SAME alias name `Foo` authored in two modules → two distinct TypeIds.
-    idx.putTypeAliasBySource("a.sx", "Foo", .i64);
-    idx.putTypeAliasBySource("b.sx", "Foo", .f64);
-    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.type_aliases_by_source.get("a.sx").?.get("Foo"));
-    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.type_aliases_by_source.get("b.sx").?.get("Foo"));
-    try std.testing.expectEqual(@as(u32, 2), idx.type_aliases_by_source.count());
+    const foo_a = idx.synthetic("Foo", "a.sx");
+    const foo_b = idx.synthetic("Foo", "b.sx");
+    idx.putInSource(.type_alias, foo_a, "a.sx", "Foo", .i64);
+    idx.putInSource(.type_alias, foo_b, "b.sx", "Foo", .f64);
+    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.lookupInSource(.type_alias, "a.sx", "Foo"));
+    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookupInSource(.type_alias, "b.sx", "Foo"));
+    try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.get(.type_alias, foo_a));
+    try std.testing.expectEqual(@as(?types.TypeId, .f64), idx.lookup(.type_alias, "Foo"));
 
-    // SAME const name `K` authored in two modules → two distinct ModuleConstInfos.
-    idx.putModuleConstBySource("a.sx", "K", .{ .value = &blk_a, .ty = .i32 });
-    idx.putModuleConstBySource("b.sx", "K", .{ .value = &blk_b, .ty = .f32 });
-    try std.testing.expect(idx.module_consts_by_source.get("a.sx").?.get("K").?.value == &blk_a);
-    try std.testing.expect(idx.module_consts_by_source.get("b.sx").?.get("K").?.value == &blk_b);
-    try std.testing.expectEqual(@as(?types.TypeId, .i32), idx.module_consts_by_source.get("a.sx").?.get("K").?.ty);
-    try std.testing.expectEqual(@as(?types.TypeId, .f32), idx.module_consts_by_source.get("b.sx").?.get("K").?.ty);
+    const k_a = idx.synthetic("K", "a.sx");
+    const k_b = idx.synthetic("K", "b.sx");
+    idx.putInSource(.module_const, k_a, "a.sx", "K", .{ .value = &blk_a, .ty = .i32 });
+    idx.putInSource(.module_const, k_b, "b.sx", "K", .{ .value = &blk_b, .ty = .f32 });
+    try std.testing.expect(idx.lookupInSource(.module_const, "a.sx", "K").?.value == &blk_a);
+    try std.testing.expect(idx.lookupInSource(.module_const, "b.sx", "K").?.value == &blk_b);
 
-    // SAME global name `g` authored in two modules → two distinct GlobalInfos.
-    idx.putGlobalBySource("a.sx", "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
-    idx.putGlobalBySource("b.sx", "g", .{ .id = inst.GlobalId.fromIndex(1), .ty = .f64 });
-    try std.testing.expect(idx.globals_by_source.get("a.sx").?.get("g").?.id == inst.GlobalId.fromIndex(0));
-    try std.testing.expect(idx.globals_by_source.get("b.sx").?.get("g").?.id == inst.GlobalId.fromIndex(1));
+    const g_a = idx.synthetic("g", "a.sx");
+    const g_b = idx.synthetic("g", "b.sx");
+    idx.putInSource(.global, g_a, "a.sx", "g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
+    idx.putInSource(.global, g_b, "b.sx", "g", .{ .id = inst.GlobalId.fromIndex(1), .ty = .f64 });
+    try std.testing.expect(idx.lookupInSource(.global, "a.sx", "g").?.id == inst.GlobalId.fromIndex(0));
+    try std.testing.expect(idx.lookupInSource(.global, "b.sx", "g").?.id == inst.GlobalId.fromIndex(1));
 
-    // The global maps stay keyed by NAME alone, so a same-name author is
-    // last-wins there — exactly ONE entry for `Foo` / `K`, independent of the
-    // source-keyed writes above.
-    idx.type_alias_map.put("Foo", .i64) catch unreachable;
-    idx.type_alias_map.put("Foo", .f64) catch unreachable;
-    try std.testing.expectEqual(@as(u32, 1), idx.type_alias_map.count());
-    idx.module_const_map.put("K", .{ .value = &blk_a, .ty = .i32 }) catch unreachable;
-    idx.module_const_map.put("K", .{ .value = &blk_b, .ty = .f32 }) catch unreachable;
-    try std.testing.expectEqual(@as(u32, 1), idx.module_const_map.count());
-
-    // removeModuleConstBySource drops only the named entry under its source.
-    idx.removeModuleConstBySource("a.sx", "K");
-    try std.testing.expect(idx.module_consts_by_source.get("a.sx").?.get("K") == null);
-    try std.testing.expect(idx.module_consts_by_source.get("b.sx").?.get("K").?.value == &blk_b);
+    // Dropping a const evicts the author `a.sx` names, and only that one.
+    idx.dropFact(.module_const, k_a);
+    try std.testing.expect(idx.lookupInSource(.module_const, "a.sx", "K") == null);
+    try std.testing.expect(idx.get(.module_const, k_a) == null);
+    try std.testing.expect(idx.lookupInSource(.module_const, "b.sx", "K").?.value == &blk_b);
 }
 
 /// Stand-in for the leaf-name lookup both array-dimension resolvers pass to the
@@ -335,7 +310,7 @@ test "floatToIntExact accepts integral floats, rejects the rest" {
 test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
-    var map = std.StringHashMap(pi.ModuleConstInfo).init(std.testing.allocator);
+    var map = ProgramIndex.init(std.testing.allocator);
     defer map.deinit();
 
     // M :: 2 (literal), N :: M + 1 (expression), P :: N * 2 (expression over an
@@ -350,11 +325,11 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     var f_val = nFloat(4.0);
     var g_val = nFloat(4.5);
 
-    try map.put("M", .{ .value = &m_val, .ty = .i64 });
-    try map.put("N", .{ .value = &n_val, .ty = .i64 });
-    try map.put("P", .{ .value = &p_val, .ty = .i64 });
-    try map.put("F", .{ .value = &f_val, .ty = .f64 });
-    try map.put("G", .{ .value = &g_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("M", ""), "M", .{ .value = &m_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("N", ""), "N", .{ .value = &n_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("P", ""), "P", .{ .value = &p_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("F", ""), "F", .{ .value = &f_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("G", ""), "G", .{ .value = &g_val, .ty = .f64 });
 
     try std.testing.expectEqual(@as(?i64, 2), pi.moduleConstInt(&map, &table, "M"));
     try std.testing.expectEqual(@as(?i64, 3), pi.moduleConstInt(&map, &table, "N"));
@@ -373,9 +348,9 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
     var a_val = nBin(.add, &b_id, &zero);
     var b_val = nBin(.add, &a_id, &zero);
     var c_val = nBin(.add, &c_id, &zero);
-    try map.put("A", .{ .value = &a_val, .ty = .i64 });
-    try map.put("B", .{ .value = &b_val, .ty = .i64 });
-    try map.put("C", .{ .value = &c_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("A", ""), "A", .{ .value = &a_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("B", ""), "B", .{ .value = &b_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("C", ""), "C", .{ .value = &c_val, .ty = .i64 });
     try std.testing.expect(pi.moduleConstInt(&map, &table, "A") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "B") == null);
     try std.testing.expect(pi.moduleConstInt(&map, &table, "C") == null);
@@ -384,7 +359,7 @@ test "moduleConstInt folds expression-RHS consts and rejects cycles" {
 test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EXPR consts" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
-    var map = std.StringHashMap(pi.ModuleConstInfo).init(std.testing.allocator);
+    var map = ProgramIndex.init(std.testing.allocator);
     defer map.deinit();
 
     // KT : f64 : 4.0 (typed float), MI :: 2 (untyped int), ML :: 5.0 (untyped
@@ -399,11 +374,11 @@ test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EX
     var l1 = nLit(1);
     var l2 = nLit(2);
     var ie_val = nBin(.add, &l1, &l2);
-    try map.put("KT", .{ .value = &kt_val, .ty = .f64 });
-    try map.put("MI", .{ .value = &mi_val, .ty = .i64 });
-    try map.put("ML", .{ .value = &ml_val, .ty = .f64 }); // pass-0 stores a float literal as f64
-    try map.put("ME", .{ .value = &me_val, .ty = .i64 }); // pass-0 placeholder for a binary_op
-    try map.put("IE", .{ .value = &ie_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("KT", ""), "KT", .{ .value = &kt_val, .ty = .f64 });
+    map.put(.module_const, map.synthetic("MI", ""), "MI", .{ .value = &mi_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("ML", ""), "ML", .{ .value = &ml_val, .ty = .f64 }); // pass-0 stores a float literal as f64
+    map.put(.module_const, map.synthetic("ME", ""), "ME", .{ .value = &me_val, .ty = .i64 }); // pass-0 placeholder for a binary_op
+    map.put(.module_const, map.synthetic("IE", ""), "IE", .{ .value = &ie_val, .ty = .i64 });
 
     // Float-valued: a typed float const, an untyped float literal, AND an untyped
     // float EXPRESSION whose declared type is the i64 placeholder (judged by value).
@@ -421,8 +396,8 @@ test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EX
     var az = nFloat(0.0);
     var a_val = nBin(.add, &b_id, &az);
     var b_val = nBin(.add, &a_id, &az);
-    try map.put("A", .{ .value = &a_val, .ty = .i64 });
-    try map.put("B", .{ .value = &b_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("A", ""), "A", .{ .value = &a_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("B", ""), "B", .{ .value = &b_val, .ty = .i64 });
     // The `+ 0.0` literal still makes them float-valued (a finite, non-cyclic leaf
     // is reached before the cycle); the point is it TERMINATES.
     try std.testing.expect(pi.moduleConstIsFloatTyped(&map, &table, "A"));
@@ -431,7 +406,7 @@ test "moduleConstIsFloatTyped judges a const by VALUE, catching untyped float-EX
 test "moduleConstInt gates the fold on the declared type, not the initializer node" {
     var table = types.TypeTable.init(std.testing.allocator);
     defer table.deinit();
-    var map = std.StringHashMap(pi.ModuleConstInfo).init(std.testing.allocator);
+    var map = ProgramIndex.init(std.testing.allocator);
     defer map.deinit();
 
     // An `int_literal` value node folds to an integer ONLY when the declared
@@ -439,9 +414,9 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     // initializer must never be folded into a count: the count path
     // consults `ModuleConstInfo.ty`, not just the node shape.
     var int_val = nLit(4);
-    try map.put("OK", .{ .value = &int_val, .ty = .i64 });
-    try map.put("STR", .{ .value = &int_val, .ty = .string });
-    try map.put("BOOLEAN", .{ .value = &int_val, .ty = .bool });
+    map.put(.module_const, map.synthetic("OK", ""), "OK", .{ .value = &int_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("STR", ""), "STR", .{ .value = &int_val, .ty = .string });
+    map.put(.module_const, map.synthetic("BOOLEAN", ""), "BOOLEAN", .{ .value = &int_val, .ty = .bool });
 
     try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "OK"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STR") == null);
@@ -455,8 +430,8 @@ test "moduleConstInt gates the fold on the declared type, not the initializer no
     var m_lit = nLit(2);
     var add2 = nLit(2);
     var expr_val = nBin(.add, &m_lit, &add2);
-    try map.put("KEXPR", .{ .value = &expr_val, .ty = .i64 });
-    try map.put("STREXPR", .{ .value = &expr_val, .ty = .string });
+    map.put(.module_const, map.synthetic("KEXPR", ""), "KEXPR", .{ .value = &expr_val, .ty = .i64 });
+    map.put(.module_const, map.synthetic("STREXPR", ""), "STREXPR", .{ .value = &expr_val, .ty = .string });
     try std.testing.expectEqual(@as(?i64, 4), pi.moduleConstInt(&map, &table, "KEXPR"));
     try std.testing.expect(pi.moduleConstInt(&map, &table, "STREXPR") == null);
 }

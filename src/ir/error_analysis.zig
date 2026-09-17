@@ -416,17 +416,17 @@ pub const ErrorAnalysis = struct {
         {
             const saved = self.l.current_source_file;
             defer self.l.setCurrentSourceFile(saved);
-            var it = self.l.program_index.fn_ast_map.iterator();
+            var it = self.l.program_index.iterator(.function);
             while (it.next()) |e| {
-                const fd = e.value_ptr.*;
+                const fd = e.value;
                 if (!Lowering.astChannelIsInferred(fd.return_type)) continue;
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList([]const u8).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
-                work.put(e.key_ptr.*, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
-                work_key.put(fd, e.key_ptr.*) catch {};
+                work.put(e.name, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
+                work_key.put(fd, e.name) catch {};
             }
         }
 
@@ -532,10 +532,10 @@ pub const ErrorAnalysis = struct {
         // leave as the ambient context.
         const saved = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved);
-        var it = self.l.program_index.fn_ast_map.iterator();
+        var it = self.l.program_index.iterator(.function);
         while (it.next()) |e| {
-            self.l.setCurrentSourceFile(e.value_ptr.*.body.source_file orelse saved);
-            self.collectClosureShapes(e.value_ptr.*.body);
+            self.l.setCurrentSourceFile(e.value.body.source_file orelse saved);
+            self.collectClosureShapes(e.value.body);
         }
     }
 

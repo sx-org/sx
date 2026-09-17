@@ -241,8 +241,8 @@ fn typeNameKnown(self: *Lowering, name: []const u8) bool {
     if (TypeResolver.resolvePrimitive(name) != null) return true;
     const tbl = &self.module.types;
     if (tbl.findByName(tbl.internString(name)) != null) return true;
-    if (self.program_index.type_alias_map.contains(name)) return true;
-    if (self.program_index.struct_template_map.contains(name)) return true;
+    if (self.program_index.contains(.type_alias, name)) return true;
+    if (self.program_index.contains(.struct_template, name)) return true;
     return false;
 }
 
@@ -340,7 +340,6 @@ pub fn hasContextExtension(self: *Lowering, fname: []const u8) bool {
     }
     return false;
 }
-
 
 fn gatherEntries(
     self: *Lowering,

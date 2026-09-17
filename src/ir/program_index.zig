@@ -197,11 +197,11 @@ pub fn builtinNameLimit(table: *types.TypeTable, receiver: *const Node, field: [
 /// constant" diagnostic) rather than recursing forever. No pack arity at module
 /// scope, so `lookupPackLen` is always null.
 const ModuleConstCtx = struct {
-    consts: *const std.StringHashMap(ModuleConstInfo),
+    index: *const ProgramIndex,
     table: *types.TypeTable,
     frame: ?*const ModuleConstFrame,
     pub fn lookupDimName(self: ModuleConstCtx, name: []const u8) ?i64 {
-        return moduleConstIntFramed(self.consts, self.table, name, self.frame);
+        return moduleConstIntFramed(self.index, self.table, name, self.frame);
     }
     /// A module const's RHS reaches this ctx as a tree of SPELLINGS — no
     /// generic bindings, so a constructor whose width is a bound `$N` cannot
@@ -261,13 +261,13 @@ const ModuleConstCtx = struct {
     /// (`G : f64 : 2.0; F : f64 : G + 0.5`) recursively through the SAME
     /// cycle-guarded frame.
     pub fn lookupFloatName(self: ModuleConstCtx, name: []const u8) ?f64 {
-        return moduleConstFloatFramed(self.consts, self.table, name, self.frame);
+        return moduleConstFloatFramed(self.index, self.table, name, self.frame);
     }
     /// True iff `name` names a FLOAT-valued const (see `moduleConstFloatValuedFramed`),
     /// resolved through the SAME cycle-guarded frame so a float-const leaf that
     /// references another const is judged consistently with `lookupFloatName`.
     pub fn nameIsFloatTyped(self: ModuleConstCtx, name: []const u8) bool {
-        return moduleConstFloatValuedFramed(self.consts, self.table, name, self.frame);
+        return moduleConstFloatValuedFramed(self.index, self.table, name, self.frame);
     }
 };
 
@@ -287,12 +287,12 @@ pub fn isFloatConstType(ty: TypeId) bool {
 /// (`K / 3`, `ME / 3`). `frame` cycle-guards a const whose value references
 /// another const; a name already on the chain has no compile-time value → not
 /// float-valued.
-fn moduleConstFloatValuedFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) bool {
+fn moduleConstFloatValuedFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) bool {
     if (moduleConstFrameContains(parent, name)) return false;
-    const ci = consts.get(name) orelse return false;
+    const ci = index.lookup(.module_const, name) orelse return false;
     if (isFloatConstType(ci.ty)) return true;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return isFloatValuedExpr(ci.value, ModuleConstCtx{ .consts = consts, .table = table, .frame = &frame });
+    return isFloatValuedExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
 }
 
 /// A module const may serve as an integer COUNT only when its DECLARED type is
@@ -312,12 +312,12 @@ pub fn isCountableConstType(table: *const types.TypeTable, ty: TypeId) bool {
     };
 }
 
-fn moduleConstIntFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i64 {
+fn moduleConstIntFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?i64 {
     if (moduleConstFrameContains(parent, name)) return null;
-    const ci = consts.get(name) orelse return null;
+    const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstIntExpr(ci.value, ModuleConstCtx{ .consts = consts, .table = table, .frame = &frame });
+    return evalConstIntExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
 }
 
 /// A name bound to a module-global integer constant → its value, else null.
@@ -333,8 +333,8 @@ fn moduleConstIntFramed(consts: *const std.StringHashMap(ModuleConstInfo), table
 /// RHS over other consts (`M :: 2; N :: M + 1` → 3) all resolve identically and
 /// everywhere a count is accepted. Cyclic consts fold to null (see
 /// `ModuleConstCtx`).
-pub fn moduleConstInt(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) ?i64 {
-    return moduleConstIntFramed(consts, table, name, null);
+pub fn moduleConstInt(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?i64 {
+    return moduleConstIntFramed(index, table, name, null);
 }
 
 /// FLOAT counterpart of `moduleConstInt`: a name bound to a NUMERIC module const
@@ -347,16 +347,16 @@ pub fn moduleConstInt(consts: *const std.StringHashMap(ModuleConstInfo), table: 
 /// the int path inside `evalConstFloatExpr` and never reaches the leaf arm that
 /// calls this; this surfaces the genuinely non-integral float so `floatToIntExact`
 /// can reject it.
-fn moduleConstFloatFramed(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?f64 {
+fn moduleConstFloatFramed(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8, parent: ?*const ModuleConstFrame) ?f64 {
     if (moduleConstFrameContains(parent, name)) return null;
-    const ci = consts.get(name) orelse return null;
+    const ci = index.lookup(.module_const, name) orelse return null;
     if (!isCountableConstType(table, ci.ty)) return null;
     var frame = ModuleConstFrame{ .name = name, .parent = parent };
-    return evalConstFloatExpr(ci.value, ModuleConstCtx{ .consts = consts, .table = table, .frame = &frame });
+    return evalConstFloatExpr(ci.value, ModuleConstCtx{ .index = index, .table = table, .frame = &frame });
 }
 
-pub fn moduleConstFloat(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) ?f64 {
-    return moduleConstFloatFramed(consts, table, name, null);
+pub fn moduleConstFloat(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) ?f64 {
+    return moduleConstFloatFramed(index, table, name, null);
 }
 
 /// True iff `name` is a FLOAT-valued module const — judged by VALUE, so it covers
@@ -365,8 +365,8 @@ pub fn moduleConstFloat(consts: *const std.StringHashMap(ModuleConstInfo), table
 /// const (`F : f64 : 2.5`). SINGLE source for the stateful (`Lowering`) and
 /// stateless (`type_bridge`) division-arm float checks, so they agree on which
 /// const-leaf divisions are float.
-pub fn moduleConstIsFloatTyped(consts: *const std.StringHashMap(ModuleConstInfo), table: *types.TypeTable, name: []const u8) bool {
-    return moduleConstFloatValuedFramed(consts, table, name, null);
+pub fn moduleConstIsFloatTyped(index: *const ProgramIndex, table: *types.TypeTable, name: []const u8) bool {
+    return moduleConstFloatValuedFramed(index, table, name, null);
 }
 
 /// True iff `node` is a FLOAT-valued compile-time expression — a float literal,
@@ -820,28 +820,69 @@ pub const ContextFieldDecl = struct {
     valid: bool = true,
 };
 
-/// Single lowering access point for declaration-name / import / visibility
+/// A UFCS alias declaration: the free function it names, and — for a `private`
+/// alias — the file it rewrites calls in. A public alias dispatches
+/// program-wide.
+pub const UfcsAlias = struct {
+    target: []const u8,
+    private_source: ?[]const u8 = null,
+};
+
+/// Everything lowering knows about ONE declaration. A declaration carries at
+/// most one of each fact; which facts it carries follows from what it declares.
+pub const DeclFacts = struct {
+    function: ?*const ast.FnDecl = null,
+    runtime_class: ?*const ast.RuntimeClassDecl = null,
+    global: ?GlobalInfo = null,
+    type_alias: ?TypeId = null,
+    struct_template: ?StructTemplate = null,
+    protocol: ?ProtocolDeclInfo = null,
+    protocol_ast: ?*const ast.ProtocolDecl = null,
+    module_const: ?ModuleConstInfo = null,
+    ufcs_alias: ?UfcsAlias = null,
+};
+
+pub const Fact = std.meta.FieldEnum(DeclFacts);
+
+pub fn FactValue(comptime fact: Fact) type {
+    return @typeInfo(@FieldType(DeclFacts, @tagName(fact))).optional.child;
+}
+
+/// Single lowering access point for declaration facts and import / visibility
 /// facts. `Lowering` embeds one `ProgramIndex` by value and reaches every
-/// fact through `self.program_index.<field>`.
+/// fact through `self.program_index.<accessor>`.
 ///
-/// OWNS the declaration maps below. BORROWS `module_scopes` / `import_graph` /
-/// `flat_import_graph` / `module_decls` / `namespace_edges` / `decl_table`
-/// (pointers into maps owned by the compilation driver, `core.zig`) — those are
-/// read-only views and are never freed here.
+/// A declaration's facts are stored under its `imports.DeclId` — the identity
+/// of where it is written. A name reaches a fact in two steps: the per-fact
+/// name index selects ONE `DeclId`, then `get` reads that declaration's fact.
+/// Two declarations spelled the same hold separate rows and can never merge.
+///
+/// OWNS `facts`, the name indexes and `owned_decl_table`. BORROWS
+/// `module_scopes` / `import_graph` / `flat_import_graph` / `module_decls` /
+/// `namespace_edges` / `decl_table` / `module_cache` (pointers into maps owned
+/// by the compilation driver, `core.zig`) — those are read-only views and are
+/// never freed here.
 ///
 /// Every owned map allocates through the compilation allocator passed to
-/// `init` (arena-backed in both the driver and the tests;
-/// no `page_allocator` field defaults). Written only by the
-/// declaration scan / registration code in `Lowering`; read everywhere else.
+/// `init` (arena-backed in both the driver and the tests).
 pub const ProgramIndex = struct {
     /// The lowering/compilation allocator (`module.alloc`), retained so the
-    /// source-keyed caches below can lazily create their inner per-source maps.
-    /// Lives for the whole compilation; the inner maps are freed in `deinit`.
+    /// source-keyed name indexes below can lazily create their inner maps.
     alloc: std.mem.Allocator,
+    /// Identities for a lowering with no driver behind it (the unit tests, the
+    /// comptime VM): `declarations()` prefers the borrowed `decl_table`.
+    owned_decl_table: imports.DeclTable,
+    /// The declaration facts, keyed by identity.
+    facts: std.AutoHashMap(imports.DeclId, DeclFacts),
+    /// Per-fact name → identity. Selection only; never storage.
+    names: [std.meta.fields(Fact).len]std.StringHashMap(imports.DeclId),
+    /// Declaring source → name → identity, for the facts a source-aware
+    /// resolution partitions (`type_alias` / `module_const` / `global`).
+    source_names: std.StringHashMap(std.StringHashMap(imports.DeclId)),
+    /// Erased/bound protocol TypeId → its declaration.
+    protocol_types: std.AutoHashMap(TypeId, imports.DeclId),
 
     // ── Import / visibility ──
-    /// Declaration name → is the function imported (declared `extern`)?
-    import_flags: std.StringHashMap(bool),
     /// Per-module visible names, keyed by source file. Borrowed view.
     module_scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)) = null,
     /// Module path → set of directly imported paths (param_impl visibility
@@ -861,62 +902,12 @@ pub const ProgramIndex = struct {
     /// Borrowed view.
     namespace_edges: ?*imports.NamespaceEdges = null,
     /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
-    /// in parallel with the import facts. Borrowed view; nothing in lowering
-    /// consumes it for selection.
+    /// in parallel with the import facts. Borrowed view.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `@import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
     /// contained; the splice reads its module back out of here. Borrowed view.
     module_cache: ?*const imports.ModuleCache = null,
-    // ── Declaration maps ──
-    /// Function name → AST decl.
-    fn_ast_map: std.StringHashMap(*const ast.FnDecl),
-    /// Module-qualified function name (`ns.fn`) → its declaring source file.
-    /// A qualified alias is registered in `fn_ast_map` WITHOUT an eager
-    /// `declareFunction`, so `lazyLowerFunction` lowers it through the
-    /// null-FuncId `lowerFunction` path with no `Function.source_file` to
-    /// restore. This carries the alias's OWN module source so its body lowers
-    /// in the right visibility context — its intra-module / own-import callees
-    /// resolve. Keyed/allocated with the lowering allocator.
-    qualified_fn_source: std.StringHashMap([]const u8),
-    /// sx alias → RuntimeClassDecl (jni_class / objc_class / swift_class / ... — registered in scan pass).
-    runtime_class_map: std.StringHashMap(*const ast.RuntimeClassDecl),
-    /// `@run` global name → GlobalId.
-    global_names: std.StringHashMap(GlobalInfo),
-    /// Type alias name → target TypeId. The single-source alias table; passed
-    /// explicitly to `TypeResolver` / `type_bridge` resolution (no borrow).
-    type_alias_map: std.StringHashMap(TypeId),
-    /// Generic struct name → template.
-    struct_template_map: std.StringHashMap(StructTemplate),
-    /// `DeclId` → generic struct template — the DeclId-keyed analogue of
-    /// `struct_template_map`, built in parallel during `registerStructDecl`.
-    /// Nothing reads it for selection; `struct_template_map` is the live consumer.
-    struct_template_by_decl: std.AutoHashMap(imports.DeclId, StructTemplate),
-    /// Protocol name → protocol info.
-    protocol_decl_map: std.StringHashMap(ProtocolDeclInfo),
-    /// Protocol name → AST node.
-    protocol_ast_map: std.StringHashMap(*const ast.ProtocolDecl),
-    /// Module-level value constants (e.g. AF_INET :i32: 2).
-    module_const_map: std.StringHashMap(ModuleConstInfo),
-    /// UFCS alias name → target function name.
-    ufcs_alias_map: std.StringHashMap([]const u8),
-    /// UFCS alias name → declaring source file, for aliases declared
-    /// `private`. Absent = public (dispatches program-wide, the pre-`private`
-    /// behavior). Present = the alias rewrites calls only in that file.
-    private_ufcs_alias_source: std.StringHashMap([]const u8),
-
-    // ── Source-keyed semantic caches ──
-    // The source-partitioned analogues of `type_alias_map` / `module_const_map`
-    // / `global_names`, keyed `source path → name → X`. Written by the same scan
-    // (`scanDecls` in lower.zig), keyed by the registering decl's source. The
-    // global maps above are the ONLY readers. These maps OWN their inner
-    // per-source maps and free them in `deinit`.
-    /// Type alias name → target TypeId, partitioned by declaring source.
-    type_aliases_by_source: std.StringHashMap(std.StringHashMap(TypeId)),
-    /// Module-level value const → info, partitioned by declaring source.
-    module_consts_by_source: std.StringHashMap(std.StringHashMap(ModuleConstInfo)),
-    /// `@run` / top-level global name → GlobalInfo, partitioned by declaring source.
-    globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──
     /// Every `@context.extend` declaration in the compilation, sorted by
@@ -929,79 +920,191 @@ pub const ProgramIndex = struct {
     context_extensions: []ContextFieldDecl = &.{},
 
     pub fn init(alloc: std.mem.Allocator) ProgramIndex {
+        var names: [std.meta.fields(Fact).len]std.StringHashMap(imports.DeclId) = undefined;
+        for (&names) |*index| index.* = std.StringHashMap(imports.DeclId).init(alloc);
         return .{
             .alloc = alloc,
-            .import_flags = std.StringHashMap(bool).init(alloc),
-            .fn_ast_map = std.StringHashMap(*const ast.FnDecl).init(alloc),
-            .qualified_fn_source = std.StringHashMap([]const u8).init(alloc),
-            .global_names = std.StringHashMap(GlobalInfo).init(alloc),
-            .runtime_class_map = std.StringHashMap(*const ast.RuntimeClassDecl).init(alloc),
-            .type_alias_map = std.StringHashMap(TypeId).init(alloc),
-            .struct_template_map = std.StringHashMap(StructTemplate).init(alloc),
-            .struct_template_by_decl = std.AutoHashMap(imports.DeclId, StructTemplate).init(alloc),
-            .protocol_decl_map = std.StringHashMap(ProtocolDeclInfo).init(alloc),
-            .protocol_ast_map = std.StringHashMap(*const ast.ProtocolDecl).init(alloc),
-            .module_const_map = std.StringHashMap(ModuleConstInfo).init(alloc),
-            .ufcs_alias_map = std.StringHashMap([]const u8).init(alloc),
-            .private_ufcs_alias_source = std.StringHashMap([]const u8).init(alloc),
-            .type_aliases_by_source = std.StringHashMap(std.StringHashMap(TypeId)).init(alloc),
-            .module_consts_by_source = std.StringHashMap(std.StringHashMap(ModuleConstInfo)).init(alloc),
-            .globals_by_source = std.StringHashMap(std.StringHashMap(GlobalInfo)).init(alloc),
+            .owned_decl_table = imports.DeclTable.init(alloc),
+            .facts = std.AutoHashMap(imports.DeclId, DeclFacts).init(alloc),
+            .names = names,
+            .source_names = std.StringHashMap(std.StringHashMap(imports.DeclId)).init(alloc),
+            .protocol_types = std.AutoHashMap(TypeId, imports.DeclId).init(alloc),
         };
     }
 
     pub fn deinit(self: *ProgramIndex) void {
-        // Owned maps only — module_scopes / import_graph / flat_import_graph /
-        // module_decls / namespace_edges / decl_table are borrowed.
-        self.import_flags.deinit();
-        self.fn_ast_map.deinit();
-        self.qualified_fn_source.deinit();
-        self.runtime_class_map.deinit();
-        self.global_names.deinit();
-        self.type_alias_map.deinit();
-        self.struct_template_map.deinit();
-        self.struct_template_by_decl.deinit();
-        self.protocol_decl_map.deinit();
-        self.protocol_ast_map.deinit();
-        self.module_const_map.deinit();
-        self.ufcs_alias_map.deinit();
-        self.private_ufcs_alias_source.deinit();
-        deinitBySource(TypeId, &self.type_aliases_by_source);
-        deinitBySource(ModuleConstInfo, &self.module_consts_by_source);
-        deinitBySource(GlobalInfo, &self.globals_by_source);
+        self.owned_decl_table.deinit();
+        self.facts.deinit();
+        for (&self.names) |*index| index.deinit();
+        var it = self.source_names.valueIterator();
+        while (it.next()) |index| index.deinit();
+        self.source_names.deinit();
+        self.protocol_types.deinit();
     }
 
-    /// Free every inner per-source map, then the outer map.
-    fn deinitBySource(comptime V: type, outer: *std.StringHashMap(std.StringHashMap(V))) void {
-        var it = outer.valueIterator();
-        while (it.next()) |inner| inner.deinit();
-        outer.deinit();
+    // ── Identities ──
+
+    pub fn declarations(self: *ProgramIndex) *imports.DeclTable {
+        return self.decl_table orelse &self.owned_decl_table;
     }
 
-    /// Insert `name → value` into the per-source map for `source`, creating the
-    /// inner map on first use. OOM is swallowed to mirror the `catch {}` global
-    /// writes this shadows.
-    fn putBySource(comptime V: type, outer: *std.StringHashMap(std.StringHashMap(V)), alloc: std.mem.Allocator, source: []const u8, name: []const u8, value: V) void {
-        const gop = outer.getOrPut(source) catch return;
-        if (!gop.found_existing) gop.value_ptr.* = std.StringHashMap(V).init(alloc);
-        gop.value_ptr.put(name, value) catch {};
+    pub fn declaration(self: *const ProgramIndex, id: imports.DeclId) imports.DeclInfo {
+        return (self.decl_table orelse &self.owned_decl_table).get(id);
     }
 
-    pub fn putTypeAliasBySource(self: *ProgramIndex, source: []const u8, name: []const u8, tid: TypeId) void {
-        putBySource(TypeId, &self.type_aliases_by_source, self.alloc, source, name, tid);
+    pub fn idForRef(self: *const ProgramIndex, ref: imports.RawDeclRef) ?imports.DeclId {
+        return (self.decl_table orelse &self.owned_decl_table).declIdForRef(ref);
     }
 
-    pub fn putModuleConstBySource(self: *ProgramIndex, source: []const u8, name: []const u8, info: ModuleConstInfo) void {
-        putBySource(ModuleConstInfo, &self.module_consts_by_source, self.alloc, source, name, info);
+    /// The identity of the declaration `ref` authors, interning it when the
+    /// driver's walk never reached it (a synthesized or comptime-registered
+    /// declaration).
+    pub fn internRef(self: *ProgramIndex, ref: imports.RawDeclRef, source: ?[]const u8) imports.DeclId {
+        const name = switch (ref) {
+            inline else => |d| d.name,
+        };
+        return self.declarations().internRef(source orelse "", name, ref, .{ .start = 0, .end = 0 }) catch @panic("out of memory");
     }
 
-    pub fn putGlobalBySource(self: *ProgramIndex, source: []const u8, name: []const u8, info: GlobalInfo) void {
-        putBySource(GlobalInfo, &self.globals_by_source, self.alloc, source, name, info);
+    pub fn internDecl(self: *ProgramIndex, decl: *const Node, source: ?[]const u8) imports.DeclId {
+        return self.declarations().intern(source orelse "", decl) catch @panic("out of memory");
     }
 
-    /// Mirror a `module_const_map.remove` into the per-source map: drop `name`
-    /// from `source`'s inner map (a no-op if the source/name is absent).
-    pub fn removeModuleConstBySource(self: *ProgramIndex, source: []const u8, name: []const u8) void {
-        if (self.module_consts_by_source.getPtr(source)) |inner| _ = inner.remove(name);
+    /// A fresh identity for a name lowering mints with no authoring AST node.
+    pub fn synthetic(self: *ProgramIndex, name: []const u8, source: ?[]const u8) imports.DeclId {
+        return self.declarations().internSynthetic(source orelse "", name) catch @panic("out of memory");
+    }
+
+    // ── Facts ──
+
+    pub fn nameIndex(self: *const ProgramIndex, comptime fact: Fact) *const std.StringHashMap(imports.DeclId) {
+        return &self.names[@intFromEnum(fact)];
+    }
+
+    pub fn get(self: *const ProgramIndex, comptime fact: Fact, id: imports.DeclId) ?FactValue(fact) {
+        const row = self.facts.getPtr(id) orelse return null;
+        return @field(row, @tagName(fact));
+    }
+
+    pub fn getPtr(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId) ?*FactValue(fact) {
+        const row = self.facts.getPtr(id) orelse return null;
+        if (@field(row, @tagName(fact)) == null) return null;
+        return &@field(row, @tagName(fact)).?;
+    }
+
+    pub fn forRef(self: *const ProgramIndex, comptime fact: Fact, ref: imports.RawDeclRef) ?FactValue(fact) {
+        return self.get(fact, self.idForRef(ref) orelse return null);
+    }
+
+    pub fn lookup(self: *const ProgramIndex, comptime fact: Fact, name: []const u8) ?FactValue(fact) {
+        return self.get(fact, self.nameIndex(fact).get(name) orelse return null);
+    }
+
+    pub fn lookupPtr(self: *ProgramIndex, comptime fact: Fact, name: []const u8) ?*FactValue(fact) {
+        return self.getPtr(fact, self.names[@intFromEnum(fact)].get(name) orelse return null);
+    }
+
+    pub fn lookupInSource(self: *const ProgramIndex, comptime fact: Fact, source: []const u8, name: []const u8) ?FactValue(fact) {
+        const index = self.source_names.get(source) orelse return null;
+        return self.get(fact, index.get(name) orelse return null);
+    }
+
+    pub fn containsInSource(self: *const ProgramIndex, comptime fact: Fact, source: []const u8, name: []const u8) bool {
+        return self.lookupInSource(fact, source, name) != null;
+    }
+
+    pub fn contains(self: *const ProgramIndex, comptime fact: Fact, name: []const u8) bool {
+        return self.lookup(fact, name) != null;
+    }
+
+    /// Give `id` this fact without touching any name index.
+    pub fn set(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId, value: FactValue(fact)) void {
+        const gop = self.facts.getOrPut(id) catch @panic("out of memory");
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        @field(gop.value_ptr, @tagName(fact)) = value;
+    }
+
+    /// Store the fact on `id` and make `name` select it.
+    pub fn put(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId, name: []const u8, value: FactValue(fact)) void {
+        self.set(fact, id, value);
+        self.names[@intFromEnum(fact)].put(name, id) catch @panic("out of memory");
+    }
+
+    /// Store the fact and make `name` select it both program-wide and within
+    /// `source`, so a source-aware resolution reaches the author written there
+    /// rather than whichever same-name declaration the program-wide index holds.
+    pub fn putInSource(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId, source: ?[]const u8, name: []const u8, value: FactValue(fact)) void {
+        self.put(fact, id, name, value);
+        const src = source orelse return;
+        const gop = self.source_names.getOrPut(src) catch return;
+        if (!gop.found_existing) gop.value_ptr.* = std.StringHashMap(imports.DeclId).init(self.alloc);
+        gop.value_ptr.put(name, id) catch {};
+    }
+
+    /// Take `fact` away from this one declaration. Its names keep selecting
+    /// it and answer null; another declaration's same-named fact is untouched.
+    pub fn dropFact(self: *ProgramIndex, comptime fact: Fact, id: imports.DeclId) void {
+        if (self.facts.getPtr(id)) |row| @field(row, @tagName(fact)) = null;
+    }
+
+    // ── Kind-specific accessors ──
+
+    pub fn protocolInfo(self: *const ProgramIndex, ty: TypeId) ?ProtocolDeclInfo {
+        return self.get(.protocol, self.protocol_types.get(ty) orelse return null);
+    }
+
+    pub fn bindProtocolType(self: *ProgramIndex, ty: TypeId, id: imports.DeclId) void {
+        self.protocol_types.put(ty, id) catch {};
+    }
+
+    /// The function declaration `ref` authors — reading it out of the facts, or
+    /// unwrapping the author itself the first time and recording it.
+    pub fn functionForAuthor(self: *ProgramIndex, ref: imports.RawDeclRef, source: ?[]const u8) ?*const ast.FnDecl {
+        const id = self.internRef(ref, source);
+        if (self.get(.function, id)) |fd| return fd;
+        const authored = self.declaration(id).ref orelse return null;
+        const fd = switch (authored) {
+            .fn_decl => |fd| fd,
+            .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else return null,
+            else => return null,
+        };
+        self.set(.function, id, fd);
+        return fd;
+    }
+
+    pub fn registerFunction(self: *ProgramIndex, name: []const u8, fd: *const ast.FnDecl, source: ?[]const u8) void {
+        const id = self.internRef(.{ .fn_decl = fd }, fd.body.source_file orelse source);
+        self.put(.function, id, name, fd);
+    }
+
+    /// Walk every `(name, fact)` pair: the names that select a declaration
+    /// carrying `fact`, with that declaration's value.
+    pub fn Iterator(comptime fact: Fact) type {
+        return struct {
+            index: *const ProgramIndex,
+            names: std.StringHashMap(imports.DeclId).Iterator,
+
+            pub const Entry = struct { name: []const u8, id: imports.DeclId, value: FactValue(fact) };
+
+            pub fn next(self: *@This()) ?Entry {
+                while (self.names.next()) |e| {
+                    if (self.index.get(fact, e.value_ptr.*)) |v|
+                        return .{ .name = e.key_ptr.*, .id = e.value_ptr.*, .value = v };
+                }
+                return null;
+            }
+        };
+    }
+
+    pub fn iterator(self: *const ProgramIndex, comptime fact: Fact) Iterator(fact) {
+        return .{ .index = self, .names = self.names[@intFromEnum(fact)].iterator() };
+    }
+
+    /// The file the declaration `name` selects is written in, or null when it
+    /// carries none.
+    pub fn functionSource(self: *const ProgramIndex, name: []const u8) ?[]const u8 {
+        const id = self.nameIndex(.function).get(name) orelse return null;
+        const source = self.declaration(id).source;
+        return if (source.len == 0) null else source;
     }
 };

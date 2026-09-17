@@ -649,7 +649,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
             const ref = kv.value_ptr.*;
             const id = table.declIdForRef(ref) orelse return error.MissingDeclId;
             const info = table.get(id);
-            try std.testing.expectEqual(imports.authorNodePtrOf(ref), imports.authorNodePtrOf(info.ref));
+            try std.testing.expectEqual(id, table.declIdForRef(info.ref.?).?);
             try std.testing.expectEqualStrings(kv.key_ptr.*, info.name);
             try std.testing.expectEqualStrings(m.value_ptr.source, info.source);
             seen += 1;
@@ -666,7 +666,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
         .const_decl => |cd| if (cd.value.data == .struct_decl) &cd.value.data.struct_decl else return error.BoxNotStruct,
         else => return error.BoxNotStruct,
     };
-    const box_id = table.declIdForStructDecl(box_sd) orelse return error.BoxNoDeclId;
+    const box_id = table.declIdForRef(.{ .struct_decl = box_sd }) orelse return error.BoxNoDeclId;
     try std.testing.expectEqual(imports.DeclKind.@"struct", table.get(box_id).kind);
     try std.testing.expectEqualStrings("Box", table.get(box_id).name);
 

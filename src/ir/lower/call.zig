@@ -82,7 +82,7 @@ const DestinationFirstUfcs = struct {
 fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?DestinationFirstUfcs {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
-    const fd0 = self.program_index.fn_ast_map.get(eff_field) orelse return null;
+    const fd0 = self.program_index.lookup(.function, eff_field) orelse return null;
     if (alias_target == null and !fd0.is_ufcs) return null;
 
     // A method the receiver's own type provides wins over a free function.
@@ -143,7 +143,6 @@ fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeI
     return self.firstUnimplementedMethod(want, cname, recv_ty) == null;
 }
 
-
 /// A destination-first target cannot be dispatched from the fall-through arm: the
 /// receiver was lowered on the way down, and that parameter takes the expression
 /// rather than its value (§5.2). The dot-call spelling is re-read as an ordinary
@@ -198,8 +197,8 @@ fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     if (self.getStructTypeName(ty)) |sname| {
         if (self.genericInstanceMethod(sname, name) != null) return true;
         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, name }) catch return true;
-        if (self.program_index.fn_ast_map.get(qualified) != null) return true;
-        if (self.program_index.runtime_class_map.get(sname) != null) return true;
+        if (self.program_index.lookup(.function, qualified) != null) return true;
+        if (self.program_index.lookup(.runtime_class, sname) != null) return true;
     }
     if (self.getProtocolInfo(ty)) |pi| {
         if (protocolHasMethod(pi, name)) return true;
@@ -689,7 +688,7 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
         switch (c.callee.data) {
             .identifier => |id| {
                 const eff = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                if (self.program_index.fn_ast_map.get(eff)) |fd| break :blk fd;
+                if (self.program_index.lookup(.function, eff)) |fd| break :blk fd;
                 // A local closure / fn-pointer binding has a fixed signature —
                 // it can never be slice-variadic.
                 if (self.scope) |scope| {
@@ -713,7 +712,7 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
                 // Namespaced / UFCS free fn by bare member name; anything we
                 // can't resolve stays conservative.
                 const eff = self.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.program_index.fn_ast_map.get(eff)) |fd| break :blk fd;
+                if (self.program_index.lookup(.function, eff)) |fd| break :blk fd;
                 return true;
             },
             else => return true,
@@ -804,8 +803,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     if (c.callee.data == .type_expr) {
         const tname = c.callee.data.type_expr.name;
         const eff = if (self.scope) |scope| scope.lookupFn(tname) orelse tname else tname;
-        const fd: ?*const ast.FnDecl = self.program_index.fn_ast_map.get(eff) orelse
-            self.program_index.fn_ast_map.get(tname);
+        const fd: ?*const ast.FnDecl = self.program_index.lookup(.function, eff) orelse
+            self.program_index.lookup(.function, tname);
         if (fd) |decl| if (decl.is_raw) {
             const id_node = self.alloc.create(Node) catch unreachable;
             id_node.* = .{ .span = c.callee.span, .data = .{ .identifier = .{ .name = tname, .is_raw = true } } };
@@ -935,7 +934,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (std.mem.eql(u8, eff_name, id_name) and
             self.ufcsAliasTarget(id_name) == null and
             !self.respelled_ufcs_callees.contains(c.callee) and
-            self.program_index.fn_ast_map.contains(eff_name) and
+            self.program_index.contains(.function, eff_name) and
             !callableLocalShadow(self, id_name) and
             intrinsics.findByName(eff_name) == null and
             !self.isNameVisible(eff_name))
@@ -949,7 +948,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return Ref.none;
         }
     }
-
 
     // Early detection of comptime-expanded calls (e.g. print) — skip arg evaluation
     // since lowerComptimeCall re-evaluates args from AST (avoiding double evaluation)
@@ -983,7 +981,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         else if (author_not_callable or callableLocalShadow(self, c.callee.data.identifier.name))
             null
         else
-            self.program_index.fn_ast_map.get(early_name);
+            self.program_index.lookup(.function, early_name);
         if (early_fd) |fd| {
             if (isPackFn(fd)) {
                 // Protocol packs (`..xs: P`) and comptime type-packs
@@ -1585,7 +1583,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 else if (author_not_callable)
                     null
                 else
-                    self.program_index.fn_ast_map.get(func_name);
+                    self.program_index.lookup(.function, func_name);
                 if (arity_fd) |fd| {
                     // A leftover slice/array-spread placeholder into a callee
                     // with NO variadic slot to consume it: diagnose the spread
@@ -1616,7 +1614,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             // A value-authored name has no callable declaration here, so the
             // name-keyed map does not answer for it.
-            const named_fd: ?*const ast.FnDecl = if (author_not_callable) null else self.program_index.fn_ast_map.get(func_name);
+            const named_fd: ?*const ast.FnDecl = if (author_not_callable) null else self.program_index.lookup(.function, func_name);
             // Check for comptime-expanded or generic functions
             if (named_fd) |fd| {
                 if (hasComptimeParams(fd)) {
@@ -1631,7 +1629,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (!author_not_callable) {
                 // First attempt: function may already be declared (from scanDecls)
                 // but not yet lowered. Try lazy lowering if needed.
-                if (self.program_index.fn_ast_map.contains(func_name) and !self.lowered_functions.contains(func_name)) {
+                if (self.program_index.contains(.function, func_name) and !self.lowered_functions.contains(func_name)) {
                     self.lazyLowerFunction(func_name);
                 }
                 if (self.resolveFuncByName(func_name)) |fid| {
@@ -1639,7 +1637,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const ret_ty = func.ret;
                     const params = func.params;
                     // Pack variadic args into a slice if the function has a variadic param
-                    if (self.program_index.fn_ast_map.get(func_name)) |fd| {
+                    if (self.program_index.lookup(.function, func_name)) |fd| {
                         self.packVariadicCallArgs(fd, c, &args);
                     }
                     const final_args = self.prependCtxIfNeeded(func, args.items);
@@ -1708,7 +1706,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // NewObject. Falls through to existing paths when no match.
             if (fa.object.data == .identifier) {
                 const alias = fa.object.data.identifier.name;
-                if (self.program_index.runtime_class_map.get(alias)) |fcd| {
+                if (self.program_index.lookup(.runtime_class, alias)) |fcd| {
                     for (fcd.members) |m| switch (m) {
                         .method => |md| if (md.is_static and std.mem.eql(u8, md.name, fa.field)) {
                             return self.lowerRuntimeStaticCall(fcd, md, args.items, c.callee.span);
@@ -1748,7 +1746,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const inner_name = inner_call.callee.data.identifier.name;
                     const resolved = if (self.scope) |scope| (scope.lookupFn(inner_name) orelse inner_name) else inner_name;
 
-                    if (self.program_index.fn_ast_map.get(resolved)) |fd| {
+                    if (self.program_index.lookup(.function, resolved)) |fd| {
                         // Only a `-> Type` generic is a type constructor. A
                         // value-returning generic reaches here as an ordinary
                         // method receiver (`el(Leaf{…}).opacity(…)`), and
@@ -1958,8 +1956,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
                 // Check for comptime-expanded or generic functions (try both names)
-                const effective_name = if (self.program_index.fn_ast_map.get(qualified_name) != null) qualified_name else func_name;
-                if (self.program_index.fn_ast_map.get(effective_name)) |fd| {
+                const effective_name = if (self.program_index.lookup(.function, qualified_name) != null) qualified_name else func_name;
+                if (self.program_index.lookup(.function, effective_name)) |fd| {
                     if (hasComptimeParams(fd)) {
                         return self.lowerComptimeCall(fd, c);
                     }
@@ -1967,14 +1965,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         return self.lowerGenericCall(fd, effective_name, c, args.items);
                     }
                 }
-                if (self.program_index.fn_ast_map.contains(effective_name) and !self.lowered_functions.contains(effective_name)) {
+                if (self.program_index.contains(.function, effective_name) and !self.lowered_functions.contains(effective_name)) {
                     self.lazyLowerFunction(effective_name);
                 }
                 if (self.resolveFuncByName(effective_name)) |fid| {
                     const func = &self.module.functions.items[@intFromEnum(fid)];
                     const ret_ty = func.ret;
                     const params = func.params;
-                    if (self.program_index.fn_ast_map.get(effective_name)) |fd| {
+                    if (self.program_index.lookup(.function, effective_name)) |fd| {
                         if (self.checkCallArity(fd, effective_name, args.items.len, false, c.callee.span)) return Ref.none;
                         self.packVariadicCallArgs(fd, c, &args);
                     }
@@ -2172,7 +2170,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // shape, descriptor derived from the sx signature.
             const struct_name = self.getStructTypeName(obj_ty);
             if (struct_name) |sname_for_runtime| {
-                if (self.program_index.runtime_class_map.get(sname_for_runtime)) |fcd| {
+                if (self.program_index.lookup(.runtime_class, sname_for_runtime)) |fcd| {
                     return self.lowerRuntimeMethodCall(fcd, fa.field, obj, args.items, c.callee.span);
                 }
             }
@@ -2243,7 +2241,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 else if (nominal_author)
                     null
                 else
-                    self.program_index.fn_ast_map.get(qualified);
+                    self.program_index.lookup(.function, qualified);
                 if (generic_method_fd) |gen_fd| {
                     if (gen_fd.type_params.len > 0) {
                         // Effective AST args: prepend receiver so positions
@@ -2256,7 +2254,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         var gbindings = callBindings(self, gen_fd, eff_args.items, method_args.items);
                         defer gbindings.deinit();
 
-                        const generic_base =if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
+                        const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
                         const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
                         if (!self.lowered_functions.contains(gmangled)) {
                             self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
@@ -2322,7 +2320,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                 // Try non-generic qualified method
                 if (!nominal_author) {
-                    const plain_method_fd = self.program_index.fn_ast_map.get(qualified);
+                    const plain_method_fd = self.program_index.lookup(.function, qualified);
                     if (plain_method_fd) |fd| {
                         if (self.checkCallArity(fd, qualified, method_args.items.len, true, c.callee.span)) return Ref.none;
                         if (!self.lowered_functions.contains(qualified)) {
@@ -2371,7 +2369,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // diagnostic; otherwise the existing first-wins lazy path.
             const alias_target = self.ufcsAliasTarget(fa.field);
             const eff_field = alias_target orelse fa.field;
-            const ufcs_fd = self.program_index.fn_ast_map.get(eff_field);
+            const ufcs_fd = self.program_index.lookup(.function, eff_field);
             const ufcs_opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
 
             if (ufcs_opted_in) {
@@ -2550,7 +2548,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         }
                         if (self.hasPlainStructAuthor(tgt))
                             return self.emitError(el.name, c.callee.span);
-                        if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+                        if (self.program_index.lookup(.function, qualified)) |fd| {
                             if (fd.type_params.len > 0) {
                                 return self.lowerGenericCall(fd, qualified, c, args.items);
                             }
@@ -3867,10 +3865,10 @@ fn lowerTagIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
 /// The integer types a runtime tag width names, sign-encoded as
 /// `variantTagWidth` does: positive widths are unsigned, negative signed.
 const tag_width_types = [_]struct { width: i64, ty: TypeId }{
-    .{ .width = 1, .ty = .u8 },   .{ .width = -1, .ty = .i8 },
-    .{ .width = 2, .ty = .u16 },  .{ .width = -2, .ty = .i16 },
-    .{ .width = 4, .ty = .u32 },  .{ .width = -4, .ty = .i32 },
-    .{ .width = 8, .ty = .u64 },  .{ .width = -8, .ty = .i64 },
+    .{ .width = 1, .ty = .u8 },  .{ .width = -1, .ty = .i8 },
+    .{ .width = 2, .ty = .u16 }, .{ .width = -2, .ty = .i16 },
+    .{ .width = 4, .ty = .u32 }, .{ .width = -4, .ty = .i32 },
+    .{ .width = 8, .ty = .u64 }, .{ .width = -8, .ty = .i64 },
 };
 
 /// A view of a boxed enum's tag word, typed by its tag type.
@@ -4923,7 +4921,7 @@ fn namedCalleeDecl(
                     }
                     break :blk scoped;
                 };
-                if (self.program_index.fn_ast_map.get(eff_name)) |fd| {
+                if (self.program_index.lookup(.function, eff_name)) |fd| {
                     return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                 }
             }
@@ -4954,7 +4952,7 @@ fn namedCalleeDecl(
                 if (obj_name) |name| {
                     if (!self.identifierBindsVisibleValue(name)) {
                         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ name, fa.field }) catch fa.field;
-                        if (self.program_index.fn_ast_map.get(qualified) orelse self.program_index.fn_ast_map.get(fa.field)) |fd| {
+                        if (self.program_index.lookup(.function, qualified) orelse self.program_index.lookup(.function, fa.field)) |fd| {
                             return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
                         }
                         return null;
@@ -4983,7 +4981,7 @@ fn namedCalleeDecl(
                 }
                 break :blk if (self.scope) |scope| scope.lookupFn(fa.field) orelse fa.field else fa.field;
             };
-            if (self.program_index.fn_ast_map.get(eff)) |fd| {
+            if (self.program_index.lookup(.function, eff)) |fd| {
                 if (fd.is_ufcs or self.ufcsAliasTarget(fa.field) != null) {
                     return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 1 };
                 }
@@ -5414,7 +5412,7 @@ pub fn expandCallDefaults(
                 // spliced args would reach the local's call_indirect as
                 // phantom extras.
                 if (callableLocalShadow(self, id.name)) return null;
-                break :blk self.program_index.fn_ast_map.get(eff_name) orelse return null;
+                break :blk self.program_index.lookup(.function, eff_name) orelse return null;
             },
             // Namespace call `mod.fn(args)` — args map directly to params
             // (no `self` prepend), so default expansion is the same shape as
@@ -5449,7 +5447,7 @@ pub fn expandCallDefaults(
                 const name = obj_name orelse return null;
                 if (self.identifierBindsVisibleValue(name)) return null;
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ name, fa.field }) catch fa.field;
-                break :blk self.program_index.fn_ast_map.get(qualified) orelse self.program_index.fn_ast_map.get(fa.field) orelse return null;
+                break :blk self.program_index.lookup(.function, qualified) orelse self.program_index.lookup(.function, fa.field) orelse return null;
             },
             .enum_literal => |el| {
                 const tgt = self.target_type orelse return null;
@@ -5695,7 +5693,7 @@ pub fn resolveCallParamTypes(
                     const func = &self.module.functions.items[@intFromEnum(fid)];
                     return coerceDemands(self, self.userParamTypes(func));
                 }
-                if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+                if (self.program_index.lookup(.function, qualified)) |fd| {
                     return astCalleeParamTypes(self, fd, c.args);
                 }
                 // A plain function re-export may collapse to its terminal
@@ -5774,7 +5772,7 @@ pub fn resolveCallParamTypes(
             // whatever `self.target_type` was on entry — typically the
             // enclosing fn's return type — which silently truncates `xx ptr`
             // casts inside e.g. a `BOOL`-returning method body.
-            if (self.program_index.runtime_class_map.get(sname)) |fcd| {
+            if (self.program_index.lookup(.runtime_class, sname)) |fcd| {
                 if (self.findRuntimeMethodInChain(fcd, fa.field)) |found| {
                     const md = found.method;
                     const saved_fc = self.current_runtime_class;
@@ -5835,7 +5833,7 @@ pub fn resolveCallParamTypes(
                     }
                 }
                 // Try AST map (not yet lowered)
-                if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+                if (self.program_index.lookup(.function, qualified)) |fd| {
                     if (fd.params.len > 0) {
                         // A generic method's params (`xs: []$T`) only have a
                         // meaning under this call site's bindings. Resolving them
@@ -5947,7 +5945,7 @@ pub fn resolveCallParamTypes(
         }
 
         // Check AST map for function signatures
-        if (self.program_index.fn_ast_map.get(name)) |fd| {
+        if (self.program_index.lookup(.function, name)) |fd| {
             return astCalleeParamTypes(self, fd, c.args);
         }
     }

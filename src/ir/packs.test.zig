@@ -61,7 +61,7 @@ test "PackResolver.packTypeArgs: missing projection → diagnostic + .unresolved
     var constraint = ast.Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "Type" } } };
     const tparams = [_]ast.StructTypeParam{.{ .name = "T", .constraint = &constraint }};
     const pd = ast.ProtocolDecl{ .name = "P", .methods = &.{}, .type_params = &tparams };
-    try lowering.program_index.protocol_ast_map.put("P", &pd);
+    lowering.program_index.put(.protocol_ast, lowering.program_index.synthetic("P", null), "P", &pd);
 
     var pat = std.StringHashMap([]const TypeId).init(alloc);
     const elems = [_]TypeId{.i64};

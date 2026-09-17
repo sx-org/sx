@@ -1107,8 +1107,8 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             // Not a scope binding — skip program-wide function / type names so
             // a closure that merely CALLS a top-level fn (or names a type)
             // doesn't try to capture it.
-            if (self.program_index.fn_ast_map.contains(id.name)) return;
-            if (self.program_index.struct_template_map.contains(id.name)) return;
+            if (self.program_index.contains(.function, id.name)) return;
+            if (self.program_index.contains(.struct_template, id.name)) return;
         },
         .binary_op => |bo| {
             self.collectCaptures(bo.lhs, param_names, captures);

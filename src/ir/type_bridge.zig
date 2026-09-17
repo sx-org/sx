@@ -10,24 +10,14 @@ const StringId = ir_types.StringId;
 const type_resolver = @import("type_resolver.zig");
 const program_index_mod = @import("program_index.zig");
 const contracts = @import("../contracts.zig");
-const ModuleConstInfo = program_index_mod.ModuleConstInfo;
-
-/// The single-source type-alias table (`ProgramIndex.type_alias_map`), threaded
-/// explicitly through every name-resolving entry point so a bare name like
-/// `ShaderHandle` (declared `ShaderHandle :: u32`) resolves to its target
-/// rather than a fresh empty-struct stub. There is no hidden alias state —
-/// callers pass the map (or `null` for contexts that never see aliases, e.g.
-/// unit tests).
-pub const AliasMap = ?*const std.StringHashMap(TypeId);
-
-/// The module-global constant table (`ProgramIndex.module_const_map`), threaded
-/// alongside the alias map so a named-const array dimension (`N :: 16; [N]T`)
-/// resolves to the same length as a literal dimension on EVERY registration-time
-/// path — type aliases (`Arr :: [N]T`), inline union/enum field types — not just
-/// the stateful body-lowering path. Without it the stateless dim resolver had no
-/// way to evaluate a named const and silently fabricated a 0 length.
-/// `null` for contexts with no const table (e.g. unit tests).
-pub const ConstMap = ?*const std.StringHashMap(ModuleConstInfo);
+/// The declaration facts (`ProgramIndex`), threaded explicitly through every
+/// name-resolving entry point so a bare name like `ShaderHandle` (declared
+/// `ShaderHandle :: u32`) resolves to its target rather than a fresh
+/// empty-struct stub, and a named-const array dimension (`N :: 16; [N]T`)
+/// resolves to the same length as a literal one. There is no hidden state —
+/// callers pass the index, or `null` for contexts that see no declarations
+/// (e.g. unit tests).
+pub const Facts = ?*const program_index_mod.ProgramIndex;
 
 /// Binding-free element-recursion adapter for `TypeResolver.resolveCompound`:
 /// nested element types resolve through `type_bridge.resolveAstType` (the
@@ -36,10 +26,9 @@ pub const ConstMap = ?*const std.StringHashMap(ModuleConstInfo);
 /// own compound algorithm.
 const StatelessInner = struct {
     table: *TypeTable,
-    alias_map: AliasMap,
-    consts: ConstMap,
+    facts: Facts,
     pub fn resolveInner(self: StatelessInner, node: *const Node) TypeId {
-        return resolveAstType(node, self.table, self.alias_map, self.consts);
+        return resolveAstType(node, self.table, self.facts);
     }
     pub fn expandTypeSpread(_: StatelessInner, _: *const Node) ?[]TypeId {
         return null;
@@ -48,11 +37,11 @@ const StatelessInner = struct {
     /// rather than an AST node (an error-set reference `!Named`). Flat:
     /// registered name → alias → stub, no visibility scoping.
     pub fn resolveName(self: StatelessInner, name: []const u8) TypeId {
-        return resolveTypeName(name, self.table, self.alias_map, false);
+        return resolveTypeName(name, self.table, self.facts, false);
     }
     pub fn aliasType(self: StatelessInner, name: []const u8) ?TypeId {
-        const map = self.alias_map orelse return null;
-        return map.get(name);
+        const facts = self.facts orelse return null;
+        return facts.lookup(.type_alias, name);
     }
     pub fn namespacedErrorSetType(_: StatelessInner, _: []const u8) ?TypeId {
         return null;
@@ -89,8 +78,8 @@ const StatelessInner = struct {
     /// dimension value in `resolveArrayLen` — not here, so an intermediate
     /// operand may legitimately be negative.
     pub fn lookupDimName(self: StatelessInner, name: []const u8) ?i64 {
-        const consts = self.consts orelse return null;
-        return program_index_mod.moduleConstInt(consts, self.table, name);
+        const facts = self.facts orelse return null;
+        return program_index_mod.moduleConstInt(facts, self.table, name);
     }
     /// Pack-length leaf for the shared integer-expression evaluator. The
     /// registration-time path has no pack-arity information (packs are bound
@@ -162,8 +151,8 @@ const StatelessInner = struct {
     /// resolved by the `evalConstIntExpr` delegation inside `evalConstFloatExpr`;
     /// this surfaces a non-integral float const so the unified rule rejects it.
     pub fn lookupFloatName(self: StatelessInner, name: []const u8) ?f64 {
-        const consts = self.consts orelse return null;
-        return program_index_mod.moduleConstFloat(consts, self.table, name);
+        const facts = self.facts orelse return null;
+        return program_index_mod.moduleConstFloat(facts, self.table, name);
     }
     /// True iff `name` is a FLOAT-typed module const — the registration-time twin
     /// of `Lowering.nameIsFloatTyped`, routed through the SAME
@@ -172,8 +161,8 @@ const StatelessInner = struct {
     /// as on the direct form (the unify-or-diverge
     /// rule extended to the division guard).
     pub fn nameIsFloatTyped(self: StatelessInner, name: []const u8) bool {
-        const consts = self.consts orelse return false;
-        return program_index_mod.moduleConstIsFloatTyped(consts, self.table, name);
+        const facts = self.facts orelse return false;
+        return program_index_mod.moduleConstIsFloatTyped(facts, self.table, name);
     }
 };
 
@@ -185,8 +174,8 @@ const StatelessInner = struct {
 /// non-const) that matches the stateful direct form, rather than one generic
 /// "not a compile-time integer constant" message for every failure (the
 /// stateful/stateless diagnostic divergence).
-pub fn foldArrayDim(len_node: *const Node, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) program_index_mod.DimU32 {
-    const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+pub fn foldArrayDim(len_node: *const Node, table: *TypeTable, facts: Facts) program_index_mod.DimU32 {
+    const si = StatelessInner{ .table = table, .facts = facts };
     return program_index_mod.foldDimU32(len_node, si, 0);
 }
 
@@ -194,17 +183,17 @@ pub fn foldArrayDim(len_node: *const Node, table: *TypeTable, alias_map: AliasMa
 // Resolve an AST type node into an IR TypeId. Used during lowering when
 // we only have the parsed AST (no codegen type registry).
 
-pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
+pub fn resolveAstType(node: ?*const Node, table: *TypeTable, facts: Facts) TypeId {
     // A null node means a caller reached type resolution without a type node.
     // Every current caller either passes a non-optional node or handles the
     // "no type" case itself (returning `.void`), so this is a caller bug — and
     // `.i64` here would silently fabricate an 8-byte int. Surface it via the
     // `.unresolved` sentinel (trips the sizeOf/toLLVMType panic at codegen).
     const n = node orelse return .unresolved;
-    const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+    const si = StatelessInner{ .table = table, .facts = facts };
     return switch (n.data) {
-        .type_expr => |te| resolveTypeName(te.name, table, alias_map, te.is_raw),
-        .identifier => |id| resolveTypeName(id.name, table, alias_map, id.is_raw),
+        .type_expr => |te| resolveTypeName(te.name, table, facts, te.is_raw),
+        .identifier => |id| resolveTypeName(id.name, table, facts, id.is_raw),
         // Structural shapes (`*T`/`[*]T`/`[]T`/`?T`/`[N]T`, functions, plain
         // closures, plain tuples) are owned by the single canonical
         // `TypeResolver.resolveCompound` — no independent compound algorithm
@@ -224,8 +213,8 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         // `Closure(..p)` field type at registration time). These tiny fallbacks
         // are the only stateless-specific shape code left; the stateful expand
         // lives in PackResolver.
-        .closure_type_expr => |ct| type_resolver.TypeResolver.resolveCompound(table, n, si) orelse resolveClosurePackShape(&ct, table, alias_map, consts),
-        .tuple_type_expr => |tt| type_resolver.TypeResolver.resolveCompound(table, n, si) orelse resolveTupleSpreadShape(&tt, table, alias_map, consts),
+        .closure_type_expr => |ct| type_resolver.TypeResolver.resolveCompound(table, n, si) orelse resolveClosurePackShape(&ct, table, facts),
+        .tuple_type_expr => |tt| type_resolver.TypeResolver.resolveCompound(table, n, si) orelse resolveTupleSpreadShape(&tt, table, facts),
         // A multi-return signature resolves to its REUSED tuple TypeId — the ABI
         // is a tuple; only its meaning ("multiple return values", return-only,
         // destructure-only) differs, which the AST node (not the TypeId) carries.
@@ -242,8 +231,8 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
             std.debug.print("type_bridge: pack-index type expression encountered outside a pack-aware context — returning .unresolved\n", .{});
             return .unresolved;
         },
-        .tuple_literal => |tl| resolveTupleLiteralAsType(&tl, table, alias_map, consts),
-        .parameterized_type_expr => |pt| resolveParameterizedType(&pt, table, alias_map, consts),
+        .tuple_literal => |tl| resolveTupleLiteralAsType(&tl, table, facts),
+        .parameterized_type_expr => |pt| resolveParameterizedType(&pt, table, facts),
         // An unannotated param. Its type must be resolved from context
         // (contextual closure typing, generic binding, or pack substitution)
         // *before* reaching here; if it doesn't, returning a plausible `.i64`
@@ -289,10 +278,10 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
 
 /// Resolve a bare type name. The algorithm lives in `type_resolver.zig`
 /// (`TypeResolver.resolveNamed`, the single source); `type_bridge` forwards the
-/// caller-threaded `alias_map` (the single-source `ProgramIndex.type_alias_map`).
+/// caller-threaded `facts`.
 /// `skip_builtin` carries the backtick raw escape.
-fn resolveTypeName(name: []const u8, table: *TypeTable, alias_map: AliasMap, skip_builtin: bool) TypeId {
-    return type_resolver.TypeResolver.resolveNamed(name, table, alias_map, skip_builtin);
+fn resolveTypeName(name: []const u8, table: *TypeTable, facts: Facts, skip_builtin: bool) TypeId {
+    return type_resolver.TypeResolver.resolveNamed(name, table, facts, skip_builtin);
 }
 
 /// Builtin primitive keyword → TypeId. The keyword table lives in
@@ -305,13 +294,13 @@ pub const resolveTypePrimitive = type_resolver.TypeResolver.resolvePrimitive;
 /// null). type_bridge can't expand the pack (no state), so it preserves the
 /// pack SHAPE — a `closureTypePack` whose prefix is the fixed params. The
 /// stateful expand lives in `PackResolver.resolveClosureTypeWithBindings`.
-fn resolveClosurePackShape(ct: *const ast.ClosureTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
+fn resolveClosurePackShape(ct: *const ast.ClosureTypeExpr, table: *TypeTable, facts: Facts) TypeId {
     const alloc = table.alloc;
     var param_ids = std.ArrayList(TypeId).empty;
     for (ct.param_types) |pt| {
-        param_ids.append(alloc, resolveAstType(pt, table, alias_map, consts)) catch unreachable;
+        param_ids.append(alloc, resolveAstType(pt, table, facts)) catch unreachable;
     }
-    const ret_id = if (ct.return_type) |rt| resolveAstType(rt, table, alias_map, consts) else TypeId.void;
+    const ret_id = if (ct.return_type) |rt| resolveAstType(rt, table, facts) else TypeId.void;
     return table.closureTypePack(param_ids.items, ret_id, @intCast(param_ids.items.len));
 }
 
@@ -320,11 +309,11 @@ fn resolveClosurePackShape(ct: *const ast.ClosureTypeExpr, table: *TypeTable, al
 /// each field resolves individually (a spread field is not a type → resolves to
 /// `.unresolved`). The stateful expand lives in
 /// `PackResolver.resolveTupleTypeWithBindings`.
-fn resolveTupleSpreadShape(tt: *const ast.TupleTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
+fn resolveTupleSpreadShape(tt: *const ast.TupleTypeExpr, table: *TypeTable, facts: Facts) TypeId {
     const alloc = table.alloc;
     var field_ids = std.ArrayList(TypeId).empty;
     for (tt.field_types) |ft| {
-        field_ids.append(alloc, resolveAstType(ft, table, alias_map, consts)) catch unreachable;
+        field_ids.append(alloc, resolveAstType(ft, table, facts)) catch unreachable;
     }
     var name_ids: ?[]const StringId = null;
     if (tt.field_names) |names| {
@@ -347,14 +336,14 @@ fn resolveTupleSpreadShape(tt: *const ast.TupleTypeExpr, table: *TypeTable, alia
 // here, so the valid path below builds the tuple and the invalid path never
 // reaches it from lowering. The sentinel is the backstop for any other
 // (binding-free) caller.
-fn resolveTupleLiteralAsType(tl: *const ast.TupleLiteral, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
+fn resolveTupleLiteralAsType(tl: *const ast.TupleLiteral, table: *TypeTable, facts: Facts) TypeId {
     const alloc = table.alloc;
     var field_ids = std.ArrayList(TypeId).empty;
     var name_ids_list = std.ArrayList(StringId).empty;
     var any_named = false;
     for (tl.elements) |el| {
         if (!isTypeShapedAstNode(el.value, table)) return .unresolved;
-        field_ids.append(alloc, resolveAstType(el.value, table, alias_map, consts)) catch unreachable;
+        field_ids.append(alloc, resolveAstType(el.value, table, facts)) catch unreachable;
         if (el.name) |n| {
             any_named = true;
             name_ids_list.append(alloc, table.internString(n)) catch unreachable;
@@ -502,7 +491,7 @@ pub fn isTypeReturningBuiltinName(name: []const u8) bool {
         std.mem.eql(u8, name, "@typeOf");
 }
 
-fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
+fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTable, facts: Facts) TypeId {
     // Strip module prefix (e.g. "std.Box" → "Box")
     const base_name = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
     // @Vector(N, T) is a built-in parameterized type
@@ -512,33 +501,33 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             // same dimension forms a fixed array accepts. An unresolvable count
             // is NOT a 0-lane vector (which would silently mis-size every load /
             // store); yield `.unresolved` so the failure surfaces.
-            const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+            const si = StatelessInner{ .table = table, .facts = facts };
             const length = si.resolveArrayLen(pt.args[0]) orelse return .unresolved;
-            const elem = resolveAstType(pt.args[1], table, alias_map, consts);
+            const elem = resolveAstType(pt.args[1], table, facts);
             return table.vectorOf(elem, length);
         }
     }
     // @Array(N, T) is the named form of `[N]T`
     if (std.mem.eql(u8, base_name, contracts.array_head)) {
         if (pt.args.len == 2) {
-            const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+            const si = StatelessInner{ .table = table, .facts = facts };
             const length = si.resolveArrayLen(pt.args[0]) orelse return .unresolved;
-            const elem = resolveAstType(pt.args[1], table, alias_map, consts);
+            const elem = resolveAstType(pt.args[1], table, facts);
             return table.arrayOf(elem, length);
         }
     }
     // @Slice(T, Len) is a fat pointer `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
     if (std.mem.eql(u8, base_name, contracts.slice_head)) {
         if (pt.args.len == 2) {
-            const elem = resolveAstType(pt.args[0], table, alias_map, consts);
-            const len_ty = resolveAstType(pt.args[1], table, alias_map, consts);
+            const elem = resolveAstType(pt.args[0], table, facts);
+            const len_ty = resolveAstType(pt.args[1], table, facts);
             if (!table.isIntegerType(len_ty)) return .unresolved;
             return table.sliceOfLen(elem, len_ty);
         }
     }
     if (std.mem.eql(u8, base_name, contracts.int_head)) {
         if (pt.args.len != 2) return .unresolved;
-        const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+        const si = StatelessInner{ .table = table, .facts = facts };
         const width_u32 = switch (program_index_mod.foldDimU32(pt.args[0], si, 1)) {
             .ok => |n| n,
             else => return .unresolved,

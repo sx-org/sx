@@ -704,6 +704,9 @@ pub const DeclKind = enum {
     open_set,
     runtime_class,
     namespace,
+    /// A name lowering mints with no authoring AST declaration.
+    synthetic,
+    ufcs_alias,
 };
 
 fn declKindOf(ref: RawDeclRef) DeclKind {
@@ -731,15 +734,12 @@ pub fn authorNodePtrOf(ref: RawDeclRef) usize {
     };
 }
 
-/// The `*const ast.StructDecl` a top-level decl node carries, or null when it is
-/// not a struct — a bare `struct_decl` or a `const_decl` whose value is one,
-/// both unwrapping to the same inner decl (mirrors lower's `structDeclOfRaw`).
-fn structDeclPtrOf(decl: *const Node) ?*const ast.StructDecl {
-    return switch (decl.data) {
-        .struct_decl => &decl.data.struct_decl,
-        .const_decl => |cd| if (cd.value.data == .struct_decl) &cd.value.data.struct_decl else null,
-        else => null,
-    };
+/// The declaration a `const_decl` wrapper defines (`S :: struct { … }` wraps a
+/// `struct_decl`), or null when the ref is not a wrapper. Wrapper and inner
+/// author share one identity.
+fn innerDeclRef(ref: RawDeclRef) ?RawDeclRef {
+    if (ref != .const_decl) return null;
+    return rawDeclRefOf(ref.const_decl.value);
 }
 
 /// A stable identifier for one declaration, assigned by `DeclTable` in module-
@@ -754,34 +754,29 @@ pub const DeclInfo = struct {
     id: DeclId,
     source: []const u8,
     name: []const u8,
-    ref: RawDeclRef,
+    /// Null for a synthesized identity, which no AST node authors.
+    ref: ?RawDeclRef,
     span: ast.Span,
     kind: DeclKind,
 };
 
 /// Stable `DeclId` for every source / namespaced / imported / C-imported decl.
-/// `entries` is indexed by `DeclId`; `by_node` reverse-maps the AST node
-/// identity (`authorNodePtrOf`) to its id; `by_struct` maps a generic struct's
-/// inner `*StructDecl` to its id (so a template registered during lowering can
-/// be keyed by `DeclId`). Borrowed by `ProgramIndex.decl_table`.
+/// `entries` is indexed by `DeclId`; `by_node` reverse-maps every AST node
+/// identity that names the declaration — the author (`authorNodePtrOf`) and,
+/// for a `const_decl` wrapper, the declaration it wraps. Borrowed by
+/// `ProgramIndex.decl_table`.
 pub const DeclTable = struct {
     alloc: std.mem.Allocator,
     entries: std.ArrayList(DeclInfo) = .empty,
     by_node: std.AutoHashMap(usize, DeclId),
-    by_struct: std.AutoHashMap(usize, DeclId),
 
     pub fn init(alloc: std.mem.Allocator) DeclTable {
-        return .{
-            .alloc = alloc,
-            .by_node = std.AutoHashMap(usize, DeclId).init(alloc),
-            .by_struct = std.AutoHashMap(usize, DeclId).init(alloc),
-        };
+        return .{ .alloc = alloc, .by_node = std.AutoHashMap(usize, DeclId).init(alloc) };
     }
 
     pub fn deinit(self: *DeclTable) void {
         self.entries.deinit(self.alloc);
         self.by_node.deinit();
-        self.by_struct.deinit();
     }
 
     pub fn get(self: *const DeclTable, id: DeclId) DeclInfo {
@@ -794,30 +789,60 @@ pub const DeclTable = struct {
         return self.by_node.get(authorNodePtrOf(ref));
     }
 
-    /// The `DeclId` for a generic struct template's inner `*StructDecl`, or null.
-    pub fn declIdForStructDecl(self: *const DeclTable, sd: *const ast.StructDecl) ?DeclId {
-        return self.by_struct.get(@intFromPtr(sd));
-    }
-
-    /// Intern one top-level decl node, returning its (possibly pre-existing)
-    /// `DeclId`. First-wins / diamond dedup by node identity, matching how the
-    /// scalar import facts dedup. The caller guarantees `rawDeclRefOf(decl)` is
-    /// non-null (so `declName` is too).
-    pub fn intern(self: *DeclTable, source: []const u8, decl: *const Node) !DeclId {
-        const ref = rawDeclRefOf(decl).?;
+    /// Intern one declaration by its author ref, returning its (possibly
+    /// pre-existing) `DeclId`. First-wins / diamond dedup by node identity,
+    /// matching how the scalar import facts dedup.
+    pub fn internRef(self: *DeclTable, source: []const u8, name: []const u8, ref: RawDeclRef, span: ast.Span) !DeclId {
         const key = authorNodePtrOf(ref);
         if (self.by_node.get(key)) |existing| return existing;
+        const inner = innerDeclRef(ref);
+        if (inner) |ir| {
+            if (self.declIdForRef(ir)) |existing| {
+                try self.by_node.put(key, existing);
+                return existing;
+            }
+        }
         const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
         try self.entries.append(self.alloc, .{
             .id = id,
             .source = source,
-            .name = decl.data.declName().?,
+            .name = name,
             .ref = ref,
-            .span = decl.span,
-            .kind = declKindOf(ref),
+            .span = span,
+            .kind = declKindOf(inner orelse ref),
         });
         try self.by_node.put(key, id);
-        if (structDeclPtrOf(decl)) |sd| try self.by_struct.put(@intFromPtr(sd), id);
+        if (inner) |ir| try self.by_node.put(authorNodePtrOf(ir), id);
+        return id;
+    }
+
+    /// Intern one top-level decl node. The node's stamped source identifies its
+    /// declaring file; `source` supplies the file for unstamped nodes.
+    pub fn intern(self: *DeclTable, source: []const u8, decl: *const Node) !DeclId {
+        if (rawDeclRefOf(decl)) |ref|
+            return self.internRef(decl.source_file orelse source, decl.data.declName().?, ref, decl.span);
+        std.debug.assert(decl.data == .ufcs_alias);
+        const key = @intFromPtr(&decl.data.ufcs_alias);
+        if (self.by_node.get(key)) |id| return id;
+        const id = try self.internSynthetic(decl.source_file orelse source, decl.data.ufcs_alias.name);
+        self.entries.items[@intFromEnum(id)].kind = .ufcs_alias;
+        self.entries.items[@intFromEnum(id)].span = decl.span;
+        try self.by_node.put(key, id);
+        return id;
+    }
+
+    /// Mint an identity for a name lowering synthesizes — a fresh id every
+    /// call, since no AST node addresses it.
+    pub fn internSynthetic(self: *DeclTable, source: []const u8, name: []const u8) !DeclId {
+        const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
+        try self.entries.append(self.alloc, .{
+            .id = id,
+            .source = source,
+            .name = name,
+            .ref = null,
+            .span = .{ .start = 0, .end = 0 },
+            .kind = .synthetic,
+        });
         return id;
     }
 
@@ -839,7 +864,7 @@ pub const DeclTable = struct {
                 const ref = kv.value_ptr.*;
                 const id = self.declIdForRef(ref) orelse @panic("DeclTable round-trip: module ref has no DeclId");
                 const info = self.get(id);
-                std.debug.assert(authorNodePtrOf(info.ref) == authorNodePtrOf(ref));
+                std.debug.assert(self.declIdForRef(info.ref.?).? == id);
                 std.debug.assert(std.mem.eql(u8, info.name, kv.key_ptr.*));
             }
         }
@@ -850,7 +875,7 @@ pub const DeclTable = struct {
                 for (target.own_decls) |decl| {
                     const ref = rawDeclRefOf(decl) orelse continue;
                     const id = self.declIdForRef(ref) orelse @panic("DeclTable round-trip: ns member has no DeclId");
-                    std.debug.assert(authorNodePtrOf(self.get(id).ref) == authorNodePtrOf(ref));
+                    std.debug.assert(self.declIdForRef(self.get(id).ref.?).? == id);
                 }
             }
         }

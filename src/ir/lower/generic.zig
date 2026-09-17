@@ -260,7 +260,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 ///
 /// Dynamic shapes (index_expr, field_access, runtime locals,
 /// etc.) fall to the alternative path that emits a builtin_call.
-
 /// A generic body lowers in its caller's visibility, where a same-named
 /// value may be in view, so a bound generic parameter answers first.
 /// A const whose author also registered the name as a type alias
@@ -285,9 +284,8 @@ fn staticTypeName(self: *Lowering, name: []const u8) bool {
 
 /// Whether `source` (the main file when null) registered `name` as a type alias.
 fn aliasAuthoredIn(self: *Lowering, source: ?[]const u8, name: []const u8) bool {
-    const src = source orelse self.main_file orelse return self.program_index.type_alias_map.contains(name);
-    const by_source = self.program_index.type_aliases_by_source.get(src) orelse return false;
-    return by_source.contains(name);
+    const src = source orelse self.main_file orelse return self.program_index.contains(.type_alias, name);
+    return self.program_index.containsInSource(.type_alias, src, name);
 }
 
 pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
@@ -381,7 +379,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
             }
             return self.isKnownTypeName(te.name) or
                 self.module.types.findByName(self.module.types.internString(te.name)) != null or
-                self.program_index.type_alias_map.get(te.name) != null;
+                self.program_index.lookup(.type_alias, te.name) != null;
         },
         .identifier => |id| {
             if (self.scope) |scope| {
@@ -389,7 +387,7 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
             }
             return self.isKnownTypeName(id.name) or
                 self.module.types.findByName(self.module.types.internString(id.name)) != null or
-                self.program_index.type_alias_map.get(id.name) != null;
+                self.program_index.lookup(.type_alias, id.name) != null;
         },
         .pointer_type_expr,
         .many_pointer_type_expr,
@@ -436,7 +434,7 @@ pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
         // drift); only the poison short-circuits.
         if (self.resolveTypeWithBindings(el.value) == .unresolved) return .unresolved;
     }
-    return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+    return type_bridge.resolveAstType(node, &self.module.types, &self.program_index);
 }
 
 /// True iff `node` is a call to a user-defined generic `($X..) -> Type` function
@@ -457,7 +455,7 @@ pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
         else => return false,
     };
     const resolved_name = if (self.scope) |scope| (scope.lookupFn(callee_name) orelse callee_name) else callee_name;
-    const fd = self.program_index.fn_ast_map.get(resolved_name) orelse return false;
+    const fd = self.program_index.lookup(.function, resolved_name) orelse return false;
     // Only a GENERIC `-> Type` fn resolves through `instantiateTypeFunction`; a
     // non-generic one would fall to a named-type lookup that this call shape
     // can't satisfy, so gate on both (matches `resolveTypeCallWithBindings`).
@@ -483,7 +481,7 @@ pub fn isGenericTypeConstructorCallNode(self: *Lowering, node: *const Node) bool
 /// The head half of the predicate above: does `name` name a generic struct
 /// template or a parameterized protocol?
 pub fn isGenericTypeConstructorHead(self: *Lowering, name: []const u8) bool {
-    if (self.program_index.struct_template_map.contains(name)) return true;
+    if (self.program_index.contains(.struct_template, name)) return true;
     return self.protocolResolver().resolveParamProtocolHead(name, null) != null;
 }
 
@@ -558,7 +556,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 .resolved => |tid| return tid,
                 .proceed => {},
             }
-            if (self.program_index.type_alias_map.get(id.name)) |alias_ty| return alias_ty;
+            if (self.program_index.lookup(.type_alias, id.name)) |alias_ty| return alias_ty;
             const name_id = self.module.types.internString(id.name);
             if (self.module.types.findByName(name_id)) |t| return t;
             if (self.diagnostics) |diags| {
@@ -591,8 +589,8 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 .resolved => |tid| if (plain) return tid,
                 .proceed => {},
             }
-            if (self.program_index.type_alias_map.get(te.name)) |alias_ty| return alias_ty;
-            return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+            if (self.program_index.lookup(.type_alias, te.name)) |alias_ty| return alias_ty;
+            return type_bridge.resolveAstType(node, &self.module.types, &self.program_index);
         },
         .call => |cl| {
             // `@typeOf(x)` resolves to `inferExprType(x)` at lower
@@ -1396,9 +1394,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
-        "int",      "signed",    "unsigned", "float", "struct",  "interface",
-        "enum",     "union",     "slice",    "array", "pointer", "vector",
-        "optional", "error", "closure",  "type",  "Type",
+        "int",      "signed", "unsigned", "float", "struct",  "interface",
+        "enum",     "union",  "slice",    "array", "pointer", "vector",
+        "optional", "error",  "closure",  "type",  "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1417,8 +1415,8 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
                 else => continue,
             };
             const categories = [_][]const u8{
-                "int",   "signed",  "unsigned", "float",     "bool",     "string",    "void",
-                "type",  "Type",    "struct",   "interface", "enum",     "union",     "slice",
+                "int",   "signed",  "unsigned", "float",     "bool",     "string", "void",
+                "type",  "Type",    "struct",   "interface", "enum",     "union",  "slice",
                 "array", "pointer", "vector",   "closure",   "optional", "error",
             };
             for (categories) |cat| {
@@ -1540,7 +1538,7 @@ pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: 
 /// reads, so this can't diverge from how the alias is laid out elsewhere.
 pub fn canonicalIntConstraintName(self: *Lowering, name: []const u8) ?[]const u8 {
     if (program_index_mod.intTypeRange(name) != null) return name;
-    if (self.program_index.type_alias_map.get(name)) |tid| {
+    if (self.program_index.lookup(.type_alias, name)) |tid| {
         const canon = self.module.types.typeName(tid);
         if (program_index_mod.intTypeRange(canon) != null) return canon;
     }
@@ -1646,7 +1644,7 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path
     if (self.current_source_file) |from| {
         if (self.aliasedStructTemplate(name, from)) |t| return .{ .template = t };
     }
-    if (self.program_index.struct_template_map.getPtr(name)) |tmpl| {
+    if (self.program_index.lookupPtr(.struct_template, name)) |tmpl| {
         if (self.headTypeLeak(name, span)) return .poisoned;
         if (self.bareVisibleStructTemplate(name)) |vt| return .{ .template = vt };
         return .{ .template = tmpl.* };
@@ -1726,9 +1724,7 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     // Own author wins outright (own-wins, 0754). Pending / unregistered → .proceed.
     if (author_set.own) |own| switch (own.raw) {
         .const_decl => {
-            if (self.program_index.type_aliases_by_source.get(own.source)) |inner| {
-                if (inner.get(name)) |tid| return .{ .resolved = tid };
-            }
+            if (self.program_index.lookupInSource(.type_alias, own.source, name)) |tid| return .{ .resolved = tid };
             return .proceed;
         },
         else => if (isNamedTypeKind(own.raw)) {
@@ -1743,21 +1739,13 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     var flat_tid_count: usize = 0;
     for (author_set.flat) |fa| {
         const is_type = switch (fa.raw) {
-            .const_decl => blk: {
-                if (self.program_index.type_aliases_by_source.get(fa.source)) |inner|
-                    break :blk inner.contains(name);
-                break :blk false;
-            },
+            .const_decl => self.program_index.containsInSource(.type_alias, fa.source, name),
             else => isNamedTypeKind(fa.raw),
         };
         if (!is_type) continue;
         flat_type_count += 1;
         const fa_tid: ?TypeId = switch (fa.raw) {
-            .const_decl => blk: {
-                if (self.program_index.type_aliases_by_source.get(fa.source)) |inner|
-                    break :blk inner.get(name);
-                break :blk null;
-            },
+            .const_decl => self.program_index.lookupInSource(.type_alias, fa.source, name),
             else => self.namedRefTid(fa.raw, name),
         };
         if (fa_tid) |t| {
@@ -1904,7 +1892,7 @@ pub fn flatFnAuthorVisible(self: *Lowering, name: []const u8, from: []const u8) 
 pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
     const mapped: ?*const ast.FnDecl = blk: {
         const resolved = if (self.scope) |scope| (scope.lookupFn(name) orelse name) else name;
-        const fd = self.program_index.fn_ast_map.get(resolved) orelse break :blk null;
+        const fd = self.program_index.lookup(.function, resolved) orelse break :blk null;
         break :blk if (fd.type_params.len > 0) fd else null;
     };
     if (self.scope) |scope| if (scope.lookupFn(name) != null) return mapped;
@@ -2289,7 +2277,7 @@ pub fn genericInstanceMethod(self: *Lowering, inst_name: []const u8, method: []c
     // instance; the method body is the template's registered impl method.
     const tmpl_name = self.struct_instance_template.get(inst_name) orelse return null;
     const tmpl_qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ tmpl_name, method }) catch return null;
-    if (self.program_index.fn_ast_map.get(tmpl_qualified)) |fd|
+    if (self.program_index.lookup(.function, tmpl_qualified)) |fd|
         return .{ .fd = fd, .bindings = bindings, .inst_name = inst_name };
     return null;
 }
@@ -2920,7 +2908,7 @@ pub fn returnExprMintsType(self: *Lowering, ret: *const Node) bool {
     // The construction terminator — a constructor's final act.
     if (std.mem.eql(u8, name, "define")) return true;
     // A bodied, non-generic, Type-returning sx helper.
-    const fd = self.program_index.fn_ast_map.get(name) orelse return false;
+    const fd = self.program_index.lookup(.function, name) orelse return false;
     if (fd.type_params.len != 0) return false;
     if (fd.body.data == .block and fd.body.data.block.stmts.len == 0) return false; // bodyless intrinsic
     const rt = fd.return_type orelse return false;

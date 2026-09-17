@@ -125,7 +125,7 @@ pub fn armPrefixType(self: *Lowering, object: *const Node) ?TypeId {
     if (self.scope) |s| {
         if (s.lookup(name) != null) return null;
     }
-    if (self.program_index.global_names.contains(name)) return null;
+    if (self.program_index.contains(.global, name)) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
     const ty = switch (self.selectNominalLeaf(name, from, false)) {
         .resolved => |tid| tid,
@@ -143,7 +143,7 @@ fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
         if (self.scope) |s| {
             if (s.lookup(name) != null) return null;
         }
-        if (self.program_index.global_names.contains(name)) return null;
+        if (self.program_index.contains(.global, name)) return null;
     }
     const path = self.qualifiedTypeName(object) orelse return null;
     defer self.alloc.free(path);
@@ -1854,7 +1854,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
             };
             if (std.mem.eql(u8, tname, "@Protocol")) return false;
             if (std.mem.eql(u8, tname, "any")) return false; // prefix view
-            if (self.program_index.protocol_decl_map.contains(tname)) return false; // re-erasure
+            if (self.program_index.contains(.protocol, tname)) return false; // re-erasure
             return true;
         }
     }
@@ -2194,7 +2194,7 @@ pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*co
             .none => {},
         }
     }
-    return self.program_index.fn_ast_map.get(name);
+    return self.program_index.lookup(.function, name);
 }
 
 /// The escape tags of a callee referenced by name from a `try g()` edge:

@@ -155,7 +155,6 @@ pub const Compilation = struct {
         // Updates `namespace_edges` in place to record each target's member ids.
         self.decl_table = try imports.buildDeclTable(self.allocator, self.file_path, mod, cache, &self.module_decls, &self.namespace_edges);
 
-
         // Build a root node from the resolved module's decls
         const new_root = try self.allocator.create(Node);
         new_root.* = .{
@@ -387,9 +386,9 @@ pub const Compilation = struct {
         // and `extends = Alias` resolution.
         var registry = std.StringHashMap([]const u8).init(self.allocator);
         defer registry.deinit();
-        var it_reg = lowering.program_index.runtime_class_map.iterator();
+        var it_reg = lowering.program_index.iterator(.runtime_class);
         while (it_reg.next()) |entry| {
-            try registry.put(entry.key_ptr.*, entry.value_ptr.*.runtime_path);
+            try registry.put(entry.name, entry.value.runtime_path);
         }
 
         // Derive the `System.loadLibrary` argument from the `-o` basename
@@ -398,9 +397,9 @@ pub const Compilation = struct {
         // .so loading via another class.
         const lib_name = libNameFromOutputPath(self.target_config.output_path);
 
-        var it = lowering.program_index.runtime_class_map.iterator();
+        var it = lowering.program_index.iterator(.runtime_class);
         while (it.next()) |entry| {
-            const fcd = entry.value_ptr.*;
+            const fcd = entry.value;
             if (!fcd.is_main) continue;
             if (fcd.is_extern) continue;
             if (fcd.runtime != .jni_class) continue;
