@@ -1,0 +1,33 @@
+// The cached `jclass`/`jmethodID` slot pair initializes once. The method ID
+// loads with acquire ordering; on a miss every racing thread builds its own
+// `NewGlobalRef`, a `cmpxchg` on the class slot elects the one the cache
+// keeps, the losers `DeleteGlobalRef` theirs, and the method ID publishes
+// with release once the class is in the slot.
+//
+// Runtime: unreachable. The JNI dispatch is all indirect through `*env`, so
+// the IR loads cleanly into the host JIT, and the dereferences never execute
+// because the guarding `gShouldCall` global stays false. A plain `if false`
+// folds away, taking the `unusedJni` body out of the IR with it; the
+// runtime-readable global keeps the JNI lowering visible to the snapshot.
+
+@import "modules/std/core.sx";
+@import "modules/platform/jni.sx";
+
+A :: @JniClass("com/example/A") extern {
+    getX :: (self: *Self) -> i32;
+}
+
+gShouldCall : bool = false;
+
+unusedJni :: (env: *void, a: *A) {
+    push .{ jni = env } {
+        _ := a.getX();
+    }
+}
+
+main :: () {
+    if gShouldCall {
+        unusedJni(null, null);
+    }
+    @printf("ok\n");
+}

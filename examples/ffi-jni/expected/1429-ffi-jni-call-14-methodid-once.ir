@@ -1,0 +1,171 @@
+
+@gShouldCall = internal global i1 false
+@kDefaultContext = internal constant { ptr } zeroinitializer
+@__Writer__FdWriter__vtable = internal constant { ptr, ptr } { ptr @__thunk_FdWriter_Writer_write, ptr @__thunk_FdWriter_Writer_flush }
+@str = private unnamed_addr constant [5 x i8] c"getX\00", align 1
+@str.1 = private unnamed_addr constant [4 x i8] c"()I\00", align 1
+@SX_JNI_CLS_com_example_A_getX____I = internal global ptr null
+@SX_JNI_MID_com_example_A_getX____I = internal global ptr null
+@str.2 = private unnamed_addr constant [4 x i8] c"ok\0A\00", align 1
+
+; Function Attrs: nounwind
+define internal { i32 } @FdWriter.init(ptr %0, i32 %1) #0 {
+entry:
+  %alloca = alloca i32, align 4
+  store i32 %1, ptr %alloca, align 4
+  %load = load i32, ptr %alloca, align 4
+  %si = insertvalue { i32 } undef, i32 %load, 0
+  ret { i32 } %si
+}
+
+; Function Attrs: nounwind
+define internal void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  %allocaN = alloca i64, align 8
+  store ptr %1, ptr %alloca, align 8
+  %allocaN = alloca { ptr, i64 }, align 8
+  store { ptr, i64 } %2, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 0, ptr %allocaN, align 8
+  br label %while.hdr.15
+
+while.hdr.15:                                     ; preds = %if.merge.19, %entry
+  %load = load i64, ptr %allocaN, align 8
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %len = extractvalue { ptr, i64 } %loadN, 1
+  %icmp = icmp slt i64 %load, %len
+  br i1 %icmp, label %while.body.16, label %while.exit.17
+
+while.body.16:                                    ; preds = %while.hdr.15
+  %loadN = load ptr, ptr %alloca, align 8
+  %loadN = load { i32 }, ptr %loadN, align 4
+  %sg = extractvalue { i32 } %loadN, 0
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %igp.data = extractvalue { ptr, i64 } %loadN, 0
+  %igp.ptr = getelementptr i8, ptr %igp.data, i64 %loadN
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %sub = sub i64 %lenN, %loadN
+  %call = call i64 @write(i32 %sg, ptr %igp.ptr, i64 %sub)
+  store i64 %call, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp sle i64 %loadN, 0
+  br i1 %icmpN, label %if.then.18, label %if.merge.19
+
+while.exit.17:                                    ; preds = %while.hdr.15
+  ret void
+
+if.then.18:                                       ; preds = %while.body.16
+  ret void
+
+if.merge.19:                                      ; preds = %while.body.16
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %add = add i64 %loadN, %loadN
+  store i64 %add, ptr %allocaN, align 8
+  br label %while.hdr.15
+}
+
+; Function Attrs: nounwind
+define internal void @FdWriter.flush(ptr %0, ptr %1) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %1, ptr %alloca, align 8
+  ret void
+}
+
+declare i64 @write(i32, ptr, i64)
+
+; Function Attrs: nounwind
+define internal void @unusedJni(ptr %0, ptr %1, ptr %2) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  %allocaN = alloca i32, align 4
+  store ptr %1, ptr %alloca, align 8
+  %allocaN = alloca ptr, align 8
+  store ptr %2, ptr %allocaN, align 8
+  %allocaN = alloca { ptr }, align 8
+  %load = load { ptr }, ptr %0, align 8
+  store { ptr } %load, ptr %allocaN, align 8
+  %gep = getelementptr inbounds nuw { ptr }, ptr %allocaN, i32 0, i32 0
+  %loadN = load ptr, ptr %alloca, align 8
+  store ptr %loadN, ptr %gep, align 8
+  %loadN = load ptr, ptr %allocaN, align 8
+  %jni.ifs = load ptr, ptr %loadN, align 8
+  %jni.cached.mid = load atomic ptr, ptr @SX_JNI_MID_com_example_A_getX____I acquire, align 8
+  %jni.is.cached = icmp ne ptr %jni.cached.mid, null
+  br i1 %jni.is.cached, label %jni.cont, label %jni.miss
+
+jni.miss:                                         ; preds = %entry
+  %3 = getelementptr inbounds ptr, ptr %jni.ifs, i32 31
+  %jni.GetObjectClass = load ptr, ptr %3, align 8
+  %jni.cls = call ptr %jni.GetObjectClass(ptr %loadN, ptr %loadN)
+  %4 = getelementptr inbounds ptr, ptr %jni.ifs, i32 21
+  %jni.NewGlobalRef = load ptr, ptr %4, align 8
+  %jni.global.cls = call ptr %jni.NewGlobalRef(ptr %loadN, ptr %jni.cls)
+  %5 = cmpxchg ptr @SX_JNI_CLS_com_example_A_getX____I, ptr null, ptr %jni.global.cls acq_rel acquire, align 8
+  %jni.cls.prior = extractvalue { ptr, i1 } %5, 0
+  %jni.cls.won = extractvalue { ptr, i1 } %5, 1
+  %jni.cls.owner = select i1 %jni.cls.won, ptr %jni.global.cls, ptr %jni.cls.prior
+  br i1 %jni.cls.won, label %jni.resolve, label %jni.drop
+
+jni.drop:                                         ; preds = %jni.miss
+  %6 = getelementptr inbounds ptr, ptr %jni.ifs, i32 22
+  %jni.DeleteGlobalRef = load ptr, ptr %6, align 8
+  call void %jni.DeleteGlobalRef(ptr %loadN, ptr %jni.global.cls)
+  br label %jni.resolve
+
+jni.resolve:                                      ; preds = %jni.drop, %jni.miss
+  %7 = getelementptr inbounds ptr, ptr %jni.ifs, i32 33
+  %jni.GetMethodID = load ptr, ptr %7, align 8
+  %jni.fresh.mid = call ptr %jni.GetMethodID(ptr %loadN, ptr %jni.cls.owner, ptr @str, ptr @str.1)
+  store atomic ptr %jni.fresh.mid, ptr @SX_JNI_MID_com_example_A_getX____I release, align 8
+  br label %jni.cont
+
+jni.cont:                                         ; preds = %jni.resolve, %entry
+  %jni.mid = phi ptr [ %jni.cached.mid, %entry ], [ %jni.fresh.mid, %jni.resolve ]
+  %8 = getelementptr inbounds ptr, ptr %jni.ifs, i32 49
+  %jni.callfn = load ptr, ptr %8, align 8
+  %jni.ret = call i32 %jni.callfn(ptr %loadN, ptr %loadN, ptr %jni.mid)
+  store i32 %jni.ret, ptr %allocaN, align 4
+  ret void
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { i32 }, align 8
+  %gload = load i1, ptr @gShouldCall, align 1
+  br i1 %gload, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  call void @unusedJni(ptr @kDefaultContext, ptr null, ptr null)
+  br label %if.merge.1
+
+if.merge.1:                                       ; preds = %if.then.0, %entry
+  %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
+  store { i32 } %call, ptr %alloca, align 4
+  %si = insertvalue { ptr, i64, ptr } undef, ptr %alloca, 0
+  %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
+  call void @FdWriter.write(ptr @kDefaultContext, ptr %alloca, { ptr, i64 } { ptr @str.2, i64 3 })
+  call void @FdWriter.flush(ptr @kDefaultContext, ptr %alloca)
+  ret i32 0
+}
+
+; Function Attrs: nounwind
+define internal void @__thunk_FdWriter_Writer_write(ptr %0, ptr %1, { ptr, i64 } %2) #0 {
+entry:
+  call void @FdWriter.write(ptr %0, ptr %1, { ptr, i64 } %2)
+  ret void
+}
+
+; Function Attrs: nounwind
+define internal void @__thunk_FdWriter_Writer_flush(ptr %0, ptr %1) #0 {
+entry:
+  call void @FdWriter.flush(ptr %0, ptr %1)
+  ret void
+}

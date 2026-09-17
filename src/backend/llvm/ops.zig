@@ -970,11 +970,16 @@ pub const Ops = struct {
         // GetMethodID` sequence.
         const mid = if (msg.cache_key) |ck| blk: {
             const pair = self.e.ffiCtors().getOrCreateJniSlots(msg.is_static, ck.class_path, ck.name_str, ck.sig_str);
+            const slot_align: c_uint = self.e.ir_mod.types.pointer_size;
             const cached_mid = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, pair.mid_slot, "jni.cached.mid");
+            c.LLVMSetOrdering(cached_mid, c.LLVMAtomicOrderingAcquire);
+            c.LLVMSetAlignment(cached_mid, slot_align);
             const is_cached = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, cached_mid, c.LLVMConstNull(self.e.cached_ptr), "jni.is.cached");
 
             const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.e.builder));
             const miss_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.miss");
+            const drop_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.drop");
+            const resolve_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.resolve");
             const cont_bb = c.LLVMAppendBasicBlockInContext(self.e.context, cur_fn, "jni.cont");
             const before_bb = c.LLVMGetInsertBlock(self.e.builder);
             _ = c.LLVMBuildCondBr(self.e.builder, is_cached, cont_bb, miss_bb);
@@ -982,6 +987,10 @@ pub const Ops = struct {
             // Miss path:
             //   instance: GetObjectClass → NewGlobalRef → GetMethodID
             //   static:   target IS class → NewGlobalRef(target) → GetStaticMethodID
+            // Racing missers each build a GlobalRef; the cmpxchg elects the
+            // one the slot keeps and the losers delete theirs. The method ID
+            // publishes with release once the class is in the slot, so the
+            // acquire load above never yields an ID over an unpublished class.
             c.LLVMPositionBuilderAtEnd(self.e.builder, miss_bb);
             const local_cls = if (msg.is_static) target else inst_cls: {
                 const get_obj_cls = self.e.loadJniFn(ifs, emit.Jni.GetObjectClass, "jni.GetObjectClass");
@@ -995,21 +1004,43 @@ pub const Ops = struct {
             const ngref_ty = c.LLVMFunctionType(self.e.cached_ptr, &ngref_params, 2, 0);
             var ngref_args = [_]c.LLVMValueRef{ env, local_cls };
             const global_cls = c.LLVMBuildCall2(self.e.builder, ngref_ty, new_global_ref, &ngref_args, 2, "jni.global.cls");
-            _ = c.LLVMBuildStore(self.e.builder, global_cls, pair.cls_slot);
+            const cls_cas = c.LLVMBuildAtomicCmpXchg(
+                self.e.builder,
+                pair.cls_slot,
+                c.LLVMConstNull(self.e.cached_ptr),
+                global_cls,
+                c.LLVMAtomicOrderingAcquireRelease,
+                c.LLVMAtomicOrderingAcquire,
+                0,
+            );
+            const prior_cls = c.LLVMBuildExtractValue(self.e.builder, cls_cas, 0, "jni.cls.prior");
+            const cls_won = c.LLVMBuildExtractValue(self.e.builder, cls_cas, 1, "jni.cls.won");
+            const owner_cls = c.LLVMBuildSelect(self.e.builder, cls_won, global_cls, prior_cls, "jni.cls.owner");
+            _ = c.LLVMBuildCondBr(self.e.builder, cls_won, resolve_bb, drop_bb);
+
+            c.LLVMPositionBuilderAtEnd(self.e.builder, drop_bb);
+            const delete_global_ref = self.e.loadJniFn(ifs, emit.Jni.DeleteGlobalRef, "jni.DeleteGlobalRef");
+            var dgref_params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr };
+            const dgref_ty = c.LLVMFunctionType(self.e.cached_void, &dgref_params, 2, 0);
+            var dgref_args = [_]c.LLVMValueRef{ env, global_cls };
+            _ = c.LLVMBuildCall2(self.e.builder, dgref_ty, delete_global_ref, &dgref_args, 2, "");
+            _ = c.LLVMBuildBr(self.e.builder, resolve_bb);
+
+            c.LLVMPositionBuilderAtEnd(self.e.builder, resolve_bb);
             const get_mid = self.e.loadJniFn(ifs, get_mid_offset, if (msg.is_static) "jni.GetStaticMethodID" else "jni.GetMethodID");
             var gmid_params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr, self.e.cached_ptr, self.e.cached_ptr };
             const gmid_ty = c.LLVMFunctionType(self.e.cached_ptr, &gmid_params, 4, 0);
-            var gmid_args = [_]c.LLVMValueRef{ env, global_cls, name_ptr, sig_ptr };
+            var gmid_args = [_]c.LLVMValueRef{ env, owner_cls, name_ptr, sig_ptr };
             const fresh_mid = c.LLVMBuildCall2(self.e.builder, gmid_ty, get_mid, &gmid_args, 4, "jni.fresh.mid");
-            _ = c.LLVMBuildStore(self.e.builder, fresh_mid, pair.mid_slot);
-            const miss_end_bb = c.LLVMGetInsertBlock(self.e.builder);
+            const publish_mid = c.LLVMBuildStore(self.e.builder, fresh_mid, pair.mid_slot);
+            c.LLVMSetOrdering(publish_mid, c.LLVMAtomicOrderingRelease);
+            c.LLVMSetAlignment(publish_mid, slot_align);
             _ = c.LLVMBuildBr(self.e.builder, cont_bb);
 
-            // Cont: phi the cached vs fresh mid.
             c.LLVMPositionBuilderAtEnd(self.e.builder, cont_bb);
             const phi = c.LLVMBuildPhi(self.e.builder, self.e.cached_ptr, "jni.mid");
             var phi_vals = [_]c.LLVMValueRef{ cached_mid, fresh_mid };
-            var phi_blocks = [_]c.LLVMBasicBlockRef{ before_bb, miss_end_bb };
+            var phi_blocks = [_]c.LLVMBasicBlockRef{ before_bb, resolve_bb };
             c.LLVMAddIncoming(phi, &phi_vals, &phi_blocks, 2);
             break :blk phi;
         } else blk: {
