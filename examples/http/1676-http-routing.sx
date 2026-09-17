@@ -45,8 +45,8 @@ hForm :: (rc: *http.RouteCtx) {
 // JSON response: {"name":"sx","n":7}
 hJson :: (rc: *http.RouteCtx) {
     obj : json.Object = .{};
-    obj.put("name", .str("sx"), context.allocator);
-    obj.put("n", .int(7), context.allocator);
+    obj.put("name", .str("sx"));
+    obj.put("n", .int(7));
     root : json.Value = .object(obj);
     if !rc.jsonSend(200, root) { rc.resp.status = 500; rc.resp.body = "json fail"; }
 }

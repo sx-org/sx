@@ -1,0 +1,10 @@
+@import "modules/std.sx";
+m :: @import "2540-errors-local-receiver-channel/mod.sx";
+forward :: () -> ! { b : m.Box = .{}; try b.go(); }
+main :: () -> i32 {
+    b : m.Box = .{};
+    e := forward();
+    print("error={} matches={}\n", e, e == .Missing);
+    if e == .Missing { return 0; }
+    1
+}

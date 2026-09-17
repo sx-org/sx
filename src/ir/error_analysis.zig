@@ -4,6 +4,7 @@ const lower = @import("lower.zig");
 
 const Node = ast.Node;
 const Lowering = lower.Lowering;
+const TypeId = @import("types.zig").TypeId;
 
 /// The converged error-analysis facts lowering consumes: each pure-failable
 /// function's inferred error-tag set, and each bare-`!` closure SHAPE's
@@ -27,6 +28,12 @@ pub const ErrorFacts = struct {
 /// facade.
 pub const ErrorAnalysis = struct {
     l: *Lowering,
+    locals: ?*const LocalScope = null,
+
+    const LocalScope = struct {
+        preceding: []const *Node,
+        parent: ?*const LocalScope,
+    };
 
     pub fn facts(self: ErrorAnalysis) ErrorFacts {
         return .{
@@ -37,8 +44,6 @@ pub const ErrorAnalysis = struct {
 
     /// The EDGE a callee spelling names — the key its declaration is
     /// registered under — or null when the spelling names none.
-    /// `enclosing_fd` types a receiver written as one of its parameters; a
-    /// receiver that is anything else is not typed here.
     fn calleeEdge(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?[]const u8 {
         switch (callee.data) {
             .identifier => |id| return id.name,
@@ -48,12 +53,11 @@ pub const ErrorAnalysis = struct {
                     // A namespace- or type-qualified callee is spelled exactly as
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
-                    if (self.qualifiedEdge(obj, fa.field)) |q| return q;
-                    // A typed Type.method outranks the bare name: a free function
-                    // may share it (libc `read`).
-                    if (self.paramTypeName(enclosing_fd, obj)) |tn| {
-                        if (self.qualifiedEdge(tn, fa.field)) |q| return q;
-                    }
+                    if (self.bindingType(enclosing_fd, obj)) |ty| {
+                        if (self.nominalName(ty)) |tn| {
+                            if (self.qualifiedEdge(tn, fa.field)) |q| return q;
+                        }
+                    } else if (self.qualifiedEdge(obj, fa.field)) |q| return q;
                 }
                 // A UFCS free function lives under the BARE method name.
                 const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
@@ -78,18 +82,21 @@ pub const ErrorAnalysis = struct {
 
     /// Visit the callee of every call `node` hands back with no `return`
     /// keyword. A `while` or `for` body is not that position.
-    fn eachTailCallee(node: *const Node, visitor: anytype) void {
+    fn eachTailCallee(self: ErrorAnalysis, node: *const Node, visitor: anytype) void {
         switch (node.data) {
             .block => |b| {
                 if (!b.produces_value or b.stmts.len == 0) return;
-                eachTailCallee(b.stmts[b.stmts.len - 1], visitor);
+                const scope = LocalScope{ .preceding = b.stmts[0 .. b.stmts.len - 1], .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                nested.eachTailCallee(b.stmts[b.stmts.len - 1], visitor);
             },
             .if_expr => |ie| {
-                eachTailCallee(ie.then_branch, visitor);
-                if (ie.else_branch) |eb| eachTailCallee(eb, visitor);
+                self.eachTailCallee(ie.then_branch, visitor);
+                if (ie.else_branch) |eb| self.eachTailCallee(eb, visitor);
             },
-            .match_expr => |me| for (me.arms) |arm| eachTailCallee(arm.body, visitor),
-            .call => |c| visitor.visit(c.callee),
+            .match_expr => |me| for (me.arms) |arm| self.eachTailCallee(arm.body, visitor),
+            .call => |c| visitor.visit(self, c.callee),
             else => {},
         }
     }
@@ -97,15 +104,14 @@ pub const ErrorAnalysis = struct {
     /// The call a failable body hands back with no `return` keyword.
     fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         var visitor = struct {
-            a: ErrorAnalysis,
             edges: *std.ArrayList([]const u8),
             dyn: *bool,
             fd: ?*const ast.FnDecl,
-            fn visit(v: *@This(), callee: *const Node) void {
-                v.a.contributeCallee(callee, v.fd, v.edges, v.dyn);
+            fn visit(v: *@This(), analysis: ErrorAnalysis, callee: *const Node) void {
+                analysis.contributeCallee(callee, v.fd, v.edges, v.dyn);
             }
-        }{ .a = self, .edges = edges, .dyn = dyn, .fd = enclosing_fd };
-        eachTailCallee(node, &visitor);
+        }{ .edges = edges, .dyn = dyn, .fd = enclosing_fd };
+        self.eachTailCallee(node, &visitor);
     }
 
     /// Does this `??` operand hand back a failure rather than an optional?
@@ -121,14 +127,13 @@ pub const ErrorAnalysis = struct {
             else => {},
         }
         var visitor = struct {
-            a: ErrorAnalysis,
             fd: ?*const ast.FnDecl,
             fails: bool,
-            fn visit(v: *@This(), callee: *const Node) void {
-                if (v.a.calleeIsFailable(callee, v.fd)) v.fails = true;
+            fn visit(v: *@This(), analysis: ErrorAnalysis, callee: *const Node) void {
+                if (analysis.calleeIsFailable(callee, v.fd)) v.fails = true;
             }
-        }{ .a = self, .fd = enclosing_fd, .fails = false };
-        eachTailCallee(node, &visitor);
+        }{ .fd = enclosing_fd, .fails = false };
+        self.eachTailCallee(node, &visitor);
         return visitor.fails;
     }
 
@@ -169,23 +174,54 @@ pub const ErrorAnalysis = struct {
         return qualified;
     }
 
-    /// The nominal spelling of the parameter `name` of `fd`, seen past a
-    /// pointer, or null when `fd` has no such parameter or its written type is
-    /// not nominal.
-    fn paramTypeName(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?[]const u8 {
+    fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
+        var ty = original;
+        if (ty.isBuiltin()) return null;
+        if (self.l.module.types.get(ty) == .pointer) ty = self.l.module.types.get(ty).pointer.pointee;
+        if (ty.isBuiltin()) return null;
+        return switch (self.l.module.types.get(ty)) {
+            .@"struct" => |s| self.l.module.types.getString(s.name),
+            else => null,
+        };
+    }
+
+    // A local initializer sees only preceding declarations, including when
+    // it shadows a receiver in an outer scope.
+    fn bindingType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
+        var scope = self.locals;
+        while (scope) |current| : (scope = current.parent) {
+            var i = current.preceding.len;
+            while (i > 0) {
+                i -= 1;
+                const node = current.preceding[i];
+                const binding: struct { name: []const u8, annotation: ?*Node, value: ?*Node } = switch (node.data) {
+                    .var_decl => |v| .{ .name = v.name, .annotation = v.type_annotation, .value = v.value },
+                    .const_decl => |c| .{ .name = c.name, .annotation = c.type_annotation, .value = @as(?*Node, c.value) },
+                    else => continue,
+                };
+                if (!std.mem.eql(u8, binding.name, name)) continue;
+                if (binding.annotation) |annotation| return self.l.resolveType(annotation);
+                const value = binding.value orelse return .unresolved;
+                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent };
+                var initializer = self;
+                initializer.locals = &preceding;
+                return initializer.receiverType(fd, value);
+            }
+        }
         const decl = fd orelse return null;
         for (decl.params) |p| {
-            if (!std.mem.eql(u8, p.name, name)) continue;
-            var ty = self.l.resolveType(p.type_expr);
-            if (ty.isBuiltin()) return null;
-            if (self.l.module.types.get(ty) == .pointer) ty = self.l.module.types.get(ty).pointer.pointee;
-            if (ty.isBuiltin()) return null;
-            return switch (self.l.module.types.get(ty)) {
-                .@"struct" => |s| self.l.module.types.getString(s.name),
-                else => null,
-            };
+            if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
         }
         return null;
+    }
+
+    fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
+        if (node.data == .identifier) {
+            if (self.bindingType(fd, node.data.identifier.name)) |ty| return ty;
+        }
+        if (node.data == .unary_op and node.data.unary_op.op == .address_of)
+            return self.l.module.types.ptrTo(self.receiverType(fd, node.data.unary_op.operand));
+        return self.l.inferExprType(node);
     }
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
@@ -221,7 +257,14 @@ pub const ErrorAnalysis = struct {
                 }
                 self.collectErrorSites(te.operand, tags, edges, dyn, enclosing_fd);
             },
-            .block => |b| for (b.stmts) |s| self.collectErrorSites(s, tags, edges, dyn, enclosing_fd),
+            .block => |b| {
+                for (b.stmts, 0..) |stmt, i| {
+                    const scope = LocalScope{ .preceding = b.stmts[0..i], .parent = self.locals };
+                    var nested = self;
+                    nested.locals = &scope;
+                    nested.collectErrorSites(stmt, tags, edges, dyn, enclosing_fd);
+                }
+            },
             .if_expr => |ie| {
                 self.collectErrorSites(ie.condition, tags, edges, dyn, enclosing_fd);
                 self.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);

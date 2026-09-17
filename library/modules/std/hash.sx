@@ -32,6 +32,7 @@
 
 @import "modules/std/core.sx";     // string
 @import "modules/std/fs.sx";       // openFile, File
+@import "modules/std/encoding.sx"; // hexDigit
 
 // Low 32 bits. SHA-256 is defined over 32-bit words; every add/rotate
 // result is masked back through this so the carry never escapes bit 31.
@@ -175,19 +176,14 @@ Sha256 :: struct {
             while j < 4 {
                 byteVal := (word >> ((3 - j) * 8)) & 0xFF;
                 pos := (i * 4 + j) * 2;
-                digest[pos]     = nibbleHex((byteVal >> 4) & 0xF);
-                digest[pos + 1] = nibbleHex(byteVal & 0xF);
+                digest[pos]     = hexDigit((byteVal >> 4) & 0xF);
+                digest[pos + 1] = hexDigit(byteVal & 0xF);
                 j += 1;
             }
             i += 1;
         }
         digest
     }
-}
-
-// Lowercase-hex ASCII byte for a 0..15 nibble.
-nibbleHex :: (n: i64) -> u8 {
-    if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
 }
 
 // Returns the SHA-256 state by value; the caller binds it to a local

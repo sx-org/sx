@@ -67,7 +67,7 @@ main :: () -> ! {
     report("json-set",         p.json);
     report("no-rest",          p.rest.len == 0);
 
-    // ── 2. Heap discipline: flag value is a VIEW into argv ────────────
+    // ── 2. Ownership: flag value is a VIEW into argv ──────────────────
     // "dist" is argv[3]; its bytes must lie inside that very element.
     src   : i64 = xx argv[3].ptr;
     stop  := src + argv[3].len;

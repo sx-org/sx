@@ -23,6 +23,7 @@
 @import "modules/std/fmt.sx";          // concat, intToString
 @import "modules/std/list.sx";         // List
 @import "modules/std/mem.sx";
+@import "modules/std/encoding.sx";     // hexValue
 clib :: @import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
 socket :: @import "modules/std/socket.sx";
 @import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
@@ -758,11 +759,7 @@ recvEncodedBody :: (c: *ClientConn, buf: [*]u8, cap: i64, headEnd: i64,
         b := wire[wireAt];
         wireAt += 1;
         if phase == .size {
-            digit : i64 = -1;
-            if '0' <= b <= '9' { digit = (b - '0').(i64); }
-            else if 'a' <= b <= 'f' { digit = (b - 'a' + 10).(i64); }
-            else if 'A' <= b <= 'F' { digit = (b - 'A' + 10).(i64); }
-            if digit >= 0 {
+            if digit := hexValue(b) {
                 if chunkSize > 0x07FFFFFFFFFFFFFF { raise .Recv; }
                 chunkSize = chunkSize * 16 + digit;
                 sizeDigits += 1;

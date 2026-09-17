@@ -256,7 +256,7 @@ osArgs :: (buf: []string) -> []string {
 // records the offending token (its `args` index + a VIEW of it) before
 // the raise, so the caller can report exactly which token failed.
 //
-// HEAP DISCIPLINE (binding, see heap-discipline.md): zero heap, zero copy.
+// OWNERSHIP: zero heap, zero copy.
 //   - group / command / every flag value / every `rest` operand are VIEWS
 //     (slices) into the caller's `args` — never copied.
 //   - `Parsed` is a by-value STACK struct the caller binds (like
@@ -360,7 +360,7 @@ isLongFlag :: (s: string) -> bool {
 
 // Parse `args` (the logical argv) against the `commands` table, writing
 // the offending token into `diag` on the error path. See the section
-// header for grammar, failure contract, and heap discipline.
+// header for grammar, failure contract, and ownership.
 parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliError) {
     // ── Dispatch: match (args[0], args[1]) against the command table ──
     if args.len < 2 {

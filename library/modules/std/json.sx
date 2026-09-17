@@ -17,75 +17,58 @@
 // in is the order the writer emits them. This is the "stable key order"
 // guarantee the manifest / db.json rely on.
 //
-// HEAP DISCIPLINE (binding, see heap-discipline.md):
-//   - Scalars (null / bool / int / float) carry no heap.
-//   - String values are VIEWS (`string`) into caller-owned memory; the
-//     node never copies the input bytes.
-//   - Composite nodes (array / object) hold unbounded children, so they
-//     genuinely need dynamic storage — but every allocation goes through
-//     an EXPLICIT `allocator` argument on the builder method
-//     (`arr.append(v, alloc)` / `obj.put(key, val, alloc)`). Allocation
-//     NEVER falls back to the implicit context allocator silently — pass
-//     `alloc` even though `List.append`'s allocator arg is defaulted.
-//   - The WRITER adds ZERO output allocations. It emits into a
-//     CALLER-PROVIDED sink: either a fixed `[]u8` buffer the caller owns
-//     (overflow is reported, never silently truncated) or, streaming,
-//     straight to an `fs.File` through a small caller-provided staging
-//     buffer — so the db.json path holds no whole-document string in
-//     memory (peak memory is O(staging), not O(document)). Integer
-//     digits are formatted in a stack `[20]u8`, float digits in a stack
-//     `[24]u8`, and the decimal conversions run on stack integers.
-//     Sink/IO/overflow failures surface on the error channel
-//     (`!JsonError`).
-//
 // Building a value (`@import "modules/std/json.sx";` brings these in):
 //
 //     obj : Object = .{};
-//     obj.put("name", .str(nameView), alloc);   // nameView: a `string`
-//     obj.put("size", .int(123), alloc);
+//     obj.put("name", .str(nameView));   // nameView: a `string`
+//     obj.put("size", .int(123));
 //     arr : List(Value) = .{};
-//     arr.append(.int(1), alloc);
-//     obj.put("xs", .array(arr), alloc);
+//     arr.append(.int(1));
+//     obj.put("xs", .array(arr));
 //     root : Value = .object(obj);
 //
-// Writing into a caller buffer (returns bytes written; raises on overflow):
+// Writing onto the heap (`StringBuilder` grows to fit):
 //
-//     out : [4096]u8 = ---;
-//     n := try writeToBuffer(root, string{ ptr = @out[0], len = 4096 });
+//     sb := StringBuilder.init();
+//     jw := JsonWriter.init(sb);
+//     try jw.write(root);
+//     got := sb.finish();
 //
-// Streaming straight to a file (no whole-document string):
+// Writing into a caller-owned buffer (`written` is null when it did not
+// fit, and `len` is then the size that would):
 //
-//     f := openFile("db.json\0", .write)?!;
-//     stage : [4096]u8 = ---;
-//     try writeToFile(root, @f, string{ ptr = @stage[0], len = 4096 });
-//     f.close();
+//     buf : [4096]u8 = ---;
+//     fw := FixedWriter.init(buf[..]);
+//     jw := JsonWriter.init(fw);
+//     try jw.write(root);
+//     view := fw.written()?!;
+//
+// Writing a file (the whole document is built, then written by `writeFile`):
+//
+//     sb := StringBuilder.init();
+//     jw := JsonWriter.init(sb);
+//     try jw.write(root);
+//     if !writeFile("db.json", sb.finish()) { … }
 // =====================================================================
 
-@import "modules/std/core.sx";     // Allocator, @sizeOf, string
+@import "modules/std/core.sx";     // Allocator, Writer, @sizeOf, string
 @import "modules/std/list.sx";     // List
 c :: @import "modules/std/c.sx";
-// `List`/`Object` builders take an explicit `alloc: Allocator`; bare-import
-// visibility is non-transitive, so the module that names the type imports it.
-@import "modules/std/mem.sx";
-@import "modules/std/fs.sx";
+@import "modules/std/mem.sx";      // alloc
 // `toF64` / `shortest` / `floatBits` / `isNonFinite` — the exact
 // decimal <-> binary pair the reader and the writer share.
 @import "modules/std/internal/decimal.sx";
+@import "modules/std/encoding.sx";     // encodeUtf8, hexDigit, hexValue
 
-// The writer's failure contract: a too-small caller buffer (Overflow), a
-// short/failed file write (Io), or a `float` that JSON cannot spell — a
-// NaN or an infinity (NonFinite). Surfaced on the error channel — never a
-// silent truncation or default.
-JsonError :: error { Overflow; Io; NonFinite }
+// The writer's only failure of its own making: a `float` that JSON cannot
+// spell — a NaN or an infinity.
+JsonError :: error { NonFinite }
 
 // ── Value model ──────────────────────────────────────────────────────
 //
 // `Value` is a payload enum over the JSON kinds. `null`/`bool`/`int`/
 // `float` are scalars; `str` is a VIEW into caller memory; `array` is a
 // `List(Value)` and `object` owns growable child storage (see Object).
-// Grow the array through the explicit-allocator form — `arr.append(v,
-// alloc)` — to keep the module's heap discipline (never the implicit
-// `context.allocator` default).
 //
 // `Value` is defined before Object so the `[*]Member` back-reference
 // resolves; `List(Value)` / `object` refer back to `Value` in turn
@@ -110,8 +93,7 @@ Member :: struct {
 }
 
 // Ordered list of (key, value) pairs — INSERTION ORDER preserved, never
-// sorted, never deduplicated. Growable backing store through the
-// explicit `alloc`.
+// sorted, never deduplicated.
 Object :: struct {
     items: [*]Member = null;
     len: i64 = 0;
@@ -120,7 +102,7 @@ Object :: struct {
     // Append a (key, val) pair at the end. Does not check for or merge a
     // duplicate key — insertion order is the contract; a repeated key is
     // emitted twice, in the order added.
-    put :: (self: *Object, key: string, v: Value, alloc: Allocator) {
+    put :: (self: *Object, key: string, v: Value, alloc: Allocator = context.allocator) {
         if self.len >= self.cap {
             newCap := if self.cap == 0 then 4 else self.cap * 2;
             newItems : [*]Member = alloc.alloc(Member, newCap).ptr;
@@ -135,7 +117,7 @@ Object :: struct {
         self.len += 1;
     }
 
-    deinit :: (self: *Object, alloc: Allocator) {
+    deinit :: (self: *Object, alloc: Allocator = context.allocator) {
         if self.items != null { alloc.deallocBytes(self.items); }
         self.items = null;
         self.len = 0;
@@ -152,136 +134,41 @@ Object :: struct {
 // Remaining exponent digits are ignored after `ev` exceeds this limit.
 // The largest accumulated value fits in i64, and no in-memory token has
 // enough digits to offset its magnitude.
-EXP_LIMIT :: 100000000000000000;   // 10^17
-
-// ── Sink ─────────────────────────────────────────────────────────────
-//
-// A single concrete output sink with two modes, chosen by `file`:
-//   - BUFFER mode (`file == null`): bytes land directly in the caller's
-//     `dst`; when `dst` fills, `put`/`putByte` raise `JsonError.Overflow`.
-//     `pos` is the running byte count.
-//   - FILE mode (`file != null`): `dst` is a caller-provided STAGING
-//     buffer; when it fills it is flushed to `file` and reused, so peak
-//     memory is O(dst) regardless of document size. `flush()` writes any
-//     remaining staged bytes. The staging buffer must be non-empty.
-//
-// The sink owns NO heap and holds NO whole-document string.
-
-Sink :: struct {
-    dst: []u8;            // caller-owned destination (buffer mode) or staging (file mode)
-    pos: i64 = 0;         // bytes currently in `dst`
-    file: *File = null;   // null => buffer mode
-
-    putByte :: (self: *Sink, b: u8) -> !JsonError {
-        if self.pos >= self.dst.len {
-            if self.file == null { raise .Overflow; }
-            try self.flush();
-        }
-        self.dst[self.pos] = b;
-        self.pos += 1;
-        return;
-    }
-
-    put :: (self: *Sink, bytes: string) -> !JsonError {
-        i := 0;
-        while i < bytes.len {
-            try self.putByte(bytes[i]);
-            i += 1;
-        }
-        return;
-    }
-
-    // File mode: write staged bytes and reset. Buffer mode: no-op.
-    flush :: (self: *Sink) -> !JsonError {
-        if self.file == null { return; }
-        if self.pos == 0 { return; }
-        n := self.file.write(string{ ptr = *self.dst[0], len = self.pos });
-        if n != self.pos { raise .Io; }
-        self.pos = 0;
-        return;
-    }
-}
+private EXP_LIMIT :: 100000000000000000;   // 10^17
 
 // ── Writer ───────────────────────────────────────────────────────────
 
-// Lowercase-hex ASCII byte for a 0..15 nibble. 48='0', 97='a'.
-hexDigit :: (n: i64) -> u8 {
-    if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
-}
+// The longest run of digits `decimal` pads out rather than switching to the
+// exponential form.
+private INTEGRAL_DIGITS :: 18;
 
-// `\u00XX` escape for a control byte (< 0x20). Two hex nibbles; the high
-// byte of the code point is always 0x00 here.
-writeUEscape :: (c: u8, sink: *Sink) -> !JsonError {
-    try sink.putByte('\\');
-    try sink.putByte('u');
-    try sink.putByte('0');
-    try sink.putByte('0');
-    try sink.putByte(hexDigit((c.(i64) >> 4) & 0xF));
-    try sink.putByte(hexDigit(c.(i64) & 0xF));
-    return;
-}
-
-// Emit a JSON string: opening quote, escaped body, closing quote. Escapes
-// quote, backslash, the named control shorthands (\b \t \n \f \r), and
-// any other control byte (< 0x20) as `\u00XX`. Bytes >= 0x20 (including
-// UTF-8 continuation bytes) pass through unchanged.
-writeString :: (s: string, sink: *Sink) -> !JsonError {
-    try sink.putByte('"');
-    i := 0;
-    while i < s.len {
-        c := s[i];
-        if c == '"'      { try sink.putByte('\\'); try sink.putByte('"'); }    // \"
-        else if c == '\\' { try sink.putByte('\\'); try sink.putByte('\\'); }    // \\
-        else if c == '\x08' { try sink.putByte('\\'); try sink.putByte('b'); }    // \b
-        else if c == '\t' { try sink.putByte('\\'); try sink.putByte('t'); }   // \t
-        else if c == '\n' { try sink.putByte('\\'); try sink.putByte('n'); }   // \n
-        else if c == '\x0c' { try sink.putByte('\\'); try sink.putByte('f'); }   // \f
-        else if c == '\r' { try sink.putByte('\\'); try sink.putByte('r'); }   // \r
-        else if c < ' '  { try writeUEscape(c, sink); }
-        else             { try sink.putByte(c); }
-        i += 1;
-    }
-    try sink.putByte('"');    // closing quote
-    return;
-}
-
-// Emit a signed integer in decimal, no allocation. Digits are formed in a
-// stack buffer working in NEGATIVE space so i64 MIN
-// (-9223372036854775808) — whose magnitude is not representable as a
-// positive i64 — serializes correctly.
-writeInt :: (n: i64, sink: *Sink) -> !JsonError {
-    if n == 0 { try sink.putByte('0'); return; }
-    tmp : [20]u8 = ---;       // 19 digits + sign is the i64 worst case
-    neg := n < 0;
-    v := n;
-    if !neg { v = 0 - n; }    // fold positives into negative space
-    i := 20;
-    while v < 0 {
-        i -= 1;
-        d := 0 - (v % 10);    // sx `%` keeps the dividend's sign; this is 0..9
-        tmp[i] = (d + '0').(u8);
-        v = v / 10;           // truncates toward zero
-    }
-    if neg { i -= 1; tmp[i] = '-'; }
-    try sink.put(string{ ptr = *tmp[i], len = 20 - i });
-    return;
-}
-
-// The longest run of digits the writer pads out rather than switching to
-// the exponential form.
-INTEGRAL_DIGITS :: 18;
+// Padding for the integral and sub-one forms; INTEGRAL_DIGITS bounds both runs.
+private ZEROS :: "000000000000000000";
 
 // A significand whose emitted text ends in a literal `.0` — `12300.0`.
-integralForm :: (k: i64, p: i64) -> bool {
+private integralForm :: (k: i64, p: i64) -> bool {
     k >= 0 and p + k + 1 <= INTEGRAL_DIGITS
 }
 
-// Emit the `p`-digit significand `n` scaled by 10^k: `123.45` when the
-// point falls inside the digits, `0.00123` when the value is below one,
+// The two-byte escape for `c`; null when `c` has none.
+private escapeOf :: (c: u8) -> ?string {
+    if c == '"'    { return "\\\""; }
+    if c == '\\'   { return "\\\\"; }
+    if c == '\x08' { return "\\b"; }
+    if c == '\t'   { return "\\t"; }
+    if c == '\n'   { return "\\n"; }
+    if c == '\x0c' { return "\\f"; }
+    if c == '\r'   { return "\\r"; }
+    null
+}
+
+// The `p`-digit significand `n` scaled by 10^k: `123.45` when the point
+// falls inside the digits, `0.00123` when the value is below one,
 // `12300.0` when it is integral, `1.23e-45` otherwise. Every form spells
 // the same decimal `n * 10^k`, which is what the reader recovers.
-emitDecimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
-    digits : [24]u8 = ---;
+// `p` is at most 17, the most digits `shortest` produces.
+private decimal :: (out: Writer, n: i64, k: i64, p: i64) {
+    digits : [17]u8 = ---;
     v := n;
     i := p;
     while i > 0 {
@@ -290,113 +177,135 @@ emitDecimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
         v = v / 10;
     }
     if integralForm(k, p) {
-        try sink.put(string{ ptr = *digits[0], len = p });
-        z := 0;
-        while z < k { try sink.putByte('0'); z += 1; }
-        try sink.put(".0");
+        out.write(digits[..p]);
+        out.write(ZEROS[..k]);
+        out.write(".0");
         return;
     }
     point := k + p - 1;        // 10^point is the leading digit's weight
     if point >= 0 and point <= p - 2 {
-        try sink.put(string{ ptr = *digits[0], len = point + 1 });
-        try sink.putByte('.');
-        try sink.put(string{ ptr = *digits[point + 1], len = p - point - 1 });
+        out.write(digits[..point + 1]);
+        out.write(".");
+        out.write(digits[point + 1..p]);
         return;
     }
     if point < 0 and point >= 0 - 6 {
-        try sink.put("0.");
-        z := 0 - point - 1;
-        while z > 0 { try sink.putByte('0'); z -= 1; }
-        try sink.put(string{ ptr = *digits[0], len = p });
+        out.write("0.");
+        out.write(ZEROS[..0 - point - 1]);
+        out.write(digits[..p]);
         return;
     }
-    try sink.putByte(digits[0]);
+    out.write(digits[..1]);
     if p > 1 {
-        try sink.putByte('.');
-        try sink.put(string{ ptr = *digits[1], len = p - 1 });
+        out.write(".");
+        out.write(digits[1..p]);
     }
-    try sink.putByte('e');
-    if point < 0 { try sink.putByte('-'); try writeInt(0 - point, sink); }
-    else         { try writeInt(point, sink); }
-    return;
-}
-
-// Emit a float as the SHORTEST decimal that reads back as the identical
-// double. The text is a preimage of `f`, never an approximation of it. A
-// NaN or an infinity has no JSON spelling and raises.
-writeFloat :: (f: f64, sink: *Sink) -> !JsonError {
-    bits := floatBits(f);
-    if isNonFinite(bits) { raise .NonFinite; }
-    if bits < 0 { try sink.putByte('-'); }   // the sign BIT, so -0.0 keeps its sign
-    v := if bits < 0 then 0.0 - f else f;
-    if v == 0.0 { try sink.put("0.0"); return; }
-    d := shortest(v);
-    try emitDecimal(d.mant, d.exp10, d.digits, sink);
-    return;
-}
-
-// Serialize one value into `sink`. Recurses for arrays / objects.
-writeValue :: (v: Value, sink: *Sink) -> !JsonError {
-    match v {
-        case .null:  try sink.put("null");
-        case .bool:  try sink.put(if v.bool then "true" else "false");
-        case .int:   try writeInt(v.int, sink);
-        case .float: try writeFloat(v.float, sink);
-        case .str:    try writeString(v.str, sink);
-        case .array:  try writeArray(v.array, sink);
-        case .object: try writeObject(v.object, sink);
+    out.write("e");
+    if point < 0 {
+        out.write("-");
+        out.writeInt(0 - point);
+    } else {
+        out.writeInt(point);
     }
-    return;
 }
 
-writeArray :: (arr: List(Value), sink: *Sink) -> !JsonError {
-    try sink.putByte('[');
-    i := 0;
-    while i < arr.len {
-        if i > 0 { try sink.putByte(','); }
-        try writeValue(arr.items[i], sink);
-        i += 1;
+// One JSON document, emitted into a caller's `Writer`.
+JsonWriter :: struct {
+    out: Writer;
+
+    init :: (out: Writer) -> JsonWriter => .{ out = out };
+
+    // Serialize `v` as a complete document, then flush the sink.
+    write :: (self: *JsonWriter, v: Value) -> !JsonError {
+        try self.value(v);
+        self.out.flush();
+        return;
     }
-    try sink.putByte(']');
-    return;
-}
 
-// Emits members in stored order — the insertion order guarantee.
-writeObject :: (obj: Object, sink: *Sink) -> !JsonError {
-    try sink.putByte('{');
-    i := 0;
-    while i < obj.len {
-        if i > 0 { try sink.putByte(','); }
-        try writeString(obj.items[i].key, sink);
-        try sink.putByte(':');
-        try writeValue(obj.items[i].val, sink);
-        i += 1;
+    value :: (self: *JsonWriter, v: Value) -> !JsonError {
+        match v {
+            case .null:   self.out.write("null");
+            case .bool:   self.out.write(if v.bool then "true" else "false");
+            case .int:    self.out.writeInt(v.int);
+            case .float:  try self.float(v.float);
+            case .str:    self.str(v.str);
+            case .array:  try self.array(v.array);
+            case .object: try self.object(v.object);
+        }
+        return;
     }
-    try sink.putByte('}');
-    return;
-}
 
-// ── Public entry points ──────────────────────────────────────────────
+    array :: (self: *JsonWriter, arr: List(Value)) -> !JsonError {
+        self.out.write("[");
+        i := 0;
+        while i < arr.len {
+            if i > 0 { self.out.write(","); }
+            try self.value(arr.items[i]);
+            i += 1;
+        }
+        self.out.write("]");
+        return;
+    }
 
-// Serialize `v` into the caller-owned buffer `dst`. Returns the number of
-// bytes written. Raises `JsonError.Overflow` if `dst` is too small (the
-// partial contents of `dst` are then undefined — nothing is truncated
-// silently). No allocation.
-writeToBuffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
-    sink := Sink{ dst = dst };
-    try writeValue(v, *sink);
-    return sink.pos;
-}
+    // Emits members in stored order — the insertion order guarantee.
+    object :: (self: *JsonWriter, obj: Object) -> !JsonError {
+        self.out.write("{");
+        i := 0;
+        while i < obj.len {
+            if i > 0 { self.out.write(","); }
+            self.str(obj.items[i].key);
+            self.out.write(":");
+            try self.value(obj.items[i].val);
+            i += 1;
+        }
+        self.out.write("}");
+        return;
+    }
 
-// Serialize `v` straight to an open `file`, staging through the caller-
-// owned `staging` buffer (which must be non-empty). No whole-document
-// string is ever held — peak extra memory is O(staging). Raises
-// `JsonError.Io` on a short/failed write. No allocation.
-writeToFile :: (v: Value, file: *File, staging: []u8) -> !JsonError {
-    sink := Sink{ dst = staging, file = file };
-    try writeValue(v, *sink);
-    try sink.flush();
-    return;
+    // Opening quote, escaped body, closing quote. Bytes needing no escape
+    // leave as one run, so a string with no escapes costs three writes.
+    // `"`, `\` and the control bytes with a shorthand take it, any other
+    // control byte goes out as `\u00XX`, and every other byte, including
+    // UTF-8 bytes, passes through.
+    str :: (self: *JsonWriter, s: string) {
+        self.out.write("\"");
+        run := 0;
+        i := 0;
+        while i < s.len {
+            c := s[i];
+            if esc := escapeOf(c) {
+                self.out.write(s[run..i]);
+                self.out.write(esc);
+            } else if c < ' ' {
+                self.out.write(s[run..i]);
+                u : [6]u8 = .['\\', 'u', '0', '0',
+                              hexDigit((c.(i64) >> 4) & 0xF),
+                              hexDigit(c.(i64) & 0xF)];
+                self.out.write(u[..]);
+            } else {
+                i += 1;
+                continue;
+            }
+            i += 1;
+            run = i;
+        }
+        self.out.write(s[run..]);
+        self.out.write("\"");
+    }
+
+    // The SHORTEST decimal that reads back as the identical double. The text
+    // is a preimage of `f`, never an approximation of it. A NaN or an infinity
+    // has no JSON spelling and raises.
+    float :: (self: *JsonWriter, f: f64) -> !JsonError {
+        bits := floatBits(f);
+        if isNonFinite(bits) { raise .NonFinite; }
+        if bits < 0 { self.out.write("-"); }   // the sign BIT, so -0.0 keeps its sign
+        v := if bits < 0 then 0.0 - f else f;
+        if v == 0.0 { self.out.write("0.0"); return; }
+        d := shortest(v);
+        decimal(self.out, d.mant, d.exp10, d.digits);
+        return;
+    }
 }
 
 // ── Reader (parser) ───────────────────────────────────────────────────
@@ -427,17 +336,6 @@ writeToFile :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 // `\u0009`, …) stay valid and decode normally. Bytes >= 0x20, including
 // 0x7F (DEL) and UTF-8 continuation bytes (>= 0x80), pass through.
 //
-// HEAP DISCIPLINE (binding, see heap-discipline.md). Exactly two kinds of
-// allocation happen, both through the EXPLICIT `alloc` parameter, never
-// the implicit context allocator:
-//   1. Composite backing stores — the `array` List(Value) / `Object.items`
-//      grow via `arr.append(.., alloc)` / `obj.put(.., alloc)` (genuinely
-//      unbounded children).
-//   2. DECODED strings — a string containing escapes must be un-escaped
-//      into fresh storage; that buffer is `alloc`-ed (bounded by the raw
-//      span, since every escape shrinks). A string with NO escapes is a
-//      zero-copy VIEW into `src`; scalars carry no heap.
-//
 // OWNERSHIP / LIFETIME: un-escaped string values are SLICES into `src` —
 // they are valid only while `src` lives. Everything else (nodes, decoded
 // strings) is owned by `alloc`; free it all by dropping that allocator
@@ -447,57 +345,22 @@ writeToFile :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 //     gpa   := GPA.init();
 //     arena := Arena.init(gpa, 4096);
 //     defer arena.deinit();
-//     root  := parse(src, arena)?!;   // composites + decoded strings in arena
+//     root  := try parse(src, arena);   // composites + decoded strings in arena
 
 // The reader's failure contract. Meaningful variants so a caller can tell
 // a truncated document from a bad escape from trailing junk.
 JsonParseError :: error { UnexpectedToken; UnexpectedEnd; BadEscape; BadNumber; TrailingGarbage; BadControlChar }
 
-// Lowercase/uppercase hex nibble value (0..15) of an ASCII byte; a non-hex
-// byte in a `\uXXXX` escape is a `BadEscape`.
-hexValue :: (c: u8) -> (i64, !JsonParseError) {
-    if c >= '0' and c <= '9'  { return (c.(i64)) - '0'; }        // '0'..'9'
-    if c >= 'a' and c <= 'f' { return (c.(i64)) - 'a' + 10; }   // 'a'..'f'
-    if c >= 'A' and c <= 'F'  { return (c.(i64)) - 'A' + 10; }   // 'A'..'F'
-    raise .BadEscape;
-}
-
-// Encode code point `cp` (already validated 0..0x10FFFF, non-surrogate) as
-// UTF-8 into `out`, returning the byte count (1..4). No bounds check: the
-// decode buffer is sized to the raw escaped span, which always dominates.
-encodeUtf8 :: (cp: i64, out: [*]u8) -> i64 {
-    if cp < 0x80 {
-        out[0] = cp.(u8);
-        return 1;
-    }
-    if cp < 0x800 {
-        out[0] = (0xC0 | (cp >> 6)).(u8);
-        out[1] = (0x80 | (cp & 0x3F)).(u8);
-        return 2;
-    }
-    if cp < 0x10000 {
-        out[0] = (0xE0 | (cp >> 12)).(u8);
-        out[1] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
-        out[2] = (0x80 | (cp & 0x3F)).(u8);
-        return 3;
-    }
-    out[0] = (0xF0 | (cp >> 18)).(u8);
-    out[1] = (0x80 | ((cp >> 12) & 0x3F)).(u8);
-    out[2] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
-    out[3] = (0x80 | (cp & 0x3F)).(u8);
-    return 4;
-}
-
 // The cursor over the input. `src` is borrowed (never written); `pos` is
-// the running offset and doubles as the failure position; `alloc` is the
-// EXPLICIT allocator for composites + decoded strings.
-Parser :: struct {
+// the running offset and doubles as the failure position; `alloc` funds
+// composites and decoded strings.
+JsonParser :: struct {
     src: string;
     pos: i64 = 0;
     alloc: Allocator;
 
     // Advance past JSON whitespace (space / tab / LF / CR).
-    skipWs :: (self: *Parser) {
+    skipWs :: (self: *JsonParser) {
         while self.pos < self.src.len {
             c := self.src[self.pos];
             if c == ' ' or c == '\t' or c == '\n' or c == '\r' { self.pos += 1; }
@@ -506,7 +369,7 @@ Parser :: struct {
     }
 
     // Consume an exact literal (`true` / `false` / `null`) or fail.
-    expectLit :: (self: *Parser, lit: string) -> !JsonParseError {
+    expectLit :: (self: *JsonParser, lit: string) -> !JsonParseError {
         if self.pos + lit.len > self.src.len { raise .UnexpectedEnd; }
         i := 0;
         while i < lit.len {
@@ -519,12 +382,12 @@ Parser :: struct {
 
     // Read 4 hex digits at `i` (which must lie within [.., end)); returns
     // the 16-bit value. Fewer than 4 digits before `end` is a BadEscape.
-    readHex4 :: (self: *Parser, i: i64, end: i64) -> (i64, !JsonParseError) {
+    readHex4 :: (self: *JsonParser, i: i64, end: i64) -> (i64, !JsonParseError) {
         if i + 4 > end { raise .BadEscape; }
         v := 0;
         k := 0;
         while k < 4 {
-            v = v * 16 + (try hexValue(self.src[i + k]));
+            if d := hexValue(self.src[i + k]) { v = v * 16 + d; } else { raise .BadEscape; }
             k += 1;
         }
         return v;
@@ -533,7 +396,7 @@ Parser :: struct {
     // Decode the escaped string body in [start, end) into `out`, returning
     // the decoded byte length. Pass 1 (in parseString) guarantees there is
     // no dangling backslash, so the byte after every `\` is in range.
-    decodeInto :: (self: *Parser, start: i64, end: i64, out: [*]u8) -> (i64, !JsonParseError) {
+    decodeInto :: (self: *JsonParser, start: i64, end: i64, out: []u8) -> (i64, !JsonParseError) {
         di := 0;
         i := start;
         while i < end {
@@ -560,11 +423,10 @@ Parser :: struct {
                         lo := try self.readHex4(lpos + 2, end);
                         if lo < 0xDC00 or lo > 0xDFFF { raise .BadEscape; }
                         cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
-                        di += encodeUtf8(cp, *out[di]);
+                        if seq := encodeUtf8(cp, out[di..]) { di += seq.len; } else { raise .BadEscape; }
                         i = lpos + 6;
                     } else {
-                        if u >= 0xDC00 and u <= 0xDFFF { raise .BadEscape; }   // lone low surrogate
-                        di += encodeUtf8(u, *out[di]);
+                        if seq := encodeUtf8(u, out[di..]) { di += seq.len; } else { raise .BadEscape; }
                         i = hpos + 4;
                     }
                 }
@@ -580,7 +442,7 @@ Parser :: struct {
     // a zero-copy VIEW into `src` when the body has no escapes; otherwise
     // decodes into an `alloc`-ed buffer (bounded by the raw span). `pos`
     // ends just past the closing quote.
-    parseString :: (self: *Parser) -> (string, !JsonParseError) {
+    parseString :: (self: *JsonParser) -> (string, !JsonParseError) {
         self.pos += 1;                 // consume opening quote
         start := self.pos;
         hasEscape := false;
@@ -604,20 +466,20 @@ Parser :: struct {
         end := i;
         if !hasEscape {
             self.pos = end + 1;
-            return string{ ptr = *self.src[start], len = end - start };
+            return self.src[start..end];
         }
         rawLen := end - start;        // decoded length <= rawLen (escapes shrink)
-        out : [*]u8 = self.alloc.alloc(u8, rawLen).ptr;
+        out := self.alloc.alloc(u8, rawLen);
         dlen := try self.decodeInto(start, end, out);
         self.pos = end + 1;
-        return string{ ptr = out, len = dlen };
+        return out[..dlen];
     }
 
     // Parse an RFC 8259 number: `-`? int frac? exp?. A bare integer is an
     // `int`; a fraction or an exponent makes it a `float`. The integer
     // digits feed BOTH accumulators — which one survives is settled by
     // the tail — so the token is read in a single pass.
-    parseNumber :: (self: *Parser) -> (Value, !JsonParseError) {
+    parseNumber :: (self: *JsonParser) -> (Value, !JsonParseError) {
         // i64 bounds, built positionally because |MIN| is not a
         // representable positive i64 literal. `minDiv10` is `MIN / 10`
         // truncated toward zero (remainder -8) — the int accumulator's
@@ -698,7 +560,7 @@ Parser :: struct {
     }
 
     // Parse an array starting at '['. Builds a `List(Value)` through `alloc`.
-    parseArray :: (self: *Parser) -> (Value, !JsonParseError) {
+    parseArray :: (self: *JsonParser) -> (Value, !JsonParseError) {
         self.pos += 1;                 // consume '['
         arr : List(Value) = .{};
         self.skipWs();
@@ -722,7 +584,7 @@ Parser :: struct {
 
     // Parse an object starting at '{'. Keys must be strings; insertion
     // order is preserved (duplicate keys are kept, never merged).
-    parseObject :: (self: *Parser) -> (Value, !JsonParseError) {
+    parseObject :: (self: *JsonParser) -> (Value, !JsonParseError) {
         self.pos += 1;                 // consume '{'
         obj : Object = .{};
         self.skipWs();
@@ -753,7 +615,7 @@ Parser :: struct {
     }
 
     // Parse any single value (after skipping leading whitespace).
-    parseValue :: (self: *Parser) -> (Value, !JsonParseError) {
+    parseValue :: (self: *JsonParser) -> (Value, !JsonParseError) {
         self.skipWs();
         if self.pos >= self.src.len { raise .UnexpectedEnd; }
         c := self.src[self.pos];
@@ -773,7 +635,7 @@ Parser :: struct {
 // string values are VIEWS into `src` and are valid only while `src` lives.
 // Trailing non-whitespace after the value raises `JsonParseError.TrailingGarbage`.
 parse :: (src: string, alloc: Allocator) -> (Value, !JsonParseError) {
-    p := Parser{ src = src, alloc = alloc };
+    p := JsonParser{ src = src, alloc = alloc };
     v := try p.parseValue();
     p.skipWs();
     if p.pos != p.src.len { raise .TrailingGarbage; }

@@ -60,10 +60,12 @@ FdWriter      :: core.FdWriter;
 writeBool     :: core.writeBool;
 writeInt      :: core.writeInt;
 writeUint     :: core.writeUint;
+writeHex      :: core.writeHex;
 writeFloat    :: core.writeFloat;
 
 writer        :: @import "modules/std/writer.sx";
 StringBuilder :: writer.StringBuilder;
+FixedWriter   :: writer.FixedWriter;
 writeEach     :: writer.writeEach;
 
 // --- Formatting ---
@@ -74,7 +76,6 @@ format :: fmt.format;
 
 anyToString      :: fmt.anyToString;
 intToString      :: fmt.intToString;
-intToHexString   :: fmt.intToHexString;
 structToString   :: fmt.structToString;
 enumToString     :: fmt.enumToString;
 flagsToString    :: fmt.flagsToString;
@@ -93,11 +94,7 @@ cstringLen  :: fmt.cstringLen;
 fromCstring :: fmt.fromCstring;
 toCstring   :: fmt.toCstring;
 
-// fmt internals, re-exported only because they were always part of the
-// flat prelude surface.
-buildFormat    :: fmt.buildFormat;
-hexGroup       :: fmt.hexGroup;
-decomposeU16x4 :: fmt.decomposeU16x4;
+buildFormat :: fmt.buildFormat;
 
 // --- Containers ---
 
@@ -141,6 +138,7 @@ time    :: @import "modules/std/time.sx";
 event   :: @import "modules/std/event.sx";
 thread  :: @import "modules/std/thread.sx";
 compress :: @import "modules/std/compress.sx";
+encoding :: @import "modules/std/encoding.sx";
 deflate  :: @import "modules/std/codecs/deflate.sx";
 zlib     :: @import "modules/std/codecs/zlib.sx";
 gzip     :: @import "modules/std/codecs/gzip.sx";

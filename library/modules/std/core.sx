@@ -234,14 +234,15 @@ impl Writer for FdWriter {
 }
 
 // The renderers `@printf`'s expansion calls, one per argument kind.
-writeBool :: (w: Writer, b: bool) {
+writeBool :: ufcs (w: Writer, b: bool) {
     w.write(if b then "true" else "false");
 }
 
 // Digits land back-to-front in the buffer, so the write starts at `i`. Twenty
-// bytes hold the widest rendering either integer renderer produces: i64's
-// minimum (nineteen digits and a sign) and u64's maximum (twenty digits).
-writeInt :: (w: Writer, n: i64) {
+// bytes hold the widest rendering either integer renderer buffers: a negative
+// i64 other than the minimum (nineteen digits and a sign) and u64's maximum
+// (twenty digits).
+writeInt :: ufcs (w: Writer, n: i64) {
     // i64.min's magnitude is not an i64; that value is the twenty-byte literal.
     if n == i64.min {
         w.write("-9223372036854775808");
@@ -267,7 +268,7 @@ writeInt :: (w: Writer, n: i64) {
     w.write(string{ ptr = *buf[i], len = 20 - i });
 }
 
-writeUint :: (w: Writer, n: u64) {
+writeUint :: ufcs (w: Writer, n: u64) {
     buf: [20]u8 = ---;
     i := 20;
     if n == 0 {
@@ -285,7 +286,7 @@ writeUint :: (w: Writer, n: u64) {
 }
 
 // Six fractional digits, zero-padded.
-writeFloat :: (w: Writer, f: f64) {
+writeFloat :: ufcs (w: Writer, f: f64) {
     v := f;
     if v < 0.0 {
         w.write("-");
@@ -303,6 +304,20 @@ writeFloat :: (w: Writer, f: f64) {
         frac = frac / 10;
     }
     w.write(string{ ptr = *buf[0], len = 6 });
+}
+
+// Lowercase hex, no prefix and no leading zeros.
+writeHex :: ufcs (w: Writer, n: u64) {
+    buf: [16]u8 = ---;
+    i := 16;
+    v := n;
+    while true {
+        i -= 1;
+        buf[i] = hexDigit((v & 0xF).(i64));
+        v = v >> 4;
+        if v == 0 { break; }
+    }
+    w.write(buf[i..]);
 }
 
 // The reader a definition whose parameter list ends in a bare `..` walks its
@@ -634,3 +649,5 @@ Into :: constraint(Target: Type) {
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.
 c :: @import "modules/std/c.sx";
+
+@import "modules/std/encoding.sx";

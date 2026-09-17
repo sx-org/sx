@@ -3407,6 +3407,16 @@ pub fn diagOptionalOperand(self: *Lowering, opt_ty: TypeId, span: ast.Span) void
     }
 }
 
+/// The payload of an optional arithmetic operand; null when `ty` is not
+/// optional. An operand not guard-narrowed is diagnosed and still unwrapped.
+pub fn unwrapOptionalOperand(self: *Lowering, operand: Ref, ty: TypeId, span: ast.Span) ?Ref {
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .optional) return null;
+    if (!self.narrowed_refs.contains(operand)) self.diagOptionalOperand(ty, span);
+    return self.builder.emit(.{ .optional_unwrap = .{ .operand = operand } }, info.optional.child);
+}
+
 pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
     const val = self.lowerExpr(fu.operand);
     const inner_ty = self.resolveOptionalInner(self.inferExprType(fu.operand));
@@ -4141,7 +4151,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             const operand = self.lowerExpr(uop.operand);
             self.suppress_int_fit_check = saved_fit;
             break :blk switch (uop.op) {
-                .negate => self.builder.emit(.{ .neg = .{ .operand = operand } }, self.builder.getRefType(operand)),
+                .negate => blk2: {
+                    const value = self.unwrapOptionalOperand(operand, self.builder.getRefType(operand), uop.operand.span) orelse operand;
+                    break :blk2 self.builder.emit(.{ .neg = .{ .operand = value } }, self.builder.getRefType(value));
+                },
                 // `!` is LOGICAL not. Only a real bool may go through the
                 // bitwise `bool_not` (i1); an integer-backed operand — an
                 // error binding (u32 tag), a plain integer — lowers as the
@@ -5400,30 +5413,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     };
     var ty = arithResultType(lhs_ty, rhs_ty);
 
-    // Auto-unwrap optional operands for arithmetic/comparison — ONLY when the
-    // operand is PROVEN present by flow narrowing (the operand-side
-    // sibling of the coercion rule). Unwrapping an un-narrowed `?T` operand
-    // unconditionally turns a null operand into its zero payload
-    // (`null + 10` → `10`, no diagnostic). `lowerIdentifier` tags a
-    // guard-narrowed local's loaded `Ref` into `narrowed_refs`; an un-narrowed
-    // optional operand is rejected loudly (then still unwrapped so the IR stays
-    // well-formed — `hasErrors()` aborts before codegen). Presence tests
-    // (`x == null` / `x != null`) returned early above, so they're unaffected.
-    if (!ty.isBuiltin()) {
-        const info = self.module.types.get(ty);
-        if (info == .optional) {
-            if (!self.narrowed_refs.contains(lhs)) self.diagOptionalOperand(ty, bop.lhs.span);
-            ty = info.optional.child;
-            lhs = self.builder.emit(.{ .optional_unwrap = .{ .operand = lhs } }, ty);
-        }
+    if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
+        lhs = payload;
+        ty = self.builder.getRefType(payload);
     }
-    if (!rhs_ty.isBuiltin()) {
-        const rhs_info = self.module.types.get(rhs_ty);
-        if (rhs_info == .optional) {
-            if (!self.narrowed_refs.contains(rhs)) self.diagOptionalOperand(rhs_ty, bop.rhs.span);
-            rhs = self.builder.emit(.{ .optional_unwrap = .{ .operand = rhs } }, rhs_info.optional.child);
-        }
-    }
+    if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
 
     // String comparison: use str_eq/str_ne (memcmp-based) instead of pointer comparison
     if (ty == .string and (bop.op == .eq or bop.op == .neq)) {

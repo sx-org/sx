@@ -1,0 +1,50 @@
+// std.encoding — byte-level encodings shared across std: UTF-8 code points
+// and hexadecimal digits.
+
+// Bytes in the UTF-8 encoding of `cp`; null when `cp` is not a Unicode
+// scalar value (negative, a surrogate, or above 0x10FFFF).
+utf8Len :: (cp: i64) -> ?i64 {
+    if cp < 0 or 0xD800 <= cp <= 0xDFFF or cp > 0x10FFFF { return null; }
+    if cp < 0x80 { return 1; }
+    if cp < 0x800 { return 2; }
+    if cp < 0x10000 { return 3; }
+    4
+}
+
+// The UTF-8 bytes of `cp`, written into the front of `out`. Null when `cp`
+// is not a Unicode scalar value or `out` is shorter than its encoding.
+encodeUtf8 :: (cp: i64, out: []u8) -> ?string {
+    if n := utf8Len(cp) {
+        if out.len < n { return null; }
+        if n == 1 {
+            out[0] = cp.(u8);
+        } else if n == 2 {
+            out[0] = (0xC0 | (cp >> 6)).(u8);
+            out[1] = (0x80 | (cp & 0x3F)).(u8);
+        } else if n == 3 {
+            out[0] = (0xE0 | (cp >> 12)).(u8);
+            out[1] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
+            out[2] = (0x80 | (cp & 0x3F)).(u8);
+        } else {
+            out[0] = (0xF0 | (cp >> 18)).(u8);
+            out[1] = (0x80 | ((cp >> 12) & 0x3F)).(u8);
+            out[2] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
+            out[3] = (0x80 | (cp & 0x3F)).(u8);
+        }
+        return out[..n];
+    }
+    null
+}
+
+// Lowercase hex ASCII byte for a 0..15 nibble.
+hexDigit :: (n: i64) -> u8 {
+    if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
+}
+
+// The 0..15 value of a hex digit in either case; null for any other byte.
+hexValue :: (c: u8) -> ?i64 {
+    if '0' <= c <= '9' { return c.(i64) - '0'; }
+    if 'a' <= c <= 'f' { return c.(i64) - 'a' + 10; }
+    if 'A' <= c <= 'F' { return c.(i64) - 'A' + 10; }
+    null
+}

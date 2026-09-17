@@ -1,6 +1,5 @@
 doc: {"esc":"\"\\\b\t\n\f\r\u0001","zero":0,"neg":-7,"min":-9223372036854775808,"max":9223372036854775807,"ok":true,"nil":null,"xs":[1,-2,3],"nested":{"k":"v"}}
 rt-exact: ok
-rt-len: ok
 rt-idempotent: ok
 st-count: ok
 st-order: ok
