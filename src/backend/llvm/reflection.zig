@@ -94,7 +94,7 @@ pub const Reflection = struct {
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
-    pub const ScalarTableKind = enum { size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag };
+    pub const ScalarTableKind = enum { size, alignment, flags, member_count, tag_width, slice_len_info, optional_flag, member_stride };
 
     pub fn getOrBuildScalarTable(self: Reflection, kind: ScalarTableKind) c.LLVMValueRef {
         const slot: *?c.LLVMValueRef, const len_slot: *u32 = switch (kind) {
@@ -105,6 +105,7 @@ pub const Reflection = struct {
             .tag_width => .{ &self.e.variant_tag_width_array, &self.e.variant_tag_width_array_len },
             .slice_len_info => .{ &self.e.slice_len_info_array, &self.e.slice_len_info_array_len },
             .optional_flag => .{ &self.e.optional_flag_array, &self.e.optional_flag_array_len },
+            .member_stride => .{ &self.e.member_stride_array, &self.e.member_stride_array_len },
         };
         if (slot.*) |g| return g;
 
@@ -131,6 +132,8 @@ pub const Reflection = struct {
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
                 .optional_flag => @bitCast(tt.optionalFlagOffset(tid)),
+                // A zero-sized element strides by 0, so absence encodes negative.
+                .member_stride => @bitCast(tt.memberStride(tid) orelse -1),
             };
             vals.append(self.e.alloc, c.LLVMConstInt(elem_ty, v, 0)) catch unreachable;
         }
@@ -145,6 +148,7 @@ pub const Reflection = struct {
             .tag_width => "__sx_variant_tag_widths",
             .slice_len_info => "__sx_slice_len_infos",
             .optional_flag => "__sx_optional_flags",
+            .member_stride => "__sx_member_strides",
         };
         const global = c.LLVMAddGlobal(self.e.llvm_module, arr_ty, gname);
         c.LLVMSetInitializer(global, arr_init);
@@ -158,9 +162,11 @@ pub const Reflection = struct {
 
     /// Member-view master-index tables: `[N x ptr]` keyed by TypeId, each slot
     /// the per-type member array (member-type tags / field offsets), or null
-    /// for memberless types. Values from the same TypeTable queries the
-    /// comptime folds use. Per-type arrays are built eagerly when the master
-    /// is first demanded (the master itself is lazy).
+    /// for memberless types. A strided kind takes ONE row — its element type,
+    /// and the offset its `memberStride` scales — so a table costs the type's
+    /// field count, never its length. Values from the same TypeTable queries
+    /// the comptime folds use. Per-type arrays are built eagerly when the
+    /// master is first demanded (the master itself is lazy).
     pub const MemberTableKind = enum { types, offsets };
 
     pub fn getOrBuildMemberPtrs(self: Reflection, kind: MemberTableKind) c.LLVMValueRef {

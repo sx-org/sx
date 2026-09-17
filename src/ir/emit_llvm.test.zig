@@ -1621,3 +1621,42 @@ test "emit: abi(.naked) function gets the naked attribute (no frame-pointer)" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "naked") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "frame-pointer") == null);
 }
+
+test "a strided kind's member tables cost its member ROW, not its length" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    const length = 1 << 20;
+    _ = module.types.arrayOf(.u8, length);
+
+    var b = Builder.init(&module);
+
+    // func member(v: any, i: i64) -> i64 { rt_field_offset(v, i) + rt_member_type(v, i) }
+    _ = b.beginFunction(str(&module, "member"), &[_]Function.Param{
+        .{ .name = str(&module, "v"), .ty = .any },
+        .{ .name = str(&module, "i"), .ty = .i64 },
+    }, .i64);
+    const entry = b.appendBlock(str(&module, "entry"), &.{});
+    b.switchToBlock(entry);
+    const args = [_]Ref{ Ref.fromIndex(0), Ref.fromIndex(1) };
+    const offset = b.callBuiltin(.rt_field_offset, &args, .i64);
+    const member = b.callBuiltin(.rt_member_type, &args, .i64);
+    b.ret(b.add(offset, member, .i64), .i64);
+    b.finalize();
+
+    var emitter = LLVMEmitter.init(alloc, &module, "test_member_tables", .{});
+    defer emitter.deinit();
+    emitter.emit();
+
+    try std.testing.expect(emitter.verify());
+
+    var g = c.LLVMGetFirstGlobal(emitter.llvm_module);
+    while (g != null) : (g = c.LLVMGetNextGlobal(g)) {
+        const initializer = c.LLVMGetInitializer(g);
+        if (initializer == null) continue;
+        const ty = c.LLVMTypeOf(initializer);
+        if (c.LLVMGetTypeKind(ty) != c.LLVMArrayTypeKind) continue;
+        try std.testing.expect(c.LLVMGetArrayLength(ty) < length);
+    }
+}

@@ -5,6 +5,7 @@ const emit = @import("../../ir/emit_llvm.zig");
 const ir_inst = @import("../../ir/inst.zig");
 const ir_types = @import("../../ir/types.zig");
 const comptime_vm = @import("../../ir/comptime_vm.zig");
+const Reflection = @import("reflection.zig").Reflection;
 
 const LLVMEmitter = emit.LLVMEmitter;
 const Inst = ir_inst.Inst;
@@ -1811,6 +1812,26 @@ pub const Ops = struct {
         };
     }
 
+    /// Load `kind`'s tag-indexed runtime scalar table at `tag`.
+    fn scalarTableRead(self: Ops, kind: Reflection.ScalarTableKind, tag: c.LLVMValueRef) c.LLVMValueRef {
+        const arr_global = self.e.reflection().getOrBuildScalarTable(kind);
+        const arr_len = switch (kind) {
+            .size => self.e.type_size_array_len,
+            .alignment => self.e.type_align_array_len,
+            .flags => self.e.is_flags_array_len,
+            .member_count => self.e.member_count_array_len,
+            .tag_width => self.e.variant_tag_width_array_len,
+            .slice_len_info => self.e.slice_len_info_array_len,
+            .optional_flag => self.e.optional_flag_array_len,
+            .member_stride => self.e.member_stride_array_len,
+        };
+        const elem_ty = if (kind == .flags) self.e.cached_i1 else self.e.cached_i64;
+        const arr_ty = c.LLVMArrayType(elem_ty, arr_len);
+        var indices = [2]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), tag };
+        const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, arr_ty, arr_global, &indices, 2, "rts.gep");
+        return c.LLVMBuildLoad2(self.e.builder, elem_ty, gep, "rts.load");
+    }
+
     /// Print how the binary reaches the current function, root first. Without
     /// it the reader sees only the last hop — and the question a staging error
     /// actually raises is "why is this in the runtime graph at all?".
@@ -1883,7 +1904,7 @@ pub const Ops = struct {
                 // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
-                const kind: @import("reflection.zig").Reflection.ScalarTableKind = switch (bi.builtin) {
+                const kind: Reflection.ScalarTableKind = switch (bi.builtin) {
                     .@"rt_@sizeOf" => .size,
                     .@"rt_@alignOf" => .alignment,
                     .rt_is_flags => .flags,
@@ -1894,29 +1915,15 @@ pub const Ops = struct {
                     else => unreachable,
                 };
                 const tid_idx = self.reflectArgTypeId(bi.args[0], "runtime reflection");
-                const arr_global = self.e.reflection().getOrBuildScalarTable(kind);
-                const elem_ty = if (kind == .flags) self.e.cached_i1 else self.e.cached_i64;
-                const arr_len = switch (kind) {
-                    .size => self.e.type_size_array_len,
-                    .alignment => self.e.type_align_array_len,
-                    .flags => self.e.is_flags_array_len,
-                    .member_count => self.e.member_count_array_len,
-                    .tag_width => self.e.variant_tag_width_array_len,
-                    .slice_len_info => self.e.slice_len_info_array_len,
-                    .optional_flag => self.e.optional_flag_array_len,
-                };
-                const arr_ty = c.LLVMArrayType(elem_ty, arr_len);
-                const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
-                var indices = [2]c.LLVMValueRef{ zero, tid_idx };
-                const gep = c.LLVMBuildInBoundsGEP2(self.e.builder, arr_ty, arr_global, &indices, 2, "rts.gep");
-                self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, gep, "rts.load"));
+                self.e.mapRef(self.scalarTableRead(kind, tid_idx));
             },
             .rt_member_type, .rt_field_offset => {
                 // Member-view runtime reads: master [N x ptr] by tag →
-                // per-type array → [idx]. OOB idx is documented UB
+                // per-type array → [idx]. A strided kind holds ONE row: its
+                // member type answers at every index and its offset is the
+                // index scaled by the stride. OOB idx is documented UB
                 // (inbounds GEP).
-                const refl = self.e.reflection();
-                const kind: @import("reflection.zig").Reflection.MemberTableKind = switch (bi.builtin) {
+                const kind: Reflection.MemberTableKind = switch (bi.builtin) {
                     .rt_member_type => .types,
                     .rt_field_offset => .offsets,
                     else => unreachable,
@@ -1925,20 +1932,33 @@ pub const Ops = struct {
                 var idx = self.e.resolveRef(bi.args[1]);
                 if (c.LLVMTypeOf(idx) != self.e.cached_i64)
                     idx = c.LLVMBuildZExt(self.e.builder, idx, self.e.cached_i64, "mi.z");
-                const master = refl.getOrBuildMemberPtrs(kind);
+                const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+                const stride = self.scalarTableRead(.member_stride, tag);
+                const strided = c.LLVMBuildICmp(self.e.builder, c.LLVMIntSGE, stride, zero, "mi.strided");
+
+                const master = self.e.reflection().getOrBuildMemberPtrs(kind);
                 const master_len = switch (kind) {
                     .types => self.e.member_type_ptrs_len,
                     .offsets => self.e.field_offset_ptrs_len,
                 };
                 const master_ty = c.LLVMArrayType(self.e.cached_ptr, master_len);
-                const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
                 var mindices = [2]c.LLVMValueRef{ zero, tag };
                 const slot_gep = c.LLVMBuildInBoundsGEP2(self.e.builder, master_ty, master, &mindices, 2, "mi.slot");
                 const per_type = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, slot_gep, "mi.arr");
                 const elem_ty = self.e.cached_i64;
-                var eindices = [1]c.LLVMValueRef{idx};
+                var eindices = [1]c.LLVMValueRef{c.LLVMBuildSelect(self.e.builder, strided, zero, idx, "mi.row")};
                 const egep = c.LLVMBuildInBoundsGEP2(self.e.builder, elem_ty, per_type, &eindices, 1, "mi.gep");
-                self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, egep, "mi.load"));
+                const row = c.LLVMBuildLoad2(self.e.builder, elem_ty, egep, "mi.load");
+                self.e.mapRef(switch (kind) {
+                    .types => row,
+                    .offsets => c.LLVMBuildSelect(
+                        self.e.builder,
+                        strided,
+                        c.LLVMBuildMul(self.e.builder, idx, stride, "mi.stride"),
+                        row,
+                        "mi.off",
+                    ),
+                });
             },
             .@"@typeInfo" => {
                 // Runtime `@typeInfo(tp)`: master [N x ptr] by tag → record ptr
