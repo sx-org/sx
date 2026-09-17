@@ -116,7 +116,7 @@ entry:
   store ptr %loadN, ptr %gep, align 8
   %loadN = load ptr, ptr %allocaN, align 8
   %jni.ifs = load ptr, ptr %loadN, align 8
-  %jni.cached.mid = load ptr, ptr @SX_JNI_MID_com_example_A_getX____I, align 8
+  %jni.cached.mid = load atomic ptr, ptr @SX_JNI_MID_com_example_A_getX____I acquire, align 8
   %jni.is.cached = icmp ne ptr %jni.cached.mid, null
   br i1 %jni.is.cached, label %jni.cont, label %jni.miss
 
@@ -127,96 +127,144 @@ jni.miss:                                         ; preds = %entry
   %7 = getelementptr inbounds ptr, ptr %jni.ifs, i32 21
   %jni.NewGlobalRef = load ptr, ptr %7, align 8
   %jni.global.cls = call ptr %jni.NewGlobalRef(ptr %loadN, ptr %jni.cls)
-  store ptr %jni.global.cls, ptr @SX_JNI_CLS_com_example_A_getX____I, align 8
-  %8 = getelementptr inbounds ptr, ptr %jni.ifs, i32 33
-  %jni.GetMethodID = load ptr, ptr %8, align 8
-  %jni.fresh.mid = call ptr %jni.GetMethodID(ptr %loadN, ptr %jni.global.cls, ptr @str, ptr @str.1)
-  store ptr %jni.fresh.mid, ptr @SX_JNI_MID_com_example_A_getX____I, align 8
+  %8 = cmpxchg ptr @SX_JNI_CLS_com_example_A_getX____I, ptr null, ptr %jni.global.cls acq_rel acquire, align 8
+  %jni.cls.prior = extractvalue { ptr, i1 } %8, 0
+  %jni.cls.won = extractvalue { ptr, i1 } %8, 1
+  %jni.cls.owner = select i1 %jni.cls.won, ptr %jni.global.cls, ptr %jni.cls.prior
+  br i1 %jni.cls.won, label %jni.resolve, label %jni.drop
+
+jni.drop:                                         ; preds = %jni.miss
+  %9 = getelementptr inbounds ptr, ptr %jni.ifs, i32 22
+  %jni.DeleteGlobalRef = load ptr, ptr %9, align 8
+  call void %jni.DeleteGlobalRef(ptr %loadN, ptr %jni.global.cls)
+  br label %jni.resolve
+
+jni.resolve:                                      ; preds = %jni.drop, %jni.miss
+  %10 = getelementptr inbounds ptr, ptr %jni.ifs, i32 33
+  %jni.GetMethodID = load ptr, ptr %10, align 8
+  %jni.fresh.mid = call ptr %jni.GetMethodID(ptr %loadN, ptr %jni.cls.owner, ptr @str, ptr @str.1)
+  store atomic ptr %jni.fresh.mid, ptr @SX_JNI_MID_com_example_A_getX____I release, align 8
   br label %jni.cont
 
-jni.cont:                                         ; preds = %jni.miss, %entry
-  %jni.mid = phi ptr [ %jni.cached.mid, %entry ], [ %jni.fresh.mid, %jni.miss ]
-  %9 = getelementptr inbounds ptr, ptr %jni.ifs, i32 49
-  %jni.callfn = load ptr, ptr %9, align 8
+jni.cont:                                         ; preds = %jni.resolve, %entry
+  %jni.mid = phi ptr [ %jni.cached.mid, %entry ], [ %jni.fresh.mid, %jni.resolve ]
+  %11 = getelementptr inbounds ptr, ptr %jni.ifs, i32 49
+  %jni.callfn = load ptr, ptr %11, align 8
   %jni.ret = call i32 %jni.callfn(ptr %loadN, ptr %loadN, ptr %jni.mid)
   store i32 %jni.ret, ptr %allocaN, align 4
   %loadN = load ptr, ptr %allocaN, align 8
   %jni.ifs10 = load ptr, ptr %loadN, align 8
-  %jni.cached.mid11 = load ptr, ptr @SX_JNI_MID_com_example_B_getX____I, align 8
+  %jni.cached.mid11 = load atomic ptr, ptr @SX_JNI_MID_com_example_B_getX____I acquire, align 8
   %jni.is.cached12 = icmp ne ptr %jni.cached.mid11, null
-  br i1 %jni.is.cached12, label %jni.cont14, label %jni.miss13
+  br i1 %jni.is.cached12, label %jni.cont16, label %jni.miss13
 
 jni.miss13:                                       ; preds = %jni.cont
-  %10 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 31
-  %jni.GetObjectClass15 = load ptr, ptr %10, align 8
-  %jni.cls16 = call ptr %jni.GetObjectClass15(ptr %loadN, ptr %loadN)
-  %11 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 21
-  %jni.NewGlobalRef17 = load ptr, ptr %11, align 8
-  %jni.global.cls18 = call ptr %jni.NewGlobalRef17(ptr %loadN, ptr %jni.cls16)
-  store ptr %jni.global.cls18, ptr @SX_JNI_CLS_com_example_B_getX____I, align 8
-  %12 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 33
-  %jni.GetMethodID19 = load ptr, ptr %12, align 8
-  %jni.fresh.mid20 = call ptr %jni.GetMethodID19(ptr %loadN, ptr %jni.global.cls18, ptr @str.2, ptr @str.3)
-  store ptr %jni.fresh.mid20, ptr @SX_JNI_MID_com_example_B_getX____I, align 8
-  br label %jni.cont14
+  %12 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 31
+  %jni.GetObjectClass17 = load ptr, ptr %12, align 8
+  %jni.cls18 = call ptr %jni.GetObjectClass17(ptr %loadN, ptr %loadN)
+  %13 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 21
+  %jni.NewGlobalRef19 = load ptr, ptr %13, align 8
+  %jni.global.cls20 = call ptr %jni.NewGlobalRef19(ptr %loadN, ptr %jni.cls18)
+  %14 = cmpxchg ptr @SX_JNI_CLS_com_example_B_getX____I, ptr null, ptr %jni.global.cls20 acq_rel acquire, align 8
+  %jni.cls.prior21 = extractvalue { ptr, i1 } %14, 0
+  %jni.cls.won22 = extractvalue { ptr, i1 } %14, 1
+  %jni.cls.owner23 = select i1 %jni.cls.won22, ptr %jni.global.cls20, ptr %jni.cls.prior21
+  br i1 %jni.cls.won22, label %jni.resolve15, label %jni.drop14
 
-jni.cont14:                                       ; preds = %jni.miss13, %jni.cont
-  %jni.mid21 = phi ptr [ %jni.cached.mid11, %jni.cont ], [ %jni.fresh.mid20, %jni.miss13 ]
-  %13 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 49
-  %jni.callfn22 = load ptr, ptr %13, align 8
-  %jni.ret23 = call i32 %jni.callfn22(ptr %loadN, ptr %loadN, ptr %jni.mid21)
-  store i32 %jni.ret23, ptr %allocaN, align 4
+jni.drop14:                                       ; preds = %jni.miss13
+  %15 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 22
+  %jni.DeleteGlobalRef24 = load ptr, ptr %15, align 8
+  call void %jni.DeleteGlobalRef24(ptr %loadN, ptr %jni.global.cls20)
+  br label %jni.resolve15
+
+jni.resolve15:                                    ; preds = %jni.drop14, %jni.miss13
+  %16 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 33
+  %jni.GetMethodID25 = load ptr, ptr %16, align 8
+  %jni.fresh.mid26 = call ptr %jni.GetMethodID25(ptr %loadN, ptr %jni.cls.owner23, ptr @str.2, ptr @str.3)
+  store atomic ptr %jni.fresh.mid26, ptr @SX_JNI_MID_com_example_B_getX____I release, align 8
+  br label %jni.cont16
+
+jni.cont16:                                       ; preds = %jni.resolve15, %jni.cont
+  %jni.mid27 = phi ptr [ %jni.cached.mid11, %jni.cont ], [ %jni.fresh.mid26, %jni.resolve15 ]
+  %17 = getelementptr inbounds ptr, ptr %jni.ifs10, i32 49
+  %jni.callfn28 = load ptr, ptr %17, align 8
+  %jni.ret29 = call i32 %jni.callfn28(ptr %loadN, ptr %loadN, ptr %jni.mid27)
+  store i32 %jni.ret29, ptr %allocaN, align 4
   %loadN = load ptr, ptr %alloca, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  %jni.ifs27 = load ptr, ptr %loadN, align 8
-  %jni.cached.mid28 = load ptr, ptr @SX_JNI_MID_getX____I, align 8
-  %jni.is.cached29 = icmp ne ptr %jni.cached.mid28, null
-  br i1 %jni.is.cached29, label %jni.cont31, label %jni.miss30
+  %jni.ifs33 = load ptr, ptr %loadN, align 8
+  %jni.cached.mid34 = load atomic ptr, ptr @SX_JNI_MID_getX____I acquire, align 8
+  %jni.is.cached35 = icmp ne ptr %jni.cached.mid34, null
+  br i1 %jni.is.cached35, label %jni.cont39, label %jni.miss36
 
-jni.miss30:                                       ; preds = %jni.cont14
-  %14 = getelementptr inbounds ptr, ptr %jni.ifs27, i32 31
-  %jni.GetObjectClass32 = load ptr, ptr %14, align 8
-  %jni.cls33 = call ptr %jni.GetObjectClass32(ptr %loadN, ptr %loadN)
-  %15 = getelementptr inbounds ptr, ptr %jni.ifs27, i32 21
-  %jni.NewGlobalRef34 = load ptr, ptr %15, align 8
-  %jni.global.cls35 = call ptr %jni.NewGlobalRef34(ptr %loadN, ptr %jni.cls33)
-  store ptr %jni.global.cls35, ptr @SX_JNI_CLS_getX____I, align 8
-  %16 = getelementptr inbounds ptr, ptr %jni.ifs27, i32 33
-  %jni.GetMethodID36 = load ptr, ptr %16, align 8
-  %jni.fresh.mid37 = call ptr %jni.GetMethodID36(ptr %loadN, ptr %jni.global.cls35, ptr @str.4, ptr @str.5)
-  store ptr %jni.fresh.mid37, ptr @SX_JNI_MID_getX____I, align 8
-  br label %jni.cont31
+jni.miss36:                                       ; preds = %jni.cont16
+  %18 = getelementptr inbounds ptr, ptr %jni.ifs33, i32 31
+  %jni.GetObjectClass40 = load ptr, ptr %18, align 8
+  %jni.cls41 = call ptr %jni.GetObjectClass40(ptr %loadN, ptr %loadN)
+  %19 = getelementptr inbounds ptr, ptr %jni.ifs33, i32 21
+  %jni.NewGlobalRef42 = load ptr, ptr %19, align 8
+  %jni.global.cls43 = call ptr %jni.NewGlobalRef42(ptr %loadN, ptr %jni.cls41)
+  %20 = cmpxchg ptr @SX_JNI_CLS_getX____I, ptr null, ptr %jni.global.cls43 acq_rel acquire, align 8
+  %jni.cls.prior44 = extractvalue { ptr, i1 } %20, 0
+  %jni.cls.won45 = extractvalue { ptr, i1 } %20, 1
+  %jni.cls.owner46 = select i1 %jni.cls.won45, ptr %jni.global.cls43, ptr %jni.cls.prior44
+  br i1 %jni.cls.won45, label %jni.resolve38, label %jni.drop37
 
-jni.cont31:                                       ; preds = %jni.miss30, %jni.cont14
-  %jni.mid38 = phi ptr [ %jni.cached.mid28, %jni.cont14 ], [ %jni.fresh.mid37, %jni.miss30 ]
-  %17 = getelementptr inbounds ptr, ptr %jni.ifs27, i32 49
-  %jni.callfn39 = load ptr, ptr %17, align 8
-  %jni.ret40 = call i32 %jni.callfn39(ptr %loadN, ptr %loadN, ptr %jni.mid38)
-  store i32 %jni.ret40, ptr %allocaN, align 4
+jni.drop37:                                       ; preds = %jni.miss36
+  %21 = getelementptr inbounds ptr, ptr %jni.ifs33, i32 22
+  %jni.DeleteGlobalRef47 = load ptr, ptr %21, align 8
+  call void %jni.DeleteGlobalRef47(ptr %loadN, ptr %jni.global.cls43)
+  br label %jni.resolve38
+
+jni.resolve38:                                    ; preds = %jni.drop37, %jni.miss36
+  %22 = getelementptr inbounds ptr, ptr %jni.ifs33, i32 33
+  %jni.GetMethodID48 = load ptr, ptr %22, align 8
+  %jni.fresh.mid49 = call ptr %jni.GetMethodID48(ptr %loadN, ptr %jni.cls.owner46, ptr @str.4, ptr @str.5)
+  store atomic ptr %jni.fresh.mid49, ptr @SX_JNI_MID_getX____I release, align 8
+  br label %jni.cont39
+
+jni.cont39:                                       ; preds = %jni.resolve38, %jni.cont16
+  %jni.mid50 = phi ptr [ %jni.cached.mid34, %jni.cont16 ], [ %jni.fresh.mid49, %jni.resolve38 ]
+  %23 = getelementptr inbounds ptr, ptr %jni.ifs33, i32 49
+  %jni.callfn51 = load ptr, ptr %23, align 8
+  %jni.ret52 = call i32 %jni.callfn51(ptr %loadN, ptr %loadN, ptr %jni.mid50)
+  store i32 %jni.ret52, ptr %allocaN, align 4
   %loadN = load ptr, ptr %alloca, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  %jni.ifs44 = load ptr, ptr %loadN, align 8
-  %jni.cached.mid45 = load ptr, ptr @SX_JNI_MID_static_getX____I, align 8
-  %jni.is.cached46 = icmp ne ptr %jni.cached.mid45, null
-  br i1 %jni.is.cached46, label %jni.cont48, label %jni.miss47
+  %jni.ifs56 = load ptr, ptr %loadN, align 8
+  %jni.cached.mid57 = load atomic ptr, ptr @SX_JNI_MID_static_getX____I acquire, align 8
+  %jni.is.cached58 = icmp ne ptr %jni.cached.mid57, null
+  br i1 %jni.is.cached58, label %jni.cont62, label %jni.miss59
 
-jni.miss47:                                       ; preds = %jni.cont31
-  %18 = getelementptr inbounds ptr, ptr %jni.ifs44, i32 21
-  %jni.NewGlobalRef49 = load ptr, ptr %18, align 8
-  %jni.global.cls50 = call ptr %jni.NewGlobalRef49(ptr %loadN, ptr %loadN)
-  store ptr %jni.global.cls50, ptr @SX_JNI_CLS_static_getX____I, align 8
-  %19 = getelementptr inbounds ptr, ptr %jni.ifs44, i32 113
-  %jni.GetStaticMethodID = load ptr, ptr %19, align 8
-  %jni.fresh.mid51 = call ptr %jni.GetStaticMethodID(ptr %loadN, ptr %jni.global.cls50, ptr @str.6, ptr @str.7)
-  store ptr %jni.fresh.mid51, ptr @SX_JNI_MID_static_getX____I, align 8
-  br label %jni.cont48
+jni.miss59:                                       ; preds = %jni.cont39
+  %24 = getelementptr inbounds ptr, ptr %jni.ifs56, i32 21
+  %jni.NewGlobalRef63 = load ptr, ptr %24, align 8
+  %jni.global.cls64 = call ptr %jni.NewGlobalRef63(ptr %loadN, ptr %loadN)
+  %25 = cmpxchg ptr @SX_JNI_CLS_static_getX____I, ptr null, ptr %jni.global.cls64 acq_rel acquire, align 8
+  %jni.cls.prior65 = extractvalue { ptr, i1 } %25, 0
+  %jni.cls.won66 = extractvalue { ptr, i1 } %25, 1
+  %jni.cls.owner67 = select i1 %jni.cls.won66, ptr %jni.global.cls64, ptr %jni.cls.prior65
+  br i1 %jni.cls.won66, label %jni.resolve61, label %jni.drop60
 
-jni.cont48:                                       ; preds = %jni.miss47, %jni.cont31
-  %jni.mid52 = phi ptr [ %jni.cached.mid45, %jni.cont31 ], [ %jni.fresh.mid51, %jni.miss47 ]
-  %20 = getelementptr inbounds ptr, ptr %jni.ifs44, i32 129
-  %jni.callfn53 = load ptr, ptr %20, align 8
-  %jni.ret54 = call i32 %jni.callfn53(ptr %loadN, ptr %loadN, ptr %jni.mid52)
-  store i32 %jni.ret54, ptr %allocaN, align 4
+jni.drop60:                                       ; preds = %jni.miss59
+  %26 = getelementptr inbounds ptr, ptr %jni.ifs56, i32 22
+  %jni.DeleteGlobalRef68 = load ptr, ptr %26, align 8
+  call void %jni.DeleteGlobalRef68(ptr %loadN, ptr %jni.global.cls64)
+  br label %jni.resolve61
+
+jni.resolve61:                                    ; preds = %jni.drop60, %jni.miss59
+  %27 = getelementptr inbounds ptr, ptr %jni.ifs56, i32 113
+  %jni.GetStaticMethodID = load ptr, ptr %27, align 8
+  %jni.fresh.mid69 = call ptr %jni.GetStaticMethodID(ptr %loadN, ptr %jni.cls.owner67, ptr @str.6, ptr @str.7)
+  store atomic ptr %jni.fresh.mid69, ptr @SX_JNI_MID_static_getX____I release, align 8
+  br label %jni.cont62
+
+jni.cont62:                                       ; preds = %jni.resolve61, %jni.cont39
+  %jni.mid70 = phi ptr [ %jni.cached.mid57, %jni.cont39 ], [ %jni.fresh.mid69, %jni.resolve61 ]
+  %28 = getelementptr inbounds ptr, ptr %jni.ifs56, i32 129
+  %jni.callfn71 = load ptr, ptr %28, align 8
+  %jni.ret72 = call i32 %jni.callfn71(ptr %loadN, ptr %loadN, ptr %jni.mid70)
+  store i32 %jni.ret72, ptr %allocaN, align 4
   ret void
 }
 

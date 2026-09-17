@@ -53,6 +53,7 @@ fn isIdentByte(b: u8) bool {
 pub const Jni = struct {
     pub const FindClass: u32 = 6;
     pub const NewGlobalRef: u32 = 21;
+    pub const DeleteGlobalRef: u32 = 22;
     pub const NewObject: u32 = 28;
     pub const GetObjectClass: u32 = 31;
     pub const GetMethodID: u32 = 33;
