@@ -1,0 +1,31 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+S :: @int(40, .signed);
+U :: @int(40, .unsigned);
+category :: (a: any) -> i64 {
+    match a { case signed: |n| { n } case unsigned: |n| { n } else: { 100 } }
+}
+convert :: (a: any) -> i64 { match a { case int: { @as(i64, a) } else: { 100 } } }
+priority :: (a: any) -> i64 { match a { case I: |n| { n.(i64) } case int: { 200 } else: { 100 } } }
+float :: (a: any) -> f64 { @as(f64, a) }
+optional :: (a: any) -> ?i64 { @as(?i64, a) }
+scalar :: (a: any) -> i64 { @as(i64, a) }
+read :: () -> i64 {
+    bits: u64 = 1099511627770;
+    signed := @rawMakeAny(S, *bits);
+    unsigned := @rawMakeAny(U, *bits);
+    @assert(@sizeOf(S) == 8 and signed.(S).(i64) == -6);
+    @assert(category(signed) == -6 and category(unsigned) == 1099511627770);
+    i: I = -6;
+    a: any = i;
+    @assert(a.(I) == -6 and convert(a) == -6 and priority(a) == -6);
+    @assert(priority(9.(u8)) == 200 and convert(9.(u8)) == 9);
+    @assert(category(1.5) == 100 and convert(true) == 100);
+    @assert(scalar(true) == 1 and scalar(1.5) == 1);
+    @assert(float(signed) == -6.0 and float(unsigned) == 1099511627770.0);
+    high: u64 = 18446744073709551615;
+    @assert(float(high) > 18000000000000000000.0);
+    @assert((optional(a) ?? 0) == -6 and @coerce(i64, a) == -6 and @as(I, a) == i);
+    category(signed)
+}
+main :: () { print("read={}\n", read()); }

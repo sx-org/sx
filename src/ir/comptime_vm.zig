@@ -642,6 +642,11 @@ pub const Vm = struct {
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
+                if (ty == .any) {
+                    try self.layoutConst(table, fields[0], .u64, addr);
+                    try self.layoutConst(table, fields[1], .type_value, addr + 8);
+                    return;
+                }
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");
                 switch (table.get(ty)) {
                     .@"struct" => |s| for (fields, 0..) |fv, i| {
@@ -1547,17 +1552,20 @@ pub const Vm = struct {
                 for (sb.cases) |case| {
                     if (operand == case.value) return .{ .jump = .{ .target = case.target, .args = case.args } };
                 }
+                if (sb.integer_cases.len > 0) {
+                    const tid = TypeId.fromIndex(try self.typeIdxOf(@bitCast(operand)));
+                    if ((try self.requireTable()).integerLayout(tid)) |layout| {
+                        for (sb.integer_cases) |case| {
+                            if (layout.signed == case.signed) return .{ .jump = .{ .target = case.target, .args = &.{} } };
+                        }
+                    }
+                }
                 return .{ .jump = .{ .target = sb.default, .args = sb.default_args } };
             },
             .ret => |u| return .{ .ret = frame.get(u.operand.index()) },
             .ret_void => return .ret_void,
 
-            // T → any: a 16-byte view `{ data: addr @0, typeId: i64 @8 }` (the
-            // borrow representation — the LLVM layout; Odin Raw_Any order,
-            // prefix-shared with protocol values). The operand IS the
-            // value's comptime ADDRESS (lowering borrows lvalue storage or
-            // spills to an alloca); the typeId is the source TypeId index
-            // (lowering pre-normalizes arbitrary-width ints).
+            // The any header stores an address at +0 and its exact TypeId at +8.
             .box_any => |ba| {
                 const table = try self.requireTable();
                 const sz = table.typeSizeBytes(.any); // 16
@@ -2354,6 +2362,14 @@ pub const Vm = struct {
                 if (bi.args.len < 1) return self.failMsg("comptime type_name: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.makeStringValue(table, table.formatTypeName(self.machine.arena.allocator(), tid, null));
+            },
+            .read_integer => {
+                const table = try self.requireTable();
+                const av = frame.get(bi.args[0].index());
+                const data = try self.machine.readWord(av, 8);
+                const tag = try self.machine.readWord(av + 8, 8);
+                const tid = TypeId.fromIndex(try self.typeIdxOf(tag));
+                return try self.readField(table, data, tid);
             },
             // type_is_unsigned(x) → is x's type an unsigned int? Resolves the TypeId
             // the same way as type_name (a `.type_value` word, or an Any box whose tag

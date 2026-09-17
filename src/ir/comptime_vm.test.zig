@@ -1883,3 +1883,85 @@ test "comptime_vm: float conversions use signed source and destination interpret
         try std.testing.expectEqual(case.expected, try v.run(&fb.func, &.{case.input}));
     }
 }
+
+test "integer switch queries late types after concrete cases and preserves branch arguments" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    var fb = Fb.init(std.testing.allocator, &.{param(.type_value)}, .i64);
+    defer fb.deinit();
+    const entry = fb.block(&.{});
+    const value = fb.add(entry, inst(.{ .const_int = 71 }, .i64));
+    const concrete = [_]inst_mod.SwitchBranch.Case{.{ .value = TypeId.i32.index(), .target = BlockId.fromIndex(1), .args = &.{ref(value)} }};
+    const categories = [_]inst_mod.SwitchBranch.IntegerCase{
+        .{ .signed = true, .target = BlockId.fromIndex(2) },
+        .{ .signed = true, .target = BlockId.fromIndex(3) },
+        .{ .signed = false, .target = BlockId.fromIndex(3) },
+    };
+    _ = fb.add(entry, inst(.{ .switch_br = .{ .operand = ref(0), .cases = &concrete, .integer_cases = &categories, .default = BlockId.fromIndex(1), .default_args = &.{ref(value)} } }, .void));
+    const arg_block = fb.block(&.{.i64});
+    const arg = fb.add(arg_block, inst(.{ .block_param = .{ .block = BlockId.fromIndex(arg_block), .param_index = 0 } }, .i64));
+    _ = fb.add(arg_block, inst(.{ .ret = .{ .operand = ref(arg) } }, .void));
+    for ([_]i64{ -6, 9 }) |n| {
+        const block = fb.block(&.{});
+        const result = fb.add(block, inst(.{ .const_int = n }, .i64));
+        _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(result) } }, .void));
+    }
+    const late = table.internInteger(23, true);
+    var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
+    defer v.deinit();
+    try std.testing.expectEqual(fromI64(71), try v.run(&fb.func, &.{TypeId.i32.index()}));
+    try std.testing.expectEqual(fromI64(-6), try v.run(&fb.func, &.{late.index()}));
+    try std.testing.expectEqual(fromI64(9), try v.run(&fb.func, &.{TypeId.u64.index()}));
+    try std.testing.expectEqual(fromI64(71), try v.run(&fb.func, &.{TypeId.bool.index()}));
+}
+
+test "integer view reads semantic signedness within a padded eight-byte slot" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    var fb = Fb.init(std.testing.allocator, &.{param(.any)}, .i64);
+    defer fb.deinit();
+    const block = fb.block(&.{});
+    const result = fb.add(block, inst(.{ .call_builtin = .{ .builtin = .read_integer, .args = &.{ref(0)} } }, .i64));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(result) } }, .void));
+    var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
+    defer v.deinit();
+    const data = v.machine.allocBytes(8, 8);
+    const av = v.machine.allocBytes(16, 8);
+    try v.machine.writeWord(data, 8, 1099511627770);
+    try v.machine.writeWord(av, 8, data);
+    try v.machine.writeWord(av + 8, 8, table.internInteger(40, true).index());
+    try std.testing.expectEqual(fromI64(-6), try v.run(&fb.func, &.{av}));
+    try v.machine.writeWord(av + 8, 8, table.internInteger(40, false).index());
+    try std.testing.expectEqual(@as(u64, 1099511627770), try v.run(&fb.func, &.{av}));
+    try v.machine.writeWord(data, 8, std.math.maxInt(u64));
+    try v.machine.writeWord(av + 8, 8, TypeId.u64.index());
+    try std.testing.expectEqual(std.math.maxInt(u64), try v.run(&fb.func, &.{av}));
+}
+
+test "any constant globals materialize one exact aligned referent and retain its tag" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+    const integer = module.types.internInteger(24, true);
+    const payload = module.addGlobal(.{ .name = .empty, .ty = integer, .init_val = .{ .int = -6 } });
+    const fields = [_]inst_mod.ConstantValue{ .{ .global_ref = payload }, .{ .int = integer.index() } };
+    const view = module.addGlobal(.{ .name = .empty, .ty = .any, .init_val = .{ .aggregate = &fields } });
+    var fb = Fb.init(alloc, &.{}, .any);
+    const block = fb.block(&.{});
+    const av = fb.add(block, inst(.{ .global_get = view }, .any));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(av) } }, .void));
+    const fid = module.addFunction(fb.func);
+    var v = vm.Vm.init(alloc);
+    v.table = &module.types;
+    v.module = &module;
+    defer v.deinit();
+    const a = try v.run(module.getFunction(fid), &.{});
+    const b = try v.run(module.getFunction(fid), &.{});
+    const data = try v.machine.readWord(a, 8);
+    try std.testing.expectEqual(data, try v.machine.readWord(b, 8));
+    try std.testing.expectEqual(@as(u64, integer.index()), try v.machine.readWord(a + 8, 8));
+    try std.testing.expectEqual(@as(u64, 0), data % module.types.typeAlignBytes(integer));
+    try std.testing.expectEqual(@as(u64, 0xfffffa), (try v.machine.readWord(data, 4)) & 0xffffff);
+}

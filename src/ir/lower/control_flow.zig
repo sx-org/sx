@@ -640,9 +640,7 @@ pub fn staticIsCondition(self: *Lowering, lhs: *const Node, rhs: *const Node) ?b
 /// the call grammar (`@int(4, .unsigned) is unsigned`).
 fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
-        .identifier, .type_expr, .field_access, .parameterized_type_expr,
-        .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr,
-        .optional_type_expr, .array_type_expr => {},
+        .identifier, .type_expr, .field_access, .parameterized_type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr => {},
         .call => |cl| return cl.callee.data == .identifier and
             contracts.isTypeConstructor(cl.callee.data.identifier.name),
         else => return false,
@@ -1199,7 +1197,8 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         else => "",
     };
     if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
-        return .{ .ref = self.lowerAnyToIntDispatch(subject, .i64, tags), .ty = .i64 };
+        const args = self.alloc.dupe(Ref, &.{subject}) catch unreachable;
+        return .{ .ref = self.builder.callBuiltin(.read_integer, args, .i64), .ty = .i64 };
     }
     if (std.mem.eql(u8, name, "float")) {
         return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };
@@ -1483,6 +1482,28 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     defer arm_blocks.deinit(self.alloc);
     for (me.arms) |_| {
         arm_blocks.append(self.alloc, self.freshBlock("match.arm")) catch unreachable;
+    }
+
+    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
+    defer integer_cases.deinit(self.alloc);
+    if (is_any_switch or is_type_match) {
+        for (me.arms) |arm| {
+            if (arm.pattern) |pat| {
+                if (pat.data == .call) _ = self.resolveTypeArg(pat);
+            }
+        }
+        for (me.arms, 0..) |arm, i| {
+            const pat = arm.pattern orelse continue;
+            const name: []const u8 = switch (pat.data) {
+                .identifier => |id| id.name,
+                .type_expr => |te| te.name,
+                else => "",
+            };
+            if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "int"))
+                integer_cases.append(self.alloc, .{ .signed = true, .target = arm_blocks.items[i] }) catch unreachable;
+            if (std.mem.eql(u8, name, "unsigned") or std.mem.eql(u8, name, "int"))
+                integer_cases.append(self.alloc, .{ .signed = false, .target = arm_blocks.items[i] }) catch unreachable;
+        }
     }
 
     // Build case list and pre-collect type tags per arm
@@ -1830,7 +1851,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         };
         break :blk self.builder.enumTag(subject, tag_ty);
     };
-    self.builder.switchBr(tag, cases.items, default_bb.?, &.{});
+    self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
 
     // Lower each arm's body
     for (me.arms, 0..) |arm, i| {

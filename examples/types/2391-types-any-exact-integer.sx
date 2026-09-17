@@ -1,0 +1,18 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+U :: @int(4, .unsigned);
+exact :: () -> i64 {
+    i: I = -6;
+    u: U = 9;
+    control: u8 = 9;
+    a: any = i;
+    b: any = u;
+    c: any = control;
+    @assert(@typeOf(a) == I and @typeOf(b) == U);
+    @assert(@typeOf(a) != i32 and @typeOf(b) != u8);
+    @assert(a.(I) == -6 and b.(U) == 9 and c.(u8) == 9);
+    @assert(@sizeOf(@typeOf(a)) == 4 and @alignOf(@typeOf(a)) == 4);
+    a.(I).(i64) + b.(U).(i64)
+}
+C :: @run exact();
+main :: () { print("exact={} {}\n", C, exact()); }

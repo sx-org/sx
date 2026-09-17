@@ -1000,3 +1000,17 @@ test "integer lane facts do not admit vectors or bool as scalar integers" {
     try std.testing.expectEqual(@as(u8, 32), table.integerLaneLayout(.usize).?.width);
     try std.testing.expect(table.integerLaneLayout(.isize).?.signed);
 }
+
+test "integer any tags distinguish types sharing ABI slots" {
+    var table = TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    const narrow = table.internInteger(24, true);
+    const padded = table.internInteger(40, true);
+    try std.testing.expect(narrow != .i32 and padded != .i64);
+    try std.testing.expectEqual(narrow, table.internInteger(24, true));
+    try std.testing.expectEqual(table.typeSizeBytes(.i32), table.typeSizeBytes(narrow));
+    try std.testing.expectEqual(table.typeSizeBytes(.i64), table.typeSizeBytes(padded));
+    try std.testing.expectEqual(@as(u8, 24), table.integerLayout(narrow).?.width);
+    try std.testing.expectEqual(@as(u8, 40), table.integerLayout(padded).?.width);
+    try std.testing.expect(table.integerLayout(.bool) == null);
+}

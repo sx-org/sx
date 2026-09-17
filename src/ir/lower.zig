@@ -3692,7 +3692,6 @@ pub const Lowering = struct {
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
-    pub const anyBoxType = lower_coerce.anyBoxType;
     pub const refuseRvalueInterfaceErasure = lower_coerce.refuseRvalueInterfaceErasure;
     pub const refuseNullAtNonOptional = lower_coerce.refuseNullAtNonOptional;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;
@@ -3711,7 +3710,6 @@ pub const Lowering = struct {
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
     pub const lowerAnyToF64Dispatch = lower_coerce.lowerAnyToF64Dispatch;
-    pub const lowerAnyToIntDispatch = lower_coerce.lowerAnyToIntDispatch;
     pub const widenAnyToF64 = lower_coerce.widenAnyToF64;
     pub const boxAnyOf = lower_coerce.boxAnyOf;
     pub const buildDefaultValue = lower_coerce.buildDefaultValue;

@@ -260,7 +260,6 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 ///
 /// Dynamic shapes (index_expr, field_access, runtime locals,
 /// etc.) fall to the alternative path that emits a builtin_call.
-
 /// A generic body lowers in its caller's visibility, where a same-named
 /// value may be in view, so a bound generic parameter answers first.
 /// A const whose author also registered the name as a type alias
@@ -1075,32 +1074,10 @@ fn hasUnresolvedElement(info: types.TypeInfo) bool {
 pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     var tags = std.ArrayList(u64).empty;
 
-    // Fixed builtin categories
     if (std.mem.eql(u8, name, "int")) {
-        tags.append(self.alloc, TypeId.i8.index()) catch {};
-        tags.append(self.alloc, TypeId.i16.index()) catch {};
-        tags.append(self.alloc, TypeId.i32.index()) catch {};
-        tags.append(self.alloc, TypeId.i64.index()) catch {};
-        tags.append(self.alloc, TypeId.u8.index()) catch {};
-        tags.append(self.alloc, TypeId.u16.index()) catch {};
-        tags.append(self.alloc, TypeId.u32.index()) catch {};
-        tags.append(self.alloc, TypeId.u64.index()) catch {};
-        tags.append(self.alloc, TypeId.usize.index()) catch {};
-        tags.append(self.alloc, TypeId.isize.index()) catch {};
-        // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
-        // normalizes them into a builtin tag (`boxAnyOf`), but an interior
-        // VIEW (`@field`) carries the member's TRUE tag — normalization
-        // can't reach a view, so the category list must cover these tags or
-        // a view of an arb-width field falls through every arm.
-        for (self.module.types.infos.items, 0..) |info, idx| {
-            // The builtin widths mirror into the table as `.signed`/
-            // `.unsigned` infos at their builtin slots — already listed
-            // above; only USER-slot (true arbitrary-width) entries add.
-            if (TypeId.fromIndex(@intCast(idx)).isBuiltin()) continue;
-            switch (info) {
-                .signed, .unsigned => tags.append(self.alloc, @intCast(idx)) catch {},
-                else => {},
-            }
+        for (0..self.module.types.infos.items.len) |idx| {
+            if (self.module.types.integerLayout(TypeId.fromIndex(@intCast(idx))) != null)
+                tags.append(self.alloc, @intCast(idx)) catch {};
         }
         return tags.items;
     }
@@ -1396,9 +1373,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
-        "int",      "signed",    "unsigned", "float", "struct",  "interface",
-        "enum",     "union",     "slice",    "array", "pointer", "vector",
-        "optional", "error", "closure",  "type",  "Type",
+        "int",      "signed", "unsigned", "float", "struct",  "interface",
+        "enum",     "union",  "slice",    "array", "pointer", "vector",
+        "optional", "error",  "closure",  "type",  "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1417,8 +1394,8 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
                 else => continue,
             };
             const categories = [_][]const u8{
-                "int",   "signed",  "unsigned", "float",     "bool",     "string",    "void",
-                "type",  "Type",    "struct",   "interface", "enum",     "union",     "slice",
+                "int",   "signed",  "unsigned", "float",     "bool",     "string", "void",
+                "type",  "Type",    "struct",   "interface", "enum",     "union",  "slice",
                 "array", "pointer", "vector",   "closure",   "optional", "error",
             };
             for (categories) |cat| {

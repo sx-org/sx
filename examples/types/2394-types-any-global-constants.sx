@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+K : I : -6;
+g: any = K;
+B : u8 : 9;
+b: any = B;
+read :: () -> i64 {
+    @assert(@typeOf(g) == I and @typeOf(b) == u8);
+    @assert(g.(I) == -6 and b.(u8) == 9);
+    @assert(@sizeOf(@typeOf(g)) == 4 and @alignOf(@typeOf(g)) == 4);
+    g.(I).(i64) + b.(u8).(i64)
+}
+C :: @run read();
+main :: () { print("globals={} {}\n", C, read()); }

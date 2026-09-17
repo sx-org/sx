@@ -1,0 +1,7 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+main :: () {
+    x: i32 = -6;
+    a: any = x;
+    print("{}\n", a.(I).(i64));
+}

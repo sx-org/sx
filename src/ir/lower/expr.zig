@@ -2518,7 +2518,6 @@ pub fn findTaggedVariant(
     return null;
 }
 
-
 /// A variant's tag by name.
 pub fn resolveVariantValue(self: *Lowering, ty: TypeId, variant_name: []const u8) i64 {
     if (ty.isBuiltin()) return 0;
@@ -5103,6 +5102,27 @@ fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) 
     if (target == .category and std.mem.eql(u8, target.category, "unsigned")) {
         const args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constBool(false);
         return self.builder.callBuiltin(.is_unsigned, args, .bool);
+    }
+    if (target == .category and (std.mem.eql(u8, target.category, "int") or std.mem.eql(u8, target.category, "signed"))) {
+        const b = &self.builder;
+        const yes = self.freshBlock("is.integer");
+        const no = self.freshBlock("is.other");
+        const merge = self.freshBlock("is.merge");
+        const slot = b.alloca(.bool);
+        var cases = [_]inst_mod.SwitchBranch.IntegerCase{
+            .{ .signed = true, .target = yes },
+            .{ .signed = false, .target = yes },
+        };
+        const count: usize = if (std.mem.eql(u8, target.category, "int")) 2 else 1;
+        b.integerSwitchBr(tag, &.{}, cases[0..count], no);
+        b.switchToBlock(yes);
+        b.store(slot, b.constBool(true));
+        b.br(merge, &.{});
+        b.switchToBlock(no);
+        b.store(slot, b.constBool(false));
+        b.br(merge, &.{});
+        b.switchToBlock(merge);
+        return b.load(slot, .bool);
     }
     const tags: []const u64 = switch (target) {
         .category => |word| self.resolveTypeCategoryTags(word),

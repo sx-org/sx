@@ -1844,6 +1844,7 @@ pub const LLVMEmitter = struct {
                     },
                     .switch_br => |sw| {
                         for (sw.cases) |case| self.markReachable(case.target, seen, &stack);
+                        for (sw.integer_cases) |case| self.markReachable(case.target, seen, &stack);
                         self.markReachable(sw.default, seen, &stack);
                     },
                     else => {},
@@ -2692,41 +2693,6 @@ pub const LLVMEmitter = struct {
 
     // ── Value coercion helpers ──────────────────────────────────────
 
-    /// Map a TypeId to its Any tag value.
-    /// Uses TypeId.index() directly — this matches resolveTypeCategoryTags in lower.zig
-    /// which also uses TypeId indices for type-switch comparisons.
-    /// For arbitrary-width ints (user-defined signed/unsigned), map to the closest
-    /// builtin TypeId so the "case int:" branch matches correctly.
-    /// Map a TypeId to its Any tag value.
-    /// Uses TypeId.index() directly — this matches resolveTypeCategoryTags in lower.zig
-    /// which also uses TypeId indices for type-switch comparisons.
-    /// For arbitrary-width ints (user-defined signed/unsigned), map to the closest
-    /// builtin TypeId so the "case int:" branch matches correctly.
-    pub fn anyTag(self: *LLVMEmitter, ty: TypeId) u64 {
-        if (ty.isBuiltin()) return ty.index();
-        // For user-defined types, check if they're arbitrary-width ints
-        const info = self.ir_mod.types.get(ty);
-        return switch (info) {
-            .signed => |w| switch (w) {
-                8 => TypeId.i8.index(),
-                16 => TypeId.i16.index(),
-                32 => TypeId.i32.index(),
-                64 => TypeId.i64.index(),
-                else => if (w <= 32) TypeId.i32.index() else TypeId.i64.index(),
-            },
-            .unsigned => |w| switch (w) {
-                8 => TypeId.u8.index(),
-                16 => TypeId.u16.index(),
-                32 => TypeId.u32.index(),
-                64 => TypeId.u64.index(),
-                else => if (w <= 32) TypeId.u32.index() else TypeId.u64.index(),
-            },
-            else => ty.index(),
-        };
-    }
-
-    /// Coerce a call argument to match the expected parameter type.
-    /// Handles int width mismatches (trunc/ext), float width, and int↔float.
     /// How an EXTERN function's declared sx return maps onto a C `char *`:
     /// `-> string` (.plain) and `-> ?string` (.optional) both receive one
     /// pointer from C; everything else is `.none`. Keep `declareFunction`'s

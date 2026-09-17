@@ -1,0 +1,25 @@
+@import "modules/std.sx";
+Early :: @int(22, .signed);
+category :: (a: any) -> i64 { match a { case signed: |n| { n } else: { 100 } } }
+read :: (a: any) -> i64 { @as(i64, a) }
+integer :: (a: any) -> bool { a is int }
+signed :: (a: any) -> bool { @typeOf(a) is signed }
+bits :: (a: any) -> i64 { t := @typeOf(a); @typeInfo(t).int.bits }
+walk :: () -> i64 {
+    builtin: i64 = 2;
+    @assert(category(builtin) == 2 and read(builtin) == 2);
+    @assert(integer(builtin) and signed(builtin) and bits(builtin) == 64);
+    early: Early = -5;
+    @assert(category(@rawMakeAny(Early, *early)) == -5);
+    late: @int(23, .signed) = -6;
+    ordinary: any = late;
+    raw := @rawMakeAny(@int(23, .signed), *late);
+    @assert(category(ordinary) == -6 and category(raw) == -6);
+    @assert(read(raw) == -6 and read(ordinary) == -6);
+    @assert(integer(ordinary) and signed(ordinary) and bits(ordinary) == 23);
+    @assert(@sizeOf(@typeOf(ordinary)) == 4);
+    @assert(!integer(true) and !signed(true));
+    read(ordinary)
+}
+C :: @run walk();
+main :: () { print("late={} {}\n", C, walk()); }

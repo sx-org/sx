@@ -661,9 +661,7 @@ pub const Builder = struct {
 
     // ── Any ─────────────────────────────────────────────────────────
 
-    /// Emit a `box_any` over an already-computed ADDRESS of the value.
-    /// Callers with a VALUE ref use `Lowering.boxAnyOf`, which decides
-    /// borrow-vs-spill and normalizes arbitrary-width int tags.
+    /// The operand addresses storage of source_type; value refs use boxAnyOf.
     pub fn boxAnyAt(self: *Builder, operand_addr: Ref, source_type: TypeId) Ref {
         return self.emit(.{ .box_any = .{ .operand = operand_addr, .source_type = source_type } }, .any);
     }
@@ -711,6 +709,17 @@ pub const Builder = struct {
             .cases = owned_cases,
             .default = default,
             .default_args = owned_default_args,
+        } }, .void);
+    }
+
+    pub fn integerSwitchBr(self: *Builder, operand: Ref, cases: []const inst.SwitchBranch.Case, integer_cases: []const inst.SwitchBranch.IntegerCase, default: BlockId) void {
+        const arena = self.module.slice_arena.allocator();
+        self.emitVoid(.{ .switch_br = .{
+            .operand = operand,
+            .cases = arena.dupe(inst.SwitchBranch.Case, cases) catch unreachable,
+            .integer_cases = arena.dupe(inst.SwitchBranch.IntegerCase, integer_cases) catch unreachable,
+            .default = default,
+            .default_args = &.{},
         } }, .void);
     }
 
