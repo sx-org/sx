@@ -42,7 +42,7 @@ if ! zig build; then
 fi
 echo "  -> ok"
 
-# `zig build test` is the sole regression runner: unit tests + the example/issue
+# `zig build test` is the sole regression runner: unit tests + the example
 # corpus + the LSP sweep all live in it. no_build_noise.sh runs it and also
 # asserts it stays silent on success.
 run_check "tests + corpus (quiet on success)" ./tests/no_build_noise.sh

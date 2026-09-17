@@ -345,7 +345,7 @@ pub fn build(b: *std.Build) void {
     const update_goldens = b.option(
         bool,
         "update-goldens",
-        "Regenerate example/issue snapshots instead of verifying them (use with `zig build test`)",
+        "Regenerate example snapshots instead of verifying them (use with `zig build test`)",
     ) orelse false;
     corpus_opts.addOption(bool, "update_goldens", update_goldens);
     // `zig build test -Dname=examples/0213-foo.sx[,examples/0214-bar.sx]` restricts
@@ -370,7 +370,7 @@ pub fn build(b: *std.Build) void {
     const run_mod_tests = b.addRunArtifact(mod_tests);
     // src/corpus_run.test.zig spawns the installed `sx` binary per example, so
     // the mod test binary must not run until `zig-out/bin/sx` + `zig-out/library`
-    // are installed. This is what folds the full example/issue regression suite
+    // are installed. This is what folds the full example regression suite
     // into `zig build test` — no shell script, just a Zig test.
     run_mod_tests.step.dependOn(b.getInstallStep());
 
@@ -402,7 +402,7 @@ pub fn build(b: *std.Build) void {
     const lex_tests = b.addTest(.{ .root_module = lexmod });
     const run_lex_tests = b.addRunArtifact(lex_tests);
 
-    const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
+    const test_step = b.step("test", "Run unit tests + the example regression suite");
     test_step.dependOn(&run_lex_tests.step);
     test_step.dependOn(&run_pkg_migrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
