@@ -637,6 +637,7 @@ fn collectExpectedDir(
     io: std.Io,
     source_dir: []const u8,
     rel_prefix: []const u8,
+    filter: []const u8,
     items: *std.ArrayList(Item),
 ) !void {
     const exp_dir = try std.fs.path.join(arena, &.{ source_dir, "expected" });
@@ -652,9 +653,9 @@ fn collectExpectedDir(
         // `-Dname=<paths>` filter: when set, run ONLY the named example(s) (full
         // repo-relative `.sx` paths, comma-separated). A non-matching example is
         // dropped silently — not counted as ran or skipped.
-        if (corpus_paths.name.len > 0) {
+        if (filter.len > 0) {
             const this_rel = try std.fmt.allocPrint(arena, "{s}/{s}.sx", .{ rel_prefix, name });
-            if (!nameMatchesFilter(corpus_paths.name, this_rel)) continue;
+            if (!nameMatchesFilter(filter, this_rel)) continue;
         }
 
         var cfg: BuildConfig = .{};
@@ -686,6 +687,7 @@ fn collectRoot(
     arena: std.mem.Allocator,
     io: std.Io,
     root_dir: []const u8,
+    filter: []const u8,
     items: *std.ArrayList(Item),
 ) !void {
     const root_base = std.fs.path.basename(root_dir);
@@ -709,7 +711,7 @@ fn collectRoot(
         const child_expected = try std.fs.path.join(arena, &.{ child_dir, "expected" });
         std.Io.Dir.access(.cwd(), io, child_expected, .{}) catch continue;
         const rel_prefix = try std.fmt.allocPrint(arena, "{s}/{s}", .{ root_base, child });
-        try collectExpectedDir(arena, io, child_dir, rel_prefix, items);
+        try collectExpectedDir(arena, io, child_dir, rel_prefix, filter, items);
     }
 }
 
@@ -1192,17 +1194,21 @@ fn writeTimingReport(
         std.debug.print("[corpus-run] {s}: {d} example(s) OVER the 1s run budget — see {s}\n", .{ label, over, path });
 }
 
-/// Run every `<root>/expected/*.exit` test: collect, run on the pool (serial
-/// items afterwards), then report in collection order. Appends a formatted
-/// diagnostic to `failures` (owned by `fail_gpa`) for each failing example.
-/// Returns the number of tests actually run (markers whose `.sx` is missing
-/// are skipped).
+/// One sweep's tally: `selected` markers passed the `-Dname` filter, and `ran`
+/// of those executed — a host gate or a missing `.sx` skips a selected marker.
+const Sweep = struct { selected: usize, ran: usize };
+
+/// Run every `<root>/expected/*.exit` test `filter` selects: collect, run on the
+/// pool (serial items afterwards), then report in collection order. Appends a
+/// formatted diagnostic to `failures` (owned by `fail_gpa`) for each failing
+/// example.
 fn sweepRoot(
     fail_gpa: std.mem.Allocator,
     io: std.Io,
     root_dir: []const u8,
+    filter: []const u8,
     failures: *std.ArrayList([]const u8),
-) !usize {
+) !Sweep {
     // Repo root (parent of examples/) is the child's cwd: relative source
     // paths land in diagnostics already-normalized, and tests/fixtures/
     // imports resolve here.
@@ -1214,8 +1220,8 @@ fn sweepRoot(
     const a = arena_state.allocator();
 
     var items: std.ArrayList(Item) = .empty;
-    try collectRoot(a, io, root_dir, &items);
-    if (items.items.len == 0) return 0;
+    try collectRoot(a, io, root_dir, filter, &items);
+    if (items.items.len == 0) return .{ .selected = 0, .ran = 0 };
 
     // Directory iteration order is filesystem-dependent; sort so slot order —
     // and with it failure reporting, skip notes, and the timing report — is
@@ -1303,7 +1309,7 @@ fn sweepRoot(
     writeTimingReport(a, io, repo_root, root_base, notes.items, items.items, outcomes) catch |err| {
         std.debug.print("[corpus-run] timing report failed ({s})\n", .{@errorName(err)});
     };
-    return ran;
+    return .{ .selected = items.items.len, .ran = ran };
 }
 
 /// Overwrite `<exp_dir>/<name>.<ext>` with `content` + a trailing newline —
@@ -1364,10 +1370,51 @@ test "examples corpus: every examples/*.sx runs and matches its snapshot" {
     var failures: std.ArrayList([]const u8) = .empty;
     defer failures.deinit(std.testing.allocator);
 
-    const ran = try sweepRoot(std.testing.allocator, io, corpus_paths.examples_dir, &failures);
+    const sweep = try sweepRoot(std.testing.allocator, io, corpus_paths.examples_dir, corpus_paths.name, &failures);
     defer for (failures.items) |f| std.testing.allocator.free(f);
-    try std.testing.expect(ran > 0);
-    try reportFailures("examples", ran, failures.items);
+    try std.testing.expect(sweep.selected > 0);
+    try reportFailures("examples", sweep.ran, failures.items);
+}
+
+test "sweepRoot: a selected example that skips on this host stays selected; an unmatched filter selects none" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const root = try SandboxPath.own(a, "corpus-selection-root", .{});
+    const root_abs = try root.abs(a, repo_root);
+    defer root.remove(a, io, repo_root);
+
+    const corpus_abs = try std.fmt.allocPrint(a, "{s}/corpus", .{root_abs});
+    const cat_abs = try std.fmt.allocPrint(a, "{s}/gated", .{corpus_abs});
+    const exp_abs = try std.fmt.allocPrint(a, "{s}/expected", .{cat_abs});
+    try std.Io.Dir.createDirPath(.cwd(), io, exp_abs);
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try std.fmt.allocPrint(a, "{s}/elsewhere.sx", .{cat_abs}),
+        .data = "main :: () -> i32 { 0 }\n",
+    });
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try std.fmt.allocPrint(a, "{s}/elsewhere.exit", .{exp_abs}),
+        .data = "0\n",
+    });
+    const off_host = if (builtin.os.tag == .macos) "linux" else "macos";
+    try std.Io.Dir.writeFile(.cwd(), io, .{
+        .sub_path = try std.fmt.allocPrint(a, "{s}/elsewhere.build", .{exp_abs}),
+        .data = try std.fmt.allocPrint(a, "{{\"host_os\": \"{s}\"}}\n", .{off_host}),
+    });
+
+    var failures: std.ArrayList([]const u8) = .empty;
+    defer failures.deinit(std.testing.allocator);
+
+    const matched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/elsewhere.sx", &failures);
+    try std.testing.expectEqual(@as(usize, 1), matched.selected);
+    try std.testing.expectEqual(@as(usize, 0), matched.ran);
+    try std.testing.expect(failures.items.len == 0);
+
+    const unmatched = try sweepRoot(std.testing.allocator, io, corpus_abs, "corpus/gated/absent.sx", &failures);
+    try std.testing.expectEqual(@as(usize, 0), unmatched.selected);
 }
 
 test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
