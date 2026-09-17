@@ -1,0 +1,44 @@
+// A lowered JNI chain owns every local reference it makes: the class
+// `GetObjectClass` hands back dies once the method ID is resolved, the one
+// `FindClass` hands back dies once the call that needs it returns. A chain
+// runs only while no exception is pending and every handle it looks up
+// resolves; otherwise it is abandoned and the pending exception reaches the
+// JVM with the native frame's return.
+//
+// Runtime: unreachable. The dispatch is all indirect through `*env`, so the
+// IR loads cleanly into the host JIT and nothing dereferences it: the
+// runtime-read `gShouldCall` stays false, and keeps the lowering out of the
+// constant folder's reach.
+
+@import "modules/std/core.sx";
+@import "modules/platform/jni.sx";
+
+Bundle :: @JniClass("android/os/Bundle") extern {}
+
+Holder :: @JniClass("com/example/Holder") extern {
+    new :: (seed: i32) -> *Self;
+}
+
+gShouldCall : bool = false;
+gHeld : *void = null;
+gName : string = "noop";
+
+SxApp :: @JniClass("co/swipelab/sxjnichain/SxApp", main = true) {
+    onCreate :: (self: *Self, b: *Bundle) {
+        super.onCreate(b);
+        gHeld = Holder.new(3);
+    }
+}
+
+unusedJni :: (env: *void, target: *void) {
+    push .{ jni = env } {
+        @JniCall(void, env, target, gName, "()V");
+    }
+}
+
+main :: () {
+    if gShouldCall {
+        unusedJni(null, null);
+    }
+    @printf("ok\n");
+}
