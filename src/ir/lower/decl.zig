@@ -3452,6 +3452,14 @@ pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: Stri
 }
 
 pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
+    // One declaration is one function: a module reached along two import paths
+    // registers its declarations once per path, and a second same-name stub
+    // splits the name-keyed lookup (`resolveFuncByName` takes the first) from
+    // the decl-identity one (`fn_decl_fids` holds the last).
+    if (self.fn_decl_fids.get(fd)) |fid| {
+        if (self.module.getFunction(fid).name == self.module.types.internString(name)) return;
+    }
+
     // An intrinsic body binds to the registry (`ir/intrinsics.zig`) by
     // (module, name). Validate here — above the generic-template guard, since
     // most intrinsics are `$T`-generic and would otherwise skip the check —
