@@ -1505,7 +1505,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     };
     if (fd.type_params.len > 0) return null;
     for (fd.params) |p| if (p.is_pack or p.is_comptime) return null;
-    const fid = self.fn_decl_fids.get(fd) orelse return null;
+    const fid = self.declFuncId(fd) orelse return null;
     return functionSignatureType(self, fid);
 }
 

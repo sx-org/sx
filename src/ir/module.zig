@@ -24,6 +24,10 @@ const Span = inst.Span;
 pub const Module = struct {
     types: TypeTable,
     functions: std.ArrayList(Function),
+    /// Symbol name → the first function registered under it. A name no
+    /// declaration owns — a monomorph instance, a thunk, a C symbol — is
+    /// reached through here.
+    first_func_by_name: std.AutoHashMap(StringId, FuncId),
     globals: std.ArrayList(Global),
     /// Maps (protocol_ty, concrete_ty) → list of method FuncIds.
     impl_table: ImplTable,
@@ -118,6 +122,7 @@ pub const Module = struct {
         return .{
             .types = TypeTable.init(alloc),
             .functions = std.ArrayList(Function).empty,
+            .first_func_by_name = std.AutoHashMap(StringId, FuncId).init(alloc),
             .globals = std.ArrayList(Global).empty,
             .impl_table = ImplTable.init(alloc),
             .objc_selector_cache = std.ArrayList(ObjcSelectorEntry).empty,
@@ -136,6 +141,7 @@ pub const Module = struct {
             func.deinit(self.alloc);
         }
         self.functions.deinit(self.alloc);
+        self.first_func_by_name.deinit();
         self.globals.deinit(self.alloc);
         self.impl_table.deinit();
         self.objc_selector_cache.deinit(self.alloc);
@@ -241,8 +247,16 @@ pub const Module = struct {
 
     pub fn addFunction(self: *Module, func: Function) FuncId {
         const id = FuncId.fromIndex(@intCast(self.functions.items.len));
+        const name = func.name;
         self.functions.append(self.alloc, func) catch unreachable;
+        const gop = self.first_func_by_name.getOrPut(name) catch @panic("out of memory");
+        if (!gop.found_existing) gop.value_ptr.* = id;
         return id;
+    }
+
+    /// The function registered under `name`, or null when nothing carries it.
+    pub fn funcIdByName(self: *const Module, name: StringId) ?FuncId {
+        return self.first_func_by_name.get(name);
     }
 
     pub fn getFunction(self: *const Module, id: FuncId) *const Function {

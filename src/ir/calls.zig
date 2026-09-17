@@ -992,13 +992,13 @@ pub const CallResolver = struct {
         const fd = sf.decl;
         const ret_ty: TypeId = if (fd.type_params.len > 0)
             self.l.genericResolver().inferGenericReturnType(fd, c)
-        else if (self.l.fn_decl_fids.get(fd)) |fid|
+        else if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].ret
         else if (fd.return_type) |rt|
             self.l.resolveTypeInSource(sf.source, rt)
         else
             .void;
-        const has_ctx = if (self.l.fn_decl_fids.get(fd)) |fid|
+        const has_ctx = if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].has_implicit_ctx
         else
             self.l.funcWantsImplicitCtx(fd);
@@ -1033,7 +1033,7 @@ pub const CallResolver = struct {
                 c2.args = eff_args;
                 break :infer self.l.genericResolver().inferGenericReturnType(fd, &c2);
             };
-        } else if (self.l.fn_decl_fids.get(fd)) |fid|
+        } else if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].ret
         else blk: {
             const saved = self.l.current_source_file;
@@ -1042,7 +1042,7 @@ pub const CallResolver = struct {
             self.l.setCurrentSourceFile(saved);
             break :blk ret;
         };
-        const has_ctx = if (self.l.fn_decl_fids.get(fd)) |fid|
+        const has_ctx = if (self.l.declFuncId(fd)) |fid|
             self.l.module.functions.items[@intFromEnum(fid)].has_implicit_ctx
         else
             self.l.funcWantsImplicitCtx(fd);

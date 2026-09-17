@@ -437,7 +437,7 @@ fn callNominal(
     span: ast.Span,
 ) Ref {
     if (self.checkCallArity(cn.fd, cn.qualified, args.len + 1, true, span)) return Ref.none;
-    const fid = self.fn_decl_fids.get(cn.fd) orelse return Ref.none;
+    const fid = self.declFuncId(cn.fd) orelse return Ref.none;
     if (!self.lowered_fids.contains(fid)) {
         self.lowered_fids.put(fid, {}) catch @panic("out of memory");
         self.lowerFunctionBodyInto(cn.fd, fid, cn.qualified);
@@ -1810,12 +1810,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         return self.lowerGenericCall(fd, selectedDispatchName(self, sf), c, args.items);
                     if (self.checkCallArity(fd, fd.name, args.items.len, false, c.callee.span)) return Ref.none;
                     const fid: FuncId = if (fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr)
-                        self.fn_decl_fids.get(fd) orelse declared: {
+                        self.declFuncId(fd) orelse declared: {
                             const saved_source = self.current_source_file;
                             self.setCurrentSourceFile(sf.source);
                             self.declareFunction(fd, fd.name);
                             self.setCurrentSourceFile(saved_source);
-                            break :declared self.fn_decl_fids.get(fd) orelse return self.emitError(fd.name, c.callee.span);
+                            break :declared self.declFuncId(fd) orelse return self.emitError(fd.name, c.callee.span);
                         }
                     else
                         self.selectedFuncId(sf);
@@ -2735,14 +2735,18 @@ fn protocolHasMethod(proto_info: anytype, name: []const u8) bool {
     return false;
 }
 
+/// The IR function a name denotes. The name selects ONE declaration and that
+/// declaration owns its function, so two same-spelled declarations can never
+/// answer for each other. A name no declaration owns — a monomorph instance, a
+/// thunk, a renamed C symbol — is answered by the module's own symbol index.
 pub fn resolveFuncByName(self: *Lowering, name: []const u8) ?FuncId {
-    // Check extern name map first (e.g., "c_abs" → "abs")
+    // A rename (`extern … "abs"`) declares under the C symbol, so that is the
+    // spelling both lookups take.
     const effective_name = self.extern_name_map.get(name) orelse name;
-    const name_id = self.module.types.internString(effective_name);
-    for (self.module.functions.items, 0..) |func, i| {
-        if (func.name == name_id) return FuncId.fromIndex(@intCast(i));
+    if (self.program_index.lookup(.function, effective_name)) |fd| {
+        if (self.declFuncId(fd)) |fid| return fid;
     }
-    return null;
+    return self.module.funcIdByName(self.module.types.internString(effective_name));
 }
 
 /// The `BuiltinId` (IR op tag) a call lowers to, or null when the name has no

@@ -208,7 +208,7 @@ pub fn plainStructMethodSource(method: PlainStructMethod) []const u8 {
 /// a same-named method from being lowered into another author's function.
 pub fn ensurePlainStructMethodLowered(self: *Lowering, method: PlainStructMethod) FuncId {
     const name = self.plainStructMethodName(method);
-    const fid = self.fn_decl_fids.get(method.fd) orelse
+    const fid = self.declFuncId(method.fd) orelse
         std.debug.panic("plain struct method '{s}' has no decl-identity function slot", .{method.fd.name});
     if (!self.lowered_fids.contains(fid)) {
         self.lowered_fids.put(fid, {}) catch @panic("out of memory");

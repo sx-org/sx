@@ -572,12 +572,10 @@ pub const Lowering = struct {
     // mismatches (each of those is one of the guard's OWN errors, not external).
     assignability_error_count: usize = 0,
     lowered_functions: std.StringHashMap(void), // tracks which functions have been fully lowered
-    /// Identity map: authoring `*const ast.FnDecl` → the FuncId `declareFunction`
-    /// created for it. The name-keyed function table (`resolveFuncByName`) returns
-    /// the FIRST author of a name, so two same-name authors collide there; this
-    /// map addresses each author's OWN slot by decl identity, letting
-    /// a SHADOWED author lower its body into a distinct FuncId.
-    fn_decl_fids: std.AutoHashMap(*const ast.FnDecl, FuncId),
+    /// The IR function each declaration owns. One declaration is one function:
+    /// two same-spelled declarations hold distinct entries, and every name that
+    /// selects a declaration reaches its function through here.
+    fn_decl_fids: std.AutoHashMap(imports_mod.DeclId, FuncId),
     /// Runtime binding name → the resolved function, once per compilation.
     runtime_binding_fids: std.StringHashMap(FuncId),
     /// Identity map for mutable top-level globals. The name/source indexes are
@@ -1346,7 +1344,7 @@ pub const Lowering = struct {
             .authored_call_defaults = std.AutoHashMap(*const Node, DefaultCallSite).init(module.alloc),
             .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
-            .fn_decl_fids = std.AutoHashMap(*const ast.FnDecl, FuncId).init(module.alloc),
+            .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
             .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
@@ -3634,6 +3632,8 @@ pub const Lowering = struct {
     pub const putGlobal = lower_decl.putGlobal;
     pub const dropModuleConst = lower_decl.dropModuleConst;
     pub const declId = lower_decl.declId;
+    pub const declFuncId = lower_decl.declFuncId;
+    pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 

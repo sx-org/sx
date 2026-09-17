@@ -822,7 +822,7 @@ fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInf
 /// `@callPtr` for an `impl (sig) for T`: the env IS the receiver, so the
 /// trampoline hands it to `call` as `self`.
 fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
-    const target = self.fn_decl_fids.get(cn.fd) orelse return null;
+    const target = self.declFuncId(cn.fd) orelse return null;
     if (!self.lowered_fids.contains(target)) {
         self.lowered_fids.put(target, {}) catch @panic("out of memory");
         self.lowerFunctionBodyInto(cn.fd, target, cn.qualified);

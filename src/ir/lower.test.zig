@@ -1890,7 +1890,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     // lookup by the stable `fn_ast_map` pointer would miss (null). Bare-call
     // routing goes through exactly these pointers, so the round-trip must hold.
     const winner_fd = lowering.program_index.lookup(.function, "greet").?;
-    const winner_fid = lowering.fn_decl_fids.get(winner_fd);
+    const winner_fid = lowering.declFuncId(winner_fd);
     try std.testing.expect(winner_fid != null);
     // Round-trips to the first-wins winner FuncId (resolveFuncByName's pick).
     try std.testing.expectEqual(lowering.resolveFuncByName("greet").?, winner_fid.?);
@@ -1905,7 +1905,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
         }
     }
     try std.testing.expect(shadow_fd != null);
-    const shadow_fid = lowering.fn_decl_fids.get(shadow_fd.?);
+    const shadow_fid = lowering.declFuncId(shadow_fd.?);
     try std.testing.expect(shadow_fid != null);
     try std.testing.expect(shadow_fid.? != winner_fid.?);
 
@@ -1927,7 +1927,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
             try std.testing.expect(sf.materialized == null);
-            try std.testing.expectEqual(shadow_fid.?, lowering.fn_decl_fids.get(sf.decl).?);
+            try std.testing.expectEqual(shadow_fid.?, lowering.declFuncId(sf.decl).?);
         },
         else => return error.TestUnexpectedResult,
     }

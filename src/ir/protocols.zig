@@ -320,7 +320,7 @@ pub const ProtocolResolver = struct {
                 .is_synthesized_default = is_synthesized_default,
             }) catch @panic("out of memory");
         }
-        if (self.l.fn_decl_fids.get(fd)) |fid| {
+        if (self.l.declFuncId(fd)) |fid| {
             const f = self.l.module.getFunction(fid);
             const user_base: usize = if (f.has_implicit_ctx) 1 else 0;
             if (user_base < f.params.len) {

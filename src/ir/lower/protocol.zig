@@ -1122,7 +1122,7 @@ fn protocolRuntimeDispatchName(self: *Lowering, display_name: []const u8, proto_
 }
 
 fn ensureProtocolImplMethodLowered(self: *Lowering, proto_ty: TypeId, proto_name: []const u8, concrete_type_name: []const u8, method: ProtocolImplMethod) FuncId {
-    const fid = self.fn_decl_fids.get(method.fd) orelse
+    const fid = self.declFuncId(method.fd) orelse
         std.debug.panic("protocol impl method '{s}.{s}' has no decl-identity function slot", .{ concrete_type_name, method.fd.name });
     if (!self.lowered_fids.contains(fid)) {
         self.lowered_fids.put(fid, {}) catch @panic("out of memory");

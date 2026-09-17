@@ -725,6 +725,17 @@ pub fn declId(self: *Lowering, ref: imports.RawDeclRef, source: ?[]const u8) imp
     return self.program_index.internRef(ref, source);
 }
 
+/// The IR function `fd` owns, or null before it is declared.
+pub fn declFuncId(self: *Lowering, fd: *const ast.FnDecl) ?FuncId {
+    return self.fn_decl_fids.get(self.declId(.{ .fn_decl = fd }, fd.body.source_file));
+}
+
+/// Give `fd` its IR function. One declaration is one function, so a second
+/// call for the same declaration replaces nothing it did not already own.
+pub fn bindDeclFuncId(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId) void {
+    self.fn_decl_fids.put(self.declId(.{ .fn_decl = fd }, fd.body.source_file), fid) catch {};
+}
+
 /// Scan pass 0, also run by the module-scope expansion before it folds a
 /// driver: a condition may name a module constant, and a constant is a fact
 /// the expansion must already have.
@@ -3330,7 +3341,7 @@ pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc) FuncId {
 /// addressable `lowerFunctionBodyInto`. Idempotent: `lowered_fids` tracks
 /// which slots already carry a body.
 pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, path: []const u8) FuncId {
-    if (self.fn_decl_fids.get(fd)) |fid| {
+    if (self.declFuncId(fd)) |fid| {
         if (!self.lowered_fids.contains(fid)) {
             self.lowered_fids.put(fid, {}) catch {};
             self.lowerFunctionBodyInto(fd, fid, name);
@@ -3341,7 +3352,7 @@ pub fn bareAuthorFuncId(self: *Lowering, fd: *const ast.FnDecl, name: []const u8
     self.setCurrentSourceFile(path);
     self.declareFunction(fd, name);
     self.setCurrentSourceFile(saved_src);
-    const fid = self.fn_decl_fids.get(fd).?;
+    const fid = self.declFuncId(fd).?;
     self.lowered_fids.put(fid, {}) catch {};
     self.lowerFunctionBodyInto(fd, fid, name);
     return fid;
@@ -3405,7 +3416,7 @@ pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: Stri
             }
         }
         if (same) {
-            self.fn_decl_fids.put(fd, FuncId.fromIndex(@intCast(i))) catch {};
+            self.bindDeclFuncId(fd, FuncId.fromIndex(@intCast(i)));
             return true;
         }
         if (self.diagnostics) |d| {
@@ -3417,13 +3428,9 @@ pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: Stri
 }
 
 pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
-    // One declaration is one function: a module reached along two import paths
-    // registers its declarations once per path, and a second same-name stub
-    // splits the name-keyed lookup (`resolveFuncByName` takes the first) from
-    // the decl-identity one (`fn_decl_fids` holds the last).
-    if (self.fn_decl_fids.get(fd)) |fid| {
-        if (self.module.getFunction(fid).name == self.module.types.internString(name)) return;
-    }
+    // One declaration is one function, so a module reached along two import
+    // paths declares its functions once.
+    if (self.declFuncId(fd) != null) return;
 
     // An intrinsic body binds to the registry (`ir/intrinsics.zig`) by
     // (module, name). Validate here — above the generic-template guard, since
@@ -3555,7 +3562,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         func.is_get = fd.is_get;
         func.is_set = fd.is_set;
         self.extern_name_map.put(name, c_name) catch {};
-        self.fn_decl_fids.put(fd, fid) catch {};
+        self.bindDeclFuncId(fd, fid);
         return;
     }
 
@@ -3583,7 +3590,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // wrapper. Without this, a builder that calls a welded fn would be rejected
     // as "comptime-only fn called at runtime" even though it never runs at runtime.
     if (fnReturnsTypeValue(fd)) func.comptime_role = .type_builder;
-    self.fn_decl_fids.put(fd, fid) catch {};
+    self.bindDeclFuncId(fd, fid);
 }
 
 /// Validate an intrinsic declaration against the registry. The registry IS the
@@ -3627,14 +3634,12 @@ pub fn isEvaluateIntrinsic(self: *Lowering, fd: *const ast.FnDecl, name: []const
 }
 
 /// Register a namespaced import's OWN functions under their module-qualified
-/// name (`ns.fn`), giving each a UNIQUE FuncId in the function table. Two
-/// modules each exporting a top-level `parse` otherwise collide in the
-/// bare-name `fn_ast_map` / function table (last-wins) while `resolveFuncByName`
-/// picks the first declared, so `lazyLowerFunction` lowers one signature
-/// against the other's body and trips its param-count assert.
-/// The bare recursion in `scanDecls` still registers intra-module bare calls;
-/// this adds the qualified identity the `pkg.fn(...)` resolution paths in
-/// `CallResolver.plan` / `lowerCall` already prefer.
+/// name (`ns.fn`). Two modules each exporting a top-level `parse` share the
+/// bare name, which selects one of them; the qualified spelling names the
+/// other's declaration directly. The bare recursion in `scanDecls` still
+/// registers intra-module bare calls; this adds the qualified identity the
+/// `pkg.fn(...)` resolution paths in `CallResolver.plan` / `lowerCall` already
+/// prefer.
 pub fn registerNamespaceQualifiedFns(self: *Lowering, ns_name: []const u8, own_decls: []const *Node) void {
     const saved_source = self.current_source_file;
     defer self.setCurrentSourceFile(saved_source);
@@ -3794,24 +3799,12 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     // Mark as lowered before lowering (prevents infinite recursion)
     self.lowered_functions.put(name, {}) catch {};
 
-    // Find the existing extern stub (from scanDecls), keyed by NAME — the
-    // FIRST author of a name owns this slot. A shadowed same-name author is
-    // not here (it has no name-keyed slot); it is lowered out-of-line into
-    // its OWN FuncId by `lowerRetainedSameNameAuthors`.
-    // A renamed `export … "csym"` fn was declared under its C symbol name
-    // (declareFunction's rename path), so search for the stub under that name
-    // and promote the body into it. `extern_name_map` only carries an entry
-    // when a rename was registered; a bare export / normal define keeps its sx
-    // name.
+    // The body lowers into the function THIS declaration owns. A renamed
+    // `export … "csym"` fn has no such slot under its sx name — it was declared
+    // under its C symbol — so the module's symbol index answers for it.
     const search_name = self.extern_name_map.get(name) orelse name;
-    const name_id = self.module.types.internString(search_name);
-    var func_id: ?FuncId = null;
-    for (self.module.functions.items, 0..) |func, i| {
-        if (func.name == name_id) {
-            func_id = FuncId.fromIndex(@intCast(i));
-            break;
-        }
-    }
+    const func_id = self.declFuncId(fd) orelse
+        self.module.funcIdByName(self.module.types.internString(search_name));
 
     if (func_id) |fid| {
         self.lowerFunctionBodyInto(fd, fid, name);
