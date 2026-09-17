@@ -1,62 +1,27 @@
-// `xx closure : Block` for an arbitrary closure signature.
-//
-// The stdlib (modules/ffi/objc_block.sx) declares hand-rolled
-// `Into(Block) for Closure() -> void` and `Closure(bool) -> void`
-// impls — the two most common Apple block shapes. Other signatures
-// need a per-shape `__block_invoke_<sig>` trampoline + `Into(Block)`
-// impl declared somewhere reachable (stdlib if shared, in-file if
-// app-specific).
-//
-// This test exercises the user-declared variant: signature
-// `Closure(i32, *void) -> void` (a two-arg block — not in stdlib).
-// If the impl is missing, the compiler emits a focused diagnostic
-// pointing at modules/ffi/objc_block.sx as the template.
+// `blockCreate` at an arbitrary block signature. The comptime builder emits the
+// `abi(.c)` trampoline matching `void (^)(int, void*)` — the shape Apple's
+// runtime calls — and forwards both arguments to the sx callable.
 
 @import "modules/std.sx";
 @import "modules/ffi/objc_block.sx";
 
-// Trampoline matching `void (^)(int, void*)` — the C ABI Apple's
-// runtime calls. Forwards through to the sx closure with the
-// standard `(__sx_ctx, env, ...args)` shape.
-__block_invoke_void_i32_p :: (blockSelf: *Block, arg0: i32, arg1: *void) abi(.c) {
-    typedFn : (*void, i32, *void) -> void = blockSelf.sxFn.((*void, i32, *void) -> void);
-    typedFn(blockSelf.sxEnv, arg0, arg1);
-}
-
-impl Into(Block) for Closure(i32, *void) -> void {
-    convert :: (self: Closure(i32, *void) -> void, alloc: Allocator = context.allocator) -> Block {
-        _ = alloc;
-        .{
-            isa = *_NSConcreteStackBlock,
-            flags = 0,
-            reserved = 0,
-            invoke = (*__block_invoke_void_i32_p).(*void),
-            descriptor = *kBlockDescriptor,
-            sxEnv = self.env,
-            sxFn = self.fnPtr,
-        }
-    }
-}
-
 // Side-effect capture so we can observe both args reached the
-// closure body.
+// callable body.
 gSum: i32 = 0;
 gTag: *void = null;
 
 main :: () -> i32 {
-    cl := |n: i32, tag: *void| {
-        gSum = n + 1;
-        gTag = tag;
-    };
-    b : Block = cl.(Block);
+    record :: (n: i32, tag: *void) { gSum = n + 1; gTag = tag; }
+    b := blockCreate(record);
 
     invokeFn : (*Block, i32, *void) -> void abi(.c) = b.invoke.((*Block, i32, *void) -> void abi(.c));
     sentinel: i32 = 42;
-    invokeFn(*b, 41, *sentinel);
+    invokeFn(b, 41, *sentinel);
 
     if gSum != 42 { print("FAIL: gSum expected 42, got {}\n", gSum); return 1; }
     if gTag == null { print("FAIL: gTag null\n"); return 1; }
 
     print("block multi-arg ok: sum={}\n", gSum);
+    blockRelease(b);
     0
 }

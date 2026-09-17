@@ -1,18 +1,16 @@
-// A capturing closure rides through `xx ... : Block` and the
-// captured state survives across the call. The block's sxEnv field
-// holds the closure's env pointer; the invoke trampoline restores it
-// before delegating.
+// A capturing lambda rides into the block through `blockCreate` and its
+// captured state survives across the call: the callable lives in the block
+// instance, and the invoke trampoline reads it back from the block pointer.
 
 @import "modules/std.sx";
-@import "modules/std/mem.sx";
 @import "modules/ffi/objc_block.sx";
 
 main :: () -> i32 {
   x : i64 = 42;
   y : i64 = 100;
-  cl : Closure() -> void = closure(||_{ x, y } { print("x + y = {}\n", x + y); });
-  b : Block = xx cl;
+  b := blockCreate(||_{ x, y } { print("x + y = {}\n", x + y); });
   invokeFn : (*Block) -> void abi(.c) = xx b.invoke;
-  invokeFn(*b);
+  invokeFn(b);
+  blockRelease(b);
   0
 }

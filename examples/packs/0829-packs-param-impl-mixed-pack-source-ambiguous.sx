@@ -8,9 +8,8 @@
 // none own, the concrete `*Box` prefix is a genuine collision and the build
 // exits 1, while the pack parts raise nothing.
 //
-// The pure-pack `Closure(..$args) -> $R` bridge in
-// `library/modules/ffi/objc_block.sx` has a single author and keeps the
-// prefix-free path (0504 / 1302 / 1304).
+// The pure-pack `Closure(..$args) -> $R` source in 0504 has a single author
+// and keeps the prefix-free path.
 
 @import "modules/std.sx";
 @import "0829-packs-param-impl-mixed-pack-source-ambiguous/a.sx";

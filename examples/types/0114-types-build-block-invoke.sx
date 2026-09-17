@@ -1,0 +1,32 @@
+// `buildBlockInvoke(args: []Type, $ret: Type) -> string` emits the
+// per-shape `invoke` trampoline that `blockCreate` inserts into its
+// monomorphised body. Per-call-shape monomorphisation re-runs the
+// builder with concrete types bound, so each block shape gets its own
+// trampoline.
+//
+// The builder is exercised directly (no `@insert`, no `blockCreate` wiring) —
+// three pack shapes through the same `void`-returning wrapper plus one non-void
+// `i32`-returning wrapper to pin the `return storage.callable(...)` branch. The
+// expected output captures the generated source verbatim, so formatting
+// drift surfaces here rather than as a downstream compile error.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
+
+previewVoid :: (..$args) -> string {
+    return buildBlockInvoke($args, void);
+}
+
+previewI32 :: (..$args) -> string {
+    return buildBlockInvoke($args, i32);
+}
+
+runAll :: () {
+    print("--- void / 0 args ---\n{}\n", previewVoid());
+    print("--- void / bool ---\n{}\n", previewVoid(true));
+    print("--- void / i64, string ---\n{}\n", previewVoid(42, "hi"));
+    print("--- i32 / f64 ---\n{}\n", previewI32(3.14));
+}
+@run runAll();
+
+main :: () { print("rt\n"); }

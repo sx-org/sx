@@ -1,0 +1,29 @@
+// The generic `blockCreate :: (f: $F/(..$A) -> $R) -> *Block` in stdlib covers
+// every callable shape: the compiler monomorphises its body per call shape and
+// emits a dedicated `invoke` `abi(.c)` trampoline (via
+// `@insert buildBlockInvoke($A, $R);`). The shape here (`(i64, i64) -> void`)
+// resolves through it like any other.
+//
+// The block is invoked directly through `b.invoke` (a typed `abi(.c)` fn-pointer) —
+// the same shape the Apple Block runtime calls when a UIKit/Foundation API hands
+// the block back to its registered invoke.
+
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
+
+gA: i64 = 0;
+gB: i64 = 0;
+
+main :: () -> i32 {
+    record :: (a: i64, b: i64) { gA = a; gB = b; }
+    blk := blockCreate(record);
+
+    invokeFn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;
+    invokeFn(blk, 10, 20);
+
+    if gA != 10 { print("FAIL: gA={}\n", gA); return 1; }
+    if gB != 20 { print("FAIL: gB={}\n", gB); return 1; }
+    print("generic block ok: a={} b={}\n", gA, gB);
+    blockRelease(blk);
+    0
+}

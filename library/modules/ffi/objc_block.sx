@@ -1,101 +1,120 @@
-// Obj-C blocks bridged to sx closures.
+// Obj-C blocks over sx callables.
 //
 // Apple's block ABI (clang's "Block Implementation Specification"): a block
-// pointer is a struct whose first five fields are { isa, flags, reserved,
-// invoke, descriptor } followed by per-block captured state. When an API
-// like `[UIView animateWithDuration:animations:]` receives a block, the
-// runtime reads `invoke` and calls it with the block pointer as the first
-// argument. UIKit / Foundation callers always `_Block_copy` synchronously
-// before returning, so a stack-allocated block is safe to pass directly.
+// pointer addresses { isa, flags, reserved, invoke, descriptor } followed by
+// the captured state. The runtime reads `invoke` and calls it with the block
+// pointer as the first argument, and moves a stack block to the heap by
+// copying `descriptor.size` bytes verbatim.
 //
-// We layer the sx closure onto Apple's layout by appending two pointer
-// fields to the standard 32-byte header: `sxEnv` (the closure's captured
-// environment pointer) and `sxFn` (the closure trampoline). The per-
-// signature `__block_invoke_*` C-ABI fn knows the offsets and calls
-// through to `sxFn(sxEnv, args...)`.
-//
-// ── Lifetime contract ───────────────────────────────────────────────────
-// `*(closure).(Block)` returns a pointer into the surrounding sx
-// function's stack frame. Same rule as `&localVar`: pass it directly to
-// a callee that consumes it immediately or `_Block_copy`s internally
-// (UIKit/Foundation always do). Don't store the pointer to use after the
-// caller returns. If you need that, ship a `Block_copy`-backed sibling
-// API and use it instead.
+// An sx block is that header, its own descriptor, and the callable value —
+// captures included — in one instance, so the runtime's verbatim copy is
+// self-contained: a block an API keeps past the call outlives the frame that
+// built it. `blockCreate` returns a heap block holding one reference;
+// `blockRelease` drops it.
 
-// `buildBlockConvert` (below) is a comptime metaprogram that emits sx source
+// `buildBlockInvoke` (below) is a comptime metaprogram that emits sx source
 // with `concat` / `intToString`; those live in std.sx. A metaprogram body
 // resolves its bare names in its OWN module, so this module must
 // import std.sx itself rather than relying on the call site's visibility.
 @import "modules/std.sx";
 
-// Standard 32-byte block header plus two trailing slots for the sx closure
-// it wraps. Total = 48 bytes.
+// Apple's block header. `*Block` is what every block-taking API receives.
 Block :: struct {
     isa: *void;
     flags: i32;
     reserved: i32;
     invoke: *void;
-    descriptor: *void;
-    sxEnv: *void;
-    sxFn: *void;
+    descriptor: *BlockDescriptor;
 }
 
-// Per-block-shape metadata. The runtime reads `size` when copying the
-// block to the heap, so it must equal the actual instance size.
+// Per-instance metadata. `size` covers the whole instance, captures included —
+// what the runtime allocates and copies when the block escapes.
 BlockDescriptor :: struct {
-    reserved: u64;
-    size: u64;
+    reserved: i64;
+    size: i64;
+    copy: (*Block, *Block) -> void abi(.c);
+    dispose: (*Block) -> void abi(.c);
+}
+
+// The header and the descriptor it addresses, at the same offsets in every sx
+// block whatever it captures.
+BlockHead :: struct {
+    header: Block;
+    shape: BlockDescriptor;
+}
+
+// One sx block: the fixed head plus the callable, whose captures ride inline.
+BlockStorage :: struct ($F: Type) {
+    head: BlockHead;
+    callable: F;
 }
 
 // libSystem isa pointer for stack-allocated blocks. Resolved at link time
 // (auto-linked on every Apple target via libSystem).
 _NSConcreteStackBlock : *void extern;
 
-// Shared descriptor for the 48-byte sx-block layout. All Into impls below
-// point their `descriptor` field at this.
-kBlockDescriptor : BlockDescriptor = .{
-    reserved = 0,
-    size = 48,
-};
+_Block_copy :: (block: *void) -> *void extern;
+_Block_release :: (block: *void) extern;
 
-// Single generic impl covers every closure shape. The compiler
-// monomorphises this body per call shape; inside each mono,
-// `$args` is the bound pack of arg types and `$R` is the bound
-// return type. The `@insert` evaluates `buildBlockConvert` at
-// comptime and substitutes the resulting source — a nested
-// `abi(.c)` trampoline + the Block literal that points its
-// `invoke` slot at it. One impl in stdlib replaces every per-
-// signature hand-rolled `__block_invoke_*` + `Into(Block)` pair.
-impl Into(Block) for Closure(..$args) -> $R {
-    convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {
-        _ = alloc;
-        @insert buildBlockConvert($args, $R);
-    }
+// The `flags` bit that makes the runtime call the descriptor's two helpers.
+kBlockHasCopyDispose :: 1 << 25;
+
+// A fresh copy inherits the source's descriptor pointer; re-point it at the
+// copy's own.
+blockCopyHelper :: (dst: *Block, src: *Block) abi(.c) {
+    _ = src;
+    head := dst.(*BlockHead);
+    head.header.descriptor = *head.shape;
 }
 
-// Comptime builder for the generic `Into(Block) for Closure(..$args)
-// -> $R` impl body. Receives the closure's per-position pack types
-// (`args`, a comptime `[]Type`) and the closure's return type
-// (`$ret`), emits source that:
-//
-//   1. Declares a nested `__invoke` `abi(.c)` trampoline whose
-//      signature matches the per-shape Apple Block ABI: first arg is
-//      `blockSelf: *Block`, then the pack types verbatim. The body
-//      reconstructs a typed fn-pointer from `blockSelf.sxFn`,
-//      prepends `blockSelf.sxEnv`, and tail-calls the sx closure.
-//   2. Returns a stack Block literal whose `invoke` slot points at
-//      the nested trampoline via `*__invoke`.
-//
-// The host impl wraps the emitted source via `@insert
-// buildBlockConvert($args, $R);`. Per-call-shape monomorphisation
-// of the impl body re-runs this builder with the concrete types
-// bound, so each closure shape gets its own dedicated trampoline.
-//
-// Void return type emits `typedFn(...)`; non-void emits
-// `return typedFn(...)`.
-buildBlockConvert :: (args: []Type, $ret: Type) -> string {
+// A block owns nothing outside its own instance, and the runtime calls both
+// helpers or neither.
+blockDisposeHelper :: (block: *Block) abi(.c) {
+    _ = block;
+}
+
+// A heap block around `f`, copied in captures and all: a capturing lambda, a
+// function, or a callable nominal. The caller owns the returned reference; an
+// API that keeps the block past the call takes its own.
+blockCreate :: (f: $F/(..$A) -> $R) -> *Block {
+    inline match F {
+        case closure: @error("a block owns the callable it copies, and a 'Closure' only borrows its environment — hand 'blockCreate' a capturing lambda or a function");
+        case pointer: @error("a block owns the callable it copies, and a pointer only borrows what it addresses — hand 'blockCreate' the callable itself");
+        else: {}
+    }
+    @insert buildBlockInvoke($A, $R);
+    value : BlockStorage(F) = ---;
+    value.head.shape = .{
+        reserved = 0,
+        size = @sizeOf(BlockStorage(F)),
+        copy = blockCopyHelper,
+        dispose = blockDisposeHelper,
+    };
+    value.head.header = .{
+        isa = *_NSConcreteStackBlock,
+        flags = kBlockHasCopyDispose,
+        reserved = 0,
+        invoke = (*invoke).(*void),
+        descriptor = *value.head.shape,
+    };
+    value.callable = f;
+    return _Block_copy((*value).(*void)).(*Block);
+}
+
+// Drop the reference `blockCreate` returned.
+blockRelease :: (block: *Block) {
+    _Block_release(block.(*void));
+}
+
+// Comptime builder for `blockCreate`'s per-shape `invoke`: the `abi(.c)` fn
+// the block runtime calls, taking the block pointer and then the callable's
+// own parameters verbatim, and forwarding to the callable stored in the
+// instance. Per-call-shape monomorphisation of `blockCreate` re-runs this
+// builder with the concrete types bound, so each shape gets its own
+// trampoline.
+buildBlockInvoke :: (args: []Type, $ret: Type) -> string {
     retName := @typeName(ret);
-    code := "__invoke :: (blockSelf: *Block";
+    code := "invoke :: (blockSelf: *Block";
     i : i64 = 0;
     while i < args.len {
         code = concat(code, ", arg");
@@ -106,45 +125,19 @@ buildBlockConvert :: (args: []Type, $ret: Type) -> string {
     }
     code = concat(code, ") -> ");
     code = concat(code, retName);
-    code = concat(code, " abi(.c) { typedFn : (*void");
-    i = 0;
-    while i < args.len {
-        code = concat(code, ", ");
-        code = concat(code, @typeName(args[i]));
-        i = i + 1;
-    }
-    code = concat(code, ") -> ");
-    code = concat(code, retName);
-    code = concat(code, " = blockSelf.sxFn.((*void");
-    i = 0;
-    while i < args.len {
-        code = concat(code, ", ");
-        code = concat(code, @typeName(args[i]));
-        i = i + 1;
-    }
-    code = concat(code, ") -> ");
-    code = concat(code, retName);
-    code = concat(code, "); ");
+    code = concat(code, " abi(.c) { storage := blockSelf.(*BlockStorage(F)); ");
     if retName == "void" {
-        code = concat(code, "typedFn(blockSelf.sxEnv");
+        code = concat(code, "storage.callable(");
     } else {
-        code = concat(code, "return typedFn(blockSelf.sxEnv");
+        code = concat(code, "return storage.callable(");
     }
     i = 0;
     while i < args.len {
-        code = concat(code, ", arg");
+        if i > 0 { code = concat(code, ", "); }
+        code = concat(code, "arg");
         code = concat(code, intToString(i));
         i = i + 1;
     }
-    code = concat(code, "); } ");
-    code = concat(code, "return .{ ");
-    code = concat(code, "isa = *_NSConcreteStackBlock, ");
-    code = concat(code, "flags = 0, ");
-    code = concat(code, "reserved = 0, ");
-    code = concat(code, "invoke = (*__invoke).(*void), ");
-    code = concat(code, "descriptor = *kBlockDescriptor, ");
-    code = concat(code, "sxEnv = self.env, ");
-    code = concat(code, "sxFn = self.fnPtr, ");
-    code = concat(code, "};");
+    code = concat(code, "); }");
     return code;
 }
