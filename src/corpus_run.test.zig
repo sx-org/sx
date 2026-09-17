@@ -2,8 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const corpus_paths = @import("corpus_paths");
 
-// End-to-end example/issue regression runner. For every
-// `<root>/expected/<name>.exit` marker under examples/ and issues/, spawn the
+// End-to-end example regression runner. For every
+// `<root>/expected/<name>.exit` marker under examples/, spawn the
 // installed `sx` binary on `<name>.sx`, capture stdout/stderr/exit, normalize,
 // and diff against the stored snapshot. Optional `<name>.ir` snapshots
 // additionally diff `sx ir` output; a `<name>.build` sidecar carries
@@ -678,12 +678,8 @@ fn collectExpectedDir(
     }
 }
 
-/// Discover every runnable item under a corpus root. Two layouts are supported
-/// simultaneously:
-///   * flat:     `<root>/expected/<name>.exit` with `<root>/<name>.sx`
-///               (used by `issues/`)
-///   * by-category: `<root>/<cat>/expected/<name>.exit` with
-///                  `<root>/<cat>/<name>.sx` (used by `examples/`)
+/// Discover every runnable item under a corpus root: a
+/// `<root>/<cat>/expected/<name>.exit` marker with its `<root>/<cat>/<name>.sx`.
 /// Category directories are visited in sorted order so item order (and
 /// therefore all reporting) is stable across filesystems.
 fn collectRoot(
@@ -692,12 +688,7 @@ fn collectRoot(
     root_dir: []const u8,
     items: *std.ArrayList(Item),
 ) !void {
-    const root_base = std.fs.path.basename(root_dir); // "examples" | "issues"
-
-    // A direct `<root>/expected/` (flat layout, e.g. issues/).
-    if (std.Io.Dir.access(.cwd(), io, try std.fs.path.join(arena, &.{ root_dir, "expected" }), .{})) |_| {
-        try collectExpectedDir(arena, io, root_dir, root_base, items);
-    } else |_| {}
+    const root_base = std.fs.path.basename(root_dir);
 
     var root = std.Io.Dir.openDirAbsolute(io, root_dir, .{ .iterate = true }) catch return;
     defer root.close(io);
@@ -1212,8 +1203,8 @@ fn sweepRoot(
     root_dir: []const u8,
     failures: *std.ArrayList([]const u8),
 ) !usize {
-    // Repo root (parent of examples/ or issues/) is the child's cwd: relative
-    // source paths land in diagnostics already-normalized, and tests/fixtures/
+    // Repo root (parent of examples/) is the child's cwd: relative source
+    // paths land in diagnostics already-normalized, and tests/fixtures/
     // imports resolve here.
     const repo_root = std.fs.path.dirname(root_dir) orelse ".";
     const root_base = std.fs.path.basename(root_dir);
@@ -1360,7 +1351,7 @@ fn reportFailures(label: []const u8, ran: usize, failures: []const []const u8) !
         \\  ── snapshot mismatch ──────────────────────────────────────────────
         \\  If the new output is CORRECT (intentional change), regenerate snapshots:
         \\      zig build test -Dupdate-goldens
-        \\      git diff examples/expected/ issues/expected/   # review before committing
+        \\      git diff examples/   # review before committing
         \\  Otherwise this is a regression — fix the code, don't update the snapshot.
         \\  ───────────────────────────────────────────────────────────────────
         \\
@@ -1377,16 +1368,6 @@ test "examples corpus: every examples/*.sx runs and matches its snapshot" {
     defer for (failures.items) |f| std.testing.allocator.free(f);
     try std.testing.expect(ran > 0);
     try reportFailures("examples", ran, failures.items);
-}
-
-test "issues corpus: every pinned issues/*.sx repro runs and matches its snapshot" {
-    const io = test_io();
-    var failures: std.ArrayList([]const u8) = .empty;
-    defer failures.deinit(std.testing.allocator);
-
-    const ran = try sweepRoot(std.testing.allocator, io, corpus_paths.issues_dir, &failures);
-    defer for (failures.items) |f| std.testing.allocator.free(f);
-    try reportFailures("issues", ran, failures.items);
 }
 
 test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {

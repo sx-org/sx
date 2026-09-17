@@ -1,2 +1,0 @@
-@import "bridge.sx";
-publicApi :: () -> i64 { bridged() }

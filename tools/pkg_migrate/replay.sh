@@ -27,16 +27,15 @@ RUNNER=$2
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 
-# The fixed input tree: the tool's own fixtures, the stdlib modules (heredoc
-# opacity, real-world volume) and the issues/ fixtures.
+# The fixed input tree: the tool's own fixtures and the stdlib modules (heredoc
+# opacity, real-world volume).
 seed_tree() {
     dest=$1
     mkdir -p "$dest"
     cp -R "$REPO/tools/pkg_migrate/testdata" "$dest/testdata"
     if [ "${2-}" = "full" ]; then
-        mkdir -p "$dest/library" "$dest/issues"
+        mkdir -p "$dest/library"
         cp -R "$REPO/library/modules" "$dest/library/modules"
-        cp "$REPO"/issues/*.sx "$dest/issues/"
     fi
 }
 
@@ -75,7 +74,7 @@ run_case 05-qualify-ambiguous qualify --map testdata/qualify/ambiguous_map.txt t
 run_case 06-to-package-dir to-package-dir --name demo testdata/pkgdir/a.sx testdata/pkgdir/b.sx
 run_case 07-to-package-dir-crossdir to-package-dir --name demo testdata/pkgdir/a.sx testdata/insert/plain.sx
 run_case 08-inventory-fixture inventory testdata/inventory
-run_case 09-inventory-corpus inventory library issues
+run_case 09-inventory-corpus inventory library
 run_case 10-inventory-warnings inventory testdata/lexical/warnings
 run_case 11-insert-warnings insert-package --name demo testdata/lexical/warnings
 run_case 12-inventory-drift inventory testdata/lexical/drift

@@ -96,7 +96,7 @@ conflict. `--apply` is intentionally rejected; apply the plan via
 ### inventory (the collision inventory)
 
 ```sh
-zig build pkg-migrate -- inventory library examples issues tests
+zig build pkg-migrate -- inventory library examples tests
 ```
 
 Scans for uses of `package`, `import`, `private`, and `intrinsic` as
@@ -107,7 +107,7 @@ per-word and per-category summaries. Backtick-escaped occurrences are
 flagged `(backticked)`. `private` and `intrinsic` are reserved words the
 lexer tags as keywords; the inventory counts every spelling of the four words
 regardless, which is the collision it exists to surface. The run over
-`library/ examples/ issues/ tests/` is committed as
+`library/ examples/ tests/` is committed as
 `tools/pkg_migrate/d9-inventory-2026-07-15.txt`.
 
 ## Exit codes
@@ -133,7 +133,7 @@ Positional, from token neighbors: `decl-const` (`name ::`), `decl-local`
 - Directory arguments are walked recursively for `.sx` files; `.git`,
   `zig-out`, `.zig-cache`, and `.sx-tmp` subtrees are skipped. Reports are
   sorted by path for determinism.
-- Malformed fixtures (unterminated strings/heredocs, e.g. under `issues/`)
+- Malformed fixtures (unterminated strings/heredocs)
   scan as the compiler scans them — the rest of the file is consumed as the
   literal — and produce a `scan-warning` line instead of failing. Only the
   five malformed-literal spellings warn; an unrecognized `#word` produces a
@@ -191,7 +191,7 @@ zig build pkg-migrate -- to-package-dir --name demo tools/pkg_migrate/testdata/p
 zig build pkg-migrate -- inventory tools/pkg_migrate/testdata/inventory
 
 # the committed inventory (0)
-zig build pkg-migrate -- inventory library examples issues tests
+zig build pkg-migrate -- inventory library examples tests
 ```
 
 `--apply` rewrites files byte-exactly as previewed for insert-package,

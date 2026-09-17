@@ -327,13 +327,12 @@ pub fn build(b: *std.Build) void {
 
     // Corpus paths for the corpus tests (src/lsp/corpus_sweep.test.zig — the
     // in-process analyzer sweep — and src/corpus_run.test.zig — the end-to-end
-    // example/issue runner). Inject absolute corpus dirs + the installed `sx`
+    // example runner). Inject the absolute corpus dir + the installed `sx`
     // binary path at configure time so the tests are CWD-independent; the
     // runner still ENUMERATES the directory contents at runtime, so new
     // examples are covered with no test edit.
     const corpus_opts = b.addOptions();
     corpus_opts.addOption([]const u8, "examples_dir", b.path("examples").getPath(b));
-    corpus_opts.addOption([]const u8, "issues_dir", b.path("issues").getPath(b));
     corpus_opts.addOption([]const u8, "library_dir", b.path("library").getPath(b));
     // Absolute path to the installed `sx` binary the corpus runner spawns per
     // example. The runner test depends on the install step (below) so this
