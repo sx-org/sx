@@ -1,5 +1,0 @@
-Secret :: struct { value: i64; }
-
-makeSecret :: (value: i64) -> Secret {
-    Secret{ value = value }
-}

@@ -4,15 +4,14 @@ const doc_mod = @import("document.zig");
 
 // The LSP corpus sweep drives the editor analyzer
 // (`DocumentStore.analyzeDocument` — the exact path `server.zig`'s
-// `textDocument/didOpen` handler uses) over EVERY `.sx` file in the example +
-// issue corpora, in process. The contract is simply: analysis must complete
-// without a panic/abort for any file. A panic aborts the whole test binary —
-// that is the loud CI signal that some AST node shape crashes the analyzer.
-// Files
+// `textDocument/didOpen` handler uses) over EVERY `.sx` file in the example
+// corpus, in process. The contract is simply: analysis must complete without a
+// panic/abort for any file. A panic aborts the whole test binary — that is the
+// loud CI signal that some AST node shape crashes the analyzer. Files
 // that merely fail to parse or sema cleanly are fine: `analyzeDocument` records
 // a null index and returns, which counts as a clean (non-crashing) outcome.
 //
-// The corpus directories are injected as absolute paths at configure time (see
+// The corpus directory is injected as an absolute path at configure time (see
 // build.zig `corpus_paths`) so the sweep is CWD-independent. The FILE LIST is
 // still read from disk at test time, so new examples are covered automatically
 // with no edit to this file.
@@ -32,12 +31,12 @@ fn sweepVerbose() bool {
     return std.c.getenv("SX_LSP_SWEEP_VERBOSE") != null;
 }
 
-/// Analyze every `.sx` file directly under `dir` through the didOpen pipeline.
-/// Returns the number of files swept. Imports resolve against the shipped
-/// `library/` so the analyzer runs over real, fully-resolved code (maximum
-/// crash surface), exactly like an editor session opened on the repo. Set
-/// `SX_LSP_SWEEP_VERBOSE` to print each file before it is analyzed (plus the
-/// per-corpus totals) — on a crash the last printed line names the offending file.
+/// Analyze every `.sx` file in `dir`'s category subdirs through the didOpen
+/// pipeline. Returns the number of files swept. Imports resolve against the
+/// shipped `library/` so the analyzer runs over real, fully-resolved code
+/// (maximum crash surface), exactly like an editor session opened on the repo.
+/// Set `SX_LSP_SWEEP_VERBOSE` to print each file before it is analyzed (plus
+/// the corpus total) — on a crash the last printed line names the offending file.
 fn sweepDirectory(alloc: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
     const verbose = sweepVerbose();
 
@@ -45,13 +44,12 @@ fn sweepDirectory(alloc: std.mem.Allocator, io: std.Io, dir: []const u8) !usize 
     var store = doc_mod.DocumentStore.init(alloc, io, &lib_paths, alloc);
     store.root_path = std.fs.path.dirname(corpus_paths.examples_dir) orelse "";
 
-    // `examples/` is organized into category subdirs (`examples/<cat>/*.sx`),
-    // while `issues/` is flat (`issues/*.sx`). Sweep the files directly under
-    // `dir` AND those one level down in each category subdir (skipping the
-    // `expected/` snapshot dirs). Companion fixture dirs nested deeper
+    // `examples/` is organized into category subdirs (`examples/<cat>/*.sx`):
+    // sweep the files one level down in each of them (skipping the `expected/`
+    // snapshot dirs). Companion fixture dirs nested deeper
     // (`<cat>/<NNNN-...>/lib.sx`) are intentionally not swept: an imported
     // companion is reached through its importer, never analyzed directly.
-    var total = try sweepFilesIn(alloc, io, &store, dir, verbose);
+    var total: usize = 0;
 
     var d = std.Io.Dir.openDirAbsolute(io, dir, .{ .iterate = true }) catch return total;
     defer d.close(io);
@@ -99,14 +97,4 @@ test "lsp corpus sweep: every examples/*.sx analyzes without panicking" {
     const n = try sweepDirectory(alloc, io, corpus_paths.examples_dir);
     if (sweepVerbose()) std.debug.print("[lsp-sweep] examples: analyzed {d} files without a crash\n", .{n});
     try std.testing.expect(n > 0);
-}
-
-test "lsp corpus sweep: every issues/*.sx repro analyzes without panicking" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const io = test_io();
-
-    const n = try sweepDirectory(alloc, io, corpus_paths.issues_dir);
-    if (sweepVerbose()) std.debug.print("[lsp-sweep] issues: analyzed {d} files without a crash\n", .{n});
 }

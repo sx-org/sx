@@ -24,7 +24,7 @@ TIMEOUT=10
 normalize() {
     sed -E \
         -e 's/0x[0-9a-f]{4,}/0xADDR/g' \
-        -e 's#(/[^[:space:]]*)?/(examples|issues)/#\2/#g'
+        -e 's#(/[^[:space:]]*)?/examples/#examples/#g'
 }
 
 if [[ ! -x "$SX" ]]; then

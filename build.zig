@@ -327,13 +327,12 @@ pub fn build(b: *std.Build) void {
 
     // Corpus paths for the corpus tests (src/lsp/corpus_sweep.test.zig — the
     // in-process analyzer sweep — and src/corpus_run.test.zig — the end-to-end
-    // example/issue runner). Inject absolute corpus dirs + the installed `sx`
+    // example runner). Inject the absolute corpus dir + the installed `sx`
     // binary path at configure time so the tests are CWD-independent; the
     // runner still ENUMERATES the directory contents at runtime, so new
     // examples are covered with no test edit.
     const corpus_opts = b.addOptions();
     corpus_opts.addOption([]const u8, "examples_dir", b.path("examples").getPath(b));
-    corpus_opts.addOption([]const u8, "issues_dir", b.path("issues").getPath(b));
     corpus_opts.addOption([]const u8, "library_dir", b.path("library").getPath(b));
     // Absolute path to the installed `sx` binary the corpus runner spawns per
     // example. The runner test depends on the install step (below) so this
@@ -346,7 +345,7 @@ pub fn build(b: *std.Build) void {
     const update_goldens = b.option(
         bool,
         "update-goldens",
-        "Regenerate example/issue snapshots instead of verifying them (use with `zig build test`)",
+        "Regenerate example snapshots instead of verifying them (use with `zig build test`)",
     ) orelse false;
     corpus_opts.addOption(bool, "update_goldens", update_goldens);
     // `zig build test -Dname=examples/0213-foo.sx[,examples/0214-bar.sx]` restricts
@@ -371,7 +370,7 @@ pub fn build(b: *std.Build) void {
     const run_mod_tests = b.addRunArtifact(mod_tests);
     // src/corpus_run.test.zig spawns the installed `sx` binary per example, so
     // the mod test binary must not run until `zig-out/bin/sx` + `zig-out/library`
-    // are installed. This is what folds the full example/issue regression suite
+    // are installed. This is what folds the full example regression suite
     // into `zig build test` — no shell script, just a Zig test.
     run_mod_tests.step.dependOn(b.getInstallStep());
 
@@ -403,7 +402,7 @@ pub fn build(b: *std.Build) void {
     const lex_tests = b.addTest(.{ .root_module = lexmod });
     const run_lex_tests = b.addRunArtifact(lex_tests);
 
-    const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
+    const test_step = b.step("test", "Run unit tests + the example regression suite");
     test_step.dependOn(&run_lex_tests.step);
     test_step.dependOn(&run_pkg_migrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);

@@ -1,5 +1,0 @@
-error: namespace 'facade' has no member 'engineAlias'
-  --> issues/nested-namespace-alias-stays-hidden-across-flat-imports.sx:4:8
-   |
- 4 |     if facade.engineAlias.secret() == 9 { return 0; }
-   |        ^^^^^^^^^^^^^^^^^^

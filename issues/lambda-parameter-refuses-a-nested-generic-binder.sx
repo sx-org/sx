@@ -1,7 +1,0 @@
-@import "modules/std.sx";
-
-main :: () {
-    id := |x: ?$T| x;
-    v: ?i64 = 1;
-    _ = id(v);
-}

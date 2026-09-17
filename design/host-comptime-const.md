@@ -716,7 +716,6 @@ Each PR is independently reviewable and must keep `zig build test` green. No shi
 - Compiler: stop putting `OS`/`ARCH`/`POINTER_SIZE`; keep `putTargetConstant` only if it still serves `@host` enum fields; delete dummy decls from `target.sx`; comments in `lower.zig` / `expr.zig` / `comptime.zig` / `expand.zig` / `decl.zig` that name those as the injected facts.
 - One unresolved-identifier pin for the `@host` cut: a program naming `OS` fails through the ordinary path. One such program, not one per old name × per position.
 - Fork pins for camelCase (not a permutation catalog): one `@` function (`@isComptime`), one contract field (`@BuildShape.staticExpressions` or `@Closure.fnPtr`), one stdlib helper (`pathJoin`). The gate is completeness.
-- `issues/0030-extern-global-declarations.md` is not in the corpus gate. It is an open in-tree issue record whose sample still writes `inline if OS == .ios`. Update that sample to `@host.os` so the still-open request describes the language as it is. Not a cut blocker if missed; do it in this PR because the file is present-tense language in the tree.
 - Expected snapshots whose *source* changed (stdout that prints `os: macos` stays; only snapshots that mention the spelling `OS` as a compiler constant, or that quote a renamed sx identifier).
 
 **Depends on:** PR 1 (the fold must already accept `@host.os`).

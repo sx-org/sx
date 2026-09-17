@@ -1,2 +1,0 @@
-engineAlias :: @import "deep.sx";
-internalApi :: () -> i64 { engineAlias.secret() }

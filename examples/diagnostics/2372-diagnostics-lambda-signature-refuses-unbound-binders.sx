@@ -9,6 +9,7 @@ main :: () {
     sliced := |x: []$T| 21;
     sized := |x: [3]$T| 22;
     unsized := |x: [*]$T| 23;
+    optional := |x: ?$T| 24;
     inlineStruct := |x: struct { v: $T; }| 3;
     inlineUnion := |x: union { a: $T; b: i64; }| 31;
     inlineEnum := |x: enum { a: $T; b; }| 32;
@@ -27,6 +28,7 @@ main :: () {
     _ = sliced;
     _ = sized;
     _ = unsized;
+    _ = optional;
     _ = inlineStruct;
     _ = inlineUnion;
     _ = inlineEnum;

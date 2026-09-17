@@ -17,7 +17,7 @@ echo "── 1/5 zig build ─────────────────�
 zig build
 
 echo "── 2/4 zig build test ────────────────────────────────"
-# Runs the unit tests AND the full example/issue regression corpus
+# Runs the unit tests AND the full example regression corpus
 # (src/corpus_run.test.zig) — a failing example fails the build.
 zig build test
 
