@@ -725,13 +725,18 @@ pub fn declId(self: *Lowering, ref: imports.RawDeclRef, source: ?[]const u8) imp
     return self.program_index.internRef(ref, source);
 }
 
-/// The IR function `fd` owns, or null before it is declared.
-pub fn declFuncId(self: *Lowering, fd: *const ast.FnDecl) ?FuncId {
-    return self.fn_decl_fids.get(self.declId(.{ .fn_decl = fd }, fd.body.source_file));
+/// The identity `ref` already has, without minting one: a read asks this,
+/// only a write interns.
+pub fn declIdOf(self: *Lowering, ref: imports.RawDeclRef) ?imports.DeclId {
+    return self.program_index.idForRef(ref);
 }
 
-/// Give `fd` its IR function. One declaration is one function, so a second
-/// call for the same declaration replaces nothing it did not already own.
+/// The IR function `fd` owns, or null before it is declared.
+pub fn declFuncId(self: *Lowering, fd: *const ast.FnDecl) ?FuncId {
+    return self.fn_decl_fids.get(self.declIdOf(.{ .fn_decl = fd }) orelse return null);
+}
+
+/// Give `fd` its IR function.
 pub fn bindDeclFuncId(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId) void {
     self.fn_decl_fids.put(self.declId(.{ .fn_decl = fd }, fd.body.source_file), fid) catch {};
 }

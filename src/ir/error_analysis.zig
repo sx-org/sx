@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const lower = @import("lower.zig");
+const imports = @import("../imports.zig");
 
 const Node = ast.Node;
 const Lowering = lower.Lowering;
@@ -11,7 +12,7 @@ const TypeId = @import("types.zig").TypeId;
 /// inferred set. The backing maps live on `Lowering` (the facade writes
 /// `self.l.*`); `facts()` returns a view over them.
 pub const ErrorFacts = struct {
-    inferred_error_sets: std.StringHashMap([]const u32),
+    inferred_error_sets: std.AutoHashMap(imports.DeclId, []const u32),
     shape_inferred_sets: std.StringHashMap([]const u32),
 };
 
@@ -20,7 +21,7 @@ pub const ErrorFacts = struct {
 /// (`convergeClosureShapeSets`), plus the AST collectors that feed them.
 ///
 /// A `*Lowering` facade (like `CallResolver`/`ProtocolResolver`):
-/// it reads the declaration map (`fn_ast_map`) + tag registry and writes the
+/// it reads the declaration facts + tag registry and writes the
 /// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
 /// (`recordClosureShape`) + its type/shape helpers stay in `Lowering`; this
@@ -388,6 +389,9 @@ pub const ErrorAnalysis = struct {
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
             fd: *const ast.FnDecl,
+            /// The smallest name that selects this declaration — the spelling
+            /// the empty-inferred warning names it by.
+            name: []const u8,
             tags: std.ArrayList(u32),
             edges: std.ArrayList([]const u8),
             rt: ?*const Node,
@@ -403,16 +407,19 @@ pub const ErrorAnalysis = struct {
             // makes the channel the DYNAMIC one: a merge over a channel nobody
             // can name is not the set the body escapes.
             dyn: bool,
+            // `main`'s `!` is the program's top error channel, and a
+            // protocol-impl method's `!` is dictated by the contract — e.g.
+            // `Io.suspendRaw` — so a non-raising body is not a "drop the `!`"
+            // case for either.
+            suppress_empty_warning: bool,
         };
-        var work = std.StringHashMap(Node_).init(self.l.alloc);
+        var work = std.AutoHashMap(imports.DeclId, Node_).init(self.l.alloc);
         defer work.deinit();
-        // A bare-`!` declaration's key in `work`, so an edge that resolved to a
-        // DECLARATION reaches that declaration's node rather than whichever
-        // same-name function the map is keyed under.
-        var work_key = std.AutoHashMap(*const ast.FnDecl, []const u8).init(self.l.alloc);
-        defer work_key.deinit();
 
-        // Seed each bare-`!` function with its direct escape sites.
+        // Seed each bare-`!` declaration with its direct escape sites. Several
+        // names may select one declaration (a bare and a namespace-qualified
+        // spelling); it converges once, under the smallest of them so the
+        // diagnostics below read the same on every run.
         {
             const saved = self.l.current_source_file;
             defer self.l.setCurrentSourceFile(saved);
@@ -420,13 +427,28 @@ pub const ErrorAnalysis = struct {
             while (it.next()) |e| {
                 const fd = e.value;
                 if (!Lowering.astChannelIsInferred(fd.return_type)) continue;
+                const suppressed = std.mem.eql(u8, e.name, "main") or self.l.impl_method_names.contains(e.name);
+                const id = self.l.declId(.{ .fn_decl = fd }, fd.body.source_file);
+                if (work.getPtr(id)) |seen| {
+                    if (std.mem.lessThan(u8, e.name, seen.name)) seen.name = e.name;
+                    seen.suppress_empty_warning = seen.suppress_empty_warning or suppressed;
+                    continue;
+                }
                 var tags = std.ArrayList(u32).empty;
                 var edges = std.ArrayList([]const u8).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
-                work.put(e.name, .{ .fd = fd, .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
-                work_key.put(fd, e.name) catch {};
+                work.put(id, .{
+                    .fd = fd,
+                    .name = e.name,
+                    .tags = tags,
+                    .edges = edges,
+                    .rt = fd.return_type,
+                    .source_file = fd.body.source_file,
+                    .dyn = dyn,
+                    .suppress_empty_warning = suppressed,
+                }) catch {};
             }
         }
 
@@ -447,16 +469,15 @@ pub const ErrorAnalysis = struct {
                         continue;
                     };
                     const callee_tags: []const u32 = blk: {
-                        if (work_key.get(callee_fd)) |k| {
-                            if (work.getPtr(k)) |cc| {
-                                // A callee whose merge is non-static makes this
-                                // node's merge non-static.
-                                if (cc.dyn and !we.value_ptr.dyn) {
-                                    we.value_ptr.dyn = true;
-                                    changed = true;
-                                }
-                                break :blk cc.tags.items;
+                        const callee_id = self.l.declId(.{ .fn_decl = callee_fd }, callee_fd.body.source_file);
+                        if (work.getPtr(callee_id)) |cc| {
+                            // A callee whose merge is non-static makes this
+                            // node's merge non-static.
+                            if (cc.dyn and !we.value_ptr.dyn) {
+                                we.value_ptr.dyn = true;
+                                changed = true;
                             }
+                            break :blk cc.tags.items;
                         }
                         break :blk self.l.declaredChannelTags(callee_fd);
                     };
@@ -471,17 +492,15 @@ pub const ErrorAnalysis = struct {
         }
 
         // Store the converged sets (sorted), materialise them, and warn on
-        // empty inferred sets.
-        // `work` is a StringHashMap, so its iteration order is hash order — walk
-        // it directly and the warnings below come out scrambled, and differently
-        // under any other hash. Order by source span first so the diagnostics
-        // read top-to-bottom and stay identical across implementations.
-        const Entry = struct { name: []const u8, node: *const Node_ };
+        // empty inferred sets. Hash order is not source order — order by the
+        // return-type span so the diagnostics read top-to-bottom and stay
+        // identical across implementations.
+        const Entry = struct { id: imports.DeclId, node: *const Node_ };
         var entries = std.ArrayList(Entry).empty;
         defer entries.deinit(self.l.alloc);
         var sit = work.iterator();
         while (sit.next()) |se| {
-            entries.append(self.l.alloc, .{ .name = se.key_ptr.*, .node = se.value_ptr }) catch {};
+            entries.append(self.l.alloc, .{ .id = se.key_ptr.*, .node = se.value_ptr }) catch {};
         }
         std.mem.sort(Entry, entries.items, {}, struct {
             fn lessThan(_: void, a: Entry, b: Entry) bool {
@@ -490,7 +509,7 @@ pub const ErrorAnalysis = struct {
                 const a_start: u32 = if (a.node.rt) |rt| rt.span.start else std.math.maxInt(u32);
                 const b_start: u32 = if (b.node.rt) |rt| rt.span.start else std.math.maxInt(u32);
                 if (a_start != b_start) return a_start < b_start;
-                return std.mem.lessThan(u8, a.name, b.name);
+                return std.mem.lessThan(u8, a.node.name, b.node.name);
             }
         }.lessThan);
 
@@ -500,18 +519,14 @@ pub const ErrorAnalysis = struct {
         for (entries.items) |se| {
             const sorted = self.l.alloc.dupe(u32, se.node.tags.items) catch continue;
             std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
-            self.l.inferred_error_sets.put(se.name, sorted) catch {};
-            if (se.node.dyn) self.l.materialiseDynChannel(se.node.fd, se.name) else self.l.materialiseInferredChannel(se.node.fd, se.name, sorted);
-            // Skip `main` (its `!` is the program's top error channel) and any
-            // protocol-impl method (its `!` is dictated by the protocol
-            // contract — e.g. `Io.suspendRaw` — so a non-raising impl body
-            // is not a "drop the `!`" case; see `impl_method_names`).
+            self.l.inferred_error_sets.put(se.id, sorted) catch {};
+            if (se.node.dyn) self.l.materialiseDynChannel(se.node.fd) else self.l.materialiseInferredChannel(se.node.fd, sorted);
             const whole_return_is_channel = Lowering.astChannelNode(se.node.rt) == se.node.rt;
-            if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
+            if (sorted.len == 0 and whole_return_is_channel and !se.node.dyn and !se.node.suppress_empty_warning) {
                 if (self.l.diagnostics) |diags| {
                     if (se.node.rt) |rt| {
                         self.l.setCurrentSourceFile(se.node.source_file orelse saved_file);
-                        diags.addFmt(.warn, rt.span, "function '{s}' is declared `!` but never errors — drop the `!`", .{se.name});
+                        diags.addFmt(.warn, rt.span, "function '{s}' is declared `!` but never errors — drop the `!`", .{se.node.name});
                     }
                 }
             }

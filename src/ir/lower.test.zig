@@ -975,8 +975,8 @@ test "converge inferred error sets: empty -> warning, raising -> converged set" 
     lowering.convergeInferredErrorSets();
 
     // raiser converges to {Foo} (non-empty); stub to ∅.
-    try std.testing.expectEqual(@as(usize, 1), (lowering.inferred_error_sets.get("raiser") orelse unreachable).len);
-    try std.testing.expectEqual(@as(usize, 0), (lowering.inferred_error_sets.get("stub") orelse unreachable).len);
+    try std.testing.expectEqual(@as(usize, 1), (lowering.inferredErrorSet(&raiser_fd) orelse unreachable).len);
+    try std.testing.expectEqual(@as(usize, 0), (lowering.inferredErrorSet(&stub_fd) orelse unreachable).len);
 
     // The empty-set (stub) warns; the raising one does not.
     var stub_warned = false;

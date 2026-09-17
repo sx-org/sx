@@ -49,16 +49,16 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     ea.convergeInferredErrorSets();
 
     const foo = lowering.anonymousErrorMember("Foo");
-    const raiser_set = lowering.inferred_error_sets.get("raiser") orelse unreachable;
+    const raiser_set = lowering.inferredErrorSet(&raiser_fd) orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), raiser_set.len);
     try std.testing.expectEqual(foo, raiser_set[0]);
     // The caller raises nothing directly but converges to {Foo} via the edge.
-    const caller_set = lowering.inferred_error_sets.get("caller") orelse unreachable;
+    const caller_set = lowering.inferredErrorSet(&caller_fd) orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), caller_set.len);
     try std.testing.expectEqual(foo, caller_set[0]);
 
     // facts() exposes the same converged store.
-    try std.testing.expect(ea.facts().inferred_error_sets.get("caller") != null);
+    try std.testing.expect(ea.facts().inferred_error_sets.get(lowering.declId(.{ .fn_decl = &caller_fd }, null)) != null);
 }
 
 test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's raises" {

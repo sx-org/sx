@@ -924,13 +924,14 @@ pub const Lowering = struct {
     /// True while lowering postfix `expr.(T)` — dest is written on the value.
     /// Prefix `xx` uses the slot dest and is an error when implicit already applies.
     xx_is_postfix: bool = false,
-    /// Whole-program-converged inferred error sets: top-level
-    /// bare-`!` function name → its sorted escape-tag ids (literal raises +
-    /// pure-failable `try` edges, fix-pointed across the call graph). The
-    /// shared `!` placeholder TypeId stays empty; this side map holds the real
-    /// per-function sets (sidesteps the name-only error-set interning). Read by
-    /// `lowerTry`'s named-caller widening and the empty-inferred warning.
-    inferred_error_sets: std.StringHashMap([]const u32),
+    /// Whole-program-converged inferred error sets: a bare-`!` DECLARATION →
+    /// its sorted escape-tag ids (literal raises + pure-failable `try` edges,
+    /// fix-pointed across the call graph). The identity of an error is where it
+    /// is defined, so a caught member resolves against the set at its
+    /// declaration rather than against whichever same-name function a spelling
+    /// would reach. The shared `!` placeholder TypeId stays empty; this side
+    /// map holds the real per-declaration sets.
+    inferred_error_sets: std.AutoHashMap(imports_mod.DeclId, []const u32),
     /// Whole-program-converged inferred error sets keyed by closure/function
     /// VALUE-signature shape: every occurrence of
     /// `Closure(<sig>) -> (T, !)` with a structurally identical value-signature
@@ -943,7 +944,7 @@ pub const Lowering = struct {
     /// when those escapes name no static member set. Every re-resolution of
     /// that signature reads the entry, so slot exactness and value subset both
     /// compare one TypeId.
-    inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
+    inferred_channels: std.AutoHashMap(imports_mod.DeclId, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
     /// is part of the contract — e.g. `Io.suspendRaw`); a conforming impl
@@ -1407,10 +1408,10 @@ pub const Lowering = struct {
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
-            .inferred_error_sets = std.StringHashMap([]const u32).init(module.alloc),
+            .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
-            .inferred_channels = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
+            .inferred_channels = std.AutoHashMap(imports_mod.DeclId, TypeId).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
     }
@@ -1451,7 +1452,9 @@ pub const Lowering = struct {
             // types are re-resolved in many places (call-result typing, protocol
             // impls) that a central reject would wrongly trip.
             const resolved = self.resolveTypeWithBindings(rt);
-            if (self.inferred_channels.get(fd)) |chan| return self.withErrorChannel(resolved, chan);
+            if (self.declIdOf(.{ .fn_decl = fd })) |id| {
+                if (self.inferred_channels.get(id)) |chan| return self.withErrorChannel(resolved, chan);
+            }
             return resolved;
         }
         // No explicit annotation — the type is inferred from the body, which
@@ -3392,6 +3395,7 @@ pub const Lowering = struct {
     pub const withErrorChannel = lower_error.withErrorChannel;
     pub const materialiseInferredChannel = lower_error.materialiseInferredChannel;
     pub const materialiseDynChannel = lower_error.materialiseDynChannel;
+    pub const inferredErrorSet = lower_error.inferredErrorSet;
     pub const convergeInferredErrorSets = lower_error.convergeInferredErrorSets;
     pub const containsTag = lower_error.containsTag;
     pub const convergeClosureShapeSets = lower_error.convergeClosureShapeSets;
@@ -3632,6 +3636,7 @@ pub const Lowering = struct {
     pub const putGlobal = lower_decl.putGlobal;
     pub const dropModuleConst = lower_decl.dropModuleConst;
     pub const declId = lower_decl.declId;
+    pub const declIdOf = lower_decl.declIdOf;
     pub const declFuncId = lower_decl.declFuncId;
     pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
     pub const emitModuleConst = lower_decl.emitModuleConst;
