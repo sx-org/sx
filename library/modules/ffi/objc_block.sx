@@ -73,12 +73,12 @@ blockDisposeHelper :: (block: *Block) abi(.c) {
     _ = block;
 }
 
-// A heap block around `f`, copied in captures and all: a capturing lambda, a
-// function, or a callable nominal. The caller owns the returned reference; an
-// API that keeps the block past the call takes its own.
+// A heap block around `f`, copied in captures and all: a lambda that writes its
+// own env, a function, or a callable nominal. The caller owns the returned
+// reference; an API that keeps the block past the call takes its own.
 blockCreate :: (f: $F/(..$A) -> $R) -> *Block {
     inline match F {
-        case closure: @error("a block owns the callable it copies, and a 'Closure' only borrows its environment — hand 'blockCreate' a capturing lambda or a function");
+        case closure: @error("a block owns the callable it copies, and a 'Closure' only borrows its environment — write the lambda's env ('||_{ }' when it captures nothing) so it carries its own, or hand 'blockCreate' a function");
         case pointer: @error("a block owns the callable it copies, and a pointer only borrows what it addresses — hand 'blockCreate' the callable itself");
         else: {}
     }

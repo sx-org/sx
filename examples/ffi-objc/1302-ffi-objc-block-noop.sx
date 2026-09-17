@@ -1,16 +1,15 @@
 // `blockCreate(<callable>)` builds an Apple-ABI block whose invoke
 // trampoline delegates to the sx callable. Verifies end-to-end:
 // stdlib Block layout, _NSConcreteStackBlock extern, per-signature
-// invoke trampoline, `blockCreate` over a `() -> void` callable. Runs
-// on macOS — invokes the block's invoke fn directly via a typed fn
-// pointer instead of going through the Obj-C runtime.
+// invoke trampoline, `blockCreate` over a lambda with an empty env.
+// Runs on macOS — invokes the block's invoke fn directly via a typed
+// fn pointer instead of going through the Obj-C runtime.
 
 @import "modules/std.sx";
 @import "modules/ffi/objc_block.sx";
 
 main :: () -> i32 {
-  body :: () { print("noop block ran\n"); }
-  b := blockCreate(body);
+  b := blockCreate(||_{ } { print("noop block ran\n"); });
   invokeFn : (*Block) -> void abi(.c) = xx b.invoke;
   invokeFn(b);
   blockRelease(b);
