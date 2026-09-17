@@ -1089,13 +1089,13 @@ pub const TypeTable = struct {
     /// Byte stride between the members of a STRIDED kind — array elements and
     /// vector lanes share one member type and step by its size, so their
     /// runtime member tables hold a single row and the reader scales it by the
-    /// index. -1 for a kind that tables each member on its own row.
-    pub fn memberStride(self: *const TypeTable, id: TypeId) i64 {
-        if (id.index() >= self.infos.items.len) return -1;
+    /// index. Null for a kind that tables each member on its own row.
+    pub fn memberStride(self: *const TypeTable, id: TypeId) ?i64 {
+        if (id.index() >= self.infos.items.len) return null;
         return switch (self.get(id)) {
             .array => |a| @intCast(self.typeSizeBytes(a.element)),
             .vector => |v| @intCast(self.typeSizeBytes(v.element)),
-            else => -1,
+            else => null,
         };
     }
 
@@ -1108,7 +1108,7 @@ pub const TypeTable = struct {
     /// derive from THIS, so a kind that answers `memberType` can never meet
     /// a null or short row.
     pub fn memberTableLen(self: *const TypeTable, id: TypeId) ?i64 {
-        if (self.memberCount(id)) |n| return if (self.memberStride(id) >= 0) @min(n, 1) else n;
+        if (self.memberCount(id)) |n| return if (self.memberStride(id) != null) @min(n, 1) else n;
         if (self.memberType(id, 0) != null) return 1;
         return null;
     }

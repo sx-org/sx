@@ -132,7 +132,8 @@ pub const Reflection = struct {
                 .tag_width => @bitCast(tt.variantTagWidth(tid)),
                 .slice_len_info => @bitCast(tt.sliceLenInfo(tid)),
                 .optional_flag => @bitCast(tt.optionalFlagOffset(tid)),
-                .member_stride => @bitCast(tt.memberStride(tid)),
+                // A zero-sized element strides by 0, so absence encodes negative.
+                .member_stride => @bitCast(tt.memberStride(tid) orelse -1),
             };
             vals.append(self.e.alloc, c.LLVMConstInt(elem_ty, v, 0)) catch unreachable;
         }
