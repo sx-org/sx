@@ -1967,8 +1967,10 @@ y: ?i32 = null;      // optional i32, no value
 Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 
 #### LLVM Representation
-- Non-pointer optionals (`?i32`, `?Point`): `{ T, i1 }` struct — payload + presence flag
-- Pointer optionals (`?*T`): bare pointer — null represents absence
+An optional takes one of three shapes:
+- `{ T, i1 }` — payload plus a presence flag, for a `T` with no spare null state (`?i32`, `?Point`).
+- One pointer word, null when absent (`?*T`, `?[*:X]T`, `?((i64) -> i64)`, `?cstring`).
+- The child's own bytes, whose LEADING pointer word is null when absent (`?[]T`, `?string`, `?[:X]T`, `?Closure`, `?I`). `@sizeOf(?[]T)` is `@sizeOf([]T)`, so an optional slice costs nothing beside the slice.
 
 #### Implicit Wrapping
 A value of type `T` implicitly converts to `?T`:

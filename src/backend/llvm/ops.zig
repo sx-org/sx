@@ -2606,110 +2606,64 @@ pub const Ops = struct {
     }
 
     // ── Optional ops ─────────────────────────────────────────
+
+    /// True when the `?T` at `opt_ty` carries no has_value flag: the child's own
+    /// leading pointer word is its null state. The LLVM shape cannot answer —
+    /// a narrow-length slice header is itself a `{ptr, i1}`.
+    fn isSentinelOptional(self: Ops, opt_ty: ?TypeId) bool {
+        const ty = opt_ty orelse return false;
+        if (ty.isBuiltin()) return false;
+        const info = self.e.ir_mod.types.get(ty);
+        return info == .optional and self.e.ir_mod.types.optionalIsSentinel(info.optional.child);
+    }
+
+    /// The presence test of a sentinel-shaped optional: its leading pointer
+    /// word, which is the whole value when the child is one word wide.
+    fn sentinelPresent(self: Ops, val: c.LLVMValueRef, name: [*c]const u8) c.LLVMValueRef {
+        const lead = if (c.LLVMGetTypeKind(c.LLVMTypeOf(val)) == c.LLVMStructTypeKind)
+            c.LLVMBuildExtractValue(self.e.builder, val, 0, "os.lead")
+        else
+            val;
+        return c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, lead, c.LLVMConstNull(c.LLVMTypeOf(lead)), name);
+    }
+
     pub fn emitOptionalWrap(self: Ops, instruction: *const Inst, un: UnaryOp) void {
-        var val = self.e.resolveRef(un.operand);
+        const val = self.e.resolveRef(un.operand);
+        if (self.isSentinelOptional(instruction.ty)) return self.e.mapRef(val);
         const opt_ty = self.e.toLLVMType(instruction.ty);
-        const opt_kind = c.LLVMGetTypeKind(opt_ty);
-        if (opt_kind == c.LLVMPointerTypeKind) {
-            // ?*T — pointer is the optional itself (null = none)
-            self.e.mapRef(val);
-        } else if (opt_kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(opt_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(opt_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // ?T → { T, i1 } — wrap value + true flag
-                const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
-                val = self.e.coerceArg(val, inner_ty);
-                var result = c.LLVMGetUndef(opt_ty);
-                result = c.LLVMBuildInsertValue(self.e.builder, result, val, 0, "ow.val");
-                result = c.LLVMBuildInsertValue(self.e.builder, result, c.LLVMConstInt(self.e.cached_i1, 1, 0), 1, "ow.has");
-                self.e.mapRef(result);
-            } else {
-                // ?Closure → closure struct IS the optional, just pass through
-                self.e.mapRef(val);
-            }
-        } else {
-            self.e.mapRef(val);
-        }
+        const inner_ty = c.LLVMStructGetTypeAtIndex(opt_ty, 0);
+        var result = c.LLVMGetUndef(opt_ty);
+        result = c.LLVMBuildInsertValue(self.e.builder, result, self.e.coerceArg(val, inner_ty), 0, "ow.val");
+        result = c.LLVMBuildInsertValue(self.e.builder, result, c.LLVMConstInt(self.e.cached_i1, 1, 0), 1, "ow.has");
+        self.e.mapRef(result);
     }
 
     pub fn emitOptionalUnwrap(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        const val_ty = c.LLVMTypeOf(val);
-        const kind = c.LLVMGetTypeKind(val_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(val_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(val_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // { T, i1 } → extract field 0
-                self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"));
-            } else {
-                // ?Closure → the struct itself is the value
-                self.e.mapRef(val);
-            }
-        } else {
-            // ?*T → pointer is the value itself
-            self.e.mapRef(val);
-        }
+        if (self.isSentinelOptional(self.e.getRefIRType(un.operand))) return self.e.mapRef(val);
+        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "ou.val"));
     }
 
     pub fn emitOptionalHasValue(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
-        const val_ty = c.LLVMTypeOf(val);
-        const kind = c.LLVMGetTypeKind(val_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            // Distinguish {T, i1} (real optional) from {ptr, ptr} (?Closure)
-            const num_fields = c.LLVMCountStructElementTypes(val_ty);
-            const last_field_ty = if (num_fields > 0) c.LLVMStructGetTypeAtIndex(val_ty, num_fields - 1) else self.e.cached_i1;
-            if (last_field_ty == self.e.cached_i1) {
-                // { T, i1 } → extract has_value flag
-                self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, num_fields - 1, "oh.has"));
-            } else {
-                // ?Closure {fnPtr, env} → check if fnPtr is null
-                const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, val, 0, "oh.fn");
-                self.e.mapRef(c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oh.nn"));
-            }
-        } else {
-            // ?*T → compare with null
-            const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, val, c.LLVMConstNull(val_ty), "oh.nn");
-            self.e.mapRef(is_nonnull);
-        }
+        if (self.isSentinelOptional(self.e.getRefIRType(un.operand)))
+            return self.e.mapRef(self.sentinelPresent(val, "oh.nn"));
+        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 1, "oh.has"));
     }
 
     pub fn emitOptionalCoalesce(self: Ops, bin: BinOp) void {
         // a ?? b — if a has value, use a's value; otherwise use b
         const a = self.e.resolveRef(bin.lhs);
         var b_val = self.e.resolveRef(bin.rhs);
-        const a_ty = c.LLVMTypeOf(a);
-        const kind = c.LLVMGetTypeKind(a_ty);
-        if (kind == c.LLVMStructTypeKind) {
-            const n_fields = c.LLVMCountStructElementTypes(a_ty);
-            const f1_ty = if (n_fields >= 2) c.LLVMStructGetTypeAtIndex(a_ty, 1) else null;
-            const is_ti1 = if (f1_ty) |ft| c.LLVMGetTypeKind(ft) == c.LLVMIntegerTypeKind and c.LLVMGetIntTypeWidth(ft) == 1 else false;
-            if (is_ti1) {
-                // Standard optional {T, i1}: extract has_value and unwrap
-                const has = c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has");
-                const unwrapped = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val");
-                const uw_ty = c.LLVMTypeOf(unwrapped);
-                const b_ty = c.LLVMTypeOf(b_val);
-                if (uw_ty != b_ty) {
-                    b_val = self.e.coerceArg(b_val, uw_ty);
-                }
-                self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
-            } else {
-                // ?Closure {fnPtr, env}: check if fnPtr is null
-                const fn_ptr = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.fn");
-                const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, fn_ptr, c.LLVMConstNull(c.LLVMTypeOf(fn_ptr)), "oc.nn");
-                // Select the full closure struct, not just the fnPtr
-                self.e.mapRef(c.LLVMBuildSelect(self.e.builder, is_nonnull, a, b_val, "oc.sel"));
-            }
-        } else {
-            // ?*T — select on null
-            const is_nonnull = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, a, c.LLVMConstNull(a_ty), "oc.nn");
-            self.e.mapRef(c.LLVMBuildSelect(self.e.builder, is_nonnull, a, b_val, "oc.sel"));
+        if (self.isSentinelOptional(self.e.getRefIRType(bin.lhs))) {
+            const present = self.sentinelPresent(a, "oc.nn");
+            return self.e.mapRef(c.LLVMBuildSelect(self.e.builder, present, a, b_val, "oc.sel"));
         }
+        const has = c.LLVMBuildExtractValue(self.e.builder, a, 1, "oc.has");
+        const unwrapped = c.LLVMBuildExtractValue(self.e.builder, a, 0, "oc.val");
+        const uw_ty = c.LLVMTypeOf(unwrapped);
+        if (uw_ty != c.LLVMTypeOf(b_val)) b_val = self.e.coerceArg(b_val, uw_ty);
+        self.e.mapRef(c.LLVMBuildSelect(self.e.builder, has, unwrapped, b_val, "oc.sel"));
     }
 
     // ── Terminators ────────────────────────────────────────

@@ -1521,12 +1521,9 @@ pub const LLVMEmitter = struct {
                 }
                 return c.LLVMConstArray2(llvm_elem_ty, elem_vals.items.ptr, @intCast(elem_vals.items.len));
             }
-            // Present optional `?T` → `{ <payload>, i1 1 }`, matching the
-            // anonymous-struct layout `toLLVMType` builds for a non-pointer
-            // optional (the absent case is a `.null_val`, serialized at the
-            // `valueToLLVMConst` top level as `LLVMConstNull` of `{T,i1}`).
-            // The VM's reg→value optional arm only produces this 2-field
-            // `[payload, bool]` aggregate for present, non-pointer optionals.
+            // Only a non-sentinel optional reaches here as an aggregate: the
+            // VM bridges a sentinel-shaped one as the child's own Value. The
+            // `{ payload, i1 }` `toLLVMType` builds for it is anonymous.
             if (info == .optional) {
                 if (fields.len != 2) {
                     std.debug.print(

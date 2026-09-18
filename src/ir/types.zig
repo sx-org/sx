@@ -1427,7 +1427,7 @@ pub const TypeTable = struct {
     pub fn optionalIsSentinel(self: *const TypeTable, child: TypeId) bool {
         if (child.index() >= self.infos.items.len) return false;
         return switch (self.get(child)) {
-            .pointer, .many_pointer, .function, .cstring, .closure => true,
+            .pointer, .many_pointer, .function, .cstring, .closure, .string, .slice => true,
             .@"struct" => |s| s.is_protocol,
             else => false,
         };
