@@ -1,0 +1,13 @@
+// A terminator is a value of the element type: one outside the element
+// integer's range is refused, and so is an element type with no numeric
+// values.
+
+@import "modules/std.sx";
+
+P :: struct { x: i64; }
+
+main :: () {
+    a : [2:300]u8 = .[1, 2];
+    s : [2:1]P = .[P{x = 1}, P{x = 2}];
+    print("{} {}\n", a[2], s[2].x);
+}

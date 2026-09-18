@@ -1684,6 +1684,9 @@ key.len            // 3
 key[3]             // 0 — the terminator
 @sizeOf([3:0]u8)   // 4
 ```
+`X` is a value of the element type, so the element is an integer or float
+type and `X` lies in its range; `[2:300]u8` and `[2:1]Point` are compile
+errors.
 
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare

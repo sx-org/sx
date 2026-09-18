@@ -2035,6 +2035,33 @@ pub const Lowering = struct {
         return .unresolved;
     }
 
+    /// Diagnose a terminator the element type has no value for: outside an
+    /// integer element's range, or an element type with no numeric values at
+    /// all. The type is still interned, so lowering continues and surfaces
+    /// further errors.
+    fn checkTerminatorFits(self: *Lowering, node: *const Node, ty: TypeId) void {
+        if (ty.isBuiltin()) return;
+        const elem: TypeId, const x: i64 = switch (self.module.types.get(ty)) {
+            .array => |a| .{ a.element, a.sentinel orelse return },
+            .slice => |sl| .{ sl.element, sl.sentinel orelse return },
+            .many_pointer => |p| .{ p.element, p.sentinel orelse return },
+            else => return,
+        };
+        if (isFloat(elem)) return;
+        const d = self.diagnostics orelse return;
+        if (self.module.types.integerLayout(elem)) |layout| {
+            // A parsed terminator is a non-negative `i64`, so every 64-bit
+            // element holds it.
+            if (layout.width >= 64) return;
+            const min = layout.limit(false);
+            const max = layout.limit(true);
+            if (x >= min and x <= max) return;
+            d.addFmt(.err, node.span, "terminator {} does not fit in '{s}' (range {}..{})", .{ x, self.formatTypeName(elem), min, max });
+            return;
+        }
+        d.addFmt(.err, node.span, "'{s}' has no terminator value; a terminated type's element is an integer or float type", .{self.formatTypeName(elem)});
+    }
+
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
         // Prefix `*` in a type position: the value grammar parses `*T` as an
@@ -2166,7 +2193,10 @@ pub const Lowering = struct {
         // the full stateful resolver (`resolveInner` → here) so generic structs
         // / bindings keep their resolution. resolveCompound returns null only
         // for the pack-shaped forms (`Closure(..p)`, spread tuples) below.
-        if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| return t;
+        if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| {
+            self.checkTerminatorFits(node, t);
+            return t;
+        }
         // Generic type-param binding (`$T`, or a bare return-type `T` without
         // the `$` prefix) — owned by TypeResolver via the explicit ResolveEnv.
         if (TypeResolver.resolveBinding(node, self.resolveEnv())) |t| return t;
