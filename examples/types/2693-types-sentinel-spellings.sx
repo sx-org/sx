@@ -2,7 +2,8 @@
 // slice and many-pointer shapes. A terminated array's `.len` is the written
 // N while its storage carries the terminator at index N; a terminated slice
 // keeps the `{ptr, len}` fat pointer and a terminated many-pointer stays one
-// word. `[:0]u8` is `string`.
+// word. `[:0]u8` is `string`. A value the program leaves to the type is
+// zeroed storage plus the terminator of every `[N:X]T` it holds.
 
 @import "modules/std.sx";
 
@@ -13,7 +14,9 @@ Chars :: [*:0]i8;
 
 Row :: struct { key: Key; tag: Tag; chars: Chars; }
 
-Pair :: struct { n: [2:7]i64; }
+Pair  :: struct { n: [2:7]i64; }
+Color :: enum { red; green; blue; }
+Cell  :: struct { c: Color; s: string; n: [2:7]i64; }
 
 Table : [2:7]i64 = .[10, 20];
 Blank : Pair;
@@ -43,5 +46,12 @@ main :: () -> i32 {
     f : [2:1]f64 = .[1.5, 2.5];
     nested : [2]Pair;
     print("terminators: {} {} {} {} {}\n", Table[2], d[2], f[2], Blank.n[2], nested[1].n[2]);
+
+    cell : Cell;
+    cells : [2]Cell;
+    text : string;
+    print("cell: {} {} {}\n", cell.c.(i64), cell.s.len, cell.n[2]);
+    print("cells[1]: {} {} {}\n", cells[1].c.(i64), cells[1].s.len, cells[1].n[2]);
+    print("text.len {}\n", text.len);
     0
 }

@@ -3244,9 +3244,8 @@ fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldR
 /// reject it loudly (no silent last-wins). Payload enums never reach here
 /// (handled earlier in `lowerStructLiteral`).
 pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: TypeId, span: ast.Span) Ref {
-    // Empty `.{}` → an undefined union value (matches the spec's `--- ` form;
-    // `zeroValue` of a union is `constUndef`).
-    if (sl.field_inits.len == 0) return self.zeroValue(ty);
+    // Empty `.{}` is an undefined union value — the spec's `--- ` form.
+    if (sl.field_inits.len == 0) return self.builder.constUndef(ty);
 
     // Validate every member is named and all share one arm.
     const Arm = struct { promoted: bool, index: u32 };
