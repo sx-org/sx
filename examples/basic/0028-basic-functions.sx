@@ -52,9 +52,9 @@ main :: () {
     TYPED_PI : f64 : 3.14;
     print("typed-const: {}\n", TYPED_PI);
 
-    // Variable with default init
-    di : i32;
-    print("default-init: {}\n", di);
+    // Typed variable
+    dv : i32 = 7;
+    print("typed-var: {}\n", dv);
 
     // Implicit return
     print("implicit-ret: {}\n", implicitReturn(21));

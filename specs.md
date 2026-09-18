@@ -3125,16 +3125,11 @@ name := value;
 // explicit type
 name : type = value;
 
-// default-initialized (type required)
-name : type;
-
 // undefined (type required)
 name : type = ---;
 ```
 
-The `:=` operator creates a mutable binding. The type is inferred unless explicitly annotated.
-
-`name : type;` initializes using the type's defaults: zero for primitives, per-field defaults for structs (see Field Defaults).
+The `:=` operator creates a mutable binding. The type is inferred unless explicitly annotated. A binding sets a value or says `= ---`.
 
 `name : type = ---;` leaves the value undefined (uninitialized memory). Reading before writing is undefined behavior.
 
@@ -3143,7 +3138,7 @@ Examples:
 x := 42;              // i32, mutable
 x := if true then 1 else 2;
 z : Foo = .variant2;  // Foo, mutable, explicit type
-a : Foo;              // Foo, default-initialized (a=0, b=42, c=undef)
+a : Foo = .{};        // Foo, per-field defaults (a=0, b=42, c=undef)
 b : Foo = ---;        // Foo, entirely undefined
 ```
 
@@ -6379,8 +6374,8 @@ payload, with no translation table.
 identity, named functions included:
 
 ```sx
-slot    : Closure(() -> (i32, !Both));
-ioSlot  : Closure(() -> (i32, !IoErr));
+slot    : Closure(() -> (i32, !Both))  = ---;
+ioSlot  : Closure(() -> (i32, !IoErr)) = ---;
 
 slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
 slot    = inner;   // OK — inner's inferred channel IS Both
