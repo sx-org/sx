@@ -1686,17 +1686,9 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
     if (vd.is_extern) return null;
     const v = vd.value.?;
 
-    // An optional-typed global (`g : ?T = <present>;`) must carry the
-    // 2-field `{ payload, has_value }` aggregate the optional's LLVM
-    // layout expects — NOT the raw payload constant. The
-    // absent forms (`= null` / `= ---`) already zero the whole `{T,i1}`
-    // struct via `.null_val` / `.zeroinit` at the emit top level, which is
-    // exactly `{ zeroinit, false }`, so they flow through unwrapped. Any
-    // other (present) initializer is serialized against the CHILD type and
-    // wrapped here into `{ <payload>, true }`. Recursing on the child type
-    // also handles nested optionals (`?(?i64)`) and optional aggregates
-    // (`?S = S{...}`), whose payloads are themselves structs/optionals.
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
+        // `.null_val` / `.zeroinit` emit as all-zero bytes of the optional's
+        // own LLVM type, which is the absent encoding of both shapes.
         switch (v.data) {
             .null_literal => return .null_val,
             .undef_literal => return .zeroinit,
