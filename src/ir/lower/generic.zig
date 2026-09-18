@@ -147,7 +147,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
     // Create scope and bind params
-    var scope = Scope.init(self.alloc, null);
+    var scope = Scope.init(self.alloc, null, &self.next_binding_id);
     defer scope.deinit();
     self.scope = &scope;
 
@@ -1287,7 +1287,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
         defer self.scope = saved_scope;
         if (arm.capture) |cap| {
             if (matchCaptureType(self, subject_ty, arm.pattern)) |cap_ty| {
-                cap_scope = Scope.init(self.alloc, self.scope);
+                cap_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
                 cap_scope.?.put(cap, .{ .ref = Ref.none, .ty = cap_ty, .is_alloca = false });
                 self.scope = &cap_scope.?;
             }

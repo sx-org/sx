@@ -800,7 +800,7 @@ pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const N
     self.builder.store(slot, struct_val);
 
     // Create a nested scope with the binder bound to the alloca pointer
-    var init_scope = Scope.init(self.alloc, self.scope);
+    var init_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer init_scope.deinit();
     const saved_scope = self.scope;
     self.scope = &init_scope;
@@ -3691,7 +3691,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
                     // un-narrowed unwrap is rejected, not silently zeroed).
-                    const is_narrowed = self.narrowed.count() > 0 and self.narrowed.contains(id.name);
+                    const is_narrowed = self.provenPresent(id.name);
                     // Reading a cursor's storage as a value would copy a
                     // position the ABI owns; `*name` is the only way to reach
                     // it, and it never lowers the name as a value.
@@ -4475,7 +4475,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // Statements that can appear in expression position
         .block => |blk| blk: {
             // Create a child scope for block-level variable shadowing
-            var block_scope = Scope.init(self.alloc, self.scope);
+            var block_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
             const saved_scope = self.scope;
             self.scope = &block_scope;
             const saved_defer_len = self.defer_stack.items.len;

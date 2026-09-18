@@ -767,7 +767,7 @@ fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
     const src = self.current_source_file;
     // A declared default lowers with no scope; the bound bool lives on a
     // child scope installed for the synthesized call.
-    var tmp = Scope.init(self.alloc, self.scope);
+    var tmp = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer tmp.deinit();
     const saved = self.scope;
     self.scope = &tmp;

@@ -1360,7 +1360,7 @@ pub fn monomorphizePackFn(
     self.builder.switchToBlock(entry);
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
-    var scope = Scope.init(self.alloc, null);
+    var scope = Scope.init(self.alloc, null, &self.next_binding_id);
     defer scope.deinit();
     self.scope = &scope;
 

@@ -137,7 +137,7 @@ test "expr_typer: raw value binding shadows numeric-limit, bare type still folds
         .fields = &box_fields,
     } });
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc, null, &l.next_binding_id);
     defer scope.deinit();
     l.scope = &scope;
     scope.put("f64", .{ .ref = Ref.none, .ty = box_ty, .is_alloca = false });
