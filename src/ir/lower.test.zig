@@ -2344,10 +2344,11 @@ test "scope: lookupNearest resolves by depth across both local namespaces" {
     const lower_mod = @import("lower.zig");
     const Scope = lower_mod.Scope;
     const alloc = std.testing.allocator;
+    var next_binding_id: u64 = 0;
 
-    var outer = Scope.init(alloc, null);
+    var outer = Scope.init(alloc, null, &next_binding_id);
     defer outer.deinit();
-    var inner = Scope.init(alloc, &outer);
+    var inner = Scope.init(alloc, &outer, &next_binding_id);
     defer inner.deinit();
 
     // Direction A: outer VAR, inner nested FN — the fn is nearest.
@@ -2383,14 +2384,15 @@ test "scope: lookupBoundary flags a value binding reached across a nested-fn bou
     const lower_mod = @import("lower.zig");
     const Scope = lower_mod.Scope;
     const alloc = std.testing.allocator;
+    var next_binding_id: u64 = 0;
 
     // enclosing (a fn body / block) — holds the local `x`.
-    var enclosing = Scope.init(alloc, null);
+    var enclosing = Scope.init(alloc, null, &next_binding_id);
     defer enclosing.deinit();
     enclosing.put("x", .{ .ref = Ref.none, .ty = .i64, .is_alloca = true });
 
     // the nested static fn's body scope — parent chain kept, boundary flagged.
-    var nested = Scope.init(alloc, &enclosing);
+    var nested = Scope.init(alloc, &enclosing, &next_binding_id);
     nested.boundary = .nested_fn;
     defer nested.deinit();
 
@@ -2418,7 +2420,7 @@ test "scope: lookupBoundary flags a value binding reached across a nested-fn bou
     // A lambda body's scope seals the plain lookups: `x` is invisible to
     // `lookup`, and `lookupBoundary` names the boundary that hid it so the
     // diagnostic can name the env field to write.
-    var lam = Scope.init(alloc, &enclosing);
+    var lam = Scope.init(alloc, &enclosing, &next_binding_id);
     lam.boundary = .lambda;
     defer lam.deinit();
     try std.testing.expect(lam.lookup("x") == null);
@@ -2455,11 +2457,11 @@ test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary,
     lowering.builder.switchToBlock(entry);
 
     // enclosing fn scope holds alloca `x`; nested static fn scope is flagged.
-    var enclosing = Scope.init(alloc, null);
+    var enclosing = Scope.init(alloc, null, &lowering.next_binding_id);
     defer enclosing.deinit();
     const x_slot = lowering.builder.alloca(.i64);
     enclosing.put("x", .{ .ref = x_slot, .ty = .i64, .is_alloca = true });
-    var nested = Scope.init(alloc, &enclosing);
+    var nested = Scope.init(alloc, &enclosing, &lowering.next_binding_id);
     nested.boundary = .nested_fn;
     defer nested.deinit();
     lowering.scope = &nested;
@@ -2499,8 +2501,9 @@ test "capture: a scope binding shadowing a fn name resolves to .binding, not ski
     const lower_mod = @import("lower.zig");
     const Scope = lower_mod.Scope;
     const alloc = std.testing.allocator;
+    var next_binding_id: u64 = 0;
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc, null, &next_binding_id);
     defer scope.deinit();
 
     // A value binding named exactly like the (hypothetical) global fn `out`.

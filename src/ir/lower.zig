@@ -233,6 +233,11 @@ pub const SourceConstCtx = struct {
 
 // ── Scope ───────────────────────────────────────────────────────────────
 
+/// The identity of one declared binding. Flow narrowing proves a BINDING
+/// present, never a spelling, so a declaration shadowing a proven name has no
+/// proof of its own.
+pub const BindingId = enum(u64) { _ };
+
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
     /// "cannot assign" diagnostic: a for-loop
@@ -262,6 +267,9 @@ pub const Binding = struct {
         reflected_member_alias,
     };
 
+    /// Null until `Scope.put` introduces the binding; a binding value moved
+    /// into another scope keeps the identity it already has.
+    id: ?BindingId = null,
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
@@ -287,6 +295,8 @@ pub const Scope = struct {
     map: std.StringHashMap(Binding),
     fn_names: std.StringHashMap([]const u8), // bare name → mangled name for local functions
     parent: ?*Scope,
+    /// Where `put` takes a new binding's identity from.
+    next_binding_id: *u64,
     /// What a value binding reached by crossing this scope is.
     boundary: Boundary = .none,
 
@@ -305,11 +315,12 @@ pub const Scope = struct {
         lambda,
     };
 
-    pub fn init(alloc: Allocator, parent: ?*Scope) Scope {
+    pub fn init(alloc: Allocator, parent: ?*Scope, next_binding_id: *u64) Scope {
         return .{
             .map = std.StringHashMap(Binding).init(alloc),
             .fn_names = std.StringHashMap([]const u8).init(alloc),
             .parent = parent,
+            .next_binding_id = next_binding_id,
         };
     }
 
@@ -319,7 +330,17 @@ pub const Scope = struct {
     }
 
     pub fn put(self: *Scope, name: []const u8, binding: Binding) void {
-        self.map.put(name, binding) catch unreachable;
+        var declared = binding;
+        if (declared.id == null) {
+            declared.id = @enumFromInt(self.next_binding_id.*);
+            self.next_binding_id.* += 1;
+        }
+        self.map.put(name, declared) catch unreachable;
+    }
+
+    pub fn bindingId(self: *const Scope, name: []const u8) ?BindingId {
+        const b = self.lookup(name) orelse return null;
+        return b.id;
     }
 
     pub fn lookup(self: *const Scope, name: []const u8) ?Binding {
@@ -444,6 +465,11 @@ pub const Lowering = struct {
     int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
+    /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
+    /// part of the per-body state the nested-body guards save and restore: an
+    /// identity reused across two bodies would carry one body's presence proof
+    /// into the other.
+    next_binding_id: u64 = 0,
     /// Transient: the user-facing const name of the body-local `@run` currently
     /// being lowered (`L :: @run f()`), so `lowerInlineComptime` can stamp the
     /// `__ct` wrapper's `comptime_display_name` for a friendly comptime-init
@@ -711,16 +737,16 @@ pub const Lowering = struct {
     lambda_sig_target: ?lower_closure.CallableSig = null,
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
-    /// Flow-sensitive narrowing. The set of local variable names
-    /// currently PROVEN present (`?T` known to carry a value) by a `!= null`
-    /// guard / branch. Region-scoped: what a region narrows ends with the
-    /// region, while an assignment's kill outlives it; the if-then branch
-    /// narrows on `!= null`, and a divergent `== null` guard narrows the rest
-    /// of the enclosing block.
+    /// Flow-sensitive narrowing. The set of local BINDINGS currently PROVEN
+    /// present (`?T` known to carry a value) by a `!= null` guard / branch.
+    /// Region-scoped: what a region narrows ends with the region, while an
+    /// assignment's kill outlives it; the if-then branch narrows on
+    /// `!= null`, and a divergent `== null` guard narrows the rest of the
+    /// enclosing block.
     /// Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
-    narrowed: std.StringHashMap(void) = undefined,
+    narrowed: std.AutoHashMap(BindingId, void) = undefined,
     /// Dedupe for the "nested fn references enclosing local"
     /// diagnostic, keyed `"<fn-index>:<name>"`. The boundary guard fires at
     /// EVERY resolution layer (identifier read, getExprAlloca fast path,
@@ -1107,7 +1133,7 @@ pub const Lowering = struct {
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
         error_boundary: ?ErrorBoundary,
-        narrowed: std.StringHashMap(void),
+        narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
@@ -1145,7 +1171,7 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
             };
-            l.narrowed = std.StringHashMap(void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
@@ -1220,7 +1246,7 @@ pub const Lowering = struct {
     ///   in the nested body would store and branch across a function boundary.
     pub const NestedBodyGuard = struct {
         l: *Lowering,
-        narrowed: std.StringHashMap(void),
+        narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
@@ -1251,7 +1277,7 @@ pub const Lowering = struct {
                 .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
-            l.narrowed = std.StringHashMap(void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
@@ -1402,7 +1428,7 @@ pub const Lowering = struct {
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
             .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
             .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
-            .narrowed = std.StringHashMap(void).init(module.alloc),
+            .narrowed = std.AutoHashMap(BindingId, void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
@@ -1464,7 +1490,7 @@ pub const Lowering = struct {
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM
         // emission as `func.ret`. Without the temporary scope, whether it slips
         // through depends on a same-named binding lingering from earlier lowering.
-        var tmp_scope = Scope.init(self.alloc, self.scope);
+        var tmp_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         defer tmp_scope.deinit();
         const saved_scope = self.scope;
         self.scope = &tmp_scope;
@@ -2609,6 +2635,19 @@ pub const Lowering = struct {
         return if (self.module.types.sliceInfoOf(pointee)) |ps| ps.element else null;
     }
 
+    pub fn provenPresent(self: *Lowering, name: []const u8) bool {
+        if (self.narrowed.count() == 0) return false;
+        const scope = self.scope orelse return false;
+        const id = scope.bindingId(name) orelse return false;
+        return self.narrowed.contains(id);
+    }
+
+    pub fn killNarrowing(self: *Lowering, name: []const u8) void {
+        const scope = self.scope orelse return;
+        const id = scope.bindingId(name) orelse return;
+        _ = self.narrowed.remove(id);
+    }
+
     /// The payload type a container use site (index, slice, generic binding)
     /// sees for `node`: a guard-narrowed optional local whose payload is
     /// indexable presents that payload — the guard proved presence, so `o[i]`
@@ -2617,7 +2656,7 @@ pub const Lowering = struct {
     /// optional-chain result, and identifier inference (`q := o`) never peels.
     pub fn narrowedContainerChild(self: *Lowering, node: *const ast.Node) ?TypeId {
         if (node.data != .identifier) return null;
-        if (self.narrowed.count() == 0 or !self.narrowed.contains(node.data.identifier.name)) return null;
+        if (!self.provenPresent(node.data.identifier.name)) return null;
         const ty = self.inferExprType(node);
         if (ty.isBuiltin()) return null;
         const info = self.module.types.get(ty);
@@ -3486,7 +3525,7 @@ pub const Lowering = struct {
     pub const matchContributesNull = lower_control_flow.matchContributesNull;
     pub const setMergeParamType = lower_control_flow.setMergeParamType;
     pub const narrowableLocal = lower_control_flow.narrowableLocal;
-    pub const nullCmpName = lower_control_flow.nullCmpName;
+    pub const nullCmpBinding = lower_control_flow.nullCmpBinding;
     pub const collectPresentIfTrue = lower_control_flow.collectPresentIfTrue;
     pub const collectPresentIfFalse = lower_control_flow.collectPresentIfFalse;
     pub const narrowSnapshot = lower_control_flow.narrowSnapshot;

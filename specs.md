@@ -2072,6 +2072,9 @@ if a == null or b == null { return; }
 
 Reassignment kills narrowing.
 
+A guard proves the *binding* it names, so a declaration shadowing a narrowed
+name starts with no proof of presence.
+
 #### Struct Field Defaults
 Optional fields in structs default to `null`:
 ```sx

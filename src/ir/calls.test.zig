@@ -250,7 +250,7 @@ test "plan: closure and fn-pointer callees, __sx_ctx by calling convention" {
     l.implicit_ctx_enabled = true;
     const cr = CallResolver{ .l = &l };
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc, null, &l.next_binding_id);
     defer scope.deinit();
     l.scope = &scope;
 
@@ -415,7 +415,7 @@ test "plan: free-function UFCS prepends receiver, distinct from namespace_fn" {
 
     // A value receiver in scope: `c : Counter`. `c.bump()` is UFCS, not a
     // namespace call — the receiver must be prepended.
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc, null, &l.next_binding_id);
     defer scope.deinit();
     scope.put("c", .{ .ref = Ref.none, .ty = counter, .is_alloca = false });
     l.scope = &scope;

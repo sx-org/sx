@@ -1,0 +1,13 @@
+// A `!= null` guard proves the binding it names present, not the spelling: the
+// declaration shadowing `x` is another binding and carries no proof.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+
+main :: () {
+    x: ?i32 = 42;
+    if x != null {
+        x: ?i32 = null;
+        take(x);    // error: optional does not implicitly unwrap
+    }
+}

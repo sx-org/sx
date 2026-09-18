@@ -350,7 +350,7 @@ fn replayBody(
     sink_ty: TypeId,
 ) void {
     const saved_scope = self.scope;
-    var body_scope = lower.Scope.init(self.alloc, null);
+    var body_scope = lower.Scope.init(self.alloc, null, &self.next_binding_id);
     defer {
         body_scope.deinit();
         self.scope = saved_scope;

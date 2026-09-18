@@ -1277,7 +1277,7 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     const entry = self.builder.appendBlock(entry_name, &.{});
     self.builder.switchToBlock(entry);
 
-    var scope = Scope.init(self.alloc, self.scope);
+    var scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer scope.deinit();
     const saved_scope = self.scope;
     self.scope = &scope;

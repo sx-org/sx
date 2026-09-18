@@ -16,6 +16,7 @@ const lower_stmt = @import("stmt.zig");
 const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
+const BindingId = lower.BindingId;
 const ComptimeValue = Lowering.ComptimeValue;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
@@ -24,41 +25,40 @@ const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 // `?T` only converts to a concrete `T` when the value is PROVEN present —
 // otherwise the implicit unwrap yields the zero payload of a null optional.
 // These helpers recognize the `!= null` / `== null`
-// guard shapes and record which local names a branch / guard proves present;
+// guard shapes and record which local bindings a branch / guard proves present;
 // `lowerIdentifier` tags the loaded `Ref` of a narrowed name into
 // `narrowed_refs`, and `coerceMode`'s `.optional_unwrap` arm only unwraps a
 // tagged (proven-present) value.
 
-/// The local-variable name if `node` is a bare identifier currently bound to
-/// an OPTIONAL local/param in scope (the only thing flow-narrowing applies
-/// to). Null for field paths, indexes, non-optionals, etc. — those keep the
-/// explicit `!`/`??`/binding requirement.
-pub fn narrowableLocal(self: *Lowering, node: *const Node) ?[]const u8 {
+/// The identity of the binding `node` names if it is a bare identifier
+/// currently bound to an OPTIONAL local/param in scope (the only thing
+/// flow-narrowing applies to). Null for field paths, indexes, non-optionals,
+/// etc. — those keep the explicit `!`/`??`/binding requirement.
+pub fn narrowableLocal(self: *Lowering, node: *const Node) ?BindingId {
     if (node.data != .identifier) return null;
-    const name = node.data.identifier.name;
     const scope = self.scope orelse return null;
-    const b = scope.lookup(name) orelse return null;
+    const b = scope.lookup(node.data.identifier.name) orelse return null;
     if (b.ty.isBuiltin()) return null;
     if (self.module.types.get(b.ty) != .optional) return null;
-    return name;
+    return b.id;
 }
 
 /// If `bop` compares an optional local against the `null` literal (either
-/// operand order), the narrowable local's name; else null.
-pub fn nullCmpName(self: *Lowering, bop: ast.BinaryOp) ?[]const u8 {
+/// operand order), that local's binding; else null.
+pub fn nullCmpBinding(self: *Lowering, bop: ast.BinaryOp) ?BindingId {
     const lhs_null = bop.lhs.data == .null_literal;
     const rhs_null = bop.rhs.data == .null_literal;
     if (lhs_null == rhs_null) return null; // need exactly one `null` side
     return self.narrowableLocal(if (lhs_null) bop.rhs else bop.lhs);
 }
 
-/// Names proven present when `cond` is TRUE: `x != null`, and the `and` of
+/// Bindings proven present when `cond` is TRUE: `x != null`, and the `and` of
 /// such tests (`a != null and b != null`).
-pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList([]const u8)) void {
+pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
     switch (bop.op) {
-        .neq => if (self.nullCmpName(bop)) |n| out.append(self.alloc, n) catch {},
+        .neq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .and_op => {
             self.collectPresentIfTrue(bop.lhs, out);
             self.collectPresentIfTrue(bop.rhs, out);
@@ -67,15 +67,15 @@ pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayL
     }
 }
 
-/// Names proven present when `cond` is FALSE: `x == null` (false ⇒ present),
-/// and the `or` of such tests (`a == null or b == null` — false ⇒ both
-/// present). This is the guard-narrowing case (`if a == null or b == null
+/// Bindings proven present when `cond` is FALSE: `x == null` (false ⇒
+/// present), and the `or` of such tests (`a == null or b == null` — false ⇒
+/// both present). This is the guard-narrowing case (`if a == null or b == null
 /// { return }` proves both present afterwards).
-pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.ArrayList([]const u8)) void {
+pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
     switch (bop.op) {
-        .eq => if (self.nullCmpName(bop)) |n| out.append(self.alloc, n) catch {},
+        .eq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .or_op => {
             self.collectPresentIfFalse(bop.lhs, out);
             self.collectPresentIfFalse(bop.rhs, out);
@@ -84,30 +84,30 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
     }
 }
 
-/// Snapshot the currently-narrowed names so a region (block / branch) can
+/// Snapshot the currently-narrowed bindings so a region (block / branch) can
 /// restore them on exit. Returns a list the caller must `deinit`.
-pub fn narrowSnapshot(self: *Lowering) std.ArrayList([]const u8) {
-    var list = std.ArrayList([]const u8).empty;
+pub fn narrowSnapshot(self: *Lowering) std.ArrayList(BindingId) {
+    var list = std.ArrayList(BindingId).empty;
     var it = self.narrowed.keyIterator();
     while (it.next()) |k| list.append(self.alloc, k.*) catch {};
     return list;
 }
 
-/// Replace the narrowed-name set with exactly `names`.
-pub fn narrowSet(self: *Lowering, names: []const []const u8) void {
+/// Replace the narrowed set with exactly `bindings`.
+pub fn narrowSet(self: *Lowering, bindings: []const BindingId) void {
     self.narrowed.clearRetainingCapacity();
-    for (names) |n| self.narrowed.put(n, {}) catch {};
+    for (bindings) |b| self.narrowed.put(b, {}) catch {};
 }
 
-fn narrowsName(names: []const []const u8, name: []const u8) bool {
-    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+fn narrowsBinding(bindings: []const BindingId, binding: BindingId) bool {
+    for (bindings) |b| if (b == binding) return true;
     return false;
 }
 
 /// Leave a lexical region: the narrowing it proved goes out of scope, while a
 /// reassignment inside it stays killed — the set becomes `saved` minus
 /// everything no longer narrowed. Consumes `saved`.
-pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList(BindingId)) void {
     var i: usize = 0;
     while (i < saved.items.len) {
         if (self.narrowed.contains(saved.items[i])) i += 1 else _ = saved.swapRemove(i);
@@ -118,12 +118,12 @@ pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
 
 /// Fold one edge arriving at a merge into the facts that hold there: the first
 /// edge seeds them, every later edge intersects. Consumes `edge`.
-fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList([]const u8), edge: std.ArrayList([]const u8)) void {
+fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList(BindingId), edge: std.ArrayList(BindingId)) void {
     var incoming = edge;
     if (merged.*) |*m| {
         var i: usize = 0;
         while (i < m.items.len) {
-            if (narrowsName(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
+            if (narrowsBinding(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
         }
         incoming.deinit(self.alloc);
     } else {
@@ -131,9 +131,10 @@ fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList([]const u8), edge: st
     }
 }
 
-/// Mark every name in `names` as narrowed (proven present) in the current set.
-pub fn applyNarrowing(self: *Lowering, names: []const []const u8) void {
-    for (names) |n| self.narrowed.put(n, {}) catch {};
+/// Mark every binding in `bindings` as narrowed (proven present) in the
+/// current set.
+pub fn applyNarrowing(self: *Lowering, bindings: []const BindingId) void {
+    for (bindings) |b| self.narrowed.put(b, {}) catch {};
 }
 
 /// Peel trivial single-block wrappers: a `match`-arm body is a block whose sole
@@ -480,12 +481,12 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     // Then branch
     self.builder.switchToBlock(then_bb);
     if (ie.binding_name) |bind_name| bindConditionPayload(self, cond_lowered, bind_name);
-    // Flow narrowing: which local names this condition proves
+    // Flow narrowing: which local bindings this condition proves
     // present in each arm. A binding `if v := opt` already unwraps `v`, so it
     // contributes nothing here.
-    var present_true = std.ArrayList([]const u8).empty;
+    var present_true = std.ArrayList(BindingId).empty;
     defer present_true.deinit(self.alloc);
-    var present_false = std.ArrayList([]const u8).empty;
+    var present_false = std.ArrayList(BindingId).empty;
     defer present_false.deinit(self.alloc);
     if (ie.binding_name == null) {
         self.collectPresentIfTrue(ie.condition, &present_true);
@@ -506,7 +507,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     // is what lets `if x == null { return; }` prove `x` present afterwards.
     var entry_snap = self.narrowSnapshot();
     defer entry_snap.deinit(self.alloc);
-    var merged: ?std.ArrayList([]const u8) = null;
+    var merged: ?std.ArrayList(BindingId) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
         var v = self.lowerExpr(ie.then_branch);
@@ -948,7 +949,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     // Body: bind one capture per position (when captures are present).
     self.builder.switchToBlock(body_bb);
 
-    var body_scope = Scope.init(self.alloc, self.scope);
+    var body_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     const old_scope = self.scope;
     self.scope = &body_scope;
 
@@ -1167,7 +1168,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
     var i: i64 = 0;
     while (i < count) : (i += 1) {
-        var body_scope = Scope.init(self.alloc, self.scope);
+        var body_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         const old_scope = self.scope;
         self.scope = &body_scope;
 
@@ -1899,7 +1900,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // there.
     var entry_snap = self.narrowSnapshot();
     defer entry_snap.deinit(self.alloc);
-    var merged: ?std.ArrayList([]const u8) = null;
+    var merged: ?std.ArrayList(BindingId) = null;
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
         self.narrowSet(entry_snap.items);
@@ -1924,7 +1925,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
         }
 
-        var arm_scope = Scope.init(self.alloc, self.scope);
+        var arm_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         const old_scope = self.scope;
         self.scope = &arm_scope;
 

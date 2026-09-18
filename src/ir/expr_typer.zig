@@ -218,9 +218,7 @@ pub const ExprTyper = struct {
                 // `?.` keeps the optional (the chain arm below).
                 if (!fa.is_optional and !obj_ty.isBuiltin() and fa.object.data == .identifier) {
                     const nrw_info = self.l.module.types.get(obj_ty);
-                    if (nrw_info == .optional and self.l.narrowed.count() > 0 and
-                        self.l.narrowed.contains(fa.object.data.identifier.name))
-                    {
+                    if (nrw_info == .optional and self.l.provenPresent(fa.object.data.identifier.name)) {
                         obj_ty = nrw_info.optional.child;
                     }
                 }
