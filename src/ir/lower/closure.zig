@@ -306,7 +306,7 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
         if (sig_target) |s| if (s.ret != .unresolved) break :blk s.ret;
         // Lambda without explicit return type — infer from the body.
         // Temporarily bind params in scope so inference can resolve param types.
-        var temp_scope = Scope.init(self.alloc, self.scope);
+        var temp_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         const saved = self.scope;
         self.scope = &temp_scope;
         for (lam.params, 0..) |p, i| {
@@ -371,7 +371,7 @@ fn lowerLambdaFunction(self: *Lowering, lam: *const ast.Lambda, name: []const u8
     // can NAME an enclosing local the body reached for; `.lambda` is what makes
     // every plain lookup stop here, so the body binds its params and its env
     // fields and nothing else.
-    var lambda_scope = Scope.init(self.alloc, saved_scope);
+    var lambda_scope = Scope.init(self.alloc, saved_scope, &self.next_binding_id);
     lambda_scope.boundary = .lambda;
     self.scope = &lambda_scope;
 

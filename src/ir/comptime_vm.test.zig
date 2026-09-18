@@ -68,6 +68,8 @@ const Fb = struct {
 };
 
 test "comptime_vm exec: integer add of two params" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     const params = [_]Function.Param{ param(.i64), param(.i64) };
     var fb = Fb.init(std.testing.allocator, &params, .i64);
     defer fb.deinit();
@@ -76,12 +78,15 @@ test "comptime_vm exec: integer add of two params" {
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(sum) } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     const out = try v.run(&fb.func, &.{ fromI64(3), fromI64(40) });
     try std.testing.expectEqual(@as(i64, 43), toI64(out));
 }
 
 test "comptime_vm exec: f64 arithmetic (a*2.0 + 1.0)" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     const params = [_]Function.Param{param(.f64)};
     var fb = Fb.init(std.testing.allocator, &params, .f64);
     defer fb.deinit();
@@ -93,12 +98,15 @@ test "comptime_vm exec: f64 arithmetic (a*2.0 + 1.0)" {
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(res) } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     const out = try v.run(&fb.func, &.{fromF64(3.0)});
     try std.testing.expectEqual(@as(f64, 7.0), toF64(out));
 }
 
 test "comptime_vm exec: comparison + cond_br selects a branch" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     // f(a) = if a < 10 then 100 else 200
     const params = [_]Function.Param{param(.i64)};
     var fb = Fb.init(std.testing.allocator, &params, .i64);
@@ -118,12 +126,15 @@ test "comptime_vm exec: comparison + cond_br selects a branch" {
     _ = fb.add(b2, inst(.{ .ret = .{ .operand = ref(y) } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     try std.testing.expectEqual(@as(i64, 100), toI64(try v.run(&fb.func, &.{fromI64(5)})));
     try std.testing.expectEqual(@as(i64, 200), toI64(try v.run(&fb.func, &.{fromI64(15)})));
 }
 
 test "comptime_vm exec: loop with block params sums i..1" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     // sum=0; i=n; while i>0 { sum+=i; i-=1 } return sum   →  n*(n+1)/2
     const params = [_]Function.Param{param(.i64)};
     var fb = Fb.init(std.testing.allocator, &params, .i64);
@@ -159,6 +170,7 @@ test "comptime_vm exec: loop with block params sums i..1" {
     _ = fb.add(b3, inst(.{ .ret = .{ .operand = ref(sum_e) } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     try std.testing.expectEqual(@as(i64, 15), toI64(try v.run(&fb.func, &.{fromI64(5)}))); // 5+4+3+2+1
     try std.testing.expectEqual(@as(i64, 55), toI64(try v.run(&fb.func, &.{fromI64(10)})));
@@ -166,6 +178,8 @@ test "comptime_vm exec: loop with block params sums i..1" {
 }
 
 test "comptime_vm exec: nested value-merge threads inner if value" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     // f(a, b) = if a { 100 } else { if b { 42 } else { 0 } }
     // The correct IR (what lowering emits for both @run forms) chains two
     // value-merge blocks: the OUTER merge's else-edge value IS the INNER merge's
@@ -211,6 +225,7 @@ test "comptime_vm exec: nested value-merge threads inner if value" {
     _ = fb.add(b6, inst(.{ .br = .{ .target = BlockId.fromIndex(3), .args = &.{ref(iv)} } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     const T = fromI64(1);
     const F = fromI64(0);
@@ -1377,6 +1392,8 @@ test "comptime_vm tryEval: wasm32 target keeps host pointers intact and restores
 }
 
 test "comptime_vm exec: division by zero and unsupported op bail loudly" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     // a / b
     {
         const params = [_]Function.Param{ param(.i64), param(.i64) };
@@ -1387,6 +1404,7 @@ test "comptime_vm exec: division by zero and unsupported op bail loudly" {
         _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(q) } }, .void));
 
         var v = vm.Vm.init(std.testing.allocator);
+        v.table = &table;
         defer v.deinit();
         try std.testing.expectEqual(@as(i64, 4), toI64(try v.run(&fb.func, &.{ fromI64(12), fromI64(3) })));
         try std.testing.expectError(error.DivisionByZero, v.run(&fb.func, &.{ fromI64(12), fromI64(0) }));
@@ -1400,6 +1418,7 @@ test "comptime_vm exec: division by zero and unsupported op bail loudly" {
         _ = fb.add(b0, inst(.ret_void, .void));
 
         var v = vm.Vm.init(std.testing.allocator);
+        v.table = &table;
         defer v.deinit();
         try std.testing.expectError(error.Unsupported, v.run(&fb.func, &.{}));
         try std.testing.expectEqualStrings(
@@ -1482,6 +1501,8 @@ test "comptime_vm: a malformed operand ref (Ref.none) bails, not a panic" {
 }
 
 test "comptime_vm: a malformed operand TYPE ref bails (refTy), not a panic" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
     // A comparison whose lhs is `Ref.none` exercises the `ref_types` (type-side)
     // accessor `refTy` — the companion to the value-side `Frame.get` guard. Raw
     // `ref_types[Ref.none.index()]` would index out of bounds and panic; it must
@@ -1494,6 +1515,7 @@ test "comptime_vm: a malformed operand TYPE ref bails (refTy), not a panic" {
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(r) } }, .void));
 
     var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
     defer v.deinit();
     try std.testing.expectError(error.Unsupported, v.run(&fb.func, &.{}));
 }
@@ -1770,4 +1792,176 @@ test "comptime_vm bridge: materializeValue → snapshotValue round-trips a snaps
     try std.testing.expectEqualStrings("", e_back.aggregate[0].string);
     try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[1].aggregate.len);
     try std.testing.expectEqual(@as(usize, 0), e_back.aggregate[2].aggregate[0].aggregate.len);
+}
+
+test "comptime_vm: integer constants and arguments produce normalized raw words" {
+    const alloc = std.testing.allocator;
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    const signed24 = table.internInteger(24, true);
+    var v = vm.Vm.init(alloc);
+    v.table = &table;
+    defer v.deinit();
+
+    var argument = Fb.init(alloc, &.{param(signed24)}, signed24);
+    defer argument.deinit();
+    _ = argument.add(argument.block(&.{}), inst(.{ .ret = .{ .operand = ref(0) } }, .void));
+    try std.testing.expectEqual(fromI64(-6), try v.run(&argument.func, &.{0xaafffffa}));
+
+    var constant = Fb.init(alloc, &.{}, .u8);
+    defer constant.deinit();
+    const block = constant.block(&.{});
+    const value = constant.add(block, inst(.{ .const_int = 256 }, .u8));
+    _ = constant.add(block, inst(.{ .ret = .{ .operand = ref(value) } }, .void));
+    try std.testing.expectEqual(@as(vm.Reg, 0), try v.run(&constant.func, &.{}));
+}
+
+test "comptime_vm: complement and shift truncate before leaving the register" {
+    const alloc = std.testing.allocator;
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    var v = vm.Vm.init(alloc);
+    v.table = &table;
+    defer v.deinit();
+    const cases = [_]struct { op: Op, args: [2]vm.Reg, expected: vm.Reg }{
+        .{ .op = .{ .bit_not = .{ .operand = ref(0) } }, .args = .{ 0, 0 }, .expected = 255 },
+        .{ .op = .{ .shl = .{ .lhs = ref(0), .rhs = ref(1) } }, .args = .{ 128, 1 }, .expected = 0 },
+    };
+    for (cases) |case| {
+        var fb = Fb.init(alloc, &.{ param(.u8), param(.u8) }, .u8);
+        defer fb.deinit();
+        const block = fb.block(&.{});
+        const value = fb.add(block, inst(case.op, .u8));
+        _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(value) } }, .void));
+        try std.testing.expectEqual(case.expected, try v.run(&fb.func, &case.args));
+    }
+}
+
+test "comptime_vm: integer loads and bridges use semantic width within padded storage" {
+    const alloc = std.testing.allocator;
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    const signed24 = table.internInteger(24, true);
+    const pointer = table.ptrTo(signed24);
+    var v = vm.Vm.init(alloc);
+    v.table = &table;
+    defer v.deinit();
+    const addr = v.machine.allocBytes(4, 4);
+    try v.machine.writeWord(addr, 4, 0xaafffffa);
+    var fb = Fb.init(alloc, &.{param(pointer)}, signed24);
+    defer fb.deinit();
+    const block = fb.block(&.{});
+    const value = fb.add(block, inst(.{ .load = .{ .operand = ref(0) } }, signed24));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(value) } }, .void));
+    try std.testing.expectEqual(fromI64(-6), try v.run(&fb.func, &.{addr}));
+    try std.testing.expectEqual(fromI64(-6), try v.materializeValue(&table, signed24, .{ .int = 0xaafffffa }));
+    const escaped = try v.regToValue(alloc, &table, 0xaafffffa, signed24);
+    try std.testing.expectEqual(@as(i64, -6), escaped.int);
+}
+
+test "comptime_vm: float conversions use signed source and destination interpretation" {
+    const alloc = std.testing.allocator;
+    var table = types.TypeTable.init(alloc);
+    defer table.deinit();
+    var v = vm.Vm.init(alloc);
+    v.table = &table;
+    defer v.deinit();
+    const signed24 = table.internInteger(24, true);
+    const cases = [_]struct { from: TypeId, to: TypeId, input: vm.Reg, expected: vm.Reg, to_float: bool }{
+        .{ .from = signed24, .to = .f64, .input = fromI64(-6), .expected = fromF64(-6.0), .to_float = true },
+        .{ .from = .u64, .to = .f64, .input = 0x8000000000000000, .expected = fromF64(9223372036854775808.0), .to_float = true },
+        .{ .from = .f64, .to = signed24, .input = fromF64(-6.0), .expected = fromI64(-6), .to_float = false },
+        .{ .from = .f64, .to = .u64, .input = fromF64(9223372036854775808.0), .expected = 0x8000000000000000, .to_float = false },
+    };
+    for (cases) |case| {
+        var fb = Fb.init(alloc, &.{param(case.from)}, case.to);
+        defer fb.deinit();
+        const block = fb.block(&.{});
+        const conversion: inst_mod.Conversion = .{ .operand = ref(0), .from = case.from, .to = case.to };
+        const value = fb.add(block, inst(if (case.to_float) .{ .int_to_float = conversion } else .{ .float_to_int = conversion }, case.to));
+        _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(value) } }, .void));
+        try std.testing.expectEqual(case.expected, try v.run(&fb.func, &.{case.input}));
+    }
+}
+
+test "integer switch queries late types after concrete cases and preserves branch arguments" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    var fb = Fb.init(std.testing.allocator, &.{param(.type_value)}, .i64);
+    defer fb.deinit();
+    const entry = fb.block(&.{});
+    const value = fb.add(entry, inst(.{ .const_int = 71 }, .i64));
+    const concrete = [_]inst_mod.SwitchBranch.Case{.{ .value = TypeId.i32.index(), .target = BlockId.fromIndex(1), .args = &.{ref(value)} }};
+    const categories = [_]inst_mod.SwitchBranch.IntegerCase{
+        .{ .signed = true, .target = BlockId.fromIndex(2) },
+        .{ .signed = true, .target = BlockId.fromIndex(3) },
+        .{ .signed = false, .target = BlockId.fromIndex(3) },
+    };
+    _ = fb.add(entry, inst(.{ .switch_br = .{ .operand = ref(0), .cases = &concrete, .integer_cases = &categories, .default = BlockId.fromIndex(1), .default_args = &.{ref(value)} } }, .void));
+    const arg_block = fb.block(&.{.i64});
+    const arg = fb.add(arg_block, inst(.{ .block_param = .{ .block = BlockId.fromIndex(arg_block), .param_index = 0 } }, .i64));
+    _ = fb.add(arg_block, inst(.{ .ret = .{ .operand = ref(arg) } }, .void));
+    for ([_]i64{ -6, 9 }) |n| {
+        const block = fb.block(&.{});
+        const result = fb.add(block, inst(.{ .const_int = n }, .i64));
+        _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(result) } }, .void));
+    }
+    const late = table.internInteger(23, true);
+    var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
+    defer v.deinit();
+    try std.testing.expectEqual(fromI64(71), try v.run(&fb.func, &.{TypeId.i32.index()}));
+    try std.testing.expectEqual(fromI64(-6), try v.run(&fb.func, &.{late.index()}));
+    try std.testing.expectEqual(fromI64(9), try v.run(&fb.func, &.{TypeId.u64.index()}));
+    try std.testing.expectEqual(fromI64(71), try v.run(&fb.func, &.{TypeId.bool.index()}));
+}
+
+test "integer view reads semantic signedness within a padded eight-byte slot" {
+    var table = types.TypeTable.init(std.testing.allocator);
+    defer table.deinit();
+    var fb = Fb.init(std.testing.allocator, &.{param(.any)}, .i64);
+    defer fb.deinit();
+    const block = fb.block(&.{});
+    const result = fb.add(block, inst(.{ .call_builtin = .{ .builtin = .read_integer, .args = &.{ref(0)} } }, .i64));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(result) } }, .void));
+    var v = vm.Vm.init(std.testing.allocator);
+    v.table = &table;
+    defer v.deinit();
+    const data = v.machine.allocBytes(8, 8);
+    const av = v.machine.allocBytes(16, 8);
+    try v.machine.writeWord(data, 8, 1099511627770);
+    try v.machine.writeWord(av, 8, data);
+    try v.machine.writeWord(av + 8, 8, table.internInteger(40, true).index());
+    try std.testing.expectEqual(fromI64(-6), try v.run(&fb.func, &.{av}));
+    try v.machine.writeWord(av + 8, 8, table.internInteger(40, false).index());
+    try std.testing.expectEqual(@as(u64, 1099511627770), try v.run(&fb.func, &.{av}));
+    try v.machine.writeWord(data, 8, std.math.maxInt(u64));
+    try v.machine.writeWord(av + 8, 8, TypeId.u64.index());
+    try std.testing.expectEqual(std.math.maxInt(u64), try v.run(&fb.func, &.{av}));
+}
+
+test "any constant globals materialize one exact aligned referent and retain its tag" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+    const integer = module.types.internInteger(24, true);
+    const payload = module.addGlobal(.{ .name = .empty, .ty = integer, .init_val = .{ .int = -6 } });
+    const fields = [_]inst_mod.ConstantValue{ .{ .global_ref = payload }, .{ .int = integer.index() } };
+    const view = module.addGlobal(.{ .name = .empty, .ty = .any, .init_val = .{ .aggregate = &fields } });
+    var fb = Fb.init(alloc, &.{}, .any);
+    const block = fb.block(&.{});
+    const av = fb.add(block, inst(.{ .global_get = view }, .any));
+    _ = fb.add(block, inst(.{ .ret = .{ .operand = ref(av) } }, .void));
+    const fid = module.addFunction(fb.func);
+    var v = vm.Vm.init(alloc);
+    v.table = &module.types;
+    v.module = &module;
+    defer v.deinit();
+    const a = try v.run(module.getFunction(fid), &.{});
+    const b = try v.run(module.getFunction(fid), &.{});
+    const data = try v.machine.readWord(a, 8);
+    try std.testing.expectEqual(data, try v.machine.readWord(b, 8));
+    try std.testing.expectEqual(@as(u64, integer.index()), try v.machine.readWord(a + 8, 8));
+    try std.testing.expectEqual(@as(u64, 0), data % module.types.typeAlignBytes(integer));
+    try std.testing.expectEqual(@as(u64, 0xfffffa), (try v.machine.readWord(data, 4)) & 0xffffff);
 }

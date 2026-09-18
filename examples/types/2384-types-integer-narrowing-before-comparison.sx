@@ -1,0 +1,4 @@
+@import "modules/std.sx";
+low_is_zero :: (x: i64) -> bool { x.(u8) == 0 }
+C :: @run low_is_zero(256);
+main :: () { print("comptime={} runtime={}\n", C, low_is_zero(256)); }

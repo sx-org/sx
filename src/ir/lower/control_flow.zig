@@ -16,6 +16,7 @@ const lower_stmt = @import("stmt.zig");
 const lower_error = @import("error.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
+const BindingId = lower.BindingId;
 const ComptimeValue = Lowering.ComptimeValue;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
@@ -24,41 +25,40 @@ const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 // `?T` only converts to a concrete `T` when the value is PROVEN present —
 // otherwise the implicit unwrap yields the zero payload of a null optional.
 // These helpers recognize the `!= null` / `== null`
-// guard shapes and record which local names a branch / guard proves present;
+// guard shapes and record which local bindings a branch / guard proves present;
 // `lowerIdentifier` tags the loaded `Ref` of a narrowed name into
 // `narrowed_refs`, and `coerceMode`'s `.optional_unwrap` arm only unwraps a
 // tagged (proven-present) value.
 
-/// The local-variable name if `node` is a bare identifier currently bound to
-/// an OPTIONAL local/param in scope (the only thing flow-narrowing applies
-/// to). Null for field paths, indexes, non-optionals, etc. — those keep the
-/// explicit `!`/`??`/binding requirement.
-pub fn narrowableLocal(self: *Lowering, node: *const Node) ?[]const u8 {
+/// The identity of the binding `node` names if it is a bare identifier
+/// currently bound to an OPTIONAL local/param in scope (the only thing
+/// flow-narrowing applies to). Null for field paths, indexes, non-optionals,
+/// etc. — those keep the explicit `!`/`??`/binding requirement.
+pub fn narrowableLocal(self: *Lowering, node: *const Node) ?BindingId {
     if (node.data != .identifier) return null;
-    const name = node.data.identifier.name;
     const scope = self.scope orelse return null;
-    const b = scope.lookup(name) orelse return null;
+    const b = scope.lookup(node.data.identifier.name) orelse return null;
     if (b.ty.isBuiltin()) return null;
     if (self.module.types.get(b.ty) != .optional) return null;
-    return name;
+    return b.id;
 }
 
 /// If `bop` compares an optional local against the `null` literal (either
-/// operand order), the narrowable local's name; else null.
-pub fn nullCmpName(self: *Lowering, bop: ast.BinaryOp) ?[]const u8 {
+/// operand order), that local's binding; else null.
+pub fn nullCmpBinding(self: *Lowering, bop: ast.BinaryOp) ?BindingId {
     const lhs_null = bop.lhs.data == .null_literal;
     const rhs_null = bop.rhs.data == .null_literal;
     if (lhs_null == rhs_null) return null; // need exactly one `null` side
     return self.narrowableLocal(if (lhs_null) bop.rhs else bop.lhs);
 }
 
-/// Names proven present when `cond` is TRUE: `x != null`, and the `and` of
+/// Bindings proven present when `cond` is TRUE: `x != null`, and the `and` of
 /// such tests (`a != null and b != null`).
-pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList([]const u8)) void {
+pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
     switch (bop.op) {
-        .neq => if (self.nullCmpName(bop)) |n| out.append(self.alloc, n) catch {},
+        .neq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .and_op => {
             self.collectPresentIfTrue(bop.lhs, out);
             self.collectPresentIfTrue(bop.rhs, out);
@@ -67,15 +67,15 @@ pub fn collectPresentIfTrue(self: *Lowering, cond: *const Node, out: *std.ArrayL
     }
 }
 
-/// Names proven present when `cond` is FALSE: `x == null` (false ⇒ present),
-/// and the `or` of such tests (`a == null or b == null` — false ⇒ both
-/// present). This is the guard-narrowing case (`if a == null or b == null
+/// Bindings proven present when `cond` is FALSE: `x == null` (false ⇒
+/// present), and the `or` of such tests (`a == null or b == null` — false ⇒
+/// both present). This is the guard-narrowing case (`if a == null or b == null
 /// { return }` proves both present afterwards).
-pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.ArrayList([]const u8)) void {
+pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.ArrayList(BindingId)) void {
     if (cond.data != .binary_op) return;
     const bop = cond.data.binary_op;
     switch (bop.op) {
-        .eq => if (self.nullCmpName(bop)) |n| out.append(self.alloc, n) catch {},
+        .eq => if (self.nullCmpBinding(bop)) |b| out.append(self.alloc, b) catch {},
         .or_op => {
             self.collectPresentIfFalse(bop.lhs, out);
             self.collectPresentIfFalse(bop.rhs, out);
@@ -84,26 +84,57 @@ pub fn collectPresentIfFalse(self: *Lowering, cond: *const Node, out: *std.Array
     }
 }
 
-/// Snapshot the currently-narrowed names so a region (block / branch) can
+/// Snapshot the currently-narrowed bindings so a region (block / branch) can
 /// restore them on exit. Returns a list the caller must `deinit`.
-pub fn narrowSnapshot(self: *Lowering) std.ArrayList([]const u8) {
-    var list = std.ArrayList([]const u8).empty;
+pub fn narrowSnapshot(self: *Lowering) std.ArrayList(BindingId) {
+    var list = std.ArrayList(BindingId).empty;
     var it = self.narrowed.keyIterator();
     while (it.next()) |k| list.append(self.alloc, k.*) catch {};
     return list;
 }
 
-/// Restore the narrowed-name set to a prior snapshot (drops anything added
-/// since, re-adds anything killed since).
-pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+/// Replace the narrowed set with exactly `bindings`.
+pub fn narrowSet(self: *Lowering, bindings: []const BindingId) void {
     self.narrowed.clearRetainingCapacity();
-    for (saved.items) |n| self.narrowed.put(n, {}) catch {};
+    for (bindings) |b| self.narrowed.put(b, {}) catch {};
+}
+
+fn narrowsBinding(bindings: []const BindingId, binding: BindingId) bool {
+    for (bindings) |b| if (b == binding) return true;
+    return false;
+}
+
+/// Leave a lexical region: the narrowing it proved goes out of scope, while a
+/// reassignment inside it stays killed — the set becomes `saved` minus
+/// everything no longer narrowed. Consumes `saved`.
+pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList(BindingId)) void {
+    var i: usize = 0;
+    while (i < saved.items.len) {
+        if (self.narrowed.contains(saved.items[i])) i += 1 else _ = saved.swapRemove(i);
+    }
+    self.narrowSet(saved.items);
     saved.deinit(self.alloc);
 }
 
-/// Mark every name in `names` as narrowed (proven present) in the current set.
-pub fn applyNarrowing(self: *Lowering, names: []const []const u8) void {
-    for (names) |n| self.narrowed.put(n, {}) catch {};
+/// Fold one edge arriving at a merge into the facts that hold there: the first
+/// edge seeds them, every later edge intersects. Consumes `edge`.
+fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList(BindingId), edge: std.ArrayList(BindingId)) void {
+    var incoming = edge;
+    if (merged.*) |*m| {
+        var i: usize = 0;
+        while (i < m.items.len) {
+            if (narrowsBinding(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
+        }
+        incoming.deinit(self.alloc);
+    } else {
+        merged.* = incoming;
+    }
+}
+
+/// Mark every binding in `bindings` as narrowed (proven present) in the
+/// current set.
+pub fn applyNarrowing(self: *Lowering, bindings: []const BindingId) void {
+    for (bindings) |b| self.narrowed.put(b, {}) catch {};
 }
 
 /// Peel trivial single-block wrappers: a `match`-arm body is a block whose sole
@@ -450,12 +481,12 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     // Then branch
     self.builder.switchToBlock(then_bb);
     if (ie.binding_name) |bind_name| bindConditionPayload(self, cond_lowered, bind_name);
-    // Flow narrowing: which local names this condition proves
+    // Flow narrowing: which local bindings this condition proves
     // present in each arm. A binding `if v := opt` already unwraps `v`, so it
     // contributes nothing here.
-    var present_true = std.ArrayList([]const u8).empty;
+    var present_true = std.ArrayList(BindingId).empty;
     defer present_true.deinit(self.alloc);
-    var present_false = std.ArrayList([]const u8).empty;
+    var present_false = std.ArrayList(BindingId).empty;
     defer present_false.deinit(self.alloc);
     if (ie.binding_name == null) {
         self.collectPresentIfTrue(ie.condition, &present_true);
@@ -470,7 +501,13 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     if (is_value and result_type != .void and result_type != .unresolved) self.target_type = result_type;
     var then_diverged = false;
     var else_diverged = false;
-    var then_snap = self.narrowSnapshot();
+    // The facts holding at `merge_bb` are those every edge REACHING it carries:
+    // each live arm's exit set, plus the condition-false edge when there is no
+    // `else`. A diverging arm reaches no merge and contributes nothing — which
+    // is what lets `if x == null { return; }` prove `x` present afterwards.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList(BindingId) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
         var v = self.lowerExpr(ie.then_branch);
@@ -502,12 +539,12 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
             self.builder.br(merge_bb, &.{});
         }
     }
-    self.narrowRestore(&then_snap);
+    if (!then_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    self.narrowSet(entry_snap.items);
 
     // Else branch
     if (has_else) {
         self.builder.switchToBlock(else_bb.?);
-        var else_snap = self.narrowSnapshot();
         self.applyNarrowing(present_false.items);
         if (is_value) {
             var v = self.lowerExpr(ie.else_branch.?);
@@ -537,14 +574,19 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
                 self.builder.br(merge_bb, &.{});
             }
         }
-        self.narrowRestore(&else_snap);
+        if (!else_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    } else {
+        self.applyNarrowing(present_false.items);
+        joinNarrowEdge(self, &merged, self.narrowSnapshot());
     }
     self.target_type = saved_target;
 
-    // Guard form: `if <x == null ...> { <diverges> }` with no else proves the
-    // tested names present for the remainder of the enclosing block. The
-    // enclosing `lowerBlock` snapshot drops this narrowing at block end.
-    if (!has_else and then_diverged) self.applyNarrowing(present_false.items);
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
+    }
 
     // Continue at merge
     self.builder.switchToBlock(merge_bb);
@@ -640,9 +682,7 @@ pub fn staticIsCondition(self: *Lowering, lhs: *const Node, rhs: *const Node) ?b
 /// the call grammar (`@int(4, .unsigned) is unsigned`).
 fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
     switch (node.data) {
-        .identifier, .type_expr, .field_access, .parameterized_type_expr,
-        .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr,
-        .optional_type_expr, .array_type_expr => {},
+        .identifier, .type_expr, .field_access, .parameterized_type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr => {},
         .call => |cl| return cl.callee.data == .identifier and
             contracts.isTypeConstructor(cl.callee.data.identifier.name),
         else => return false,
@@ -909,7 +949,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     // Body: bind one capture per position (when captures are present).
     self.builder.switchToBlock(body_bb);
 
-    var body_scope = Scope.init(self.alloc, self.scope);
+    var body_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     const old_scope = self.scope;
     self.scope = &body_scope;
 
@@ -1128,7 +1168,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
     var i: i64 = 0;
     while (i < count) : (i += 1) {
-        var body_scope = Scope.init(self.alloc, self.scope);
+        var body_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         const old_scope = self.scope;
         self.scope = &body_scope;
 
@@ -1199,7 +1239,8 @@ fn categoryCapture(self: *Lowering, pat: *const Node, subject: Ref, tags: []cons
         else => "",
     };
     if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
-        return .{ .ref = self.lowerAnyToIntDispatch(subject, .i64, tags), .ty = .i64 };
+        const args = self.alloc.dupe(Ref, &.{subject}) catch unreachable;
+        return .{ .ref = self.builder.callBuiltin(.read_integer, args, .i64), .ty = .i64 };
     }
     if (std.mem.eql(u8, name, "float")) {
         return .{ .ref = self.widenAnyToF64(subject, tags), .ty = .f64 };
@@ -1483,6 +1524,28 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     defer arm_blocks.deinit(self.alloc);
     for (me.arms) |_| {
         arm_blocks.append(self.alloc, self.freshBlock("match.arm")) catch unreachable;
+    }
+
+    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
+    defer integer_cases.deinit(self.alloc);
+    if (is_any_switch or is_type_match) {
+        for (me.arms) |arm| {
+            if (arm.pattern) |pat| {
+                if (pat.data == .call) _ = self.resolveTypeArg(pat);
+            }
+        }
+        for (me.arms, 0..) |arm, i| {
+            const pat = arm.pattern orelse continue;
+            const name: []const u8 = switch (pat.data) {
+                .identifier => |id| id.name,
+                .type_expr => |te| te.name,
+                else => "",
+            };
+            if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "int"))
+                integer_cases.append(self.alloc, .{ .signed = true, .target = arm_blocks.items[i] }) catch unreachable;
+            if (std.mem.eql(u8, name, "unsigned") or std.mem.eql(u8, name, "int"))
+                integer_cases.append(self.alloc, .{ .signed = false, .target = arm_blocks.items[i] }) catch unreachable;
+        }
     }
 
     // Build case list and pre-collect type tags per arm
@@ -1830,11 +1893,17 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         };
         break :blk self.builder.enumTag(subject, tag_ty);
     };
-    self.builder.switchBr(tag, cases.items, default_bb.?, &.{});
+    self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
 
-    // Lower each arm's body
+    // Arms are alternatives, not a sequence: each starts from the facts holding
+    // at the `match`, and only the arms that reach `merge_bb` say what holds
+    // there.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList(BindingId) = null;
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
+        self.narrowSet(entry_snap.items);
 
         // A patterned arm no switch case targets is unreachable. Lowering it
         // emits invalid IR — a runtime cast with no matching type, a payload
@@ -1856,7 +1925,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
         }
 
-        var arm_scope = Scope.init(self.alloc, self.scope);
+        var arm_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         const old_scope = self.scope;
         self.scope = &arm_scope;
 
@@ -2048,6 +2117,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     v = self.builder.constUndef(result_type);
                 }
                 self.builder.br(merge_bb, &.{v});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         } else {
             lowerArmBody(self, arm.body, demand);
@@ -2056,6 +2126,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             arm_scope.deinit();
             if (!self.currentBlockHasTerminator()) {
                 self.builder.br(merge_bb, &.{});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
     }
@@ -2071,37 +2142,35 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
         if (!found_default) {
             self.builder.switchToBlock(default_bb.?);
-            if (is_type_match) {
-                // For type-category matches, unrecognized tags should skip to merge
-                // (e.g., optional types not covered by anyToString categories)
-                if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
-                } else {
-                    self.builder.br(merge_bb, &.{});
-                }
+            // Only an enum whose variants the arms cover leaves the default
+            // unreachable; any other subject can hold a value no arm names,
+            // which reaches the merge carrying the facts that hold at the
+            // `match`.
+            const is_exhaustive = blk: {
+                if (is_type_match or subject_ty.isBuiltin()) break :blk false;
+                const ty_info = self.module.types.get(subject_ty);
+                if (ty_info == .@"enum") break :blk cases.items.len >= ty_info.@"enum".variants.len;
+                break :blk false;
+            };
+            if (is_exhaustive) {
+                self.builder.emitUnreachable();
             } else {
-                // For non-exhaustive matches (union/enum with unhandled variants),
-                // fall through to merge instead of unreachable
-                const is_exhaustive = blk: {
-                    if (!subject_ty.isBuiltin()) {
-                        const ty_info = self.module.types.get(subject_ty);
-                        if (ty_info == .@"enum") {
-                            break :blk cases.items.len >= ty_info.@"enum".variants.len;
-                        }
-                    }
-                    break :blk false;
-                };
-                if (is_exhaustive) {
-                    self.builder.emitUnreachable();
-                } else if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
+                if (has_value_merge) {
+                    self.builder.br(merge_bb, &.{self.builder.constUndef(result_type)});
                 } else {
                     self.builder.br(merge_bb, &.{});
                 }
+                self.narrowSet(entry_snap.items);
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
+    }
+
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
     }
 
     self.builder.switchToBlock(merge_bb);

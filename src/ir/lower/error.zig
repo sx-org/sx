@@ -1739,7 +1739,7 @@ pub fn finishCatchHandler(self: *Lowering, body_val: ?Ref, succ_ty: TypeId, merg
 /// catch), returns the body's value (or null if the body diverged); when
 /// null (pure-failable catch), runs the body for effect and returns null.
 pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err_set: TypeId, want_ty: ?TypeId) ?Ref {
-    var handle_scope = Scope.init(self.alloc, self.scope);
+    var handle_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     const saved_scope = self.scope;
     self.scope = &handle_scope;
     defer {

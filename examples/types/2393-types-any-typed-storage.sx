@@ -1,0 +1,43 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+U :: @int(4, .unsigned);
+Box :: struct { n: I; }
+g: I = -6;
+borrow :: () -> i64 {
+    b := Box{n = -6};
+    a: any = b.n;
+    field := @field(b, 0);
+    b.n = -9;
+    @assert(a.(I) == -9 and field.(I) == -9);
+    @assert(@rawAnyData(a) == @rawAnyData(field));
+    raw := @rawMakeAny(I, *b.n);
+    @assert(@typeOf(raw) == I and raw.(I) == -9);
+    whole: any = b;
+    b.n = -10;
+    @assert(whole.(Box).n == -10);
+    hold: any = ---;
+    if true { hold = 9.(U); }
+    @assert(hold.(U) == 9);
+    spill: any = (-7).(I);
+    @assert(spill.(I) == -7);
+    optional: ?I = -4;
+    optional_view: any = optional;
+    if inner := @inner(optional_view) {
+        @assert(@typeOf(inner) == I and inner.(I) == -4);
+        optional = -5;
+        @assert(inner.(I) == -5);
+    } else { @assert(false); }
+    xs: [2]I = .[-1, -2];
+    array: any = xs;
+    element := @anyElement(I, array, 1);
+    xs[1] = -3;
+    @assert(element.(I) == -3 and @typeOf(element) == I);
+    a.(I).(i64)
+}
+C :: @run borrow();
+main :: () {
+    view: any = g;
+    g = -9;
+    @assert(view.(I) == -9 and @rawAnyData(view) == (*g).(u64));
+    print("storage={} {} global={}\n", C, borrow(), view.(I).(i64));
+}

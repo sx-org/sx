@@ -1,0 +1,8 @@
+@import "modules/std.sx";
+signed :: (x: i64) -> i64 { x.(i8).(i64) }
+pun :: (x: u8) -> i64 { x.(i8).(i64) }
+invert :: (x: u8) -> bool { ~x == 255 }
+S :: @run signed(255);
+P :: @run pun(255);
+B :: @run invert(0);
+main :: () { print("signed={} {} pun={} {} invert={} {}\n", S, signed(255), P, pun(255), B, invert(0)); }

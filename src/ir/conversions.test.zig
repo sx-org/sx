@@ -206,6 +206,43 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     try std.testing.expect(l.noneReinterpretIsUnsafe(opt_ptr, .i64));
 }
 
+test "conversions: a pointer welds only over its own struct" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const tt = &module.types;
+
+    const box = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Box"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("n"), .ty = .i32 }}) catch unreachable } });
+    const other = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Other"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("q"), .ty = .i32 }}) catch unreachable } });
+
+    try std.testing.expect(l.noneReinterpretIsUnsafe(tt.ptrTo(other), tt.ptrTo(box)));
+    try std.testing.expect(!l.noneReinterpretIsUnsafe(tt.ptrTo(box), tt.manyPtrTo(box)));
+}
+
+test "conversions: a failable welds only into a channel holding its members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const tt = &module.types;
+
+    const a_name = tt.internString("A");
+    const x = tt.internMember(tt.internErrorOwner(&a_name, a_name), "X");
+    const b_name = tt.internString("B");
+    const y = tt.internMember(tt.internErrorOwner(&b_name, b_name), "Y");
+    const a = tt.internFailable(.i32, tt.errorSetType(.empty, &[_]u32{x}));
+    const b = tt.internFailable(.i32, tt.errorSetType(.empty, &[_]u32{y}));
+    const both = tt.internFailable(.i32, tt.errorSetType(.empty, &[_]u32{ x, y }));
+
+    try std.testing.expect(l.noneReinterpretIsUnsafe(a, b));
+    try std.testing.expect(!l.noneReinterpretIsUnsafe(a, both));
+}
+
 test "conversions: classifyCompare meets pointers, numbers, and refuses mixed signedness" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

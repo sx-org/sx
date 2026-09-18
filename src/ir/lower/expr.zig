@@ -23,7 +23,6 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const binOpSymbol = Lowering.binOpSymbol;
-const arithResultType = Lowering.arithResultType;
 const exprIsFailable = Lowering.exprIsFailable;
 const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
@@ -801,7 +800,7 @@ pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const N
     self.builder.store(slot, struct_val);
 
     // Create a nested scope with the binder bound to the alloca pointer
-    var init_scope = Scope.init(self.alloc, self.scope);
+    var init_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer init_scope.deinit();
     const saved_scope = self.scope;
     self.scope = &init_scope;
@@ -3692,7 +3691,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
                     // un-narrowed unwrap is rejected, not silently zeroed).
-                    const is_narrowed = self.narrowed.count() > 0 and self.narrowed.contains(id.name);
+                    const is_narrowed = self.provenPresent(id.name);
                     // Reading a cursor's storage as a value would copy a
                     // position the ABI owns; `*name` is the only way to reach
                     // it, and it never lowers the name as a value.
@@ -4139,7 +4138,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const place = self.resolveMutablePlace(uop.operand) orelse
                     break :blk self.diagDecrementTarget(node.span);
                 const ty = Lowering.placeType(place);
-                if (self.pointerElement(ty) != null) break :blk self.diagDecrementPointer(ty, node.span);
                 if (!self.isIntEx(ty)) break :blk self.diagDecrementNonInteger(ty, node.span);
                 break :blk self.lowerPlaceRmw(place, .sub_assign, self.builder.constInt(1, ty));
             }
@@ -4477,7 +4475,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // Statements that can appear in expression position
         .block => |blk| blk: {
             // Create a child scope for block-level variable shadowing
-            var block_scope = Scope.init(self.alloc, self.scope);
+            var block_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
             const saved_scope = self.scope;
             self.scope = &block_scope;
             const saved_defer_len = self.defer_stack.items.len;
@@ -5104,6 +5102,27 @@ fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) 
         const args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constBool(false);
         return self.builder.callBuiltin(.is_unsigned, args, .bool);
     }
+    if (target == .category and (std.mem.eql(u8, target.category, "int") or std.mem.eql(u8, target.category, "signed"))) {
+        const b = &self.builder;
+        const yes = self.freshBlock("is.integer");
+        const no = self.freshBlock("is.other");
+        const merge = self.freshBlock("is.merge");
+        const slot = b.alloca(.bool);
+        var cases = [_]inst_mod.SwitchBranch.IntegerCase{
+            .{ .signed = true, .target = yes },
+            .{ .signed = false, .target = yes },
+        };
+        const count: usize = if (std.mem.eql(u8, target.category, "int")) 2 else 1;
+        b.integerSwitchBr(tag, &.{}, cases[0..count], no);
+        b.switchToBlock(yes);
+        b.store(slot, b.constBool(true));
+        b.br(merge, &.{});
+        b.switchToBlock(no);
+        b.store(slot, b.constBool(false));
+        b.br(merge, &.{});
+        b.switchToBlock(merge);
+        return b.load(slot, .bool);
+    }
     const tags: []const u64 = switch (target) {
         .category => |word| self.resolveTypeCategoryTags(word),
         .concrete => |ty| blk: {
@@ -5410,7 +5429,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const it = self.inferExprType(bop.rhs);
         break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
     };
-    var ty = arithResultType(lhs_ty, rhs_ty);
+    var ty = self.arithResultType(lhs_ty, rhs_ty);
 
     if (self.unwrapOptionalOperand(lhs, ty, bop.lhs.span)) |payload| {
         lhs = payload;
@@ -5485,53 +5504,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // The RHS type the operand rules see: a narrowed optional shows its payload.
-    const eff_rhs_ty = blk: {
-        if (!rhs_ty.isBuiltin()) {
-            const ri = self.module.types.get(rhs_ty);
-            if (ri == .optional) break :blk ri.optional.child;
-        }
-        break :blk rhs_ty;
-    };
-
-    // `+` / `-` with a pointer operand is POINTER arithmetic — an
-    // element-scaled GEP or an element distance, never an integer add/sub on
-    // the address. Invalid pairings are rejected inside.
-    if (bop.op == .add or bop.op == .sub) {
-        const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
-        if (self.lowerPointerArith(bop.op, lhs, ty, rhs, eff_rhs_ty, span)) |result| return result;
-    }
-
-    // Reject scalar ops on incompatible operand types (e.g.
-    // `i64 + string`, `i64 < string`, `i64 & string`). The result type
-    // `ty` is derived from the LHS, so without this the op lowers as
-    // `<op> : <lhs>` and either reinterprets the RHS bytes (arithmetic
-    // / bitwise → garbage) or feeds mismatched LLVM types to `icmp`
-    // (ordering → verifier failure).
-    {
-        const group: enum { none, arith, ordering, bitwise } = switch (bop.op) {
-            .add, .sub, .mul, .div, .mod => .arith,
-            .lt, .lte, .gt, .gte => .ordering,
-            .bit_and, .bit_or, .bit_xor, .shl, .shr => .bitwise,
-            else => .none,
-        };
-        if (group != .none) {
-            const ok = switch (group) {
-                .arith => self.isArithOperand(ty) and self.isArithOperand(eff_rhs_ty),
-                .ordering => self.isOrderingOperand(ty) and self.isOrderingOperand(eff_rhs_ty),
-                .bitwise => self.isBitwiseOperand(ty) and self.isBitwiseOperand(eff_rhs_ty),
-                .none => true,
-            };
-            if (!ok) {
-                if (self.diagnostics) |diags| {
-                    diags.addFmt(.err, bop.lhs.span, "cannot apply '{s}' to operands of type '{s}' and '{s}'", .{
-                        binOpSymbol(bop.op), self.formatTypeName(ty), self.formatTypeName(eff_rhs_ty),
-                    });
-                }
-                return self.emitPlaceholder("operand-type-mismatch");
-            }
-        }
-    }
+    if (self.diagOperandTypes(bop.op, ty, self.operandType(rhs_ty), bop.lhs.span)) return self.emitPlaceholder("operand-type-mismatch");
 
     // Comparison operands meet at a comparison type — not a store.
     // Numeric pairs widen / promote to float; two pointers meet at `*void`;
@@ -5601,97 +5574,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .in_op => self.emitError("in_op", bop.lhs.span),
         .is_op => unreachable, // intercepted at the head of lowerBinaryOp
     };
-}
-
-/// Lower `+` / `-` when either operand is a pointer. `ptr ± int` over a sized
-/// pointee (either order for `+`) becomes an element-scaled GEP typed as the
-/// pointer; `p - q` over one nonzero-sized element type becomes the signed
-/// element distance. Every other pairing is rejected here with a located
-/// diagnostic, so no pointer ever reaches the integer add/sub arms. Null when
-/// neither operand is a pointer.
-pub fn lowerPointerArith(
-    self: *Lowering,
-    op: ast.BinaryOp.Op,
-    lhs: Ref,
-    lhs_ty: TypeId,
-    rhs: Ref,
-    rhs_ty: TypeId,
-    span: ast.Span,
-) ?Ref {
-    const l_elem = self.pointerElement(lhs_ty);
-    const r_elem = self.pointerElement(rhs_ty);
-    if (l_elem == null and r_elem == null) return null;
-
-    if (l_elem != null and r_elem != null) {
-        if (op == .add) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot add '{s}' and '{s}': pointer arithmetic offsets a pointer by an integer, and two addresses have no sum", .{
-                self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
-            });
-            return self.emitPlaceholder("pointer-sum");
-        }
-        if (l_elem.? != r_elem.?) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot subtract '{s}' from '{s}': a pointer difference is a count of elements, so both pointers must address the same element type", .{
-                self.formatTypeName(rhs_ty), self.formatTypeName(lhs_ty),
-            });
-            return self.emitPlaceholder("pointer-difference-element-mismatch");
-        }
-        return lowerPointerDistance(self, lhs, rhs, l_elem.?, span);
-    }
-
-    const ptr_on_left = l_elem != null;
-    if (!ptr_on_left and op == .sub) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot subtract '{s}' from '{s}': a pointer may only be subtracted from another pointer or offset by an integer", .{
-            self.formatTypeName(rhs_ty), self.formatTypeName(lhs_ty),
-        });
-        return self.emitPlaceholder("pointer-subtrahend");
-    }
-
-    const ptr_ty = if (ptr_on_left) lhs_ty else rhs_ty;
-    const off_ty = if (ptr_on_left) rhs_ty else lhs_ty;
-    if (!self.isIntEx(off_ty)) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot offset '{s}' by '{s}': a pointer offset must be an integer", .{
-            self.formatTypeName(ptr_ty), self.formatTypeName(off_ty),
-        });
-        return self.emitPlaceholder("pointer-offset-operand");
-    }
-
-    const elem = if (ptr_on_left) l_elem.? else r_elem.?;
-    if (elem == .void or elem == .noreturn) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot offset '{s}': pointer arithmetic requires a sized pointee, but '{s}' is unsized", .{
-            self.formatTypeName(ptr_ty), self.formatTypeName(elem),
-        });
-        return self.emitPlaceholder("pointer-offset-unsized");
-    }
-
-    // A GEP index is sign-extended to the pointer width, so a narrow or
-    // unsigned offset is widened at its OWN signedness first.
-    var index = if (ptr_on_left) rhs else lhs;
-    if (off_ty != .i64) index = self.coerceToType(index, off_ty, .i64);
-    if (op == .sub) index = self.builder.emit(.{ .neg = .{ .operand = index } }, .i64);
-    const base = if (ptr_on_left) lhs else rhs;
-    return self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = index } }, ptr_ty);
-}
-
-/// `p - q` over one nonzero-sized element type: the byte distance divided by
-/// the element size, as a signed element count.
-fn lowerPointerDistance(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, span: ast.Span) Ref {
-    if (elem == .void or elem == .noreturn) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': an unsized element has no element count", .{
-            self.formatTypeName(elem),
-        });
-        return self.emitPlaceholder("pointer-difference-unsized");
-    }
-    const stride = self.module.types.typeSizeBytes(elem);
-    if (stride == 0) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': a zero-sized element has no element count", .{
-            self.formatTypeName(elem),
-        });
-        return self.emitPlaceholder("pointer-difference-zero-sized");
-    }
-    const l_addr = self.builder.emit(.{ .bitcast = .{ .operand = lhs, .from = self.builder.getRefType(lhs), .to = .isize } }, .isize);
-    const r_addr = self.builder.emit(.{ .bitcast = .{ .operand = rhs, .from = self.builder.getRefType(rhs), .to = .isize } }, .isize);
-    const bytes = self.builder.sub(l_addr, r_addr, .isize);
-    return self.builder.div(bytes, self.builder.constInt(@intCast(stride), .isize), .isize);
 }
 
 /// Struct value equality: recursive field-wise `==` / `!=`.

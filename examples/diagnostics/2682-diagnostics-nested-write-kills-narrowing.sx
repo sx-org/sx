@@ -1,0 +1,13 @@
+// A reassignment kills flow narrowing from wherever it is written: the write
+// sits in an inner block, so leaving that block does not hand `x` back the
+// `== null` guard's proof of presence.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+
+main :: () {
+    x: ?i32 = 42;
+    if x == null { return; }
+    { x = null; }
+    take(x);    // error: optional does not implicitly unwrap
+}

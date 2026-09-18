@@ -1,0 +1,1 @@
+type assertion failed at 2396-diagnostics-any-distinct-integer.sx:6: expected @int(24, .signed), got i32

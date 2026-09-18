@@ -233,6 +233,11 @@ pub const SourceConstCtx = struct {
 
 // ── Scope ───────────────────────────────────────────────────────────────
 
+/// The identity of one declared binding. Flow narrowing proves a BINDING
+/// present, never a spelling, so a declaration shadowing a proven name has no
+/// proof of its own.
+pub const BindingId = enum(u64) { _ };
+
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
     /// "cannot assign" diagnostic: a for-loop
@@ -262,6 +267,9 @@ pub const Binding = struct {
         reflected_member_alias,
     };
 
+    /// Null until `Scope.put` introduces the binding; a binding value moved
+    /// into another scope keeps the identity it already has.
+    id: ?BindingId = null,
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
@@ -287,6 +295,8 @@ pub const Scope = struct {
     map: std.StringHashMap(Binding),
     fn_names: std.StringHashMap([]const u8), // bare name → mangled name for local functions
     parent: ?*Scope,
+    /// Where `put` takes a new binding's identity from.
+    next_binding_id: *u64,
     /// What a value binding reached by crossing this scope is.
     boundary: Boundary = .none,
 
@@ -305,11 +315,12 @@ pub const Scope = struct {
         lambda,
     };
 
-    pub fn init(alloc: Allocator, parent: ?*Scope) Scope {
+    pub fn init(alloc: Allocator, parent: ?*Scope, next_binding_id: *u64) Scope {
         return .{
             .map = std.StringHashMap(Binding).init(alloc),
             .fn_names = std.StringHashMap([]const u8).init(alloc),
             .parent = parent,
+            .next_binding_id = next_binding_id,
         };
     }
 
@@ -319,7 +330,17 @@ pub const Scope = struct {
     }
 
     pub fn put(self: *Scope, name: []const u8, binding: Binding) void {
-        self.map.put(name, binding) catch unreachable;
+        var declared = binding;
+        if (declared.id == null) {
+            declared.id = @enumFromInt(self.next_binding_id.*);
+            self.next_binding_id.* += 1;
+        }
+        self.map.put(name, declared) catch unreachable;
+    }
+
+    pub fn bindingId(self: *const Scope, name: []const u8) ?BindingId {
+        const b = self.lookup(name) orelse return null;
+        return b.id;
     }
 
     pub fn lookup(self: *const Scope, name: []const u8) ?Binding {
@@ -444,6 +465,11 @@ pub const Lowering = struct {
     int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
+    /// Hands out `BindingId`s to every scope this lowering builds. It is NOT
+    /// part of the per-body state the nested-body guards save and restore: an
+    /// identity reused across two bodies would carry one body's presence proof
+    /// into the other.
+    next_binding_id: u64 = 0,
     /// Transient: the user-facing const name of the body-local `@run` currently
     /// being lowered (`L :: @run f()`), so `lowerInlineComptime` can stamp the
     /// `__ct` wrapper's `comptime_display_name` for a friendly comptime-init
@@ -705,15 +731,16 @@ pub const Lowering = struct {
     lambda_sig_target: ?lower_closure.CallableSig = null,
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
-    /// Flow-sensitive narrowing. The set of local variable names
-    /// currently PROVEN present (`?T` known to carry a value) by a `!= null`
-    /// guard / branch. Region-scoped: `lowerBlock` snapshots+restores it, the
-    /// if-then branch narrows on `!= null`, a divergent `== null` guard narrows
-    /// the rest of the enclosing block, and an assignment kills the name's
-    /// narrowing. Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
+    /// Flow-sensitive narrowing. The set of local BINDINGS currently PROVEN
+    /// present (`?T` known to carry a value) by a `!= null` guard / branch.
+    /// Region-scoped: what a region narrows ends with the region, while an
+    /// assignment's kill outlives it; the if-then branch narrows on
+    /// `!= null`, and a divergent `== null` guard narrows the rest of the
+    /// enclosing block.
+    /// Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
-    narrowed: std.StringHashMap(void) = undefined,
+    narrowed: std.AutoHashMap(BindingId, void) = undefined,
     /// Dedupe for the "nested fn references enclosing local"
     /// diagnostic, keyed `"<fn-index>:<name>"`. The boundary guard fires at
     /// EVERY resolution layer (identifier read, getExprAlloca fast path,
@@ -1101,7 +1128,7 @@ pub const Lowering = struct {
         pack_arg_types: ?std.StringHashMap([]const TypeId),
         inline_return_target: ?InlineExit,
         error_boundary: ?ErrorBoundary,
-        narrowed: std.StringHashMap(void),
+        narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
@@ -1139,7 +1166,7 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
             };
-            l.narrowed = std.StringHashMap(void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
@@ -1214,7 +1241,7 @@ pub const Lowering = struct {
     ///   in the nested body would store and branch across a function boundary.
     pub const NestedBodyGuard = struct {
         l: *Lowering,
-        narrowed: std.StringHashMap(void),
+        narrowed: std.AutoHashMap(BindingId, void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
         break_target: ?BlockId,
@@ -1245,7 +1272,7 @@ pub const Lowering = struct {
                 .error_boundary = l.error_boundary,
                 .current_fn_decl = l.current_fn_decl,
             };
-            l.narrowed = std.StringHashMap(void).init(l.alloc);
+            l.narrowed = std.AutoHashMap(BindingId, void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.break_target = null;
@@ -1396,7 +1423,7 @@ pub const Lowering = struct {
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
             .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
             .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
-            .narrowed = std.StringHashMap(void).init(module.alloc),
+            .narrowed = std.AutoHashMap(BindingId, void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .lambda_env_types = std.AutoHashMap(LambdaKey, TypeId).init(module.alloc),
             .env_lambdas = std.AutoHashMap(TypeId, *const ast.Lambda).init(module.alloc),
@@ -1460,7 +1487,7 @@ pub const Lowering = struct {
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM
         // emission as `func.ret`. Without the temporary scope, whether it slips
         // through depends on a same-named binding lingering from earlier lowering.
-        var tmp_scope = Scope.init(self.alloc, self.scope);
+        var tmp_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
         defer tmp_scope.deinit();
         const saved_scope = self.scope;
         self.scope = &tmp_scope;
@@ -2605,6 +2632,19 @@ pub const Lowering = struct {
         return if (self.module.types.sliceInfoOf(pointee)) |ps| ps.element else null;
     }
 
+    pub fn provenPresent(self: *Lowering, name: []const u8) bool {
+        if (self.narrowed.count() == 0) return false;
+        const scope = self.scope orelse return false;
+        const id = scope.bindingId(name) orelse return false;
+        return self.narrowed.contains(id);
+    }
+
+    pub fn killNarrowing(self: *Lowering, name: []const u8) void {
+        const scope = self.scope orelse return;
+        const id = scope.bindingId(name) orelse return;
+        _ = self.narrowed.remove(id);
+    }
+
     /// The payload type a container use site (index, slice, generic binding)
     /// sees for `node`: a guard-narrowed optional local whose payload is
     /// indexable presents that payload — the guard proved presence, so `o[i]`
@@ -2613,7 +2653,7 @@ pub const Lowering = struct {
     /// optional-chain result, and identifier inference (`q := o`) never peels.
     pub fn narrowedContainerChild(self: *Lowering, node: *const ast.Node) ?TypeId {
         if (node.data != .identifier) return null;
-        if (self.narrowed.count() == 0 or !self.narrowed.contains(node.data.identifier.name)) return null;
+        if (!self.provenPresent(node.data.identifier.name)) return null;
         const ty = self.inferExprType(node);
         if (ty.isBuiltin()) return null;
         const info = self.module.types.get(ty);
@@ -2664,54 +2704,9 @@ pub const Lowering = struct {
         return ty == .f32 or ty == .f64;
     }
 
-    /// Result type of an arithmetic / bitwise / shift binary op over two
-    /// scalar operand types. This is the single promotion rule shared by the
-    /// value path (`lowerBinaryOp`) and AST-level inference
-    /// (`ExprTyper.inferType`'s binary-op arm), so static typing reports
-    /// exactly the type the lowered value carries. An integer LHS with a
-    /// floating-point RHS promotes to the float (`i64 + f64` → `f64`); every
-    /// other pairing — including vectors / structs, whose `isInt` is false —
-    /// takes the LHS type. Comparison / logical ops never reach here (they
-    /// are `.bool` at both sites).
-    pub fn arithResultType(lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
-        if (isInt(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
+    pub fn arithResultType(self: *Lowering, lhs_ty: TypeId, rhs_ty: TypeId) TypeId {
+        if (self.isIntEx(lhs_ty) and isFloat(rhs_ty)) return rhs_ty;
         return lhs_ty;
-    }
-
-    /// The element type a pointer addresses — the pointee of `*T`, the element
-    /// of `[*]T`. Null for every non-pointer type.
-    pub fn pointerElement(self: *Lowering, ty: TypeId) ?TypeId {
-        if (ty.isBuiltin()) return null;
-        return switch (self.module.types.get(ty)) {
-            .pointer => |p| p.pointee,
-            .many_pointer => |p| p.element,
-            else => null,
-        };
-    }
-
-    /// Result type of a `+` / `-` that is POINTER arithmetic: an offset
-    /// (`ptr ± int`, either operand order for `+`) yields the pointer type, a
-    /// same-element difference yields `isize`. Null for every other pairing,
-    /// including the invalid ones — `lowerPointerArith` rejects those with a
-    /// diagnostic. Shared by `lowerBinaryOp` and AST-level inference so a
-    /// static type matches the value produced.
-    pub fn pointerArithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ?TypeId {
-        if (op != .add and op != .sub) return null;
-        const l_elem = self.pointerElement(lhs_ty);
-        const r_elem = self.pointerElement(rhs_ty);
-        if (l_elem != null and r_elem != null) {
-            return if (op == .sub and l_elem.? == r_elem.?) .isize else null;
-        }
-        if (l_elem != null) return if (self.isIntEx(rhs_ty)) lhs_ty else null;
-        if (r_elem != null and op == .add) return if (self.isIntEx(lhs_ty)) rhs_ty else null;
-        return null;
-    }
-
-    fn isInt(ty: TypeId) bool {
-        return switch (ty) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => true,
-            else => false,
-        };
     }
 
     /// Carry-rule resolution outcome for a namespace alias, diagnostic-free.
@@ -3091,15 +3086,7 @@ pub const Lowering = struct {
     }
 
     pub fn isIntEx(self: *Lowering, ty: TypeId) bool {
-        if (isInt(ty)) return true;
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            return switch (info) {
-                .signed, .unsigned => true,
-                else => false,
-            };
-        }
-        return false;
+        return self.module.types.integerLayout(ty) != null;
     }
 
     /// The integer type a payload-less enum's value IS — its declared backing
@@ -3201,15 +3188,12 @@ pub const Lowering = struct {
     /// custom widths), floats, and SIMD vectors. `.unresolved` returns true so
     /// a type we couldn't infer is never diagnosed — the check only fires on a
     /// concretely incompatible operand (e.g. `string`, a struct, an enum).
-    /// A pointer is not an arithmetic operand: `lowerBinaryOp` routes `+` / `-`
-    /// to `lowerPointerArith` before this check, so a pointer reaching it is
-    /// under `* / %` and is rejected.
     pub fn isArithOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or isFloat(ty)) return true;
+        if (self.isIntEx(ty) or isFloat(ty)) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .vector => true,
+            .vector => true,
             else => false,
         };
     }
@@ -3221,10 +3205,10 @@ pub const Lowering = struct {
     /// un-inferable operand is never falsely diagnosed.
     pub fn isOrderingOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or isFloat(ty) or ty == .bool) return true;
+        if (self.isIntEx(ty) or isFloat(ty) or ty == .bool) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .@"enum", .pointer, .many_pointer, .vector => true,
+            .@"enum", .pointer, .many_pointer, .vector => true,
             else => false,
         };
     }
@@ -3235,10 +3219,10 @@ pub const Lowering = struct {
     /// passes (see `isOrderingOperand`).
     pub fn isBitwiseOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
-        if (isInt(ty) or ty == .bool) return true;
+        if (self.isIntEx(ty) or ty == .bool) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .@"enum", .vector => true,
+            .@"enum", .vector => true,
             else => false,
         };
     }
@@ -3269,6 +3253,34 @@ pub const Lowering = struct {
         return "an expression of an incompatible type";
     }
 
+    /// The type an operand carries into an op: an optional shows the payload,
+    /// which is what lowering unwraps it to.
+    pub fn operandType(self: *Lowering, ty: TypeId) TypeId {
+        if (ty.isBuiltin()) return ty;
+        const info = self.module.types.get(ty);
+        return if (info == .optional) info.optional.child else ty;
+    }
+
+    /// Reject a scalar op whose operands are incompatible with it (e.g.
+    /// `i64 + string`, `[*]i32 + i64`, `i64 & string`). The result type is
+    /// derived from the LHS, so without this the op lowers as `<op> : <lhs>`
+    /// and either reinterprets the RHS bytes (arithmetic / bitwise → garbage)
+    /// or feeds mismatched LLVM types to `icmp` (ordering → verifier failure).
+    /// True when the pairing was diagnosed.
+    pub fn diagOperandTypes(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId, span: ast.Span) bool {
+        const ok = switch (op) {
+            .add, .sub, .mul, .div, .mod => self.isArithOperand(lhs_ty) and self.isArithOperand(rhs_ty),
+            .lt, .lte, .gt, .gte => self.isOrderingOperand(lhs_ty) and self.isOrderingOperand(rhs_ty),
+            .bit_and, .bit_or, .bit_xor, .shl, .shr => self.isBitwiseOperand(lhs_ty) and self.isBitwiseOperand(rhs_ty),
+            else => true,
+        };
+        if (ok) return false;
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}' to operands of type '{s}' and '{s}'", .{
+            binOpSymbol(op), self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+        });
+        return true;
+    }
+
     pub fn binOpSymbol(op: ast.BinaryOp.Op) []const u8 {
         return switch (op) {
             .add => "+",
@@ -3294,33 +3306,14 @@ pub const Lowering = struct {
         };
     }
 
-    fn typeBits(ty: TypeId) u32 {
+    pub fn typeBitsEx(self: *Lowering, ty: TypeId) u32 {
+        if (self.module.types.integerLayout(ty)) |layout| return layout.width;
         return switch (ty) {
             .bool => 1,
-            .i8, .u8 => 8,
-            .i16, .u16 => 16,
-            .i32, .u32 => 32,
-            .i64, .u64 => 64,
-            .usize, .isize => 0, // target-dependent — use typeBitsEx
             .f32 => 32,
             .f64 => 64,
             else => 0,
         };
-    }
-
-    pub fn typeBitsEx(self: *Lowering, ty: TypeId) u32 {
-        if (ty == .usize or ty == .isize) return @as(u32, self.module.types.pointer_size) * 8;
-        const b = typeBits(ty);
-        if (b > 0) return b;
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            return switch (info) {
-                .signed => |w| @as(u32, w),
-                .unsigned => |w| @as(u32, w),
-                else => 0,
-            };
-        }
-        return 0;
     }
 
     // --- lower/error.zig (lower_error) ---
@@ -3349,6 +3342,7 @@ pub const Lowering = struct {
     pub const channelIsPlaceholder = lower_error.channelIsPlaceholder;
     pub const checkErrorSetSubset = lower_error.checkErrorSetSubset;
     pub const checkErrorSetValueCoercion = lower_error.checkErrorSetValueCoercion;
+    pub const errorSetValueRetypeIsLegal = lower_error.errorSetValueRetypeIsLegal;
     pub const diagTagsNotInSet = lower_error.diagTagsNotInSet;
     pub const lowerRaise = lower_error.lowerRaise;
     pub const lowerFailableSuccessReturn = lower_error.lowerFailableSuccessReturn;
@@ -3511,7 +3505,6 @@ pub const Lowering = struct {
     pub const diagContextRootWrite = lower_stmt.diagContextRootWrite;
     pub const diagNonstoreRootWrite = lower_stmt.diagNonstoreRootWrite;
     pub const diagDecrementTarget = lower_stmt.diagDecrementTarget;
-    pub const diagDecrementPointer = lower_stmt.diagDecrementPointer;
     pub const diagDecrementNonInteger = lower_stmt.diagDecrementNonInteger;
     pub const lowerMultiAssign = lower_stmt.lowerMultiAssign;
     pub const lowerDestructureDecl = lower_stmt.lowerDestructureDecl;
@@ -3530,10 +3523,11 @@ pub const Lowering = struct {
     pub const matchContributesNull = lower_control_flow.matchContributesNull;
     pub const setMergeParamType = lower_control_flow.setMergeParamType;
     pub const narrowableLocal = lower_control_flow.narrowableLocal;
-    pub const nullCmpName = lower_control_flow.nullCmpName;
+    pub const nullCmpBinding = lower_control_flow.nullCmpBinding;
     pub const collectPresentIfTrue = lower_control_flow.collectPresentIfTrue;
     pub const collectPresentIfFalse = lower_control_flow.collectPresentIfFalse;
     pub const narrowSnapshot = lower_control_flow.narrowSnapshot;
+    pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;
     pub const applyNarrowing = lower_control_flow.applyNarrowing;
     pub const tryConstBoolCondition = lower_control_flow.tryConstBoolCondition;
@@ -3737,7 +3731,6 @@ pub const Lowering = struct {
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
-    pub const anyBoxType = lower_coerce.anyBoxType;
     pub const refuseRvalueInterfaceErasure = lower_coerce.refuseRvalueInterfaceErasure;
     pub const refuseNullAtNonOptional = lower_coerce.refuseNullAtNonOptional;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;
@@ -3756,7 +3749,6 @@ pub const Lowering = struct {
     pub const viewOfConcreteAddr = lower_coerce.viewOfConcreteAddr;
     pub const inferConcreteTypeName = lower_coerce.inferConcreteTypeName;
     pub const lowerAnyToF64Dispatch = lower_coerce.lowerAnyToF64Dispatch;
-    pub const lowerAnyToIntDispatch = lower_coerce.lowerAnyToIntDispatch;
     pub const widenAnyToF64 = lower_coerce.widenAnyToF64;
     pub const boxAnyOf = lower_coerce.boxAnyOf;
     pub const buildDefaultValue = lower_coerce.buildDefaultValue;
@@ -4043,7 +4035,6 @@ pub const Lowering = struct {
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
     pub const lowerIs = lower_expr.lowerIs;
     pub const conformanceAsk = lower_expr.conformanceAsk;
-    pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;
     pub const lowerStructEquality = lower_expr.lowerStructEquality;

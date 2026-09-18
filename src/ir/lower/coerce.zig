@@ -579,74 +579,26 @@ pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
     return self.builder.makeAny(tid_ref, ctx_ref);
 }
 
-/// The type a value boxes under: the tag space has only the builtin int
-/// widths, so an arbitrary-width int boxes as the builtin it widens to.
-pub fn anyBoxType(self: *Lowering, src_ty: TypeId) TypeId {
-    if (src_ty.isBuiltin()) return src_ty;
-    return switch (self.module.types.get(src_ty)) {
-        .signed => |w| switch (w) {
-            8 => .i8,
-            16 => .i16,
-            32 => .i32,
-            64 => .i64,
-            else => if (w <= 32) TypeId.i32 else TypeId.i64,
-        },
-        .unsigned => |w| switch (w) {
-            8 => .u8,
-            16 => .u16,
-            32 => .u32,
-            64 => .u64,
-            else => if (w <= 32) TypeId.u32 else TypeId.u64,
-        },
-        else => src_ty,
-    };
-}
-
-/// Box a concrete value into an `any` view `{tag, data}`. `any` is a
-/// type-erased BORROW: the data slot holds the value's ADDRESS.
-/// - An addressable lvalue operand (same discipline as protocol erasure:
-///   lvalue node, not a by-value SSA binding) borrows its storage via
-///   `refStorageAddress` — zero copy, and mutations of the source stay
-///   visible through a live view.
-/// - Anything else (rvalues, node-less coercion sites) spills to a frame
-///   temp and points at it — the temp lives for the enclosing frame.
-/// Arbitrary-width ints are widened into their tag-normalized builtin
-/// (`anyTag` maps e.g. `@int(24, .unsigned)` → `u32`), so `data` ALWAYS points
-/// at exactly `@sizeOf(tag)` valid bytes — the invariant every consumer (typed
-/// unbox loads, the raw layer's shallow copies) relies on.
+/// An any view borrows exact typed storage. Addressable lvalues retain their
+/// address; other values spill to storage that lives for the enclosing frame.
 pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) Ref {
-    // A protocol source is never boxed as itself: the box of a protocol
-    // value is the concrete receiver's view (§7.3). Every implicit boxing
-    // position — declaration target, assignment, call argument, field
-    // init, container element, return — funnels through here, so they all
-    // agree with the explicit `xx p : any` conversion.
+    // Protocol and open-set views retain the concrete referent identity (§7.3).
     if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val);
-    // An open set is never boxed as the set: the view is of the MEMBER it
-    // carries — the member's address inside the slot, and the member's own type
-    // (spec: Open Sets — what a set value answers about itself). Every boxing
-    // position funnels through here, so they all agree with `v.(any)`.
     if (self.isOpenSet(src_ty)) return self.openSetAnyView(src_ty, val, node);
     if (src_ty == .void) {
         // A void has no storage; the view is `{void, null}`.
         return self.builder.boxAnyAt(self.builder.constNull(self.module.types.ptrTo(.void)), .void);
     }
-    // Tag-normalize arbitrary-width ints (the tag space only has the
-    // builtin widths; a borrow of a 3-byte value under a 4-byte tag
-    // would overread).
-    const box_ty = anyBoxType(self, src_ty);
-    const v = if (box_ty == src_ty) val else self.builder.widen(val, src_ty, box_ty);
-    if (box_ty == src_ty) {
-        if (node) |n| {
-            if (self.isLvalueExpr(n) and !self.isByValueBindingIdent(n)) {
-                if (self.refStorageAddress(val)) |addr| {
-                    return self.builder.boxAnyAt(addr, box_ty);
-                }
+    if (node) |n| {
+        if (self.isLvalueExpr(n) and !self.isByValueBindingIdent(n)) {
+            if (self.refStorageAddress(val)) |addr| {
+                return self.builder.boxAnyAt(addr, src_ty);
             }
         }
     }
-    const slot = self.builder.alloca(box_ty);
-    self.builder.store(slot, v);
-    return self.builder.boxAnyAt(slot, box_ty);
+    const slot = self.builder.alloca(src_ty);
+    self.builder.store(slot, val);
+    return self.builder.boxAnyAt(slot, src_ty);
 }
 
 /// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
@@ -815,7 +767,7 @@ fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
     const src = self.current_source_file;
     // A declared default lowers with no scope; the bound bool lives on a
     // child scope installed for the synthesized call.
-    var tmp = Scope.init(self.alloc, self.scope);
+    var tmp = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer tmp.deinit();
     const saved = self.scope;
     self.scope = &tmp;
@@ -1039,10 +991,7 @@ pub fn lowerAnyToF64Dispatch(self: *Lowering, any_val: Ref) Ref {
     return self.builder.load(result_slot, .f64);
 }
 
-/// The f64 reading of an `any` carrying one of the float tags in `tags` (the
-/// float analog of `lowerAnyToIntDispatch`): an f32 view is an exact-width
-/// 4-byte load that extends afterwards, so a set spanning both widths reads
-/// per tag.
+/// Float views load their tagged width before extending to f64.
 pub fn widenAnyToF64(self: *Lowering, any_val: Ref, tags: []const u64) Ref {
     var has_f32 = false;
     var has_f64 = false;
@@ -1057,76 +1006,6 @@ pub fn widenAnyToF64(self: *Lowering, any_val: Ref, tags: []const u64) Ref {
         return self.builder.widen(f32_val, .f32, .f64);
     }
     return self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, .f64);
-}
-
-/// Generate a mini-dispatch for unboxing an `any` to a 64-bit int inside a
-/// `case int:`-style match arm whose tag set spans several widths (the int
-/// analog of `lowerAnyToF64Dispatch`). Under the borrow representation an
-/// unbox is an EXACT-width load through the view — a bare 8-byte load with
-/// a narrower tag would overread — so switch on the tag: each sub-8-byte
-/// int tag loads its own width and sign/zero-extends per its signedness;
-/// the default arm (8-byte tags) loads the target directly.
-pub fn lowerAnyToIntDispatch(self: *Lowering, any_val: Ref, dst_ty: TypeId, tags: []const u64) Ref {
-    const result_slot = self.builder.alloca(dst_ty);
-    const tag = self.builder.structGet(any_val, 1, .i64);
-
-    const default_bb = self.freshBlock("int.unbox.wide");
-    const merge_bb = self.freshBlock("int.merge");
-
-    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
-    defer cases.deinit(self.alloc);
-    var case_tids = std.ArrayList(TypeId).empty;
-    defer case_tids.deinit(self.alloc);
-    var case_blocks = std.ArrayList(inst_mod.BlockId).empty;
-    defer case_blocks.deinit(self.alloc);
-
-    for (tags) |t| {
-        const tid = TypeId.fromIndex(@intCast(t));
-        if (!isNarrowIntTag(self, tid)) continue;
-        const bb = self.freshBlock("int.unbox.narrow");
-        cases.append(self.alloc, .{ .value = @intCast(t), .target = bb, .args = &.{} }) catch unreachable;
-        case_tids.append(self.alloc, tid) catch unreachable;
-        case_blocks.append(self.alloc, bb) catch unreachable;
-    }
-    if (cases.items.len == 0) {
-        // No narrow tags in the set — a plain exact-width load suffices.
-        return self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, dst_ty);
-    }
-
-    self.builder.switchBr(tag, cases.items, default_bb, &.{});
-
-    for (case_tids.items, case_blocks.items) |tid, bb| {
-        self.builder.switchToBlock(bb);
-        const narrow = self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, tid);
-        const wide = self.builder.widen(narrow, tid, dst_ty);
-        self.builder.store(result_slot, wide);
-        self.builder.br(merge_bb, &.{});
-    }
-
-    self.builder.switchToBlock(default_bb);
-    const direct = self.builder.emit(.{ .unbox_any = .{ .operand = any_val } }, dst_ty);
-    self.builder.store(result_slot, direct);
-    self.builder.br(merge_bb, &.{});
-
-    self.builder.switchToBlock(merge_bb);
-    return self.builder.load(result_slot, dst_ty);
-}
-
-/// The sub-8-byte int tags an int-category match can carry: the narrow
-/// builtins, plus arbitrary-width ints (a VIEW of an `@int(N, …)` struct field
-/// carries its true tag) whose ABI size is under a word.
-fn isNarrowIntTag(self: *Lowering, tid: TypeId) bool {
-    switch (tid) {
-        .i8, .u8, .i16, .u16, .i32, .u32 => return true,
-        else => {},
-    }
-    if (!tid.isBuiltin()) {
-        switch (self.module.types.get(tid)) {
-            .signed, .unsigned => return self.module.types.typeSizeBytes(tid) < 8,
-            else => {},
-        }
-    }
-    return false;
 }
 
 /// Produce a default value for a type, applying struct field defaults.
@@ -1586,9 +1465,66 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // a same-width scalar occupy the same bytes but mean different things, so
     // the store types an address as a number the program then does arithmetic
     // on (or a number as an address it then dereferences). Pointer↔pointer
-    // stays in the same-width family below (`*T → [*]T`).
+    // stays in the same-width family below (`*T → [*]T`) unless the two bottom
+    // out on different structs.
     if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
+    if (structPointeesDiffer(self, src_ty, dst_ty)) return true;
+    if (failableChannelEscapes(self, src_ty, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
+}
+
+/// Two addresses that bottom out on DIFFERENT structs at the same indirection
+/// depth (`*A → *B`). Both sides are one word, so the width rule reads the
+/// store as bit-compatible, but the destination names a layout the source's
+/// bytes do not hold: the program reads `B`'s fields out of an `A`. Two
+/// layouts are exempt — a protocol, which the source concrete lends a view of,
+/// and a foreign runtime class, whose hierarchy lives in the runtime rather
+/// than the type table.
+fn structPointeesDiffer(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    var src = src_ty;
+    var dst = dst_ty;
+    while (true) {
+        const src_pointee = pointeeOf(self, src) orelse return false;
+        const dst_pointee = pointeeOf(self, dst) orelse return false;
+        if (src_pointee == dst_pointee) return false;
+        if (!isStructType(self, src_pointee) or !isStructType(self, dst_pointee)) {
+            src = src_pointee;
+            dst = dst_pointee;
+            continue;
+        }
+        if (self.getProtocolInfo(dst_pointee) != null) return false;
+        return !isRuntimeClass(self, src_pointee) and !isRuntimeClass(self, dst_pointee);
+    }
+}
+
+fn pointeeOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .pointer => |p| p.pointee,
+        .many_pointer => |p| p.element,
+        else => null,
+    };
+}
+
+fn isStructType(self: *Lowering, ty: TypeId) bool {
+    return !ty.isBuiltin() and self.module.types.get(ty) == .@"struct";
+}
+
+fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
+    const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
+    return self.program_index.runtime_class_map.contains(name);
+}
+
+/// A failable whose members the destination failable's channel does not hold.
+/// Two channels are one width whenever their payload areas coincide, so the
+/// width rule reads the store as bit-compatible, but a `catch` over the
+/// destination can never name the member the value carries.
+fn failableChannelEscapes(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    if (src_ty.isBuiltin() or dst_ty.isBuiltin()) return false;
+    const src = self.module.types.get(src_ty);
+    const dst = self.module.types.get(dst_ty);
+    if (src != .failable or dst != .failable) return false;
+    return !self.errorSetValueRetypeIsLegal(src.failable.err, dst.failable.err);
 }
 
 fn isFunctionType(self: *Lowering, ty: TypeId) bool {

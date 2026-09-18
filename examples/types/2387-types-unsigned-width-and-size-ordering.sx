@@ -1,0 +1,5 @@
+@import "modules/std.sx";
+U :: @int(24, .unsigned);
+less :: (a: U, b: U) -> bool { a < b }
+size_less :: (a: usize, b: usize) -> bool { a < b }
+main :: () { print("u24={} usize={}\n", less(16777215, 1), size_less(usize.max, 1)); }

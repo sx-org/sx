@@ -1,0 +1,14 @@
+// A reassignment only kills narrowing on the paths that carry it: the write
+// below sits in an arm that returns, so the code after the `if` is reached
+// solely by the arm where `x` is still the guard's proven payload.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+clear :: () -> bool { return false; }
+
+main :: () {
+    x: ?i32 = 42;
+    if x == null { return; }
+    if clear() { x = null; return; }
+    take(x);
+}

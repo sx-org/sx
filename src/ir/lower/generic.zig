@@ -147,7 +147,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
     // Create scope and bind params
-    var scope = Scope.init(self.alloc, null);
+    var scope = Scope.init(self.alloc, null, &self.next_binding_id);
     defer scope.deinit();
     self.scope = &scope;
 
@@ -1073,32 +1073,10 @@ fn hasUnresolvedElement(info: types.TypeInfo) bool {
 pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     var tags = std.ArrayList(u64).empty;
 
-    // Fixed builtin categories
     if (std.mem.eql(u8, name, "int")) {
-        tags.append(self.alloc, TypeId.i8.index()) catch {};
-        tags.append(self.alloc, TypeId.i16.index()) catch {};
-        tags.append(self.alloc, TypeId.i32.index()) catch {};
-        tags.append(self.alloc, TypeId.i64.index()) catch {};
-        tags.append(self.alloc, TypeId.u8.index()) catch {};
-        tags.append(self.alloc, TypeId.u16.index()) catch {};
-        tags.append(self.alloc, TypeId.u32.index()) catch {};
-        tags.append(self.alloc, TypeId.u64.index()) catch {};
-        tags.append(self.alloc, TypeId.usize.index()) catch {};
-        tags.append(self.alloc, TypeId.isize.index()) catch {};
-        // Arbitrary-width ints (`@int(N, …)`) match `case int:` too. Boxing
-        // normalizes them into a builtin tag (`boxAnyOf`), but an interior
-        // VIEW (`@field`) carries the member's TRUE tag — normalization
-        // can't reach a view, so the category list must cover these tags or
-        // a view of an arb-width field falls through every arm.
-        for (self.module.types.infos.items, 0..) |info, idx| {
-            // The builtin widths mirror into the table as `.signed`/
-            // `.unsigned` infos at their builtin slots — already listed
-            // above; only USER-slot (true arbitrary-width) entries add.
-            if (TypeId.fromIndex(@intCast(idx)).isBuiltin()) continue;
-            switch (info) {
-                .signed, .unsigned => tags.append(self.alloc, @intCast(idx)) catch {},
-                else => {},
-            }
+        for (0..self.module.types.infos.items.len) |idx| {
+            if (self.module.types.integerLayout(TypeId.fromIndex(@intCast(idx))) != null)
+                tags.append(self.alloc, @intCast(idx)) catch {};
         }
         return tags.items;
     }
@@ -1308,7 +1286,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
         defer self.scope = saved_scope;
         if (arm.capture) |cap| {
             if (matchCaptureType(self, subject_ty, arm.pattern)) |cap_ty| {
-                cap_scope = Scope.init(self.alloc, self.scope);
+                cap_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
                 cap_scope.?.put(cap, .{ .ref = Ref.none, .ty = cap_ty, .is_alloca = false });
                 self.scope = &cap_scope.?;
             }

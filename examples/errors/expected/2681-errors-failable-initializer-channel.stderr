@@ -1,0 +1,11 @@
+error: cannot initialize 'v' of type '(i32, !B)' with a value of type '(i32, !A)'
+  --> examples/errors/2681-errors-failable-initializer-channel/main.sx:12:20
+   |
+12 |     v: (i32, !B) = lib.failsA();
+   |                    ^^^^^^^^^^^^
+
+error: cannot initialize 'w' of type '(i32, !IoErr (examples/errors/2681-errors-failable-initializer-channel/main.sx))' with a value of type '(i32, !IoErr (examples/errors/2681-errors-failable-initializer-channel/lib.sx))'
+  --> examples/errors/2681-errors-failable-initializer-channel/main.sx:13:24
+   |
+13 |     w: (i32, !IoErr) = lib.failsIo();
+   |                        ^^^^^^^^^^^^^

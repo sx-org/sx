@@ -1,0 +1,5 @@
+@import "modules/std.sx";
+I :: @int(24, .signed);
+floating :: (x: I) -> f64 { x.(f64) }
+integer :: (x: f64) -> I { x.(I) }
+main :: () { print("{} {}\n", floating(-6), integer(-6.0).(i64)); }

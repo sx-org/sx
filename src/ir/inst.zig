@@ -601,6 +601,9 @@ pub const BuiltinId = enum(u16) {
     // implements them; emit_llvm bails (Type is comptime-only).
     type_name,
     is_unsigned,
+    // Requires an integer-tagged any; loads its exact type and sign/zero-extends
+    // to a 64-bit word.
+    read_integer,
     // Runtime-Type scalar reflection: tag-indexed table reads
     // (sizes/aligns/flag-bits); rt_type_eq is a plain tag compare.
     @"rt_@sizeOf",
@@ -674,6 +677,14 @@ pub const SwitchBranch = struct {
     cases: []const Case,
     default: BlockId,
     default_args: []const Ref,
+    // Predicates interpret the operand as a TypeId, after concrete cases,
+    // in first-wins order. Their destinations have no block parameters.
+    integer_cases: []const IntegerCase = &.{},
+
+    pub const IntegerCase = struct {
+        signed: bool,
+        target: BlockId,
+    };
 
     pub const Case = struct {
         value: i64,
@@ -767,7 +778,6 @@ pub const Function = struct {
     /// declaring file, which for std/core.sx means all of them.
     intrinsic: ?intrinsics.Id = null,
 
-
     /// For a body-local `@run` wrapper (`L :: @run f()` → an `is_comptime`
     /// `__ct_N` function): the user-facing const NAME the `@run` initializes, so
     /// a comptime-init failure can report `comptime init of 'L' failed` rather
@@ -808,7 +818,6 @@ pub const Function = struct {
     };
 
     pub const CallingConvention = types.TypeInfo.CallConv;
-
 
     /// True when the function exists only at compile time, whatever the reason.
     /// The emit gates want exactly this — never the specific role.

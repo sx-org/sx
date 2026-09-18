@@ -107,7 +107,7 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
     switch (node.data) {
         .block => |blk| {
             // Create a child scope for block-level variable shadowing
-            var block_scope = Scope.init(self.alloc, self.scope);
+            var block_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
             const saved_scope = self.scope;
             self.scope = &block_scope;
             const saved_defer_len = self.defer_stack.items.len;
@@ -1691,12 +1691,6 @@ pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
     return self.emitPlaceholder("pre-decrement");
 }
 
-pub fn diagDecrementPointer(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot pre-decrement pointer target '{s}' — use '-= 1' for pointer arithmetic", .{self.formatTypeName(ty)});
-    return self.emitPlaceholder("pre-decrement");
-}
-
 pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "pre-decrement needs an integer target; got '{s}'", .{self.formatTypeName(ty)});
@@ -2193,8 +2187,7 @@ fn tryLowerQualifiedGlobalStore(
     return .handled;
 }
 
-/// Map a compound-assignment op to the binary op it folds with, for the
-/// get-modify-set rewrite of `obj.prop OP= x` (a `@set` property).
+/// Map a compound-assignment op to the binary op it folds with.
 fn compoundAssignToBinaryOp(op: ast.Assignment.Op) ast.BinaryOp.Op {
     return switch (op) {
         .add_assign => .add,
@@ -2384,7 +2377,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // Narrowing): a fresh value may be null, so the name is not proven
     // present. Drop it from the narrowed set before lowering the store.
     if (asgn.target.data == .identifier) {
-        _ = self.narrowed.remove(asgn.target.data.identifier.name);
+        self.killNarrowing(asgn.target.data.identifier.name);
     }
 
     // Writes through a constant are rejected at compile time:
@@ -2670,9 +2663,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // payload write is a different lvalue).
             if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
                 const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.narrowed.count() > 0 and
-                    self.narrowed.contains(fa.object.data.identifier.name))
-                {
+                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
                     const child = ninfo.optional.child;
                     if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
                         const opt_val = self.builder.load(obj_ptr, obj_ty);
@@ -2916,9 +2907,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             var obj_ty = self.inferExprType(fa.object);
             if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
                 const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.narrowed.count() > 0 and
-                    self.narrowed.contains(fa.object.data.identifier.name))
-                {
+                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
                     const child = ninfo.optional.child;
                     if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
                         const opt_val = self.builder.load(obj_ptr, obj_ty);
@@ -3430,9 +3419,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // spelling, same as the store path.
             if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
                 const ninfo = self.module.types.get(obj_ty);
-                if (ninfo == .optional and self.narrowed.count() > 0 and
-                    self.narrowed.contains(fa.object.data.identifier.name))
-                {
+                if (ninfo == .optional and self.provenPresent(fa.object.data.identifier.name)) {
                     const child = ninfo.optional.child;
                     if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
                         const opt_val = self.builder.load(obj_ptr, obj_ty);
@@ -3601,8 +3588,10 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
 }
 
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
-    if (op != .assign and self.pointerElement(ty) != null) return emitPointerCompoundOp(self, lhs, rhs, op, ty);
     const rhs_ty = self.builder.getRefType(rhs);
+    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
+    if (op != .assign and self.diagOperandTypes(compoundAssignToBinaryOp(op), ty, self.operandType(rhs_ty), span))
+        return self.emitPlaceholder("operand-type-mismatch");
     const rhs_c = if (rhs_ty != ty and rhs_ty != .void and ty != .void)
         self.coerceToType(rhs, rhs_ty, ty)
     else
@@ -3620,23 +3609,6 @@ pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op
         .shr_assign => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
         else => self.emitError("compound_assign", null),
     };
-}
-
-/// A compound `OP=` whose target is a pointer. Only `+=` / `-=` by an integer
-/// have a pointer form — they fold through the same pointer-arithmetic
-/// lowering as `p + n` / `p - n`; every other operator, and a pointer RHS
-/// (whose difference is a count, not an address), is rejected here.
-fn emitPointerCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
-    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
-    const rhs_ty = self.builder.getRefType(rhs);
-    if ((op == .add_assign or op == .sub_assign) and self.pointerElement(rhs_ty) == null) {
-        return self.lowerPointerArith(compoundAssignToBinaryOp(op), lhs, ty, rhs, rhs_ty, span) orelse
-            self.emitError("compound_assign", span);
-    }
-    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}=' to '{s}': a pointer target takes only '+=' / '-=' by an integer", .{
-        Lowering.binOpSymbol(compoundAssignToBinaryOp(op)), self.formatTypeName(ty),
-    });
-    return self.emitPlaceholder("pointer-compound-assign");
 }
 
 // ── Defer / cleanup ─────────────────────────────────────────────
@@ -3859,11 +3831,11 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     // Reassignment kills flow narrowing: a fresh value may be null, so an
     // assigned name is not
     // proven present. Mirror lowerAssignment exactly — IDENT targets only
-    // (narrowing keys are bare local names, never field/index/deref paths),
+    // (narrowing keys are bare local bindings, never field/index/deref paths),
     // removed BEFORE any RHS lowers, so `o, a = o + 1, 2;` inside an
     // `if o != null` diagnoses the RHS use just like `o = o + 1;` does.
     for (ma.targets) |t| {
-        if (t.data == .identifier) _ = self.narrowed.remove(t.data.identifier.name);
+        if (t.data == .identifier) self.killNarrowing(t.data.identifier.name);
     }
 
     // Select every namespace-qualified destination before evaluating any RHS.

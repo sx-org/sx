@@ -1,0 +1,5 @@
+@import "modules/std.sx";
+U4 :: @int(4, .unsigned);
+p :: () -> U4 { x : U4 = 3; y : U4 = x; y }
+C :: @run p();
+main :: () { print("comptime={} runtime={}\n", C.(i64), p().(i64)); }

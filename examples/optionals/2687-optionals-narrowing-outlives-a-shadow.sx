@@ -1,0 +1,16 @@
+// A shadowing declaration's scope ends and the outer binding's proof of
+// presence stands, unaffected by what the shadow held.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+
+main :: () {
+    x: ?i32 = 42;
+    if x != null {
+        {
+            x: ?i32 = 7;
+            if x != null { take(x); }
+        }
+        take(x);
+    }
+}

@@ -3948,8 +3948,7 @@ fn refuseAs(self: *Lowering, src_ty: TypeId, dst: TypeId, span: ast.Span) Ref {
     return self.builder.constUndef(dst);
 }
 
-/// The scalar sources a boxed `@as` dispatches over.
-const boxed_as_sources = [_]TypeId{ .bool, .i8, .u8, .i16, .u16, .i32, .u32, .i64, .u64, .isize, .usize, .f32, .f64 };
+const boxed_as_sources = [_]TypeId{ .bool, .f32, .f64 };
 
 /// Whether a boxed source of type `s` converts to `dst` without a diagnostic:
 /// the modeled scalar plans, the same-width integer pun the explicit ladder
@@ -3988,13 +3987,29 @@ fn boxedAs(self: *Lowering, av: Ref, dst: TypeId, span: ast.Span) Ref {
         if (!seen) candidates.append(self.alloc, s) catch return Ref.none;
     }
     for (candidates.items) |s| {
+        if (self.module.types.integerLayout(s) != null) continue;
         if (!boxedAsConverts(self, s, dst)) continue;
         const bb = self.freshBlock("as.from");
         cases.append(self.alloc, .{ .value = @intCast(s.index()), .target = bb, .args = &.{} }) catch return Ref.none;
         srcs.append(self.alloc, s) catch return Ref.none;
         blocks.append(self.alloc, bb) catch return Ref.none;
     }
-    b.switchBr(type_word, cases.items, refuse_bb, &.{});
+    var integer_cases = std.ArrayList(inst_mod.SwitchBranch.IntegerCase).empty;
+    defer integer_cases.deinit(self.alloc);
+    for ([_]TypeId{ .i64, .u64 }) |word| {
+        if (!boxedAsConverts(self, word, dst)) continue;
+        const bb = self.freshBlock("as.integer");
+        integer_cases.append(self.alloc, .{ .signed = word == .i64, .target = bb }) catch return Ref.none;
+    }
+    b.integerSwitchBr(type_word, cases.items, integer_cases.items, refuse_bb);
+    for (integer_cases.items) |case| {
+        b.switchToBlock(case.target);
+        const args = self.alloc.dupe(Ref, &.{av}) catch return Ref.none;
+        const word: TypeId = if (case.signed) .i64 else .u64;
+        const loaded = b.callBuiltin(.read_integer, args, word);
+        b.store(slot, self.coerceExplicit(loaded, word, dst));
+        b.br(merge_bb, &.{});
+    }
     for (srcs.items, blocks.items) |s, bb| {
         b.switchToBlock(bb);
         const loaded = b.emit(.{ .unbox_any = .{ .operand = av } }, s);

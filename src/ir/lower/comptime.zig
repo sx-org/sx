@@ -1310,9 +1310,9 @@ fn lowerComptimeCallArgsMode(
         return Ref.none;
 
     const caller_scope = self.scope;
-    var staging_scope = Scope.init(self.alloc, caller_scope);
+    var staging_scope = Scope.init(self.alloc, caller_scope, &self.next_binding_id);
     defer staging_scope.deinit();
-    var callee_scope = Scope.init(self.alloc, null);
+    var callee_scope = Scope.init(self.alloc, null, &self.next_binding_id);
     defer callee_scope.deinit();
     if (isolate_callee) self.scope = &staging_scope;
     defer self.scope = caller_scope;
@@ -1557,7 +1557,7 @@ fn lowerComptimeCallArgsMode(
         self.named_return_names = saved_nrn;
         self.named_return_defaults = saved_nrd;
     }
-    var named_return_scope = Scope.init(self.alloc, self.scope);
+    var named_return_scope = Scope.init(self.alloc, self.scope, &self.next_binding_id);
     defer named_return_scope.deinit();
     const saved_body_scope = self.scope;
     self.scope = &named_return_scope;
@@ -1913,7 +1913,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
 
     // Create a scope that chains to the enclosing scope (so the
     // expression can reference names visible at the @run site).
-    var ct_scope = Scope.init(self.alloc, saved_scope);
+    var ct_scope = Scope.init(self.alloc, saved_scope, &self.next_binding_id);
     self.scope = &ct_scope;
 
     // Lower any prelude statements (type-fn body locals) so the result
