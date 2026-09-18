@@ -57,25 +57,18 @@ fn sentinelConstant(sentinel: i64, elem_ty: TypeId) inst_mod.ConstantValue {
 /// terminator of every `[N:X]T` it holds. Null when zeroed storage already IS
 /// that value.
 pub fn defaultConstant(self: *Lowering, ty: TypeId) ?inst_mod.ConstantValue {
-    if (ty.isBuiltin()) return null;
+    if (!self.module.types.writesTerminator(ty)) return null;
     switch (self.module.types.get(ty)) {
         .array => |a| {
-            const elem = self.defaultConstant(a.element);
-            if (elem == null and (a.sentinel orelse 0) == 0) return null;
             const vals = self.alloc.alloc(inst_mod.ConstantValue, a.storageLen()) catch return null;
-            @memset(vals, elem orelse .zeroinit);
+            @memset(vals, self.defaultConstant(a.element) orelse .zeroinit);
             if (a.sentinel) |x| vals[a.length] = sentinelConstant(x, a.element);
             return .{ .aggregate = vals };
         },
         .@"struct" => |st| {
-            var terminated = false;
             const vals = self.alloc.alloc(inst_mod.ConstantValue, st.fields.len) catch return null;
-            for (st.fields, 0..) |f, i| {
-                const field = self.defaultConstant(f.ty);
-                vals[i] = field orelse .zeroinit;
-                terminated = terminated or field != null;
-            }
-            return if (terminated) .{ .aggregate = vals } else null;
+            for (st.fields, 0..) |f, i| vals[i] = self.defaultConstant(f.ty) orelse .zeroinit;
+            return .{ .aggregate = vals };
         },
         else => return null,
     }

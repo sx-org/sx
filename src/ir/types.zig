@@ -1762,6 +1762,20 @@ pub const TypeTable = struct {
         return self.errorSetType(self.internString(dyn_channel_spelling), &.{});
     }
 
+    /// Whether a default value of `id` writes a non-zero terminator anywhere:
+    /// a `[N:X]T` with a non-zero X, directly or under an element or a field.
+    /// Zeroed storage IS the default value of every other type.
+    pub fn writesTerminator(self: *const TypeTable, id: TypeId) bool {
+        if (id.isBuiltin()) return false;
+        return switch (self.get(id)) {
+            .array => |a| (a.sentinel orelse 0) != 0 or self.writesTerminator(a.element),
+            .@"struct" => |st| for (st.fields) |f| {
+                if (self.writesTerminator(f.ty)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
     /// Size in bytes for a type (pointer-sized = 8 on 64-bit).
     pub fn sizeOf(self: *const TypeTable, id: TypeId) u32 {
         const info = self.get(id);

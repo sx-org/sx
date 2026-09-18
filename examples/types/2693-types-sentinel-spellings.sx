@@ -41,6 +41,7 @@ main :: () -> i32 {
 
     d : [2:7]i64;
     f : [2:1]f64 = .[1.5, 2.5];
-    print("terminators: {} {} {} {}\n", Table[2], d[2], f[2], Blank.n[2]);
+    nested : [2]Pair;
+    print("terminators: {} {} {} {} {}\n", Table[2], d[2], f[2], Blank.n[2], nested[1].n[2]);
     0
 }

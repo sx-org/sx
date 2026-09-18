@@ -1051,8 +1051,8 @@ pub fn optionalOfFlattened(self: *Lowering, ty: TypeId) TypeId {
     return self.module.types.optionalOf(ty);
 }
 
-/// Produce a zero/default value for any type — constInt(0) for integers,
-/// constNull for pointers, constUndef for structs/complex types.
+/// A type's default value: zeroed storage, plus the terminator of every
+/// `[N:X]T` it holds.
 pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
     if (ty.isBuiltin()) return self.builder.constInt(0, ty);
     const info = self.module.types.get(ty);
@@ -1061,22 +1061,28 @@ pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
         // `.signed`/`.unsigned` variants — fall through `isBuiltin()`.
         .signed, .unsigned => self.builder.constInt(0, ty),
         .pointer, .optional => self.builder.constNull(ty),
-        .@"struct", .slice, .many_pointer => self.builder.constNull(ty),
-        .array => |a| zeroArray(self, ty, a),
+        .slice, .many_pointer => self.builder.constNull(ty),
+        .@"struct" => |st| if (self.module.types.writesTerminator(ty)) terminatedStruct(self, ty, st) else self.builder.constNull(ty),
+        .array => |a| if (self.module.types.writesTerminator(ty)) terminatedArray(self, ty, a) else self.builder.constNull(ty),
         else => self.builder.constUndef(ty),
     };
 }
 
-/// A `[N:X]T`'s default value holds its terminator. Zeroed storage already IS
-/// that value for `[N]T` and for a `0` terminator.
-fn zeroArray(self: *Lowering, ty: TypeId, info: types.TypeInfo.ArrayInfo) Ref {
-    const x = info.sentinel orelse 0;
-    if (x == 0) return self.builder.constNull(ty);
+fn terminatedArray(self: *Lowering, ty: TypeId, info: types.TypeInfo.ArrayInfo) Ref {
     var elems = std.ArrayList(Ref).empty;
+    defer elems.deinit(self.alloc);
     elems.ensureTotalCapacity(self.alloc, info.storageLen()) catch unreachable;
     for (0..info.length) |_| elems.appendAssumeCapacity(self.zeroValue(info.element));
-    elems.appendAssumeCapacity(self.sentinelValue(x, info.element));
+    if (info.sentinel) |x| elems.appendAssumeCapacity(self.sentinelValue(x, info.element));
     return self.builder.structInit(elems.items, ty);
+}
+
+fn terminatedStruct(self: *Lowering, ty: TypeId, info: types.TypeInfo.StructInfo) Ref {
+    var vals = std.ArrayList(Ref).empty;
+    defer vals.deinit(self.alloc);
+    vals.ensureTotalCapacity(self.alloc, info.fields.len) catch unreachable;
+    for (info.fields) |f| vals.appendAssumeCapacity(self.zeroValue(f.ty));
+    return self.builder.structInit(vals.items, ty);
 }
 
 /// Emit the unified non-integral float→int narrowing diagnostic.
