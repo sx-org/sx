@@ -359,12 +359,10 @@ Pair;
 Top-level and local bindings, expression statements, assignments, `return` /
 `raise` / `break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `=> expr`
-body all take the `;`. The value-less spellings take it the same way — a
-`return` with nothing to return, and a `name : Type` declaration with no
-initializer:
+body all take the `;`. A `return` with nothing to return takes it the same way:
 
 ```sx
-counter : i64;
+counter : i64 = 0;
 bump :: (by: i64) -> void {
     counter = counter + by;
     return;
@@ -779,8 +777,8 @@ self-types as an *anonymous structural struct*: named elements become fields;
 positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
 comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
 positional escape; mixing named and positional elements is an error. Inline
-anonymous type **annotations** (`a : struct { x: i64; }`, `u : union { … }`,
-`e : enum { S: T; … }`) produce the same kind of type, in any type position —
+anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
+`enum { S: T; … }`) produce the same kind of type, in any type position —
 including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
@@ -1685,8 +1683,8 @@ pointing at the annotated form.
 
 `@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx
-MyArr :: @Array(5, i32);       // equivalent to [5]i32
-grid : @Array(2, [3]f32);      // equivalent to [2][3]f32
+MyArr :: @Array(5, i32);         // equivalent to [5]i32
+grid : @Array(2, [3]f32) = ---;  // equivalent to [2][3]f32
 ```
 
 A **count** is a compile-time integer used as an array dimension, a `@Vector`
@@ -3125,16 +3123,11 @@ name := value;
 // explicit type
 name : type = value;
 
-// default-initialized (type required)
-name : type;
-
 // undefined (type required)
 name : type = ---;
 ```
 
-The `:=` operator creates a mutable binding. The type is inferred unless explicitly annotated.
-
-`name : type;` initializes using the type's defaults: zero for primitives, per-field defaults for structs (see Field Defaults).
+The `:=` operator creates a mutable binding. The type is inferred unless explicitly annotated. A binding sets a value or says `= ---`.
 
 `name : type = ---;` leaves the value undefined (uninitialized memory). Reading before writing is undefined behavior.
 
@@ -3143,7 +3136,7 @@ Examples:
 x := 42;              // i32, mutable
 x := if true then 1 else 2;
 z : Foo = .variant2;  // Foo, mutable, explicit type
-a : Foo;              // Foo, default-initialized (a=0, b=42, c=undef)
+a : Foo = .{};        // Foo, per-field defaults (a=0, b=42, c=undef)
 b : Foo = ---;        // Foo, entirely undefined
 ```
 
@@ -6146,7 +6139,7 @@ destination supplies a channel — construction, `==`, and `case`.
 
 ```sx
 t := IoErr.Failed;   // singleton channel {intern(IoErr, Failed)}
-e : IoErr;           // the whole set — a binding is never narrowed
+e : IoErr = t;       // the whole set — a binding is never narrowed
 ```
 
 `.X` resolves when exactly one member named `X` is live in the destination
@@ -6379,8 +6372,8 @@ payload, with no translation table.
 identity, named functions included:
 
 ```sx
-slot    : Closure(() -> (i32, !Both));
-ioSlot  : Closure(() -> (i32, !IoErr));
+slot    : Closure(() -> (i32, !Both))  = ---;
+ioSlot  : Closure(() -> (i32, !IoErr)) = ---;
 
 slot    = foo;     // ERROR — `!FooError` is not `!Both`, though FooError ⊆ Both
 slot    = inner;   // OK — inner's inferred channel IS Both
@@ -6598,7 +6591,6 @@ at_fn_decl      = AT_IDENT '::' '(' params? ')' ('->' ret_type)? end
                   // so no keyword, body, ABI, or linkage follows
 var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
-                | IDENT ':' type end
                 | IDENT ':' type 'extern' linkage_tail end
 linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
                   // `end` closes the tail

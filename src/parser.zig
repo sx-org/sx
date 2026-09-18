@@ -504,16 +504,6 @@ pub const Parser = struct {
         // Parse type
         const type_node = try self.parseTypeExpr();
 
-        // `name : type` is already a whole declaration, so ask whether it ended
-        // before looking at what an initializer or a linkage tail would have
-        // started. `:`, `=` and `extern` cannot open a statement, so a line
-        // break in front of any of them continues this one.
-        if (self.atStatementEnd()) {
-            // name : type; (default-initialized variable)
-            try self.expectStatementEnd();
-            return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = null, .is_raw = name_is_raw } });
-        }
-
         if (self.tokens.tag(self.tok) == .colon) {
             // name : type : value; (typed constant)
             self.advance();
@@ -548,7 +538,7 @@ pub const Parser = struct {
             } });
         }
 
-        return self.fail("expected ':', '=', ';', or 'extern' after type annotation");
+        return self.fail("expected ':', '=', or 'extern' after type annotation");
     }
 
     /// Parse a function/method/lambda/closure/fn-pointer return type.
@@ -5691,7 +5681,7 @@ pub const Parser = struct {
     /// True where the statement or declaration could end right here — at its
     /// written `;`, or at the end of the file. The query form of
     /// `expectStatementEnd`, which consumes. A construct parser asks it before
-    /// every optional slot that a completed declaration would not have.
+    /// an optional slot a completed form would not have.
     fn atStatementEnd(self: *const Parser) bool {
         return self.tokens.tag(self.tok) == .semicolon or self.tokens.tag(self.tok) == .eof;
     }

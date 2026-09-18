@@ -1,0 +1,5 @@
+error: expected ':', '=', or 'extern' after type annotation
+  --> examples/diagnostics/2693-diagnostics-valueless-local-rejected.sx:9:20
+   |
+ 9 |     seen : Counters;
+   |                    ^

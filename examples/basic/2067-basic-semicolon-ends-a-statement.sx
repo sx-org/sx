@@ -9,10 +9,9 @@
 TAU :: 6;
 seed : i64 = 7;
 
-// The value-less forms take the terminator too: a declaration with no
-// initializer, and a `return` with nothing to return.
-counter : i64;
+counter : i64 = 0;
 
+// A `return` with nothing to return takes the terminator too.
 bump :: (by: i64) -> void {
     counter = counter + by;
     return;
