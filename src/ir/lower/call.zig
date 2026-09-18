@@ -5786,7 +5786,7 @@ pub fn resolveCallParamTypes(
         }
         if (self.getStructTypeName(obj_ty)) |sname| {
             // Runtime-class receiver (`@ObjcClass` / `@JniClass` / etc.):
-            // resolve the method from `runtime_class_map` walking `extends =`.
+            // resolve the method through the `extends =` chain.
             // Without this path, `target_type` for each arg falls back to
             // whatever `self.target_type` was on entry — typically the
             // enclosing fn's return type — which silently truncates `xx ptr`

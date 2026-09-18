@@ -103,11 +103,10 @@ pub const Module = struct {
         name: []const u8,
         decl: *const ast.RuntimeClassDecl,
         methods: []const ObjcDefinedMethodEntry = &.{},
-        /// Pre-resolved Obj-C runtime name of the parent class, so
-        /// emit_llvm can pass it to `objc_getClass(parent)` /
-        /// `objc_allocateClassPair(super, ...)` without walking the
-        /// sx-side runtime_class_map (which lives in lower.zig).
-        /// Defaults to "NSObject" when no `extends =` member is present.
+        /// Obj-C runtime name of the parent class, with an `extends =` alias
+        /// resolved to the class it names — `objc_getClass` /
+        /// `objc_allocateClassPair` take the runtime spelling, not the sx
+        /// alias. "NSObject" when no `extends =` member is present.
         parent_objc_name: []const u8 = "NSObject",
     };
 

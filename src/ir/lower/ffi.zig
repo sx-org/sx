@@ -807,8 +807,8 @@ pub fn lowerSuperCall(
 
 // ── Runtime-class registration ──────────────────────────────────
 
-/// Register a runtime-class declaration. The alias goes into
-/// `runtime_class_map` for method-dispatch lookup. The underlying
+/// Register a runtime-class declaration. The alias goes into the program
+/// index's `.runtime_class` facet for method-dispatch lookup. The underlying
 /// type (e.g. `*Activity`) is resolved via the existing struct
 /// fallback in `type_bridge.resolveTypeName` (which interns unknown
 /// named types as 0-field structs).
