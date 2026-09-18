@@ -3935,6 +3935,7 @@ pub const Lowering = struct {
     pub const mangleTypeName = lower_generic.mangleTypeName;
     pub const resolveTypeCategoryTags = lower_generic.resolveTypeCategoryTags;
     pub const inferMatchResultType = lower_generic.inferMatchResultType;
+    pub const matchCaptureType = lower_generic.matchCaptureType;
     pub const unifyValueArmTypes = lower_generic.unifyValueArmTypes;
     pub const isTypeCategoryMatch = lower_generic.isTypeCategoryMatch;
     pub const isRuntimeCategoryName = lower_generic.isRuntimeCategoryName;

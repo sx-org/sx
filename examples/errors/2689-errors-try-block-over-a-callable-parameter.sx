@@ -8,6 +8,8 @@ zero :: () -> (i64, !E) { return 0; }
 other :: () -> (i64, !F) { raise F.Other; }
 plain :: () -> i64 { 1 }
 
+K :: enum { cb: () -> (i64, !F); none; }
+
 run :: (g: () -> (i64, !E)) -> i64 {
     try { x := try g(); x + 1 } catch { -1 }
 }
@@ -16,18 +18,18 @@ bad :: (g: () -> (i64, !E)) -> bool {
     try { x := try g(); if x > 0 { raise E.Bad; } false } catch |e| { e == .Bad }
 }
 
-level :: (g: () -> (i64, !E), h: () -> i64) -> (i64, !) {
+level :: (g: () -> (i64, !E), h: () -> i64, k: K) -> (i64, !) {
     x := try g();
     if x > 0 { raise E.Bad; }
-    {
-        g : () -> (i64, !F) = other;
-        y := try g();
+    match k {
+        case .cb: |g| { y := try g(); }
+        case .none: {}
     }
     h()
 }
 
 caught :: (g: () -> (i64, !E)) -> i64 {
-    level(g, plain) catch |e| { if e == .Bad { 1 } else if e == F.Other { 2 } else { 0 } }
+    level(g, plain, K.cb(other)) catch |e| { if e == .Bad { 1 } else if e == F.Other { 2 } else { 0 } }
 }
 
 main :: () -> i32 {

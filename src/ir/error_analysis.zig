@@ -35,6 +35,7 @@ pub const ErrorAnalysis = struct {
         preceding: []const *Node = &.{},
         loop: ?*const ast.ForExpr = null,
         payload: ?struct { name: []const u8, condition: *const Node } = null,
+        arm: ?struct { capture: []const u8, pattern: ?*const Node, subject: *const Node } = null,
         parent: ?*const LocalScope,
     };
 
@@ -107,7 +108,12 @@ pub const ErrorAnalysis = struct {
                 nested.eachTailCallee(ie.then_branch, visitor);
                 if (ie.else_branch) |eb| self.eachTailCallee(eb, visitor);
             },
-            .match_expr => |me| for (me.arms) |arm| self.eachTailCallee(arm.body, visitor),
+            .match_expr => |me| for (me.arms) |arm| {
+                const scope = armScope(arm, me.subject, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.eachTailCallee(arm.body, visitor);
+            },
             .call => |c| visitor.visit(self, c.callee),
             else => {},
         }
@@ -215,7 +221,7 @@ pub const ErrorAnalysis = struct {
             while (i > 0) {
                 i -= 1;
                 const node = current.preceding[i];
-                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent, .loop = current.loop, .payload = current.payload };
+                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent, .loop = current.loop, .payload = current.payload, .arm = current.arm };
                 var initializer = self;
                 initializer.locals = &preceding;
                 if (node.data == .destructure_decl) {
@@ -248,6 +254,13 @@ pub const ErrorAnalysis = struct {
                     return ty;
                 }
             }
+            if (current.arm) |arm| {
+                if (std.mem.eql(u8, arm.capture, name)) {
+                    var outer = self;
+                    outer.locals = current.parent;
+                    return self.l.matchCaptureType(outer.receiverType(fd, arm.subject), arm.pattern) orelse .unresolved;
+                }
+            }
             if (current.loop) |loop| {
                 for (loop.captures, 0..) |capture, index| {
                     if (!std.mem.eql(u8, capture.name, name)) continue;
@@ -269,6 +282,10 @@ pub const ErrorAnalysis = struct {
             if (std.mem.eql(u8, p.name, name)) return self.l.resolveType(p.type_expr);
         }
         return null;
+    }
+
+    fn armScope(arm: ast.MatchArm, subject: *const Node, parent: ?*const LocalScope) LocalScope {
+        return .{ .parent = parent, .arm = if (arm.capture) |c| .{ .capture = c, .pattern = arm.pattern, .subject = subject } else null };
     }
 
     fn payloadScope(name: ?[]const u8, condition: *const Node, parent: ?*const LocalScope) LocalScope {
@@ -385,7 +402,12 @@ pub const ErrorAnalysis = struct {
             },
             .match_expr => |me| {
                 self.collectErrorSites(me.subject, tags, edges, dyn, enclosing_fd);
-                for (me.arms) |arm| self.collectErrorSites(arm.body, tags, edges, dyn, enclosing_fd);
+                for (me.arms) |arm| {
+                    const scope = armScope(arm, me.subject, self.locals);
+                    var nested = self;
+                    nested.locals = &scope;
+                    nested.collectErrorSites(arm.body, tags, edges, dyn, enclosing_fd);
+                }
             },
             .while_expr => |w| {
                 self.collectErrorSites(w.condition, tags, edges, dyn, enclosing_fd);
