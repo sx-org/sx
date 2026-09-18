@@ -46,10 +46,11 @@ pub fn refuseVoidElement(self: *Lowering, src_ty: TypeId, slot_ty: TypeId, field
 const InferredLiteral = struct { ty: TypeId, refs: []const Ref };
 
 /// The instance a bare generic literal names, read without lowering it: each
-/// written field's initializer is typed as an expression, so a lambda — whose
-/// type is its env, known only when lowered — leaves the answer null, as does
-/// a literal that would be refused. The typer asks this for a literal used as
-/// an operand (`Box{ item = 1 }.twice()`).
+/// written field's initializer is typed as an expression, and a written lambda
+/// is the env its `_{ … }` names. An env-less lambda — a closure the typer
+/// names only as far as its annotations reach — leaves the answer null, as
+/// does a literal that would be refused. The typer asks this for a literal
+/// used as an operand (`Box{ item = 1 }.twice()`).
 pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *const program_index_mod.StructTemplate) ?TypeId {
     for (tmpl.type_params) |tp| if (!tp.is_type_param) return null;
     var tb = std.StringHashMap(TypeId).init(self.alloc);
@@ -61,8 +62,10 @@ pub fn genericLiteralType(self: *Lowering, sl: *const ast.StructLiteral, tmpl: *
         } else if (i < tmpl.field_names.len) i else null;
         const k = idx orelse continue;
         const node = tmpl.field_type_nodes[k];
-        if (fi.value.data == .lambda) return null;
-        const arg_ty = self.inferExprType(fi.value);
+        const arg_ty = if (fi.value.data == .lambda) blk: {
+            if (!fi.value.data.lambda.has_env) return null;
+            break :blk self.lambdaEnvType(&fi.value.data.lambda) orelse return null;
+        } else self.inferExprType(fi.value);
         if (arg_ty == .unresolved) return null;
         for (tmpl.type_params) |tp| {
             if (!self.matchTypeParam(node, tp.name)) continue;
