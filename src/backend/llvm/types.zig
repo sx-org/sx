@@ -104,7 +104,7 @@ pub const TypeLowering = struct {
             },
             .array => |arr| {
                 const elem = self.toLLVMType(arr.element);
-                return c.LLVMArrayType2(elem, arr.length);
+                return c.LLVMArrayType2(elem, arr.storageLen());
             },
             .vector => |vec| {
                 const elem = self.toLLVMType(vec.element);

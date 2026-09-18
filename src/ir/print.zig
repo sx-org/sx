@@ -483,12 +483,12 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(p.pointee, tt, writer);
         },
         .many_pointer => |p| {
-            try writer.writeAll("[*]");
+            if (p.sentinel) |x| try writer.print("[*:{d}]", .{x}) else try writer.writeAll("[*]");
             try writeType(p.element, tt, writer);
         },
         .slice => |s| {
             if (s.len_type == .i64) {
-                try writer.writeAll("[]");
+                if (s.sentinel) |x| try writer.print("[:{d}]", .{x}) else try writer.writeAll("[]");
                 try writeType(s.element, tt, writer);
             } else {
                 try writer.writeAll("@Slice(");
@@ -499,7 +499,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             }
         },
         .array => |a| {
-            try writer.print("[{d}]", .{a.length});
+            if (a.sentinel) |x| try writer.print("[{d}:{d}]", .{ a.length, x }) else try writer.print("[{d}]", .{a.length});
             try writeType(a.element, tt, writer);
         },
         .optional => |o| {

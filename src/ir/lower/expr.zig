@@ -1550,7 +1550,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
 
         if (is_special) {
             if (std.mem.eql(u8, fa.field, "len")) {
-                return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
+                return self.emitLength(obj, obj_ty);
             }
             {
                 const elem_ty = self.getElementType(obj_ty);
@@ -2583,6 +2583,8 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     var elem_ty: TypeId = .unresolved;
     var from_target = false;
     var is_vector = false;
+    // The destination's terminator, written past the last element.
+    var sentinel: ?i64 = null;
 
     // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
     // The prefix slot names the AGGREGATE type; a prefix that resolves to
@@ -2601,6 +2603,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
+                        sentinel = a.sentinel;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2631,6 +2634,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
                 switch (info) {
                     .array => |a| {
                         elem_ty = a.element;
+                        sentinel = a.sentinel;
                         from_target = true;
                     },
                     .vector => |v| {
@@ -2675,10 +2679,12 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         elems.append(self.alloc, val) catch unreachable;
     }
 
+    if (sentinel) |x| elems.append(self.alloc, self.builder.constInt(x, elem_ty)) catch unreachable;
+
     const result_ty = if (is_vector)
         self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))
     else
-        self.module.types.arrayOf(elem_ty, @intCast(al.elements.len));
+        self.module.types.arrayOfSentinel(elem_ty, @intCast(al.elements.len), sentinel);
     return self.builder.structInit(elems.items, result_ty);
 }
 
@@ -3052,16 +3058,8 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     }
     var lo = if (se.start) |s| self.lowerExpr(s) else self.builder.constInt(0, .i64);
     if (se.start_exclusive) lo = self.builder.add(lo, self.builder.constInt(1, .i64), .i64);
-    // Open-ended `hi`: for a fixed-size array the length is a compile-time
-    // constant — emit it directly rather than a runtime `.length` op. Runtime
-    // codegen folds the identical constant for an array (`emitLength`), so the
-    // result is unchanged; the win is the comptime interp, which can't
-    // disambiguate a 2-element array from a `{ptr,len}` fat pointer by Value
-    // shape and so would misread a `.length` op on an array.
     var hi = if (se.end) |e|
         self.lowerExpr(e)
-    else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array)
-        self.builder.constInt(@intCast(self.module.types.get(obj_ty).array.length), .i64)
     else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .many_pointer) blk: {
         // A many-pointer `[*]T` carries no length, so an open-ended slice
         // `mp[lo..]` has no upper bound to resolve — a `.length` op on it would

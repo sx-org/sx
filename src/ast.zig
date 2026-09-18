@@ -813,10 +813,15 @@ pub const ImportDecl = struct {
 pub const ArrayTypeExpr = struct {
     length: *Node, // int_literal for the size
     element_type: *Node, // type_expr for the element type
+    /// The `:X` terminator of `[N:X]T`. Storage is `length + 1` elements, the
+    /// last holding `X`; `length` stays the written N.
+    sentinel: ?i64 = null,
 };
 
 pub const SliceTypeExpr = struct {
     element_type: *Node, // type_expr for the element type
+    /// The `:X` terminator of `[:X]T`.
+    sentinel: ?i64 = null,
 };
 
 pub const ArrayLiteral = struct {
@@ -856,6 +861,8 @@ pub const PointerTypeExpr = struct {
 
 pub const ManyPointerTypeExpr = struct {
     element_type: *Node,
+    /// The `:X` terminator of `[*:X]T`.
+    sentinel: ?i64 = null,
 };
 
 pub const OptionalTypeExpr = struct {

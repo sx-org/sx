@@ -2477,12 +2477,22 @@ pub const Ops = struct {
         }
     }
 
+    /// The written N of an array-typed ref, which `[N:X]T`'s storage exceeds by
+    /// the terminator. Null when the ref's IR type is not an array — a union
+    /// and a payload-carrying error set also lower to LLVM array shapes.
+    fn writtenArrayLen(self: Ops, operand: Ref) ?u64 {
+        const ty = self.e.getRefIRType(operand) orelse return null;
+        if (ty.isBuiltin()) return null;
+        const info = self.e.ir_mod.types.get(ty);
+        return if (info == .array) info.array.length else null;
+    }
+
     pub fn emitLength(self: Ops, un: UnaryOp) void {
         const val = self.e.resolveRef(un.operand);
         const val_ty = c.LLVMTypeOf(val);
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMArrayTypeKind) {
-            const len = c.LLVMGetArrayLength2(val_ty);
+            const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(val_ty);
             self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, len, 0));
         } else if (kind == c.LLVMVectorTypeKind or kind == c.LLVMScalableVectorTypeKind) {
             // SIMD vector: .len is the lane count, a compile-time constant.
@@ -2585,7 +2595,7 @@ pub const Ops = struct {
         const arr_ty = c.LLVMTypeOf(arr);
         const arr_kind = c.LLVMGetTypeKind(arr_ty);
         if (arr_kind == c.LLVMArrayTypeKind) {
-            const len = c.LLVMGetArrayLength2(arr_ty);
+            const len = self.writtenArrayLen(un.operand) orelse c.LLVMGetArrayLength2(arr_ty);
             const tmp = self.e.buildEntryAlloca(arr_ty, "a2s.tmp");
             _ = c.LLVMBuildStore(self.e.builder, arr, tmp);
             var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), c.LLVMConstInt(self.e.cached_i64, 0, 0) };

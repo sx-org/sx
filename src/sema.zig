@@ -459,14 +459,14 @@ pub const Analyzer = struct {
                 const length = self.arrayDimLength(ate.length);
                 const elem_type = self.resolveTypeNode(ate.element_type);
                 const elem_name = elem_type.displayName(self.allocator) catch return .void_type;
-                return .{ .array_type = .{ .element_name = elem_name, .length = length, .is_raw = typeExprIsRaw(ate.element_type) } };
+                return .{ .array_type = .{ .element_name = elem_name, .length = length, .is_raw = typeExprIsRaw(ate.element_type), .sentinel = ate.sentinel } };
             }
             // Slice type: []T
             if (tn.data == .slice_type_expr) {
                 const ste = tn.data.slice_type_expr;
                 const elem_type = self.resolveTypeNode(ste.element_type);
                 const elem_name = elem_type.displayName(self.allocator) catch return .void_type;
-                return .{ .slice_type = .{ .element_name = elem_name, .is_raw = typeExprIsRaw(ste.element_type) } };
+                return .{ .slice_type = .{ .element_name = elem_name, .is_raw = typeExprIsRaw(ste.element_type), .sentinel = ste.sentinel } };
             }
             // Optional type: ?T
             if (tn.data == .optional_type_expr) {
@@ -487,7 +487,7 @@ pub const Analyzer = struct {
                 const mpte = tn.data.many_pointer_type_expr;
                 const elem_type = self.resolveTypeNode(mpte.element_type);
                 const elem_name = elem_type.displayName(self.allocator) catch return .void_type;
-                return .{ .many_pointer_type = .{ .element_name = elem_name, .is_raw = typeExprIsRaw(mpte.element_type) } };
+                return .{ .many_pointer_type = .{ .element_name = elem_name, .is_raw = typeExprIsRaw(mpte.element_type), .sentinel = mpte.sentinel } };
             }
             // Function pointer type: (ParamTypes) -> ReturnType
             if (tn.data == .function_type_expr) {
@@ -598,9 +598,9 @@ pub const Analyzer = struct {
         return switch (node.data) {
             .type_expr => |te| self.resolveTypeNameStr(te.name, te.is_raw),
             .identifier => |id| self.resolveTypeNameStr(id.name, id.is_raw),
-            .many_pointer_type_expr => |mp| .{ .many_pointer_type = .{ .element_name = self.typeExprName(mp.element_type), .is_raw = typeExprIsRaw(mp.element_type) } },
+            .many_pointer_type_expr => |mp| .{ .many_pointer_type = .{ .element_name = self.typeExprName(mp.element_type), .is_raw = typeExprIsRaw(mp.element_type), .sentinel = mp.sentinel } },
             .pointer_type_expr => |p| .{ .pointer_type = .{ .pointee_name = self.typeExprName(p.pointee_type), .is_raw = typeExprIsRaw(p.pointee_type) } },
-            .slice_type_expr => |s| .{ .slice_type = .{ .element_name = self.typeExprName(s.element_type), .is_raw = typeExprIsRaw(s.element_type) } },
+            .slice_type_expr => |s| .{ .slice_type = .{ .element_name = self.typeExprName(s.element_type), .is_raw = typeExprIsRaw(s.element_type), .sentinel = s.sentinel } },
             .parameterized_type_expr => |pte| self.instantiateGeneric(pte.name, pte.args) orelse self.resolveTypeNode(node),
             else => self.resolveTypeNode(node),
         };

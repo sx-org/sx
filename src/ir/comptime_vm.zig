@@ -2792,14 +2792,15 @@ pub const Vm = struct {
                     return .{ .aggregate = out };
                 }
                 if (info == .array) {
-                    // `[N]E` is held by-address as N contiguous `E` slots at
-                    // stride `sizeof(E)`. Bridge each element via `regToValue`
-                    // recursively (so a nested array / array-of-struct / array
-                    // inside a struct all compose), producing an `.aggregate`
-                    // Value whose serializer arm (`serializeAggregateValue`'s
-                    // `.array` case) emits an `LLVMConstArray2`.
+                    // An array is held by-address as contiguous `E` slots at
+                    // stride `sizeof(E)`, a `[N:X]T`'s terminator included.
+                    // Bridge each element via `regToValue` recursively (so a
+                    // nested array / array-of-struct / array inside a struct all
+                    // compose), producing an `.aggregate` Value whose serializer
+                    // arm (`serializeAggregateValue`'s `.array` case) emits an
+                    // `LLVMConstArray2`.
                     const elem_ty = info.array.element;
-                    const len: usize = @intCast(info.array.length);
+                    const len: usize = @intCast(info.array.storageLen());
                     const stride: Addr = @intCast(table.typeSizeBytes(elem_ty));
                     const out = alloc.alloc(Value, len) catch return self.failMsg("reg→value: out of memory (array)");
                     for (0..len) |i| {
@@ -3254,7 +3255,7 @@ pub const Vm = struct {
                 if (info == .array) {
                     const elem_ty = info.array.element;
                     const stride = table.typeSizeBytes(elem_ty);
-                    if (items.len != @as(usize, @intCast(info.array.length)))
+                    if (items.len != @as(usize, @intCast(info.array.storageLen())))
                         return self.failMsg("materialize: array value length differs from the type's");
                     const addr = self.machine.allocBytes(table.typeSizeBytes(ty), 8);
                     for (items, 0..) |item, i| {

@@ -2598,12 +2598,23 @@ pub const Lowering = struct {
         };
     }
 
+    /// The length of a container in its own `Len` word. An array's is the
+    /// compile-time constant its type states — never its storage, which a
+    /// terminator widens by one element.
+    pub fn emitLength(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
+        if (!obj_ty.isBuiltin()) {
+            const info = self.module.types.get(obj_ty);
+            if (info == .array) return self.builder.constInt(@intCast(info.array.length), .i64);
+        }
+        return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
+    }
+
     /// The length of a container as an `i64` — a fat pointer's length word
     /// widened out of its declared `Len`, so the index/range machinery works in
     /// one integer width whatever the slice's ABI.
     pub fn emitLengthI64(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
-        const len_ty = self.module.types.lenTypeOf(obj_ty);
-        const len = self.builder.emit(.{ .length = .{ .operand = obj } }, len_ty);
+        const len = self.emitLength(obj, obj_ty);
+        const len_ty = self.builder.getRefType(len);
         if (len_ty == .i64) return len;
         return self.builder.emit(.{ .widen = .{ .operand = len, .from = len_ty, .to = .i64 } }, .i64);
     }
