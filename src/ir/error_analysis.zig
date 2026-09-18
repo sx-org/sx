@@ -66,14 +66,26 @@ pub const ErrorAnalysis = struct {
     }
 
     /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, or `dyn` when the callee spelling names none. A
-    /// resolved non-failable callee contributes an edge whose declared channel
-    /// is empty.
-    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
+    /// callee's declaration, the members of a callable parameter's closed
+    /// channel, or `dyn` when the callee names neither. A non-failable callee
+    /// contributes no member.
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
         if (self.calleeDecl(callee, enclosing_fd)) |edge| {
             edges.append(self.l.alloc, edge) catch {};
-        } else {
-            dyn.* = true;
+            return;
+        }
+        if (callee.data == .identifier) {
+            if (self.slotReturn(enclosing_fd, callee.data.identifier.name)) |ret| {
+                const channel = self.l.errorChannelOf(ret) orelse return;
+                if (!self.l.channelIsOpen(channel)) return self.contributeSet(channel, tags);
+            }
+        }
+        dyn.* = true;
+    }
+
+    fn contributeSet(self: ErrorAnalysis, set: TypeId, tags: *std.ArrayList(u32)) void {
+        for (self.l.module.types.get(set).@"error".tags) |t| {
+            if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
         }
     }
 
@@ -102,15 +114,16 @@ pub const ErrorAnalysis = struct {
     }
 
     /// The call a failable body hands back with no `return` keyword.
-    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         var visitor = struct {
+            tags: *std.ArrayList(u32),
             edges: *std.ArrayList(*const ast.FnDecl),
             dyn: *bool,
             fd: ?*const ast.FnDecl,
             fn visit(v: *@This(), analysis: ErrorAnalysis, callee: *const Node) void {
-                analysis.contributeCallee(callee, v.fd, v.edges, v.dyn);
+                analysis.contributeCallee(callee, v.fd, v.tags, v.edges, v.dyn);
             }
-        }{ .edges = edges, .dyn = dyn, .fd = enclosing_fd };
+        }{ .tags = tags, .edges = edges, .dyn = dyn, .fd = enclosing_fd };
         self.eachTailCallee(node, &visitor);
     }
 
@@ -148,19 +161,18 @@ pub const ErrorAnalysis = struct {
         if (self.calleeDecl(callee, enclosing_fd)) |fd|
             return Lowering.astChannelNode(fd.return_type) != null;
         if (callee.data == .identifier) {
-            if (self.slotChannel(enclosing_fd, callee.data.identifier.name)) |has| return has;
+            if (self.slotReturn(enclosing_fd, callee.data.identifier.name)) |ret| return self.l.errorChannelOf(ret) != null;
         }
         return true;
     }
 
-    /// Null when `name` is not a callable parameter of `fd`; else whether that
-    /// slot's written return carries an error channel.
-    fn slotChannel(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?bool {
+    /// The written return of the callable parameter `name` of `fd`, or null
+    /// when `name` is not one.
+    fn slotReturn(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
         const decl = fd orelse return null;
         for (decl.params) |p| {
             if (!std.mem.eql(u8, p.name, name)) continue;
-            const ret = self.l.slotReturnType(self.l.resolveType(p.type_expr)) orelse return null;
-            return self.l.errorChannelOf(ret) != null;
+            return self.l.slotReturnType(self.l.resolveType(p.type_expr));
         }
         return null;
     }
@@ -338,9 +350,7 @@ pub const ErrorAnalysis = struct {
                     if (rm.set) |set| {
                         // What a qualified member contributes is its STATIC TYPE —
                         // the whole set, not the one member named at the site.
-                        for (self.l.module.types.get(set).@"error".tags) |t| {
-                            if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
-                        }
+                        self.contributeSet(set, tags);
                     } else {
                         tags.append(self.l.alloc, self.l.anonymousErrorMember(rm.member)) catch {};
                     }
@@ -352,7 +362,7 @@ pub const ErrorAnalysis = struct {
             },
             .try_expr => |te| {
                 if (te.operand.data == .call) {
-                    self.contributeCallee(te.operand.data.call.callee, enclosing_fd, edges, dyn);
+                    self.contributeCallee(te.operand.data.call.callee, enclosing_fd, tags, edges, dyn);
                 } else if (te.operand.data != .block) {
                     // A `try` on a non-call — a closure / fn-pointer value, a
                     // checked assertion (`av.(T)`) — escapes through a channel
@@ -402,7 +412,7 @@ pub const ErrorAnalysis = struct {
             .return_stmt => |r| if (r.value) |v| {
                 // `return callee(...)` FORWARDS the callee's error channel, so
                 // it contributes the callee's set exactly like a `try` edge.
-                if (v.data == .call) self.contributeCallee(v.data.call.callee, enclosing_fd, edges, dyn);
+                if (v.data == .call) self.contributeCallee(v.data.call.callee, enclosing_fd, tags, edges, dyn);
                 self.collectErrorSites(v, tags, edges, dyn, enclosing_fd);
             },
             .var_decl => |v| if (v.value) |val| self.collectErrorSites(val, tags, edges, dyn, enclosing_fd),
@@ -471,7 +481,7 @@ pub const ErrorAnalysis = struct {
         // escape with or without a `try` marker. An optional `??` routes no
         // failure, and a value terminator ends the chain, so neither adds one.
         if (self.operandFails(nc.lhs, enclosing_fd) and self.operandFails(nc.rhs, enclosing_fd))
-            self.contributeTailCall(nc.rhs, edges, dyn, enclosing_fd);
+            self.contributeTailCall(nc.rhs, tags, edges, dyn, enclosing_fd);
     }
 
     /// An operand whose failure a fallback absorbs: its own attempt goes
@@ -490,7 +500,7 @@ pub const ErrorAnalysis = struct {
     /// the calls whose failure leaves it.
     pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
-        self.contributeTailCall(body, edges, dyn, enclosing_fd);
+        self.contributeTailCall(body, tags, edges, dyn, enclosing_fd);
     }
 
     /// Whole-program fix-point that converges each bare-`!` function's inferred
@@ -514,11 +524,12 @@ pub const ErrorAnalysis = struct {
             source_file: ?[]const u8,
             // The body escapes through a channel that cannot be named (a `try`
             // of a closure value or a checked assertion, a `raise` of a
-            // computed tag, a call whose callee names no declaration), so it
-            // genuinely propagates a dynamic error even when no concrete tag
-            // converges. Suppresses the empty-set "drop the `!`" warning, and
-            // makes the channel the DYNAMIC one: a merge over a channel nobody
-            // can name is not the set the body escapes.
+            // computed tag, a call whose callee names neither a declaration
+            // nor a closed channel), so it genuinely propagates a dynamic
+            // error even when no concrete tag converges. Suppresses the
+            // empty-set "drop the `!`" warning, and makes the channel the
+            // DYNAMIC one: a merge over a channel nobody can name is not the
+            // set the body escapes.
             dyn: bool,
             // `main`'s `!` is the program's top error channel, and a
             // protocol-impl method's `!` is dictated by the contract — e.g.

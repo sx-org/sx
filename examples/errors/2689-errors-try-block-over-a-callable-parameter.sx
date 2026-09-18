@@ -8,7 +8,11 @@ run :: (g: () -> (i64, !E)) -> i64 {
     try { x := try g(); x + 1 } catch { -1 }
 }
 
+bad :: (g: () -> (i64, !E)) -> bool {
+    try { x := try g(); if x > 0 { raise E.Bad; } false } catch |e| { e == .Bad }
+}
+
 main :: () -> i32 {
-    print("fail={} pass={}\n", run(fail), run(pass));
+    print("fail={} pass={} bad={}\n", run(fail), run(pass), bad(pass));
     0
 }
