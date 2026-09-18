@@ -1928,29 +1928,30 @@ chain is rooted at a constant is rejected (see
 [Constant-Write Rejection](#constant-write-rejection)); a dereference in
 the chain leaves the checked zone.
 
-**Fat pointer layout**: `[:0]u8`, `string`, and `[]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0. This means `*[:0]u8` works as C's `char**` — a C function dereferences through the outer pointer and reads the raw `char*` from offset 0.
+**Fat pointer layout**: `[:0]u8`, `string`, and `[]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
 
 ### cstring
 
-`cstring` is the C-boundary string: ONE pointer to a null-terminated u8
-buffer — exactly C's `char *`. It is thin (8 bytes, no length field;
-`cstringLen` walks to the terminator, O(n)) and crosses `extern`
-boundaries verbatim in BOTH directions. `?cstring` is the nullable case
-and lowers to the same bare pointer (null = absent) — the natural type
-for `getenv`-style returns and optional `char *` parameters.
+C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer.
+It is thin (8 bytes, no length field; `cstringLen` walks to the
+terminator, O(n)) and crosses `extern` boundaries verbatim in BOTH
+directions. `?[*:0]u8` is the nullable case and lowers to the same bare
+pointer (null = absent) — the type for `getenv`-style returns and
+optional `char *` parameters. `*[*:0]u8` is C's `char**`. `cstring` names
+a thin pointer of the same shape.
 
 Conversion discipline (Odin's model):
 
-- A string **literal** coerces to `cstring` implicitly — literal bytes
+- A string **literal** coerces to `[*:0]u8` implicitly — literal bytes
   are terminated constants in the binary, so the conversion is free.
 - Any **other** `string` does NOT coerce: it may be an unterminated view
   (`string{ptr, len}` windows, writer output). Materialize an owned,
   terminated copy with `toCstring(s)`.
-- `cstring` does not coerce to `string` implicitly — the length is an
+- `[*:0]u8` does not coerce to `string` implicitly — the length is an
   O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
-- `xx` bit-casts `cstring` ↔ `*u8` / `[*]u8` / integer-pointer values
+- `xx` bit-casts `[*:0]u8` ↔ `*u8` / `[*]u8` / integer-pointer values
   for low-level interop.
 
 ### Optional Types
@@ -2155,12 +2156,10 @@ SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self)
 
 | C type | sx type | Notes |
 |--------|---------|-------|
-| `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
-| `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
-| `const char*` (return) | `cstring` | the pointer, verbatim; `fromCstring` to view |
-| nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
+| `const char*` (input) | `[*:0]u8` | the pointer, verbatim; literals coerce |
+| `const char*` (return) | `[*:0]u8` | the pointer, verbatim; `fromCstring` to view |
+| nullable `const char*` (both directions) | `?[*:0]u8` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
-| `const char**` | `*[:0]u8` | address of `[:0]u8` — `.ptr` at offset 0 |
 | `int*` (single out) | `*i32` | |
 | `unsigned*` (single out) | `*u32` | |
 | `float*` (buffer) | `[*]f32` | |
@@ -2465,7 +2464,7 @@ pathJoin :: (..parts: []string) -> string { ... }
 A parameter list may end in a bare `..`, the C `...`:
 
 ```sx
-printf :: (fmt: cstring, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ..) -> i32 extern;
 tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
 ```
 
@@ -2496,7 +2495,7 @@ An `extern` declaration may instead end in `..name: []T`, the **homogeneous
 constraint** over the tail: the author asserts every tail argument is a `T`.
 Each argument at or past the fixed count takes the ordinary implicit conversion
 to `T` — the one any typed parameter of `T` performs, so a string literal reaches
-a `[]cstring` tail as its data pointer — and then the promotions above. The
+a `[][*:0]u8` tail as its data pointer — and then the promotions above. The
 emitted operand carries `T`'s width rather than the argument's written one, and
 each crosses its own C variadic slot; nothing is packed into an sx slice.
 
@@ -2591,7 +2590,7 @@ only in an effective-C signature. The rule is independent of a bare `..` tail �
 a signature that takes a list needs none of its own:
 
 ```sx
-vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+vmprintf :: (fmt: [*:0]u8, ap: @VaList) -> ?[*:0]u8 extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
@@ -2614,14 +2613,14 @@ from an `ap: @VaList` local or parameter, `f(fmt, ap.*)` from an internal
 value copy:
 
 ```sx
-relay :: (fmt: cstring, ..) -> i32 abi(.c) {
+relay :: (fmt: [*:0]u8, ..) -> i32 abi(.c) {
     ap: @VaList = ---;
     @vaStart(*ap);
     defer @vaEnd(*ap);
     return c_vformat(fmt, ap);
 }
 
-forward :: (fmt: cstring, ap: *@VaList) -> i32 {
+forward :: (fmt: [*:0]u8, ap: *@VaList) -> i32 {
     return c_vformat(fmt, ap.*);
 }
 ```

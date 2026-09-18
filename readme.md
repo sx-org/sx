@@ -246,7 +246,7 @@ FIBONACCI_10 :: @run fib(10);
 @insert @run generateLookupTable();
 
 libc :: @library "c";
-printf :: (fmt: [:0]u8, args: ..any) -> i32 extern libc;
+printf :: (fmt: [*:0]u8, args: ..any) -> i32 extern libc;
 abs       :: (x: i32) -> i32 extern;
 sx_square :: (x: i32) -> i32 export { x * x }
 __stdinp  : *void extern;

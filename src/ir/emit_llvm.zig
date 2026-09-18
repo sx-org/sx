@@ -1586,18 +1586,13 @@ pub const LLVMEmitter = struct {
         // main always returns i32 at the LLVM level (JIT expects it)
         const raw_ret_ty = self.toLLVMType(func.ret);
         const needs_c_abi = func.is_extern or func.call_conv == .c;
-        // An extern `-> string` / `-> ?string` receives ONE `char *` from C;
-        // the fat sx value is synthesized at the call site (emitCall's
-        // cstrReturnToSx). Never sret — the C callee knows nothing about an
-        // out-pointer.
-        const cstr_ret = self.cstrRetKind(func);
         // sret return: C-ABI functions returning a >16 B non-HFA struct
         // use the indirect-return convention (caller allocates space,
         // passes its pointer as a hidden first arg with `sret(<T>)`,
         // function writes through and returns void). Distinct from
         // small-struct register coercion (i64 / [2 x i64]) and HFA.
-        const uses_sret = needs_c_abi and !is_main and cstr_ret == .none and self.needsByval(func.ret, raw_ret_ty);
-        const ret_ty = if (is_main) self.cached_i32 else if (cstr_ret != .none) self.cached_ptr else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
+        const uses_sret = needs_c_abi and !is_main and self.needsByval(func.ret, raw_ret_ty);
+        const ret_ty = if (is_main) self.cached_i32 else if (uses_sret) self.cached_void else if (needs_c_abi) self.abiCoerceParamTypeEx(func.ret, raw_ret_ty, func.is_extern) else raw_ret_ty;
 
         // Build parameter types.
         // C ABI (extern / abi(.c)): full size-bucket coercion (string→ptr, ≤8→i64, …).
@@ -1719,7 +1714,6 @@ pub const LLVMEmitter = struct {
         // classification exactly.
         const needs_c_abi_sig = func.is_extern or func.call_conv == .c;
         const fn_uses_sret = needs_c_abi_sig and !self.current_func_is_main and
-            self.cstrRetKind(func) == .none and
             self.needsByval(func.ret, self.toLLVMType(func.ret));
         const param_sret_offset: usize = if (fn_uses_sret) 1 else 0;
         for (0..func.params.len) |pi| {
@@ -2692,69 +2686,6 @@ pub const LLVMEmitter = struct {
     }
 
     // ── Value coercion helpers ──────────────────────────────────────
-
-    /// How an EXTERN function's declared sx return maps onto a C `char *`:
-    /// `-> string` (.plain) and `-> ?string` (.optional) both receive one
-    /// pointer from C; everything else is `.none`. Keep `declareFunction`'s
-    /// signature building and `emitCall`'s result synthesis keyed on the
-    /// SAME classification or the ABI splits.
-    pub const CstrRet = enum { none, plain, optional };
-
-    pub fn cstrRetKind(self: *LLVMEmitter, func: *const Function) CstrRet {
-        if (!func.is_extern) return .none;
-        if (func.ret == .string) return .plain;
-        if (!func.ret.isBuiltin()) {
-            const info = self.ir_mod.types.get(func.ret);
-            if (info == .optional and info.optional.child == .string) return .optional;
-        }
-        return .none;
-    }
-
-    /// Build the sx-level value for a extern call that returned a `char *`:
-    /// `{ptr, strlen(ptr)}` for `string` (NULL → `{null, 0}`), wrapped in
-    /// `{string, i1}` with `has = ptr != null` for `?string`. The strlen call
-    /// is branch-guarded — `select` would evaluate `strlen(NULL)`.
-    pub fn cstrReturnToSx(self: *LLVMEmitter, p: c.LLVMValueRef, optional: bool) c.LLVMValueRef {
-        const strlen_fn = c.LLVMGetNamedFunction(self.llvm_module, "strlen") orelse blk: {
-            var pt = [_]c.LLVMTypeRef{self.cached_ptr};
-            const ft = c.LLVMFunctionType(self.cached_i64, &pt, 1, 0);
-            break :blk c.LLVMAddFunction(self.llvm_module, "strlen", ft);
-        };
-        const strlen_ty = c.LLVMGlobalGetValueType(strlen_fn);
-
-        const cur_fn = c.LLVMGetBasicBlockParent(c.LLVMGetInsertBlock(self.builder));
-        const entry_bb = c.LLVMGetInsertBlock(self.builder);
-        const len_bb = c.LLVMAppendBasicBlockInContext(self.context, cur_fn, "cstr.len");
-        const join_bb = c.LLVMAppendBasicBlockInContext(self.context, cur_fn, "cstr.join");
-
-        const is_null = c.LLVMBuildICmp(self.builder, c.LLVMIntEQ, p, c.LLVMConstNull(self.cached_ptr), "cstr.isnull");
-        _ = c.LLVMBuildCondBr(self.builder, is_null, join_bb, len_bb);
-
-        c.LLVMPositionBuilderAtEnd(self.builder, len_bb);
-        var sargs = [_]c.LLVMValueRef{p};
-        const n = c.LLVMBuildCall2(self.builder, strlen_ty, strlen_fn, &sargs, 1, "cstr.n");
-        _ = c.LLVMBuildBr(self.builder, join_bb);
-
-        c.LLVMPositionBuilderAtEnd(self.builder, join_bb);
-        const len_phi = c.LLVMBuildPhi(self.builder, self.cached_i64, "cstr.lenphi");
-        var ivals = [_]c.LLVMValueRef{ c.LLVMConstInt(self.cached_i64, 0, 0), n };
-        var ibbs = [_]c.LLVMBasicBlockRef{ entry_bb, len_bb };
-        c.LLVMAddIncoming(len_phi, &ivals, &ibbs, 2);
-
-        const str_ty = self.getStringStructType();
-        var s = c.LLVMGetUndef(str_ty);
-        s = c.LLVMBuildInsertValue(self.builder, s, p, 0, "cstr.sp");
-        s = c.LLVMBuildInsertValue(self.builder, s, len_phi, 1, "cstr.sv");
-        if (!optional) return s;
-
-        var ofields = [_]c.LLVMTypeRef{ str_ty, self.cached_i1 };
-        const opt_ty = c.LLVMStructTypeInContext(self.context, &ofields, 2, 0);
-        const has = c.LLVMBuildNot(self.builder, is_null, "cstr.has");
-        var o = c.LLVMGetUndef(opt_ty);
-        o = c.LLVMBuildInsertValue(self.builder, o, s, 0, "cstr.ov");
-        o = c.LLVMBuildInsertValue(self.builder, o, has, 1, "cstr.opt");
-        return o;
-    }
 
     pub fn coerceArg(self: *LLVMEmitter, val: c.LLVMValueRef, param_ty: c.LLVMTypeRef) c.LLVMValueRef {
         const val_ty = c.LLVMTypeOf(val);

@@ -35,7 +35,7 @@ glDrawArrays             : (u32, i32, i32) -> void abi(.c) = ---;
 glPolygonMode            : (u32, u32) -> void abi(.c) = ---;
 glLineWidth              : (f32) -> void abi(.c) = ---;
 glCreateShader           : (u32) -> u32 abi(.c) = ---;
-glShaderSource           : (u32, i32, *[:0]u8, *i32) -> void abi(.c) = ---;
+glShaderSource           : (u32, i32, *[*:0]u8, *i32) -> void abi(.c) = ---;
 glCompileShader          : (u32) -> void abi(.c) = ---;
 glGetShaderiv            : (u32, u32, *i32) -> void abi(.c) = ---;
 glGetShaderInfoLog       : (u32, i32, *i32, [*]u8) -> void abi(.c) = ---;
@@ -109,11 +109,11 @@ GL_CLAMP_TO_EDGE         :u32: 0x812F;
 
 // Loader: call once after creating GL context
 // Pass in a proc loader (e.g. SDL_GL_GetProcAddress)
-loadFn :: (slot: *$T, name: cstring, getProc: (cstring) -> *void abi(.c)) {
+loadFn :: (slot: *$T, name: [*:0]u8, getProc: ([*:0]u8) -> *void abi(.c)) {
     slot.* = getProc(name).(T);
 }
 
-loadGl :: (getProc: (cstring) -> *void abi(.c)) {
+loadGl :: (getProc: ([*:0]u8) -> *void abi(.c)) {
     loadFn(*glClearColor, "glClearColor", getProc);
     loadFn(*glClear, "glClear", getProc);
     loadFn(*glEnable, "glEnable", getProc);
@@ -200,7 +200,8 @@ createProgram :: (vertSrc: [:0]u8, fragSrc: [:0]u8) -> u32 {
 
 compileShader :: (shaderType : u32, source: [:0]u8) -> u32 {
     shader := glCreateShader(shaderType);
-    glShaderSource(shader, 1, source, null);
+    text : [*:0]u8 = source.ptr.([*:0]u8);
+    glShaderSource(shader, 1, *text, null);
     glCompileShader(shader);
 
     status : i32 = 0;

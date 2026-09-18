@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-printf :: (fmt: cstring, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ..) -> i32 extern;
 
 readTail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
     ap: @VaList = ---;

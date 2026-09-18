@@ -22,7 +22,7 @@
 
 @import "modules/std.sx";
 
-printf :: (fmt: cstring, ..) -> i32 extern;
+printf :: (fmt: [*:0]u8, ..) -> i32 extern;
 c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 
 // `..name: []U` is the homogeneous constraint: every tail argument takes the

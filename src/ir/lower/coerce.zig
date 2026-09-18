@@ -1832,9 +1832,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // bytes are a terminated constant (Odin's literal blessing). Any
         // other string may be an unterminated view, so it must materialize
         // through `toCstring`.
-        // The destination is `.cstring` OR a `[*]u8`/`[*]i8` C byte pointer
-        // (the C-import synthesis of `char const *`) — the emitted value is
-        // the data pointer, typed as the DESTINATION.
+        // The destination is `.cstring` OR a byte many-pointer (`[*:0]u8`,
+        // `[*]u8`, `[*]i8`) — the emitted value is the data pointer, typed as
+        // the DESTINATION.
         .string_to_cstring => {
             if (self.builder.isConstString(val)) {
                 return self.builder.emit(.{ .data_ptr = .{ .operand = val } }, dst_ty);
