@@ -206,6 +206,22 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     try std.testing.expect(l.noneReinterpretIsUnsafe(opt_ptr, .i64));
 }
 
+test "conversions: a pointer welds only over its own struct" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const tt = &module.types;
+
+    const box = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Box"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("n"), .ty = .i32 }}) catch unreachable } });
+    const other = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Other"), .fields = alloc.dupe(ir_mod.TypeInfo.StructInfo.Field, &[_]ir_mod.TypeInfo.StructInfo.Field{.{ .name = tt.internString("q"), .ty = .i32 }}) catch unreachable } });
+
+    try std.testing.expect(l.noneReinterpretIsUnsafe(tt.ptrTo(other), tt.ptrTo(box)));
+    try std.testing.expect(!l.noneReinterpretIsUnsafe(tt.ptrTo(box), tt.manyPtrTo(box)));
+}
+
 test "conversions: classifyCompare meets pointers, numbers, and refuses mixed signedness" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

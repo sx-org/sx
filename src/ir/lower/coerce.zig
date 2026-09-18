@@ -1465,9 +1465,53 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // a same-width scalar occupy the same bytes but mean different things, so
     // the store types an address as a number the program then does arithmetic
     // on (or a number as an address it then dereferences). Pointer↔pointer
-    // stays in the same-width family below (`*T → [*]T`).
+    // stays in the same-width family below (`*T → [*]T`) unless the two bottom
+    // out on different structs.
     if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
+    if (structPointeesDiffer(self, src_ty, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
+}
+
+/// Two addresses that bottom out on DIFFERENT structs at the same indirection
+/// depth (`*A → *B`). Both sides are one word, so the width rule reads the
+/// store as bit-compatible, but the destination names a layout the source's
+/// bytes do not hold: the program reads `B`'s fields out of an `A`. Two
+/// layouts are exempt — a protocol, which the source concrete lends a view of,
+/// and a foreign runtime class, whose hierarchy lives in the runtime rather
+/// than the type table.
+fn structPointeesDiffer(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    var src = src_ty;
+    var dst = dst_ty;
+    while (true) {
+        const src_pointee = pointeeOf(self, src) orelse return false;
+        const dst_pointee = pointeeOf(self, dst) orelse return false;
+        if (src_pointee == dst_pointee) return false;
+        if (!isStructType(self, src_pointee) or !isStructType(self, dst_pointee)) {
+            src = src_pointee;
+            dst = dst_pointee;
+            continue;
+        }
+        if (self.getProtocolInfo(dst_pointee) != null) return false;
+        return !isRuntimeClass(self, src_pointee) and !isRuntimeClass(self, dst_pointee);
+    }
+}
+
+fn pointeeOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .pointer => |p| p.pointee,
+        .many_pointer => |p| p.element,
+        else => null,
+    };
+}
+
+fn isStructType(self: *Lowering, ty: TypeId) bool {
+    return !ty.isBuiltin() and self.module.types.get(ty) == .@"struct";
+}
+
+fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
+    const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
+    return self.program_index.runtime_class_map.contains(name);
 }
 
 fn isFunctionType(self: *Lowering, ty: TypeId) bool {

@@ -1,0 +1,17 @@
+error: cannot initialize 'p' of type '*Box (examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx)' with a value of type '*Other'
+  --> examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx:7:15
+   |
+ 7 |     p: *Box = lib.optr();
+   |               ^^^^^^^^^^
+
+error: cannot initialize 'q' of type '*Box (examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx)' with a value of type '*Box (examples/diagnostics/2680-diagnostics-pointer-initializer-author/lib.sx)'
+  --> examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx:8:15
+   |
+ 8 |     q: *Box = lib.bptr();
+   |               ^^^^^^^^^^
+
+error: cannot initialize 'r' of type '**Box (examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx)' with a value of type '**Other'
+  --> examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx:9:16
+   |
+ 9 |     r: **Box = lib.optrptr();
+   |                ^^^^^^^^^^^^^
