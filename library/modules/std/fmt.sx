@@ -25,36 +25,34 @@ last :: ufcs (s: []$T) -> ?$T {
     s[s.len - 1]
 }
 
-// ── cstring: the C-boundary string ────────────────────────────────────
-// `cstring` is ONE pointer to a null-terminated u8 buffer — C's `char *`.
-// It carries no length (`cstringLen` walks to the terminator) and
-// crosses `extern` boundaries verbatim in both directions; `?cstring`
-// is the nullable case (null pointer = absent). String LITERALS coerce
-// to `cstring` implicitly — their bytes are terminated constants; every
-// other `string` must materialize through `toCstring`.
+// ── [*:0]u8: the C-boundary string ────────────────────────────────────
+// C's `char *` is ONE pointer to a null-terminated u8 buffer. It carries
+// no length (`cstringLen` walks to the terminator) and crosses `extern`
+// boundaries verbatim in both directions; `?[*:0]u8` is the nullable case
+// (null pointer = absent). String LITERALS coerce to it implicitly — their
+// bytes are terminated constants; every other `string` must materialize
+// through `toCstring`.
 
 // Byte length of `c` (strlen — O(n), walks to the terminator).
-cstringLen :: (c: cstring) -> i64 {
-    p : [*]u8 = c.([*]u8);
+cstringLen :: (c: [*:0]u8) -> i64 {
     n := 0;
-    while p[n] != '\0' { n += 1; }
+    while c[n] != '\0' { n += 1; }
     n
 }
 
 // A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
 // shares C's buffer — copy it if it must outlive the source.
-fromCstring :: (c: cstring) -> string {
-    p : [*]u8 = c.([*]u8);
-    string{ ptr = p, len = cstringLen(c) }
+fromCstring :: (c: [*:0]u8) -> [:0]u8 {
+    string{ ptr = c.([*]u8), len = cstringLen(c) }
 }
 
-// An owned, terminated copy of `s` as a `cstring`.
-toCstring :: (s: string) -> cstring {
+// An owned, terminated copy of `s`.
+toCstring :: (s: string) -> [*:0]u8 {
     sb := StringBuilder.init();
     sb.reserve(s.len + 1);
     sb.write(s);
     sb.write("\0");
-    sb.finish().ptr.(cstring)
+    sb.finish().ptr.([*:0]u8)
 }
 
 // Join path components with the POSIX separator ('/'). Skips empty

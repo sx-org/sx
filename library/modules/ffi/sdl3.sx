@@ -326,7 +326,7 @@ SDL_Event :: enum struct { tag: u32; _: u32; payload: [30]u32; } {
 // Functions
 SDL_Init               :: (flags: u32) -> bool extern;
 SDL_Quit               :: () -> void extern;
-SDL_CreateWindow       :: (title: [:0]u8, w: i32, h: i32, flags: u64) -> *void extern;
+SDL_CreateWindow       :: (title: [*:0]u8, w: i32, h: i32, flags: u64) -> *void extern;
 SDL_DestroyWindow      :: (window: *void) -> void extern;
 SDL_GL_SetAttribute    :: (attr: i32, value: i32) -> bool extern;
 SDL_GL_CreateContext    :: (window: *void) -> *void extern;
@@ -334,7 +334,7 @@ SDL_GL_DestroyContext   :: (context: *void) -> bool extern;
 SDL_GL_MakeCurrent     :: (window: *void, context: *void) -> bool extern;
 SDL_GL_SwapWindow      :: (window: *void) -> bool extern;
 SDL_GL_SetSwapInterval   :: (interval: i32) -> bool extern;
-SDL_GL_GetProcAddress    :: (proc: cstring) -> *void abi(.c) extern;
+SDL_GL_GetProcAddress    :: (proc: [*:0]u8) -> *void abi(.c) extern;
 
 SDL_Metal_CreateView     :: (window: *void) -> *void extern;
 SDL_Metal_DestroyView    :: (view: *void) -> void extern;

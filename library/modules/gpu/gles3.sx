@@ -37,7 +37,7 @@
 // the EGL context is current. We declare only the loader here; EGL
 // surface/context creation belongs in the consumer's `main = true`
 // Activity (e.g. an `onCreate` body that calls `eglCreateContext`).
-eglGetProcAddress :: (name: cstring) -> *void abi(.c) extern;
+eglGetProcAddress :: (name: [*:0]u8) -> *void abi(.c) extern;
 
 
 // ── State + resource tables ────────────────────────────────────────────

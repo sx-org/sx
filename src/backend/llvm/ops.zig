@@ -1535,10 +1535,7 @@ pub const Ops = struct {
         };
         const callee_needs_c_abi = callee_func.is_extern or callee_func.call_conv == .c;
         const callee_raw_ret = self.e.toLLVMType(callee_func.ret);
-        // Extern string/?string returns receive one `char *` — never sret
-        // (must mirror declareFunction's signature classification).
-        const cstr_ret = self.e.cstrRetKind(callee_func);
-        const callee_uses_sret = callee_needs_c_abi and cstr_ret == .none and self.e.needsByval(callee_func.ret, callee_raw_ret);
+        const callee_uses_sret = callee_needs_c_abi and self.e.needsByval(callee_func.ret, callee_raw_ret);
 
         // When the callee uses sret, prepend an alloca for the result.
         // Index alignment: actual_args[0] = sret_slot; actual_args[i+1] = sx arg i.
@@ -1593,10 +1590,6 @@ pub const Ops = struct {
             c.LLVMAddCallSiteAttribute(result, param1_idx, sret_attr);
             // Load the actual struct value the callee wrote into the slot.
             result = c.LLVMBuildLoad2(self.e.builder, callee_raw_ret, sret_slot, "sret.load");
-        } else if (!call_is_void_like and cstr_ret != .none) {
-            // The C side returned `char *`; build the fat sx string (and the
-            // optional wrapper) from it.
-            result = self.e.cstrReturnToSx(result, cstr_ret == .optional);
         } else if (!call_is_void_like and callee_func.is_extern) {
             // Coerce ABI return value (e.g. i64 / [2 x i64]) back to IR struct type if needed
             const expected_ty = self.e.toLLVMType(instruction.ty);

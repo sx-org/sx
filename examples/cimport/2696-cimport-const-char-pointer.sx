@@ -1,0 +1,21 @@
+// A synthesized C decl spells `const char *` as `[*:0]u8` — the terminator is
+// part of the type, so a string literal reaches the parameter and a returned
+// pointer walks to its own end. A writable `char *` promises no terminator and
+// stays `[*]u8`.
+@import "modules/std.sx";
+
+cu :: @import c {
+    @include "2696-cimport-const-char-pointer/text.h";
+    @source  "2696-cimport-const-char-pointer/text.c";
+};
+
+main :: () -> i32 {
+    print("length = {}\n", cu.text_length("hello"));
+
+    tag := cu.text_tag();
+    print("tag = {} {}\n", @typeName(@typeOf(tag)), fromCstring(tag));
+
+    raw := cu.text_buffer();
+    print("buffer = {} {}\n", @typeName(@typeOf(raw)), string{ ptr = raw, len = 3 });
+    0
+}

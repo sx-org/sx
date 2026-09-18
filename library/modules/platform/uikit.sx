@@ -914,7 +914,7 @@ impl Platform for UIKitPlatform {
 
     insertText :: (self: *UIKitPlatform, text: *NSString) {
         if session := self.session {
-            session.insert(fromCstring(text.UTF8String().(cstring)));
+            session.insert(fromCstring(text.UTF8String().([*:0]u8)));
         }
     }
 
@@ -929,7 +929,7 @@ impl Platform for UIKitPlatform {
     setMarkedText :: (self: *UIKitPlatform, text: ?*NSString, selectedRange: _NSRange) {
         if session := self.session {
             run : string = "";
-            if t := text { run = fromCstring(t.UTF8String().(cstring)); }
+            if t := text { run = fromCstring(t.UTF8String().([*:0]u8)); }
             selStart := utf16OffsetToBytes(run, selectedRange.location.(i64));
             selEnd := utf16OffsetToBytes(run, (selectedRange.location + selectedRange.length).(i64));
             session.setMarked(run, selStart, selEnd);
@@ -981,7 +981,7 @@ uikitPointer :: (pos: Point) -> PointerEvent {
 
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `loadGl`'s C-conv proc-loader slot.
-iosGlProc :: (name: cstring) -> *void abi(.c) {
+iosGlProc :: (name: [*:0]u8) -> *void abi(.c) {
     rtldDefault : *void = (0 - 2).(*void);
     dlsym(rtldDefault, name)
 }

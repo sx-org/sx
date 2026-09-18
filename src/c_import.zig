@@ -300,19 +300,21 @@ pub fn processCImport(
             const fn_node = try allocator.create(Node);
             fn_node.* = .{
                 .span = .{ .start = 0, .end = 0 },
-                .data = .{ .fn_decl = .{
-                    .name = name,
-                    .params = try params.toOwnedSlice(allocator),
-                    .return_type = ret_node,
-                    .body = extern_body,
-                    .extern_export = .extern_,
-                    .is_c_variadic = fi.is_variadic != 0,
-                    // A C function whose own NAME collides with a reserved type
-                    // spelling (`int i8(int);`) is RAW — exempt from the
-                    // reserved-type-name decl check so generated bindings import
-                    // without hand-edits.
-                    .is_raw = true,
-                } },
+                .data = .{
+                    .fn_decl = .{
+                        .name = name,
+                        .params = try params.toOwnedSlice(allocator),
+                        .return_type = ret_node,
+                        .body = extern_body,
+                        .extern_export = .extern_,
+                        .is_c_variadic = fi.is_variadic != 0,
+                        // A C function whose own NAME collides with a reserved type
+                        // spelling (`int i8(int);`) is RAW — exempt from the
+                        // reserved-type-name decl check so generated bindings import
+                        // without hand-edits.
+                        .is_raw = true,
+                    },
+                },
             };
 
             try all_decls.append(allocator, fn_node);
@@ -972,20 +974,20 @@ fn mapCTypeToSxNode(
     if (std.mem.endsWith(u8, trimmed, "*")) {
         const base = std.mem.trim(u8, trimmed[0 .. trimmed.len - 1], " ");
 
-        // const char * → [*]u8 (raw pointer, matches C ABI)
+        // const char * → [*:0]u8 (C's string pointer)
         if (std.mem.eql(u8, base, "const char") or std.mem.eql(u8, base, "char const")) {
-            return makeManyPointerTypeNode(allocator, "u8");
+            return makeManyPointerTypeNode(allocator, "u8", 0);
         }
-        // char * → [*]u8
+        // char * → [*]u8 (a writable byte buffer carries no terminator promise)
         if (std.mem.eql(u8, base, "char")) {
-            return makeManyPointerTypeNode(allocator, "u8");
+            return makeManyPointerTypeNode(allocator, "u8", null);
         }
         // unsigned char * / const unsigned char * → [*]u8
         if (std.mem.eql(u8, base, "unsigned char") or
             std.mem.eql(u8, base, "const unsigned char") or
             std.mem.eql(u8, base, "unsigned char const"))
         {
-            return makeManyPointerTypeNode(allocator, "u8");
+            return makeManyPointerTypeNode(allocator, "u8", null);
         }
         // void * / const void * → *void
         if (std.mem.eql(u8, base, "void") or std.mem.eql(u8, base, "const void")) {
@@ -1067,12 +1069,12 @@ fn makePointerTypeNode(allocator: std.mem.Allocator, pointee: []const u8) !*Node
     return node;
 }
 
-fn makeManyPointerTypeNode(allocator: std.mem.Allocator, element: []const u8) !*Node {
+fn makeManyPointerTypeNode(allocator: std.mem.Allocator, element: []const u8, sentinel: ?i64) !*Node {
     const inner = try makeTypeExprNode(allocator, element);
     const node = try allocator.create(Node);
     node.* = .{
         .span = .{ .start = 0, .end = 0 },
-        .data = .{ .many_pointer_type_expr = .{ .element_type = inner } },
+        .data = .{ .many_pointer_type_expr = .{ .element_type = inner, .sentinel = sentinel } },
     };
     return node;
 }

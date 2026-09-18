@@ -37,14 +37,14 @@ memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
 read   :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc;
 write  :: (fd: Fd, buf: [*]u8, count: i64) -> isize extern libc;
 close  :: (fd: Fd) -> i32 extern libc;
-open   :: (path: [:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
+open   :: (path: [*:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
 lseek  :: (fd: Fd, offset: i64, whence: i32) -> i64 extern libc;
-unlink :: (path: [:0]u8) -> i32 extern libc;
-rmdir  :: (path: [:0]u8) -> i32 extern libc;
-mkdir  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
-access :: (path: [:0]u8, mode: i32) -> i32 extern libc;
-chmod  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
-rename :: (oldp: [:0]u8, newp: [:0]u8) -> i32 extern libc;
+unlink :: (path: [*:0]u8) -> i32 extern libc;
+rmdir  :: (path: [*:0]u8) -> i32 extern libc;
+mkdir  :: (path: [*:0]u8, mode: u32) -> i32 extern libc;
+access :: (path: [*:0]u8, mode: i32) -> i32 extern libc;
+chmod  :: (path: [*:0]u8, mode: u32) -> i32 extern libc;
+rename :: (oldp: [*:0]u8, newp: [*:0]u8) -> i32 extern libc;
 fstat  :: (fd: Fd, output: *void) -> i32 extern libc;
 fcntl  :: (fd: Fd, cmd: i32, ..args: []i32) -> i32 extern libc;
 
@@ -98,7 +98,7 @@ inline match @host.os {
 inline match @host.os {
     case .wasm:
         emscripten_set_main_loop  :: (func: *void, fps: i32, simInfinite: i32) extern libc;
-        emscripten_run_script_int :: (script: [:0]u8) -> i32 extern libc;
+        emscripten_run_script_int :: (script: [*:0]u8) -> i32 extern libc;
     else: {}
 }
 
@@ -119,7 +119,7 @@ exit :: (code: i32) -> noreturn extern libc "_exit";
 // `argv` is NUL-terminated: the last slot is null.
 pipe    :: (fds: *[2]Fd) -> i32 extern libc;
 fork    :: () -> i32 extern libc;
-execvp  :: (file: cstring, argv: [*]?cstring) -> i32 extern libc;
+execvp  :: (file: [*:0]u8, argv: [*]?[*:0]u8) -> i32 extern libc;
 dup2    :: (oldfd: Fd, newfd: Fd) -> i32 extern libc;
 waitpid :: (pid: i32, status: *i32, options: i32) -> i32 extern libc;
 kill    :: (pid: i32, sig: i32) -> i32 extern libc;

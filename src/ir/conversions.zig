@@ -65,10 +65,10 @@ pub const CoercionResolver = struct {
     pub fn classify(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) CoercionPlan {
         if (src_ty == dst_ty) return .no_op;
         if (src_ty == .string and dst_ty == .cstring) return .string_to_cstring;
-        // string → `[*]u8`/`[*]i8`: the C-import synthesizes `char const *`
-        // params as byte many-pointers, so a string LITERAL argument gets the
-        // same literal-only blessing as `cstring` (its bytes are a terminated
-        // constant; the emitted value is the DATA POINTER). A non-literal
+        // string → a byte many-pointer (`[*:0]u8`, C's `char *`, and the
+        // unterminated `[*]u8` / `[*]i8`): a string LITERAL gets the same
+        // literal-only blessing as `cstring` — its bytes are a terminated
+        // constant and the emitted value is the DATA POINTER. A non-literal
         // string may be an unterminated view — same rejection as cstring.
         // The pair needs this modeled arm: the `.none`-weld guard rejects a
         // `.none` weld of the 16-byte {ptr,len} header into a pointer.

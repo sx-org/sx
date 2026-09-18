@@ -8,7 +8,7 @@ Vector2 :: struct {
     x, y: f32;
 }
 
-InitWindow :: (width: i32, height: i32, title: [:0]u8) -> void extern raylib;
+InitWindow :: (width: i32, height: i32, title: [*:0]u8) -> void extern raylib;
 CloseWindow :: () -> void extern raylib;
 WindowShouldClose :: () -> bool extern raylib;
 BeginDrawing :: () -> void extern raylib;
