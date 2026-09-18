@@ -1,0 +1,5 @@
+FA :: error { Alpha; }
+Box :: struct($T: Type) {
+    v: T;
+    go :: (self: *Box(T)) -> (i64, !FA) { raise FA.Alpha; }
+}

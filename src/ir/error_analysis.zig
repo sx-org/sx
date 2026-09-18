@@ -185,20 +185,28 @@ pub const ErrorAnalysis = struct {
     }
 
     /// The method a call on a `ty` receiver dispatches to. `ty`'s own
-    /// declaration answers first: two modules may each declare a `Name`, so
-    /// the `Name.method` spelling speaks only for a type with no known author.
+    /// declaration answers first — a plain struct through its author, a
+    /// generic instance through its stamped one: two modules may each declare
+    /// a `Name`, so the `Name.method` spelling speaks only for a type with no
+    /// known author.
     fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
         if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
-        if (!self.l.hasPlainStructAuthor(ty)) {
-            if (self.nominalName(ty)) |name| {
+        if (self.nominalName(ty)) |name| {
+            if (self.l.genericInstanceMethod(name, method)) |gm| return gm.fd;
+            if (!self.l.hasPlainStructAuthor(ty)) {
                 if (self.qualifiedDecl(name, method)) |fd| return fd;
             }
         }
         return self.ufcsDecl(method);
     }
 
+    /// The free function a dot-call selects. Dot-dispatch onto a free function
+    /// is opt-in — a `ufcs` alias or a fn declared `name :: ufcs (...)` — so a
+    /// plain free function of the same bare name selects nothing.
     fn ufcsDecl(self: ErrorAnalysis, method: []const u8) ?*const ast.FnDecl {
-        return self.l.edgeCalleeDecl(self.l.ufcsAliasTarget(method) orelse method, self.l.current_source_file);
+        const alias = self.l.ufcsAliasTarget(method);
+        const fd = self.l.edgeCalleeDecl(alias orelse method, self.l.current_source_file) orelse return null;
+        return if (alias != null or fd.is_ufcs) fd else null;
     }
 
     fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
