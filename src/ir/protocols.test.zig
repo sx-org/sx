@@ -94,7 +94,7 @@ test "protocols: packArgConformsTo at the impl-declaration level (non-parameteri
     try std.testing.expect(!pr.packArgConformsTo("Nope", circle));
 }
 
-test "protocols: registerImplBlock records <Target>.<method> in fn_ast_map" {
+test "protocols: registerImplBlock registers <Target>.<method> as a callable" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

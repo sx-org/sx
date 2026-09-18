@@ -974,13 +974,13 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 } else if (cd.value.data == .identifier or cd.value.data == .field_access) {
                     // FN alias: `print2 :: print;` /
                     // `my_print :: s.print;`. When the alias chain terminates
-                    // at a fn decl, register the ALIAS name in `fn_ast_map`
-                    // pointing at the target's decl — every dispatch path
-                    // (early pack/comptime/generic, plain lazy-lower,
-                    // plan-side return typing) reads that map, so the alias
-                    // dispatches exactly like the target. Absent-only: a real
-                    // same-name fn keeps its slot (same-name re-exports are
-                    // a no-op — the target already owns the name).
+                    // at a fn decl, the ALIAS name selects the target's decl
+                    // in the function index — every dispatch path (early
+                    // pack/comptime/generic, plain lazy-lower, plan-side
+                    // return typing) reads it, so the alias dispatches exactly
+                    // like the target. Absent-only: a real same-name fn keeps
+                    // its slot (same-name re-exports are a no-op — the target
+                    // already owns the name).
                     if (self.current_source_file orelse self.main_file) |from| {
                         if (self.aliasedFnDecl(&decl.data.const_decl, from)) |target_fd| {
                             if (!self.program_index.contains(.function, cd.name))
@@ -3758,7 +3758,7 @@ pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
 }
 
 /// Lazily lower a function body on demand. Called when lowerCall can't find
-/// the function and it exists in fn_ast_map.
+/// the function and the function index holds its declaration.
 pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     // Already lowered?
     if (self.lowered_functions.contains(name)) return;
@@ -3817,13 +3817,13 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     }
 
     // Function not yet declared — create it fresh via lowerFunction. A
-    // module-qualified alias (`ns.fn`) is registered in
-    // `fn_ast_map` without an eager `declareFunction`, so there's no
-    // `Function.source_file` to switch to. Restore the alias's OWN declaring
-    // source before lowering its body, otherwise it lowers in the caller's
-    // visibility context and an own-import callee (`foo` calling `helper`
-    // from `foo`'s module's flat import) is reported "not visible".
-    // The reentry guard keeps the nested lowering transparent to the caller.
+    // module-qualified alias (`ns.fn`) enters the function index without an
+    // eager `declareFunction`, so there's no `Function.source_file` to switch
+    // to. Restore the alias's OWN declaring source before lowering its body,
+    // otherwise it lowers in the caller's visibility context and an own-import
+    // callee (`foo` calling `helper` from `foo`'s module's flat import) is
+    // reported "not visible". The reentry guard keeps the nested lowering
+    // transparent to the caller.
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
     if (self.program_index.functionSource(name)) |src| {
@@ -3832,14 +3832,11 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     self.lowerFunction(fd, name, false);
 }
 
-/// Lower `fd`'s body into the SPECIFIC `fid`, promoting its extern stub to a
-/// real function. Identity-addressable: the caller passes the exact FuncId,
-/// so a SHADOWED same-name author lowers into its OWN slot instead of
-/// colliding on the name-keyed `resolveFuncByName` (which returns the first
-/// author, the very split that trips the param-count assert). Self-
-/// contained — the `FnBodyReentry` guard makes the nested lowering
-/// transparent to any in-progress caller body — so it serves
-/// both `lazyLowerFunction`'s name-keyed found path and the out-of-line
+/// Lower `fd`'s body into the SPECIFIC `fid` the caller names, promoting its
+/// extern stub to a real function, so a shadowed same-name author fills its
+/// own slot. Self-contained — the `FnBodyReentry` guard makes the nested
+/// lowering transparent to any in-progress caller body — so it serves both
+/// `lazyLowerFunction`'s name-keyed found path and the out-of-line
 /// `lowerRetainedSameNameAuthors` pass.
 pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId, name: []const u8) void {
     // Synthesized protocol defaults execute in their declaring impl's method

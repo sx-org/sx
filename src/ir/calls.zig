@@ -700,14 +700,14 @@ pub const CallResolver = struct {
                     };
                     // `bfd` was found by its BARE name (a re-exported alias —
                     // `make :: inner.make` — registers the callee under `make`,
-                    // not under the facade-qualified `facade.make`). So the
-                    // qualified-name key is absent from `qualified_fn_source`,
-                    // and pinning the return type to that null source would
-                    // fall back to the CALL SITE's context — wrongly rejecting a
+                    // not under the facade-qualified `facade.make`). The
+                    // qualified spelling may select no declaration of its own,
+                    // and pinning the return type to a null source would fall
+                    // back to the CALL SITE's context — wrongly rejecting a
                     // return type (e.g. a `(Thing, !E)` multi-return whose
-                    // `Thing` is bare-visible only inside the callee's module) as
-                    // "not visible". The authoritative defining
-                    // module is `bfd`'s own source.
+                    // `Thing` is bare-visible only inside the callee's module)
+                    // as "not visible". The authoritative defining module is
+                    // `bfd`'s own source.
                     return .{
                         .kind = .namespace_fn,
                         .return_type = if (bfd.return_type) |rt| self.l.resolveTypeInSource(bfd.body.source_file, rt) else .void,

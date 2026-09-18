@@ -660,10 +660,6 @@ pub const Lowering = struct {
     /// its display name.
     protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
-    /// Declaration-name / import / visibility facts (`ProgramIndex`).
-    /// Owns `import_flags`; borrows `module_scopes` /
-    /// `import_graph` from the compilation driver. Reached via
-    /// `self.program_index.<field>`; populated by scan/registration code.
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
     // Implicit Context parameter machinery. When the program imports
