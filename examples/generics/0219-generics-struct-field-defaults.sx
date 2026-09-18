@@ -13,9 +13,9 @@ Box   :: struct($T: Type) { item: T; tag: i64 = 1; count: i64 = 9; }
 Outer :: struct($U: Type) { boxed: U; label: i64 = 99; }
 Dep   :: struct($T: Type) { item: T; sz: i64 = @sizeOf(T); }
 
-// Alias-instantiation leg: the alias name carries the instance's defaults
-// AND its mirrored type bindings (registerGenericStructAlias), so both a
-// constant and a DEPENDENT default apply through the alias spelling too.
+// Alias-instantiation leg: an alias BINDS the instantiation's own TypeId
+// (registerGenericStructAlias), so the instance's defaults — constant and
+// DEPENDENT alike — apply through the alias spelling.
 BI :: Box(i64);
 DA :: Dep(i16);
 
@@ -52,4 +52,8 @@ main :: () {
     ab : BI = .{ item = 3 };
     ad : DA = .{ item = 5 };
     print("{} {} {}\n", ab.tag, ab.count, ad.sz); // 1 9 2
+
+    // The alias also spells the literal's HEAD.
+    hd := DA{ item = 5 };
+    print("{}\n", hd.sz);                      // 2
 }

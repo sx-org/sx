@@ -538,12 +538,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Get struct field types for coercion and ordering
     const struct_fields = self.getStructFields(ty);
 
-    // Look up field defaults from AST. An inferred instance is keyed by its
-    // own mangled name, like any generic instance.
-    const struct_name_for_defaults = if (sl.struct_name != null and inferred_ty == .unresolved) sl.struct_name else if (!ty.isBuiltin()) blk: {
+    // Defaults and type-param bindings key off the RESOLVED type's own struct
+    // name: a generic instance registers both under its mangled name, which an
+    // alias of it (`BI :: Box(i64)`) never spells.
+    const struct_name_for_defaults: ?[]const u8 = if (ty.isBuiltin()) null else blk: {
         const ti = self.module.types.get(ty);
-        break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else @as(?[]const u8, null);
-    } else @as(?[]const u8, null);
+        break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else null;
+    };
     // The concrete TypeId selects the AUTHORING declaration's defaults. For
     // an author-tracked type the identity map is AUTHORITATIVE — a miss means
     // "this struct declares no defaults", never "borrow a same-name author's".
@@ -559,15 +560,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     };
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
-    // @sizeOf(T)` (dependent defaults). Those default AST nodes
-    // are monomorphized here: while lowering a missing field's default we
-    // temporarily install this instance's captured `type_bindings` (stamped by
-    // `instantiateGenericStruct` into `struct_instance_bindings`, keyed by the
-    // instance's mangled struct name — or the ALIAS name for `BI :: Box(i64)`,
-    // which mirrors the instance's bindings) so `T` resolves to the concrete
-    // arg for THIS instantiation. Only a non-generic struct has no entry —
-    // `default_bindings` stays null and the default lowers in the ambient
-    // (empty) binding context, exactly as before.
+    // @sizeOf(T)` (dependent defaults). Those default AST nodes are
+    // monomorphized here: lowering a missing field's default temporarily
+    // installs this instance's captured `type_bindings` (stamped by
+    // `instantiateGenericStruct` into `struct_instance_bindings` under the
+    // instance's mangled struct name) so `T` resolves to the concrete arg for
+    // THIS instantiation. A non-generic struct has no entry and its defaults
+    // lower in the ambient binding context.
     const default_bindings: ?std.StringHashMap(TypeId) =
         if (struct_name_for_defaults) |sn| self.struct_instance_bindings.get(sn) else null;
 
