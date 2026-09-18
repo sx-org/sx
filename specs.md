@@ -777,8 +777,8 @@ self-types as an *anonymous structural struct*: named elements become fields;
 positional elements get index names (`"0"`, `"1"`, …) readable via `.N` or a
 comptime `[i]` index; `.{x}` shorthand is a NAMED field, `.{ (x) }` is the
 positional escape; mixing named and positional elements is an error. Inline
-anonymous type **annotations** (`a : struct { x: i64; }`, `u : union { … }`,
-`e : enum { S: T; … }`) produce the same kind of type, in any type position —
+anonymous type **annotations** (`struct { x: i64; }`, `union { … }`,
+`enum { S: T; … }`) produce the same kind of type, in any type position —
 including a function's return type (`make :: () -> struct { x: i64; } {
 .{ x = 3 } }`; a bodyless `F :: () -> struct { … };` stays a function-type
 alias).
@@ -6591,7 +6591,6 @@ at_fn_decl      = AT_IDENT '::' '(' params? ')' ('->' ret_type)? end
                   // so no keyword, body, ABI, or linkage follows
 var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
-                | IDENT ':' type end
                 | IDENT ':' type 'extern' linkage_tail end
 linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
                   // `end` closes the tail
