@@ -750,8 +750,8 @@ pub const Lowering = struct {
     /// identifier machinery. First site wins; later sites stay silent-but-
     /// poisoned (they still return placeholders, and hasErrors() aborts).
     diag_enclosing_seen: std.StringHashMap(void) = undefined,
-    /// Dedupe for the const-alias-cycle diagnostic, keyed by the
-    /// cycle's minimum participant decl address: `followAliasChain` is probed
+    /// Dedupe for the const-alias-cycle diagnostic, keyed by the identity of
+    /// the cycle's head declaration: `followAliasChain` is probed
     /// speculatively from several resolution layers and from EACH member
     /// decl's registration, all of which close the same loop.
     alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
