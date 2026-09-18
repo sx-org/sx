@@ -713,10 +713,11 @@ pub const Lowering = struct {
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
     /// Flow-sensitive narrowing. The set of local variable names
     /// currently PROVEN present (`?T` known to carry a value) by a `!= null`
-    /// guard / branch. Region-scoped: `lowerBlock` snapshots+restores it, the
-    /// if-then branch narrows on `!= null`, a divergent `== null` guard narrows
-    /// the rest of the enclosing block, and an assignment kills the name's
-    /// narrowing. Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
+    /// guard / branch. Region-scoped: what a region narrows ends with the
+    /// region, while an assignment's kill outlives it; the if-then branch
+    /// narrows on `!= null`, and a divergent `== null` guard narrows the rest
+    /// of the enclosing block.
+    /// Consulted at the implicit `?T → concrete` unwrap (`coerceMode`):
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
     narrowed: std.StringHashMap(void) = undefined,
@@ -3489,6 +3490,7 @@ pub const Lowering = struct {
     pub const collectPresentIfTrue = lower_control_flow.collectPresentIfTrue;
     pub const collectPresentIfFalse = lower_control_flow.collectPresentIfFalse;
     pub const narrowSnapshot = lower_control_flow.narrowSnapshot;
+    pub const narrowSet = lower_control_flow.narrowSet;
     pub const narrowRestore = lower_control_flow.narrowRestore;
     pub const applyNarrowing = lower_control_flow.applyNarrowing;
     pub const tryConstBoolCondition = lower_control_flow.tryConstBoolCondition;

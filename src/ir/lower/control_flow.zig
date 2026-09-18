@@ -93,12 +93,42 @@ pub fn narrowSnapshot(self: *Lowering) std.ArrayList([]const u8) {
     return list;
 }
 
-/// Restore the narrowed-name set to a prior snapshot (drops anything added
-/// since, re-adds anything killed since).
-pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+/// Replace the narrowed-name set with exactly `names`.
+pub fn narrowSet(self: *Lowering, names: []const []const u8) void {
     self.narrowed.clearRetainingCapacity();
-    for (saved.items) |n| self.narrowed.put(n, {}) catch {};
+    for (names) |n| self.narrowed.put(n, {}) catch {};
+}
+
+fn narrowsName(names: []const []const u8, name: []const u8) bool {
+    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+/// Leave a lexical region: the narrowing it proved goes out of scope, while a
+/// reassignment inside it stays killed — the set becomes `saved` minus
+/// everything no longer narrowed. Consumes `saved`.
+pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+    var i: usize = 0;
+    while (i < saved.items.len) {
+        if (self.narrowed.contains(saved.items[i])) i += 1 else _ = saved.swapRemove(i);
+    }
+    self.narrowSet(saved.items);
     saved.deinit(self.alloc);
+}
+
+/// Fold one edge arriving at a merge into the facts that hold there: the first
+/// edge seeds them, every later edge intersects. Consumes `edge`.
+fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList([]const u8), edge: std.ArrayList([]const u8)) void {
+    var incoming = edge;
+    if (merged.*) |*m| {
+        var i: usize = 0;
+        while (i < m.items.len) {
+            if (narrowsName(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
+        }
+        incoming.deinit(self.alloc);
+    } else {
+        merged.* = incoming;
+    }
 }
 
 /// Mark every name in `names` as narrowed (proven present) in the current set.
@@ -470,7 +500,13 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     if (is_value and result_type != .void and result_type != .unresolved) self.target_type = result_type;
     var then_diverged = false;
     var else_diverged = false;
-    var then_snap = self.narrowSnapshot();
+    // The facts holding at `merge_bb` are those every edge REACHING it carries:
+    // each live arm's exit set, plus the condition-false edge when there is no
+    // `else`. A diverging arm reaches no merge and contributes nothing — which
+    // is what lets `if x == null { return; }` prove `x` present afterwards.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList([]const u8) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
         var v = self.lowerExpr(ie.then_branch);
@@ -502,12 +538,12 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
             self.builder.br(merge_bb, &.{});
         }
     }
-    self.narrowRestore(&then_snap);
+    if (!then_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    self.narrowSet(entry_snap.items);
 
     // Else branch
     if (has_else) {
         self.builder.switchToBlock(else_bb.?);
-        var else_snap = self.narrowSnapshot();
         self.applyNarrowing(present_false.items);
         if (is_value) {
             var v = self.lowerExpr(ie.else_branch.?);
@@ -537,14 +573,19 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
                 self.builder.br(merge_bb, &.{});
             }
         }
-        self.narrowRestore(&else_snap);
+        if (!else_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    } else {
+        self.applyNarrowing(present_false.items);
+        joinNarrowEdge(self, &merged, self.narrowSnapshot());
     }
     self.target_type = saved_target;
 
-    // Guard form: `if <x == null ...> { <diverges> }` with no else proves the
-    // tested names present for the remainder of the enclosing block. The
-    // enclosing `lowerBlock` snapshot drops this narrowing at block end.
-    if (!has_else and then_diverged) self.applyNarrowing(present_false.items);
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
+    }
 
     // Continue at merge
     self.builder.switchToBlock(merge_bb);
