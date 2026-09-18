@@ -13,6 +13,11 @@ Chars :: [*:0]i8;
 
 Row :: struct { key: Key; tag: Tag; chars: Chars; }
 
+Pair :: struct { n: [2:7]i64; }
+
+Table : [2:7]i64 = .[10, 20];
+Blank : Pair;
+
 atComptime :: () {
     k : Key = .[65, 66, 67, 68];
     print("comptime: len {} term {} size {}\n", k.len, k[4], @sizeOf(Key));
@@ -33,5 +38,9 @@ main :: () -> i32 {
 
     n : [2:7]i64 = .[10, 20];
     print("n.len {} n[1] {} n[2] {}\n", n.len, n[1], n[2]);
+
+    d : [2:7]i64;
+    f : [2:1]f64 = .[1.5, 2.5];
+    print("terminators: {} {} {} {}\n", Table[2], d[2], f[2], Blank.n[2]);
     0
 }

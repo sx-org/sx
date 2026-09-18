@@ -53,7 +53,6 @@ pub const Type = union(enum) {
     pub const SliceTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
-        /// The terminator of `[:X]T`.
         sentinel: ?i64 = null,
     };
 
@@ -65,7 +64,6 @@ pub const Type = union(enum) {
     pub const ManyPointerTypeInfo = struct {
         element_name: []const u8,
         is_raw: bool,
-        /// The terminator of `[*:X]T`.
         sentinel: ?i64 = null,
     };
 
@@ -94,7 +92,6 @@ pub const Type = union(enum) {
         /// concrete length — this is hover/metadata, not codegen.
         length: ?u32,
         is_raw: bool,
-        /// The terminator of `[N:X]T`.
         sentinel: ?i64 = null,
     };
 

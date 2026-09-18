@@ -207,9 +207,6 @@ test "sema: a raw parameterized type `` `i8(i64) `` instantiates the user generi
     try std.testing.expectEqual(@as(u8, 64), y.signed);
 }
 
-// The terminated spellings reach hover with their terminator: the editor index
-// carries the sentinel alongside the element name, so `[:1]u8` never displays
-// as `[]u8`.
 test "sema: terminated array, slice and many-pointer types display their terminator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

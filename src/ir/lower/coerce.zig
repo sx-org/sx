@@ -1061,9 +1061,22 @@ pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
         // `.signed`/`.unsigned` variants — fall through `isBuiltin()`.
         .signed, .unsigned => self.builder.constInt(0, ty),
         .pointer, .optional => self.builder.constNull(ty),
-        .@"struct", .array, .slice, .many_pointer => self.builder.constNull(ty),
+        .@"struct", .slice, .many_pointer => self.builder.constNull(ty),
+        .array => |a| zeroArray(self, ty, a),
         else => self.builder.constUndef(ty),
     };
+}
+
+/// A `[N:X]T`'s default value holds its terminator. Zeroed storage already IS
+/// that value for `[N]T` and for a `0` terminator.
+fn zeroArray(self: *Lowering, ty: TypeId, info: types.TypeInfo.ArrayInfo) Ref {
+    const x = info.sentinel orelse 0;
+    if (x == 0) return self.builder.constNull(ty);
+    var elems = std.ArrayList(Ref).empty;
+    elems.ensureTotalCapacity(self.alloc, info.storageLen()) catch unreachable;
+    for (0..info.length) |_| elems.appendAssumeCapacity(self.zeroValue(info.element));
+    elems.appendAssumeCapacity(self.sentinelValue(x, info.element));
+    return self.builder.structInit(elems.items, ty);
 }
 
 /// Emit the unified non-integral float→int narrowing diagnostic.

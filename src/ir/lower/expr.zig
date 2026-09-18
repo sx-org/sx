@@ -2679,7 +2679,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         elems.append(self.alloc, val) catch unreachable;
     }
 
-    if (sentinel) |x| elems.append(self.alloc, self.builder.constInt(x, elem_ty)) catch unreachable;
+    if (sentinel) |x| elems.append(self.alloc, self.sentinelValue(x, elem_ty)) catch unreachable;
 
     const result_ty = if (is_vector)
         self.module.types.vectorOf(elem_ty, @intCast(al.elements.len))

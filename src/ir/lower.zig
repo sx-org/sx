@@ -2598,6 +2598,12 @@ pub const Lowering = struct {
         };
     }
 
+    /// A `[N:X]T` terminator as a value of the element type.
+    pub fn sentinelValue(self: *Lowering, sentinel: i64, elem_ty: TypeId) Ref {
+        if (isFloat(elem_ty)) return self.builder.constFloat(@floatFromInt(sentinel), elem_ty);
+        return self.builder.constInt(sentinel, elem_ty);
+    }
+
     /// The length of a container in its own `Len` word. An array's is the
     /// compile-time constant its type states — never its storage, which a
     /// terminator widens by one element.
@@ -3447,6 +3453,7 @@ pub const Lowering = struct {
     pub const createComptimeFunctionWithPrelude = lower_comptime.createComptimeFunctionWithPrelude;
     pub const constExprValue = lower_comptime.constExprValue;
     pub const constArrayLiteral = lower_comptime.constArrayLiteral;
+    pub const defaultConstant = lower_comptime.defaultConstant;
     pub const constStructLiteral = lower_comptime.constStructLiteral;
     pub const constEnumLiteral = lower_comptime.constEnumLiteral;
     pub const foldSourceConstInt = lower_comptime.foldSourceConstInt;

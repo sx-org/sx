@@ -820,7 +820,6 @@ pub const ArrayTypeExpr = struct {
 
 pub const SliceTypeExpr = struct {
     element_type: *Node, // type_expr for the element type
-    /// The `:X` terminator of `[:X]T`.
     sentinel: ?i64 = null,
 };
 
@@ -861,7 +860,6 @@ pub const PointerTypeExpr = struct {
 
 pub const ManyPointerTypeExpr = struct {
     element_type: *Node,
-    /// The `:X` terminator of `[*:X]T`.
     sentinel: ?i64 = null,
 };
 

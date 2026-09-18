@@ -240,7 +240,6 @@ pub const TypeInfo = union(enum) {
         element: TypeId,
         /// The written N of `[N]T` / `[N:X]T` — what `.len` answers.
         length: u32,
-        /// The terminator of `[N:X]T`.
         sentinel: ?i64 = null,
 
         /// Elements the value occupies: N, plus the terminator's slot.
@@ -264,7 +263,6 @@ pub const TypeInfo = union(enum) {
 
     pub const ManyPointerInfo = struct {
         element: TypeId,
-        /// The terminator of `[*:X]T`.
         sentinel: ?i64 = null,
     };
 
