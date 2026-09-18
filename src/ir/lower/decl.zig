@@ -1704,15 +1704,10 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
         }
         const child = self.module.types.get(var_ty).optional.child;
         const payload = self.globalInitValuePayload(vd, v, child) orelse return null;
-        // Sentinel-shaped optionals (`?*T`, `?fn`, `?Closure`, `?Protocol`)
-        // reuse the payload's null representation and therefore have no
-        // `{payload, has_value}` wrapper in LLVM. A present global address is
-        // already the complete initializer for `?*T`.
-        const child_info = self.module.types.get(child);
-        const sentinel_optional = child_info == .pointer or child_info == .many_pointer or
-            child_info == .function or child_info == .cstring or child_info == .closure or
-            (child_info == .@"struct" and child_info.@"struct".is_protocol);
-        if (sentinel_optional) return payload;
+        // A sentinel-shaped optional reuses the payload's own null
+        // representation, so the payload IS the whole initializer — there is no
+        // `{payload, has_value}` wrapper in LLVM.
+        if (self.module.types.optionalIsSentinel(child)) return payload;
         const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
         fields[0] = payload;
         fields[1] = .{ .boolean = true };

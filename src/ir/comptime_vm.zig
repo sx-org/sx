@@ -1234,8 +1234,7 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const child = table.get(ins.ty).optional.child; // ins.ty is ?T
                 const val = frame.get(u.operand.index());
-                if (optChildIsPtr(table, child)) return .{ .value = val }; // pointer optional: the pointer
-                if (optChildIsProtocol(table, child)) return .{ .value = val }; // sentinel-shaped: the handle itself
+                if (table.optionalIsSentinel(child)) return .{ .value = val }; // sentinel-shaped: the child value itself
                 const addr = self.machine.allocBytes(table.typeSizeBytes(ins.ty), table.typeAlignBytes(ins.ty));
                 try self.writeField(table, addr, child, val); // payload @ 0
                 try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, 1); // has_value flag = 1
@@ -1250,7 +1249,7 @@ pub const Vm = struct {
                     return error.TypeError;
                 }
                 const child = table.get(opt_ty).optional.child;
-                if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
+                if (table.optionalIsSentinel(child)) return .{ .value = v };
                 return .{ .value = try self.readField(table, v, child) };
             },
             .optional_has_value => |u| {
@@ -1263,7 +1262,7 @@ pub const Vm = struct {
                 const v = frame.get(b.lhs.index());
                 if (try self.optHas(table, opt_ty, v)) {
                     const child = table.get(opt_ty).optional.child;
-                    if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
+                    if (table.optionalIsSentinel(child)) return .{ .value = v };
                     return .{ .value = try self.readField(table, v, child) };
                 }
                 return .{ .value = frame.get(b.rhs.index()) };
@@ -2811,24 +2810,19 @@ pub const Vm = struct {
                     return .{ .aggregate = out };
                 }
                 if (info == .optional) {
-                    // Only the `{ payload@0, has_value@sizeof(child) }` aggregate
-                    // shape lands here — a pointer-child optional is a word and
-                    // bridges through the `.word` arm. A closure / protocol child
-                    // has a different layout (sentinel func-ref / ctx-ptr-as-flag),
-                    // so guard against it and bail loudly rather than mis-read.
+                    // A pointer-child optional is a word and bridges through the
+                    // `.word` arm; what lands here is a wide sentinel — the child
+                    // value itself — or the `{ payload@0, has_value@sizeof(child) }`
+                    // aggregate. The `const_null` form is a bare `null_addr` with
+                    // no allocation behind it.
                     const child = info.optional.child;
                     if (optChildIsPtr(table, child))
                         return self.failMsg("reg→value: pointer optional reached the aggregate arm");
-                    if (!child.isBuiltin()) switch (table.get(child)) {
-                        .closure => return self.failMsg("reg→value: ?Closure optional not bridged (sentinel layout)"),
-                        .@"struct" => |s| if (s.is_protocol)
-                            return self.failMsg("reg→value: ?Protocol optional not bridged (ctx-ptr layout)"),
-                        else => {},
-                    };
-                    // has_value flag lives at offset sizeof(child); clear → null.
-                    // The `const_null` form is a bare `null_addr` (no allocation);
-                    // treat that as none too (mirrors `optHas`).
                     if (reg == null_addr) return .null_val;
+                    if (optChildIsWide(table, child)) {
+                        if ((try self.machine.readWord(reg, table.pointer_size)) == null_addr) return .null_val;
+                        return self.bridgeValue(alloc, table, reg, child, mode);
+                    }
                     const has = (try self.machine.readWord(reg + table.typeSizeBytes(child), 1)) != 0;
                     if (!has) return .null_val;
                     // Present: bridge the payload (read from offset 0) as the child
@@ -3028,23 +3022,22 @@ pub const Vm = struct {
         return table.optionalIsSentinel(child) and table.typeSizeBytes(child) == table.pointer_size;
     }
 
-    /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
-    /// with a null ctx IS the absent sentinel (specs.md §6.6), so there is no
-    /// flag byte to write and the value passes through wrap/unwrap unchanged.
-    fn optChildIsProtocol(table: *const types.TypeTable, child: TypeId) bool {
-        if (child.isBuiltin()) return false;
-        const info = table.get(child);
-        return info == .@"struct" and info.@"struct".is_protocol;
+    /// A sentinel `?T` WIDER than a pointer word — a slice, a closure, a
+    /// protocol handle. Its leading pointer word is the null state, so there is
+    /// no flag byte to write and the value passes through wrap/unwrap unchanged.
+    fn optChildIsWide(table: *const types.TypeTable, child: TypeId) bool {
+        return table.optionalIsSentinel(child) and table.typeSizeBytes(child) > table.pointer_size;
     }
 
     /// Does an optional value `v` of type `opt_ty` hold a value? A pointer optional
-    /// is present iff non-null; a `{T,i1}` optional is none when `v` is `null_addr`
-    /// (the `const_null` form) else its flag byte (at offset `sizeof(child)`) is set.
+    /// is present iff non-null; a wide sentinel iff its leading pointer word is;
+    /// a `{T,i1}` optional is none when `v` is `null_addr` (the `const_null`
+    /// form) else its flag byte (at offset `sizeof(child)`) is set.
     fn optHas(self: *Vm, table: *const types.TypeTable, opt_ty: TypeId, v: Reg) Error!bool {
         const child = table.get(opt_ty).optional.child;
         if (optChildIsPtr(table, child)) return v != null_addr;
         if (v == null_addr) return false;
-        if (optChildIsProtocol(table, child)) return (try self.machine.readWord(v, 8)) != null_addr;
+        if (optChildIsWide(table, child)) return (try self.machine.readWord(v, table.pointer_size)) != null_addr;
         return (try self.machine.readWord(v + table.typeSizeBytes(child), 1)) != 0;
     }
 
