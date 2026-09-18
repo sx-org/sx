@@ -1512,7 +1512,7 @@ fn isStructType(self: *Lowering, ty: TypeId) bool {
 
 fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
     const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
-    return self.program_index.runtime_class_map.contains(name);
+    return self.program_index.contains(.runtime_class, name);
 }
 
 /// A failable whose members the destination failable's channel does not hold.
