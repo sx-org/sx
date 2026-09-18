@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i32' where 'i32' is expected: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/diagnostics/2685-diagnostics-match-arm-write-kills-narrowing.sx:15:5
+   |
+15 |     take(x);    // error: optional does not implicitly unwrap
+   |     ^^^^^^^

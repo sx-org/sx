@@ -93,12 +93,42 @@ pub fn narrowSnapshot(self: *Lowering) std.ArrayList([]const u8) {
     return list;
 }
 
-/// Restore the narrowed-name set to a prior snapshot (drops anything added
-/// since, re-adds anything killed since).
-pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+/// Replace the narrowed-name set with exactly `names`.
+pub fn narrowSet(self: *Lowering, names: []const []const u8) void {
     self.narrowed.clearRetainingCapacity();
-    for (saved.items) |n| self.narrowed.put(n, {}) catch {};
+    for (names) |n| self.narrowed.put(n, {}) catch {};
+}
+
+fn narrowsName(names: []const []const u8, name: []const u8) bool {
+    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+/// Leave a lexical region: the narrowing it proved goes out of scope, while a
+/// reassignment inside it stays killed — the set becomes `saved` minus
+/// everything no longer narrowed. Consumes `saved`.
+pub fn narrowRestore(self: *Lowering, saved: *std.ArrayList([]const u8)) void {
+    var i: usize = 0;
+    while (i < saved.items.len) {
+        if (self.narrowed.contains(saved.items[i])) i += 1 else _ = saved.swapRemove(i);
+    }
+    self.narrowSet(saved.items);
     saved.deinit(self.alloc);
+}
+
+/// Fold one edge arriving at a merge into the facts that hold there: the first
+/// edge seeds them, every later edge intersects. Consumes `edge`.
+fn joinNarrowEdge(self: *Lowering, merged: *?std.ArrayList([]const u8), edge: std.ArrayList([]const u8)) void {
+    var incoming = edge;
+    if (merged.*) |*m| {
+        var i: usize = 0;
+        while (i < m.items.len) {
+            if (narrowsName(incoming.items, m.items[i])) i += 1 else _ = m.swapRemove(i);
+        }
+        incoming.deinit(self.alloc);
+    } else {
+        merged.* = incoming;
+    }
 }
 
 /// Mark every name in `names` as narrowed (proven present) in the current set.
@@ -470,7 +500,13 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     if (is_value and result_type != .void and result_type != .unresolved) self.target_type = result_type;
     var then_diverged = false;
     var else_diverged = false;
-    var then_snap = self.narrowSnapshot();
+    // The facts holding at `merge_bb` are those every edge REACHING it carries:
+    // each live arm's exit set, plus the condition-false edge when there is no
+    // `else`. A diverging arm reaches no merge and contributes nothing — which
+    // is what lets `if x == null { return; }` prove `x` present afterwards.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList([]const u8) = null;
     self.applyNarrowing(present_true.items);
     if (is_value) {
         var v = self.lowerExpr(ie.then_branch);
@@ -502,12 +538,12 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
             self.builder.br(merge_bb, &.{});
         }
     }
-    self.narrowRestore(&then_snap);
+    if (!then_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    self.narrowSet(entry_snap.items);
 
     // Else branch
     if (has_else) {
         self.builder.switchToBlock(else_bb.?);
-        var else_snap = self.narrowSnapshot();
         self.applyNarrowing(present_false.items);
         if (is_value) {
             var v = self.lowerExpr(ie.else_branch.?);
@@ -537,14 +573,19 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
                 self.builder.br(merge_bb, &.{});
             }
         }
-        self.narrowRestore(&else_snap);
+        if (!else_diverged) joinNarrowEdge(self, &merged, self.narrowSnapshot());
+    } else {
+        self.applyNarrowing(present_false.items);
+        joinNarrowEdge(self, &merged, self.narrowSnapshot());
     }
     self.target_type = saved_target;
 
-    // Guard form: `if <x == null ...> { <diverges> }` with no else proves the
-    // tested names present for the remainder of the enclosing block. The
-    // enclosing `lowerBlock` snapshot drops this narrowing at block end.
-    if (!has_else and then_diverged) self.applyNarrowing(present_false.items);
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
+    }
 
     // Continue at merge
     self.builder.switchToBlock(merge_bb);
@@ -1853,9 +1894,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     };
     self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
 
-    // Lower each arm's body
+    // Arms are alternatives, not a sequence: each starts from the facts holding
+    // at the `match`, and only the arms that reach `merge_bb` say what holds
+    // there.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList([]const u8) = null;
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
+        self.narrowSet(entry_snap.items);
 
         // A patterned arm no switch case targets is unreachable. Lowering it
         // emits invalid IR — a runtime cast with no matching type, a payload
@@ -2069,6 +2116,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     v = self.builder.constUndef(result_type);
                 }
                 self.builder.br(merge_bb, &.{v});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         } else {
             lowerArmBody(self, arm.body, demand);
@@ -2077,6 +2125,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             arm_scope.deinit();
             if (!self.currentBlockHasTerminator()) {
                 self.builder.br(merge_bb, &.{});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
     }
@@ -2092,37 +2141,35 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
         if (!found_default) {
             self.builder.switchToBlock(default_bb.?);
-            if (is_type_match) {
-                // For type-category matches, unrecognized tags should skip to merge
-                // (e.g., optional types not covered by anyToString categories)
-                if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
-                } else {
-                    self.builder.br(merge_bb, &.{});
-                }
+            // Only an enum whose variants the arms cover leaves the default
+            // unreachable; any other subject can hold a value no arm names,
+            // which reaches the merge carrying the facts that hold at the
+            // `match`.
+            const is_exhaustive = blk: {
+                if (is_type_match or subject_ty.isBuiltin()) break :blk false;
+                const ty_info = self.module.types.get(subject_ty);
+                if (ty_info == .@"enum") break :blk cases.items.len >= ty_info.@"enum".variants.len;
+                break :blk false;
+            };
+            if (is_exhaustive) {
+                self.builder.emitUnreachable();
             } else {
-                // For non-exhaustive matches (union/enum with unhandled variants),
-                // fall through to merge instead of unreachable
-                const is_exhaustive = blk: {
-                    if (!subject_ty.isBuiltin()) {
-                        const ty_info = self.module.types.get(subject_ty);
-                        if (ty_info == .@"enum") {
-                            break :blk cases.items.len >= ty_info.@"enum".variants.len;
-                        }
-                    }
-                    break :blk false;
-                };
-                if (is_exhaustive) {
-                    self.builder.emitUnreachable();
-                } else if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
+                if (has_value_merge) {
+                    self.builder.br(merge_bb, &.{self.builder.constUndef(result_type)});
                 } else {
                     self.builder.br(merge_bb, &.{});
                 }
+                self.narrowSet(entry_snap.items);
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
+    }
+
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
     }
 
     self.builder.switchToBlock(merge_bb);
