@@ -83,7 +83,7 @@ test "protocols: packArgConformsTo at the impl-declaration level (non-parameteri
     const impl_methods = [_]*Node{draw_node};
     const ib = ast.ImplBlock{ .protocol_name = "Shape", .target_type = "Circle", .methods = &impl_methods };
     const decl = mk(alloc, .{ .impl_block = ib });
-    pr.registerImplBlock(&ib, false, decl);
+    pr.registerImplBlock(&ib, decl);
     try std.testing.expect(pr.packArgConformsTo("Shape", circle));
 
     // An arg already erased to the protocol struct itself trivially conforms.
@@ -94,7 +94,7 @@ test "protocols: packArgConformsTo at the impl-declaration level (non-parameteri
     try std.testing.expect(!pr.packArgConformsTo("Nope", circle));
 }
 
-test "protocols: registerImplBlock records <Target>.<method> in fn_ast_map" {
+test "protocols: registerImplBlock registers <Target>.<method> as a callable" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -116,9 +116,9 @@ test "protocols: registerImplBlock records <Target>.<method> in fn_ast_map" {
     const decl = mk(alloc, .{ .impl_block = ib });
 
     // Not registered before; the non-parameterised impl registers `Circle.draw`.
-    try std.testing.expect(!l.program_index.fn_ast_map.contains("Circle.draw"));
-    pr.registerImplBlock(&ib, false, decl);
-    try std.testing.expect(l.program_index.fn_ast_map.contains("Circle.draw"));
+    try std.testing.expect(!l.program_index.contains(.function, "Circle.draw"));
+    pr.registerImplBlock(&ib, decl);
+    try std.testing.expect(l.program_index.contains(.function, "Circle.draw"));
     // And it conforms through the exact protocol/concrete impl registry.
     try std.testing.expect(pr.packArgConformsTo("Drawable", circle));
 }
@@ -162,10 +162,10 @@ test "protocols: empty impl adoption is order-independent and excludes foreign d
     // method, even though both protocols use the same method spelling.
     const default_ib = ast.ImplBlock{ .protocol_name = "DefaultDraw", .target_type = "Circle", .methods = &.{} };
     const default_decl = mk(alloc, .{ .impl_block = default_ib });
-    pr.registerImplBlock(&default_ib, false, default_decl);
+    pr.registerImplBlock(&default_ib, default_decl);
     const required_ib = ast.ImplBlock{ .protocol_name = "RequiredDraw", .target_type = "Circle", .methods = &.{} };
     const required_decl = mk(alloc, .{ .impl_block = required_ib });
-    pr.registerImplBlock(&required_ib, false, required_decl);
+    pr.registerImplBlock(&required_ib, required_decl);
     try std.testing.expect(pr.protocolDispatchMethod(required_ty, "RequiredDraw", circle, "draw") == null);
 
     // Register the real provider AFTER the empty impl. Dispatch now adopts the
@@ -174,7 +174,7 @@ test "protocols: empty impl adoption is order-independent and excludes foreign d
     const provider_body = [_]*Node{draw_node};
     const provider_ib = ast.ImplBlock{ .protocol_name = "ProviderDraw", .target_type = "Circle", .methods = &provider_body };
     const provider_decl = mk(alloc, .{ .impl_block = provider_ib });
-    pr.registerImplBlock(&provider_ib, false, provider_decl);
+    pr.registerImplBlock(&provider_ib, provider_decl);
     const adopted = pr.protocolDispatchMethod(required_ty, "RequiredDraw", circle, "draw").?;
     try std.testing.expect(adopted.fd == &draw_node.data.fn_decl);
     try std.testing.expect(!adopted.is_synthesized_default);
@@ -212,8 +212,8 @@ test "protocols: registerParamImpl flags a same-file duplicate impl" {
     // intentionally idempotent (the scan does that after alias fixpoints).
     const ib2 = ib;
     const decl2 = mk(alloc, .{ .impl_block = ib2 });
-    pr.registerImplBlock(&decl.data.impl_block, false, decl);
-    pr.registerImplBlock(&decl2.data.impl_block, false, decl2);
+    pr.registerImplBlock(&decl.data.impl_block, decl);
+    pr.registerImplBlock(&decl2.data.impl_block, decl2);
 
     var dup_reported = false;
     for (diags.items.items) |d| {

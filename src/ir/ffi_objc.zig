@@ -43,10 +43,10 @@ const ObjcEncodingStack = struct {
 /// budget — `*void` requires explicit modifier, `weak` requires an
 /// object-pointer slot.
 const ObjcPropertyKind = enum {
-    assign,    // primitives or explicitly opted-out object slots
-    strong,    // default for *<ObjC-class> — retain on assign, release on dealloc
-    weak,      // objc_storeWeak / objc_loadWeakRetained — auto-nilling
-    copy,      // [val copy] on assign — for immutable-wanting String/Array slots
+    assign, // primitives or explicitly opted-out object slots
+    strong, // default for *<ObjC-class> — retain on assign, release on dealloc
+    weak, // objc_storeWeak / objc_loadWeakRetained — auto-nilling
+    copy, // [val copy] on assign — for immutable-wanting String/Array slots
 
     pub fn isObject(k: ObjcPropertyKind) bool {
         return k == .strong or k == .weak or k == .copy;
@@ -178,7 +178,7 @@ pub const ObjcLowering = struct {
                 const is_objc_obj = blk: {
                     if (pointee_info != .@"struct") break :blk false;
                     const name = self.l.module.types.getString(pointee_info.@"struct".name);
-                    break :blk self.l.program_index.runtime_class_map.get(name) != null;
+                    break :blk self.l.program_index.lookup(.runtime_class, name) != null;
                 };
                 if (is_objc_obj) {
                     try out.append(self.l.alloc, '@');
@@ -330,7 +330,7 @@ pub const ObjcLowering = struct {
     pub fn objcDefinedSuperclass(self: ObjcLowering, fcd: *const ast.RuntimeClassDecl) ?*const ast.RuntimeClassDecl {
         for (fcd.members) |m| switch (m) {
             .extends => |alias| {
-                const parent = self.l.program_index.runtime_class_map.get(alias) orelse return null;
+                const parent = self.l.program_index.lookup(.runtime_class, alias) orelse return null;
                 if (parent.is_extern or parent.runtime != .objc_class) return null;
                 return parent;
             },
@@ -354,7 +354,7 @@ pub const ObjcLowering = struct {
         const pointee_info = self.l.module.types.get(ptr_info.pointer.pointee);
         if (pointee_info != .@"struct") return false;
         const struct_name = self.l.module.types.getString(pointee_info.@"struct".name);
-        const fcd = self.l.program_index.runtime_class_map.get(struct_name) orelse return false;
+        const fcd = self.l.program_index.lookup(.runtime_class, struct_name) orelse return false;
         return fcd.runtime == .objc_class or fcd.runtime == .objc_protocol;
     }
 
@@ -367,25 +367,18 @@ pub const ObjcLowering = struct {
     pub fn objcPropertyKind(self: ObjcLowering, field: ast.RuntimeFieldDecl) ObjcPropertyKind {
         // Survey the modifier list.
         var has_strong = false;
-        var has_weak   = false;
-        var has_copy   = false;
+        var has_weak = false;
+        var has_copy = false;
         var has_assign = false;
         for (field.property_modifiers) |mod| {
-            if (std.mem.eql(u8, mod, "strong")) has_strong = true
-            else if (std.mem.eql(u8, mod, "weak"))   has_weak   = true
-            else if (std.mem.eql(u8, mod, "copy"))   has_copy   = true
-            else if (std.mem.eql(u8, mod, "assign")) has_assign = true
-            else if (std.mem.eql(u8, mod, "readonly")) {
+            if (std.mem.eql(u8, mod, "strong")) has_strong = true else if (std.mem.eql(u8, mod, "weak")) has_weak = true else if (std.mem.eql(u8, mod, "copy")) has_copy = true else if (std.mem.eql(u8, mod, "assign")) has_assign = true else if (std.mem.eql(u8, mod, "readonly")) {
                 // Orthogonal to ARC kind — no-op here.
-            }
-            else if (std.mem.eql(u8, mod, "nonatomic") or std.mem.eql(u8, mod, "atomic")) {
+            } else if (std.mem.eql(u8, mod, "nonatomic") or std.mem.eql(u8, mod, "atomic")) {
                 // Atomicity — recorded for the property attribute string;
                 // doesn't affect the ARC kind.
-            }
-            else if (std.mem.startsWith(u8, mod, "getter(") or std.mem.startsWith(u8, mod, "setter(")) {
+            } else if (std.mem.startsWith(u8, mod, "getter(") or std.mem.startsWith(u8, mod, "setter(")) {
                 // Selector overrides — handled elsewhere.
-            }
-            else {
+            } else {
                 if (self.l.diagnostics) |d| {
                     const span = ast.Span{ .start = 0, .end = 0 };
                     d.addFmt(.err, span, "unknown @ObjcProperty modifier '{s}' on field '{s}' — expected one of: strong, weak, copy, assign, readonly, nonatomic, atomic, getter(\"...\"), setter(\"...\")", .{ mod, field.name });
@@ -396,8 +389,8 @@ pub const ObjcLowering = struct {
         // Mutually-exclusive ARC modifiers — at most one.
         const explicit_count: u32 =
             (@as(u32, if (has_strong) 1 else 0)) +
-            (@as(u32, if (has_weak)   1 else 0)) +
-            (@as(u32, if (has_copy)   1 else 0)) +
+            (@as(u32, if (has_weak) 1 else 0)) +
+            (@as(u32, if (has_copy) 1 else 0)) +
             (@as(u32, if (has_assign) 1 else 0));
         if (explicit_count > 1) {
             if (self.l.diagnostics) |d| {
@@ -418,7 +411,7 @@ pub const ObjcLowering = struct {
             const pointee_info = self.l.module.types.get(pointee);
             if (pointee_info != .@"struct") break :blk false;
             const struct_name = self.l.module.types.getString(pointee_info.@"struct".name);
-            const fcd = self.l.program_index.runtime_class_map.get(struct_name) orelse break :blk false;
+            const fcd = self.l.program_index.lookup(.runtime_class, struct_name) orelse break :blk false;
             break :blk fcd.runtime == .objc_class or fcd.runtime == .objc_protocol;
         };
 
@@ -453,8 +446,8 @@ pub const ObjcLowering = struct {
         }
 
         // Apply explicit modifier or default.
-        if (has_weak)   return .weak;
-        if (has_copy)   return .copy;
+        if (has_weak) return .weak;
+        if (has_copy) return .copy;
         if (has_strong) return .strong;
         if (has_assign) return .assign;
         // Default: object pointers → strong; everything else → assign.

@@ -346,7 +346,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         .kind = pd.kind,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
-    self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
+    self.program_index.put(.protocol, self.declId(.{ .protocol_decl = pd }, self.current_source_file), owned, protocol_info);
     self.protocol_info_by_type.put(id, protocol_info) catch @panic("out of memory");
     // The canonical argument tuple, kept alongside the family's declaration
     // identity: impl lookup and coherence key on this pair rather than on the
@@ -387,7 +387,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
 /// Find `name` in `protocol_name`'s type-arg namespace (`protocol($T,...)`).
 /// Returns the `type_params` index, or null (also for unknown protocols).
 pub fn lookupProtocolArg(self: *Lowering, protocol_name: []const u8, name: []const u8) ?u32 {
-    const pd = self.program_index.protocol_ast_map.get(protocol_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, protocol_name) orelse return null;
     for (pd.type_params, 0..) |tp, i| {
         if (std.mem.eql(u8, tp.name, name)) return @intCast(i);
     }
@@ -397,7 +397,7 @@ pub fn lookupProtocolArg(self: *Lowering, protocol_name: []const u8, name: []con
 /// Find `name` in `protocol_name`'s runtime-accessor namespace (its methods
 /// — protocols have no fields). Returns the `methods` index, or null.
 pub fn lookupProtocolField(self: *Lowering, protocol_name: []const u8, name: []const u8) ?u32 {
-    const pd = self.program_index.protocol_ast_map.get(protocol_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, protocol_name) orelse return null;
     for (pd.methods, 0..) |m, i| {
         if (std.mem.eql(u8, m.name, name)) return @intCast(i);
     }
@@ -406,7 +406,7 @@ pub fn lookupProtocolField(self: *Lowering, protocol_name: []const u8, name: []c
 
 /// Check if a type name is a registered protocol.
 pub fn isProtocolType(self: *Lowering, type_name: []const u8) bool {
-    return self.program_index.protocol_decl_map.contains(type_name);
+    return self.program_index.contains(.protocol, type_name);
 }
 
 /// Get protocol info for a TypeId (if it's a protocol type).
@@ -498,9 +498,9 @@ pub fn classifyIsTarget(self: *Lowering, node: *const Node) ?IsTarget {
 /// lowercase word.
 pub fn isCategoryWord(name: []const u8) bool {
     const words = [_][]const u8{
-        "int",      "signed",  "unsigned", "float",  "bool",     "string",
-        "void",     "type",    "struct",   "interface", "enum",  "union",
-        "slice",    "array",   "pointer",  "vector", "optional", "error",
+        "int",     "signed", "unsigned", "float",     "bool",     "string",
+        "void",    "type",   "struct",   "interface", "enum",     "union",
+        "slice",   "array",  "pointer",  "vector",    "optional", "error",
         "closure",
     };
     for (words) |w| if (std.mem.eql(u8, name, w)) return true;
@@ -763,7 +763,7 @@ fn staticInterfaceGlobal(self: *Lowering, operand: *const Node) ?program_index_m
     switch (operand.data) {
         .identifier => |id| return switch (self.selectGlobalAuthor(id.name)) {
             .resolved => |sel| sel,
-            .untracked => self.program_index.global_names.get(id.name),
+            .untracked => self.program_index.lookup(.global, id.name),
             else => null,
         },
         .field_access => {
@@ -779,11 +779,9 @@ fn staticInterfaceGlobal(self: *Lowering, operand: *const Node) ?program_index_m
 }
 
 fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
-    if (self.program_index.globals_by_source.get(sel.author.source)) |inner| {
-        if (inner.get(sel.member)) |g| return g;
-    }
+    if (self.program_index.lookupInSource(.global, sel.author.source, sel.member)) |g| return g;
     if (sel.author.raw == .var_decl)
-        return self.program_index.global_names.get(sel.member);
+        return self.program_index.lookup(.global, sel.member);
     return null;
 }
 
@@ -885,7 +883,7 @@ pub fn emitDefaultContextGlobalEarly(self: *Lowering) void {
 
 fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) void {
     // Already emitted (possibly early) — never emit twice.
-    if (self.program_index.global_names.contains("kDefaultContext")) return;
+    if (self.program_index.contains(.global, "kDefaultContext")) return;
     const saved_edc = self.emitting_default_context;
     self.emitting_default_context = true;
     defer self.emitting_default_context = saved_edc;
@@ -930,7 +928,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
         .init_val = .{ .aggregate = ctx_fields },
         .is_const = true,
     });
-    self.putGlobal(self.current_source_file, global_name, .{ .id = gid, .ty = ctx_ty });
+    self.putGlobal(self.program_index.synthetic(global_name, self.current_source_file), self.current_source_file, global_name, .{ .id = gid, .ty = ctx_ty });
 }
 
 /// Create a thunk function: __thunk_ConcreteType_Protocol_method(ctx: *void, args...) -> ret
@@ -1124,7 +1122,7 @@ fn protocolRuntimeDispatchName(self: *Lowering, display_name: []const u8, proto_
 }
 
 fn ensureProtocolImplMethodLowered(self: *Lowering, proto_ty: TypeId, proto_name: []const u8, concrete_type_name: []const u8, method: ProtocolImplMethod) FuncId {
-    const fid = self.fn_decl_fids.get(method.fd) orelse
+    const fid = self.declFuncId(method.fd) orelse
         std.debug.panic("protocol impl method '{s}.{s}' has no decl-identity function slot", .{ concrete_type_name, method.fd.name });
     if (!self.lowered_fids.contains(fid)) {
         self.lowered_fids.put(fid, {}) catch @panic("out of memory");
@@ -1489,8 +1487,8 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
         },
         else => return false,
     };
-    if (!self.program_index.protocol_decl_map.contains(tname) and
-        !self.program_index.protocol_ast_map.contains(tname)) return false;
+    if (!self.program_index.contains(.protocol, tname) and
+        !self.program_index.contains(.protocol_ast, tname)) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "an 'any' value's type tag is always a concrete type — it never holds an erased '{s}', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('match av {{ case T: … }}')", .{tname});
     }

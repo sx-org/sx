@@ -264,7 +264,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
         // value expression (`ENABLED :: false`, chains, `F :: @host.os == .ios`).
         // Only a bool-shaped fold counts; anything else stays runtime.
         .identifier => |id| {
-            const info = self.program_index.module_const_map.get(id.name) orelse return null;
+            const info = self.program_index.lookup(.module_const, id.name) orelse return null;
             return evalComptimeConditionDepth(self, info.value, depth + 1);
         },
         .binary_op => {},
@@ -425,7 +425,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (self.type_bindings) |tb| {
         if (tb.get(name)) |bound| return bound == tid;
     }
-    if (self.program_index.type_alias_map.get(name)) |alias_ty| return alias_ty == tid;
+    if (self.program_index.lookup(.type_alias, name)) |alias_ty| return alias_ty == tid;
     const name_id = self.module.types.internString(name);
     if (self.module.types.findByName(name_id)) |t| return t == tid;
     return false;
@@ -556,7 +556,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     });
 
     // Register for runtime lookup: identifier resolution emits global_get
-    self.putGlobal(self.current_source_file, name, .{ .id = gid, .ty = global_ty });
+    self.putGlobal(self.program_index.synthetic(name, self.current_source_file), self.current_source_file, name, .{ .id = gid, .ty = global_ty });
 }
 
 /// Lower a standalone `@run expr;` at the top level (side-effect only).
@@ -655,7 +655,7 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
 fn preregisterForwardTypes(self: *Lowering, expr: *const Node) void {
     scanDeclareNames(self, expr, 0);
     if (expr.data == .call and expr.data.call.callee.data == .identifier) {
-        if (self.program_index.fn_ast_map.get(expr.data.call.callee.data.identifier.name)) |fd| {
+        if (self.program_index.lookup(.function, expr.data.call.callee.data.identifier.name)) |fd| {
             scanDeclareNames(self, fd.body, 0);
         }
     }
@@ -683,7 +683,7 @@ fn scanDeclareNames(self: *Lowering, node: *const Node, depth: u32) void {
                 // resolves through the forward-ALIAS path — which checks
                 // `type_aliases_by_source`, not `findByName`. Without this the
                 // alias path returns a pending empty-struct stub instead.
-                self.putTypeAlias(self.current_source_file, nm, tid);
+                self.putTypeAlias(self.program_index.synthetic(nm, self.current_source_file), self.current_source_file, nm, tid);
             }
             for (c.args) |a| scanDeclareNames(self, a, depth + 1);
         },
@@ -1017,7 +1017,7 @@ pub fn lowerComptimeDeps(self: *Lowering, ct: *Lowering, expr: *const Node) void
     if (expr.data.call.callee.data != .identifier) return;
     const name = expr.data.call.callee.data.identifier.name;
     if (resolveBuiltin(name) != null) return;
-    if (self.program_index.fn_ast_map.get(name)) |fd| {
+    if (self.program_index.lookup(.function, name)) |fd| {
         if (ct.resolveFuncByName(name) == null) {
             ct.lowerFunction(fd, name, false);
         }
@@ -2163,7 +2163,7 @@ const ConstAuthor = union(enum) {
 /// comptime-host path.
 pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     const from = self.current_source_file orelse self.main_file orelse {
-        if (self.program_index.module_const_map.get(name)) |ci| return .{ .resolved = .{ .info = ci, .source = null } };
+        if (self.program_index.lookup(.module_const, name)) |ci| return .{ .resolved = .{ .info = ci, .source = null } };
         return .none;
     };
     var res = self.resolver();
@@ -2297,11 +2297,9 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// `source`'s per-source const cache entry for `name` — the read side of
-/// `module_consts_by_source` — or null.
+/// The module const `name` names as written in `source`, or null.
 pub fn sourceModuleConst(self: *Lowering, source: []const u8, name: []const u8) ?ModuleConstInfo {
-    const inner = self.program_index.module_consts_by_source.get(source) orelse return null;
-    return inner.get(name);
+    return self.program_index.lookupInSource(.module_const, source, name);
 }
 
 pub const GlobalAuthor = union(enum) {
@@ -2339,15 +2337,13 @@ pub fn selectGlobalAuthor(self: *Lowering, name: []const u8) GlobalAuthor {
 }
 
 fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor, name: []const u8) GlobalAuthor {
-    if (self.program_index.globals_by_source.get(author.source)) |inner| {
-        if (inner.get(name)) |g| return .{ .resolved = g };
-    }
+    if (self.program_index.lookupInSource(.global, author.source, name)) |g| return .{ .resolved = g };
     // A var_decl author with no per-source registration: the decl was deduped
     // at flat-merge (two modules declaring the same extern symbol), so the
     // global registered under the surviving author's source. The author IS a
     // global — serve the symbol's registration.
     if (author.raw == .var_decl) {
-        if (self.program_index.global_names.get(name)) |g| return .{ .resolved = g };
+        if (self.program_index.lookup(.global, name)) |g| return .{ .resolved = g };
     }
     return .not_a_global;
 }
@@ -2356,7 +2352,7 @@ fn globalAuthorAt(self: *Lowering, author: resolver_mod.RawAuthor, name: []const
 /// or null when no single author answers. Typing consumes this so it can never
 /// name a global the call path refuses, and never double-reports the refusal.
 pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.global_names.get(name) orelse return null;
+    const gi = self.program_index.lookup(.global, name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -2370,7 +2366,7 @@ pub fn globalValueRef(self: *Lowering, name: []const u8) ?program_index_mod.Glob
 /// fall-through path runs. Sites needing custom placeholder emission use
 /// `selectGlobalAuthor` directly.
 pub fn resolveGlobalRef(self: *Lowering, name: []const u8, span: ?ast.Span) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.global_names.get(name) orelse return null;
+    const gi = self.program_index.lookup(.global, name) orelse return null;
     switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| return g,
         .not_a_global => return null,

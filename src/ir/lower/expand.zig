@@ -495,7 +495,7 @@ const Expansion = struct {
             return false;
         }
         self.emitDefaultContextGlobalEarly();
-        if (!self.program_index.global_names.contains("kDefaultContext")) {
+        if (!self.program_index.contains(.global, "kDefaultContext")) {
             ex.awaitContext();
             return false;
         }
@@ -768,7 +768,7 @@ const Expansion = struct {
             if (decl.data != .impl_block) continue;
             if (!std.mem.eql(u8, decl.data.impl_block.protocol_name, proto_name)) continue;
             ex.self.setCurrentSourceFile(decl.source_file);
-            ex.self.protocolResolver().registerImplBlock(&decl.data.impl_block, false, decl);
+            ex.self.protocolResolver().registerImplBlock(&decl.data.impl_block, decl);
         }
         ex.self.setCurrentSourceFile(src);
     }
@@ -816,13 +816,13 @@ const Expansion = struct {
             if (!std.mem.eql(u8, cd.name, name)) continue;
             if (cd.value.data != .call) continue;
             if (!ex.typeFunctionCall(cd.value.data.call.callee)) continue;
-            if (ex.self.program_index.type_alias_map.get(name)) |tid| {
+            if (ex.self.program_index.lookup(.type_alias, name)) |tid| {
                 if (tid != .unresolved) return true;
             }
             if (!ex.contextReady()) return true;
             ex.self.setCurrentSourceFile(decl.source_file);
             const minted = ex.self.evalComptimeType(cd.value) orelse return true;
-            ex.self.putTypeAlias(decl.source_file, name, minted);
+            ex.self.putTypeAlias(ex.self.declId(.{ .const_decl = &decl.data.const_decl }, decl.source_file), decl.source_file, name, minted);
             return true;
         }
         return false;

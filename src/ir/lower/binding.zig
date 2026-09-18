@@ -20,7 +20,7 @@ pub fn runtimeBinding(self: *Lowering, name: []const u8) ?FuncId {
 }
 
 fn resolveBinding(self: *Lowering, b: runtime_bindings.Binding) ?FuncId {
-    if (self.program_index.fn_ast_map.get(b.name)) |fd| {
+    if (self.program_index.lookup(.function, b.name)) |fd| {
         if (ownerAuthored(self, b.module, fd.body.source_file orelse self.main_file)) {
             self.lazyLowerFunction(b.name);
             return self.resolveFuncByName(b.name);

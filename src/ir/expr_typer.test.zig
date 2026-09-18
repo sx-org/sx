@@ -179,10 +179,10 @@ test "expr_typer: global and module-const raw bindings shadow numeric-limit" {
     } });
 
     // GLOBAL raw binding `` `f32 := Box{…} `` — registered in global_names.
-    try l.program_index.global_names.put("f32", .{ .id = @enumFromInt(0), .ty = box_ty });
+    l.program_index.put(.global, l.program_index.synthetic("f32", null), "f32", .{ .id = @enumFromInt(0), .ty = box_ty });
     // MODULE-CONST raw binding `` `i16 :: Box{…} `` — registered in module_const_map.
     var const_val = node(.{ .int_literal = .{ .value = 0 } });
-    try l.program_index.module_const_map.put("i16", .{ .value = &const_val, .ty = box_ty });
+    l.program_index.put(.module_const, l.program_index.synthetic("i16", null), "i16", .{ .value = &const_val, .ty = box_ty });
 
     // The shared guard sees both non-lexical bindings, but not an unbound spelling.
     try std.testing.expect(l.identifierBindsValue("f32"));

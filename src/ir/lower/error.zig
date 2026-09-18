@@ -125,7 +125,7 @@ pub fn armPrefixType(self: *Lowering, object: *const Node) ?TypeId {
     if (self.scope) |s| {
         if (s.lookup(name) != null) return null;
     }
-    if (self.program_index.global_names.contains(name)) return null;
+    if (self.program_index.contains(.global, name)) return null;
     const from = self.current_source_file orelse self.main_file orelse return null;
     const ty = switch (self.selectNominalLeaf(name, from, false)) {
         .resolved => |tid| tid,
@@ -143,7 +143,7 @@ fn namespacedPrefixType(self: *Lowering, object: *const Node) ?TypeId {
         if (self.scope) |s| {
             if (s.lookup(name) != null) return null;
         }
-        if (self.program_index.global_names.contains(name)) return null;
+        if (self.program_index.contains(.global, name)) return null;
     }
     const path = self.qualifiedTypeName(object) orelse return null;
     defer self.alloc.free(path);
@@ -1854,7 +1854,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
             };
             if (std.mem.eql(u8, tname, "@Protocol")) return false;
             if (std.mem.eql(u8, tname, "any")) return false; // prefix view
-            if (self.program_index.protocol_decl_map.contains(tname)) return false; // re-erasure
+            if (self.program_index.contains(.protocol, tname)) return false; // re-erasure
             return true;
         }
     }
@@ -2112,19 +2112,19 @@ pub fn withErrorChannel(self: *Lowering, ret: TypeId, chan: TypeId) TypeId {
 /// Give a bare-`!` declaration the channel its body converged to: the interned
 /// flatten-merge of `members` becomes the declaration's channel TypeId, on the
 /// already-declared signature and on every later re-resolution of it.
-pub fn materialiseInferredChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, members: []const u32) void {
-    installChannel(self, fd, name, self.module.types.errorSetType(.empty, members));
+pub fn materialiseInferredChannel(self: *Lowering, fd: *const ast.FnDecl, members: []const u32) void {
+    installChannel(self, fd, self.module.types.errorSetType(.empty, members));
 }
 
 /// Give a bare-`!` declaration whose escapes name no static member set the
 /// DYNAMIC channel.
-pub fn materialiseDynChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8) void {
-    installChannel(self, fd, name, self.module.types.dynErrorChannel());
+pub fn materialiseDynChannel(self: *Lowering, fd: *const ast.FnDecl) void {
+    installChannel(self, fd, self.module.types.dynErrorChannel());
 }
 
-fn installChannel(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, chan: TypeId) void {
-    self.inferred_channels.put(fd, chan) catch return;
-    const fid = self.resolveFuncByName(name) orelse return;
+fn installChannel(self: *Lowering, fd: *const ast.FnDecl, chan: TypeId) void {
+    self.inferred_channels.put(self.declId(.{ .fn_decl = fd }, fd.body.source_file), chan) catch return;
+    const fid = self.declFuncId(fd) orelse return;
     const func = self.module.getFunctionMut(fid);
     func.ret = withErrorChannel(self, func.ret, chan);
 }
@@ -2194,15 +2194,22 @@ pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*co
             .none => {},
         }
     }
-    return self.program_index.fn_ast_map.get(name);
+    return self.program_index.lookup(.function, name);
 }
 
-/// The escape tags of a callee referenced by name from a `try g()` edge:
-/// a bare-`!` callee's converged set, or a named callee's written one.
+/// The escape tags of a callee referenced by name from a `try g()` edge. The
+/// spelling names a declaration first; that declaration's converged set is the
+/// answer, or its written channel when its `!` is not inferred.
 pub fn calleeEscapeTags(self: *Lowering, callee: []const u8) []const u32 {
-    if (self.inferred_error_sets.get(callee)) |t| return t;
-    if (edgeCalleeDecl(self, callee, self.current_source_file)) |cfd| return declaredChannelTags(self, cfd);
-    return &.{};
+    const cfd = edgeCalleeDecl(self, callee, self.current_source_file) orelse return &.{};
+    if (inferredErrorSet(self, cfd)) |t| return t;
+    return declaredChannelTags(self, cfd);
+}
+
+/// The set a bare-`!` declaration converged to, or null when its `!` is
+/// written out or the convergence has not reached it.
+pub fn inferredErrorSet(self: *Lowering, fd: *const ast.FnDecl) ?[]const u32 {
+    return self.inferred_error_sets.get(self.declIdOf(.{ .fn_decl = fd }) orelse return null);
 }
 
 /// Merge `new_tags` into the shape node `key` (sorted, deduped). The map is

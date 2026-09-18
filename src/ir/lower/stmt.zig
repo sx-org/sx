@@ -691,7 +691,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             self.registerErrorSetDecl(node);
         },
         .ufcs_alias => |ua| {
-            self.program_index.ufcs_alias_map.put(ua.name, ua.target) catch {};
+            self.program_index.put(.ufcs_alias, self.program_index.internDecl(node, node.source_file), ua.name, .{ .target = ua.target });
         },
         // Expression statement
         else => {
@@ -1055,7 +1055,7 @@ fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
         if (scope.lookup(name) != null) return null;
         break :blk scope.lookupFn(name) orelse name;
     } else name;
-    const fd = self.program_index.fn_ast_map.get(effective_name) orelse return null;
+    const fd = self.program_index.lookup(.function, effective_name) orelse return null;
 
     return self.declSignatureType(fd);
 }
@@ -1070,7 +1070,7 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
         scope.fn_names.put(fd.name, mangled) catch {};
         break :blk mangled;
     } else fd.name;
-    self.program_index.fn_ast_map.put(name, fd) catch {};
+    self.program_index.registerFunction(name, fd, self.current_source_file);
     self.lazyLowerFunction(name);
 }
 
@@ -1088,8 +1088,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
             }
             break :blk mangled;
         } else cd.name;
-        // Register in fn_ast_map so it can be resolved by lowerCall
-        self.program_index.fn_ast_map.put(name, fd) catch {};
+        self.program_index.registerFunction(name, fd, self.current_source_file);
         // Lower the function body (saves/restores builder state)
         self.lazyLowerFunction(name);
         return;
@@ -1805,12 +1804,8 @@ fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) 
     if (selected.author.raw == .var_decl) {
         if (self.global_decl_infos.get(selected.author.raw.var_decl)) |global| return global;
     }
-    if (self.program_index.globals_by_source.get(selected.author.source)) |inner| {
-        if (inner.get(selected.member)) |global| return global;
-    }
-    if (self.program_index.globals_by_source.get(selected.target.target_module_path)) |inner| {
-        if (inner.get(selected.member)) |global| return global;
-    }
+    if (self.program_index.lookupInSource(.global, selected.author.source, selected.member)) |global| return global;
+    if (self.program_index.lookupInSource(.global, selected.target.target_module_path, selected.member)) |global| return global;
 
     // Some registrations are deliberately deduplicated (notably extern
     // globals), so the per-source partition may have no row. Re-run only the
@@ -1818,7 +1813,7 @@ fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) 
     // never consume the process-global winner directly.
     const saved_source = self.current_source_file;
     self.setCurrentSourceFile(selected.author.source);
-    const resolved: ?program_index_mod.GlobalInfo = if (self.program_index.global_names.get(selected.member)) |fallback|
+    const resolved: ?program_index_mod.GlobalInfo = if (self.program_index.lookup(.global, selected.member)) |fallback|
         switch (self.selectGlobalAuthor(selected.member)) {
             .resolved => |global| global,
             .untracked => if (selected.author.raw == .var_decl) fallback else null,
@@ -2107,7 +2102,7 @@ fn tryLowerQualifiedGlobalStore(
     var member_not_visible = false;
     if (!is_fn and !is_const) {
         // Mirror resolveGlobalRef's outcome mapping, minus its diagnostics.
-        if (self.program_index.global_names.get(member)) |gi| {
+        if (self.program_index.lookup(.global, member)) |gi| {
             switch (self.selectGlobalAuthor(member)) {
                 .resolved => |g| resolved = g,
                 .not_a_global => {},
@@ -2430,7 +2425,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         if (!found_local) {
             // Quiet author-aware lookup (type inference only; the store
             // site diagnoses ambiguity / visibility).
-            if (self.program_index.global_names.get(asgn.target.data.identifier.name)) |gi| {
+            if (self.program_index.lookup(.global, asgn.target.data.identifier.name)) |gi| {
                 switch (self.selectGlobalAuthor(asgn.target.data.identifier.name)) {
                     .resolved => |g| self.target_type = g.ty,
                     .untracked => self.target_type = gi.ty,
@@ -2610,7 +2605,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // (`totl = 42;`) compiles and runs.
                     // `resolveGlobalRef` already diagnosed the ambiguous /
                     // not-visible outcomes itself; don't stack a second error.
-                    const already_diagnosed = self.program_index.global_names.get(id.name) != null and
+                    const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
                         switch (self.selectGlobalAuthor(id.name)) {
                             .ambiguous, .not_visible => true,
                             else => false,
@@ -2854,7 +2849,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 /// Author-aware global lookup that stays silent on every failing outcome, so a
 /// caller that resolves a place can report its own message.
 fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
-    const gi = self.program_index.global_names.get(name) orelse return null;
+    const gi = self.program_index.lookup(.global, name) orelse return null;
     return switch (self.selectGlobalAuthor(name)) {
         .resolved => |g| g,
         .untracked => gi,
@@ -3784,7 +3779,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             if (!found_local) {
                 // Quiet author-aware lookup (type inference only; the store
                 // site diagnoses ambiguity / visibility).
-                if (self.program_index.global_names.get(id.name)) |gi| {
+                if (self.program_index.lookup(.global, id.name)) |gi| {
                     switch (self.selectGlobalAuthor(id.name)) {
                         .resolved => |g| self.target_type = g.ty,
                         .untracked => self.target_type = gi.ty,
@@ -3975,7 +3970,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         // `resolveGlobalRef` already diagnosed
                         // the ambiguous / not-visible outcomes itself; don't
                         // stack a second error.
-                        const already_diagnosed = self.program_index.global_names.get(id.name) != null and
+                        const already_diagnosed = self.program_index.lookup(.global, id.name) != null and
                             switch (self.selectGlobalAuthor(id.name)) {
                                 .ambiguous, .not_visible => true,
                                 else => false,

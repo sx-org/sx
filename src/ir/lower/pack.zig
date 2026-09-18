@@ -1110,7 +1110,7 @@ pub fn lowerPackFnCallNamed(
     // protocol. Only enforced for a known protocol constraint — an unknown
     // name (e.g. a plain type used as a pack constraint) is left alone.
     if (pack_protocol) |proto| {
-        if (self.program_index.protocol_ast_map.contains(proto)) {
+        if (self.program_index.contains(.protocol_ast, proto)) {
             for (call_node.args[pack_start..], pack_arg_types.items) |arg_node, arg_ty| {
                 if (!self.protocolResolver().packArgConformsTo(proto, arg_ty)) {
                     if (self.diagnostics) |diags| {

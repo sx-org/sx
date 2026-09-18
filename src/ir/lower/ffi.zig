@@ -15,7 +15,6 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 
-
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
@@ -304,9 +303,9 @@ pub fn lowerRuntimeMethodCall(
     // resolve `*Foo` cross-class refs to their runtime paths.
     var registry = jni_descriptor.ClassRegistry.init(self.alloc);
     defer registry.deinit();
-    var it = self.program_index.runtime_class_map.iterator();
+    var it = self.program_index.iterator(.runtime_class);
     while (it.next()) |entry| {
-        registry.put(entry.key_ptr.*, entry.value_ptr.*.runtime_path) catch {};
+        registry.put(entry.name, entry.value.runtime_path) catch {};
     }
 
     const ret_ty = if (method.return_type) |rt| self.resolveType(rt) else .void;
@@ -541,7 +540,7 @@ pub fn lowerObjcStaticCall(
         else blk: {
             // Fallback: no current ctx (e.g. compiler-internal callers).
             // Use the default context — same as the IMP would.
-            const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
+            const default_ctx_gi = self.program_index.lookup(.global, "kDefaultContext") orelse {
                 if (self.diagnostics) |d| {
                     d.addFmt(.err, span, "Cls.alloc() on sx-defined class '{s}': no current context and kDefaultContext missing", .{fcd.name});
                 }
@@ -626,9 +625,9 @@ pub fn lowerRuntimeStaticCall(
     // Build class registry snapshot for `*Foo` cross-class refs.
     var registry = jni_descriptor.ClassRegistry.init(self.alloc);
     defer registry.deinit();
-    var it = self.program_index.runtime_class_map.iterator();
+    var it = self.program_index.iterator(.runtime_class);
     while (it.next()) |entry| {
-        registry.put(entry.key_ptr.*, entry.value_ptr.*.runtime_path) catch {};
+        registry.put(entry.name, entry.value.runtime_path) catch {};
     }
 
     // For `new`, the JNI descriptor's return position is `V` (the
@@ -673,17 +672,19 @@ pub fn lowerRuntimeStaticCall(
     const sig_ref = self.builder.constString(sig_sid);
 
     const args_owned = self.alloc.dupe(Ref, method_args) catch unreachable;
-    return self.builder.emit(.{ .jni_msg_send = .{
-        .env = env_ref,
-        .target = Ref.none, // unused for ctor — class is resolved via parent_class_path
-        .name = name_ref,
-        .sig = sig_ref,
-        .args = args_owned,
-        .is_static = false,
-        .is_constructor = true,
-        .parent_class_path = self.alloc.dupe(u8, fcd.runtime_path) catch fcd.runtime_path,
-        .cache_key = null,
-    } }, ret_ty);
+    return self.builder.emit(.{
+        .jni_msg_send = .{
+            .env = env_ref,
+            .target = Ref.none, // unused for ctor — class is resolved via parent_class_path
+            .name = name_ref,
+            .sig = sig_ref,
+            .args = args_owned,
+            .is_static = false,
+            .is_constructor = true,
+            .parent_class_path = self.alloc.dupe(u8, fcd.runtime_path) catch fcd.runtime_path,
+            .cache_key = null,
+        },
+    }, ret_ty);
 }
 
 /// Lower `super.method(args)` inside a `main = true` / sx-defined
@@ -715,7 +716,7 @@ pub fn lowerSuperCall(
     var parent_path: []const u8 = "android/app/Activity";
     for (fcd.members) |m| switch (m) {
         .extends => |alias| {
-            if (self.program_index.runtime_class_map.get(alias)) |parent_fcd| {
+            if (self.program_index.lookup(.runtime_class, alias)) |parent_fcd| {
                 parent_path = parent_fcd.runtime_path;
             } else {
                 parent_path = alias;
@@ -737,7 +738,7 @@ pub fn lowerSuperCall(
     }
     if (resolved_method == null) {
         const parent_fcd = blk: for (fcd.members) |m| switch (m) {
-            .extends => |alias| if (self.program_index.runtime_class_map.get(alias)) |pf| break :blk pf else continue,
+            .extends => |alias| if (self.program_index.lookup(.runtime_class, alias)) |pf| break :blk pf else continue,
             else => {},
         } else null;
         if (parent_fcd) |pf| {
@@ -759,9 +760,9 @@ pub fn lowerSuperCall(
     // for `*Self` resolution).
     var registry = jni_descriptor.ClassRegistry.init(self.alloc);
     defer registry.deinit();
-    var it = self.program_index.runtime_class_map.iterator();
+    var it = self.program_index.iterator(.runtime_class);
     while (it.next()) |entry| {
-        registry.put(entry.key_ptr.*, entry.value_ptr.*.runtime_path) catch {};
+        registry.put(entry.name, entry.value.runtime_path) catch {};
     }
     descriptor = jni_descriptor.deriveMethod(self.alloc, .{
         .enclosing_path = parent_path,
@@ -789,17 +790,19 @@ pub fn lowerSuperCall(
     const ret_ty = if (method.return_type) |rt| self.resolveType(rt) else .void;
 
     const args_owned = self.alloc.dupe(Ref, method_args) catch unreachable;
-    return self.builder.emit(.{ .jni_msg_send = .{
-        .env = env_ref,
-        .target = self_ref,
-        .name = name_ref,
-        .sig = sig_ref,
-        .args = args_owned,
-        .is_static = false,
-        .is_nonvirtual = true,
-        .parent_class_path = self.alloc.dupe(u8, parent_path) catch parent_path,
-        .cache_key = null, // per-call FindClass + GetMethodID
-    } }, ret_ty);
+    return self.builder.emit(.{
+        .jni_msg_send = .{
+            .env = env_ref,
+            .target = self_ref,
+            .name = name_ref,
+            .sig = sig_ref,
+            .args = args_owned,
+            .is_static = false,
+            .is_nonvirtual = true,
+            .parent_class_path = self.alloc.dupe(u8, parent_path) catch parent_path,
+            .cache_key = null, // per-call FindClass + GetMethodID
+        },
+    }, ret_ty);
 }
 
 // ── Runtime-class registration ──────────────────────────────────
@@ -818,7 +821,7 @@ pub fn lowerSuperCall(
 /// substituted to `*<ClassName>State` during body lowering
 pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     upsertRuntimeClass(self, fcd.name, fcd);
-    if (self.program_index.runtime_class_map.get(fcd.name) == null) return;
+    if (self.program_index.lookup(.runtime_class, fcd.name) == null) return;
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
@@ -853,9 +856,9 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
 /// sx-defined (export) duplicate, same-name methods with different
 /// static-ness/arity/selector, or an `extends =` that closes a cycle.
 fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeClassDecl) void {
-    const existing = self.program_index.runtime_class_map.get(key) orelse {
+    const existing = self.program_index.lookup(.runtime_class, key) orelse {
         if (extendsClosesCycle(self, key, fcd.members, fcd.extends_span)) return;
-        self.program_index.runtime_class_map.put(key, fcd) catch {};
+        self.program_index.put(.runtime_class, self.declId(.{ .runtime_class_decl = fcd }, fcd.source_file), key, fcd);
         return;
     };
     if (existing == fcd) return;
@@ -911,7 +914,10 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
             .field => |fd| {
                 var dup = false;
                 for (existing.members) |em| {
-                    if (em == .field and std.mem.eql(u8, em.field.name, fd.name)) { dup = true; break; }
+                    if (em == .field and std.mem.eql(u8, em.field.name, fd.name)) {
+                        dup = true;
+                        break;
+                    }
                 }
                 if (dup) {
                     if (self.diagnostics) |d| {
@@ -924,7 +930,10 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
             .extends => |parent| {
                 var existing_parent: ?[]const u8 = null;
                 for (existing.members) |em| {
-                    if (em == .extends) { existing_parent = em.extends; break; }
+                    if (em == .extends) {
+                        existing_parent = em.extends;
+                        break;
+                    }
                 }
                 if (existing_parent) |ep| {
                     if (!std.mem.eql(u8, ep, parent)) {
@@ -940,7 +949,10 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
             .implements => |proto| {
                 var dup = false;
                 for (existing.members) |em| {
-                    if (em == .implements and std.mem.eql(u8, em.implements, proto)) { dup = true; break; }
+                    if (em == .implements and std.mem.eql(u8, em.implements, proto)) {
+                        dup = true;
+                        break;
+                    }
                 }
                 if (!dup) members.append(self.alloc, m) catch return;
             },
@@ -955,7 +967,8 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
     merged.* = existing.*;
     merged.members = self.alloc.dupe(ast.RuntimeClassMember, members.items) catch return;
     if (extendsClosesCycle(self, key, merged.members, fcd.extends_span)) return;
-    self.program_index.runtime_class_map.put(key, merged) catch {};
+    const id = self.program_index.nameIndex(.runtime_class).get(key) orelse return;
+    self.program_index.set(.runtime_class, id, merged);
 }
 
 /// The registered `extends =` graph is a forest, so a walk from `members`'
@@ -969,7 +982,7 @@ fn extendsClosesCycle(self: *Lowering, key: []const u8, members: []const ast.Run
         chain.appendSlice(self.alloc, " extends ") catch return false;
         chain.appendSlice(self.alloc, walk) catch return false;
         if (std.mem.eql(u8, walk, key)) break;
-        const parent = self.program_index.runtime_class_map.get(walk) orelse return false;
+        const parent = self.program_index.lookup(.runtime_class, walk) orelse return false;
         walk = extendsAlias(parent.members) orelse return false;
     }
     if (self.diagnostics) |d| {
@@ -996,7 +1009,7 @@ pub fn extendsAlias(members: []const ast.RuntimeClassMember) ?[]const u8 {
 pub fn resolveObjcParentName(self: *Lowering, fcd: *const ast.RuntimeClassDecl) []const u8 {
     for (fcd.members) |m| switch (m) {
         .extends => |alias| {
-            if (self.program_index.runtime_class_map.get(alias)) |parent_fcd| {
+            if (self.program_index.lookup(.runtime_class, alias)) |parent_fcd| {
                 if (parent_fcd.is_extern) return parent_fcd.runtime_path;
                 // Sx-defined parent — its alias IS its Obj-C name.
                 return parent_fcd.name;
@@ -1067,7 +1080,7 @@ pub fn registerObjcDefinedClassMethods(self: *Lowering, fcd: *const ast.RuntimeC
         const body = method.body orelse continue;
         const fd = self.synthesizeFnDeclFromObjcMethod(method, body) orelse continue;
         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ fcd.name, method.name }) catch continue;
-        self.program_index.fn_ast_map.put(qualified, fd) catch {};
+        self.program_index.registerFunction(qualified, fd, self.current_source_file);
         self.declareFunction(fd, qualified);
 
         // Selector mangling — A.1's deriveObjcSelector handles
@@ -1194,16 +1207,15 @@ pub fn registerNamespacedRuntimeClasses(self: *Lowering, ns: ast.NamespaceDecl) 
     }
 }
 
-
 // ── JNI main stubs ─────────────────────────────────────────────
 
 pub fn synthesizeJniMainStubs(self: *Lowering) void {
     var seen = std.StringHashMap(void).init(self.alloc);
     defer seen.deinit();
 
-    var it = self.program_index.runtime_class_map.iterator();
+    var it = self.program_index.iterator(.runtime_class);
     while (it.next()) |entry| {
-        const fcd = entry.value_ptr.*;
+        const fcd = entry.value;
         if (!fcd.is_main) continue;
         if (fcd.is_extern) continue;
         if (fcd.runtime != .jni_class) continue;
@@ -1331,7 +1343,7 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     const saved_ctx_ref_jni = self.current_ctx_ref;
     defer self.current_ctx_ref = saved_ctx_ref_jni;
     if (self.implicit_ctx_enabled) {
-        if (self.program_index.global_names.get("kDefaultContext")) |dctx_gi| {
+        if (self.program_index.lookup(.global, "kDefaultContext")) |dctx_gi| {
             self.current_ctx_ref = self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
         }
     }

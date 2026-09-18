@@ -541,7 +541,7 @@ test "lower: objcTypeEncodingFromSignature emits @ for Obj-C class pointers" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSString", &ns_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSString", null), "NSString", &ns_fcd);
 
     // Return *NSString, no args: "@@:"
     const e1 = try lowering.objc().objcTypeEncodingFromSignature(ns_ptr, &.{}, null);
@@ -574,7 +574,7 @@ test "lower: objcTypeEncodingFromSignature unwraps optional to wire type" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSString", &ns_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSString", null), "NSString", &ns_fcd);
 
     // `?i64 -> ?*NSString` collapses to `q -> @` at the Obj-C boundary.
     const opt_i64 = module.types.optionalOf(.i64);
@@ -743,7 +743,7 @@ test "lower: isObjcClassPointer recognises pointer-to-runtime-Obj-C-class" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSString", &ns_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSString", null), "NSString", &ns_fcd);
     try std.testing.expect(lowering.objc().isObjcClassPointer(ns_ptr));
 
     // *NSCopying where NSCopying is a registered Obj-C *protocol* → also true
@@ -759,7 +759,7 @@ test "lower: isObjcClassPointer recognises pointer-to-runtime-Obj-C-class" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSCopying", &proto_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSCopying", null), "NSCopying", &proto_fcd);
     try std.testing.expect(lowering.objc().isObjcClassPointer(proto_ptr));
 
     // *Plain where Plain is a non-extern struct → false.
@@ -791,7 +791,7 @@ test "lower: objcPropertyKind defaults + explicit ARC modifiers" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSString", &ns_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSString", null), "NSString", &ns_fcd);
 
     // Primitive field, no modifiers → assign (the non-object default).
     const prim = ast.RuntimeFieldDecl{ .name = "count", .field_type = typeKeyword(alloc, "i32"), .is_property = true };
@@ -816,7 +816,7 @@ test "lower: objcPropertyKind defaults + explicit ARC modifiers" {
         .is_extern = true,
         .is_main = false,
     };
-    try lowering.program_index.runtime_class_map.put("NSCoding", &proto_fcd);
+    lowering.program_index.put(.runtime_class, lowering.program_index.synthetic("NSCoding", null), "NSCoding", &proto_fcd);
     const proto_ty = typeKeyword(alloc, "*NSCoding");
     defer alloc.destroy(proto_ty);
     const proto_default = ast.RuntimeFieldDecl{ .name = "coder", .field_type = proto_ty, .is_property = true };
@@ -932,6 +932,27 @@ test "pack projection: same-name type-arg + method warns" {
     try std.testing.expectEqual(Lowering.PackProjection{ .method = 0 }, lowering.resolvePackProjection("Shadowy", "value", .value_position));
 }
 
+test "a declaration reached twice keeps one function, and its name resolves to it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+
+    const body = alloc.create(Node) catch unreachable;
+    body.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = &.{} } } };
+    const fd = ast.FnDecl{ .name = "connRead", .params = &.{}, .return_type = null, .body = body };
+    lowering.program_index.registerFunction("connRead", &fd, null);
+
+    // A module reached along two import paths is scanned once per path.
+    lowering.declareFunction(&fd, "connRead");
+    lowering.declareFunction(&fd, "connRead");
+
+    try std.testing.expectEqual(lowering.declFuncId(&fd).?, lowering.resolveFuncByName("connRead").?);
+    try std.testing.expectEqual(@as(usize, 1), module.functions.items.len);
+}
+
 test "converge inferred error sets: empty -> warning, raising -> converged set" {
     // The compile driver renders diagnostics only on failure, so the
     // empty-inferred warning is validated on the DiagnosticList directly —
@@ -969,14 +990,14 @@ test "converge inferred error sets: empty -> warning, raising -> converged set" 
     r_body.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .block = .{ .stmts = r_stmts } } };
     const raiser_fd = ast.FnDecl{ .name = "raiser", .params = &.{}, .return_type = r_rt, .body = r_body };
 
-    lowering.program_index.fn_ast_map.put("stub", &stub_fd) catch unreachable;
-    lowering.program_index.fn_ast_map.put("raiser", &raiser_fd) catch unreachable;
+    lowering.program_index.registerFunction("stub", &stub_fd, null);
+    lowering.program_index.registerFunction("raiser", &raiser_fd, null);
 
     lowering.convergeInferredErrorSets();
 
     // raiser converges to {Foo} (non-empty); stub to ∅.
-    try std.testing.expectEqual(@as(usize, 1), (lowering.inferred_error_sets.get("raiser") orelse unreachable).len);
-    try std.testing.expectEqual(@as(usize, 0), (lowering.inferred_error_sets.get("stub") orelse unreachable).len);
+    try std.testing.expectEqual(@as(usize, 1), (lowering.inferredErrorSet(&raiser_fd) orelse unreachable).len);
+    try std.testing.expectEqual(@as(usize, 0), (lowering.inferredErrorSet(&stub_fd) orelse unreachable).len);
 
     // The empty-set (stub) warns; the raising one does not.
     var stub_warned = false;
@@ -1470,7 +1491,7 @@ test "lower: multi-assign to a GLOBAL array index stores in place via global_add
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    lowering.program_index.global_names.put("g", .{ .id = gid, .ty = arr_ty }) catch unreachable;
+    lowering.program_index.put(.global, lowering.program_index.synthetic("g", null), "g", .{ .id = gid, .ty = arr_ty });
 
     // main :: () { a := 0; g[1], a = 77, 4; }
     // lowerMultiAssign's index arm takes the `is_array` branch —
@@ -1813,8 +1834,8 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     // temporary. If the winner were keyed by `&fd` (the scanDecls bug), this
     // lookup by the stable `fn_ast_map` pointer would miss (null). Bare-call
     // routing goes through exactly these pointers, so the round-trip must hold.
-    const winner_fd = lowering.program_index.fn_ast_map.get("greet").?;
-    const winner_fid = lowering.fn_decl_fids.get(winner_fd);
+    const winner_fd = lowering.program_index.lookup(.function, "greet").?;
+    const winner_fid = lowering.declFuncId(winner_fd);
     try std.testing.expect(winner_fid != null);
     // Round-trips to the first-wins winner FuncId (resolveFuncByName's pick).
     try std.testing.expectEqual(lowering.resolveFuncByName("greet").?, winner_fid.?);
@@ -1829,7 +1850,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
         }
     }
     try std.testing.expect(shadow_fd != null);
-    const shadow_fid = lowering.fn_decl_fids.get(shadow_fd.?);
+    const shadow_fid = lowering.declFuncId(shadow_fd.?);
     try std.testing.expect(shadow_fid != null);
     try std.testing.expect(shadow_fid.? != winner_fid.?);
 
@@ -1851,7 +1872,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
             try std.testing.expect(sf.materialized == null);
-            try std.testing.expectEqual(shadow_fid.?, lowering.fn_decl_fids.get(sf.decl).?);
+            try std.testing.expectEqual(shadow_fid.?, lowering.declFuncId(sf.decl).?);
         },
         else => return error.TestUnexpectedResult,
     }
@@ -1947,13 +1968,13 @@ test "lower: scan populates source-keyed caches per declaring source" {
     const idx = &lowering.program_index;
 
     // SAME alias name `Color` lands a DISTINCT entry under each source key.
-    const color_a = idx.type_aliases_by_source.get(a_path).?.get("Color").?;
-    const color_b = idx.type_aliases_by_source.get(b_path).?.get("Color").?;
+    const color_a = idx.lookupInSource(.type_alias, a_path, "Color").?;
+    const color_b = idx.lookupInSource(.type_alias, b_path, "Color").?;
     try std.testing.expect(color_a != color_b); // *u8 vs *u16 — source-partitioned
 
     // SAME const name `K` lands a DISTINCT entry (distinct value node) per source.
-    const k_a = idx.module_consts_by_source.get(a_path).?.get("K").?;
-    const k_b = idx.module_consts_by_source.get(b_path).?.get("K").?;
+    const k_a = idx.lookupInSource(.module_const, a_path, "K").?;
+    const k_b = idx.lookupInSource(.module_const, b_path, "K").?;
     try std.testing.expect(k_a.value != k_b.value);
 
     // The global maps stay keyed by NAME alone — a hashmap key holds exactly
@@ -1961,9 +1982,9 @@ test "lower: scan populates source-keyed caches per declaring source" {
     // `Color` / `K`), independent of the by-source writes.
     // The single global `Color` is one of the two source-keyed authors (not a
     // merged/duplicated value).
-    const global_color = idx.type_alias_map.get("Color").?;
+    const global_color = idx.lookup(.type_alias, "Color").?;
     try std.testing.expect(global_color == color_a or global_color == color_b);
-    const global_k = idx.module_const_map.get("K").?;
+    const global_k = idx.lookup(.module_const, "K").?;
     try std.testing.expect(global_k.value == k_a.value or global_k.value == k_b.value);
 }
 
@@ -2896,7 +2917,7 @@ test "type alias: array element referencing a LATER-declared alias resolves via 
     lowering.lowerRoot(root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    const a = lowering.program_index.type_alias_map.get("A").?;
+    const a = lowering.program_index.lookup(.type_alias, "A").?;
     const a_info = module.types.get(a);
     try std.testing.expect(a_info == .array);
     try std.testing.expectEqual(@as(u32, 2), a_info.array.length);
@@ -2935,23 +2956,23 @@ test "type alias: forward composite elements across all shapes adopt the real el
     lowering.lowerRoot(root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    const arr = module.types.get(lowering.program_index.type_alias_map.get("ArrL").?);
+    const arr = module.types.get(lowering.program_index.lookup(.type_alias, "ArrL").?);
     try std.testing.expect(arr == .array);
     try std.testing.expectEqual(TypeId.i64, arr.array.element); // NOT a stub
 
-    const sl = module.types.get(lowering.program_index.type_alias_map.get("SliceL").?);
+    const sl = module.types.get(lowering.program_index.lookup(.type_alias, "SliceL").?);
     try std.testing.expect(sl == .slice);
     try std.testing.expectEqual(TypeId.i64, sl.slice.element);
 
-    const opt = module.types.get(lowering.program_index.type_alias_map.get("OptL").?);
+    const opt = module.types.get(lowering.program_index.lookup(.type_alias, "OptL").?);
     try std.testing.expect(opt == .optional);
     try std.testing.expectEqual(TypeId.i64, opt.optional.child);
 
-    const ptr = module.types.get(lowering.program_index.type_alias_map.get("PtrL").?);
+    const ptr = module.types.get(lowering.program_index.lookup(.type_alias, "PtrL").?);
     try std.testing.expect(ptr == .pointer);
     try std.testing.expectEqual(TypeId.i64, ptr.pointer.pointee);
 
-    const fnl = module.types.get(lowering.program_index.type_alias_map.get("FnL").?);
+    const fnl = module.types.get(lowering.program_index.lookup(.type_alias, "FnL").?);
     try std.testing.expect(fnl == .function);
     try std.testing.expectEqual(TypeId.i64, fnl.function.params[0]);
     try std.testing.expectEqual(TypeId.i64, fnl.function.ret);
@@ -2985,7 +3006,7 @@ test "type alias: generic-instantiation element in a composite RHS instantiates 
     lowering.lowerRoot(root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    const al = lowering.program_index.type_alias_map.get("AL").?;
+    const al = lowering.program_index.lookup(.type_alias, "AL").?;
     const al_info = module.types.get(al);
     try std.testing.expect(al_info == .array);
     try std.testing.expectEqual(@as(u32, 2), al_info.array.length);
@@ -3024,7 +3045,7 @@ test "type alias: function-alias with a pointer to a LATER-declared nominal reso
     lowering.lowerRoot(root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    const h = lowering.program_index.type_alias_map.get("H").?;
+    const h = lowering.program_index.lookup(.type_alias, "H").?;
     const h_info = module.types.get(h);
     try std.testing.expect(h_info == .function);
     try std.testing.expectEqual(@as(usize, 1), h_info.function.params.len);

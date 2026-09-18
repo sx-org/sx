@@ -142,9 +142,9 @@ test "TypeResolver.resolveName resolves aliases via ProgramIndex (not the TypeTa
     defer table.deinit();
     var index = ProgramIndex.init(alloc);
     defer index.deinit();
-    try index.type_alias_map.put("ShaderHandle", .u32); // alias → primitive
+    index.put(.type_alias, index.synthetic("ShaderHandle", null), "ShaderHandle", .u32); // alias → primitive
     const ptr_i64 = table.ptrTo(.i64);
-    try index.type_alias_map.put("NodeRef", ptr_i64); // alias → pointer
+    index.put(.type_alias, index.synthetic("NodeRef", null), "NodeRef", ptr_i64); // alias → pointer
     const tr = TypeResolver{ .alloc = alloc, .types = &table, .diagnostics = null, .index = &index };
 
     try std.testing.expectEqual(@as(TypeId, .u32), tr.resolveName("ShaderHandle", false));

@@ -258,13 +258,11 @@ pub const TypeResolver = struct {
     }
 
     /// Resolve a bare type NAME to a `TypeId`: primitive → string-form
-    /// pointer/slice/optional prefixes → already-registered named type → alias
-    /// (`alias_map`) → fresh empty-struct stub.
-    /// `alias_map` is the single-source alias table (owned by `ProgramIndex`);
-    /// callers pass it explicitly — Lowering via the index (`resolveName`),
-    /// `type_bridge` via the alias map threaded through `resolveAstType`. The
-    /// stub fall-through preserves long-standing behavior for as-yet-
-    /// unregistered names.
+    /// pointer/slice/optional prefixes → already-registered named type → the
+    /// alias fact of the declaration that name selects → fresh empty-struct
+    /// stub. Callers pass the facts explicitly — Lowering via the index
+    /// (`resolveName`), `type_bridge` via the index threaded through
+    /// `resolveAstType`.
     ///
     /// `skip_builtin` is the backtick raw-identifier escape (`` `i8 `` in type
     /// position): a raw reference is the LITERAL name used as a
@@ -273,7 +271,7 @@ pub const TypeResolver = struct {
     /// (`false`) and resolves to the builtin int type. The string-prefix
     /// recursion always passes `false`: the inner names (`*T`/`?T`) are bare,
     /// never raw.
-    pub fn resolveNamed(name: []const u8, table: *TypeTable, alias_map: ?*const std.StringHashMap(TypeId), skip_builtin: bool) TypeId {
+    pub fn resolveNamed(name: []const u8, table: *TypeTable, facts: ?*const ProgramIndex, skip_builtin: bool) TypeId {
         if (!skip_builtin) {
             if (resolvePrimitive(name)) |id| return id;
         }
@@ -288,30 +286,29 @@ pub const TypeResolver = struct {
         }
         // Many-pointer: [*]T.
         if (name.len >= 4 and name[0] == '[' and name[1] == '*' and name[2] == ']') {
-            return table.manyPtrTo(resolveNamed(name[3..], table, alias_map, false));
+            return table.manyPtrTo(resolveNamed(name[3..], table, facts, false));
         }
         // Pointer: *T.
         if (name.len >= 2 and name[0] == '*') {
-            return table.ptrTo(resolveNamed(name[1..], table, alias_map, false));
+            return table.ptrTo(resolveNamed(name[1..], table, facts, false));
         }
         // Optional: ?T.
         if (name.len >= 2 and name[0] == '?') {
-            return table.optionalOf(resolveNamed(name[1..], table, alias_map, false));
+            return table.optionalOf(resolveNamed(name[1..], table, facts, false));
         }
         // Named struct/enum/union — already-registered wins, then alias, then
         // a fresh empty-struct stub for an as-yet-unregistered name.
         const name_id = table.internString(name);
         if (table.findByName(name_id)) |existing| return existing;
-        if (alias_map) |amap| {
-            if (amap.get(name)) |alias_ty| return alias_ty;
+        if (facts) |index| {
+            if (index.lookup(.type_alias, name)) |alias_ty| return alias_ty;
         }
         return table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
     }
 
-    /// Resolve a bare type name through the canonical alias source
-    /// (`ProgramIndex.type_alias_map`). `skip_builtin` carries the backtick raw
-    /// escape — see `resolveNamed`.
+    /// Resolve a bare type name through the declaration facts. `skip_builtin`
+    /// carries the backtick raw escape — see `resolveNamed`.
     pub fn resolveName(self: TypeResolver, name: []const u8, skip_builtin: bool) TypeId {
-        return resolveNamed(name, self.types, &self.index.type_alias_map, skip_builtin);
+        return resolveNamed(name, self.types, self.index, skip_builtin);
     }
 };

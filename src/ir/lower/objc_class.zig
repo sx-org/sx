@@ -11,7 +11,6 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 
-
 const lower = @import("../lower.zig");
 const lower_ffi = @import("ffi.zig");
 const Lowering = lower.Lowering;
@@ -52,7 +51,7 @@ pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, f
     const pointee_info = self.module.types.get(ptr_info.pointer.pointee);
     if (pointee_info != .@"struct") return null;
     const struct_name = self.module.types.getString(pointee_info.@"struct".name);
-    const fcd = self.program_index.runtime_class_map.get(struct_name) orelse return null;
+    const fcd = self.program_index.lookup(.runtime_class, struct_name) orelse return null;
     if (fcd.runtime != .objc_class and fcd.runtime != .objc_protocol) return null;
     return self.findRuntimePropertyInChain(fcd, field_name);
 }
@@ -68,7 +67,7 @@ pub fn findRuntimeMethodInChain(self: *Lowering, fcd: *const ast.RuntimeClassDec
             else => {},
         };
         const parent = lower_ffi.extendsAlias(current.members) orelse return null;
-        current = self.program_index.runtime_class_map.get(parent) orelse return null;
+        current = self.program_index.lookup(.runtime_class, parent) orelse return null;
     }
 }
 
@@ -82,7 +81,7 @@ pub fn findRuntimePropertyInChain(self: *Lowering, fcd: *const ast.RuntimeClassD
             else => {},
         };
         const parent = lower_ffi.extendsAlias(current.members) orelse return null;
-        current = self.program_index.runtime_class_map.get(parent) orelse return null;
+        current = self.program_index.lookup(.runtime_class, parent) orelse return null;
     }
 }
 
@@ -105,7 +104,7 @@ pub fn lookupObjcDefinedStateFieldOnPointer(self: *Lowering, obj_expr: *const as
     const pointee_info = self.module.types.get(ptr_info.pointer.pointee);
     if (pointee_info != .@"struct") return null;
     const struct_name = self.module.types.getString(pointee_info.@"struct".name);
-    const fcd = self.program_index.runtime_class_map.get(struct_name) orelse return null;
+    const fcd = self.program_index.lookup(.runtime_class, struct_name) orelse return null;
     // Only sx-defined Obj-C classes have a state struct. Extern (referenced)
     // runtime classes' fields are purely declaration metadata (no state).
     if (fcd.is_extern or fcd.runtime != .objc_class) return null;
@@ -714,7 +713,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
 
     const ctx_ref: ?Ref = blk: {
         if (!self.implicit_ctx_enabled) break :blk null;
-        const dctx_gi = self.program_index.global_names.get("kDefaultContext") orelse break :blk null;
+        const dctx_gi = self.program_index.lookup(.global, "kDefaultContext") orelse break :blk null;
         break :blk self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
     };
 
@@ -805,7 +804,7 @@ pub fn emitObjcDefinedClassAllocImp(self: *Lowering, fcd: *const ast.RuntimeClas
     // default allocator. Sx-side callers bypass this IMP entirely
     // (compiler intercepts Cls.alloc()) and use their own
     // `context.allocator`.
-    const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
+    const default_ctx_gi = self.program_index.lookup(.global, "kDefaultContext") orelse {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassAllocImp: kDefaultContext global missing for class '{s}' (compiler bug — scan pass did not register the default context)", .{fcd.name});
         }
@@ -1034,7 +1033,7 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const ctx_ref: ?Ref = blk: {
         if (!self.implicit_ctx_enabled) break :blk null;
-        const dctx_gi = self.program_index.global_names.get("kDefaultContext") orelse break :blk null;
+        const dctx_gi = self.program_index.lookup(.global, "kDefaultContext") orelse break :blk null;
         break :blk self.builder.emit(.{ .global_addr = dctx_gi.id }, ptr_void);
     };
 
@@ -1230,7 +1229,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     // Default-context address for the implicit __sx_ctx the dealloc
     // fn-ptr takes as its first arg (the dealloc body might allocate
     // internally; default GPA is the safe baseline).
-    const default_ctx_gi = self.program_index.global_names.get("kDefaultContext") orelse {
+    const default_ctx_gi = self.program_index.lookup(.global, "kDefaultContext") orelse {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: kDefaultContext global missing for class '{s}'", .{fcd.name});
         }

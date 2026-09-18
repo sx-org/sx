@@ -274,7 +274,7 @@ pub fn tryPackImplMatch(
 
     var bindings = std.StringHashMap(TypeId).init(self.alloc);
     defer bindings.deinit();
-    const pd = self.program_index.protocol_ast_map.get(proto_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, proto_name) orelse return null;
     bindings.put(pd.type_params[0].name, dst_ty) catch return null;
     if (entry.ret_var_name) |rv| bindings.put(rv, src_ret) catch return null;
 
@@ -329,7 +329,7 @@ pub fn lowerConvert(self: *Lowering, operand: Ref, operand_node: *const Node, sr
     // parameterised protocols would walk protocol_decl_map looking for
     // protocols that take a single type-param and have a `convert` method.
     const proto_name = "Into";
-    const pd = self.program_index.protocol_ast_map.get(proto_name) orelse return null;
+    const pd = self.program_index.lookup(.protocol_ast, proto_name) orelse return null;
     if (pd.type_params.len != 1) return null;
 
     var key_buf = std.ArrayList(u8).empty;
@@ -1379,12 +1379,12 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     if (self.ufcsAliasTarget(name) != null) return null;
     const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
         .func => |sf| sf.decl,
-        .none => self.program_index.fn_ast_map.get(name) orelse return null,
+        .none => self.program_index.lookup(.function, name) orelse return null,
         .ambiguous, .not_callable => return null,
     };
     if (fd.type_params.len > 0) return null;
     for (fd.params) |p| if (p.is_pack or p.is_comptime) return null;
-    const fid = self.fn_decl_fids.get(fd) orelse return null;
+    const fid = self.declFuncId(fd) orelse return null;
     return functionSignatureType(self, fid);
 }
 
@@ -1512,7 +1512,7 @@ fn isStructType(self: *Lowering, ty: TypeId) bool {
 
 fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
     const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
-    return self.program_index.runtime_class_map.contains(name);
+    return self.program_index.contains(.runtime_class, name);
 }
 
 /// A failable whose members the destination failable's channel does not hold.

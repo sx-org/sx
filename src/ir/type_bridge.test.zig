@@ -3,7 +3,7 @@ const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
 const ast = @import("../ast.zig");
 const program_index_mod = @import("program_index.zig");
-const ModuleConstInfo = program_index_mod.ModuleConstInfo;
+const ProgramIndex = program_index_mod.ProgramIndex;
 const Node = ast.Node;
 
 const TypeId = types.TypeId;
@@ -19,7 +19,7 @@ test "resolveAstType: primitive type_expr" {
     defer alloc.destroy(node);
     node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "f64" } } };
 
-    try std.testing.expectEqual(TypeId.f64, type_bridge.resolveAstType(node, &table, null, null));
+    try std.testing.expectEqual(TypeId.f64, type_bridge.resolveAstType(node, &table, null));
 }
 
 test "resolveAstType: pointer type" {
@@ -35,7 +35,7 @@ test "resolveAstType: pointer type" {
     defer alloc.destroy(node);
     node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .pointer_type_expr = .{ .pointee_type = inner } } };
 
-    const id = type_bridge.resolveAstType(node, &table, null, null);
+    const id = type_bridge.resolveAstType(node, &table, null);
     try std.testing.expectEqual(TypeInfo{ .pointer = .{ .pointee = .i32 } }, table.get(id));
 }
 
@@ -56,7 +56,7 @@ test "resolveAstType: optional slice" {
     defer alloc.destroy(opt);
     opt.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .optional_type_expr = .{ .inner_type = slice } } };
 
-    const id = type_bridge.resolveAstType(opt, &table, null, null);
+    const id = type_bridge.resolveAstType(opt, &table, null);
     const info = table.get(id);
     switch (info) {
         .optional => |o| try std.testing.expectEqual(TypeId.string, o.child),
@@ -69,10 +69,10 @@ test "resolveAstType: null surfaces as .unresolved (no silent i64 default)" {
     var table = TypeTable.init(alloc);
     defer table.deinit();
 
-    try std.testing.expectEqual(TypeId.unresolved, type_bridge.resolveAstType(null, &table, null, null));
+    try std.testing.expectEqual(TypeId.unresolved, type_bridge.resolveAstType(null, &table, null));
 }
 
-test "resolveAstType: threaded alias_map resolves named alias" {
+test "resolveAstType: threaded facts resolve a named alias" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -83,34 +83,34 @@ test "resolveAstType: threaded alias_map resolves named alias" {
     defer alloc.destroy(sh_node);
     sh_node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "ShaderHandle" } } };
 
-    const empty_stub = type_bridge.resolveAstType(sh_node, &table, null, null);
+    const empty_stub = type_bridge.resolveAstType(sh_node, &table, null);
     const empty_info = table.get(empty_stub);
     try std.testing.expectEqual(@as(std.meta.Tag(TypeInfo), .@"struct"), std.meta.activeTag(empty_info));
     try std.testing.expectEqual(@as(usize, 0), empty_info.@"struct".fields.len);
 
-    // With an explicit alias map (threaded, not borrowed via a TypeTable field),
+    // With explicit facts (threaded, not borrowed via a TypeTable field),
     // an unseen name resolves to the alias target instead of a stub.
-    var aliases = std.StringHashMap(TypeId).init(alloc);
+    var aliases = ProgramIndex.init(alloc);
     defer aliases.deinit();
-    try aliases.put("ShaderHandle", .u32);
+    aliases.put(.type_alias, aliases.synthetic("ShaderHandle", null), "ShaderHandle", .u32);
 
     // Names already interned as stubs short-circuit on `findByName` — that's
     // the existing behaviour. Use a FRESH alias name to demonstrate the path.
     const opaque_node = try alloc.create(Node);
     defer alloc.destroy(opaque_node);
     opaque_node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "Opaque" } } };
-    try aliases.put("Opaque", .u64);
-    try std.testing.expectEqual(TypeId.u64, type_bridge.resolveAstType(opaque_node, &table, &aliases, null));
+    aliases.put(.type_alias, aliases.synthetic("Opaque", null), "Opaque", .u64);
+    try std.testing.expectEqual(TypeId.u64, type_bridge.resolveAstType(opaque_node, &table, &aliases));
 
     // Compound forms (`*Opaque`, `[]Opaque`, `?Opaque`) route through recursive
-    // helpers that thread the same alias_map at every step.
+    // helpers that thread the same facts at every step.
     const opaque_inner = try alloc.create(Node);
     defer alloc.destroy(opaque_inner);
     opaque_inner.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "Opaque" } } };
     const ptr_node = try alloc.create(Node);
     defer alloc.destroy(ptr_node);
     ptr_node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .pointer_type_expr = .{ .pointee_type = opaque_inner } } };
-    const ptr_id = type_bridge.resolveAstType(ptr_node, &table, &aliases, null);
+    const ptr_id = type_bridge.resolveAstType(ptr_node, &table, &aliases);
     try std.testing.expectEqual(TypeInfo{ .pointer = .{ .pointee = .u64 } }, table.get(ptr_id));
 }
 
@@ -123,9 +123,9 @@ test "resolveAstType: named-const array dimension resolves to the same length as
     const n_val = try alloc.create(Node);
     defer alloc.destroy(n_val);
     n_val.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .int_literal = .{ .value = 4 } } };
-    var consts = std.StringHashMap(ModuleConstInfo).init(alloc);
+    var consts = ProgramIndex.init(alloc);
     defer consts.deinit();
-    try consts.put("N", .{ .value = n_val, .ty = .i64 });
+    consts.put(.module_const, consts.synthetic("N", null), "N", .{ .value = n_val, .ty = .i64 });
 
     // `[N]i64` — dimension is the named const `N`, not a literal.
     const elem = try alloc.create(Node);
@@ -139,7 +139,7 @@ test "resolveAstType: named-const array dimension resolves to the same length as
     arr.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .array_type_expr = .{ .length = len_node, .element_type = elem } } };
 
     // With the const table threaded, `[N]i64` lays out identically to `[4]i64`.
-    const id = type_bridge.resolveAstType(arr, &table, null, &consts);
+    const id = type_bridge.resolveAstType(arr, &table, &consts);
     const info = table.get(id);
     try std.testing.expect(info == .array);
     try std.testing.expectEqual(TypeId.i64, info.array.element);
@@ -160,14 +160,14 @@ test "resolveAstType: error_set_decl registers an error-set type + interns membe
         .tag_name_starts = &.{ ast.no_source_start, ast.no_source_start },
     } } };
 
-    const id = type_bridge.resolveAstType(node, &table, null, null);
+    const id = type_bridge.resolveAstType(node, &table, null);
     const info = table.get(id);
     try std.testing.expect(info == .@"error");
     try std.testing.expectEqualStrings("ParseErr", table.getString(info.@"error".name));
     try std.testing.expectEqual(@as(usize, 2), info.@"error".tags.len);
     try std.testing.expectEqualStrings("BadDigit", table.getTagName(table.errorSetMember(id, "BadDigit").one));
     // Re-resolving the same decl dedups to the same TypeId.
-    try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
+    try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null));
 }
 
 test "resolveAstType: twin inline error sets are distinct TypeIds" {
@@ -187,8 +187,8 @@ test "resolveAstType: twin inline error sets are distinct TypeIds" {
     defer alloc.destroy(b);
     b.* = a.*;
 
-    const ia = type_bridge.resolveAstType(a, &table, null, null);
-    const ib = type_bridge.resolveAstType(b, &table, null, null);
+    const ia = type_bridge.resolveAstType(a, &table, null);
+    const ib = type_bridge.resolveAstType(b, &table, null);
     try std.testing.expect(ia != ib);
     try std.testing.expect(table.errorSetMember(ia, "A").one != table.errorSetMember(ib, "A").one);
 }
@@ -208,7 +208,7 @@ test "resolveAstType: `!Named` resolves to the declared error set" {
     const node = try alloc.create(Node);
     defer alloc.destroy(node);
     node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{ .operands = &.{"ParseErr"} } } };
-    try std.testing.expectEqual(set, type_bridge.resolveAstType(node, &table, null, null));
+    try std.testing.expectEqual(set, type_bridge.resolveAstType(node, &table, null));
 }
 
 test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
@@ -223,8 +223,8 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
     defer alloc.destroy(b);
     b.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_type_expr = .{} } };
 
-    const ia = type_bridge.resolveAstType(a, &table, null, null);
-    const ib = type_bridge.resolveAstType(b, &table, null, null);
+    const ia = type_bridge.resolveAstType(a, &table, null);
+    const ib = type_bridge.resolveAstType(b, &table, null);
     try std.testing.expect(table.get(ia) == .@"error");
     try std.testing.expectEqualStrings("!", table.getString(table.get(ia).@"error".name));
     try std.testing.expectEqual(@as(usize, 0), table.get(ia).@"error".tags.len); // empty until the SCC convergence pass runs
@@ -253,7 +253,7 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
     defer alloc.destroy(tuple);
     tuple.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .tuple_type_expr = .{ .field_types = &fields, .field_names = null } } };
 
-    const id = type_bridge.resolveAstType(tuple, &table, null, null);
+    const id = type_bridge.resolveAstType(tuple, &table, null);
     const info = table.get(id);
     try std.testing.expect(info == .failable);
     try std.testing.expectEqual(TypeId.i32, info.failable.value);

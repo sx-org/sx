@@ -598,12 +598,10 @@ pub const Lowering = struct {
     // mismatches (each of those is one of the guard's OWN errors, not external).
     assignability_error_count: usize = 0,
     lowered_functions: std.StringHashMap(void), // tracks which functions have been fully lowered
-    /// Identity map: authoring `*const ast.FnDecl` → the FuncId `declareFunction`
-    /// created for it. The name-keyed function table (`resolveFuncByName`) returns
-    /// the FIRST author of a name, so two same-name authors collide there; this
-    /// map addresses each author's OWN slot by decl identity, letting
-    /// a SHADOWED author lower its body into a distinct FuncId.
-    fn_decl_fids: std.AutoHashMap(*const ast.FnDecl, FuncId),
+    /// The IR function each declaration owns. One declaration is one function:
+    /// two same-spelled declarations hold distinct entries, and every name that
+    /// selects a declaration reaches its function through here.
+    fn_decl_fids: std.AutoHashMap(imports_mod.DeclId, FuncId),
     /// Runtime binding name → the resolved function, once per compilation.
     runtime_binding_fids: std.StringHashMap(FuncId),
     /// Identity map for mutable top-level globals. The name/source indexes are
@@ -688,10 +686,6 @@ pub const Lowering = struct {
     /// its display name.
     protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
-    /// Declaration-name / import / visibility facts (`ProgramIndex`).
-    /// Owns `import_flags`; borrows `module_scopes` /
-    /// `import_graph` from the compilation driver. Reached via
-    /// `self.program_index.<field>`; populated by scan/registration code.
     program_index: ProgramIndex,
     current_source_file: ?[]const u8 = null, // source file of function currently being lowered
     // Implicit Context parameter machinery. When the program imports
@@ -953,13 +947,14 @@ pub const Lowering = struct {
     /// True while lowering postfix `expr.(T)` — dest is written on the value.
     /// Prefix `xx` uses the slot dest and is an error when implicit already applies.
     xx_is_postfix: bool = false,
-    /// Whole-program-converged inferred error sets: top-level
-    /// bare-`!` function name → its sorted escape-tag ids (literal raises +
-    /// pure-failable `try` edges, fix-pointed across the call graph). The
-    /// shared `!` placeholder TypeId stays empty; this side map holds the real
-    /// per-function sets (sidesteps the name-only error-set interning). Read by
-    /// `lowerTry`'s named-caller widening and the empty-inferred warning.
-    inferred_error_sets: std.StringHashMap([]const u32),
+    /// Whole-program-converged inferred error sets: a bare-`!` DECLARATION →
+    /// its sorted escape-tag ids (literal raises + pure-failable `try` edges,
+    /// fix-pointed across the call graph). The identity of an error is where it
+    /// is defined, so a caught member resolves against the set at its
+    /// declaration rather than against whichever same-name function a spelling
+    /// would reach. The shared `!` placeholder TypeId stays empty; this side
+    /// map holds the real per-declaration sets.
+    inferred_error_sets: std.AutoHashMap(imports_mod.DeclId, []const u32),
     /// Whole-program-converged inferred error sets keyed by closure/function
     /// VALUE-signature shape: every occurrence of
     /// `Closure(<sig>) -> (T, !)` with a structurally identical value-signature
@@ -972,7 +967,7 @@ pub const Lowering = struct {
     /// when those escapes name no static member set. Every re-resolution of
     /// that signature reads the entry, so slot exactness and value subset both
     /// compare one TypeId.
-    inferred_channels: std.AutoHashMap(*const ast.FnDecl, TypeId),
+    inferred_channels: std.AutoHashMap(imports_mod.DeclId, TypeId),
     /// Qualified names (`Type.method`) of every explicitly-written protocol
     /// impl method. A protocol method may be declared `!` (the error channel
     /// is part of the contract — e.g. `Io.suspendRaw`); a conforming impl
@@ -1373,7 +1368,7 @@ pub const Lowering = struct {
             .authored_call_defaults = std.AutoHashMap(*const Node, DefaultCallSite).init(module.alloc),
             .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
             .mono_sites = std.ArrayList(DefaultCallSite).empty,
-            .fn_decl_fids = std.AutoHashMap(*const ast.FnDecl, FuncId).init(module.alloc),
+            .fn_decl_fids = std.AutoHashMap(imports_mod.DeclId, FuncId).init(module.alloc),
             .runtime_binding_fids = std.StringHashMap(FuncId).init(module.alloc),
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
@@ -1436,10 +1431,10 @@ pub const Lowering = struct {
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .convert_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),
-            .inferred_error_sets = std.StringHashMap([]const u32).init(module.alloc),
+            .inferred_error_sets = std.AutoHashMap(imports_mod.DeclId, []const u32).init(module.alloc),
             .impl_method_names = std.StringHashMap(void).init(module.alloc),
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
-            .inferred_channels = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
+            .inferred_channels = std.AutoHashMap(imports_mod.DeclId, TypeId).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
     }
@@ -1465,7 +1460,7 @@ pub const Lowering = struct {
     }
 
     fn resolveReturnType2(self: *Lowering, rt: ?*const Node) TypeId {
-        if (rt) |r| return type_bridge.resolveAstType(r, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+        if (rt) |r| return type_bridge.resolveAstType(r, &self.module.types, &self.program_index);
         return .void;
     }
 
@@ -1480,7 +1475,9 @@ pub const Lowering = struct {
             // types are re-resolved in many places (call-result typing, protocol
             // impls) that a central reject would wrongly trip.
             const resolved = self.resolveTypeWithBindings(rt);
-            if (self.inferred_channels.get(fd)) |chan| return self.withErrorChannel(resolved, chan);
+            if (self.declIdOf(.{ .fn_decl = fd })) |id| {
+                if (self.inferred_channels.get(id)) |chan| return self.withErrorChannel(resolved, chan);
+            }
             return resolved;
         }
         // No explicit annotation — the type is inferred from the body, which
@@ -1698,7 +1695,7 @@ pub const Lowering = struct {
     }
 
     pub fn aliasType(self: *Lowering, name: []const u8) ?TypeId {
-        return self.program_index.type_alias_map.get(name);
+        return self.program_index.lookup(.type_alias, name);
     }
 
     pub fn errorOwnerSource(self: *Lowering) StringId {
@@ -2267,7 +2264,7 @@ pub const Lowering = struct {
             // member names, resolving no type names, so it stays on the flat
             // `else`.
             .error_type_expr => return type_bridge.resolveErrorType(&node.data.error_type_expr, &self.module.types, self),
-            else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map),
+            else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index),
         }
     }
 
@@ -2379,7 +2376,7 @@ pub const Lowering = struct {
         if (self.type_bindings) |bindings| {
             if (bindings.get(name) != null) return true;
         }
-        if (self.program_index.type_alias_map.get(name) != null) return true;
+        if (self.program_index.lookup(.type_alias, name) != null) return true;
         const name_id = self.module.types.internString(name);
         return self.module.types.findByName(name_id) != null;
     }
@@ -2560,7 +2557,7 @@ pub const Lowering = struct {
                 // Global check mirrors `resolveGlobalRef` minus its
                 // diagnostics — the ambiguous/not-visible outcomes fall to
                 // the value path, which diagnoses them exactly once.
-                if (self.program_index.global_names.get(id.name) == null) return false;
+                if (self.program_index.lookup(.global, id.name) == null) return false;
                 return switch (self.selectGlobalAuthor(id.name)) {
                     .resolved, .untracked => true,
                     .not_a_global, .ambiguous, .not_visible => false,
@@ -2776,12 +2773,12 @@ pub const Lowering = struct {
     /// Source-aware UFCS alias lookup: a `private` alias rewrites calls only
     /// in its declaring file; a public alias keeps its program-wide dispatch.
     pub fn ufcsAliasTarget(self: *Lowering, name: []const u8) ?[]const u8 {
-        const target = self.program_index.ufcs_alias_map.get(name) orelse return null;
-        if (self.program_index.private_ufcs_alias_source.get(name)) |authority| {
+        const alias = self.program_index.lookup(.ufcs_alias, name) orelse return null;
+        if (alias.private_source) |authority| {
             const requester = self.current_source_file orelse self.main_file orelse authority;
             if (!std.mem.eql(u8, requester, authority)) return null;
         }
-        return target;
+        return alias.target;
     }
 
     /// True when ANY module in the program declares `alias` as a namespace
@@ -2923,13 +2920,13 @@ pub const Lowering = struct {
         if (self.pack_arg_types) |m| if (m.contains(name)) return true;
         if (self.comptime_constants.contains(name)) return true;
 
-        if (self.program_index.global_names.get(name) != null) {
+        if (self.program_index.lookup(.global, name) != null) {
             switch (self.selectGlobalAuthor(name)) {
                 .resolved, .untracked => return true,
                 .not_a_global, .ambiguous, .not_visible => {},
             }
         }
-        if (self.program_index.module_const_map.get(name) != null) {
+        if (self.program_index.lookup(.module_const, name) != null) {
             switch (self.selectModuleConst(name)) {
                 .resolved, .own_opaque => return true,
                 .ambiguous, .none => {},
@@ -3083,7 +3080,7 @@ pub const Lowering = struct {
         if (self.scope) |s| {
             if (s.lookup(root) != null) return null;
         }
-        if (self.program_index.global_names.contains(root)) return null;
+        if (self.program_index.contains(.global, root)) return null;
         if (self.namespaceAliasTarget(root, node.span) == null) return null;
         return fa.field;
     }
@@ -3388,6 +3385,7 @@ pub const Lowering = struct {
     pub const withErrorChannel = lower_error.withErrorChannel;
     pub const materialiseInferredChannel = lower_error.materialiseInferredChannel;
     pub const materialiseDynChannel = lower_error.materialiseDynChannel;
+    pub const inferredErrorSet = lower_error.inferredErrorSet;
     pub const convergeInferredErrorSets = lower_error.convergeInferredErrorSets;
     pub const containsTag = lower_error.containsTag;
     pub const convergeClosureShapeSets = lower_error.convergeClosureShapeSets;
@@ -3627,6 +3625,10 @@ pub const Lowering = struct {
     pub const putModuleConst = lower_decl.putModuleConst;
     pub const putGlobal = lower_decl.putGlobal;
     pub const dropModuleConst = lower_decl.dropModuleConst;
+    pub const declId = lower_decl.declId;
+    pub const declIdOf = lower_decl.declIdOf;
+    pub const declFuncId = lower_decl.declFuncId;
+    pub const bindDeclFuncId = lower_decl.bindDeclFuncId;
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 

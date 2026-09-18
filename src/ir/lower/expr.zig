@@ -1283,7 +1283,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     const saved_global_src = self.current_source_file;
                     self.setCurrentSourceFile(sel.target.target_module_path);
                     var global_info: ?program_index_mod.GlobalInfo = null;
-                    if (self.program_index.global_names.get(sel.member)) |fallback| {
+                    if (self.program_index.lookup(.global, sel.member)) |fallback| {
                         switch (self.selectGlobalAuthor(sel.member)) {
                             .resolved => |g| global_info = g,
                             .untracked => global_info = fallback,
@@ -1351,7 +1351,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     if (fa.object.data == .identifier) {
         const oname = fa.object.data.identifier.name;
         const shadowed = if (self.scope) |s| s.lookup(oname) != null else false;
-        if (!shadowed and !self.program_index.global_names.contains(oname)) {
+        if (!shadowed and !self.program_index.contains(.global, oname)) {
             if (self.module.types.findByName(self.module.types.internString(oname))) |ty| {
                 if (!ty.isBuiltin() and self.isElseMember(ty, fa.field)) {
                     self.refuseBareElseMember(ty, fa.field, span);
@@ -1581,8 +1581,8 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
     if (self.scope) |scope| {
         if (scope.lookup(name) != null) return true;
     }
-    if (self.program_index.global_names.get(name) != null) return true;
-    if (self.program_index.module_const_map.get(name) != null) return true;
+    if (self.program_index.lookup(.global, name) != null) return true;
+    if (self.program_index.lookup(.module_const, name) != null) return true;
     return false;
 }
 
@@ -2029,7 +2029,7 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
         const q = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, field }) catch return null;
-        if (self.program_index.fn_ast_map.get(q)) |fd| {
+        if (self.program_index.lookup(.function, q)) |fd| {
             return if (fd.is_get) fd else null;
         }
     }
@@ -2089,7 +2089,7 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
         const q = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, eff }) catch return null;
-        if (self.program_index.fn_ast_map.get(q)) |fd| {
+        if (self.program_index.lookup(.function, q)) |fd| {
             return if (fd.is_set) fd else null;
         }
     }
@@ -2693,7 +2693,7 @@ fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
             if (self.scope) |sc| {
                 if (sc.lookup(id.name) != null) return null;
             }
-            if (self.program_index.global_names.contains(id.name)) return null;
+            if (self.program_index.contains(.global, id.name)) return null;
             const tid = self.resolveArrayLiteralType(node);
             if (tid == .unresolved) return null;
             return self.module.types.ptrTo(tid);
@@ -2781,7 +2781,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
         },
         .type_expr => |inner| {
             if (self.headTypeLeak(inner.name, te.span)) return .unresolved;
-            return type_bridge.resolveAstType(te, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+            return type_bridge.resolveAstType(te, &self.module.types, &self.program_index);
         },
         // Structural type heads on a typed `.[...]` literal — `[N]T`, `[]T`.
         // These resolve through the canonical `resolveAstType` compound path
@@ -3729,7 +3729,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
             // same-named one.
-            if (self.program_index.global_names.get(id.name)) |gi| {
+            if (self.program_index.lookup(.global, id.name)) |gi| {
                 switch (self.selectGlobalAuthor(id.name)) {
                     .resolved => |g| break :blk self.builder.emit(.{ .global_get = g.id }, g.ty),
                     .not_a_global => {},
@@ -3747,7 +3747,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
             }
             // Check module-level value constants (e.g. AF_INET :i32: 2)
-            if (self.program_index.module_const_map.get(id.name)) |ci_global| {
+            if (self.program_index.lookup(.module_const, id.name)) |ci_global| {
                 if (!self.isNameVisible(id.name)) {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, node.span, "'{s}' is not visible; @import the module that declares it", .{id.name});
@@ -3779,12 +3779,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // global decl list (first-wins) has no `fn_ast_map` entry but IS
             // a raw-facts author — the author selection inside this arm
             // serves it, so admit it through the gate.
-            const fn_author_only = !self.program_index.fn_ast_map.contains(eff_fn_name) and
+            const fn_author_only = !self.program_index.contains(.function, eff_fn_name) and
                 std.mem.eql(u8, eff_fn_name, id.name) and
                 (if (self.scope) |scope| scope.lookup(id.name) == null else true) and
                 self.current_source_file != null and
                 self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free) == .func;
-            if (self.program_index.fn_ast_map.contains(eff_fn_name) or fn_author_only) {
+            if (self.program_index.contains(.function, eff_fn_name) or fn_author_only) {
                 // Visibility check only for user-typed bare names (id.name
                 // == eff_fn_name) without a UFCS alias. Mangled local-
                 // scope names and UFCS rewrites are compiler indirections
@@ -3803,7 +3803,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // genuine `Any` param takes a formatted type-name string boxed
                 // as Any.
                 if (self.target_type == .any or self.target_type == .type_value) {
-                    const fd_any: ?*const ast.FnDecl = self.program_index.fn_ast_map.get(eff_fn_name) orelse fd_blk: {
+                    const fd_any: ?*const ast.FnDecl = self.program_index.lookup(.function, eff_fn_name) orelse fd_blk: {
                         switch (self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free)) {
                             .func => |sf| break :fd_blk sf.decl,
                             else => break :fd_blk null,
@@ -3972,7 +3972,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.type_bindings) |tb| {
                     if (tb.get(id.name)) |t| break :blk_ty t;
                 }
-                if (self.program_index.type_alias_map.get(id.name)) |t| break :blk_ty t;
+                if (self.program_index.lookup(.type_alias, id.name)) |t| break :blk_ty t;
                 if (type_bridge.resolveTypePrimitive(id.name)) |t| break :blk_ty t;
                 const name_id = self.module.types.internString(id.name);
                 if (self.module.types.findByName(name_id)) |t| break :blk_ty t;
@@ -4088,7 +4088,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // not a storage-backed array/struct const — those resolve above).
                 // Same defect as the local case: without storage, `@FORTY` would
                 // become `inttoptr (i64 <value> to ptr)`. Diagnose.
-                if (self.program_index.module_const_map.get(id_name) != null) {
+                if (self.program_index.lookup(.module_const, id_name) != null) {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
                     break :blk self.emitPlaceholder("addr_of_const");
@@ -4549,7 +4549,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk binding.ref;
                 }
             }
-            if (self.program_index.global_names.get(te.name)) |gi| {
+            if (self.program_index.lookup(.global, te.name)) |gi| {
                 break :blk self.builder.emit(.{ .global_get = gi.id }, gi.ty);
             }
             // Type literal in expression position → first-class
@@ -4557,7 +4557,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // `t : Type = f64;` store a real TypeId; lets
             // `t == f64` icmp at runtime against the same TypeId.
             if (self.isKnownTypeName(te.name)) {
-                const ty = type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+                const ty = type_bridge.resolveAstType(node, &self.module.types, &self.program_index);
                 break :blk self.builder.constType(ty);
             }
             break :blk self.emitError(te.name, node.span);

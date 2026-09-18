@@ -822,7 +822,7 @@ fn fnPtrTrampoline(self: *Lowering, ty: TypeId, info: types.TypeInfo.FunctionInf
 /// `@callPtr` for an `impl (sig) for T`: the env IS the receiver, so the
 /// trampoline hands it to `call` as `self`.
 fn nominalTrampoline(self: *Lowering, cn: lower_protocol.CallableNominal) ?FuncId {
-    const target = self.fn_decl_fids.get(cn.fd) orelse return null;
+    const target = self.declFuncId(cn.fd) orelse return null;
     if (!self.lowered_fids.contains(target)) {
         self.lowered_fids.put(target, {}) catch @panic("out of memory");
         self.lowerFunctionBodyInto(cn.fd, target, cn.qualified);
@@ -1107,8 +1107,8 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             // Not a scope binding — skip program-wide function / type names so
             // a closure that merely CALLS a top-level fn (or names a type)
             // doesn't try to capture it.
-            if (self.program_index.fn_ast_map.contains(id.name)) return;
-            if (self.program_index.struct_template_map.contains(id.name)) return;
+            if (self.program_index.contains(.function, id.name)) return;
+            if (self.program_index.contains(.struct_template, id.name)) return;
         },
         .binary_op => |bo| {
             self.collectCaptures(bo.lhs, param_names, captures);

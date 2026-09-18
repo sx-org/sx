@@ -1134,7 +1134,7 @@ pub fn memberAuthor(self: *Lowering, ty: TypeId) ?MemberAuthor {
         // answer the member's own.
         const src: ?[]const u8 = blk: {
             const tmpl_name = self.struct_instance_template.get(name) orelse break :blk null;
-            const tmpl = self.program_index.struct_template_map.get(tmpl_name) orelse break :blk null;
+            const tmpl = self.program_index.lookup(.struct_template, tmpl_name) orelse break :blk null;
             break :blk tmpl.source_file;
         };
         return .{ .decl = decl, .source = src };

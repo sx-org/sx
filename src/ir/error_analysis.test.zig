@@ -43,22 +43,22 @@ test "error_analysis: convergeInferredErrorSets propagates a callee set across a
     const c_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{c_try} } });
     const caller_fd = ast.FnDecl{ .name = "caller", .params = &.{}, .return_type = c_rt, .body = c_body };
 
-    lowering.program_index.fn_ast_map.put("raiser", &raiser_fd) catch unreachable;
-    lowering.program_index.fn_ast_map.put("caller", &caller_fd) catch unreachable;
+    lowering.program_index.registerFunction("raiser", &raiser_fd, null);
+    lowering.program_index.registerFunction("caller", &caller_fd, null);
 
     ea.convergeInferredErrorSets();
 
     const foo = lowering.anonymousErrorMember("Foo");
-    const raiser_set = lowering.inferred_error_sets.get("raiser") orelse unreachable;
+    const raiser_set = lowering.inferredErrorSet(&raiser_fd) orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), raiser_set.len);
     try std.testing.expectEqual(foo, raiser_set[0]);
     // The caller raises nothing directly but converges to {Foo} via the edge.
-    const caller_set = lowering.inferred_error_sets.get("caller") orelse unreachable;
+    const caller_set = lowering.inferredErrorSet(&caller_fd) orelse unreachable;
     try std.testing.expectEqual(@as(usize, 1), caller_set.len);
     try std.testing.expectEqual(foo, caller_set[0]);
 
     // facts() exposes the same converged store.
-    try std.testing.expect(ea.facts().inferred_error_sets.get("caller") != null);
+    try std.testing.expect(ea.facts().inferred_error_sets.get(lowering.declId(.{ .fn_decl = &caller_fd }, null)) != null);
 }
 
 test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's raises" {
@@ -80,7 +80,7 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
     const host_body = mk(alloc, .{ .block = .{ .stmts = &[_]*Node{lambda} } });
     const host_fd = ast.FnDecl{ .name = "host", .params = &.{}, .return_type = null, .body = host_body };
 
-    lowering.program_index.fn_ast_map.put("host", &host_fd) catch unreachable;
+    lowering.program_index.registerFunction("host", &host_fd, null);
 
     ea.convergeClosureShapeSets();
 
@@ -120,7 +120,7 @@ test "error_analysis: empty-inferred warnings are emitted in source order, not h
         fds[i] = ast.FnDecl{ .name = name, .params = &.{}, .return_type = rt, .body = body };
     }
     for (&names, 0..) |name, i| {
-        lowering.program_index.fn_ast_map.put(name, &fds[i]) catch unreachable;
+        lowering.program_index.registerFunction(name, &fds[i], null);
     }
 
     ea.convergeInferredErrorSets();

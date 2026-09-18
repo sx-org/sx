@@ -538,16 +538,10 @@ pub const UnknownTypeChecker = struct {
                 else => {},
             }
         }
-        var it_fc = self.index.runtime_class_map.keyIterator();
-        while (it_fc.next()) |k| out.put(k.*, {}) catch {};
-        var it_tmpl = self.index.struct_template_map.keyIterator();
-        while (it_tmpl.next()) |k| out.put(k.*, {}) catch {};
-        var it_pd = self.index.protocol_decl_map.keyIterator();
-        while (it_pd.next()) |k| out.put(k.*, {}) catch {};
-        var it_pa = self.index.protocol_ast_map.keyIterator();
-        while (it_pa.next()) |k| out.put(k.*, {}) catch {};
-        var it_al = self.index.type_alias_map.keyIterator();
-        while (it_al.next()) |k| out.put(k.*, {}) catch {};
+        inline for (.{ .runtime_class, .struct_template, .protocol, .protocol_ast, .type_alias }) |fact| {
+            var it = self.index.iterator(fact);
+            while (it.next()) |entry| out.put(entry.name, {}) catch {};
+        }
     }
 
     /// Harvest every type-declaration name (local `T :: struct/enum/union` and
@@ -967,8 +961,8 @@ pub const UnknownTypeChecker = struct {
                 const source = tp.constraint.source_file orelse self.author_source orelse self.diagnostics.current_source_file;
                 return l.isProtocolConstraint(cname, source);
             }
-            return self.index.protocol_decl_map.contains(cname) or
-                self.index.protocol_ast_map.contains(cname);
+            return self.index.contains(.protocol, cname) or
+                self.index.contains(.protocol_ast, cname);
         }
         return false;
     }
@@ -1016,10 +1010,10 @@ pub const UnknownTypeChecker = struct {
 
     fn isValueParamPosition(self: UnknownTypeChecker, base: []const u8, i: usize) bool {
         if (contracts.isTypeConstructor(base)) return !contracts.takesTypeArg(base, i);
-        if (self.index.struct_template_map.get(base)) |tmpl| {
+        if (self.index.lookup(.struct_template, base)) |tmpl| {
             if (i < tmpl.type_params.len) return !tmpl.type_params[i].is_type_param;
         }
-        if (self.index.fn_ast_map.get(base)) |fd| {
+        if (self.index.lookup(.function, base)) |fd| {
             if (i < fd.type_params.len) {
                 const tp = fd.type_params[i];
                 // A value param is one whose constraint is a non-`Type` type
@@ -1156,7 +1150,7 @@ pub const UnknownTypeChecker = struct {
         if (sets.contains(head)) return;
         // A composition (`Both :: FooError | BooError`) authors no set of its
         // own — it binds a name to the channel its operands merge into.
-        if (self.index.type_alias_map.get(head)) |aliased| {
+        if (self.index.lookup(.type_alias, head)) |aliased| {
             if (!aliased.isBuiltin() and self.types.get(aliased) == .@"error") return;
         }
         // A name that names a real (non-error-set) TYPE — a struct/enum/union,
