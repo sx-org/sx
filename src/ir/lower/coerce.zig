@@ -1469,6 +1469,7 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // out on different structs.
     if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
     if (structPointeesDiffer(self, src_ty, dst_ty)) return true;
+    if (failableChannelEscapes(self, src_ty, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
 }
 
@@ -1512,6 +1513,18 @@ fn isStructType(self: *Lowering, ty: TypeId) bool {
 fn isRuntimeClass(self: *Lowering, struct_ty: TypeId) bool {
     const name = self.module.types.getString(self.module.types.get(struct_ty).@"struct".name);
     return self.program_index.runtime_class_map.contains(name);
+}
+
+/// A failable whose members the destination failable's channel does not hold.
+/// Two channels are one width whenever their payload areas coincide, so the
+/// width rule reads the store as bit-compatible, but a `catch` over the
+/// destination can never name the member the value carries.
+fn failableChannelEscapes(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    if (src_ty.isBuiltin() or dst_ty.isBuiltin()) return false;
+    const src = self.module.types.get(src_ty);
+    const dst = self.module.types.get(dst_ty);
+    if (src != .failable or dst != .failable) return false;
+    return !self.errorSetValueRetypeIsLegal(src.failable.err, dst.failable.err);
 }
 
 fn isFunctionType(self: *Lowering, ty: TypeId) bool {
