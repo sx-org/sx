@@ -1,0 +1,7 @@
+FA :: error { Alpha; }
+Stmt :: struct {
+    step :: (self: *Stmt) -> (i32, !FA) { raise FA.Alpha; }
+}
+Db :: struct {
+    prepare :: (self: *Db) -> (Stmt, !FA) { return Stmt{}; }
+}

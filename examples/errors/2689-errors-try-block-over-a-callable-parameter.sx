@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+E :: error { Bad; }
+
+fail :: () -> (i64, !E) { raise E.Bad; }
+pass :: () -> (i64, !E) { return 41; }
+
+run :: (g: () -> (i64, !E)) -> i64 {
+    try { x := try g(); x + 1 } catch { -1 }
+}
+
+main :: () -> i32 {
+    print("fail={} pass={}\n", run(fail), run(pass));
+    0
+}

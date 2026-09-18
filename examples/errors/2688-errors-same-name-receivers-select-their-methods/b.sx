@@ -1,0 +1,8 @@
+FB :: error { Beta; }
+FC :: error { Gamma; }
+Stmt :: struct {
+    step :: (self: *Stmt) -> (i32, !FB) { raise FB.Beta; }
+}
+Db :: struct {
+    prepare :: (self: *Db) -> (Stmt, !FC) { return Stmt{}; }
+}

@@ -1,0 +1,26 @@
+@import "modules/std.sx";
+a :: @import "2688-errors-same-name-receivers-select-their-methods/a.sx";
+b :: @import "2688-errors-same-name-receivers-select-their-methods/b.sx";
+E :: error { Missing; }
+
+viaA :: (db: *a.Db) -> ! {
+    st := try db.prepare();
+    rc := try st.step();
+    if rc == 0 { raise E.Missing; }
+}
+
+viaB :: (db: *b.Db) -> ! {
+    st := try db.prepare();
+    rc := try st.step();
+    if rc == 0 { raise E.Missing; }
+}
+
+main :: () -> i32 {
+    da : a.Db = .{};
+    db : b.Db = .{};
+    ea := viaA(*da);
+    eb := viaB(*db);
+    print("a={} alpha={}\nb={} beta={}\n", ea, ea == .Alpha, eb, eb == .Beta);
+    if ea == .Alpha and eb == .Beta { return 0; }
+    1
+}

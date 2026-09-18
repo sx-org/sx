@@ -45,11 +45,10 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// The EDGE a callee spelling names — the key its declaration is
-    /// registered under — or null when the spelling names none.
-    fn calleeEdge(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?[]const u8 {
+    /// The declaration a callee spelling selects, or null when it selects none.
+    fn calleeDecl(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?*const ast.FnDecl {
         switch (callee.data) {
-            .identifier => |id| return id.name,
+            .identifier => |id| return self.l.edgeCalleeDecl(id.name, self.l.current_source_file),
             .field_access => |fa| {
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
@@ -57,10 +56,10 @@ pub const ErrorAnalysis = struct {
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
                     if (self.bindingType(enclosing_fd, obj)) |ty| {
-                        return self.receiverEdge(ty, fa.field);
-                    } else if (self.qualifiedEdge(obj, fa.field)) |q| return q;
+                        return self.receiverMethod(ty, fa.field);
+                    } else if (self.qualifiedDecl(obj, fa.field)) |q| return q;
                 }
-                return self.ufcsEdge(fa.field);
+                return self.ufcsDecl(fa.field);
             },
             else => return null,
         }
@@ -70,8 +69,8 @@ pub const ErrorAnalysis = struct {
     /// callee's declaration, or `dyn` when the callee spelling names none. A
     /// resolved non-failable callee contributes an edge whose declared channel
     /// is empty.
-    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
-        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
+        if (self.calleeDecl(callee, enclosing_fd)) |edge| {
             edges.append(self.l.alloc, edge) catch {};
         } else {
             dyn.* = true;
@@ -103,9 +102,9 @@ pub const ErrorAnalysis = struct {
     }
 
     /// The call a failable body hands back with no `return` keyword.
-    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         var visitor = struct {
-            edges: *std.ArrayList([]const u8),
+            edges: *std.ArrayList(*const ast.FnDecl),
             dyn: *bool,
             fd: ?*const ast.FnDecl,
             fn visit(v: *@This(), analysis: ErrorAnalysis, callee: *const Node) void {
@@ -142,14 +141,12 @@ pub const ErrorAnalysis = struct {
     /// from what the source WROTE — a lambda's return, the callee
     /// declaration's return, a callable parameter's return. A spelling collect
     /// cannot read fails: the extra contribution then routes it through
-    /// `contributeCallee`, which the fix-point turns into `dyn`.
+    /// `contributeCallee`, which marks it `dyn`.
     fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
         if (callee.data == .lambda)
             return Lowering.astChannelNode(callee.data.lambda.return_type) != null;
-        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
-            if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd|
-                return Lowering.astChannelNode(fd.return_type) != null;
-        }
+        if (self.calleeDecl(callee, enclosing_fd)) |fd|
+            return Lowering.astChannelNode(fd.return_type) != null;
         if (callee.data == .identifier) {
             if (self.slotChannel(enclosing_fd, callee.data.identifier.name)) |has| return has;
         }
@@ -168,23 +165,27 @@ pub const ErrorAnalysis = struct {
         return null;
     }
 
-    /// `"<head>.<method>"` when that names a declaration, else null.
-    fn qualifiedEdge(self: ErrorAnalysis, head: []const u8, method: []const u8) ?[]const u8 {
+    /// The declaration `"<head>.<method>"` names, else null.
+    fn qualifiedDecl(self: ErrorAnalysis, head: []const u8, method: []const u8) ?*const ast.FnDecl {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
-        if (self.l.edgeCalleeDecl(qualified, self.l.current_source_file) == null) return null;
-        return qualified;
+        return self.l.edgeCalleeDecl(qualified, self.l.current_source_file);
     }
 
-    fn receiverEdge(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?[]const u8 {
-        if (self.nominalName(ty)) |name| {
-            if (self.qualifiedEdge(name, method)) |edge| return edge;
+    /// The method a call on a `ty` receiver dispatches to. `ty`'s own
+    /// declaration answers first: two modules may each declare a `Name`, so
+    /// the `Name.method` spelling speaks only for a type with no known author.
+    fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
+        if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
+        if (!self.l.hasPlainStructAuthor(ty)) {
+            if (self.nominalName(ty)) |name| {
+                if (self.qualifiedDecl(name, method)) |fd| return fd;
+            }
         }
-        return self.ufcsEdge(method);
+        return self.ufcsDecl(method);
     }
 
-    fn ufcsEdge(self: ErrorAnalysis, method: []const u8) ?[]const u8 {
-        const bare = self.l.ufcsAliasTarget(method) orelse method;
-        return if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) bare else null;
+    fn ufcsDecl(self: ErrorAnalysis, method: []const u8) ?*const ast.FnDecl {
+        return self.l.edgeCalleeDecl(self.l.ufcsAliasTarget(method) orelse method, self.l.current_source_file);
     }
 
     fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
@@ -297,8 +298,7 @@ pub const ErrorAnalysis = struct {
                 const receiver = call.callee.data.field_access.object;
                 if (receiver.data != .identifier) break :result;
                 const ty = self.bindingType(fd, receiver.data.identifier.name) orelse break :result;
-                const edge = self.receiverEdge(ty, call.callee.data.field_access.field) orelse break :result;
-                const callee = self.l.edgeCalleeDecl(edge, self.l.current_source_file) orelse break :result;
+                const callee = self.receiverMethod(ty, call.callee.data.field_access.field) orelse break :result;
                 if (callee.type_params.len != 0) break :result;
                 const ret = callee.return_type orelse break :result;
                 return self.l.resolveTypeInSource(callee.body.source_file, ret);
@@ -331,7 +331,7 @@ pub const ErrorAnalysis = struct {
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
-    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (self.l.raisedMember(rs.tag)) |rm| {
@@ -455,7 +455,7 @@ pub const ErrorAnalysis = struct {
     /// A `??` chain routes each operand's failure to the operand that follows,
     /// so every operand but the last is absorbed. The last one propagates,
     /// unless `absorbed` — a `catch` over the chain takes its total failure.
-    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
+    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
         self.collectAbsorbed(nc.lhs, tags, edges, dyn, enclosing_fd);
         // `??` is right-associative, so the chain continues down the rhs.
         if (nc.rhs.data == .null_coalesce) {
@@ -478,7 +478,7 @@ pub const ErrorAnalysis = struct {
     /// nowhere, while a `try` nested inside it re-raises before the fallback
     /// runs and still escapes. A `try { … }` boundary owns every escape
     /// inside it.
-    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, true),
             .try_expr => |te| if (te.operand.data != .block) self.collectAbsorbed(te.operand, tags, edges, dyn, enclosing_fd),
@@ -488,7 +488,7 @@ pub const ErrorAnalysis = struct {
 
     /// Every escape of a failable `body`: the tags it raises and the edges of
     /// the calls whose failure leaves it.
-    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
         self.contributeTailCall(body, edges, dyn, enclosing_fd);
     }
@@ -506,7 +506,7 @@ pub const ErrorAnalysis = struct {
             /// the empty-inferred warning names it by.
             name: []const u8,
             tags: std.ArrayList(u32),
-            edges: std.ArrayList([]const u8),
+            edges: std.ArrayList(*const ast.FnDecl),
             rt: ?*const Node,
             // Module the function is written in. `rt.span` is an offset into
             // THAT file, and this whole-program pass runs with whatever
@@ -548,7 +548,7 @@ pub const ErrorAnalysis = struct {
                     continue;
                 }
                 var tags = std.ArrayList(u32).empty;
-                var edges = std.ArrayList([]const u8).empty;
+                var edges = std.ArrayList(*const ast.FnDecl).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
@@ -571,16 +571,7 @@ pub const ErrorAnalysis = struct {
             changed = false;
             var wit = work.iterator();
             while (wit.next()) |we| {
-                for (we.value_ptr.edges.items) |callee| {
-                    const callee_fd = self.l.edgeCalleeDecl(callee, we.value_ptr.source_file) orelse {
-                        // No single author is visible at the edge, so the
-                        // channel it escapes through is not statically known.
-                        if (!we.value_ptr.dyn) {
-                            we.value_ptr.dyn = true;
-                            changed = true;
-                        }
-                        continue;
-                    };
+                for (we.value_ptr.edges.items) |callee_fd| {
                     const callee_tags: []const u32 = blk: {
                         const callee_id = self.l.declId(.{ .fn_decl = callee_fd }, callee_fd.body.source_file);
                         if (work.getPtr(callee_id)) |cc| {
@@ -649,7 +640,7 @@ pub const ErrorAnalysis = struct {
     /// Whole-program union of each bare-`!` closure/fn-type SHAPE's escape set
     /// Walks every function body for closure literals;
     /// each bare-`!` failable literal contributes its raises (+ `try named_fn()`
-    /// edges, resolved against the name-keyed converged sets) to the node shared
+    /// edges, resolved against their declarations' converged sets) to the node shared
     /// by all occurrences of its value-signature shape. A `try slot(x)` against
     /// any matching-shape slot then widens against this union.
     pub fn convergeClosureShapeSets(self: ErrorAnalysis) void {
