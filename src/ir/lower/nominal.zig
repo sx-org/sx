@@ -785,16 +785,49 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolv
     }
 }
 
+/// Where an alias declaration is written: the file the `DeclTable` stamped as
+/// its declarer and the offset of its name inside that file. Totally ordered,
+/// with a file-less declaration after every located one.
+const AliasDeclSite = struct {
+    file: ?[]const u8,
+    name_start: u32,
+
+    fn precedes(self: AliasDeclSite, other: AliasDeclSite) bool {
+        if (self.file) |mine| {
+            const theirs = other.file orelse return true;
+            switch (std.mem.order(u8, mine, theirs)) {
+                .lt => return true,
+                .gt => return false,
+                .eq => {},
+            }
+        } else if (other.file != null) return false;
+        return self.name_start < other.name_start;
+    }
+};
+
+fn aliasDeclSite(self: *Lowering, cd: *const ast.ConstDecl) AliasDeclSite {
+    const id = self.program_index.idForRef(.{ .const_decl = cd });
+    return .{
+        .file = if (id) |i| self.program_index.declaration(i).source else null,
+        .name_start = cd.name_span.start,
+    };
+}
+
 /// Report a const-alias cycle once. `cycle` is the closed loop's decls in
-/// walk order (first element = re-visited decl). Both the once-only key and
-/// the reported rotation are the loop's minimum decl address, so every entry
-/// point into the same loop — each member decl's own registration probe, plus
-/// any use-site probe — shares one diagnostic and one message.
+/// walk order (first element = re-visited decl). The head is the loop's
+/// earliest declaration site, so the once-only key, the reported rotation and
+/// the blamed span are the same for every entry point into the loop — each
+/// member decl's own registration probe, plus any use-site probe — and the
+/// span is rendered in the head's own declaring file.
 fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void {
     const diags = self.diagnostics orelse return;
     var head: usize = 0;
-    for (cycle, 0..) |cd, i| {
-        if (@intFromPtr(cd) < @intFromPtr(cycle[head])) head = i;
+    var head_site = aliasDeclSite(self, cycle[0]);
+    for (cycle[1..], 1..) |cd, i| {
+        const site = aliasDeclSite(self, cd);
+        if (!site.precedes(head_site)) continue;
+        head = i;
+        head_site = site;
     }
     const gop = self.alias_cycle_diagnosed.getOrPut(@intFromPtr(cycle[head])) catch return;
     if (gop.found_existing) return;
@@ -805,7 +838,7 @@ fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void
         names.appendSlice(self.alloc, " -> ") catch @panic("out of memory");
     }
     names.appendSlice(self.alloc, cycle[head].name) catch @panic("out of memory");
-    diags.addFmt(.err, cycle[head].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
+    diags.addFmtInFile(.err, head_site.file, cycle[head].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
 }
 
 /// The fn decl a const ALIAS chain terminates at, or null when `cd` is not

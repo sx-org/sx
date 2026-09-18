@@ -1,0 +1,9 @@
+// An alias cycle spanning two files reports the member with the earliest
+// source position — declaring file first, then name offset — and the caret
+// lands in that member's own file. The import chain reaches `later.sx`
+// before `earlier.sx`, so the AST order of the two members is the reverse of
+// their source order.
+@import "modules/std.sx";
+@import "2687-diagnostics-alias-cycle-head-by-source/later.sx";
+
+main :: () { print("unreached\n"); }

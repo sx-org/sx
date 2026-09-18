@@ -183,8 +183,9 @@ pub const DiagnosticList = struct {
     /// `import_sources`) instead of the ambient `current_source_file`. Used to
     /// pin a diagnostic whose `span` is an offset into a NON-current file — e.g.
     /// a parse error raised while resolving an `@import`, where the span belongs
-    /// to the imported file, not the importer.
-    pub fn addFmtInFile(self: *DiagnosticList, level: Level, source_file: []const u8, span: ?Span, comptime fmt: []const u8, args: anytype) void {
+    /// to the imported file, not the importer. `null` renders against the root
+    /// file.
+    pub fn addFmtInFile(self: *DiagnosticList, level: Level, source_file: ?[]const u8, span: ?Span, comptime fmt: []const u8, args: anytype) void {
         const saved = self.current_source_file;
         self.current_source_file = source_file;
         defer self.current_source_file = saved;
