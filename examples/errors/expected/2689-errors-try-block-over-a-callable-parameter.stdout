@@ -1,1 +1,1 @@
-fail=-1 pass=42 bad=true
+fail=-1 pass=42 bad=true level=true shadow=true

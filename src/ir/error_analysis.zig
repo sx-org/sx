@@ -66,7 +66,7 @@ pub const ErrorAnalysis = struct {
     }
 
     /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, the members of a callable parameter's closed
+    /// callee's declaration, the members of a callable binding's closed
     /// channel, or `dyn` when the callee names neither. A non-failable callee
     /// contributes no member.
     fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
@@ -152,7 +152,7 @@ pub const ErrorAnalysis = struct {
 
     /// Does a call through this callee spelling carry an error channel? Read
     /// from what the source WROTE — a lambda's return, the callee
-    /// declaration's return, a callable parameter's return. A spelling collect
+    /// declaration's return, a callable binding's return. A spelling collect
     /// cannot read fails: the extra contribution then routes it through
     /// `contributeCallee`, which marks it `dyn`.
     fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
@@ -166,15 +166,10 @@ pub const ErrorAnalysis = struct {
         return true;
     }
 
-    /// The written return of the callable parameter `name` of `fd`, or null
-    /// when `name` is not one.
+    /// The return of the callable binding `name` selects at the site, or null
+    /// when `name` selects none.
     fn slotReturn(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
-        const decl = fd orelse return null;
-        for (decl.params) |p| {
-            if (!std.mem.eql(u8, p.name, name)) continue;
-            return self.l.slotReturnType(self.l.resolveType(p.type_expr));
-        }
-        return null;
+        return self.l.slotReturnType(self.bindingType(fd, name) orelse return null);
     }
 
     /// The declaration `"<head>.<method>"` names, else null.
