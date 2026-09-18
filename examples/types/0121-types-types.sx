@@ -94,7 +94,7 @@ main :: () {
     print("struct-shorthand: {}\n", p4);
 
     // Field defaults
-    d1 : Defaults;
+    d1 : Defaults = .{};
     print("defaults: a={} b={}\n", d1.a, d1.b);
 
     // Field access and assignment

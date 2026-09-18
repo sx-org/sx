@@ -213,8 +213,8 @@ test "a wrapper carrying a cursor is refused wherever the cursor is" {
         \\    row: [1]@VaList;
         \\    lent: [2]*@VaList;
         \\}
-        \\rows: [1]@VaList;
-        \\borrows: []*@VaList;
+        \\rows: [1]@VaList = ---;
+        \\borrows: []*@VaList = ---;
         \\hands_back :: () -> [1]@VaList { return ---; }
         \\takes :: (rows: [1]@VaList) -> i64 abi(.c) { return 0; }
         \\takes_borrow :: (rows: []*@VaList) -> i64 { return 0; }
@@ -237,12 +237,12 @@ test "a signature is checked through every wrapper that carries it" {
         \\Nested :: (i32, NotC) -> i64 abi(.c);
         \\BadRet :: (i32) -> [1]*@VaList abi(.c);
         \\Legal  :: struct { read: CRead; }
-        \\wrapped: [1]NotC;
-        \\behind: *NotC;
-        \\nested: Nested;
-        \\hands_back: BadRet;
-        \\legal_rows: [2]CRead;
-        \\legal_held: Legal;
+        \\wrapped: [1]NotC = ---;
+        \\behind: *NotC = ---;
+        \\nested: Nested = ---;
+        \\hands_back: BadRet = ---;
+        \\legal_rows: [2]CRead = ---;
+        \\legal_held: Legal = ---;
         \\main :: () -> i64 { return 0; }
     , &lowered);
     defer lowered.module.deinit();
@@ -257,9 +257,9 @@ test "a closure signature has no C side for a cursor" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\bad_take: Closure(@VaList) -> i64;
-        \\bad_hand: Closure(i32) -> *@VaList;
-        \\legal_borrow: Closure(*@VaList) -> i64;
+        \\bad_take: Closure(@VaList) -> i64 = ---;
+        \\bad_hand: Closure(i32) -> *@VaList = ---;
+        \\legal_borrow: Closure(*@VaList) -> i64 = ---;
         \\main :: () -> i64 { return 0; }
     , &lowered);
     defer lowered.module.deinit();
@@ -308,8 +308,8 @@ test "a protocol method meets the boundary rules on every kind" {
         \\LegalBorrow :: interface {
         \\    read :: (self: *Self, ap: *@VaList) -> i64;
         \\}
-        \\holds: Reader;
-        \\legal: LegalBorrow;
+        \\holds: Reader = ---;
+        \\legal: LegalBorrow = ---;
         \\main :: () -> i64 { return 0; }
     , &lowered);
     defer lowered.module.deinit();

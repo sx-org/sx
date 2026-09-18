@@ -56,8 +56,8 @@ Wraps :: struct {
 
 VaPair :: struct { a: @VaList; b: i64 };
 
-wrappedGlobal: [1]@VaList;
-wrappedBorrows: []*@VaList;
+wrappedGlobal: [1]@VaList = ---;
+wrappedBorrows: []*@VaList = ---;
 
 handsBackWrapped :: (ap: *@VaList) -> [1]@VaList { return ---; }
 
@@ -81,8 +81,8 @@ Signatures :: struct {
 }
 
 // A cursor in a global outlives every frame that could open one.
-stored: @VaList;
-storedBorrow: *@VaList;
+stored: @VaList = ---;
+storedBorrow: *@VaList = ---;
 
 handsOneBack :: (ap: *@VaList) -> @VaList { return *ap; }
 

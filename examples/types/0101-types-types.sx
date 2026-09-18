@@ -13,7 +13,7 @@ Foo :: struct {
 }
 
 main :: () {
-    a : Foo; // a=0, b=42, d=17 from defaults; c is `---` (undefined)
+    a : Foo = .{}; // a=0, b=42, d=17 from defaults; c is `---` (undefined)
     // `c` was declared `---`, so its contents are undefined here. Pin it
     // before printing so the snapshot is deterministic — printing the raw
     // undefined byte yields whatever garbage the stack/codegen leaves.
