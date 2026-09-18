@@ -1,0 +1,11 @@
+@import "modules/std.sx";
+lib :: @import "lib.sx";
+
+Box :: struct { n: i32 }
+
+main :: () -> i32 {
+    p: *Box = lib.optr();
+    q: *Box = lib.bptr();
+    print("{} {}\n", @typeName(@typeOf(p)), @typeName(@typeOf(q)));
+    0
+}

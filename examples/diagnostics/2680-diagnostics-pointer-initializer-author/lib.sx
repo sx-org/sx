@@ -1,0 +1,4 @@
+Other :: struct { q: i32 }
+optr :: () -> *Other { null }
+Box :: struct { q: i32 }
+bptr :: () -> *Box { null }
