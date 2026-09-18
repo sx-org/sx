@@ -1,0 +1,5 @@
+FB :: error { Beta; }
+Box :: struct($T: Type) {
+    v: T;
+    go :: (self: *Box(T)) -> (i64, !FB) { raise FB.Beta; }
+}
