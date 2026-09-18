@@ -19,7 +19,7 @@ Color :: enum { red; green; blue; }
 Cell  :: struct { c: Color; s: string; n: [2:7]i64; }
 
 Table : [2:7]i64 = .[10, 20];
-Blank : Pair;
+Blank : Pair = .{};
 
 atComptime :: () {
     k : Key = .[65, 66, 67, 68];
@@ -42,14 +42,14 @@ main :: () -> i32 {
     n : [2:7]i64 = .[10, 20];
     print("n.len {} n[1] {} n[2] {}\n", n.len, n[1], n[2]);
 
-    d : [2:7]i64;
+    d : [2:7]i64 = .[0, 0];
     f : [2:1]f64 = .[1.5, 2.5];
-    nested : [2]Pair;
+    nested : [2]Pair = .[.{}, .{}];
     print("terminators: {} {} {} {} {}\n", Table[2], d[2], f[2], Blank.n[2], nested[1].n[2]);
 
-    cell : Cell;
-    cells : [2]Cell;
-    text : string;
+    cell : Cell = .{};
+    cells : [2]Cell = .[.{}, .{}];
+    text : string = "";
     print("cell: {} {} {}\n", cell.c.(i64), cell.s.len, cell.n[2]);
     print("cells[1]: {} {} {}\n", cells[1].c.(i64), cells[1].s.len, cells[1].n[2]);
     print("text.len {}\n", text.len);

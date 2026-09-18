@@ -18,7 +18,7 @@ Wrapper :: struct {
 }
 
 main :: () -> i32 {
-    v : `i32(i64);
+    v : `i32(i64) = ---;
     v.x = 7;
     p : *`i32(i64) = *v;  // pointer to a raw parameterized type
     w : Wrapper = ---;

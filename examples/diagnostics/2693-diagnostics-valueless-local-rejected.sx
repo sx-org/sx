@@ -1,0 +1,11 @@
+// A local or a module global sets a value or says `= ---`; a name and a type
+// alone are not a declaration. A field is the other side of that fork: it takes
+// its type alone and holds the zero value.
+Counters :: struct {
+    hits: i64;
+}
+
+main :: () -> i32 {
+    seen : Counters;
+    return xx seen.hits;
+}

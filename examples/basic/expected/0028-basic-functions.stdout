@@ -1,7 +1,7 @@
 === 5. Functions ===
 const: 42
 typed-const: 3.140000
-default-init: 0
+typed-var: 7
 implicit-ret: 42
 early-ret: 5
 early-ret2: 99

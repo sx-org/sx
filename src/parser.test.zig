@@ -601,11 +601,6 @@ test "parser: a mid-block statement without its `;` is refused" {
         const msg = try parseErrMsg(alloc, src);
         try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
     }
-
-    // A `name : T` with no initializer is complete, so the report names the
-    // terminator alongside the tails the declaration could still take.
-    const typed = try parseErrMsg(alloc, "f :: () -> void { slot : i64\n g(slot); }");
-    try std.testing.expect(std.mem.indexOf(u8, typed, "expected ':', '=', ';', or 'extern'") != null);
 }
 
 // The declaration forms a file is made of take the same `;`; the last one ends
@@ -758,25 +753,23 @@ test "parser: a bare scope block statement does not chain" {
     try std.testing.expect(chained.data.block.stmts[0].data.call.callee.data == .field_access);
 }
 
-// The value-less forms take the same `;`: a `return` with no value, and a
-// `name : type` declaration with no initializer.
-test "parser: a `;` terminates the value-less forms" {
+// A `return` takes its `;` with or without a value, in statement and in
+// expression position.
+test "parser: a `;` terminates a `return` with nothing to return" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const body = try parseBody(alloc,
         \\f :: () -> void {
-        \\    slot : i64;
-        \\    g(slot);
+        \\    g();
         \\    return;
         \\}
     );
     const stmts = body.data.block.stmts;
-    try std.testing.expectEqual(@as(usize, 3), stmts.len);
-    try std.testing.expect(stmts[0].data.var_decl.value == null);
-    try std.testing.expect(stmts[1].data == .call);
-    try std.testing.expect(stmts[2].data.return_stmt.value == null);
+    try std.testing.expectEqual(@as(usize, 2), stmts.len);
+    try std.testing.expect(stmts[0].data == .call);
+    try std.testing.expect(stmts[1].data.return_stmt.value == null);
 
     // A `return` in expression position asks the same question, so the
     // statement after an early `then return;` is not the value it returns.
@@ -810,11 +803,11 @@ test "parser: the end of the file ends the last declaration" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = try Parser.init(alloc, "TAU :: 6;\nseed : i64\n");
+    var p = try Parser.init(alloc, "TAU :: 6;\nseed : i64 = 1\n");
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
     try std.testing.expect(decls[0].data == .const_decl);
-    try std.testing.expect(decls[1].data.var_decl.value == null);
+    try std.testing.expect(decls[1].data.var_decl.value.?.data == .int_literal);
 }
 
 // ---- Linkage tails ----
@@ -898,7 +891,6 @@ test "parser: a struct linkage tail binds its abi and lib" {
     try std.testing.expectEqual(ast.ABI.c, sd.abi);
     try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
 }
-
 
 // ---- The binding layer ----
 //

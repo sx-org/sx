@@ -91,25 +91,25 @@ error: cannot declare a return of type '*@VaList' — a C-variadic cursor cannot
 error: cannot declare a global of type '[1]@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:59:16
    |
-59 | wrappedGlobal: [1]@VaList;
+59 | wrappedGlobal: [1]@VaList = ---;
    |                ^^^^^^^^^^
 
 error: cannot declare a global of type '[]*@VaList' — it addresses a '@VaList', which cannot outlive the call frame whose tail it reads
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:60:17
    |
-60 | wrappedBorrows: []*@VaList;
+60 | wrappedBorrows: []*@VaList = ---;
    |                 ^^^^^^^^^^
 
 error: cannot declare a global of type '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:84:9
    |
-84 | stored: @VaList;
+84 | stored: @VaList = ---;
    |         ^^^^^^^
 
 error: cannot declare a global of type '*@VaList' — a C-variadic cursor cannot outlive the call frame whose tail it reads
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:85:15
    |
-85 | storedBorrow: *@VaList;
+85 | storedBorrow: *@VaList = ---;
    |               ^^^^^^^^
 
 error: '@vaStart' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)
