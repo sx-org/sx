@@ -372,13 +372,15 @@ pub const Compilation = struct {
         return module;
     }
 
-    /// Walk `lowering.program_index.runtime_class_map` and render Java sources for every
-    /// `main = true @JniClass("...")` declaration. Renders happen here so the
-    /// AST + class-registry snapshot stay confined to the lowering pass; the
-    /// downstream APK pipeline only needs `{runtime_path, java_source}` pairs.
+    /// Walk `lowering.program_index`'s `.runtime_class` facet and render Java
+    /// sources for every `main = true @JniClass("...")` declaration. Renders
+    /// happen here so the AST + class-registry snapshot stay confined to the
+    /// lowering pass; the downstream APK pipeline only needs
+    /// `{runtime_path, java_source}` pairs.
     fn collectJniMainEmissions(self: *Compilation, lowering: *ir.Lowering) !void {
-        // `runtime_class_map` registers each decl under bare + qualified names —
-        // dedupe by runtime_path so a single decl emits one .java.
+        // The `.runtime_class` facet selects each decl under both its bare and
+        // its qualified name — dedupe by runtime_path so a single decl emits
+        // one .java.
         var seen = std.StringHashMap(void).init(self.allocator);
         defer seen.deinit();
 

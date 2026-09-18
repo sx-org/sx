@@ -304,10 +304,6 @@ pub const FfiCtors = struct {
             const fcd = entry_kv.decl;
             const class_name = fcd.name;
 
-            // Parent class — pre-resolved Obj-C runtime name from
-            // lower.zig (resolveObjcParentName). Stored on the
-            // cache entry so emit_llvm doesn't re-walk
-            // runtime_class_map here.
             const parent_name = entry_kv.parent_objc_name;
 
             const parent_str_global = self.e.emitPrivateCString(parent_name, "OBJC_CLASS_NAME_");
