@@ -458,7 +458,7 @@ Both :: ParseErr | IoErr;
 parse :: (s: string) -> (i32, !ParseErr) { ... }
 mixed :: (s: string) -> (i32, !)         { ... }   // infers ParseErr | IoErr
 
-slot : Closure((string) -> (i32, !Both));
+slot : Closure((string) -> (i32, !Both)) = ---;
 
 slot = parse;   // ERROR — `!ParseErr` is not `!Both`, subset or not
 slot = mixed;   // OK — mixed's inferred channel IS Both

@@ -359,12 +359,10 @@ Pair;
 Top-level and local bindings, expression statements, assignments, `return` /
 `raise` / `break` / `continue` / `defer`, `@import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `=> expr`
-body all take the `;`. The value-less spellings take it the same way — a
-`return` with nothing to return, and a `name : Type` declaration with no
-initializer:
+body all take the `;`. A `return` with nothing to return takes it the same way:
 
 ```sx
-counter : i64;
+counter : i64 = 0;
 bump :: (by: i64) -> void {
     counter = counter + by;
     return;
@@ -1685,8 +1683,8 @@ pointing at the annotated form.
 
 `@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx
-MyArr :: @Array(5, i32);       // equivalent to [5]i32
-grid : @Array(2, [3]f32);      // equivalent to [2][3]f32
+MyArr :: @Array(5, i32);         // equivalent to [5]i32
+grid : @Array(2, [3]f32) = ---;  // equivalent to [2][3]f32
 ```
 
 A **count** is a compile-time integer used as an array dimension, a `@Vector`
@@ -6141,7 +6139,7 @@ destination supplies a channel — construction, `==`, and `case`.
 
 ```sx
 t := IoErr.Failed;   // singleton channel {intern(IoErr, Failed)}
-e : IoErr;           // the whole set — a binding is never narrowed
+e : IoErr = t;       // the whole set — a binding is never narrowed
 ```
 
 `.X` resolves when exactly one member named `X` is live in the destination
