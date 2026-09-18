@@ -1894,9 +1894,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     };
     self.builder.integerSwitchBr(tag, cases.items, integer_cases.items, default_bb.?);
 
-    // Lower each arm's body
+    // Arms are alternatives, not a sequence: each starts from the facts holding
+    // at the `match`, and only the arms that reach `merge_bb` say what holds
+    // there.
+    var entry_snap = self.narrowSnapshot();
+    defer entry_snap.deinit(self.alloc);
+    var merged: ?std.ArrayList([]const u8) = null;
     for (me.arms, 0..) |arm, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
+        self.narrowSet(entry_snap.items);
 
         // A patterned arm no switch case targets is unreachable. Lowering it
         // emits invalid IR — a runtime cast with no matching type, a payload
@@ -2110,6 +2116,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                     v = self.builder.constUndef(result_type);
                 }
                 self.builder.br(merge_bb, &.{v});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         } else {
             lowerArmBody(self, arm.body, demand);
@@ -2118,6 +2125,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             arm_scope.deinit();
             if (!self.currentBlockHasTerminator()) {
                 self.builder.br(merge_bb, &.{});
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
     }
@@ -2133,37 +2141,35 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
         if (!found_default) {
             self.builder.switchToBlock(default_bb.?);
-            if (is_type_match) {
-                // For type-category matches, unrecognized tags should skip to merge
-                // (e.g., optional types not covered by anyToString categories)
-                if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
-                } else {
-                    self.builder.br(merge_bb, &.{});
-                }
+            // Only an enum whose variants the arms cover leaves the default
+            // unreachable; any other subject can hold a value no arm names,
+            // which reaches the merge carrying the facts that hold at the
+            // `match`.
+            const is_exhaustive = blk: {
+                if (is_type_match or subject_ty.isBuiltin()) break :blk false;
+                const ty_info = self.module.types.get(subject_ty);
+                if (ty_info == .@"enum") break :blk cases.items.len >= ty_info.@"enum".variants.len;
+                break :blk false;
+            };
+            if (is_exhaustive) {
+                self.builder.emitUnreachable();
             } else {
-                // For non-exhaustive matches (union/enum with unhandled variants),
-                // fall through to merge instead of unreachable
-                const is_exhaustive = blk: {
-                    if (!subject_ty.isBuiltin()) {
-                        const ty_info = self.module.types.get(subject_ty);
-                        if (ty_info == .@"enum") {
-                            break :blk cases.items.len >= ty_info.@"enum".variants.len;
-                        }
-                    }
-                    break :blk false;
-                };
-                if (is_exhaustive) {
-                    self.builder.emitUnreachable();
-                } else if (has_value_merge) {
-                    const default_val = self.builder.constUndef(result_type);
-                    self.builder.br(merge_bb, &.{default_val});
+                if (has_value_merge) {
+                    self.builder.br(merge_bb, &.{self.builder.constUndef(result_type)});
                 } else {
                     self.builder.br(merge_bb, &.{});
                 }
+                self.narrowSet(entry_snap.items);
+                joinNarrowEdge(self, &merged, self.narrowSnapshot());
             }
         }
+    }
+
+    if (merged) |*m| {
+        self.narrowSet(m.items);
+        m.deinit(self.alloc);
+    } else {
+        self.narrowSet(entry_snap.items);
     }
 
     self.builder.switchToBlock(merge_bb);

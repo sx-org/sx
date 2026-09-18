@@ -1,0 +1,17 @@
+// `match` arms are alternatives, not a sequence: the write in `case 1` is not
+// on the path that runs `case 2`, so the guard's proof of `x` still stands
+// where the sibling arm reads it.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+pick :: () -> i32 { return 2; }
+
+main :: () {
+    x: ?i32 = 42;
+    if x == null { return; }
+    match pick() {
+        case 1: { x = null; return; }
+        case 2: { take(x); }
+        else: { }
+    }
+}

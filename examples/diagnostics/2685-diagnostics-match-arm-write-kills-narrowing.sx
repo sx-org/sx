@@ -1,0 +1,16 @@
+// An arm that falls through to the code after the `match` carries its write
+// there, so the guard's proof of `x` is gone at the read.
+@import "modules/std.sx";
+
+take :: (v: i32) { print("{}\n", v); }
+pick :: () -> i32 { return 0; }
+
+main :: () {
+    x: ?i32 = 42;
+    if x == null { return; }
+    match pick() {
+        case 0: { x = null; }
+        else: { }
+    }
+    take(x);    // error: optional does not implicitly unwrap
+}
