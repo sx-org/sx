@@ -1,0 +1,21 @@
+// A terminator is part of a type's identity at a generic call site, so a
+// terminated spelling and its sentinel-free counterpart key distinct
+// monomorphs.
+
+@import "modules/std.sx";
+
+Views :: struct { plain: []i64; term: [:7]i64; }
+
+name :: (x: $T) -> i64 { print("{}\n", @typeName(T)); 0 }
+
+main :: () -> i32 {
+    a : [2]i64 = .[1, 2];
+    b : [2:7]i64 = .[1, 2];
+    _ := name(a);
+    _ := name(b);
+
+    v := Views{};
+    _ := name(v.plain);
+    _ := name(v.term);
+    0
+}

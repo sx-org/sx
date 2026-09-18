@@ -65,15 +65,24 @@ pub const GenericResolver = struct {
             },
             .many_pointer => |p| blk: {
                 const inner = self.mangleTypeName(p.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
+                break :blk if (p.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "mptrs{d}_{s}", .{ x, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .slice => |s| blk: {
                 const inner = self.mangleTypeName(s.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch @panic("out of memory while mangling type");
+                break :blk if (s.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "SLs{d}_{s}", .{ x, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .array => |a| blk: {
                 const inner = self.mangleTypeName(a.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
+                break :blk if (a.sentinel) |x|
+                    std.fmt.allocPrint(self.l.alloc, "ARs{d}_{d}_{s}", .{ x, a.length, inner }) catch @panic("out of memory while mangling type")
+                else
+                    std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
             },
             // A width the aliases do not name is an ordinary identifier, so a
             // formed int takes a shape fragment like every other formed type —
