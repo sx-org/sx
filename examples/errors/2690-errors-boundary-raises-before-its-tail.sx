@@ -1,0 +1,16 @@
+// A `try { … }` body that raises before reaching its tail still takes its
+// success type from that tail, and the tail reads the bindings the block
+// declares.
+@import "modules/std.sx";
+
+E :: error { Bad; }
+
+pass :: () -> (i64, !E) { return 41; }
+
+boundary :: () -> i64 {
+    return try { x := try pass(); raise E.Bad; x } catch |e| { if e == .Bad { -1 } else { -2 } };
+}
+
+main :: () {
+    print("boundary={}\n", boundary());
+}

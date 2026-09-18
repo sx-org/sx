@@ -37,8 +37,10 @@ pub const TailDemand = union(enum) {
 
 /// What a demanded body yielded, once its scopes and defers have unwound.
 pub const BodyTail = union(enum) {
-    /// Control left the body (`return` / `raise` / a diverging call).
-    terminated,
+    /// Control left the body (`return` / `raise` / a diverging call), carrying
+    /// the type its tail spells — read while the body's own scope still stands,
+    /// and `.noreturn` when control left at the tail itself.
+    terminated: TypeId,
     /// The body ran to its end with nothing to hand back.
     no_value,
     /// The tail's value, for a position that demanded one.
@@ -126,7 +128,7 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
             const tail_len: usize = if (demand != .none and blk.produces_value and blk.stmts.len > 0) 1 else 0;
             self.force_block_value = false;
             for (blk.stmts[0 .. blk.stmts.len - tail_len]) |stmt| {
-                if (self.block_terminated) return .terminated;
+                if (self.block_terminated) return unreachedTail(self, blk, tail_len);
                 self.lowerStmt(stmt);
                 // A bare `return`/`raise` mid-block terminates the current
                 // basic block but deliberately does NOT set `block_terminated`
@@ -134,15 +136,23 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
                 // block, skipping its trailing statements — see lowerReturn).
                 // Stop here so dead statements after the terminator aren't
                 // emitted into an already-closed block (invalid LLVM IR).
-                if (self.currentBlockHasTerminator()) return .terminated;
+                if (self.currentBlockHasTerminator()) return unreachedTail(self, blk, tail_len);
             }
             if (tail_len == 0) return .no_value;
-            if (self.block_terminated) return .terminated;
+            if (self.block_terminated) return unreachedTail(self, blk, tail_len);
             return lowerTail(self, blk.stmts[blk.stmts.len - 1], demand);
         },
         // Single expression as body (arrow functions)
         else => return lowerTail(self, node, demand),
     }
+}
+
+/// Control left the body before its tail. The tail's type is still what the
+/// position reads, and the block's bindings die with its scope — so it is read
+/// here, where that scope stands.
+fn unreachedTail(self: *Lowering, blk: ast.Block, tail_len: usize) BodyTail {
+    if (tail_len == 0) return .{ .terminated = .noreturn };
+    return .{ .terminated = self.inferExprType(blk.stmts[blk.stmts.len - 1]) };
 }
 
 /// Whether an evaluated expression left this position live, closing the block
@@ -161,7 +171,7 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
     switch (demand) {
         .none => {
             self.lowerStmt(tail);
-            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+            return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
         .value, .return_value => {
             // A no-`else` block-`if` tail is a valueless GUARD statement, not a
@@ -172,7 +182,7 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
-            if (expressionDiverged(self, v)) return .terminated;
+            if (expressionDiverged(self, v)) return .{ .terminated = .noreturn };
             return .{ .value = v };
         },
         .error_only => |ret_ty| return lowerErrorOnlyTail(self, tail, ret_ty),
@@ -202,11 +212,11 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         // nothing, so no merge is typed and no arm decides for another.
         .if_expr => |ie| {
             _ = self.lowerIfExpr(&ie, demand);
-            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+            return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
         .match_expr => |me| {
             _ = self.lowerMatch(&me, demand);
-            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+            return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
         },
         else => {},
     }
@@ -216,8 +226,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         // Nothing demands this value: it has no destination, and it is
         // evaluated purely for its effects.
         self.target_type = null;
-        const disposed = self.tryLowerAsExpr(tail) orelse return if (self.currentBlockHasTerminator()) .terminated else .no_value;
-        return if (expressionDiverged(self, disposed)) .terminated else .no_value;
+        const disposed = self.tryLowerAsExpr(tail) orelse return if (self.currentBlockHasTerminator()) .{ .terminated = .noreturn } else .no_value;
+        return if (expressionDiverged(self, disposed)) .{ .terminated = .noreturn } else .no_value;
     }
     // An error leaf, or one not yet typed: the declared set IS its destination
     // — the contextual `.X` spelling reads it from the target — so lower it
@@ -225,9 +235,9 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     self.target_type = ret_ty;
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const maybe_val = self.tryLowerAsExpr(tail);
-    if (self.currentBlockHasTerminator()) return .terminated;
+    if (self.currentBlockHasTerminator()) return .{ .terminated = .noreturn };
     const val = maybe_val orelse return .no_value;
-    if (expressionDiverged(self, val)) return .terminated;
+    if (expressionDiverged(self, val)) return .{ .terminated = .noreturn };
     const val_ty = self.builder.getRefType(val);
     if (val_ty == .unresolved) {
         // Never reinterpreted as a tag. Report it unless lowering the tail
