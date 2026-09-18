@@ -752,7 +752,7 @@ pub const DeclId = enum(u32) { _ };
 /// same raw author the import facts hold (its AST node identity is `id`'s key).
 pub const DeclInfo = struct {
     id: DeclId,
-    source: []const u8,
+    source: ?[]const u8,
     name: []const u8,
     /// Null for a synthesized identity, which no AST node authors.
     ref: ?RawDeclRef,
@@ -792,7 +792,7 @@ pub const DeclTable = struct {
     /// Intern one declaration by its author ref, returning its (possibly
     /// pre-existing) `DeclId`. First-wins / diamond dedup by node identity,
     /// matching how the scalar import facts dedup.
-    pub fn internRef(self: *DeclTable, source: []const u8, name: []const u8, ref: RawDeclRef, span: ast.Span) !DeclId {
+    pub fn internRef(self: *DeclTable, source: ?[]const u8, name: []const u8, ref: RawDeclRef, span: ast.Span) !DeclId {
         const key = authorNodePtrOf(ref);
         if (self.by_node.get(key)) |existing| return existing;
         const inner = innerDeclRef(ref);
@@ -818,7 +818,7 @@ pub const DeclTable = struct {
 
     /// Intern one top-level decl node. The node's stamped source identifies its
     /// declaring file; `source` supplies the file for unstamped nodes.
-    pub fn intern(self: *DeclTable, source: []const u8, decl: *const Node) !DeclId {
+    pub fn intern(self: *DeclTable, source: ?[]const u8, decl: *const Node) !DeclId {
         if (rawDeclRefOf(decl)) |ref|
             return self.internRef(decl.source_file orelse source, decl.data.declName().?, ref, decl.span);
         std.debug.assert(decl.data == .ufcs_alias);
@@ -833,7 +833,7 @@ pub const DeclTable = struct {
 
     /// Mint an identity for a name lowering synthesizes — a fresh id every
     /// call, since no AST node addresses it.
-    pub fn internSynthetic(self: *DeclTable, source: []const u8, name: []const u8) !DeclId {
+    pub fn internSynthetic(self: *DeclTable, source: ?[]const u8, name: []const u8) !DeclId {
         const id: DeclId = @enumFromInt(@as(u32, @intCast(self.entries.items.len)));
         try self.entries.append(self.alloc, .{
             .id = id,

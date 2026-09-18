@@ -859,9 +859,11 @@ pub fn FactValue(comptime fact: Fact) type {
 ///
 /// OWNS `facts`, the name indexes and `owned_decl_table`. BORROWS
 /// `module_scopes` / `import_graph` / `flat_import_graph` / `module_decls` /
-/// `namespace_edges` / `decl_table` / `module_cache` (pointers into maps owned
-/// by the compilation driver, `core.zig`) — those are read-only views and are
-/// never freed here.
+/// `namespace_edges` / `module_cache` (pointers into maps owned by the
+/// compilation driver, `core.zig`) — those are read-only views and are never
+/// freed here. `decl_table` is the driver's table, borrowed and APPENDED to —
+/// `declarations()` interns synthesized and comptime-registered identities
+/// into it.
 ///
 /// Every owned map allocates through the compilation allocator passed to
 /// `init` (arena-backed in both the driver and the tests).
@@ -902,7 +904,7 @@ pub const ProgramIndex = struct {
     /// Borrowed view.
     namespace_edges: ?*imports.NamespaceEdges = null,
     /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
-    /// in parallel with the import facts. Borrowed view.
+    /// in parallel with the import facts. Borrowed and appended to.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `@import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
@@ -963,16 +965,16 @@ pub const ProgramIndex = struct {
         const name = switch (ref) {
             inline else => |d| d.name,
         };
-        return self.declarations().internRef(source orelse "", name, ref, .{ .start = 0, .end = 0 }) catch @panic("out of memory");
+        return self.declarations().internRef(source, name, ref, .{ .start = 0, .end = 0 }) catch @panic("out of memory");
     }
 
     pub fn internDecl(self: *ProgramIndex, decl: *const Node, source: ?[]const u8) imports.DeclId {
-        return self.declarations().intern(source orelse "", decl) catch @panic("out of memory");
+        return self.declarations().intern(source, decl) catch @panic("out of memory");
     }
 
     /// A fresh identity for a name lowering mints with no authoring AST node.
     pub fn synthetic(self: *ProgramIndex, name: []const u8, source: ?[]const u8) imports.DeclId {
-        return self.declarations().internSynthetic(source orelse "", name) catch @panic("out of memory");
+        return self.declarations().internSynthetic(source, name) catch @panic("out of memory");
     }
 
     // ── Facts ──
@@ -1104,7 +1106,6 @@ pub const ProgramIndex = struct {
     /// carries none.
     pub fn functionSource(self: *const ProgramIndex, name: []const u8) ?[]const u8 {
         const id = self.nameIndex(.function).get(name) orelse return null;
-        const source = self.declaration(id).source;
-        return if (source.len == 0) null else source;
+        return self.declaration(id).source;
     }
 };

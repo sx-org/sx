@@ -651,7 +651,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
             const info = table.get(id);
             try std.testing.expectEqual(id, table.declIdForRef(info.ref.?).?);
             try std.testing.expectEqualStrings(kv.key_ptr.*, info.name);
-            try std.testing.expectEqualStrings(m.value_ptr.source, info.source);
+            try std.testing.expectEqualStrings(m.value_ptr.source, info.source.?);
             seen += 1;
         }
     }
