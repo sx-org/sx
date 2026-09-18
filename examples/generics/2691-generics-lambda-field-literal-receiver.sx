@@ -1,0 +1,14 @@
+// A bare generic literal holding a written lambda names its instance, so the
+// literal is a method receiver where it stands.
+@import "modules/std.sx";
+
+Holder :: struct ($F: Type) {
+    on: F;
+    run :: (self: *@This()) { self.on() }
+}
+
+main :: () -> i32 {
+    n := 41;
+    Holder{ on = ||_{ n } print("chained {}\n", n + 1) }.run();
+    0
+}
