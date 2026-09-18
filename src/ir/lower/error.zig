@@ -1395,13 +1395,21 @@ fn lowerTryBoundary(self: *Lowering, block: *const Node, span: ast.Span) Ref {
     const saved_boundary = self.error_boundary;
     self.error_boundary = .{ .chan = chan, .fail_bb = fail_bb, .defer_base = self.defer_stack.items.len };
     const saved_terminated = self.block_terminated;
-    const tail = self.lowerBlockValue(block);
+    const body = self.lowerDemandedBody(block, .value);
     self.error_boundary = saved_boundary;
     // Control resumes at the join whatever the block did, so a `raise` at its
     // tail must not make the enclosing body's later statements look dead.
     self.block_terminated = saved_terminated;
 
-    const succ_ty: TypeId = if (tail) |t| self.builder.getRefType(t) else self.inferExprType(block);
+    const tail: ?Ref = switch (body) {
+        .value => |v| v,
+        else => null,
+    };
+    const succ_ty: TypeId = switch (body) {
+        .value => |v| self.builder.getRefType(v),
+        .terminated => |t| t,
+        else => self.inferExprType(block),
+    };
     const ret_ty = if (succ_ty == .void or succ_ty == .noreturn) chan else self.module.types.internFailable(succ_ty, chan);
     const done_bb = self.freshBlockWithParams("tryblk.done", &.{ret_ty});
 
