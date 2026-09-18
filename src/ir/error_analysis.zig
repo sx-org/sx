@@ -32,7 +32,10 @@ pub const ErrorAnalysis = struct {
     locals: ?*const LocalScope = null,
 
     const LocalScope = struct {
-        preceding: []const *Node,
+        preceding: []const *Node = &.{},
+        loop: ?*const ast.ForExpr = null,
+        payload: ?struct { name: []const u8, condition: *const Node } = null,
+        arm: ?struct { capture: []const u8, pattern: ?*const Node, subject: *const Node } = null,
         parent: ?*const LocalScope,
     };
 
@@ -43,11 +46,10 @@ pub const ErrorAnalysis = struct {
         };
     }
 
-    /// The EDGE a callee spelling names — the key its declaration is
-    /// registered under — or null when the spelling names none.
-    fn calleeEdge(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?[]const u8 {
+    /// The declaration a callee spelling selects, or null when it selects none.
+    fn calleeDecl(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) ?*const ast.FnDecl {
         switch (callee.data) {
-            .identifier => |id| return id.name,
+            .identifier => |id| return self.l.edgeCalleeDecl(id.name, self.l.current_source_file),
             .field_access => |fa| {
                 if (fa.object.data == .identifier) {
                     const obj = fa.object.data.identifier.name;
@@ -55,29 +57,36 @@ pub const ErrorAnalysis = struct {
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
                     if (self.bindingType(enclosing_fd, obj)) |ty| {
-                        if (self.nominalName(ty)) |tn| {
-                            if (self.qualifiedEdge(tn, fa.field)) |q| return q;
-                        }
-                    } else if (self.qualifiedEdge(obj, fa.field)) |q| return q;
+                        return self.receiverMethod(ty, fa.field);
+                    } else if (self.qualifiedDecl(obj, fa.field)) |q| return q;
                 }
-                // A UFCS free function lives under the BARE method name.
-                const bare = self.l.ufcsAliasTarget(fa.field) orelse fa.field;
-                if (self.l.edgeCalleeDecl(bare, self.l.current_source_file) != null) return bare;
-                return null;
+                return self.ufcsDecl(fa.field);
             },
             else => return null,
         }
     }
 
     /// The escape a `try`ed or `return`ed call contributes: an EDGE naming the
-    /// callee's declaration, or `dyn` when the callee spelling names none. A
-    /// resolved non-failable callee contributes an edge whose declared channel
-    /// is empty.
-    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, edges: *std.ArrayList([]const u8), dyn: *bool) void {
-        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
+    /// callee's declaration, the members of a callable binding's closed
+    /// channel, or `dyn` when the callee names neither. A non-failable callee
+    /// contributes no member.
+    fn contributeCallee(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool) void {
+        if (self.calleeDecl(callee, enclosing_fd)) |edge| {
             edges.append(self.l.alloc, edge) catch {};
-        } else {
-            dyn.* = true;
+            return;
+        }
+        if (callee.data == .identifier) {
+            if (self.slotReturn(enclosing_fd, callee.data.identifier.name)) |ret| {
+                const channel = self.l.errorChannelOf(ret) orelse return;
+                if (!self.l.channelIsOpen(channel)) return self.contributeSet(channel, tags);
+            }
+        }
+        dyn.* = true;
+    }
+
+    fn contributeSet(self: ErrorAnalysis, set: TypeId, tags: *std.ArrayList(u32)) void {
+        for (self.l.module.types.get(set).@"error".tags) |t| {
+            if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
         }
     }
 
@@ -93,25 +102,34 @@ pub const ErrorAnalysis = struct {
                 nested.eachTailCallee(b.stmts[b.stmts.len - 1], visitor);
             },
             .if_expr => |ie| {
-                self.eachTailCallee(ie.then_branch, visitor);
+                const scope = payloadScope(ie.binding_name, ie.condition, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.eachTailCallee(ie.then_branch, visitor);
                 if (ie.else_branch) |eb| self.eachTailCallee(eb, visitor);
             },
-            .match_expr => |me| for (me.arms) |arm| self.eachTailCallee(arm.body, visitor),
+            .match_expr => |me| for (me.arms) |arm| {
+                const scope = armScope(arm, me.subject, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.eachTailCallee(arm.body, visitor);
+            },
             .call => |c| visitor.visit(self, c.callee),
             else => {},
         }
     }
 
     /// The call a failable body hands back with no `return` keyword.
-    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn contributeTailCall(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         var visitor = struct {
-            edges: *std.ArrayList([]const u8),
+            tags: *std.ArrayList(u32),
+            edges: *std.ArrayList(*const ast.FnDecl),
             dyn: *bool,
             fd: ?*const ast.FnDecl,
             fn visit(v: *@This(), analysis: ErrorAnalysis, callee: *const Node) void {
-                analysis.contributeCallee(callee, v.fd, v.edges, v.dyn);
+                analysis.contributeCallee(callee, v.fd, v.tags, v.edges, v.dyn);
             }
-        }{ .edges = edges, .dyn = dyn, .fd = enclosing_fd };
+        }{ .tags = tags, .edges = edges, .dyn = dyn, .fd = enclosing_fd };
         self.eachTailCallee(node, &visitor);
     }
 
@@ -140,39 +158,47 @@ pub const ErrorAnalysis = struct {
 
     /// Does a call through this callee spelling carry an error channel? Read
     /// from what the source WROTE — a lambda's return, the callee
-    /// declaration's return, a callable parameter's return. A spelling collect
+    /// declaration's return, a callable binding's return. A spelling collect
     /// cannot read fails: the extra contribution then routes it through
-    /// `contributeCallee`, which the fix-point turns into `dyn`.
+    /// `contributeCallee`, which marks it `dyn`.
     fn calleeIsFailable(self: ErrorAnalysis, callee: *const Node, enclosing_fd: ?*const ast.FnDecl) bool {
         if (callee.data == .lambda)
             return Lowering.astChannelNode(callee.data.lambda.return_type) != null;
-        if (self.calleeEdge(callee, enclosing_fd)) |edge| {
-            if (self.l.edgeCalleeDecl(edge, self.l.current_source_file)) |fd|
-                return Lowering.astChannelNode(fd.return_type) != null;
-        }
+        if (self.calleeDecl(callee, enclosing_fd)) |fd|
+            return Lowering.astChannelNode(fd.return_type) != null;
         if (callee.data == .identifier) {
-            if (self.slotChannel(enclosing_fd, callee.data.identifier.name)) |has| return has;
+            if (self.slotReturn(enclosing_fd, callee.data.identifier.name)) |ret| return self.l.errorChannelOf(ret) != null;
         }
         return true;
     }
 
-    /// Null when `name` is not a callable parameter of `fd`; else whether that
-    /// slot's written return carries an error channel.
-    fn slotChannel(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?bool {
-        const decl = fd orelse return null;
-        for (decl.params) |p| {
-            if (!std.mem.eql(u8, p.name, name)) continue;
-            const ret = self.l.slotReturnType(self.l.resolveType(p.type_expr)) orelse return null;
-            return self.l.errorChannelOf(ret) != null;
-        }
-        return null;
+    /// The return of the callable binding `name` selects at the site, or null
+    /// when `name` selects none.
+    fn slotReturn(self: ErrorAnalysis, fd: ?*const ast.FnDecl, name: []const u8) ?TypeId {
+        return self.l.slotReturnType(self.bindingType(fd, name) orelse return null);
     }
 
-    /// `"<head>.<method>"` when that names a declaration, else null.
-    fn qualifiedEdge(self: ErrorAnalysis, head: []const u8, method: []const u8) ?[]const u8 {
+    /// The declaration `"<head>.<method>"` names, else null.
+    fn qualifiedDecl(self: ErrorAnalysis, head: []const u8, method: []const u8) ?*const ast.FnDecl {
         const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ head, method }) catch return null;
-        if (self.l.edgeCalleeDecl(qualified, self.l.current_source_file) == null) return null;
-        return qualified;
+        return self.l.edgeCalleeDecl(qualified, self.l.current_source_file);
+    }
+
+    /// The method a call on a `ty` receiver dispatches to. `ty`'s own
+    /// declaration answers first: two modules may each declare a `Name`, so
+    /// the `Name.method` spelling speaks only for a type with no known author.
+    fn receiverMethod(self: ErrorAnalysis, ty: TypeId, method: []const u8) ?*const ast.FnDecl {
+        if (self.l.plainStructMethod(ty, method)) |m| return m.fd;
+        if (!self.l.hasPlainStructAuthor(ty)) {
+            if (self.nominalName(ty)) |name| {
+                if (self.qualifiedDecl(name, method)) |fd| return fd;
+            }
+        }
+        return self.ufcsDecl(method);
+    }
+
+    fn ufcsDecl(self: ErrorAnalysis, method: []const u8) ?*const ast.FnDecl {
+        return self.l.edgeCalleeDecl(self.l.ufcsAliasTarget(method) orelse method, self.l.current_source_file);
     }
 
     fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
@@ -195,6 +221,19 @@ pub const ErrorAnalysis = struct {
             while (i > 0) {
                 i -= 1;
                 const node = current.preceding[i];
+                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent, .loop = current.loop, .payload = current.payload, .arm = current.arm };
+                var initializer = self;
+                initializer.locals = &preceding;
+                if (node.data == .destructure_decl) {
+                    const d = node.data.destructure_decl;
+                    for (d.names, 0..) |target, index| {
+                        if (!std.mem.eql(u8, target, name)) continue;
+                        const ty = initializer.receiverType(fd, d.value);
+                        const len = self.l.module.types.productLen(ty) orelse return .unresolved;
+                        return if (index < len) self.l.module.types.productFieldType(ty, index) else .unresolved;
+                    }
+                    continue;
+                }
                 const binding: struct { name: []const u8, annotation: ?*Node, value: ?*Node } = switch (node.data) {
                     .var_decl => |v| .{ .name = v.name, .annotation = v.type_annotation, .value = v.value },
                     .const_decl => |c| .{ .name = c.name, .annotation = c.type_annotation, .value = @as(?*Node, c.value) },
@@ -203,10 +242,39 @@ pub const ErrorAnalysis = struct {
                 if (!std.mem.eql(u8, binding.name, name)) continue;
                 if (binding.annotation) |annotation| return self.l.resolveType(annotation);
                 const value = binding.value orelse return .unresolved;
-                const preceding = LocalScope{ .preceding = current.preceding[0..i], .parent = current.parent };
-                var initializer = self;
-                initializer.locals = &preceding;
                 return initializer.receiverType(fd, value);
+            }
+            if (current.payload) |payload| {
+                if (std.mem.eql(u8, payload.name, name)) {
+                    var outer = self;
+                    outer.locals = current.parent;
+                    const ty = outer.receiverType(fd, payload.condition);
+                    if (!ty.isBuiltin() and self.l.module.types.get(ty) == .optional)
+                        return self.l.module.types.get(ty).optional.child;
+                    return ty;
+                }
+            }
+            if (current.arm) |arm| {
+                if (std.mem.eql(u8, arm.capture, name)) {
+                    var outer = self;
+                    outer.locals = current.parent;
+                    return self.l.matchCaptureType(outer.receiverType(fd, arm.subject), arm.pattern) orelse .unresolved;
+                }
+            }
+            if (current.loop) |loop| {
+                for (loop.captures, 0..) |capture, index| {
+                    if (!std.mem.eql(u8, capture.name, name)) continue;
+                    const iterable = loop.iterables[index];
+                    var outer = self;
+                    outer.locals = current.parent;
+                    const element = if (capture.type_annotation) |annotation|
+                        self.l.resolveType(annotation)
+                    else if (iterable.is_range)
+                        TypeId.i64
+                    else
+                        outer.iterableElementType(fd, iterable.expr);
+                    return if (capture.by_ref) self.l.module.types.ptrTo(element) else element;
+                }
             }
         }
         const decl = fd orelse return null;
@@ -216,27 +284,85 @@ pub const ErrorAnalysis = struct {
         return null;
     }
 
-    fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
-        if (node.data == .identifier) {
-            if (self.bindingType(fd, node.data.identifier.name)) |ty| return ty;
+    fn armScope(arm: ast.MatchArm, subject: *const Node, parent: ?*const LocalScope) LocalScope {
+        return .{ .parent = parent, .arm = if (arm.capture) |c| .{ .capture = c, .pattern = arm.pattern, .subject = subject } else null };
+    }
+
+    fn payloadScope(name: ?[]const u8, condition: *const Node, parent: ?*const LocalScope) LocalScope {
+        return .{ .parent = parent, .payload = if (name) |n| .{ .name = n, .condition = condition } else null };
+    }
+
+    fn iterableElementType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, expr: *const Node) TypeId {
+        var ty = self.receiverType(fd, expr);
+        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .pointer)
+            ty = self.l.module.types.get(ty).pointer.pointee;
+        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .@"struct") {
+            const fields = self.l.module.types.get(ty).@"struct".fields;
+            for (fields) |field| {
+                if (!std.mem.eql(u8, self.l.module.types.getString(field.name), "items")) continue;
+                if (self.l.module.types.sliceInfoOf(field.ty)) |slice| return slice.element;
+                if (!field.ty.isBuiltin() and self.l.module.types.get(field.ty) == .many_pointer) {
+                    for (fields) |other| {
+                        if (std.mem.eql(u8, self.l.module.types.getString(other.name), "len"))
+                            return self.l.module.types.get(field.ty).many_pointer.element;
+                    }
+                }
+            }
         }
-        if (node.data == .unary_op and node.data.unary_op.op == .address_of)
-            return self.l.module.types.ptrTo(self.receiverType(fd, node.data.unary_op.operand));
+        return self.l.getElementType(ty);
+    }
+
+    fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
+        switch (node.data) {
+            .identifier => |id| if (self.bindingType(fd, id.name)) |ty| return ty,
+            .unary_op => |op| if (op.op == .address_of)
+                return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
+            .call => |call| result: {
+                if (call.callee.data != .field_access) break :result;
+                const receiver = call.callee.data.field_access.object;
+                if (receiver.data != .identifier) break :result;
+                const ty = self.bindingType(fd, receiver.data.identifier.name) orelse break :result;
+                const callee = self.receiverMethod(ty, call.callee.data.field_access.field) orelse break :result;
+                if (callee.type_params.len != 0) break :result;
+                const ret = callee.return_type orelse break :result;
+                return self.l.resolveTypeInSource(callee.body.source_file, ret);
+            },
+            .try_expr => |attempt| {
+                if (attempt.operand.data == .block) return self.receiverType(fd, attempt.operand);
+                return self.successType(fd, attempt.operand);
+            },
+            .catch_expr => |handler| {
+                const attempted = Lowering.catchAttempted(&handler);
+                return if (attempted.boundary) self.receiverType(fd, attempted.node) else self.successType(fd, attempted.node);
+            },
+            .block => |block| {
+                if (!block.produces_value or block.stmts.len == 0) return .void;
+                const scope = LocalScope{ .preceding = block.stmts[0 .. block.stmts.len - 1], .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                return nested.receiverType(fd, block.stmts[block.stmts.len - 1]);
+            },
+            else => {},
+        }
         return self.l.inferExprType(node);
+    }
+
+    fn successType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, operand: *const Node) TypeId {
+        const ty = self.receiverType(fd, operand);
+        const channel = self.l.errorChannelOf(ty) orelse return .unresolved;
+        return if (ty == channel) .void else self.l.failableSuccessType(ty);
     }
 
     /// Collect the error TAGS raised + the call EDGES of a function body, for
     /// the inferred-set fix-point. Stops at nested function boundaries.
-    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .raise_stmt => |rs| {
                 if (self.l.raisedMember(rs.tag)) |rm| {
                     if (rm.set) |set| {
                         // What a qualified member contributes is its STATIC TYPE —
                         // the whole set, not the one member named at the site.
-                        for (self.l.module.types.get(set).@"error".tags) |t| {
-                            if (!Lowering.containsTag(tags.items, t)) tags.append(self.l.alloc, t) catch {};
-                        }
+                        self.contributeSet(set, tags);
                     } else {
                         tags.append(self.l.alloc, self.l.anonymousErrorMember(rm.member)) catch {};
                     }
@@ -248,7 +374,7 @@ pub const ErrorAnalysis = struct {
             },
             .try_expr => |te| {
                 if (te.operand.data == .call) {
-                    self.contributeCallee(te.operand.data.call.callee, enclosing_fd, edges, dyn);
+                    self.contributeCallee(te.operand.data.call.callee, enclosing_fd, tags, edges, dyn);
                 } else if (te.operand.data != .block) {
                     // A `try` on a non-call — a closure / fn-pointer value, a
                     // checked assertion (`av.(T)`) — escapes through a channel
@@ -268,28 +394,42 @@ pub const ErrorAnalysis = struct {
             },
             .if_expr => |ie| {
                 self.collectErrorSites(ie.condition, tags, edges, dyn, enclosing_fd);
-                self.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);
+                const scope = payloadScope(ie.binding_name, ie.condition, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.collectErrorSites(ie.then_branch, tags, edges, dyn, enclosing_fd);
                 if (ie.else_branch) |eb| self.collectErrorSites(eb, tags, edges, dyn, enclosing_fd);
             },
             .match_expr => |me| {
                 self.collectErrorSites(me.subject, tags, edges, dyn, enclosing_fd);
-                for (me.arms) |arm| self.collectErrorSites(arm.body, tags, edges, dyn, enclosing_fd);
+                for (me.arms) |arm| {
+                    const scope = armScope(arm, me.subject, self.locals);
+                    var nested = self;
+                    nested.locals = &scope;
+                    nested.collectErrorSites(arm.body, tags, edges, dyn, enclosing_fd);
+                }
             },
             .while_expr => |w| {
                 self.collectErrorSites(w.condition, tags, edges, dyn, enclosing_fd);
-                self.collectErrorSites(w.body, tags, edges, dyn, enclosing_fd);
+                const scope = payloadScope(w.binding_name, w.condition, self.locals);
+                var nested = self;
+                nested.locals = &scope;
+                nested.collectErrorSites(w.body, tags, edges, dyn, enclosing_fd);
             },
             .for_expr => |f| {
                 for (f.iterables) |it| {
                     self.collectErrorSites(it.expr, tags, edges, dyn, enclosing_fd);
                     if (it.range_end) |re| self.collectErrorSites(re, tags, edges, dyn, enclosing_fd);
                 }
-                self.collectErrorSites(f.body, tags, edges, dyn, enclosing_fd);
+                const scope = LocalScope{ .loop = &f, .parent = self.locals };
+                var nested = self;
+                nested.locals = &scope;
+                nested.collectErrorSites(f.body, tags, edges, dyn, enclosing_fd);
             },
             .return_stmt => |r| if (r.value) |v| {
                 // `return callee(...)` FORWARDS the callee's error channel, so
                 // it contributes the callee's set exactly like a `try` edge.
-                if (v.data == .call) self.contributeCallee(v.data.call.callee, enclosing_fd, edges, dyn);
+                if (v.data == .call) self.contributeCallee(v.data.call.callee, enclosing_fd, tags, edges, dyn);
                 self.collectErrorSites(v, tags, edges, dyn, enclosing_fd);
             },
             .var_decl => |v| if (v.value) |val| self.collectErrorSites(val, tags, edges, dyn, enclosing_fd),
@@ -342,7 +482,7 @@ pub const ErrorAnalysis = struct {
     /// A `??` chain routes each operand's failure to the operand that follows,
     /// so every operand but the last is absorbed. The last one propagates,
     /// unless `absorbed` — a `catch` over the chain takes its total failure.
-    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
+    fn collectCoalesce(self: ErrorAnalysis, nc: *const ast.NullCoalesce, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl, absorbed: bool) void {
         self.collectAbsorbed(nc.lhs, tags, edges, dyn, enclosing_fd);
         // `??` is right-associative, so the chain continues down the rhs.
         if (nc.rhs.data == .null_coalesce) {
@@ -358,14 +498,14 @@ pub const ErrorAnalysis = struct {
         // escape with or without a `try` marker. An optional `??` routes no
         // failure, and a value terminator ends the chain, so neither adds one.
         if (self.operandFails(nc.lhs, enclosing_fd) and self.operandFails(nc.rhs, enclosing_fd))
-            self.contributeTailCall(nc.rhs, edges, dyn, enclosing_fd);
+            self.contributeTailCall(nc.rhs, tags, edges, dyn, enclosing_fd);
     }
 
     /// An operand whose failure a fallback absorbs: its own attempt goes
     /// nowhere, while a `try` nested inside it re-raises before the fallback
     /// runs and still escapes. A `try { … }` boundary owns every escape
     /// inside it.
-    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    fn collectAbsorbed(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         switch (node.data) {
             .null_coalesce => |nc| self.collectCoalesce(&nc, tags, edges, dyn, enclosing_fd, true),
             .try_expr => |te| if (te.operand.data != .block) self.collectAbsorbed(te.operand, tags, edges, dyn, enclosing_fd),
@@ -375,9 +515,9 @@ pub const ErrorAnalysis = struct {
 
     /// Every escape of a failable `body`: the tags it raises and the edges of
     /// the calls whose failure leaves it.
-    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
+    pub fn collectEscapes(self: ErrorAnalysis, body: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList(*const ast.FnDecl), dyn: *bool, enclosing_fd: ?*const ast.FnDecl) void {
         self.collectErrorSites(body, tags, edges, dyn, enclosing_fd);
-        self.contributeTailCall(body, edges, dyn, enclosing_fd);
+        self.contributeTailCall(body, tags, edges, dyn, enclosing_fd);
     }
 
     /// Whole-program fix-point that converges each bare-`!` function's inferred
@@ -393,7 +533,7 @@ pub const ErrorAnalysis = struct {
             /// the empty-inferred warning names it by.
             name: []const u8,
             tags: std.ArrayList(u32),
-            edges: std.ArrayList([]const u8),
+            edges: std.ArrayList(*const ast.FnDecl),
             rt: ?*const Node,
             // Module the function is written in. `rt.span` is an offset into
             // THAT file, and this whole-program pass runs with whatever
@@ -401,11 +541,12 @@ pub const ErrorAnalysis = struct {
             source_file: ?[]const u8,
             // The body escapes through a channel that cannot be named (a `try`
             // of a closure value or a checked assertion, a `raise` of a
-            // computed tag, a call whose callee names no declaration), so it
-            // genuinely propagates a dynamic error even when no concrete tag
-            // converges. Suppresses the empty-set "drop the `!`" warning, and
-            // makes the channel the DYNAMIC one: a merge over a channel nobody
-            // can name is not the set the body escapes.
+            // computed tag, a call whose callee names neither a declaration
+            // nor a closed channel), so it genuinely propagates a dynamic
+            // error even when no concrete tag converges. Suppresses the
+            // empty-set "drop the `!`" warning, and makes the channel the
+            // DYNAMIC one: a merge over a channel nobody can name is not the
+            // set the body escapes.
             dyn: bool,
             // `main`'s `!` is the program's top error channel, and a
             // protocol-impl method's `!` is dictated by the contract — e.g.
@@ -435,7 +576,7 @@ pub const ErrorAnalysis = struct {
                     continue;
                 }
                 var tags = std.ArrayList(u32).empty;
-                var edges = std.ArrayList([]const u8).empty;
+                var edges = std.ArrayList(*const ast.FnDecl).empty;
                 var dyn = false;
                 self.l.setCurrentSourceFile(fd.body.source_file orelse saved);
                 self.collectEscapes(fd.body, &tags, &edges, &dyn, fd);
@@ -458,16 +599,7 @@ pub const ErrorAnalysis = struct {
             changed = false;
             var wit = work.iterator();
             while (wit.next()) |we| {
-                for (we.value_ptr.edges.items) |callee| {
-                    const callee_fd = self.l.edgeCalleeDecl(callee, we.value_ptr.source_file) orelse {
-                        // No single author is visible at the edge, so the
-                        // channel it escapes through is not statically known.
-                        if (!we.value_ptr.dyn) {
-                            we.value_ptr.dyn = true;
-                            changed = true;
-                        }
-                        continue;
-                    };
+                for (we.value_ptr.edges.items) |callee_fd| {
                     const callee_tags: []const u32 = blk: {
                         const callee_id = self.l.declId(.{ .fn_decl = callee_fd }, callee_fd.body.source_file);
                         if (work.getPtr(callee_id)) |cc| {
@@ -536,7 +668,7 @@ pub const ErrorAnalysis = struct {
     /// Whole-program union of each bare-`!` closure/fn-type SHAPE's escape set
     /// Walks every function body for closure literals;
     /// each bare-`!` failable literal contributes its raises (+ `try named_fn()`
-    /// edges, resolved against the name-keyed converged sets) to the node shared
+    /// edges, resolved against their declarations' converged sets) to the node shared
     /// by all occurrences of its value-signature shape. A `try slot(x)` against
     /// any matching-shape slot then widens against this union.
     pub fn convergeClosureShapeSets(self: ErrorAnalysis) void {

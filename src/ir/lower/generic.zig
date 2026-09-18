@@ -1186,7 +1186,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 /// captures the unwrapped child (mirrors `lowerMatch`'s capture lowering).
 /// Null when the subject/pattern supplies no typed payload — the arm-level
 /// binding guard diagnoses those at lowering.
-fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
+pub fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
     // The else member's capture is the subject word in the backing integer.
     if (pattern) |p| {
         const leaf: ?[]const u8 = switch (p.data) {

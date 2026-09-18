@@ -1357,7 +1357,7 @@ pub fn catchAttempted(ce: *const ast.CatchExpr) Attempted {
 fn tryBoundaryChannel(self: *Lowering, block: *const Node) TypeId {
     var tags = std.ArrayList(u32).empty;
     defer tags.deinit(self.alloc);
-    var edges = std.ArrayList([]const u8).empty;
+    var edges = std.ArrayList(*const ast.FnDecl).empty;
     defer edges.deinit(self.alloc);
     var dyn = false;
     self.errorAnalysis().collectErrorSites(block, &tags, &edges, &dyn, self.current_fn_decl);
@@ -2177,7 +2177,7 @@ pub fn recordClosureShape(self: *Lowering, lam: *const ast.Lambda) void {
 
     var tags = std.ArrayList(u32).empty;
     defer tags.deinit(self.alloc);
-    var edges = std.ArrayList([]const u8).empty;
+    var edges = std.ArrayList(*const ast.FnDecl).empty;
     defer edges.deinit(self.alloc);
     // `dyn` is irrelevant to closure-shape widening: a shape node unions tags.
     var dyn_unused = false;
@@ -2205,13 +2205,11 @@ pub fn edgeCalleeDecl(self: *Lowering, name: []const u8, from: ?[]const u8) ?*co
     return self.program_index.lookup(.function, name);
 }
 
-/// The escape tags of a callee referenced by name from a `try g()` edge. The
-/// spelling names a declaration first; that declaration's converged set is the
-/// answer, or its written channel when its `!` is not inferred.
-pub fn calleeEscapeTags(self: *Lowering, callee: []const u8) []const u32 {
-    const cfd = edgeCalleeDecl(self, callee, self.current_source_file) orelse return &.{};
-    if (inferredErrorSet(self, cfd)) |t| return t;
-    return declaredChannelTags(self, cfd);
+/// The escape tags of the declaration a `try g()` edge names: its converged
+/// set, or its written channel when its `!` is not inferred.
+pub fn calleeEscapeTags(self: *Lowering, callee: *const ast.FnDecl) []const u32 {
+    if (inferredErrorSet(self, callee)) |t| return t;
+    return declaredChannelTags(self, callee);
 }
 
 /// The set a bare-`!` declaration converged to, or null when its `!` is
