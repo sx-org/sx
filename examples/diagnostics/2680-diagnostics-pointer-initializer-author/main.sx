@@ -6,6 +6,7 @@ Box :: struct { n: i32 }
 main :: () -> i32 {
     p: *Box = lib.optr();
     q: *Box = lib.bptr();
-    print("{} {}\n", @typeName(@typeOf(p)), @typeName(@typeOf(q)));
+    r: **Box = lib.optrptr();
+    print("{} {} {}\n", @typeName(@typeOf(p)), @typeName(@typeOf(q)), @typeName(@typeOf(r)));
     0
 }

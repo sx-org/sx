@@ -9,3 +9,9 @@ error: cannot initialize 'q' of type '*Box (examples/diagnostics/2680-diagnostic
    |
  8 |     q: *Box = lib.bptr();
    |               ^^^^^^^^^^
+
+error: cannot initialize 'r' of type '**Box (examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx)' with a value of type '**Other'
+  --> examples/diagnostics/2680-diagnostics-pointer-initializer-author/main.sx:9:16
+   |
+ 9 |     r: **Box = lib.optrptr();
+   |                ^^^^^^^^^^^^^
