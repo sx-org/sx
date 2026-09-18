@@ -146,8 +146,13 @@ pub const TypeResolver = struct {
     pub fn resolveCompound(table: *TypeTable, node: *const Node, inner: anytype) ?TypeId {
         return switch (node.data) {
             .pointer_type_expr => |pt| table.ptrTo(inner.resolveInner(pt.pointee_type)),
-            .many_pointer_type_expr => |mp| table.manyPtrTo(inner.resolveInner(mp.element_type)),
-            .slice_type_expr => |st| table.sliceOf(inner.resolveInner(st.element_type)),
+            .many_pointer_type_expr => |mp| table.manyPtrToSentinel(inner.resolveInner(mp.element_type), mp.sentinel),
+            .slice_type_expr => |st| blk: {
+                const elem = inner.resolveInner(st.element_type);
+                // `[:0]u8` IS `string`.
+                if (elem == .u8 and st.sentinel != null and st.sentinel.? == 0) break :blk .string;
+                break :blk table.sliceOfSentinel(elem, st.sentinel);
+            },
             .optional_type_expr => |ot| table.optionalOf(inner.resolveInner(ot.inner_type)),
             .array_type_expr => |at| blk: {
                 const elem = inner.resolveInner(at.element_type);
@@ -161,7 +166,7 @@ pub const TypeResolver = struct {
                 // also emits a diagnostic; the registration-time caller surfaces
                 // the unresolved alias) rather than silently miscompiling.
                 const len = inner.resolveArrayLen(at.length) orelse break :blk TypeId.unresolved;
-                break :blk table.arrayOf(elem, len);
+                break :blk table.arrayOfSentinel(elem, len, at.sentinel);
             },
             .function_type_expr => |ft| blk: {
                 var param_ids = std.ArrayList(TypeId).empty;
@@ -276,14 +281,6 @@ pub const TypeResolver = struct {
             if (resolvePrimitive(name)) |id| return id;
         }
 
-        // Sentinel-terminated slice: [:0]u8 → string.
-        if (name.len >= 5 and name[0] == '[' and name[1] == ':') {
-            if (std.mem.indexOfScalar(u8, name, ']')) |close| {
-                const sentinel = name[2..close];
-                const elem = name[close + 1 ..];
-                if (std.mem.eql(u8, sentinel, "0") and std.mem.eql(u8, elem, "u8")) return .string;
-            }
-        }
         // Many-pointer: [*]T.
         if (name.len >= 4 and name[0] == '[' and name[1] == '*' and name[2] == ']') {
             return table.manyPtrTo(resolveNamed(name[3..], table, facts, false));

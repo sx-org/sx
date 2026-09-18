@@ -2035,6 +2035,33 @@ pub const Lowering = struct {
         return .unresolved;
     }
 
+    /// Diagnose a terminator the element type has no value for: outside an
+    /// integer element's range, or an element type with no numeric values at
+    /// all. The type is still interned, so lowering continues and surfaces
+    /// further errors.
+    fn checkTerminatorFits(self: *Lowering, node: *const Node, ty: TypeId) void {
+        if (ty.isBuiltin()) return;
+        const elem: TypeId, const x: i64 = switch (self.module.types.get(ty)) {
+            .array => |a| .{ a.element, a.sentinel orelse return },
+            .slice => |sl| .{ sl.element, sl.sentinel orelse return },
+            .many_pointer => |p| .{ p.element, p.sentinel orelse return },
+            else => return,
+        };
+        if (isFloat(elem)) return;
+        const d = self.diagnostics orelse return;
+        if (self.module.types.integerLayout(elem)) |layout| {
+            // A parsed terminator is a non-negative `i64`, so every 64-bit
+            // element holds it.
+            if (layout.width >= 64) return;
+            const min = layout.limit(false);
+            const max = layout.limit(true);
+            if (x >= min and x <= max) return;
+            d.addFmt(.err, node.span, "terminator {} does not fit in '{s}' (range {}..{})", .{ x, self.formatTypeName(elem), min, max });
+            return;
+        }
+        d.addFmt(.err, node.span, "'{s}' has no terminator value; a terminated type's element is an integer or float type", .{self.formatTypeName(elem)});
+    }
+
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
         // Prefix `*` in a type position: the value grammar parses `*T` as an
@@ -2166,7 +2193,10 @@ pub const Lowering = struct {
         // the full stateful resolver (`resolveInner` → here) so generic structs
         // / bindings keep their resolution. resolveCompound returns null only
         // for the pack-shaped forms (`Closure(..p)`, spread tuples) below.
-        if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| return t;
+        if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| {
+            self.checkTerminatorFits(node, t);
+            return t;
+        }
         // Generic type-param binding (`$T`, or a bare return-type `T` without
         // the `$` prefix) — owned by TypeResolver via the explicit ResolveEnv.
         if (TypeResolver.resolveBinding(node, self.resolveEnv())) |t| return t;
@@ -2598,12 +2628,29 @@ pub const Lowering = struct {
         };
     }
 
+    /// A `[N:X]T` terminator as a value of the element type.
+    pub fn sentinelValue(self: *Lowering, sentinel: i64, elem_ty: TypeId) Ref {
+        if (isFloat(elem_ty)) return self.builder.constFloat(@floatFromInt(sentinel), elem_ty);
+        return self.builder.constInt(sentinel, elem_ty);
+    }
+
+    /// The length of a container in its own `Len` word. An array's is the
+    /// compile-time constant its type states — never its storage, which a
+    /// terminator widens by one element.
+    pub fn emitLength(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
+        if (!obj_ty.isBuiltin()) {
+            const info = self.module.types.get(obj_ty);
+            if (info == .array) return self.builder.constInt(@intCast(info.array.length), .i64);
+        }
+        return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
+    }
+
     /// The length of a container as an `i64` — a fat pointer's length word
     /// widened out of its declared `Len`, so the index/range machinery works in
     /// one integer width whatever the slice's ABI.
     pub fn emitLengthI64(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
-        const len_ty = self.module.types.lenTypeOf(obj_ty);
-        const len = self.builder.emit(.{ .length = .{ .operand = obj } }, len_ty);
+        const len = self.emitLength(obj, obj_ty);
+        const len_ty = self.builder.getRefType(len);
         if (len_ty == .i64) return len;
         return self.builder.emit(.{ .widen = .{ .operand = len, .from = len_ty, .to = .i64 } }, .i64);
     }
@@ -3436,6 +3483,7 @@ pub const Lowering = struct {
     pub const createComptimeFunctionWithPrelude = lower_comptime.createComptimeFunctionWithPrelude;
     pub const constExprValue = lower_comptime.constExprValue;
     pub const constArrayLiteral = lower_comptime.constArrayLiteral;
+    pub const defaultConstant = lower_comptime.defaultConstant;
     pub const constStructLiteral = lower_comptime.constStructLiteral;
     pub const constEnumLiteral = lower_comptime.constEnumLiteral;
     pub const foldSourceConstInt = lower_comptime.foldSourceConstInt;

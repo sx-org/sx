@@ -134,6 +134,10 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
     }
 }
 
+fn printSentinel(sentinel: ?i64, writer: Writer) anyerror!void {
+    if (sentinel) |s| try writer.print(":{d}", .{s});
+}
+
 /// Print a type-expression node back to source text.
 pub fn printType(node: *const Node, writer: Writer) anyerror!void {
     switch (node.data) {
@@ -156,16 +160,21 @@ pub fn printType(node: *const Node, writer: Writer) anyerror!void {
             try printType(o.inner_type, writer);
         },
         .slice_type_expr => |s| {
-            try writer.writeAll("[]");
+            try writer.writeByte('[');
+            try printSentinel(s.sentinel, writer);
+            try writer.writeByte(']');
             try printType(s.element_type, writer);
         },
         .many_pointer_type_expr => |m| {
-            try writer.writeAll("[*]");
+            try writer.writeAll("[*");
+            try printSentinel(m.sentinel, writer);
+            try writer.writeByte(']');
             try printType(m.element_type, writer);
         },
         .array_type_expr => |a| {
             try writer.writeByte('[');
             try printExpr(a.length, writer);
+            try printSentinel(a.sentinel, writer);
             try writer.writeByte(']');
             try printType(a.element_type, writer);
         },

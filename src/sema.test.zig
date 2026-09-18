@@ -206,3 +206,28 @@ test "sema: a raw parameterized type `` `i8(i64) `` instantiates the user generi
     try std.testing.expect(y == .signed);
     try std.testing.expectEqual(@as(u8, 64), y.signed);
 }
+
+test "sema: terminated array, slice and many-pointer types display their terminator" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cases = [_]struct { src: []const u8, want: []const u8 }{
+        .{ .src = "[4:0]u8", .want = "[4:0]u8" },
+        .{ .src = "[:1]u8", .want = "[:1]u8" },
+        .{ .src = "[*:0]i8", .want = "[*:0]i8" },
+        .{ .src = "[4]u8", .want = "[4]u8" },
+        .{ .src = "[]u8", .want = "[]u8" },
+        .{ .src = "[*]i8", .want = "[*]i8" },
+    };
+    for (cases) |case| {
+        const src = try std.fmt.allocPrintSentinel(alloc, "f :: (x: {s}) {{ 0; }}", .{case.src}, 0);
+        var parser = try Parser.init(alloc, src);
+        const root = try parser.parse();
+        var analyzer = sema.Analyzer.init(alloc);
+        _ = try analyzer.analyze(root);
+        const node = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
+        const ty = analyzer.resolveTypeNode(node);
+        try std.testing.expectEqualStrings(case.want, try ty.displayName(alloc));
+    }
+}

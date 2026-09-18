@@ -1675,6 +1675,19 @@ val := buffer[2];  // 3.5
 buffer.len         // 5 (compile-time constant, i64)
 ```
 
+`[N:X]T` is a **terminated** array: N elements followed by the terminator `X`.
+Its `.len` is N and its storage is N+1 elements, the last holding `X`, which
+index N reads.
+```sx
+key : [3:0]u8 = .[65, 66, 67];
+key.len            // 3
+key[3]             // 0 — the terminator
+@sizeOf([3:0]u8)   // 4
+```
+`X` is a value of the element type, so the element is an integer or float
+type and `X` lies in its range; `[2:300]u8` and `[2:1]Point` are compile
+errors.
+
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
 (`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
@@ -1718,6 +1731,14 @@ iterations rather than being an error.
 
 ### Slice Types
 A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
+
+`[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
+element one past `.len` is `X`. `[:0]u8` is `string`; every other terminated
+slice is a type of its own, distinct from `[]T`.
+```sx
+@typeName([:1]u8)  // "[:1]u8"
+@typeName([]u8)    // "string"
+```
 ```sx
 // Arrays implicitly coerce to slices at call sites
 arr : [5]i32 = .[3, 1, 4, 1, 5];
@@ -1831,6 +1852,7 @@ are arbitrary expressions (`arr[x-1..=x+1]`).
 |--------|---------|--------|-------|
 | `*T` | pointer to one T | no | no |
 | `[*]T` | many-pointer (buffer) | no | yes |
+| `[*:X]T` | many-pointer whose buffer ends with `X` | no | yes |
 | `*[N]T` | pointer to array of N T | yes | yes |
 | `*[]T` | pointer to slice | yes | yes |
 

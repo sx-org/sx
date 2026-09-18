@@ -426,10 +426,16 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
     }
 }
 
+fn spellSentinel(sentinel: ?i64, buf: *[24]u8) []const u8 {
+    const value = sentinel orelse return "";
+    return std.fmt.bufPrint(buf, ":{d}", .{value}) catch unreachable;
+}
+
 /// Deterministic structural spelling of a type expression, for declaration
 /// segments. The segment is identity, not display: distinct source spellings
 /// must yield distinct strings.
 fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
+    var sentinel_buf: [24]u8 = undefined;
     switch (node.data) {
         .type_expr => |t| return alloc.dupe(u8, t.name),
         .parameterized_type_expr => |p| {
@@ -444,10 +450,10 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
             return out.toOwnedSlice(alloc);
         },
         .pointer_type_expr => |p| return std.fmt.allocPrint(alloc, "*{s}", .{try spellType(alloc, p.pointee_type)}),
-        .many_pointer_type_expr => |m| return std.fmt.allocPrint(alloc, "[*]{s}", .{try spellType(alloc, m.element_type)}),
+        .many_pointer_type_expr => |m| return std.fmt.allocPrint(alloc, "[*{s}]{s}", .{ spellSentinel(m.sentinel, &sentinel_buf), try spellType(alloc, m.element_type) }),
         .optional_type_expr => |o| return std.fmt.allocPrint(alloc, "?{s}", .{try spellType(alloc, o.inner_type)}),
-        .slice_type_expr => |s| return std.fmt.allocPrint(alloc, "[]{s}", .{try spellType(alloc, s.element_type)}),
-        .array_type_expr => |a| return std.fmt.allocPrint(alloc, "[{s}]{s}", .{ try spellType(alloc, a.length), try spellType(alloc, a.element_type) }),
+        .slice_type_expr => |s| return std.fmt.allocPrint(alloc, "[{s}]{s}", .{ spellSentinel(s.sentinel, &sentinel_buf), try spellType(alloc, s.element_type) }),
+        .array_type_expr => |a| return std.fmt.allocPrint(alloc, "[{s}{s}]{s}", .{ try spellType(alloc, a.length), spellSentinel(a.sentinel, &sentinel_buf), try spellType(alloc, a.element_type) }),
         .int_literal => |il| return std.fmt.allocPrint(alloc, "{d}", .{il.value}),
         .function_type_expr => |f| {
             var out = std.ArrayList(u8).empty;

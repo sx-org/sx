@@ -1675,8 +1675,8 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 }
 
 /// Serialize a top-level global's initializer into a static `ConstantValue`.
-/// Extern globals (external symbol) and value-less declarations carry no
-/// payload — they default to zero/extern at link, which is correct. An
+/// An extern global (external symbol) carries no payload; a value-less one
+/// defaults to zero at link, save a `[N:X]T`, whose terminator it states. An
 /// identifier initializer that names a module constant is materialized from
 /// the recorded constant (`K : A : 42; g : A = K;` → 42); a
 /// global initialized from an identifier that resolves to no usable constant
@@ -1684,7 +1684,7 @@ fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
 /// global has no run site for a dynamic initializer.
 pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) ?inst_mod.ConstantValue {
     if (vd.is_extern) return null;
-    const v = vd.value orelse return null;
+    const v = vd.value orelse return self.defaultConstant(var_ty);
 
     // An optional-typed global (`g : ?T = <present>;`) must carry the
     // 2-field `{ payload, has_value }` aggregate the optional's LLVM

@@ -238,7 +238,14 @@ pub const TypeInfo = union(enum) {
 
     pub const ArrayInfo = struct {
         element: TypeId,
+        /// The written N of `[N]T` / `[N:X]T` — what `.len` answers.
         length: u32,
+        sentinel: ?i64 = null,
+
+        /// Elements the value occupies: N, plus the terminator's slot.
+        pub fn storageLen(self: ArrayInfo) u32 {
+            return self.length + @intFromBool(self.sentinel != null);
+        }
     };
 
     pub const SliceInfo = struct {
@@ -246,6 +253,8 @@ pub const TypeInfo = union(enum) {
         /// The integer type of the length word. `[]T` is `len_type == .i64`;
         /// any other `Len` is a distinct type with its own `{ptr, Len}` ABI.
         len_type: TypeId = .i64,
+        /// The terminator of `[:X]T`: the element one past `.len`.
+        sentinel: ?i64 = null,
     };
 
     pub const PointerInfo = struct {
@@ -254,6 +263,7 @@ pub const TypeInfo = union(enum) {
 
     pub const ManyPointerInfo = struct {
         element: TypeId,
+        sentinel: ?i64 = null,
     };
 
     pub const VectorInfo = struct {
@@ -673,7 +683,7 @@ pub const TypeTable = struct {
     /// Intern a TypeInfo, returning the existing TypeId if structurally equal.
     /// `[]u8` IS `string`: the slice spelling interns to the primitive.
     pub fn intern(self: *TypeTable, info: TypeInfo) TypeId {
-        if (info == .slice and info.slice.element == .u8 and info.slice.len_type == .i64) return .string;
+        if (info == .slice and info.slice.element == .u8 and info.slice.len_type == .i64 and info.slice.sentinel == null) return .string;
         const key = TypeKey{ .info = info };
         if (self.intern_map.get(key)) |existing| {
             return existing;
@@ -1259,8 +1269,16 @@ pub const TypeTable = struct {
         return self.intern(.{ .many_pointer = .{ .element = element } });
     }
 
+    pub fn manyPtrToSentinel(self: *TypeTable, element: TypeId, sentinel: ?i64) TypeId {
+        return self.intern(.{ .many_pointer = .{ .element = element, .sentinel = sentinel } });
+    }
+
     pub fn sliceOf(self: *TypeTable, element: TypeId) TypeId {
         return self.intern(.{ .slice = .{ .element = element } });
+    }
+
+    pub fn sliceOfSentinel(self: *TypeTable, element: TypeId, sentinel: ?i64) TypeId {
+        return self.intern(.{ .slice = .{ .element = element, .sentinel = sentinel } });
     }
 
     pub fn sliceOfLen(self: *TypeTable, element: TypeId, len_type: TypeId) TypeId {
@@ -1429,6 +1447,10 @@ pub const TypeTable = struct {
 
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
         return self.intern(.{ .array = .{ .element = element, .length = length } });
+    }
+
+    pub fn arrayOfSentinel(self: *TypeTable, element: TypeId, length: u32, sentinel: ?i64) TypeId {
+        return self.intern(.{ .array = .{ .element = element, .length = length, .sentinel = sentinel } });
     }
 
     pub fn optionalOf(self: *TypeTable, child: TypeId) TypeId {
@@ -1740,6 +1762,20 @@ pub const TypeTable = struct {
         return self.errorSetType(self.internString(dyn_channel_spelling), &.{});
     }
 
+    /// Whether a default value of `id` writes a non-zero terminator anywhere:
+    /// a `[N:X]T` with a non-zero X, directly or under an element or a field.
+    /// Zeroed storage IS the default value of every other type.
+    pub fn writesTerminator(self: *const TypeTable, id: TypeId) bool {
+        if (id.isBuiltin()) return false;
+        return switch (self.get(id)) {
+            .array => |a| (a.sentinel orelse 0) != 0 or self.writesTerminator(a.element),
+            .@"struct" => |st| for (st.fields) |f| {
+                if (self.writesTerminator(f.ty)) break true;
+            } else false,
+            else => false,
+        };
+    }
+
     /// Size in bytes for a type (pointer-sized = 8 on 64-bit).
     pub fn sizeOf(self: *const TypeTable, id: TypeId) u32 {
         const info = self.get(id);
@@ -1760,7 +1796,7 @@ pub const TypeTable = struct {
                 break :blk self.sizeOf(opt.child) + 8;
             },
             .slice => 16, // {ptr, len} — both words round up to 8 in this model
-            .array => |arr| arr.length * self.sizeOf(arr.element),
+            .array => |arr| arr.storageLen() * self.sizeOf(arr.element),
             .vector => |vec| vec.length * self.sizeOf(vec.element),
             .any => 16, // {type_tag, data_ptr}
             .type_value => 8, // an 8-byte type handle (a `TypeId` in a word), NOT the 16-byte any box
@@ -1882,7 +1918,7 @@ pub const TypeTable = struct {
 
             .array => |a| blk: {
                 const elem_size = self.typeSizeBytes(a.element);
-                break :blk elem_size * @as(usize, @intCast(a.length));
+                break :blk elem_size * @as(usize, @intCast(a.storageLen()));
             },
             .vector => |v| blk: {
                 const elem_size = self.typeSizeBytes(v.element);
@@ -2114,17 +2150,24 @@ pub const TypeTable = struct {
             },
             .many_pointer => |p| blk: {
                 const inner = self.formatTypeName(alloc, p.element, leaf);
+                if (p.sentinel) |x|
+                    break :blk std.fmt.allocPrint(alloc, "[*:{d}]{s}", .{ x, inner }) catch "[*:?]?";
                 break :blk std.fmt.allocPrint(alloc, "[*]{s}", .{inner}) catch "[*]?";
             },
             .slice => |s| blk: {
                 const inner = self.formatTypeName(alloc, s.element, leaf);
-                if (s.len_type == .i64)
+                if (s.len_type == .i64) {
+                    if (s.sentinel) |x|
+                        break :blk std.fmt.allocPrint(alloc, "[:{d}]{s}", .{ x, inner }) catch "[:?]?";
                     break :blk std.fmt.allocPrint(alloc, "[]{s}", .{inner}) catch "[]?";
+                }
                 const len_name = self.formatTypeName(alloc, s.len_type, leaf);
                 break :blk std.fmt.allocPrint(alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "@Slice(?)";
             },
             .array => |a| blk: {
                 const inner = self.formatTypeName(alloc, a.element, leaf);
+                if (a.sentinel) |x|
+                    break :blk std.fmt.allocPrint(alloc, "[{d}:{d}]{s}", .{ a.length, x, inner }) catch "[N:?]?";
                 break :blk std.fmt.allocPrint(alloc, "[{d}]{s}", .{ a.length, inner }) catch "[N]?";
             },
             .vector => |v| blk: {
@@ -2236,14 +2279,19 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
         .unsigned => |w| h.update(&.{w}),
         .f32, .f64, .void, .bool, .string, .cstring, .any, .type_value, .noreturn, .usize, .isize, .unresolved => {},
         .pointer => |p| h.update(std.mem.asBytes(&p.pointee)),
-        .many_pointer => |p| h.update(std.mem.asBytes(&p.element)),
+        .many_pointer => |p| {
+            h.update(std.mem.asBytes(&p.element));
+            hashSentinel(h, p.sentinel);
+        },
         .slice => |s| {
             h.update(std.mem.asBytes(&s.element));
             h.update(std.mem.asBytes(&s.len_type));
+            hashSentinel(h, s.sentinel);
         },
         .array => |a| {
             h.update(std.mem.asBytes(&a.element));
             h.update(std.mem.asBytes(&a.length));
+            hashSentinel(h, a.sentinel);
         },
         .vector => |v| {
             h.update(std.mem.asBytes(&v.element));
@@ -2304,6 +2352,17 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
     }
 }
 
+fn hashSentinel(h: *std.hash.Wyhash, sentinel: ?i64) void {
+    const present: u8 = if (sentinel != null) 1 else 0;
+    h.update(&.{present});
+    if (sentinel) |v| h.update(std.mem.asBytes(&v));
+}
+
+fn sentinelEql(a: ?i64, b: ?i64) bool {
+    if (a) |av| return if (b) |bv| av == bv else false;
+    return b == null;
+}
+
 fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
     const Tag = std.meta.Tag(TypeInfo);
     const a_tag: Tag = a;
@@ -2315,9 +2374,9 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .unsigned => |w| w == b.unsigned,
         .f32, .f64, .void, .bool, .string, .cstring, .any, .type_value, .noreturn, .usize, .isize, .unresolved => true,
         .pointer => |p| p.pointee == b.pointer.pointee,
-        .many_pointer => |p| p.element == b.many_pointer.element,
-        .slice => |s| s.element == b.slice.element and s.len_type == b.slice.len_type,
-        .array => |ar| ar.element == b.array.element and ar.length == b.array.length,
+        .many_pointer => |p| p.element == b.many_pointer.element and sentinelEql(p.sentinel, b.many_pointer.sentinel),
+        .slice => |s| s.element == b.slice.element and s.len_type == b.slice.len_type and sentinelEql(s.sentinel, b.slice.sentinel),
+        .array => |ar| ar.element == b.array.element and ar.length == b.array.length and sentinelEql(ar.sentinel, b.array.sentinel),
         .vector => |v| v.element == b.vector.element and v.length == b.vector.length,
         .optional => |o| o.child == b.optional.child,
         .function => |f| {

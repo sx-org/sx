@@ -1012,16 +1012,16 @@ pub fn widenAnyToF64(self: *Lowering, any_val: Ref, tags: []const u64) Ref {
 /// For structs with defaults (e.g., `b: i32 = 99`), creates a struct_literal with defaults applied.
 /// For other types, returns a zero value.
 pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
-    if (ty.isBuiltin()) return self.builder.constInt(0, ty);
+    if (ty.isBuiltin()) return self.zeroValue(ty);
     const info = self.module.types.get(ty);
     if (info != .@"struct") return self.zeroValue(ty);
     // Check for struct defaults — TypeId identity first; for an
     // author-tracked type a tid-map miss means "no defaults".
     const struct_name_str = self.module.types.getString(info.@"struct".name);
     const field_defaults = self.struct_defaults_by_tid.get(ty) orelse blk: {
-        if (self.plain_struct_authors.contains(ty)) return self.builder.constUndef(ty);
+        if (self.plain_struct_authors.contains(ty)) return self.zeroValue(ty);
         break :blk self.struct_defaults_map.get(struct_name_str) orelse
-            return self.builder.constUndef(ty);
+            return self.zeroValue(ty);
     };
     const fields = info.@"struct".fields;
     var field_vals = std.ArrayList(Ref).empty;
@@ -1051,19 +1051,32 @@ pub fn optionalOfFlattened(self: *Lowering, ty: TypeId) TypeId {
     return self.module.types.optionalOf(ty);
 }
 
-/// Produce a zero/default value for any type — constInt(0) for integers,
-/// constNull for pointers, constUndef for structs/complex types.
+/// A type's default value: zeroed storage, plus the terminator of every
+/// `[N:X]T` it holds.
 pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
-    if (ty.isBuiltin()) return self.builder.constInt(0, ty);
-    const info = self.module.types.get(ty);
-    return switch (info) {
-        // Arbitrary-width integer types (`@int(N, …)`) interned as
-        // `.signed`/`.unsigned` variants — fall through `isBuiltin()`.
-        .signed, .unsigned => self.builder.constInt(0, ty),
-        .pointer, .optional => self.builder.constNull(ty),
-        .@"struct", .array, .slice, .many_pointer => self.builder.constNull(ty),
-        else => self.builder.constUndef(ty),
+    if (!self.module.types.writesTerminator(ty)) return self.builder.constNull(ty);
+    return switch (self.module.types.get(ty)) {
+        .array => |a| terminatedArray(self, ty, a),
+        .@"struct" => |st| terminatedStruct(self, ty, st),
+        else => unreachable,
     };
+}
+
+fn terminatedArray(self: *Lowering, ty: TypeId, info: types.TypeInfo.ArrayInfo) Ref {
+    var elems = std.ArrayList(Ref).empty;
+    defer elems.deinit(self.alloc);
+    elems.ensureTotalCapacity(self.alloc, info.storageLen()) catch unreachable;
+    for (0..info.length) |_| elems.appendAssumeCapacity(self.zeroValue(info.element));
+    if (info.sentinel) |x| elems.appendAssumeCapacity(self.sentinelValue(x, info.element));
+    return self.builder.structInit(elems.items, ty);
+}
+
+fn terminatedStruct(self: *Lowering, ty: TypeId, info: types.TypeInfo.StructInfo) Ref {
+    var vals = std.ArrayList(Ref).empty;
+    defer vals.deinit(self.alloc);
+    vals.ensureTotalCapacity(self.alloc, info.fields.len) catch unreachable;
+    for (info.fields) |f| vals.appendAssumeCapacity(self.zeroValue(f.ty));
+    return self.builder.structInit(vals.items, ty);
 }
 
 /// Emit the unified non-integral float→int narrowing diagnostic.
