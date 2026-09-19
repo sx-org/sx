@@ -1056,6 +1056,7 @@ pub const UnknownTypeChecker = struct {
             else
                 self.reportIfValueParamInTypePosition(te.name, node.span, in_scope, struct_field),
             .identifier => |id| self.reportIfUnknownType(id.name, node.span, declared, in_scope, type_vals, id.is_raw),
+            .spread_expr => |se| self.checkTypeNodeForUnknown(se.operand, declared, in_scope, type_vals, struct_field),
             .pointer_type_expr => |pt| self.checkTypeNodeForUnknown(pt.pointee_type, declared, in_scope, type_vals, struct_field),
             .many_pointer_type_expr => |mp| self.checkTypeNodeForUnknown(mp.element_type, declared, in_scope, type_vals, struct_field),
             .slice_type_expr => |st| self.checkTypeNodeForUnknown(st.element_type, declared, in_scope, type_vals, struct_field),
