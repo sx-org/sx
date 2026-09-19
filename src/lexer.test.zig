@@ -33,9 +33,9 @@ test "lex the compound operator spellings" {
     var tl = try lexT(":= : :: += -= *= /= -> => == != <= >= ?? ?. ?!");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{
-        .colon_equal, .colon,       .colon_colon,     .plus_equal,   .minus_equal,
-        .star_equal,  .slash_equal, .arrow,           .fat_arrow,    .equal_equal,
-        .bang_equal,  .less_equal,  .greater_equal,   .question_question, .question_dot,
+        .colon_equal,   .colon,       .colon_colon,   .plus_equal,        .minus_equal,
+        .star_equal,    .slash_equal, .arrow,         .fat_arrow,         .equal_equal,
+        .bang_equal,    .less_equal,  .greater_equal, .question_question, .question_dot,
         .question_bang, .eof,
     }, tl.tags);
 }
@@ -196,6 +196,20 @@ test "a heredoc keeps every content line" {
     defer deinitT(&tl);
     try std.testing.expectEqual(Tag.raw_string_literal, tl.tags[0]);
     try std.testing.expectEqualStrings("#version 330\nvoid main() {}\n", tl.slice(tl.first()));
+}
+
+test "a `\\\\` literal spans consecutive lines and stops at the last line's content" {
+    var tl = try lexT("s := \\\\one\n     \\\\two\n;");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .identifier, .colon_equal, .multiline_string_literal, .semicolon, .eof }, tl.tags);
+    try std.testing.expectEqualStrings("\\\\one\n     \\\\two", tl.slice(tl.next(tl.next(tl.first()))));
+}
+
+test "a `//` inside a `\\\\` line is content" {
+    var tl = try lexT("\\\\a // b");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .multiline_string_literal, .eof }, tl.tags);
+    try std.testing.expectEqualStrings("\\\\a // b", tl.slice(tl.first()));
 }
 
 test "0x/0X runs lex as one int literal" {
@@ -410,6 +424,10 @@ test "an unterminated string is one invalid row spanning to end of file" {
     try expectSingleInvalid("\"abc");
 }
 
+test "a single backslash is reported invalid" {
+    try expectSingleInvalid("\\");
+}
+
 test "unterminated char is reported invalid" {
     try expectSingleInvalid("'a");
 }
@@ -584,15 +602,15 @@ test "`_{` is one token and `_ {` is an identifier and a brace" {
     var glued = try lexT("|x|_{ n = n } x");
     defer deinitT(&glued);
     try std.testing.expectEqualSlices(Tag, &.{
-        .pipe,       .identifier, .pipe,  .underscore_l_brace, .identifier,
-        .equal,      .identifier, .r_brace, .identifier,       .eof,
+        .pipe,  .identifier, .pipe,    .underscore_l_brace, .identifier,
+        .equal, .identifier, .r_brace, .identifier,         .eof,
     }, glued.tags);
 
     var spaced = try lexT("|x| _ { n = n } x");
     defer deinitT(&spaced);
     try std.testing.expectEqualSlices(Tag, &.{
-        .pipe,       .identifier, .pipe,  .identifier, .l_brace, .identifier,
-        .equal,      .identifier, .r_brace, .identifier, .eof,
+        .pipe,  .identifier, .pipe,    .identifier, .l_brace, .identifier,
+        .equal, .identifier, .r_brace, .identifier, .eof,
     }, spaced.tags);
 }
 

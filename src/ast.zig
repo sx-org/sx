@@ -292,7 +292,12 @@ pub const BoolLiteral = struct {
 
 pub const StringLiteral = struct {
     raw: []const u8,
-    is_raw: bool = false,
+    form: Form = .quoted,
+
+    /// The spelling the body came from. `.quoted` is the only body that
+    /// carries escape sequences, and a `.lines` body is the joined text
+    /// rather than a slice of the source.
+    pub const Form = enum { quoted, heredoc, lines };
 };
 
 /// A `'...'` char literal. `value` is the decoded code point (fits in i64;

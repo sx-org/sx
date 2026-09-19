@@ -1673,7 +1673,7 @@ pub fn typeLimitInt(self: *Lowering, receiver: *const Node, field: []const u8) ?
 
 /// The bytes a string literal denotes, escapes resolved.
 pub fn stringLiteralBytes(self: *Lowering, lit: ast.StringLiteral) []const u8 {
-    if (lit.is_raw) return lit.raw;
+    if (lit.form != .quoted) return lit.raw;
     return unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
 }
 

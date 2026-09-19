@@ -4,7 +4,6 @@ const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
-const unescape = @import("../../unescape.zig");
 const parser_mod = @import("../../parser.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const program_index_mod = @import("../program_index.zig");
@@ -979,11 +978,7 @@ fn annotationIsTypeArray(self: *Lowering, annotation: ?*Node) bool {
 pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // Case 1: String literal — return it directly (no need for interpreter)
     if (expr.data == .string_literal) {
-        const lit = expr.data.string_literal;
-        const str = if (lit.is_raw)
-            lit.raw
-        else
-            unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+        const str = self.stringLiteralBytes(expr.data.string_literal);
         return self.alloc.dupeZ(u8, str) catch null;
     }
 

@@ -782,7 +782,7 @@ fn refuseAbsentReerasure(self: *Lowering, present: Ref, dst_ty: TypeId) void {
     tmp.put(owned, .{ .ref = present, .ty = .bool, .is_alloca = false });
     const ok = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
     const text = std.fmt.allocPrint(self.alloc, "re-erasure to '{s}' failed", .{self.formatTypeName(dst_ty)}) catch return;
-    const msg = self.synthNode(.{ .string_literal = .{ .raw = text, .is_raw = true } }, span, src);
+    const msg = self.synthNode(.{ .string_literal = .{ .raw = text } }, span, src);
     const callee = self.synthNode(.{ .identifier = .{ .name = "@assert" } }, span, src);
     const args = self.alloc.dupe(*Node, &.{ ok, msg }) catch return;
     _ = self.lowerCall(&.{ .callee = callee, .args = args });

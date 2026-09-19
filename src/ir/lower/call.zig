@@ -6,7 +6,6 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const intrinsics = @import("../intrinsics.zig");
 const type_bridge = @import("../type_bridge.zig");
-const unescape = @import("../../unescape.zig");
 const errors = @import("../../errors.zig");
 const program_index_mod = @import("../program_index.zig");
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
@@ -3522,8 +3521,7 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
         if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx, which is not in the program", .{});
         return Ref.none;
     };
-    const lit = fmt_node.data.string_literal;
-    const fmt = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+    const fmt = self.stringLiteralBytes(fmt_node.data.string_literal);
 
     var seg: std.ArrayList(u8) = .empty;
     defer seg.deinit(self.alloc);
