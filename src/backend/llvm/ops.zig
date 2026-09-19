@@ -10,6 +10,7 @@ const Reflection = @import("reflection.zig").Reflection;
 const LLVMEmitter = emit.LLVMEmitter;
 const Inst = ir_inst.Inst;
 const BinOp = ir_inst.BinOp;
+const SeqCmp = ir_inst.SeqCmp;
 const UnaryOp = ir_inst.UnaryOp;
 const Aggregate = ir_inst.Aggregate;
 const FieldAccess = ir_inst.FieldAccess;
@@ -378,12 +379,12 @@ pub const Ops = struct {
         self.e.emitCmpOrdered(bin, instruction.ty, c.LLVMIntSGE, c.LLVMIntUGE, c.LLVMRealOGE);
     }
 
-    pub fn emitStrEq(self: Ops, bin: BinOp) void {
-        self.e.emitStrCmp(bin, true);
+    pub fn emitStrEq(self: Ops, cmp: SeqCmp) void {
+        self.e.emitStrCmp(cmp, true);
     }
 
-    pub fn emitStrNe(self: Ops, bin: BinOp) void {
-        self.e.emitStrCmp(bin, false);
+    pub fn emitStrNe(self: Ops, cmp: SeqCmp) void {
+        self.e.emitStrCmp(cmp, false);
     }
 
     // ── Logical ───────────────────────────────────────────

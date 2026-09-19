@@ -1855,6 +1855,16 @@ pub const TypeTable = struct {
         return self.integerLayout(ty) != null;
     }
 
+    /// True iff a value of `ty` fills its storage, so two values are equal
+    /// exactly when their bytes are: `bool` and the integers whose width is
+    /// their ABI size. `@int(24)` occupies 4 bytes whose top byte is
+    /// unspecified.
+    pub fn bytesAreValue(self: *const TypeTable, ty: TypeId) bool {
+        if (ty == .bool) return true;
+        const layout = self.integerLayout(ty) orelse return false;
+        return layout.width == self.typeSizeBytes(ty) * 8;
+    }
+
     /// True iff `ty` is an unsigned integer. Canonical signedness query for
     /// reflection (`type_is_unsigned`) and the `{}` formatter so a u64 value
     /// renders as unsigned decimal rather than the i64 reinterpretation.

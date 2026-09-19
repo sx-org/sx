@@ -431,8 +431,8 @@ test "comptime_vm exec: const_string length + str_eq/str_ne" {
     const b = fb.add(b0, inst(.{ .const_string = foo2 }, .string));
     const c = fb.add(b0, inst(.{ .const_string = bar }, .string));
     const la = fb.add(b0, inst(.{ .length = .{ .operand = ref(a) } }, .i64)); // 3
-    const eq = fb.add(b0, inst(.{ .str_eq = .{ .lhs = ref(a), .rhs = ref(b) } }, .bool)); // true
-    const ne = fb.add(b0, inst(.{ .str_ne = .{ .lhs = ref(a), .rhs = ref(c) } }, .bool)); // true
+    const eq = fb.add(b0, inst(.{ .str_eq = .{ .lhs = ref(a), .rhs = ref(b), .elem_size = 1 } }, .bool)); // true
+    const ne = fb.add(b0, inst(.{ .str_ne = .{ .lhs = ref(a), .rhs = ref(c), .elem_size = 1 } }, .bool)); // true
     const both = fb.add(b0, inst(.{ .bool_and = .{ .lhs = ref(eq), .rhs = ref(ne) } }, .bool));
     // return length(a) when both predicates hold, else 0  →  3
     const z = fb.add(b0, inst(.{ .const_int = 0 }, .i64));

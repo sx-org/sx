@@ -5468,48 +5468,36 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     }
     if (self.unwrapOptionalOperand(rhs, rhs_ty, bop.rhs.span)) |payload| rhs = payload;
 
-    // `str_eq` reads two {ptr, len} headers; an array operand carries none, so
-    // the aggregate guard below answers for it.
-    if (ty == .string and (bop.op == .eq or bop.op == .neq)) {
-        for ([2]Ref{ lhs, rhs }) |operand| {
-            const oty = self.builder.getRefType(operand);
-            if (!oty.isBuiltin() and self.module.types.get(oty) == .array) ty = oty;
+    // Sequence value equality: `[N]T`, `[N:X]T`, `[]T`, `[:X]T` and `string`
+    // compare CONTENT. The operands need one element type; an array meets the
+    // slice, and the lengths answer at run time.
+    if (bop.op == .eq or bop.op == .neq) {
+        const l_ty = refTypeOr(self, lhs, ty);
+        const r_ty = refTypeOr(self, rhs, rhs_ty);
+        if (sequenceElement(self, l_ty)) |l_elem| {
+            if (sequenceElement(self, r_ty)) |r_elem| {
+                if (l_elem != r_elem) {
+                    if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                        self.formatTypeName(l_ty), self.formatTypeName(r_ty),
+                    });
+                    return self.emitPlaceholder("distinct-sequence-equality");
+                }
+                return lowerSequenceEquality(self, lhs, rhs, l_elem, bop.op == .eq, bop.lhs.span);
+            }
         }
     }
 
-    // String comparison: use str_eq/str_ne (memcmp-based) instead of pointer comparison
-    if (ty == .string and (bop.op == .eq or bop.op == .neq)) {
-        return if (bop.op == .eq)
-            self.builder.emit(.{ .str_eq = .{ .lhs = lhs, .rhs = rhs } }, .bool)
-        else
-            self.builder.emit(.{ .str_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool);
-    }
-
-    // Non-comparable aggregate `==` / `!=` guard.
-    //
-    // A `union { ... }` and a fixed `[N]T` array are raw byte /
-    // element aggregates with NO defined value-equality: a union's inactive-
-    // variant + padding bytes are unspecified, so a byte-wise `icmp` over the
-    // `[N x i8]` union storage (or `[N x T]` array storage) is both semantically
-    // wrong AND rejected by the LLVM verifier ("Invalid operand types for ICmp").
-    // Reject at lower time — where the span and the named type are available —
-    // with a located diagnostic + a hint to compare a specific variant/element
-    // instead, rather than emitting invalid IR downstream. Payload enums (compare
-    // by tag), payload-less enums, tuples, strings, slices, and optionals all have
-    // their own valid compare paths and are unaffected.
+    // A `union`'s inactive-variant and padding bytes are unspecified, so it has
+    // no value-equality: a byte-wise `icmp` over its `[N x i8]` storage is both
+    // wrong and rejected by the LLVM verifier. Reject at lower time, where the
+    // span and the named type are available.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
-        const agg_info = self.module.types.get(ty);
-        const hint: ?[]const u8 = switch (agg_info) {
-            .@"union" => "compare a specific variant field (e.g. `a.field == b.field`)",
-            .array => "compare elements individually, or loop over the elements",
-            else => null,
-        };
-        if (hint) |h| {
+        if (self.module.types.get(ty) == .@"union") {
             if (self.diagnostics) |d| {
                 const pid = d.addFmtId(.err, bop.lhs.span, "cannot compare '{s}' values with '{s}'", .{
                     self.formatTypeName(ty), binOpSymbol(bop.op),
                 });
-                d.addNote(pid, bop.lhs.span, h);
+                d.addNote(pid, bop.lhs.span, "compare a specific variant field (e.g. `a.field == b.field`)");
             }
             return self.emitPlaceholder("uncomparable-aggregate-eq");
         }
@@ -5623,13 +5611,10 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 /// natural "two structs are equal iff every field is equal" semantics. Padding
 /// bytes are never read (that is exactly why field-wise beats a byte-compare).
 ///
-/// A field that is not itself comparable — a `union`, a fixed `[N]T`
-/// array, or an `?T` optional — is rejected with a located diagnostic, mirroring
-/// how those shapes are rejected as bare `==` operands (and by the
-/// optional-operand guard). The reduced per-field comparisons that DO get built
-/// are scalar / pointer / string / slice / payload enum / nested-struct — each
-/// with its own valid lowering — so `emit_llvm`'s narrow struct arm never sees a
-/// user struct.
+/// A field with no value-equality of its own — a `union` — is rejected with a
+/// located diagnostic, mirroring how that shape is rejected as a bare `==`
+/// operand. Every field comparison that DOES get built has its own valid
+/// lowering, so `emit_llvm`'s narrow struct arm never sees a user struct.
 pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, ty: TypeId) Ref {
     const info = self.module.types.get(ty);
     const fields = info.@"struct".fields;
@@ -5707,23 +5692,87 @@ pub fn lowerOptionalMixedEquality(self: *Lowering, opt: Ref, conc: Ref, inner_ty
     return self.builder.blockParam(merge_bb, 0, .bool);
 }
 
+fn refTypeOr(self: *Lowering, r: Ref, fallback: TypeId) TypeId {
+    const t = self.builder.getRefType(r);
+    return if (t == .unresolved) fallback else t;
+}
+
+/// The element type of a sequence whose `==` compares content — `[N]T`,
+/// `[N:X]T`, `[]T`, `[:X]T`, `string` — or null for every other type.
+fn sequenceElement(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty == .string) return .u8;
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .array => |a| a.element,
+        .slice => |sl| sl.element,
+        else => null,
+    };
+}
+
+/// The `{ptr, len}` reading of a sequence operand: a slice already is one, an
+/// array meets it. `[N:X]T` lands on its written N — the terminator is the
+/// type's guarantee, not part of the value.
+fn sequenceAsSlice(self: *Lowering, v: Ref, elem: TypeId) Ref {
+    const ty = self.builder.getRefType(v);
+    if (ty.isBuiltin() or self.module.types.get(ty) != .array) return v;
+    return self.builder.emit(.{ .array_to_slice = .{ .operand = v } }, self.module.types.sliceOf(elem));
+}
+
+/// Build a `bool` Ref for `lhs == rhs` (or `!=`) over two sequences of `elem`:
+/// the lengths, then every element through `lowerFieldEquality`. `memcmp`
+/// stands in for the loop where an element's bytes are its value.
+fn lowerSequenceEquality(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, want_eq: bool, span: ast.Span) Ref {
+    const l = sequenceAsSlice(self, lhs, elem);
+    const r = sequenceAsSlice(self, rhs, elem);
+    if (self.module.types.bytesAreValue(elem)) {
+        const size: u32 = @intCast(self.module.types.typeSizeBytes(elem));
+        const cmp: inst_mod.SeqCmp = .{ .lhs = l, .rhs = r, .elem_size = size };
+        return if (want_eq)
+            self.builder.emit(.{ .str_eq = cmp }, .bool)
+        else
+            self.builder.emit(.{ .str_ne = cmp }, .bool);
+    }
+
+    const l_len = self.builder.emit(.{ .length = .{ .operand = l } }, self.module.types.lenTypeOf(self.builder.getRefType(l)));
+    const r_len = self.builder.emit(.{ .length = .{ .operand = r } }, self.module.types.lenTypeOf(self.builder.getRefType(r)));
+    const len_eq = self.builder.cmpEq(l_len, r_len);
+
+    const head_bb = self.freshBlockWithParams("seqeq.head", &.{.i64});
+    const body_bb = self.freshBlock("seqeq.body");
+    const merge_bb = self.freshBlockWithParams("seqeq.merge", &.{.bool});
+    const zero = self.builder.constInt(0, .i64);
+    self.builder.condBr(len_eq, head_bb, &.{zero}, merge_bb, &.{self.builder.constBool(false)});
+
+    self.builder.switchToBlock(head_bb);
+    const i = self.builder.blockParam(head_bb, 0, .i64);
+    const done = self.builder.cmpEq(i, l_len);
+    self.builder.condBr(done, merge_bb, &.{self.builder.constBool(true)}, body_bb, &.{});
+
+    self.builder.switchToBlock(body_bb);
+    const le = self.builder.emit(.{ .index_get = .{ .lhs = l, .rhs = i } }, elem);
+    const re = self.builder.emit(.{ .index_get = .{ .lhs = r, .rhs = i } }, elem);
+    // A rejected element has diagnosed; closing the loop anyway keeps the CFG
+    // well-formed until `hasErrors()` aborts.
+    const elem_eq = self.lowerFieldEquality(le, re, elem, span) orelse self.builder.constBool(false);
+    const next = self.builder.add(i, self.builder.constInt(1, .i64), .i64);
+    self.builder.condBr(elem_eq, head_bb, &.{next}, merge_bb, &.{self.builder.constBool(false)});
+
+    self.builder.switchToBlock(merge_bb);
+    const all_eq = self.builder.blockParam(merge_bb, 0, .bool);
+    return if (want_eq) all_eq else self.builder.emit(.{ .bool_not = .{ .operand = all_eq } }, .bool);
+}
+
 /// Build a `bool` Ref for `lf == rf` where both are values of `field_ty`, the
 /// per-field step of `lowerStructEquality`. Returns null (after emitting a
 /// located diagnostic) for a field type that has no defined value-equality.
 pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, span: ast.Span) ?Ref {
+    if (sequenceElement(self, field_ty)) |elem| return lowerSequenceEquality(self, lf, rf, elem, true, span);
+
     // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize,
     // cstring): a plain `cmp_eq`. The LLVM emitter picks fcmp for a float
     // operand and icmp otherwise off the operand's own type, so f32/f64 fields
     // get the correct ordered-equal compare with no special-casing here.
-    if (field_ty.isBuiltin()) {
-        // `string` is a fat `{ptr,len}` — a byte-wise `icmp` on it is invalid
-        // IR; route to memcmp-based `str_eq` (the same path top-level string
-        // `==` takes).
-        if (field_ty == .string) {
-            return self.builder.emit(.{ .str_eq = .{ .lhs = lf, .rhs = rf } }, .bool);
-        }
-        return self.builder.cmpEq(lf, rf);
-    }
+    if (field_ty.isBuiltin()) return self.builder.cmpEq(lf, rf);
 
     const fi = self.module.types.get(field_ty);
     return switch (fi) {
@@ -5747,30 +5796,18 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
             if (bad) break :blk null;
             break :blk acc.?;
         },
-        // Slice (`{ptr,len}` fat pointer): pointer+len identity, same as bare
-        // slice `==`. emit_llvm's 2-scalar-field arm handles it.
-        .slice => self.builder.cmpEq(lf, rf),
         // Enum and pointers-by-info: scalar identity; a payload-carrying enum
         // compares its tag only (emit_llvm's tag-only arm).
         .@"enum", .pointer, .many_pointer => self.builder.cmpEq(lf, rf),
         // Optional field: both-null equal, one-null unequal, both-present →
         // payload compare — the same rule as bare `?T == ?T`.
         .optional => self.lowerOptionalEquality(lf, rf, fi.optional.child, span),
-        // Non-comparable field types — rejected. An
-        // union's inactive bytes are unspecified; a fixed array has no
-        // defined value-equality (compare elements). Each mirrors how the bare
-        // shape is rejected as a top-level `==` operand.
-        .@"union", .array => blk: {
-            const hint: []const u8 = switch (fi) {
-                .@"union" => "compare a specific variant sub-field",
-                .array => "compare elements individually, or loop over the elements",
-                else => unreachable,
-            };
+        .@"union" => blk: {
             if (self.diagnostics) |d| {
-                const pid = d.addFmtId(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
+                const pid = d.addFmtId(.err, span, "cannot compare: '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
-                d.addNote(pid, span, hint);
+                d.addNote(pid, span, "compare a specific variant field");
             }
             break :blk null;
         },
@@ -5782,7 +5819,7 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
         // ill-defined.)
         else => blk: {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
+                d.addFmt(.err, span, "cannot compare: '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
             }

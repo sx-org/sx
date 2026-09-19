@@ -1222,14 +1222,16 @@ pub const Vm = struct {
                 const esz: u64 = @intCast(table.typeSizeBytes(elem));
                 return .{ .value = try self.makeSlice(table, ins.ty, data +% lo *% esz, hi - lo) };
             },
-            .str_eq, .str_ne => |b| {
+            .str_eq, .str_ne => |sc| {
                 const table = try self.requireTable();
-                const lb = frame.get(b.lhs.index());
-                const rb = frame.get(b.rhs.index());
-                const lty = try self.refTy(ref_types, b.lhs);
-                const rty = try self.refTy(ref_types, b.rhs);
-                const ls = try self.machine.bytes(try self.sliceData(table, lb), @intCast(try self.sliceLen(table, lty, lb)));
-                const rs = try self.machine.bytes(try self.sliceData(table, rb), @intCast(try self.sliceLen(table, rty, rb)));
+                const lb = frame.get(sc.lhs.index());
+                const rb = frame.get(sc.rhs.index());
+                const lty = try self.refTy(ref_types, sc.lhs);
+                const rty = try self.refTy(ref_types, sc.rhs);
+                const ln: usize = @intCast(try self.sliceLen(table, lty, lb) * sc.elem_size);
+                const rn: usize = @intCast(try self.sliceLen(table, rty, rb) * sc.elem_size);
+                const ls = try self.machine.bytes(try self.sliceData(table, lb), ln);
+                const rs = try self.machine.bytes(try self.sliceData(table, rb), rn);
                 const eq = std.mem.eql(u8, ls, rs);
                 return .{ .value = @intFromBool(if (std.meta.activeTag(ins.op) == .str_eq) eq else !eq) };
             },
