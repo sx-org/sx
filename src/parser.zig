@@ -2478,18 +2478,19 @@ pub const Parser = struct {
                 const saved = self.tok;
                 const fname = self.tokens.slice(self.tok);
                 const ident_start = self.tokens.start(self.tok);
+                const name_span = ast.Span{ .start = ident_start, .end = self.tokens.end(self.tok) };
                 self.advance();
 
                 if (self.tokens.tag(self.tok) == .equal) {
                     // Named field: name = expr
                     self.advance(); // skip '='
                     const value = try self.parseExpr();
-                    try field_inits.append(self.allocator, .{ .name = fname, .value = value });
+                    try field_inits.append(self.allocator, .{ .name = fname, .name_span = name_span, .value = value });
                     continue;
                 } else if (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace) {
                     // Shorthand: just an identifier (name = identifier with same name)
                     const ident_node = try self.createNode(ident_start, .{ .identifier = .{ .name = fname } });
-                    try field_inits.append(self.allocator, .{ .name = fname, .value = ident_node, .was_shorthand = true });
+                    try field_inits.append(self.allocator, .{ .name = fname, .name_span = name_span, .value = ident_node, .was_shorthand = true });
                     continue;
                 }
 

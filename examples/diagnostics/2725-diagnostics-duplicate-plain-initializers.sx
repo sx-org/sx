@@ -1,0 +1,8 @@
+P :: struct { x: i32; y: i32 = 7; z: i32; }
+
+main :: () {
+    named := P{x = 1, x = 2};
+    x: i32 = 3;
+    contextual: P = .{x, x = 4};
+    inferred := .{value = 1, value = 2};
+}
