@@ -56,11 +56,11 @@ pub const ErrorAnalysis = struct {
                     // A namespace- or type-qualified callee is spelled exactly as
                     // its declaration is registered, so it outranks the bare name:
                     // two modules may each author `parse`.
-                    if (self.bindingType(enclosing_fd, obj)) |ty| {
-                        return self.receiverMethod(ty, fa.field);
-                    } else if (self.qualifiedDecl(obj, fa.field)) |q| return q;
+                    if (self.bindingType(enclosing_fd, obj)) |ty| return self.receiverMethod(ty, fa.field);
+                    if (self.qualifiedDecl(obj, fa.field)) |q| return q;
+                    return self.ufcsDecl(fa.field);
                 }
-                return self.ufcsDecl(fa.field);
+                return self.receiverMethod(self.receiverType(enclosing_fd, fa.object), fa.field);
             },
             else => return null,
         }
@@ -210,9 +210,7 @@ pub const ErrorAnalysis = struct {
     }
 
     fn nominalName(self: ErrorAnalysis, original: TypeId) ?[]const u8 {
-        var ty = original;
-        if (ty.isBuiltin()) return null;
-        if (self.l.module.types.get(ty) == .pointer) ty = self.l.module.types.get(ty).pointer.pointee;
+        const ty = self.derefed(original);
         if (ty.isBuiltin()) return null;
         return switch (self.l.module.types.get(ty)) {
             .@"struct" => |s| self.l.module.types.getString(s.name),
@@ -301,9 +299,7 @@ pub const ErrorAnalysis = struct {
     }
 
     fn iterableElementType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, expr: *const Node) TypeId {
-        var ty = self.receiverType(fd, expr);
-        if (!ty.isBuiltin() and self.l.module.types.get(ty) == .pointer)
-            ty = self.l.module.types.get(ty).pointer.pointee;
+        const ty = self.derefed(self.receiverType(fd, expr));
         if (!ty.isBuiltin() and self.l.module.types.get(ty) == .@"struct") {
             const fields = self.l.module.types.get(ty).@"struct".fields;
             for (fields) |field| {
@@ -320,11 +316,37 @@ pub const ErrorAnalysis = struct {
         return self.l.getElementType(ty);
     }
 
+    fn fieldType(self: ErrorAnalysis, ty: TypeId, field: []const u8) TypeId {
+        return self.l.resolveFieldType(self.derefed(ty), field);
+    }
+
+    fn elementType(self: ErrorAnalysis, ty: TypeId) TypeId {
+        return self.l.getElementType(self.derefed(ty));
+    }
+
+    fn derefed(self: ErrorAnalysis, ty: TypeId) TypeId {
+        if (ty.isBuiltin()) return ty;
+        const info = self.l.module.types.get(ty);
+        return if (info == .pointer) info.pointer.pointee else ty;
+    }
+
     fn receiverType(self: ErrorAnalysis, fd: ?*const ast.FnDecl, node: *const Node) TypeId {
         switch (node.data) {
             .identifier => |id| if (self.bindingType(fd, id.name)) |ty| return ty,
             .unary_op => |op| if (op.op == .address_of)
                 return self.l.module.types.ptrTo(self.receiverType(fd, op.operand)),
+            .field_access => |fa| {
+                const member = self.fieldType(self.receiverType(fd, fa.object), fa.field);
+                if (member != .unresolved) return member;
+            },
+            .index_expr => |ix| {
+                const element = self.elementType(self.receiverType(fd, ix.object));
+                if (element != .unresolved) return element;
+            },
+            .slice_expr => |sl| {
+                const element = self.elementType(self.receiverType(fd, sl.object));
+                if (element != .unresolved) return self.l.module.types.sliceOf(element);
+            },
             .call => |call| result: {
                 if (call.callee.data != .field_access) break :result;
                 const receiver = call.callee.data.field_access.object;

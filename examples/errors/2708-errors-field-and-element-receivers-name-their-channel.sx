@@ -1,0 +1,25 @@
+@import "modules/std.sx";
+m :: @import "2708-errors-field-and-element-receivers-name-their-channel/mod.sx";
+
+Holder :: struct { box: m.Box; }
+
+field :: (h: *Holder) -> ! { b := h.box; try b.go(); }
+member :: (h: *Holder) -> ! { try h.box.go(); }
+element :: (boxes: []m.Box) -> ! { b := boxes[0]; try b.go(); }
+subslice :: (boxes: []m.Box) -> ! {
+    rest := boxes[1..];
+    for b in rest { try b.go(); }
+}
+
+main :: () -> i32 {
+    h : Holder = .{};
+    boxes : [2]m.Box = .{ .{}, .{} };
+    e1 := field(*h);
+    e2 := member(*h);
+    e3 := element(boxes[..]);
+    e4 := subslice(boxes[..]);
+    print("field={} member={} element={} subslice={}\n",
+          e1 == .Missing, e2 == .Missing, e3 == .Missing, e4 == .Missing);
+    if e1 == .Missing and e2 == .Missing and e3 == .Missing and e4 == .Missing { return 0; }
+    1
+}
