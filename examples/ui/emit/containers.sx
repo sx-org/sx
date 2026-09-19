@@ -17,8 +17,8 @@ VStack :: @OpenVariant(View) {
     modifier: Modifier = .{};
 
     fit :: (self: *VStack, proposal: ProposedSize) -> Size {
-        w := 0.0;
-        h := 0.0;
+        w : f32 = 0.0;
+        h : f32 = 0.0;
         for c in self.children {
             s := c.fit(proposal);
             if s.width > w { w = s.width; }

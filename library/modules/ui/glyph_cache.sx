@@ -31,11 +31,11 @@ GlyphEntry :: struct {
 // Quantize font size to half-point increments to limit cache entries.
 // e.g., 13.0 -> 26, 13.5 -> 27, 14.0 -> 28
 quantizeSize :: (fontSize: f32) -> u16 {
-    (fontSize * 2.0 + 0.5)
+    (fontSize * 2.0 + 0.5).(u16)
 }
 
 dequantizeSize :: (q: u16) -> f32 {
-    q / 2.0
+    (q / 2.0).(f32)
 }
 
 // Pack (glyphIndex, sizeQuantized) into a single u32 for fast comparison
@@ -556,7 +556,7 @@ GlyphCache :: struct {
 
     setDpiScale :: (self: *GlyphCache, scale: f32) {
         self.dpiScale = scale;
-        self.invDpi = 1.0 / scale;
+        self.invDpi = (1.0 / scale).(f32);
     }
 
     // Get the scale factor for a logical font size

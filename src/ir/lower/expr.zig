@@ -657,7 +657,12 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
             }
-            const val = if (prelowered) |pl| pl[k] else self.lowerExpr(fi.value);
+            const val = if (prelowered) |pl|
+                pl[k]
+            else if (index) |idx|
+                self.foldComptimeFloatInit(fi.value, struct_fields[idx].ty) orelse self.lowerExpr(fi.value)
+            else
+                self.lowerExpr(fi.value);
             self.target_type = saved_tt;
             lowered.append(self.alloc, .{
                 .val = val,
@@ -763,7 +768,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else
             fatPointerSlotType(self, ty, fi.name, i) orelse .unresolved;
         if (elem_target != .unresolved) self.target_type = elem_target;
-        var val = if (prelowered) |pl| pl[i] else self.lowerExpr(fi.value);
+        var val = if (prelowered) |pl|
+            pl[i]
+        else
+            self.foldComptimeFloatInit(fi.value, elem_target) orelse self.lowerExpr(fi.value);
         self.target_type = saved_tt;
         // Coerce field value to match the destination field/element type.
         // Coerce from the value's ACTUAL lowered type (`getRefType`) rather

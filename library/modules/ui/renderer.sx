@@ -343,7 +343,7 @@ UIRenderer :: struct {
                 }
                 case .image: {
                     self.bindTexture(node.textureId);
-                    neg2 : f32 = 0.0 - 2.0;
+                    neg2 : f32 = -2.0;
                     self.pushQuadUv(node.frame, COLOR_WHITE, COLOR_TRANSPARENT, neg2, 0.0, node.uvMin, node.uvMax);
                     // Re-bind font atlas after image
                     font := gFont;
@@ -532,7 +532,7 @@ UIRenderer :: struct {
                     }
 
                     // cornerRadius = -1.0 signals "text mode" to the fragment shader
-                    neg1 : f32 = 0.0 - 1.0;
+                    neg1 : f32 = -1.0;
                     self.writeVertex(gx0, gy0, uMin, vMin, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
                     self.writeVertex(gx1, gy0, uMax, vMin, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
                     self.writeVertex(gx0, gy1, uMin, vMax, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);

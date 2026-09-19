@@ -4194,6 +4194,11 @@ pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]c
             .non_integral, .not_const => {},
         }
     }
+    if (isFloat(ci.ty)) {
+        if (program_index_mod.evalConstFloatExpr(ci.value, self)) |value| {
+            return self.builder.constFloat(value, ci.ty);
+        }
+    }
     switch (ci.value.data) {
         .int_literal => |lit| {
             // If declared type is float, convert integer value to float constant

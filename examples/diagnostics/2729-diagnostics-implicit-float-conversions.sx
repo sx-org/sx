@@ -1,0 +1,11 @@
+Small :: struct { value: f32; }
+Whole :: struct { value: i32; }
+
+main :: () {
+    large: f64 = 16777217.0;
+    small := Small{value = large};
+    fraction: f64 = 1.5;
+    whole := Whole{value = fraction};
+    other_cast: f32 = fraction.(f32).(f64);
+    branch: f32 = if fraction > 0.0 then 1.0 else large;
+}

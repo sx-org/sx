@@ -1601,6 +1601,17 @@ fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
     return self.module.types.typeSizeBytes(a) == self.module.types.typeSizeBytes(b);
 }
 
+fn refuseImplicitNumericConversion(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) Ref {
+    if (!self.externalErrorsExist()) {
+        if (self.diagnostics) |d| {
+            const cs = self.builder.current_span;
+            d.addFmt(.err, .{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+            self.assignability_error_count += 1;
+        }
+    }
+    return self.builder.constUndef(dst_ty);
+}
+
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
     // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
     // the borrowed VIEW here, at the node-less layer, so EVERY store site
@@ -1640,11 +1651,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                         return self.builder.constInt(op.const_int, dst_ty);
                     }
                 }
-                if (self.diagnostics) |d| {
-                    d.addFmt(.err, span, "cannot implicitly convert '{s}' to '{s}'; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
-                    self.assignability_error_count += 1;
-                }
-                return self.builder.constUndef(dst_ty);
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
         }
         if (!self.xx_passthrough_refs.contains(val)) {
@@ -1957,22 +1964,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         .int_to_float => return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .float_to_int => {
-            // Implicit float→int narrowing follows the unified rule (the
-            // same `floatToIntExact` the array-dim / `$K: Count` paths use):
-            // a compile-time INTEGRAL float folds to its int, a NON-integral
-            // one is a compile error. Explicit `xx` / `cast` (mode
-            // `.explicit`) skips this and truncates. A runtime float has no
-            // compile-time value to fold — it truncates as before.
             if (mode == .implicit) {
                 if (self.builder.constFloatInfo(val)) |info| {
                     if (program_index_mod.floatToIntExact(info.value)) |iv| {
                         return self.builder.constInt(iv, dst_ty);
                     }
-                    // Non-integral: diagnose, then fall through to the
-                    // truncating op below so lowering finishes and
-                    // `hasErrors()` aborts the build.
                     self.diagNonIntegralNarrow(.{ .start = info.span.start, .end = info.span.end }, info.value, dst_ty);
+                    return self.builder.constUndef(dst_ty);
                 }
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
@@ -2006,7 +2006,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         // *T / [*]T → *void: same address, result typed `*void`.
         .ptr_to_void => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
-        .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        .narrow => {
+            if (mode == .implicit and Lowering.isFloat(src_ty) and Lowering.isFloat(dst_ty)) {
+                if (self.builder.constFloatInfo(val)) |info| {
+                    return self.builder.constFloat(info.value, dst_ty);
+                }
+                return refuseImplicitNumericConversion(self, src_ty, dst_ty);
+            }
+            return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
             // Implicit array→slice coercion (`fill(arr)` where `fill :: (s:

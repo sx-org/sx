@@ -309,6 +309,7 @@ fn contextualArmType(self: *Lowering, inferred: TypeId) TypeId {
     if (self.suppress_int_fit_check) return inferred;
     const target = self.target_type orelse return inferred;
     if (self.isIntEx(inferred) and self.isIntEx(target)) return target;
+    if (Lowering.isFloat(inferred) and Lowering.isFloat(target)) return target;
     if (self.module.types.isAnonStruct(inferred) and self.module.types.isAnonStruct(target) and
         self.module.types.get(inferred).@"struct".fields.len == self.module.types.get(target).@"struct".fields.len) return target;
     return inferred;

@@ -3,6 +3,7 @@
 P :: struct { small: i16; real: f64; address: *void; }
 N :: struct { value: i32; }
 Pair :: struct { a: i32; b: i32; }
+Floats :: struct { small: f32; whole: i32; }
 
 main :: () {
     byte: u8 = 255;
@@ -21,4 +22,12 @@ main :: () {
     print("{} {} {}\n", prefix, postfix.value, unsigned);
     repeated := Pair{literal, literal};
     print("{} {}\n", repeated.a, repeated.b);
+    float_literals := Floats{small = 1.5, whole = 6.0 / 2.0};
+    large_float: f64 = 16777217.0;
+    fraction: f64 = 1.5;
+    float_casts := Floats{small = xx large_float, whole = fraction.(i32)};
+    print("{} {} {} {}\n", float_literals.small, float_literals.whole, float_casts.small, float_casts.whole);
+    optional_float: ?f32 = 1.5;
+    branch: f32 = if byte == 0 then 1.5 else -2.5;
+    print("{} {}\n", optional_float ?? 0.0, branch);
 }
