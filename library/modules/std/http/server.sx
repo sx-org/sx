@@ -1259,14 +1259,14 @@ runFiberJob :: (arg: usize) {
 // cannot drift. decInto/statusLineFor (types.sx) keep the status and
 // Content-Length digits alloc-free.
 
-HDR_CL    :: "\r\nContent-Length: ";
-HDR_TE    :: "\r\nTransfer-Encoding: chunked";
-HDR_CT    :: "\r\nContent-Type: ";
-HDR_DATE  :: "\r\nDate: ";
-HDR_SRV   :: "\r\nServer: ";
-HDR_KA    :: "\r\nConnection: keep-alive\r\n";
-HDR_CLOSE :: "\r\nConnection: close\r\n";
-HTTP_PFX  :: "HTTP/1.1 ";
+HDR_CL    : string : "\r\nContent-Length: ";
+HDR_TE    : string : "\r\nTransfer-Encoding: chunked";
+HDR_CT    : string : "\r\nContent-Type: ";
+HDR_DATE  : string : "\r\nDate: ";
+HDR_SRV   : string : "\r\nServer: ";
+HDR_KA    : string : "\r\nConnection: keep-alive\r\n";
+HDR_CLOSE : string : "\r\nConnection: close\r\n";
+HTTP_PFX  : string : "HTTP/1.1 ";
 
 // Append `s` at dst[off]; returns the new offset.
 putStr :: (dst: [*]u8, off: i64, s: string) -> i64 {

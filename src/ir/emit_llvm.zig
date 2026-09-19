@@ -1213,7 +1213,7 @@ pub const LLVMEmitter = struct {
                     .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
                     .float => |v| c.LLVMConstReal(llvm_ty, v),
                     .boolean => |v| c.LLVMConstInt(llvm_ty, @intFromBool(v), 0),
-                    .string => |sid| self.emitConstStringGlobal(self.ir_mod.types.getString(sid)),
+                    .string => |sid| self.constStringAt(llvm_ty, self.ir_mod.types.getString(sid)),
                     .aggregate => |agg| self.emitConstAggregate(agg, llvm_ty, false),
                     .vtable => c.LLVMConstNull(llvm_ty), // placeholder — initialized in initVtableGlobals after function declarations
                     // A top-level null-pointer global (`p : *i64 = null;`) and a
@@ -1408,7 +1408,7 @@ pub const LLVMEmitter = struct {
                 },
                 .object => |obj| self.imageObjectGlobal(obj, global_name),
             },
-            .string => |s| self.emitConstStringGlobal(s),
+            .string => |s| self.constStringAt(llvm_ty, s),
             .aggregate => |fields| self.serializeAggregateValue(fields, ty, global_name),
             // The remaining Value variants cannot become static binary
             // constants outside of a fat-pointer aggregate. Bail loudly.
@@ -1914,7 +1914,7 @@ pub const LLVMEmitter = struct {
             .interp_print_frames => self.ops().emitInterpPrintFrames(),
             .trace_frame => self.ops().emitTraceFrame(instruction),
             .trace_resolve => |u| self.ops().emitTraceResolve(u),
-            .const_string => |str_id| self.ops().emitConstString(str_id),
+            .const_string => |str_id| self.ops().emitConstString(instruction, str_id),
             .const_null => self.ops().emitConstNull(instruction),
             .const_undef => self.ops().emitConstUndef(instruction),
             .const_type => |tid| self.ops().emitConstType(tid),
@@ -2966,17 +2966,46 @@ pub const LLVMEmitter = struct {
 
     /// The private NUL-terminated byte array a fat-pointer constant points at.
     fn emitConstBytesGlobal(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
-        const str_z = self.alloc.dupeZ(u8, str) catch unreachable;
-        defer self.alloc.free(str_z);
-        const len: c_uint = @intCast(str.len + 1); // include null terminator
-        const str_const = c.LLVMConstStringInContext(self.context, str_z.ptr, len - 1, 0);
-        const arr_ty = c.LLVMArrayType2(self.cached_i8, len);
+        const str_const = self.emitTerminatedBytes(str);
+        const arr_ty = c.LLVMArrayType2(self.cached_i8, @intCast(str.len + 1));
         const str_global_val = c.LLVMAddGlobal(self.llvm_module, arr_ty, "str.data");
         c.LLVMSetInitializer(str_global_val, str_const);
         c.LLVMSetGlobalConstant(str_global_val, 1);
         c.LLVMSetLinkage(str_global_val, c.LLVMPrivateLinkage);
         c.LLVMSetUnnamedAddress(str_global_val, c.LLVMGlobalUnnamedAddr);
         return str_global_val;
+    }
+
+    /// The `[N+1 x i8]` constant a `[N:0]u8` literal IS — N bytes then the
+    /// terminator.
+    pub fn emitTerminatedBytes(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
+        const str_z = self.alloc.dupeZ(u8, str) catch unreachable;
+        defer self.alloc.free(str_z);
+        return c.LLVMConstStringInContext(self.context, str_z.ptr, @intCast(str.len), 0);
+    }
+
+    /// The address of an array VALUE's storage. A constant array lives in a
+    /// private constant global, so the pointer outlives every frame; anything
+    /// else is spilled to a frame slot.
+    pub fn arrayStorageAddress(self: *LLVMEmitter, val: c.LLVMValueRef, arr_ty: c.LLVMTypeRef) c.LLVMValueRef {
+        if (c.LLVMIsConstant(val) != 0) {
+            const g = c.LLVMAddGlobal(self.llvm_module, arr_ty, "arr.data");
+            c.LLVMSetInitializer(g, val);
+            c.LLVMSetGlobalConstant(g, 1);
+            c.LLVMSetLinkage(g, c.LLVMPrivateLinkage);
+            c.LLVMSetUnnamedAddress(g, c.LLVMGlobalUnnamedAddr);
+            return g;
+        }
+        const tmp = self.buildEntryAlloca(arr_ty, "arr.slot");
+        _ = c.LLVMBuildStore(self.builder, val, tmp);
+        return tmp;
+    }
+
+    /// A string constant at the shape its slot names: the `[N:0]u8` bytes, or
+    /// the `{ptr, len}` view.
+    fn constStringAt(self: *LLVMEmitter, llvm_ty: c.LLVMTypeRef, str: []const u8) c.LLVMValueRef {
+        if (c.LLVMGetTypeKind(llvm_ty) == c.LLVMArrayTypeKind) return self.emitTerminatedBytes(str);
+        return self.emitConstStringGlobal(str);
     }
 
     /// Build a constant string { ptr, i64 } value without using the builder
@@ -3007,7 +3036,7 @@ pub const LLVMEmitter = struct {
                 .int => |v| c.LLVMConstInt(elem_ty, @bitCast(v), 1),
                 .float => |v| c.LLVMConstReal(elem_ty, v),
                 .boolean => |v| c.LLVMConstInt(elem_ty, @intFromBool(v), 0),
-                .string => |sid| self.emitConstStringGlobal(self.ir_mod.types.getString(sid)),
+                .string => |sid| self.constStringAt(elem_ty, self.ir_mod.types.getString(sid)),
                 .aggregate => |inner| self.emitConstAggregate(inner, elem_ty, require_resolved),
                 .func_ref => |fid| self.func_map.get(fid.index()) orelse blk: {
                     if (require_resolved) {

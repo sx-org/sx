@@ -1,0 +1,11 @@
+// Nothing implicitly adds a terminator: a view whose type carries none cannot
+// stand where one is named, whatever its bytes happen to hold.
+@import "modules/std.sx";
+
+takesTerm :: (t: [:1]u8) -> i64 { t.len }
+
+main :: () -> i32 {
+    plain : [3]u8 = .[7, 8, 1];
+    _ = takesTerm(plain[..]);
+    0
+}

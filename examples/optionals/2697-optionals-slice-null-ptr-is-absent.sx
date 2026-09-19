@@ -24,7 +24,7 @@ sliceLen :: (want: bool) -> i64 {
 }
 
 tagLen :: (want: bool) -> i64 {
-    o : ?Tag = if want { Bytes[0..4] } else { null };
+    o : ?Tag = if want { Bytes } else { null };
     if t := o { t.len } else { -1 }
 }
 

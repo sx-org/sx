@@ -338,7 +338,7 @@ test "a named tail refuses what its element type refuses" {
     try std.testing.expectEqual(@as(usize, 1), lowered.diagnostics.errorCount());
 }
 
-test "a named tail refuses a conversion that turns on the value" {
+test "a named tail refuses a string where its element names a terminator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var lowered: Lowered = undefined;
@@ -353,7 +353,7 @@ test "a named tail refuses a conversion that turns on the value" {
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "only a string LITERAL coerces"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "nothing implicitly adds a terminator"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "does not coerce to 'string' implicitly"));
 }
 

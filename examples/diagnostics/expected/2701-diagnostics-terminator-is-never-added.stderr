@@ -1,0 +1,5 @@
+error: a value of type 'string' does not coerce to '[:1]u8': nothing implicitly adds a terminator
+  --> examples/diagnostics/2701-diagnostics-terminator-is-never-added.sx:9:9
+   |
+ 9 |     _ = takesTerm(plain[..]);
+   |         ^^^^^^^^^^^^^^^^^^^^

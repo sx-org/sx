@@ -1,0 +1,36 @@
+// A string literal is `[N:0]u8` — its bytes plus the terminator, by value. It
+// keeps that array where the destination names a shape only a terminated value
+// reaches (the array itself, a byte pointer), and decays to the `[:0]u8` view
+// everywhere else. A `::` constant keeps the array — `y := X` copies it while
+// `f(X)` decays — and an annotated one is the view its annotation names. The
+// terminator is the TYPE's, so a literal argument reaches a C `[*:0]u8`
+// parameter.
+
+@import "modules/std.sx";
+
+libc :: @library "c";
+puts :: (s: [*:0]u8) -> i32 extern libc;
+
+GREETING :: "abc";
+HEADER : string : "abc";
+
+takesString :: (s: string) -> i64 { s.len }
+
+main :: () -> i32 {
+    b : [3:0]u8 = "abc";
+    b[0] = 'X';
+    print("kept: {} len {} size {} term {}\n", @typeName([3:0]u8), b.len, @sizeOf([3:0]u8), b[3]);
+
+    s := "abc";
+    print("decayed: {} {} len {}\n", @typeName(@typeOf(s)), s, s.len);
+
+    y := GREETING;
+    y[0] = 'Z';
+    print("copy: {} {} {} {}\n", @typeName(@typeOf(y)), y[0], y[2], y[3]);
+    print("annotated: {} {}\n", @typeName(@typeOf(HEADER)), takesString(HEADER));
+    print("decays at a string slot: {}\n", takesString(GREETING));
+
+    _ = puts("a literal reaches C");
+    _ = puts(GREETING);
+    0
+}

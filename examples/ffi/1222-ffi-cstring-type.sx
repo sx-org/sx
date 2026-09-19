@@ -1,8 +1,8 @@
 // C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer.
 // It crosses extern boundaries verbatim in both directions; `?[*:0]u8` is
-// the nullable case (null pointer = absent); string LITERALS coerce
-// implicitly (terminated constants); arbitrary strings materialize via
-// toCstring; fromCstring is the zero-copy view back.
+// the nullable case (null pointer = absent); a terminated value reaches it
+// through the type, while an arbitrary string materializes via toCstring;
+// fromCstring is the zero-copy view back.
 @import "modules/std.sx";
 
 libc :: @library "c";

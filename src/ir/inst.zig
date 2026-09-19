@@ -226,7 +226,7 @@ pub const Op = union(enum) {
     index_get: BinOp, // arr[idx] → value
     index_gep: BinOp, // &arr[idx] → pointer
     length: UnaryOp, // .len on slice/string/array
-    data_ptr: UnaryOp, // .ptr on slice/string
+    data_ptr: UnaryOp, // .ptr on slice/string/array
     subslice: Subslice, // arr[lo..hi]
     array_to_slice: UnaryOp, // [N]T → []T
 

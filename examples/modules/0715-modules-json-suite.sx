@@ -29,7 +29,7 @@
 // The writer's EXACT output for the PART A document (insertion order,
 // canonical escaping). Hand-pinned so a writer regression fails loudly in
 // the example itself, not only in the captured golden.
-EXPECT :: "{\"esc\":\"\\\"\\\\\\b\\t\\n\\f\\r\\u0001\",\"zero\":0,\"neg\":-7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";
+EXPECT : string : "{\"esc\":\"\\\"\\\\\\b\\t\\n\\f\\r\\u0001\",\"zero\":0,\"neg\":-7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -565,7 +565,7 @@ fn coerceGlobalFnPointerArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.
     for (args, 0..) |*arg, ai| {
         if (ai >= info.params.len) break;
         const dst_ty = info.params[ai];
-        const src_ty = if (ai < c.args.len) self.inferExprType(c.args[ai]) else self.builder.getRefType(arg.*);
+        const src_ty = self.builder.getRefType(arg.*);
         if (!dst_ty.isBuiltin()) {
             const dti = self.module.types.get(dst_ty);
             if (dti == .pointer and dti.pointer.pointee == src_ty and src_ty != .void) {
@@ -5597,6 +5597,16 @@ fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *co
     for (fd.params, 0..) |_, param_idx| {
         demands.append(self.alloc, lower_bound.paramDemand(self, fd, param_idx)) catch unreachable;
     }
+    // `..name: []U` asserts every tail argument is a `U`, so each tail slot
+    // demands the ELEMENT, not the slice the parameter is written as.
+    if (fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
+        const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
+        if (self.module.types.sliceInfoOf(declared)) |slice| {
+            const tail = ParamDemand{ .coerce = slice.element };
+            demands.items[fd.params.len - 1] = tail;
+            while (demands.items.len < args.len) demands.append(self.alloc, tail) catch unreachable;
+        }
+    }
     return demands.items;
 }
 
@@ -5957,6 +5967,12 @@ pub fn resolveCallParamTypes(
     // the name-keyed maps must not type its arguments — the same gate dispatch
     // applies, or the args coerce to a function the call never reaches.
     if (!author_declines) {
+        // A named variadic tail's slots demand its ELEMENT type, which only the
+        // declaration spells — the lowered signature carries the packed slice.
+        if (self.program_index.lookup(.function, name)) |fd| {
+            if (fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic)
+                return astCalleeParamTypes(self, fd, c.args);
+        }
         // Check declared functions
         if (self.resolveFuncByName(name)) |fid| {
             const func = &self.module.functions.items[@intFromEnum(fid)];

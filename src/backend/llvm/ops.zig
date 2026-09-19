@@ -124,10 +124,15 @@ pub const Ops = struct {
         self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, frame_ty, ptr, "frame.val"));
     }
 
-    pub fn emitConstString(self: Ops, str_id: StringId) void {
+    /// A string literal's bytes at the type the destination decided: the
+    /// `[N:0]u8` array value, or the `{ptr, len}` view it decays to.
+    pub fn emitConstString(self: Ops, instruction: *const Inst, str_id: StringId) void {
         const str = self.e.ir_mod.types.getString(str_id);
-        const llvm_val = self.e.emitStringConstant(str);
-        self.e.mapRef(llvm_val);
+        if (!instruction.ty.isBuiltin() and self.e.ir_mod.types.get(instruction.ty) == .array) {
+            self.e.mapRef(self.e.emitTerminatedBytes(str));
+            return;
+        }
+        self.e.mapRef(self.e.emitStringConstant(str));
     }
 
     pub fn emitConstNull(self: Ops, instruction: *const Inst) void {
@@ -2505,6 +2510,8 @@ pub const Ops = struct {
         const kind = c.LLVMGetTypeKind(val_ty);
         if (kind == c.LLVMStructTypeKind) {
             self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, val, 0, "dptr"));
+        } else if (kind == c.LLVMArrayTypeKind) {
+            self.e.mapRef(self.e.arrayStorageAddress(val, val_ty));
         } else {
             self.e.mapRef(c.LLVMGetUndef(self.e.cached_ptr));
         }

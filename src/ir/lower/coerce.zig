@@ -232,7 +232,7 @@ pub fn lowerCoerce(self: *Lowering, operand: Ref, operand_node: *const Node, src
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     return switch (plan) {
-        .widen, .int_to_float, .array_to_slice, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .string_to_cstring, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
+        .widen, .int_to_float, .array_to_slice, .array_drop_terminator, .array_to_many_ptr, .slice_to_many_ptr, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
         else => false,
     };
 }
@@ -707,7 +707,12 @@ pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeI
     const addr = self.refStorageAddress(val) orelse return null;
     const info = self.module.types.get(src_ty).array;
     const elem_ty = info.element;
-    const slice_ty = self.module.types.sliceOfLen(elem_ty, self.module.types.lenTypeOf(dst_ty));
+    // The view keeps the destination's terminator when the array holds it.
+    const keeps_terminator = if (self.module.types.sliceInfoOf(dst_ty)) |ds|
+        ds.sentinel != null and ds.sentinel == info.sentinel
+    else
+        false;
+    const slice_ty = if (keeps_terminator) dst_ty else self.module.types.sliceOfLen(elem_ty, self.module.types.lenTypeOf(dst_ty));
     const lo = self.builder.constInt(0, .i64);
     const hi = self.builder.constInt(@intCast(info.length), .i64);
     return self.builder.emit(.{ .subslice = .{
@@ -1828,20 +1833,17 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return val;
         },
-        // string → cstring: ONLY a string LITERAL coerces implicitly — its
-        // bytes are a terminated constant (Odin's literal blessing). Any
-        // other string may be an unterminated view, so it must materialize
-        // through `toCstring`.
-        // The destination is `.cstring` OR a byte many-pointer (`[*:0]u8`,
-        // `[*]u8`, `[*]i8`) — the emitted value is the data pointer, typed as
-        // the DESTINATION.
-        .string_to_cstring => {
-            if (self.builder.isConstString(val)) {
-                return self.builder.emit(.{ .data_ptr = .{ .operand = val } }, dst_ty);
-            }
+        // Nothing implicitly adds a terminator: a view whose type carries none
+        // cannot stand where one is named. `toCstring` is the owned,
+        // terminated copy a `string` reaches a C byte pointer through.
+        .adds_terminator_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "only a string LITERAL coerces to '{s}' implicitly; an arbitrary string may be an unterminated view — materialize it with toCstring(s)", .{self.formatTypeName(dst_ty)});
+                const fix = if (src_ty == .string and self.coercionResolver().pointerDestElement(dst_ty) != null)
+                    " — materialize one with toCstring(s)"
+                else
+                    "";
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': nothing implicitly adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
             }
             return val;
         },
@@ -2007,6 +2009,30 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // (dangling) and IS rejected. Recorded in specs.md §Subslicing.
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
         },
+        // `[N:X]T` → `[N]T`: the N elements, read through the array's own
+        // element accessor; the terminator's slot is not part of the value.
+        .array_drop_terminator => {
+            const a = self.module.types.get(src_ty).array;
+            var elems = std.ArrayList(Ref).empty;
+            defer elems.deinit(self.alloc);
+            elems.ensureTotalCapacity(self.alloc, a.length) catch unreachable;
+            for (0..a.length) |i| {
+                const idx = self.builder.constInt(@intCast(i), .i64);
+                elems.appendAssumeCapacity(self.builder.emit(.{ .index_get = .{ .lhs = val, .rhs = idx } }, a.element));
+            }
+            return self.builder.structInit(self.alloc.dupe(Ref, elems.items) catch unreachable, dst_ty);
+        },
+        // `[N:X]T` → `[*:X]T`: the array's own storage, so a write through the
+        // pointer is a write to the array. An array value with no storage of
+        // its own — a constant, a temporary — gets one at emission.
+        .array_to_many_ptr => {
+            if (self.refStorageAddress(val)) |addr| {
+                return self.builder.emit(.{ .bitcast = .{ .operand = addr, .from = self.builder.getRefType(addr), .to = dst_ty } }, dst_ty);
+            }
+            return self.builder.emit(.{ .data_ptr = .{ .operand = val } }, dst_ty);
+        },
+        // `[:X]T` → `[*:X]T`: the fat pointer's data word.
+        .slice_to_many_ptr => return self.builder.emit(.{ .data_ptr = .{ .operand = val } }, dst_ty),
         // `@Slice(T,A) → @Slice(T,B)`: same view, a length word of a different
         // width. Rebuild the header from the source's `.ptr` and `.len`. A
         // folded source length that does not fit `B` is refused; implicit
