@@ -825,14 +825,6 @@ pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
     return author.source;
 }
 
-/// The file that may mention `field` on `ty`. A `@using` promotion carries the
-/// base's authority; every other field answers to the struct's own declaration.
-pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]const u8 {
-    const owner = self.plainStructOwnerType(ty);
-    if (self.promoted_field_authority.get(.{ .ty = owner, .name = field })) |source| return source;
-    return self.structDeclaringSource(owner);
-}
-
 pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
     const wanted = self.module.types.internString(field);
     var vis: ast.Visibility = .public;
@@ -846,7 +838,7 @@ pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
     const from = self.current_source_file orelse return false;
     // Only a named declaration or a generic instance can carry a private field
     // — the parser refuses one on an anonymous body — and both stamp an author.
-    const declaring = self.fieldDeclaringSource(ty, wanted) orelse
+    const declaring = self.structDeclaringSource(ty) orelse
         std.debug.panic("private field '{s}' on a struct type with no declaring file", .{field});
     return !std.mem.eql(u8, from, declaring);
 }

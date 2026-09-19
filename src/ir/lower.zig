@@ -90,14 +90,6 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
-/// A private field reached through `@using` promotion, keyed on the PROMOTING
-/// struct's TypeId. The promoting struct copies the base's field verbatim, so
-/// only this record still names the file that may mention it.
-pub const PromotedField = struct {
-    ty: TypeId,
-    name: types.StringId,
-};
-
 /// Identity key for a materialized protocol/concrete dispatch table. The
 /// concrete TypeId (not its display name) keeps two modules' same-named
 /// structs from sharing thunks or a vtable global.
@@ -639,8 +631,6 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
-    /// Declaring file of each private field a struct gained through `@using`.
-    promoted_field_authority: std.AutoHashMap(PromotedField, ?[]const u8),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
     /// same-display-name types.
@@ -822,13 +812,7 @@ pub const Lowering = struct {
     /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
-    /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
-    /// FLATTENED layout (a `@using`-embedded base field holds null — base
-    /// defaults do not flow through `@using`, matching generic instantiation).
-    /// Literal lowering selects
-    /// through this identity first; the display-name map above stays only as
-    /// the generic-instance / alias fallback, because its name key is
-    /// last-wins across same-name authors.
+    /// Defaults follow the flattened layout; spread fields have no default.
     struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
     /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
     /// twin of `struct_const_map`: the `"Struct.CONST"` string key is
@@ -1376,7 +1360,6 @@ pub const Lowering = struct {
             .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
             .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
-            .promoted_field_authority = std.AutoHashMap(PromotedField, ?[]const u8).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
             .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
@@ -1678,9 +1661,40 @@ pub const Lowering = struct {
         return self.resolveTypeWithBindings(node);
     }
 
-    pub fn expandTypeSpread(self: *Lowering, node: *const Node) ?[]TypeId {
-        if (node.data != .spread_expr) return null;
-        return self.packResolver().packTypeElems(node.data.spread_expr.operand);
+    pub fn expandStructSpread(self: *Lowering, node: *const Node, start: usize) ?[]const types.TypeInfo.StructInfo.Field {
+        const operand = node.data.spread_expr.operand;
+        if (self.packResolver().packTypeElems(operand)) |tys| {
+            const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, tys.len) catch @panic("out of memory");
+            for (tys, fields, start..) |ty, *field, i| {
+                field.* = .{
+                    .name = self.module.types.internString(std.fmt.allocPrint(self.alloc, "{d}", .{i}) catch @panic("out of memory")),
+                    .ty = ty,
+                };
+            }
+            return fields;
+        }
+        const ty = self.resolveTypeWithBindings(operand);
+        return type_bridge.structSpreadFields(&self.module.types, ty) catch |err| {
+            if (self.diagnostics) |d| d.add(.err, switch (err) {
+                error.InvalidOperand => "struct member spread requires a pack or struct type",
+                error.PrivateField => "cannot spread a struct containing a private field",
+            }, node.span);
+            return null;
+        };
+    }
+
+    pub fn recordStructDefaults(self: *Lowering, ty: TypeId, defaults: []const ?*const Node) void {
+        for (defaults) |default| {
+            if (default != null) break;
+        } else return;
+        for (defaults) |default| {
+            if (default) |node| {
+                if (node.source_file == null) @constCast(node).source_file = self.current_source_file;
+            }
+        }
+        self.struct_defaults_by_tid.put(ty, defaults) catch @panic("out of memory");
+        const name = self.module.types.getString(self.module.types.get(ty).@"struct".name);
+        self.struct_defaults_map.put(name, defaults) catch @panic("out of memory");
     }
 
     /// TYPE-NAME twin of `resolveInner` for callers holding a name rather than
@@ -3684,13 +3698,9 @@ pub const Lowering = struct {
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
     pub const registerStructDecl = lower_nominal.registerStructDecl;
-    pub const resolveUsingBase = lower_nominal.resolveUsingBase;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
     pub const plainStructOwnerType = lower_nominal.plainStructOwnerType;
-    pub const PromotedPrivate = lower_nominal.PromotedPrivate;
-    pub const notePromotedPrivate = lower_nominal.notePromotedPrivate;
-    pub const recordPromotedPrivate = lower_nominal.recordPromotedPrivate;
     pub const plainStructMethod = lower_nominal.plainStructMethod;
     pub const plainStructAdoptableMethod = lower_nominal.plainStructAdoptableMethod;
     pub const plainStructMethodName = lower_nominal.plainStructMethodName;
@@ -4013,7 +4023,6 @@ pub const Lowering = struct {
     pub const lowerSelfBlock = lower_expr.lowerSelfBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const structDeclaringSource = lower_expr.structDeclaringSource;
-    pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
     pub const privateFieldHere = lower_expr.privateFieldHere;
     pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const FieldLookup = lower_expr.FieldLookup;

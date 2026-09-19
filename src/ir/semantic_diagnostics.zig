@@ -142,39 +142,12 @@ pub const UnknownTypeChecker = struct {
             decl_checker.author_source = author_source;
             switch (decl.data) {
                 .fn_decl => decl_checker.checkFnSignatureTypes(&decl.data.fn_decl, &declared),
-                .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
+                .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared, &.{}, &.{}),
                 .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
                 .impl_block => |ib| for (ib.methods) |method| {
                     if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
-                .var_decl => |vd| if (vd.value) |v| decl_checker.checkTopLevelValue(v, &declared),
-                .const_decl => |cd| switch (cd.value.data) {
-                    .fn_decl => decl_checker.checkFnSignatureTypes(&cd.value.data.fn_decl, &declared),
-                    .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
-                    .error_set_decl => |esd| decl_checker.checkErrorPayloadTypes(&esd, &declared),
-                    // A COMPOSITE type alias — tuple / array / slice / optional
-                    // / pointer / many-pointer / function / closure RHS
-                    // (`NT :: Tuple(a: i64, b: bool)`, `Bad :: [3]T`,
-                    // `S :: []T`, `O :: ?T`, `P :: *T`, `F :: (T) -> U`,
-                    // `CB :: Closure(T) -> U`) —
-                    // registers the structural TypeId; an unknown element/
-                    // pointee/param/return name would otherwise resolve to a
-                    // silent empty-struct stub INSIDE the shape (never patched,
-                    // wrong layout at every use). Walk the RHS so
-                    // `Bad :: [3]NoSuchType` gets the same "unknown type" the
-                    // inline annotation form gets. `checkTypeNodeForUnknown`
-                    // recurses every composite position (nested `[2][]T` too).
-                    .tuple_type_expr,
-                    .array_type_expr,
-                    .slice_type_expr,
-                    .optional_type_expr,
-                    .pointer_type_expr,
-                    .many_pointer_type_expr,
-                    .function_type_expr,
-                    .closure_type_expr,
-                    => decl_checker.checkTypeNodeForUnknown(cd.value, &declared, &.{}, &.{}, false),
-                    else => decl_checker.checkTopLevelValue(cd.value, &declared),
-                },
+                .var_decl, .const_decl, .union_decl, .enum_decl => decl_checker.checkValueTypes(decl, &declared, &.{}, &.{}),
                 else => {},
             }
         }
@@ -643,43 +616,46 @@ pub const UnknownTypeChecker = struct {
         }
     }
 
-    fn checkStructFieldTypes(self: UnknownTypeChecker, sd: *const ast.StructDecl, declared: *std.StringHashMap(void)) void {
-        // A generic struct's field types may reference its own type params
-        // (`$T`, `$N`, the `..$Ts` pack) — those are IN SCOPE here, so pass them
-        // through rather than skipping the whole decl. Skipping silently let a
-        // genuinely-undeclared field type (`bad: MissingType`) fall through the
-        // type leaf's empty-struct stub and compile. A value-param
-        // position (a `@Vector` lane count, a `$N: u32` arg) is still skipped
-        // inside `checkTypeNodeForUnknown` / `isValueParamPosition`.
-        for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, sd.type_params, &.{}, true);
-    }
-
     fn checkErrorPayloadTypes(self: UnknownTypeChecker, esd: *const ast.ErrorSetDecl, declared: *std.StringHashMap(void)) void {
         for (esd.tag_types) |maybe_payload| {
             const payload = maybe_payload orelse continue;
-            if (payload.data == .struct_decl)
-                self.checkStructFieldTypes(&payload.data.struct_decl, declared)
-            else
-                self.checkTypeNodeForUnknown(payload, declared, &.{}, &.{}, false);
+            self.checkTypeNodeForUnknown(payload, declared, &.{}, &.{}, false);
         }
     }
 
-    fn checkTopLevelValue(self: UnknownTypeChecker, value: *const Node, declared: *std.StringHashMap(void)) void {
+    fn checkValueTypes(
+        self: UnknownTypeChecker,
+        value: *const Node,
+        declared: *std.StringHashMap(void),
+        outer_scope: []const ast.StructTypeParam,
+        outer_type_vals: []const []const u8,
+    ) void {
         var in_scope = std.ArrayList(ast.StructTypeParam).empty;
         defer in_scope.deinit(self.alloc);
+        in_scope.appendSlice(self.alloc, outer_scope) catch @panic("out of memory");
         var type_vals = std.ArrayList([]const u8).empty;
         defer type_vals.deinit(self.alloc);
+        type_vals.appendSlice(self.alloc, outer_type_vals) catch @panic("out of memory");
         self.walkBodyTypes(value, declared, &in_scope, &type_vals);
     }
 
-    fn checkStructDeclTypes(self: UnknownTypeChecker, sd: *const ast.StructDecl, declared: *std.StringHashMap(void)) void {
-        self.checkStructFieldTypes(sd, declared);
+    fn checkStructDeclTypes(
+        self: UnknownTypeChecker,
+        sd: *const ast.StructDecl,
+        declared: *std.StringHashMap(void),
+        outer_scope: []const ast.StructTypeParam,
+        outer_type_vals: []const []const u8,
+    ) void {
         var in_scope = std.ArrayList(ast.StructTypeParam).empty;
         defer in_scope.deinit(self.alloc);
+        in_scope.appendSlice(self.alloc, outer_scope) catch @panic("out of memory");
         for (sd.type_params) |tp| in_scope.append(self.alloc, tp) catch {};
         var type_vals = std.ArrayList([]const u8).empty;
         defer type_vals.deinit(self.alloc);
+        type_vals.appendSlice(self.alloc, outer_type_vals) catch @panic("out of memory");
+        for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, in_scope.items, type_vals.items, true);
         for (sd.field_defaults) |default| if (default) |value| self.walkBodyTypes(value, declared, &in_scope, &type_vals);
+        for (sd.constants) |constant| self.walkBodyTypes(constant, declared, &in_scope, &type_vals);
         for (sd.methods) |method| {
             if (method.data == .fn_decl) {
                 const fd = &method.data.fn_decl;
@@ -853,17 +829,21 @@ pub const UnknownTypeChecker = struct {
                 if (cd.type_annotation) |ta| self.checkTypeNodeForUnknown(ta, declared, in_scope.items, type_vals.items, false);
                 self.walkBodyTypes(cd.value, declared, in_scope, type_vals);
             },
-            .struct_decl => |sd| {
-                // A body-local struct's own type params (`$T`) join the enclosing
-                // scope's in-scope params (so a local generic struct can name both
-                // the outer fn's `$T` and its own); any OTHER bare field type is
-                // still a genuinely-undeclared type. Mirrors the top-level
-                // `checkStructFieldTypes` close of the generic-struct carveout.
-                const save = in_scope.items.len;
-                defer in_scope.shrinkRetainingCapacity(save);
-                for (sd.type_params) |tp| in_scope.append(self.alloc, tp) catch {};
-                for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, in_scope.items, type_vals.items, true);
-            },
+            .struct_decl,
+            .union_decl,
+            .enum_decl,
+            .error_set_decl,
+            .tuple_type_expr,
+            .return_type_expr,
+            .array_type_expr,
+            .slice_type_expr,
+            .optional_type_expr,
+            .pointer_type_expr,
+            .many_pointer_type_expr,
+            .function_type_expr,
+            .closure_type_expr,
+            .parameterized_type_expr,
+            => self.checkTypeNodeForUnknown(node, declared, in_scope.items, type_vals.items, false),
             .call => |c| {
                 self.walkBodyTypes(c.callee, declared, in_scope, type_vals);
                 for (c.args) |a| self.walkBodyTypes(a, declared, in_scope, type_vals);
@@ -872,11 +852,17 @@ pub const UnknownTypeChecker = struct {
                 self.walkBodyTypes(b.lhs, declared, in_scope, type_vals);
                 self.walkBodyTypes(b.rhs, declared, in_scope, type_vals);
             },
+            .chained_comparison => |cc| for (cc.operands) |o| self.walkBodyTypes(o, declared, in_scope, type_vals),
             .unary_op => |u| self.walkBodyTypes(u.operand, declared, in_scope, type_vals),
             .field_access => |fa| self.walkBodyTypes(fa.object, declared, in_scope, type_vals),
             .index_expr => |ix| {
                 self.walkBodyTypes(ix.object, declared, in_scope, type_vals);
                 self.walkBodyTypes(ix.index, declared, in_scope, type_vals);
+            },
+            .slice_expr => |sx| {
+                self.walkBodyTypes(sx.object, declared, in_scope, type_vals);
+                if (sx.start) |s| self.walkBodyTypes(s, declared, in_scope, type_vals);
+                if (sx.end) |e| self.walkBodyTypes(e, declared, in_scope, type_vals);
             },
             .struct_literal => |sl| {
                 // A NAMED struct-literal head (`Point{ … }`) names its type
@@ -915,6 +901,10 @@ pub const UnknownTypeChecker = struct {
                 if (al.type_expr) |th| self.checkTypeNodeForUnknown(th, declared, in_scope.items, type_vals.items, false);
                 for (al.elements) |e| self.walkBodyTypes(e, declared, in_scope, type_vals);
             },
+            .tuple_literal => |tl| {
+                if (tl.type_expr) |th| self.checkTypeNodeForUnknown(th, declared, in_scope.items, type_vals.items, false);
+                for (tl.elements) |e| self.walkBodyTypes(e.value, declared, in_scope, type_vals);
+            },
             .force_unwrap => |fu| self.walkBodyTypes(fu.operand, declared, in_scope, type_vals),
             .null_coalesce => |nc| {
                 self.walkBodyTypes(nc.lhs, declared, in_scope, type_vals);
@@ -940,7 +930,10 @@ pub const UnknownTypeChecker = struct {
                 self.walkBodyTypes(sb.operand, declared, in_scope, type_vals);
                 self.walkBodyTypes(sb.block, declared, in_scope, type_vals);
             },
-            .lambda => |lm| self.checkScope(lm.type_params, lm.params, lm.return_type, lm.body, declared, in_scope, type_vals),
+            .lambda => |lm| {
+                for (lm.env) |e| self.walkBodyTypes(e.value, declared, in_scope, type_vals);
+                self.checkScope(lm.type_params, lm.params, lm.return_type, lm.body, declared, in_scope, type_vals);
+            },
             .fn_decl => |fd| self.checkScope(fd.type_params, fd.params, fd.return_type, fd.body, declared, in_scope, type_vals),
             else => {},
         }
@@ -1056,40 +1049,45 @@ pub const UnknownTypeChecker = struct {
             else
                 self.reportIfValueParamInTypePosition(te.name, node.span, in_scope, struct_field),
             .identifier => |id| self.reportIfUnknownType(id.name, node.span, declared, in_scope, type_vals, id.is_raw),
+            .struct_decl => |sd| self.checkStructDeclTypes(&sd, declared, in_scope, type_vals),
+            .union_decl => |ud| for (ud.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, in_scope, type_vals, struct_field),
+            .enum_decl => |ed| {
+                if (ed.backing_type) |bt| self.checkTypeNodeForUnknown(bt, declared, in_scope, type_vals, struct_field);
+                for (ed.variant_types) |vt| if (vt) |t| self.checkTypeNodeForUnknown(t, declared, in_scope, type_vals, struct_field);
+            },
+            .error_set_decl => |esd| for (esd.tag_types) |tt| if (tt) |t| self.checkTypeNodeForUnknown(t, declared, in_scope, type_vals, struct_field),
+            .spread_expr => |se| self.checkTypeNodeForUnknown(se.operand, declared, in_scope, type_vals, struct_field),
             .pointer_type_expr => |pt| self.checkTypeNodeForUnknown(pt.pointee_type, declared, in_scope, type_vals, struct_field),
             .many_pointer_type_expr => |mp| self.checkTypeNodeForUnknown(mp.element_type, declared, in_scope, type_vals, struct_field),
             .slice_type_expr => |st| self.checkTypeNodeForUnknown(st.element_type, declared, in_scope, type_vals, struct_field),
             .optional_type_expr => |ot| self.checkTypeNodeForUnknown(ot.inner_type, declared, in_scope, type_vals, struct_field),
-            .array_type_expr => |at| self.checkTypeNodeForUnknown(at.element_type, declared, in_scope, type_vals, struct_field),
+            .array_type_expr => |at| {
+                self.checkValueTypes(at.length, declared, in_scope, type_vals);
+                self.checkTypeNodeForUnknown(at.element_type, declared, in_scope, type_vals, struct_field);
+            },
             .tuple_type_expr => |tt| for (tt.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, in_scope, type_vals, struct_field),
+            .return_type_expr => |rt| {
+                for (rt.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, in_scope, type_vals, struct_field);
+                if (rt.field_defaults) |defaults| {
+                    for (defaults) |default| if (default) |v| self.checkValueTypes(v, declared, in_scope, type_vals);
+                }
+            },
+            .tuple_literal => |tl| for (tl.elements) |e| self.checkTypeNodeForUnknown(e.value, declared, in_scope, type_vals, struct_field),
             .function_type_expr => |ft| {
                 for (ft.param_types) |pt| self.checkTypeNodeForUnknown(pt, declared, in_scope, type_vals, struct_field);
                 if (ft.return_type) |rt| self.checkTypeNodeForUnknown(rt, declared, in_scope, type_vals, struct_field);
             },
             .closure_type_expr => |ct| {
-                // Variadic type-pack closures (`Closure(..$args) -> R`) resolve
-                // their projections specially — don't walk them here.
-                if (ct.pack_name != null) return;
                 for (ct.param_types) |pt| self.checkTypeNodeForUnknown(pt, declared, in_scope, type_vals, struct_field);
                 if (ct.return_type) |rt| self.checkTypeNodeForUnknown(rt, declared, in_scope, type_vals, struct_field);
             },
-            // Builtin constructors (`@Vector`) and generic templates resolve the
-            // base name specially; check only the TYPE args. A value-param
-            // position (a `@Vector` lane count, or a generic `$N: u32` arg) holds
-            // a compile-time integer — `@Vector(N, f32)` / `Vec(N, f32)` with `N`
-            // a module const — not a type name, so it must not be walked as one
-            // (it would falsely report "unknown type 'N'"). The lowering
-            // resolvers fold the value and emit the precise diagnostic if it
-            // isn't a compile-time integer.
             .parameterized_type_expr => |pt| {
                 const base = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
-                // A Type-returning reflection builtin in type position
-                // (`x.(@pointeeType(T))`) takes VALUE args — never walk them as
-                // type names; the lowering fold diagnoses a bad arg precisely.
-                if (isTypeFnName(base)) return;
                 for (pt.args, 0..) |a, i| {
-                    if (self.isValueParamPosition(base, i)) continue;
-                    self.checkTypeNodeForUnknown(a, declared, in_scope, type_vals, struct_field);
+                    if (isTypeFnName(base) or self.isValueParamPosition(base, i))
+                        self.checkValueTypes(a, declared, in_scope, type_vals)
+                    else
+                        self.checkTypeNodeForUnknown(a, declared, in_scope, type_vals, struct_field);
                 }
             },
             // `!E` (a written failable channel) in type position. A bare `!`

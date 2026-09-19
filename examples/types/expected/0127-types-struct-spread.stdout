@@ -1,0 +1,6 @@
+=== 26. struct spread ===
+sprite-px: 10
+sprite-r: 255
+sprite-scale: 1
+say: hello (len=5)
+n=42

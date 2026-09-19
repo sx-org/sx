@@ -1,0 +1,14 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32; }
+Wrap :: struct ($T: Type, ..$Ts: []Type) {
+    inner: struct { ..T; tail: i32; };
+    callback: Closure(..$Ts) -> T;
+}
+
+main :: () {
+    v: Wrap(Base, i32) = ---;
+    v.inner.x = 2;
+    v.inner.tail = 3;
+    print("{} {} {}\n", v.inner.x, v.inner.tail, @sizeOf(@typeOf(v.inner)));
+}

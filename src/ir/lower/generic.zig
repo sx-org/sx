@@ -2535,48 +2535,7 @@ pub fn instantiateGenericStructBound(
         if (self.diagnostics) |d| d.current_source_file = sf;
     }
 
-    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-    var instance_defaults = std.ArrayList(?*Node).empty;
-    var promoted_private = std.ArrayList(Lowering.PromotedPrivate).empty;
-    var field_idx: usize = 0;
-    var using_idx: usize = 0;
-    while (field_idx < tmpl.field_names.len or using_idx < tmpl.decl.using_entries.len) {
-        while (using_idx < tmpl.decl.using_entries.len and tmpl.decl.using_entries[using_idx].insert_index == field_idx) {
-            const ue = tmpl.decl.using_entries[using_idx];
-            // current_source_file is the TEMPLATE's file here (set above), so
-            // the base selects from the declaring module's authority, not the
-            // global name table.
-            if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
-                const used_info = table.get(used_ty);
-                if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
-                    self.notePromotedPrivate(&promoted_private, used_ty, f);
-                    fields.append(self.alloc, f) catch unreachable;
-                    instance_defaults.append(self.alloc, null) catch unreachable;
-                };
-            }
-            using_idx += 1;
-        }
-        if (field_idx >= tmpl.field_names.len) break;
-        const field_ty = self.resolveTypeWithBindings(tmpl.field_type_nodes[field_idx]);
-        fields.append(self.alloc, .{
-            .name = table.internString(tmpl.field_names[field_idx]),
-            .ty = field_ty,
-            .visibility = if (field_idx < tmpl.decl.field_visibilities.len) tmpl.decl.field_visibilities[field_idx] else .public,
-        }) catch unreachable;
-        instance_defaults.append(self.alloc, if (field_idx < tmpl.decl.field_defaults.len) tmpl.decl.field_defaults[field_idx] else null) catch unreachable;
-        field_idx += 1;
-    }
-    while (using_idx < tmpl.decl.using_entries.len) : (using_idx += 1) {
-        const ue = tmpl.decl.using_entries[using_idx];
-        if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
-            const used_info = table.get(used_ty);
-            if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
-                self.notePromotedPrivate(&promoted_private, used_ty, f);
-                fields.append(self.alloc, f) catch unreachable;
-                instance_defaults.append(self.alloc, null) catch unreachable;
-            };
-        }
-    }
+    const layout = type_bridge.buildStructLayout(tmpl.decl, table, self);
 
     self.current_source_file = saved_src;
     if (self.diagnostics) |d| d.current_source_file = saved_diag_src;
@@ -2587,11 +2546,12 @@ pub fn instantiateGenericStructBound(
     self.pack_bindings = saved_pack_bindings;
     self.pack_arg_types = saved_pack_arg_types;
 
+    const resolved_layout = layout orelse return .unresolved;
+
     // Register the monomorphized struct
-    const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items } };
+    const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = resolved_layout.fields } };
     const id = if (table.findByName(name_id)) |existing| existing else table.intern(info);
     table.updatePreservingKey(id, info);
-    self.recordPromotedPrivate(id, promoted_private.items);
 
     // Bind the template name to this concrete instance so a method's
     // `self: *Combined` (the template name) resolves to `*Combined__i64_i64`
@@ -2607,41 +2567,9 @@ pub fn instantiateGenericStructBound(
     self.struct_instance_template.put(owned_mangled, tmpl.name) catch {};
     self.struct_instance_author.put(owned_mangled, tmpl.decl) catch {};
 
-    // Carry the template's field-default expressions onto the MONOMORPHIZED
-    // instance so struct-literal lowering finds them. The literal
-    // path (`lower/expr.zig`) keys `struct_defaults_map` off the instance's
-    // struct name (`name_id` == `mangled_name`); a generic instance's mangled
-    // name never matched the template's plain name, so declared defaults were
-    // silently zero-filled instead of applied (as they are for non-generic
-    // structs). The default nodes are index-aligned with `field_names` — both
-    // are copied straight from `tmpl.decl` in declaration order — so the raw
-    // AST slice maps 1:1 onto this instance's fields. Defaults that reference a
-    // type param (e.g. `@sizeOf(T)`) are monomorphized at the literal site
-    // by re-installing THIS instance's `type_bindings` from
-    // `struct_instance_bindings` (see `lower/expr.zig`, the generic-instance
-    // default path).
-    if (instance_defaults.items.len > 0) {
-        var has_any_default = false;
-        for (instance_defaults.items) |d| {
-            if (d != null) {
-                has_any_default = true;
-                break;
-            }
-        }
-        if (has_any_default) {
-            // The template's module wrote these expressions, so they resolve
-            // over ITS import edges wherever the literal that needs them sits.
-            if (tmpl.source_file) |author_source| {
-                for (instance_defaults.items) |maybe_default| {
-                    if (maybe_default) |default_node| {
-                        const mutable: *ast.Node = @constCast(default_node);
-                        if (mutable.source_file == null) mutable.source_file = author_source;
-                    }
-                }
-            }
-            self.struct_defaults_map.put(owned_mangled, instance_defaults.toOwnedSlice(self.alloc) catch &.{}) catch {};
-        }
-    }
+    self.setCurrentSourceFile(tmpl.source_file orelse saved_src);
+    self.recordStructDefaults(id, resolved_layout.defaults);
+    self.setCurrentSourceFile(saved_src);
 
     // A GENERIC open-set member is measured per instantiation: the template has
     // no layout, so `max` / `align` / finiteness are checked here, against the
@@ -2745,57 +2673,30 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
 
     // Try struct first
     if (findStructInBody(fd.body)) |struct_decl| {
-        // Resolve struct fields with type bindings active
-        var struct_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-        var pos: usize = 0;
-        for (struct_decl.field_names, struct_decl.field_types) |fname, ftype_node| {
-            if (ftype_node.data == .spread_expr) {
-                if (self.expandTypeSpread(ftype_node)) |tys| {
-                    for (tys) |ty| {
-                        const n = std.fmt.allocPrint(self.alloc, "{d}", .{pos}) catch unreachable;
-                        struct_fields.append(self.alloc, .{
-                            .name = table.internString(n),
-                            .ty = ty,
-                        }) catch {};
-                        pos += 1;
-                    }
-                    continue;
-                }
-            }
-            const field_ty = self.resolveTypeWithBindings(ftype_node);
-            const name = if (fname.len == 0)
-                table.internString(std.fmt.allocPrint(self.alloc, "{d}", .{pos}) catch unreachable)
-            else
-                table.internString(fname);
-            struct_fields.append(self.alloc, .{
-                .name = name,
-                .ty = field_ty,
-            }) catch {};
-            pos += 1;
-        }
+        const layout = type_bridge.buildStructLayout(&struct_decl, table, self) orelse return .unresolved;
 
         // Always register under mangled name
         const mangled_info: types.TypeInfo = .{ .@"struct" = .{
             .name = mangled_name_id,
-            .fields = struct_fields.items,
+            .fields = layout.fields,
         } };
         const mangled_id = if (table.findByName(mangled_name_id)) |existing| existing else table.intern(mangled_info);
         table.updatePreservingKey(mangled_id, mangled_info);
+        self.recordStructDefaults(mangled_id, layout.defaults);
+        self.struct_instance_bindings.put(mangled_name, tb) catch @panic("out of memory");
 
         // If there's a real alias, also register under alias name and in alias map
         if (has_alias) {
             const alias_name_id = table.internString(alias_name);
             const alias_info: types.TypeInfo = .{ .@"struct" = .{
                 .name = alias_name_id,
-                .fields = struct_fields.items,
+                .fields = layout.fields,
             } };
             const alias_id = if (table.findByName(alias_name_id)) |existing| existing else table.intern(alias_info);
             table.updatePreservingKey(alias_id, alias_info);
 
-            // Store defaults if any
-            if (struct_decl.field_defaults.len > 0) {
-                self.struct_defaults_map.put(alias_name, struct_decl.field_defaults) catch {};
-            }
+            self.recordStructDefaults(alias_id, layout.defaults);
+            self.struct_instance_bindings.put(alias_name, tb) catch @panic("out of memory");
 
             return alias_id;
         }

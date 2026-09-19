@@ -5,6 +5,12 @@ error: unknown error set 'Nonexistent'
    |         ^^^^^^^^^^^^
 
 error: unknown error set 'Nonexistent'
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:26:29
+   |
+26 |     w : struct { a: i32; b: !Nonexistent } = ---;       // nested in a product
+   |                             ^^^^^^^^^^^^
+
+error: unknown error set 'Nonexistent'
   --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:27:17
    |
 27 |     v : Closure(!Nonexistent) -> i32 = ---;   // nested in a closure param

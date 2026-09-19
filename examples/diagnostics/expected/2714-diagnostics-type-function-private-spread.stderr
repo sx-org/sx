@@ -1,0 +1,5 @@
+error: cannot spread a struct containing a private field
+  --> examples/diagnostics/2714-diagnostics-type-function-private-spread.sx:2:46
+   |
+ 2 | Make :: ($T: Type) -> Type { return struct { ..T; }; }
+   |                                              ^^^

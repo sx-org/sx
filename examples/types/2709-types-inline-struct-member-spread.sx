@@ -1,0 +1,17 @@
+@import "modules/std.sx";
+
+Base :: struct { x: i32; y: i64 = 91; }
+Header :: struct ($T: Type) { value: T; tag: i32 = 92; }
+Container :: struct { inner: struct { ..Base; tail: i32 = 7; }; }
+Make :: ($T: Type) -> Type {
+    return struct { ..Header(T); bytes: i64 = @sizeOf(T); };
+}
+Made :: Make(i16);
+
+main :: () {
+    c := Container{ inner = .{ x = 2 } };
+    print("{} {} {}\n", c.inner.x, c.inner.y, c.inner.tail);
+    m := Made{ value = 3 };
+    n : Make(i32) = .{ value = 4 };
+    print("{} {} {} / {} {} {}\n", m.value, m.tag, m.bytes, n.value, n.tag, n.bytes);
+}

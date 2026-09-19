@@ -155,7 +155,7 @@ name := node?.name ?? "unknown";
 if n != null { takeI32(n); }    // narrowed; a bare `takeI32(n)` is an error
 ```
 
-`@using` composes structs. Methods live in the body.
+`..Base` in a struct body splices Base’s fields. Methods live in the body.
 
 ### Generics and closures
 

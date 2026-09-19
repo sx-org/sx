@@ -1,0 +1,5 @@
+error: unknown type 'Bse'
+  --> examples/diagnostics/2715-diagnostics-unknown-struct-spread.sx:4:23
+   |
+ 4 | Derived :: struct { ..Bse; z: i32; }
+   |                       ^^^

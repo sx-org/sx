@@ -1,0 +1,22 @@
+@import "modules/std.sx";
+a :: @import "0921-modules-nominal-defaults-constants-spread/wa.sx";
+b :: @import "0921-modules-nominal-defaults-constants-spread/wb.sx";
+
+LocalBase :: struct { tag: i64; }
+LocalThing :: struct { ..LocalBase; v: i64 = 42; }
+
+main :: () -> i32 {
+    ta := a.mk();
+    tb := b.mk();
+    print("defaults: a.x={} b.x={} b.extra={}\n", ta.x, tb.x, tb.extra);
+
+    print("consts: a={} b={}\n", a.Thing.SIZE, b.Thing.SIZE);
+
+    va := a.Thing{ ca = 3, cb = 4 };
+    vb := b.Thing{ da = 6 };
+    print("spread: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
+
+    lt := LocalThing{ tag = 1 };
+    print("align: v={}\n", lt.v);
+    return 0;
+}

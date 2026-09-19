@@ -847,25 +847,22 @@ inactive-variant bytes are unspecified. That mirrors the rejection of a bare
 `union` top-level `==` operand. `<`, `<=`, `>`, `>=` are not defined on
 structs.
 
-#### `@using` — Struct Composition
-`@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
+#### Struct Member Spread
+`..X` in a struct body splices the operand's members at that position: a pack
+supplies positional fields, and a struct type supplies its named fields and
+types. Other operand kinds are compile errors. A struct operand containing a
+private field cannot be spread, including in its declaring file. Spread fields
+receive no base defaults; explicit fields keep their declared defaults.
 
 ```sx
 UBase :: struct { x: i32; y: i32; }
-UExt :: struct { @using UBase; z: i32; }
-e := UExt{x = 1, y = 2, z = 3 };
-print("{}\n", e.x);  // 1
+UExt :: struct { ..UBase; z: i32 = 3; }
+e := UExt{x = 1, y = 2};
+print("{}\n", e.z);  // 3
 ```
 
-`@using` may appear at any field position (beginning, middle, end) and multiple `@using` entries are allowed:
-```sx
-UPos :: struct { px: i32; py: i32; }
-UCol :: struct { r: i32; g: i32; }
-USprite :: struct { @using UPos; @using UCol; scale: i32; }
-s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
-```
-
-The referenced struct must be declared before use. This is purely a compile-time field expansion — no runtime overhead.
+The referenced struct must be declared before use. This is a compile-time field
+expansion with no runtime overhead.
 
 #### Struct Interpolation
 Struct values in string interpolation print their fields with no type-name
@@ -2756,7 +2753,7 @@ concrete arg types at any particular call site.
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
 | Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack as an anonymous positional struct |
-| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | anonymous struct whose one field is the pack-spread product |
+| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | splices the pack elements as positional fields |
 | Spread → callable sig | `Closure(..Ts) -> R` / `Closure(..Ts.Arg) -> R` | positional params of the callable |
 
 #### Pack projection
@@ -5809,8 +5806,9 @@ Semantics:
   and a mention includes `x.fd(…)` when `fd` is a callable field. Another file
   can still produce a value without naming the field: a positional init
   (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
-  A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
-  `@field`) read the layout rather than the name, so none is a mention.
+  A call-argument spread (`f(..x)`), an index (`x[0]`), and reflection
+  (`print("{}", x)`, `@field`) read the layout rather than the name, so none
+  is a mention.
   Same-file methods, free functions, and literals may name the field.
   A method whose name matches a private field still dispatches: `x.fd(…)` is a
   mention only when `fd` resolves to a field.
@@ -5818,9 +5816,6 @@ Semantics:
 - **A promoted union member answers to its payload's file.** A union whose
   variant is a named struct promotes that struct's members; a private one is
   nameable only from the file declaring the payload.
-- **A `@using` promotion carries the base's authority.** A struct that promotes
-  a base with a private field gains the field's storage, not the right to name
-  it: only the base's declaring file may.
 
 Placement rules — `private` is allowed on identifier-headed module-scope
 declarations and on the fields of a NAMED struct declaration (a generic
@@ -5829,7 +5824,8 @@ inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
 struct / `constraint` / `interface` / `impl` methods and requirements, flat
 `@import`, `impl` blocks,
-`@context.extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
+`@context.extend`, struct spread members, standalone `@run`, global `asm`,
+and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -6699,7 +6695,7 @@ set_member      = IDENT ('=' (expr | 'else'))? (':' type)?
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
                   // members are `;`-separated; a trailing `;` before `}` is optional
-struct_member   = field_group | '@using' IDENT
+struct_member   = field_group | '..' type
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)?
 union_decl      = IDENT '::' 'union' '{' union_members '}'
 union_members   = (union_member (';' union_member)* ';'? )?
