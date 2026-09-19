@@ -50,7 +50,7 @@ pub const CoercionResolver = struct {
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         ptr_int_bitcast, // ptr ↔ int
-        ptr_to_void, // *T / [*]T / cstring → *void
+        ptr_to_void, // *T / [*]T → *void
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
         array_to_slice, // [N]T → []T (materialize backing storage + header)
@@ -60,15 +60,28 @@ pub const CoercionResolver = struct {
         slice_len_convert, // @Slice(T,A) → @Slice(T,B) (rebuild the header on B's length word)
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
         adds_terminator_reject, // an unterminated view → a terminated shape (diagnostic)
-        cstring_to_string_reject, // explicit fromCstring required (diagnostic)
         error_set_retype, // error set → error set, tags legal in the destination
         none, // nothing applies — pass the value through
+
+        /// A plan that REFUSES the conversion. The value does not reach the
+        /// destination; the emitter reports the refusal and passes the operand
+        /// through so lowering can continue.
+        pub fn refuses(self: CoercionPlan) bool {
+            return switch (self) {
+                .closure_to_fn_reject,
+                .unique_to_closure_reject,
+                .lambda_ptr_to_closure_reject,
+                .optional_to_bool_reject,
+                .many_to_slice_reject,
+                .adds_terminator_reject,
+                => true,
+                else => false,
+            };
+        }
     };
 
-    /// The element a thin element pointer destination names. `cstring` is
-    /// `[*:0]u8` under its own name.
+    /// The element a thin element pointer destination names.
     pub fn pointerDestElement(self: CoercionResolver, dst_ty: TypeId) ?TypeId {
-        if (dst_ty == .cstring) return .u8;
         if (dst_ty.isBuiltin()) return null;
         const di = self.l.module.types.get(dst_ty);
         return if (di == .many_pointer) di.many_pointer.element else null;
@@ -76,11 +89,17 @@ pub const CoercionResolver = struct {
 
     /// The terminator a thin element pointer destination guarantees, or null
     /// for the unterminated `[*]T`.
-    fn pointerDestSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
-        if (dst_ty == .cstring) return 0;
+    pub fn pointerDestSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
         if (dst_ty.isBuiltin()) return null;
         const di = self.l.module.types.get(dst_ty);
         return if (di == .many_pointer) di.many_pointer.sentinel else null;
+    }
+
+    /// The terminator `dst_ty` guarantees, over both the thin pointers and the
+    /// sequences that carry a length.
+    pub fn destSentinel(self: CoercionResolver, dst_ty: TypeId) ?i64 {
+        if (self.l.module.types.sliceInfoOf(dst_ty)) |s| return s.sentinel;
+        return self.pointerDestSentinel(dst_ty);
     }
 
     fn byteSized(elem: TypeId) bool {
@@ -103,11 +122,11 @@ pub const CoercionResolver = struct {
         // or names none; a view whose type carries no terminator is refused
         // where one is named.
         if (self.pointerDestElement(dst_ty)) |dst_elem| {
-            if (!src_ty.isBuiltin()) switch (self.l.module.types.get(src_ty)) {
+            switch (self.l.module.types.get(src_ty)) {
                 .array => |a| if (self.terminatorReaches(a.element, a.sentinel, dst_ty, dst_elem)) return .array_to_many_ptr,
                 .slice => |sl| if (self.terminatorReaches(sl.element, sl.sentinel, dst_ty, dst_elem)) return .slice_to_many_ptr,
                 else => {},
-            };
+            }
             if (self.pointerDestSentinel(dst_ty) != null) {
                 if (self.l.module.types.sliceInfoOf(src_ty)) |ss| {
                     if (ss.element == dst_elem or (byteSized(ss.element) and byteSized(dst_elem))) return .adds_terminator_reject;
@@ -123,7 +142,6 @@ pub const CoercionResolver = struct {
                 if (self.l.openSetDeclaresMembership(src_ty, set.decl)) return .member_to_open_set;
             }
         }
-        if (src_ty == .cstring and dst_ty == .string) return .cstring_to_string_reject;
         if (src_ty == .any and dst_ty != .any) return .unbox_any;
         if (dst_ty == .any and src_ty != .any) return .box_any;
 
@@ -273,8 +291,8 @@ pub const CoercionResolver = struct {
 
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
-        // Losing a pointee is the destination's request: a single-pointer,
-        // many-pointer, or `cstring` stores into `*void` without a glyph.
+        // Losing a pointee is the destination's request: a single-pointer or
+        // many-pointer stores into `*void` without a glyph.
         // The reverse (`*void` → `*T`) is a pointer↔pointer `.none`
         // (explicit `raw.(*T)` / `xx raw`).
         if (self.isVoidPointer(dst_ty) and self.isTypedAddress(src_ty)) return .ptr_to_void;
@@ -446,7 +464,6 @@ pub const CoercionResolver = struct {
     }
 
     fn isTypedAddress(self: CoercionResolver, ty: TypeId) bool {
-        if (ty == .cstring) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.l.module.types.get(ty)) {
             .pointer, .many_pointer => true,
@@ -455,7 +472,6 @@ pub const CoercionResolver = struct {
     }
 
     fn isAddressType(self: CoercionResolver, ty: TypeId) bool {
-        if (ty == .cstring) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.l.module.types.get(ty)) {
             .pointer, .many_pointer, .function => true,

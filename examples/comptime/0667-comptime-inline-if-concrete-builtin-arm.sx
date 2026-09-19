@@ -33,6 +33,7 @@ main :: () {
     x : i64 = 7;
     b : u8 = 1;
     f : f32 = 1.5;
-    print("{} {} {} {} {}\n", byInline(x), byInline(b), byInline(f), byInline("s"), byInline(true));
+    s : string = concat("s", "");
+    print("{} {} {} {} {}\n", byInline(x), byInline(b), byInline(f), byInline(s), byInline(true));
     print("{} {} {} {}\n", byType(i64), byType(u8), byType(f32), byType(bool));
 }

@@ -884,9 +884,7 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             // element type too.
             // `string` IS the `[]u8` slice, so it binds the element param to `u8`.
             if (arg_ty == .string) break :blk self.extractTypeParam(st.element_type, .u8, tp_name);
-            if (arg_ty.isBuiltin()) break :blk null;
-            const info = self.module.types.get(arg_ty);
-            break :blk switch (info) {
+            break :blk switch (self.module.types.get(arg_ty)) {
                 .slice => |s| self.extractTypeParam(st.element_type, s.element, tp_name),
                 .array => |a| self.extractTypeParam(st.element_type, a.element, tp_name),
                 else => null,
@@ -1343,12 +1341,9 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
 /// which silently truncates `i64` into an `i32`-typed first branch) to
 /// keep an f64 payload-capture arm and an int-literal arm yielding f64 in
 /// BOTH orders. Every non-numeric pair mirrors
-/// if/else exactly: the earlier type wins when the later arm's value can
-/// safely become it — a modeled coercion or a same-width bit-compatible
-/// reinterpret, i.e. NOT `noneReinterpretIsUnsafe`, the same predicate the
-/// store guard uses — else the join flips to the later type when
-/// only that direction coerces. Null = no safe direction either way: a true
-/// mismatch the caller diagnoses.
+/// if/else exactly: the earlier type wins when the later arm's value reaches
+/// it, else the join flips to the later type when only that direction does.
+/// Null = no safe direction either way: a true mismatch the caller diagnoses.
 pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
     if (a == b) return a;
     const a_float = Lowering.isFloat(a);
@@ -1359,9 +1354,16 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
         if (a_float != b_float) return if (a_float) a else b;
         return if (self.typeBitsEx(b) > self.typeBitsEx(a)) b else a;
     }
-    if (!self.noneReinterpretIsUnsafe(b, a)) return a;
-    if (!self.noneReinterpretIsUnsafe(a, b)) return b;
+    if (armValueReaches(self, b, a)) return a;
+    if (armValueReaches(self, a, b)) return b;
     return null;
+}
+
+/// Whether an arm value of `src` reaches the joined type `dst`: a modeled
+/// coercion that is not a refusal, or a bit-compatible reinterpret.
+fn armValueReaches(self: *Lowering, src: TypeId, dst: TypeId) bool {
+    if (self.coercionResolver().classify(src, dst).refuses()) return false;
+    return !self.noneReinterpretIsUnsafe(src, dst);
 }
 
 /// Is `name` a runtime type-CATEGORY keyword denoting a tag SET (many

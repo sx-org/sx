@@ -40,32 +40,26 @@ error: cannot coerce a value of type 'i64' to '*Obj': a number is not an address
 27 |     q : *Obj = m;
    |     ^^^^^^^^^^^^^
 
-error: cannot coerce a value of type 'i64' to 'cstring': a number is not an address; use an explicit cast (`xx`/`.(T)`)
-  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:28:5
-   |
-28 |     c : cstring = 5;
-   |     ^^^^^^^^^^^^^^^^
-
 error: cannot coerce a value of type '*void' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
-  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:30:5
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:29:5
    |
-30 |     wrongTarget : i64 = p.(*void);
+29 |     wrongTarget : i64 = p.(*void);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot coerce a value of type 'u64' to '*Obj': a number is not an address; use an explicit cast (`xx`/`.(T)`)
-  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:32:5
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:31:5
    |
-32 |     wrongPointer : *Obj = number.(u64);
+31 |     wrongPointer : *Obj = number.(u64);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot initialize 'maybeNumber' of type 'i64' with a value of type '?*Obj'
-  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:35:25
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:34:25
    |
-35 |     maybeNumber : i64 = maybeP;
+34 |     maybeNumber : i64 = maybeP;
    |                         ^^^^^^
 
 error: cannot coerce a value of type '?*Obj' to 'i64': no implicit conversion applies
-  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:36:17
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:35:17
    |
-36 |     maybeArg := take(maybeP);
+35 |     maybeArg := take(maybeP);
    |                 ^^^^^^^^^^^^

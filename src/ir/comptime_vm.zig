@@ -1076,11 +1076,12 @@ pub const Vm = struct {
             .struct_init => |agg| {
                 const table = try self.requireTable();
                 const sty = ins.ty;
-                // `string`/`any` are builtin TWO-WORD aggregates (`{ptr@0, len@8}` /
-                // `{tag@0, value@8}`) — a literal like `string{ ptr = p, len = n }`
-                // (e.g. `fromCstring`) struct_inits one. Lay each operand as an
-                // 8-byte word; the other builtins have no aggregate literal form.
-                if (sty == .string or sty == .any) {
+                // `string`/`cstring`/`any` are builtin TWO-WORD aggregates
+                // (`{ptr@0, len@8}` / `{tag@0, value@8}`) — a literal like
+                // `cstring{ ptr = p, len = n }` (e.g. `fromCstring`) struct_inits
+                // one. Lay each operand as an 8-byte word; the other builtins have
+                // no aggregate literal form.
+                if (sty == .string or sty == .cstring or sty == .any) {
                     const a = self.machine.allocBytes(16, 8);
                     for (agg.fields, 0..) |fr, i| {
                         if (i >= 2) break;
@@ -1146,13 +1147,10 @@ pub const Vm = struct {
             .length => |u| {
                 const table = try self.requireTable();
                 const oty = (try self.refTy(ref_types, u.operand));
-                if (oty == .string) return .{ .value = try self.sliceLen(table, .string, frame.get(u.operand.index())) };
-                if (!oty.isBuiltin()) {
-                    switch (table.get(oty)) {
-                        .array => |a| return .{ .value = a.length },
-                        .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
-                        else => {},
-                    }
+                switch (table.get(oty)) {
+                    .array => |a| return .{ .value = a.length },
+                    .string, .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
+                    else => {},
                 }
                 self.detail = "comptime VM: length() on a non-array/slice/string operand";
                 return error.Unsupported;
@@ -1166,16 +1164,18 @@ pub const Vm = struct {
                 if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
                 // An array-typed literal IS its storage; the decayed form is
                 // the {ptr, len} view over the same bytes.
-                if (!ins.ty.isBuiltin() and table.get(ins.ty) == .array) return .{ .value = data };
-                return .{ .value = try self.makeSlice(table, .string, data, text.len) };
+                if (table.get(ins.ty) == .array) return .{ .value = data };
+                return .{ .value = try self.makeSlice(table, ins.ty, data, text.len) };
             },
             .data_ptr => |u| {
                 const table = try self.requireTable();
                 const oty = (try self.refTy(ref_types, u.operand));
-                if (oty == .string or (!oty.isBuiltin() and table.get(oty) == .slice))
-                    return .{ .value = try self.sliceData(table, frame.get(u.operand.index())) };
-                // An array value IS the address of its storage.
-                if (!oty.isBuiltin() and table.get(oty) == .array) return .{ .value = frame.get(u.operand.index()) };
+                switch (table.get(oty)) {
+                    .string, .slice => return .{ .value = try self.sliceData(table, frame.get(u.operand.index())) },
+                    // An array value IS the address of its storage.
+                    .array => return .{ .value = frame.get(u.operand.index()) },
+                    else => {},
+                }
                 self.detail = "comptime VM: .ptr (data_ptr) on a non-slice/string/array operand";
                 return error.Unsupported;
             },
@@ -1197,27 +1197,21 @@ pub const Vm = struct {
                 const bty = if (s.base_ty != .void) s.base_ty else (try self.refTy(ref_types, s.base));
                 var elem: TypeId = .u8;
                 var data: Addr = base;
-                if (bty == .string) {
-                    data = try self.sliceData(table, base);
-                } else if (!bty.isBuiltin()) {
-                    switch (table.get(bty)) {
-                        .array => |a| elem = a.element,
-                        // `[*]T` (a List's `items` field) / `*T`: the base IS the
-                        // data pointer; subslicing yields `{ base + lo, hi - lo }`.
-                        .many_pointer => |mp| elem = mp.element,
-                        .pointer => |p| elem = p.pointee,
-                        .slice => |sl| {
-                            elem = sl.element;
-                            data = try self.sliceData(table, base);
-                        },
-                        else => {
-                            self.detail = "comptime VM: subslice on a non-array/slice/string base";
-                            return error.Unsupported;
-                        },
-                    }
-                } else {
-                    self.detail = "comptime VM: subslice on an unsupported base";
-                    return error.Unsupported;
+                switch (table.get(bty)) {
+                    .string => data = try self.sliceData(table, base),
+                    .array => |a| elem = a.element,
+                    // `[*]T` (a List's `items` field) / `*T`: the base IS the
+                    // data pointer; subslicing yields `{ base + lo, hi - lo }`.
+                    .many_pointer => |mp| elem = mp.element,
+                    .pointer => |p| elem = p.pointee,
+                    .slice => |sl| {
+                        elem = sl.element;
+                        data = try self.sliceData(table, base);
+                    },
+                    else => {
+                        self.detail = "comptime VM: subslice on a non-array/slice/string base";
+                        return error.Unsupported;
+                    },
                 }
                 const esz: u64 = @intCast(table.typeSizeBytes(elem));
                 return .{ .value = try self.makeSlice(table, ins.ty, data +% lo *% esz, hi - lo) };
@@ -1940,8 +1934,10 @@ pub const Vm = struct {
             .aggregate => {
                 // Only a string/slice `{ptr, len}` fat pointer marshals (→ a
                 // NUL-terminated `char*`); any other aggregate bails.
-                if (aty != .string and (aty.isBuiltin() or table.get(aty) != .slice))
-                    return self.failMsg("comptime extern call: non-string/slice aggregate arg not marshaled on the VM");
+                switch (table.get(aty)) {
+                    .string, .slice => {},
+                    else => return self.failMsg("comptime extern call: non-string/slice aggregate arg not marshaled on the VM"),
+                }
                 const n: usize = @intCast(try self.sliceLen(table, aty, reg));
                 const data = try self.sliceData(table, reg);
                 const buf = self.machine.allocBytes(n + 1, 1); // zeroed → NUL at [n]
@@ -2510,25 +2506,6 @@ pub const Vm = struct {
         if (table.integerLayout(tid)) |integer| {
             vname = "int";
             payload = .{ .int = .{ .bits = integer.width, .signed = integer.signed } };
-        } else if (tid.isBuiltin()) {
-            switch (tid) {
-                .bool => vname = "bool",
-                .void => vname = "void",
-                .string => vname = "string",
-                .cstring => vname = "cstring",
-                .any => vname = "any",
-                .noreturn => vname = "noreturn",
-                .type_value => vname = "typeValue",
-                .f32 => {
-                    vname = "float";
-                    payload = .{ .float = .{ .bits = 32 } };
-                },
-                .f64 => {
-                    vname = "float";
-                    payload = .{ .float = .{ .bits = 64 } };
-                },
-                else => return self.failMsg("comptime @typeInfo: unclassified builtin type"),
-            }
         } else switch (table.get(tid)) {
             .signed, .unsigned, .usize, .isize => unreachable,
             .f32 => {
@@ -2542,7 +2519,6 @@ pub const Vm = struct {
             .bool => vname = "bool",
             .void => vname = "void",
             .string => vname = "string",
-            .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
             .type_value, .unresolved => vname = "typeValue",
@@ -2770,8 +2746,8 @@ pub const Vm = struct {
                 return .{ .int = @bitCast(normalizeWord(table, ty, reg)) };
             },
             .aggregate => {
-                if (ty == .string) {
-                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, .string, reg)));
+                if (ty == .string or ty == .cstring) {
+                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, ty, reg)));
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
                 const info = table.get(ty);
@@ -2964,11 +2940,11 @@ pub const Vm = struct {
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {
         if (table.integerLayout(ty) != null) return .word;
         switch (ty) {
-            .bool, .f32, .f64, .cstring => return .word,
+            .bool, .f32, .f64 => return .word,
             // A comptime `Type` value is an 8-byte handle (a `TypeId` in a word) —
             // distinct from the 16-byte boxed `.any`. It rides as a word.
             .type_value => return .word,
-            .string => return .aggregate, // {ptr,len} fat pointer (16B), by-address
+            .string, .cstring => return .aggregate, // {ptr,len} fat pointer (16B), by-address
             .any => return .aggregate, // boxed { type_tag, value } (16B), by-address
             else => {},
         }
@@ -3011,10 +2987,9 @@ pub const Vm = struct {
     }
 
     /// A pointer-shaped (word) type — picks the `void*`-ABI extern-return trampoline
-    /// (`callPtrRet`) over the `i64`-ABI one. `cstring` plus any `pointer` /
-    /// `many_pointer` / `function`; a non-pointer optional folds to its child word.
+    /// (`callPtrRet`) over the `i64`-ABI one. Any `pointer` / `many_pointer` /
+    /// `function`; a non-pointer optional folds to its child word.
     fn isPointerish(table: *const types.TypeTable, ty: TypeId) bool {
-        if (ty == .cstring) return true;
         if (ty.isBuiltin()) return false;
         return switch (table.get(ty)) {
             .pointer, .many_pointer, .function => true,
@@ -3111,20 +3086,22 @@ pub const Vm = struct {
     fn fieldOffset(table: *const types.TypeTable, sty: TypeId, idx: u32) Addr {
         // string/slice `{ptr@0, len@8}` and the boxed Any `{type_tag@0, value@8}`
         // share the same two-8-byte-field layout.
-        if (sty == .string or sty == .any or (!sty.isBuiltin() and table.get(sty) == .slice))
-            return if (idx == 0) 0 else 8;
-        if (!sty.isBuiltin() and table.get(sty) == .failable) {
-            const f = table.get(sty).failable;
-            const n = table.failableValueSlotCount(f);
-            var off: usize = 0;
-            var i: usize = 0;
-            while (i < n + 1) : (i += 1) {
-                const fty = if (i < n) table.failableValueSlotType(f, i) else f.err;
-                off = std.mem.alignForward(usize, off, table.typeAlignBytes(fty));
-                if (i == idx) return @intCast(off);
-                off += table.typeSizeBytes(fty);
-            }
-            return @intCast(off);
+        if (sty == .any) return if (idx == 0) 0 else 8;
+        switch (table.get(sty)) {
+            .string, .slice => return if (idx == 0) 0 else 8,
+            .failable => |f| {
+                const n = table.failableValueSlotCount(f);
+                var off: usize = 0;
+                var i: usize = 0;
+                while (i < n + 1) : (i += 1) {
+                    const fty = if (i < n) table.failableValueSlotType(f, i) else f.err;
+                    off = std.mem.alignForward(usize, off, table.typeAlignBytes(fty));
+                    if (i == idx) return @intCast(off);
+                    off += table.typeSizeBytes(fty);
+                }
+                return @intCast(off);
+            },
+            else => {},
         }
         const fields = structFields(table, sty);
         var off: usize = 0;
@@ -3176,19 +3153,13 @@ pub const Vm = struct {
 
     /// Address of element `idx_word` in `base`: `data + idx * elem_size`, where
     /// `data` is `base` itself for a directly-addressable base (`array` / `pointer`
-    /// / `many_pointer` / `cstring`) or the loaded `.ptr` field for a fat-pointer
-    /// base (`slice` / `string`).
+    /// / `many_pointer`) or the loaded `.ptr` field for a fat-pointer base
+    /// (`slice` / `string`).
     fn elemAddr(self: *Vm, table: *const types.TypeTable, base_ty: TypeId, base: Reg, idx_word: Reg, elem_size: usize) Error!Addr {
         const data: Addr = blk: {
-            if (base_ty == .string) break :blk try self.machine.readWord(base, table.pointer_size);
-            if (base_ty == .cstring) break :blk base;
-            if (base_ty.isBuiltin()) {
-                self.detail = "comptime VM: indexing an unsupported builtin base";
-                return error.Unsupported;
-            }
             break :blk switch (table.get(base_ty)) {
                 .array, .pointer, .many_pointer => base,
-                .slice => try self.machine.readWord(base, table.pointer_size),
+                .string, .slice => try self.machine.readWord(base, table.pointer_size),
                 else => {
                     self.detail = "comptime VM: indexing a non-array/pointer/slice base";
                     return error.Unsupported;

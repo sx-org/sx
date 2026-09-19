@@ -44,7 +44,7 @@ unlinkPath :: (path: string) {
     pb : [112]u8 = ---;
     clib.memcpy(*pb[0], path.ptr, path.len);
     pb[path.len] = 0;
-    p : string = .{ ptr = *pb[0], len = path.len };
+    p : cstring = .{ ptr = *pb[0], len = path.len };
     fs.deleteFile(p);
 }
 

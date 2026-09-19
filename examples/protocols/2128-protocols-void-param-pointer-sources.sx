@@ -1,8 +1,7 @@
 // A protocol method's `*void` parameter takes the pointer VALUE from every
-// single-pointer source — `*T`, `[*]T`, and `cstring` alike, since `xx`
-// bit-casts a cstring to a pointer value (spec, "cstring"). Only a
-// NON-pointer value is spilled to a stack slot whose address crosses, so the
-// callee reads it back through a typed pointer.
+// single-pointer source — `*T` and `[*]T` alike. Only a NON-pointer value is
+// spilled to a stack slot whose address crosses, so the callee reads it back
+// through a typed pointer.
 @import "modules/std.sx";
 
 Take :: interface {
@@ -26,9 +25,8 @@ main :: () {
     truth : usize = xx many;
     one : *u8 = xx many;
     raw : *void = many;
-    cs : cstring = xx many;
 
-    print("plain {}\n", plain(cs) == truth);
+    print("plain {}\n", plain(many) == truth);
 
     t.take(many);
     print("many {}\n", s.seen == truth);
@@ -36,8 +34,6 @@ main :: () {
     print("single {}\n", s.seen == truth);
     t.take(raw);
     print("void {}\n", s.seen == truth);
-    t.take(cs);
-    print("cstring {}\n", s.seen == truth);
 
     // A non-pointer argument still crosses as the address of its slot.
     n : i64 = 42;

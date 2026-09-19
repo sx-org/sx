@@ -823,7 +823,7 @@ the ordered IEEE compare (NaN semantics per §Operators — consequently a struc
 containing a NaN field is NOT equal to itself), an array, slice or `string`
 field uses content equality (§Array Types), a nested struct/tuple field
 recurses, a payload enum field compares by tag only (matching a bare payload
-enum `==`), a pointer / cstring field compares by identity, and an `?T` field
+enum `==`), a pointer field compares by identity, and an `?T` field
 compares by the optional value-equality rule (§Optional Types — both-null
 equal, one-null unequal, both-present → payload compare). Because the comparison walks named
 fields, **padding bytes are never read** — a byte-wise compare would be
@@ -1764,11 +1764,12 @@ iterations rather than being an error.
 A slice `[]T` is a fat pointer `{ptr, i64}` referencing a contiguous sequence of `T` elements. Same runtime layout as `string`.
 
 `[:X]T` is a **terminated** slice: the same `{ptr, i64}` fat pointer, whose
-element one past `.len` is `X`. `[:0]u8` is `string`; every other terminated
+element one past `.len` is `X`. `[:0]u8` is `cstring`; every other terminated
 slice is a type of its own, distinct from `[]T`.
 ```sx
 @typeName([:1]u8)  // "[:1]u8"
 @typeName([]u8)    // "string"
+@typeName([:0]u8)  // "cstring"
 ```
 
 `==` on two slices compares content (§Array Types).
@@ -1947,7 +1948,7 @@ val := mp[2];             // 30
 - `[]T` → `[*]T` (slice decays to many-pointer, extracts `.ptr`)
 - `T` → `*T` at call sites (implicit address-of)
 - `null` (`*void`) → any `*T`
-- `*T` / `[*]T` / `cstring` → `*void` (losing the pointee). `[]T.ptr` is a
+- `*T` / `[*]T` → `*void` (losing the pointee). `[]T.ptr` is a
   many-pointer, so it takes this arm. Gaining a pointee (`*void` → `*T`) is
   explicit: `raw.(*T)` or `xx raw` at a `*T` slot.
 
@@ -1963,26 +1964,33 @@ chain is rooted at a constant is rejected (see
 [Constant-Write Rejection](#constant-write-rejection)); a dereference in
 the chain leaves the checked zone.
 
-**Fat pointer layout**: `[:0]u8`, `string`, and `[]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
+**Fat pointer layout**: `string`, `cstring`, `[]T` and `[:X]T` are `{ptr, i64}` structs. The raw pointer is always the first field at offset 0.
 
 ### cstring
 
-C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer.
-It is thin (8 bytes, no length field; `cstringLen` walks to the
-terminator, O(n)) and crosses `extern` boundaries verbatim in BOTH
-directions. `?[*:0]u8` is the nullable case and lowers to the same bare
-pointer (null = absent) — the type for `getenv`-style returns and
-optional `char *` parameters. `*[*:0]u8` is C's `char**`. `cstring` names
-a thin pointer of the same shape.
+`cstring` is `[:0]u8`: the `{ptr, i64}` slice whose bytes end in a
+terminator. `.len` counts the bytes before it, indexing, iteration and
+content `==` are the slice's own (§Slice Types, §Array Types), and
+`?cstring` is the slice's 16 bytes with a null `ptr` meaning absent.
+
+C's `char *` is `[*:0]u8`: ONE pointer to a null-terminated u8 buffer,
+carrying no length (`cstringLen` walks to the terminator, O(n)) and
+crossing `extern` boundaries verbatim in BOTH directions. `?[*:0]u8` is
+the nullable case and lowers to the same bare pointer (null = absent) —
+the type for `getenv`-style returns and optional `char *` parameters.
+`*[*:0]u8` is C's `char**`.
 
 Conversion discipline:
 
-- The terminator is the TYPE's, so a terminated value reaches `[*:0]u8` on
-  its own — a string literal is `[N:0]u8` and passes straight through.
-- A `string` does NOT coerce: its bytes carry no terminator (`string{ptr,
-  len}` windows, writer output). Materialize an owned, terminated copy
-  with `toCstring(s)`.
-- `[*:0]u8` does not coerce to `string` implicitly — the length is an
+- The terminator is the TYPE's, so a terminated value reaches `cstring`
+  and `[*:0]u8` on its own — a string literal is `[N:0]u8` and passes
+  straight through.
+- A `string` does NOT coerce to either: its bytes carry no terminator
+  (`string{ptr, len}` windows, writer output). Materialize an owned,
+  terminated copy with `toCstring(s)`.
+- Dropping the guarantee is implicit: `cstring` → `string` is the
+  `[:X]T` → `[]T` arm, so `string` methods take a `cstring` receiver.
+- `[*:0]u8` does not coerce to `cstring` implicitly — the length is an
   O(n) strlen the code must ask for. `fromCstring(c)` is the zero-copy
   view (shares C's buffer); a copy must be made for it to outlive C's
   buffer.
@@ -2004,7 +2012,7 @@ Any type `T` can be made optional: `?i32`, `?string`, `?Point`, `?*T`, `?[]T`.
 #### LLVM Representation
 An optional takes one of three shapes:
 - `{ T, i1 }` — payload plus a presence flag, for a `T` with no spare null state (`?i32`, `?Point`).
-- One pointer word, null when absent (`?*T`, `?[*:X]T`, `?((i64) -> i64)`, `?cstring`).
+- One pointer word, null when absent (`?*T`, `?[*:X]T`, `?((i64) -> i64)`).
 - The child's own bytes, whose LEADING pointer word is null when absent (`?[]T`, `?string`, `?[:X]T`, `?Closure`, `?I`). `@sizeOf(?[]T)` is `@sizeOf([]T)`, so an optional slice costs nothing beside the slice.
 
 #### Implicit Wrapping
@@ -2853,7 +2861,7 @@ isReady : ValueListenable(bool) = map(
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
 - Integer literals can convert to any numeric type implicitly
-- `*T` / `[*]T` / `cstring` → `*void`
+- `*T` / `[*]T` → `*void`
 
 **Implicit float → integer** — a float flowing into an integer-typed slot
 without `xx` / `.(T)`:
@@ -2899,7 +2907,7 @@ are not written onward.
 | Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
 | Signed vs unsigned, same width | error — write `a.(u64) < b` |
 | Two sequences of one element type (`[N]T`, `[N:X]T`, `[]T`, `[:X]T`, `string`) | their content (§Array Types); an array meets the slice |
-| Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr, `cstring`) | address bits / address order |
+| Two pointers, any pointees (`*T`, `*void`, `[*]T`, `[*:X]T`, fn-ptr) | address bits / address order |
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |

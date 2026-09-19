@@ -27,7 +27,7 @@ fn literalFits(l: *Lowering, node: *const Node, ty: TypeId) bool {
     return switch (node.data) {
         .int_literal => l.isIntEx(ty) or Lowering.isFloat(ty),
         .float_literal => Lowering.isFloat(ty),
-        .string_literal => ty == .string or l.literalKeepsArray(ty),
+        .string_literal => ty == .string or ty == .cstring or l.literalKeepsArray(ty),
         .unary_op => |uo| literalFits(l, uo.operand, ty),
         else => false,
     };

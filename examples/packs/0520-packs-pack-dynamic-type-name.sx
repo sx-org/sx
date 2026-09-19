@@ -17,7 +17,7 @@
 
 walk :: (..$args) -> string {
     list := $args;
-    s := "";
+    s : string = "";
     i : i64 = 0;
     while i < list.len {
         s = concat(s, @typeName(list[i]));

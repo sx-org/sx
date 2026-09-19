@@ -452,7 +452,6 @@ TypeInfo :: enum {
     float: FloatInfo;
     bool;
     string;
-    cstring;
     void;
     array: ArrayInfo;
     vector: VectorInfo;

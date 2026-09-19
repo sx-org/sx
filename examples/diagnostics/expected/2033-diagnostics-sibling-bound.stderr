@@ -1,4 +1,4 @@
-error: 'string' does not satisfy the bound on '$V'
+error: 'cstring' does not satisfy the bound on '$V'
   --> examples/diagnostics/2033-diagnostics-sibling-bound.sx:18:27
    |
 18 | exact :: ($P: Type, v: $V/P) -> i32 { 1 }

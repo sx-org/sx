@@ -21,7 +21,7 @@ exact :: ($P: Type, v: $V/P) -> i32 { 1 }
 spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
 
 main :: () {
-    // `P = i64` collapses the bound to `V == i64`, and `string` is not it.
+    // `P = i64` collapses the bound to `V == i64`, and `cstring` is not it.
     print("{}\n", exact(i64, "hello"));
 
     // `Ord` takes no type arguments, so the list is wrong for it.

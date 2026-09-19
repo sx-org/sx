@@ -9,12 +9,12 @@
 @import "modules/std.sx";
 
 main :: () -> i64 {
-    x : i32 = "hi";        // error: cannot initialize 'x' (string ↛ i32)
+    x : i32 = "hi";        // error: cannot initialize 'x' (cstring ↛ i32)
 
     y : i32 = 0;
-    y = "nope";            // error: cannot reassign 'y' (string ↛ i32)
+    y = "nope";            // error: cannot reassign 'y' (cstring ↛ i32)
 
-    C : i32 : "also";      // error: cannot initialize 'C' (string ↛ i32)
+    C : i32 : "also";      // error: cannot initialize 'C' (cstring ↛ i32)
 
     return 0;
 }

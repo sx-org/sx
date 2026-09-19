@@ -2617,7 +2617,6 @@ pub const Lowering = struct {
     /// rather than a plausible `.i64`.
     pub fn getElementType(self: *Lowering, ty: TypeId) TypeId {
         if (ty == .string) return .u8;
-        if (ty.isBuiltin()) return .unresolved;
         const info = self.module.types.get(ty);
         return switch (info) {
             .slice => |s| s.element,
@@ -3296,7 +3295,7 @@ pub const Lowering = struct {
         if (self.isIntEx(init_ty)) return "an integer expression";
         if (isFloat(init_ty)) return "a floating-point expression";
         if (init_ty == .bool) return "a boolean expression";
-        if (init_ty == .string) return "a string expression";
+        if (init_ty == .string or init_ty == .cstring) return "a string expression";
         return "an expression of an incompatible type";
     }
 

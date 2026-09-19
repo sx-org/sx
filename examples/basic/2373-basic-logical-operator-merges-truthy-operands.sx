@@ -40,8 +40,7 @@ main :: () {
     _, good := may(3);
     print("{} {}\n", bad and true, good or false);
 
-    s: cstring = "hi";
-    print("{} {}\n", s and true, 1 > 0 and 2);
+    print("{} {}\n", 1 > 0 and 2, 1 < 0 or 7);
 
     print("{} {}\n", LITERAL_OR, LITERAL_AND);
 }

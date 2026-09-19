@@ -990,7 +990,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // A non-string expression never reaches the VM: wrapping it as
     // `-> string` would hand `regToValue` a fat-pointer load of an integer.
     const expr_ty = self.inferExprType(expr);
-    if (expr_ty != .string) {
+    if (expr_ty != .string and expr_ty != .cstring) {
         if (self.diagnostics) |d| {
             if (!d.hasErrors())
                 d.addFmt(.err, expr.span, "`@insert` requires a string", .{});

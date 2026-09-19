@@ -157,7 +157,11 @@ impl GPU for Gles3Gpu {
     createShader :: (self: *Gles3Gpu, vsrc: string, fsrc: string) -> ShaderHandle {
         inline if @host.os != .android { return 0; }
 
-        prog := createProgram(vsrc, fsrc);
+        vz := toCstring(vsrc);
+        fz := toCstring(fsrc);
+        prog := createProgram(vz, fz);
+        context.allocator.deallocBytes(vz.ptr);
+        context.allocator.deallocBytes(fz.ptr);
         if prog == 0 { return 0; }
         slot : Gles3ShaderSlot = .{
             program = prog,

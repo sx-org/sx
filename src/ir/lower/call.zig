@@ -3143,7 +3143,7 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
     // kind check a same-sized aggregate (`[8]u8`, an 8-byte struct) slips through
     // and the user gets a raw LLVM verifier error instead of a clean diagnostic.
     const scalar_ok = switch (self.module.types.get(elem_ty)) {
-        .signed, .unsigned, .f32, .f64, .bool, .pointer, .many_pointer, .cstring, .@"enum", .vector => true,
+        .signed, .unsigned, .f32, .f64, .bool, .pointer, .many_pointer, .@"enum", .vector => true,
         else => false,
     };
     const size = self.typeSizeBytes(elem_ty);
@@ -3414,7 +3414,7 @@ const PrintfKind = enum {
 /// The kind that renders a value of `ty`, or null when nothing does.
 fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
     switch (ty) {
-        .string => return .str,
+        .string, .cstring => return .str,
         .bool => return .boolean,
         .i8, .i16, .i32, .i64, .isize => return .signed,
         .u8, .u16, .u32, .u64, .usize => return .unsigned,
@@ -3931,7 +3931,7 @@ fn lowerAsIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     switch (self.coercionResolver().classify(src_ty, dst)) {
         .no_op => return val,
         .unbox_any => unreachable,
-        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject, .cstring_to_string_reject => return refuseAs(self, src_ty, dst, c.callee.span),
+        .closure_to_fn_reject, .unique_to_closure_reject, .lambda_ptr_to_closure_reject, .optional_to_bool_reject, .many_to_slice_reject => return refuseAs(self, src_ty, dst, c.callee.span),
         else => {
             // The explicit ladder carries the modeled puns (same-width integer
             // signedness, pointer words); a value it passes through untyped has
@@ -4496,10 +4496,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // word (or worse, a 16-byte `any`) into the data slot is never
         // meaningful, and the runtime contract can't catch it.
         const data_ty = self.builder.getRefType(data);
-        const data_is_ptr = data_ty == .cstring or (!data_ty.isBuiltin() and switch (self.module.types.get(data_ty)) {
+        const data_is_ptr = switch (self.module.types.get(data_ty)) {
             .pointer, .many_pointer => true,
             else => false,
-        });
+        };
         if (!data_is_ptr) {
             if (self.diagnostics) |d| {
                 d.addFmt(.err, c.args[1].span, "@rawMakeAny expects a pointer for 'data' (got '{s}') — pass the value's address (`*v`, or a @rawAnyData result)", .{self.formatTypeName(data_ty)});

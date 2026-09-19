@@ -4,7 +4,7 @@ error: 'Pair' leaves '$B' unbound: no written field carries it — write it, or 
 19 |     p := Pair{ a = 1 };
    |          ^^^^^^^^^^^^^
 
-error: 'y' binds '$T' to 'string', but 'x' bound it to 'i64'
+error: 'y' binds '$T' to 'cstring', but 'x' bound it to 'i64'
   --> examples/diagnostics/2350-diagnostics-generic-literal-unbound.sx:20:10
    |
 20 |     s := Same{ x = 1, y = "one" };

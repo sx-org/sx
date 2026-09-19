@@ -557,10 +557,8 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
             if (elem_ty == .unresolved) return null;
             const base_ty = self.builder.getRefType(b.lhs);
             var base = b.lhs;
-            if (base_ty.isBuiltin()) {
-                if (base_ty != .string) return null;
-            } else switch (self.module.types.get(base_ty)) {
-                .slice, .pointer, .many_pointer => {},
+            switch (self.module.types.get(base_ty)) {
+                .string, .slice, .pointer, .many_pointer => {},
                 .array => base = self.refStorageAddress(b.lhs) orelse return null,
                 else => return null,
             }
@@ -880,10 +878,10 @@ pub fn refuseRvalueInterfaceErasure(self: *Lowering, proto_name: []const u8, spa
 }
 
 /// `null` is the absence of `?T` and the null pointer. It does not type at a
-/// non-optional value slot. Pointer-shaped slots (`*T`, `[*]T`, `cstring`, a
-/// function type) take `null` as the null address.
+/// non-optional value slot. Pointer-shaped slots (`*T`, `[*]T`, a function
+/// type) take `null` as the null address.
 pub fn refuseNullAtNonOptional(self: *Lowering, dst_ty: TypeId, span: ast.Span) bool {
-    if (dst_ty == .void or dst_ty == .unresolved or dst_ty == .cstring) return false;
+    if (dst_ty == .void or dst_ty == .unresolved) return false;
     if (!dst_ty.isBuiltin()) {
         switch (self.module.types.get(dst_ty)) {
             .optional, .pointer, .many_pointer, .function => return false,
@@ -1162,7 +1160,7 @@ pub const CheckedCoercion = struct {
 
 /// `coerceToType`, plus whether the conversion landed. A refusal is exactly what
 /// a typed parameter refuses, including the pairs that turn on the VALUE — a
-/// non-literal `string` reaching a `cstring`, an un-narrowed optional — so a
+/// non-literal `string` reaching a `[*:0]u8`, an un-narrowed optional — so a
 /// caller that must react to one reads a single answer rather than re-deriving
 /// the ladder's arms.
 pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) CheckedCoercion {
@@ -1558,7 +1556,6 @@ fn isErrorSetType(self: *Lowering, ty: TypeId) bool {
 /// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
 /// test above. Optional and erased values use separate representation checks.
 pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
-    if (ty == .cstring) return true;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
         .pointer, .many_pointer => true,
@@ -1576,10 +1573,9 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 /// separately above. Vectors are deliberately in NEITHER set because their
 /// representation varies — they never pun-flag.
 fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
-    if (ty == .string or ty == .any) return true;
-    if (ty.isBuiltin()) return false;
+    if (ty == .any) return true;
     return switch (self.module.types.get(ty)) {
-        .@"struct", .@"union", .array, .slice, .closure, .failable => true,
+        .string, .@"struct", .@"union", .array, .slice, .closure, .failable => true,
         .@"enum" => |e| e.hasPayload(),
         else => false,
     };
@@ -1655,9 +1651,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // expected) — diagnose it instead of fabricating garbage.
         .none => {
             switch (mode) {
-                // Pointer-shaped EXPLICIT cast (`*T`, `[*]T`, `cstring`): same
-                // address, RESULT typed `dst_ty`. An inferred `live := p.(*i64)`
-                // binds off that ref. LLVM bitcast is a no-op under opaque pointers.
+                // Pointer-shaped EXPLICIT cast (`*T`, `[*]T`): same address,
+                // RESULT typed `dst_ty`. An inferred `live := p.(*i64)` binds
+                // off that ref. LLVM bitcast is a no-op under opaque pointers.
                 .explicit => {
                     if (src_ty != dst_ty and isPointerValueKind(self, src_ty) and
                         (isPointerValueKind(self, dst_ty) or isFunctionType(self, dst_ty)))
@@ -1839,21 +1835,11 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .adds_terminator_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
-                const fix = if (src_ty == .string and self.coercionResolver().pointerDestElement(dst_ty) != null)
+                const fix = if (src_ty == .string and self.coercionResolver().destSentinel(dst_ty) == 0)
                     " — materialize one with toCstring(s)"
                 else
                     "";
                 d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "a value of type '{s}' does not coerce to '{s}': nothing implicitly adds a terminator{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), fix });
-            }
-            return val;
-        },
-        // cstring → string: the length is implicit (strlen), so the
-        // conversion is never silent — `fromCstring(c)` is the zero-copy
-        // view, `substr(fromCstring(c), 0, ...)` the owned copy.
-        .cstring_to_string_reject => {
-            if (self.diagnostics) |d| {
-                const cs = self.builder.current_span;
-                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with fromCstring(c)", .{});
             }
             return val;
         },
@@ -1986,7 +1972,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
             return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
-        // *T / [*]T / cstring → *void: same address, result typed `*void`.
+        // *T / [*]T → *void: same address, result typed `*void`.
         .ptr_to_void => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
@@ -2101,19 +2087,16 @@ pub fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
 /// belongs there: the 32- and 64-bit integers, `f64`, the pointer family and
 /// its nullable forms, and function values that carry the C convention.
 pub fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
-    if (ty == .f64 or ty == .cstring) return true;
+    if (ty == .f64) return true;
     if (tailIntegerWidth(self, ty)) |bits| return bits == 32 or bits == 64;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
         .pointer, .many_pointer => true,
         // A nullable pointer is one word with null as its absent value; any
         // other optional carries a separate presence flag.
-        .optional => |o| switch (o.child) {
-            .cstring => true,
-            else => !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
-                .pointer, .many_pointer => true,
-                else => false,
-            },
+        .optional => |o| !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
+            .pointer, .many_pointer => true,
+            else => false,
         },
         .function => |f| f.call_conv == .c,
         else => false,

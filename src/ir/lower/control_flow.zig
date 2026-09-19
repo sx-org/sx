@@ -2087,7 +2087,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             // already terminated its block; emitting the fallback const
             // here would land AFTER the terminator .
             if (!self.currentBlockHasTerminator()) {
-                var v = maybe_v orelse if (result_type == .string or !result_type.isBuiltin())
+                var v = maybe_v orelse if (result_type == .string or result_type == .cstring or !result_type.isBuiltin())
                     self.builder.constUndef(result_type)
                 else
                     self.builder.constInt(0, result_type);
