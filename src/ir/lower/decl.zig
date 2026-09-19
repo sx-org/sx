@@ -907,6 +907,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.setCurrentSourceFile(decl.source_file);
         self.reserveShadowSlot(td);
     }
+    reserveStructLayouts(self, decls);
     // The signatures below resolve their `!` channels against these bindings; a
     // channel resolved before its operands bind keeps a member-less placeholder.
     reserveErrorSetSlots(self, decls);
@@ -1872,6 +1873,21 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
     if (self.diagnostics) |d|
         d.addFmt(.err, v.span, "global '{s}' must be initialized by a compile-time constant", .{vd.name});
     return null;
+}
+
+fn reserveStructLayouts(self: *Lowering, decls: []const *const Node) void {
+    const saved_source = self.current_source_file;
+    defer self.setCurrentSourceFile(saved_source);
+    for (decls) |decl| {
+        if (decl.data == .namespace_decl) {
+            reserveStructLayouts(self, decl.data.namespace_decl.decls);
+            continue;
+        }
+        const td = topLevelTypeDecl(decl) orelse continue;
+        if (td != .@"struct" or td.isGeneric()) continue;
+        self.setCurrentSourceFile(decl.source_file);
+        _ = self.reserveStructLayout(td.@"struct", decl.source_file);
+    }
 }
 
 /// Reserve the TypeId of every error set the program declares, a namespaced

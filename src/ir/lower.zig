@@ -90,6 +90,11 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
+pub const PendingStructLayout = struct {
+    author: PlainStructAuthor,
+    state: enum { pending, resolving } = .pending,
+};
+
 /// Identity key for a materialized protocol/concrete dispatch table. The
 /// concrete TypeId (not its display name) keeps two modules' same-named
 /// structs from sharing thunks or a vtable global.
@@ -631,6 +636,7 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
+    pending_struct_layouts: std.AutoHashMap(TypeId, PendingStructLayout),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
     /// same-display-name types.
@@ -1360,6 +1366,7 @@ pub const Lowering = struct {
             .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
             .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
+            .pending_struct_layouts = std.AutoHashMap(TypeId, PendingStructLayout).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
             .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
@@ -1674,6 +1681,31 @@ pub const Lowering = struct {
             return fields;
         }
         const ty = self.resolveTypeWithBindings(operand);
+        if (self.pending_struct_layouts.get(ty)) |pending| {
+            switch (pending.state) {
+                .pending => {
+                    const saved_types = self.type_bindings;
+                    const saved_values = self.comptime_value_bindings;
+                    const saved_packs = self.pack_bindings;
+                    const saved_pack_types = self.pack_arg_types;
+                    self.type_bindings = null;
+                    self.comptime_value_bindings = null;
+                    self.pack_bindings = null;
+                    self.pack_arg_types = null;
+                    defer {
+                        self.type_bindings = saved_types;
+                        self.comptime_value_bindings = saved_values;
+                        self.pack_bindings = saved_packs;
+                        self.pack_arg_types = saved_pack_types;
+                    }
+                    self.registerStructDecl(pending.author.decl, pending.author.source);
+                },
+                .resolving => {
+                    if (self.diagnostics) |d| d.add(.err, "struct member spread has a circular layout dependency", node.span);
+                    return null;
+                },
+            }
+        }
         return type_bridge.structSpreadFields(&self.module.types, ty) catch |err| {
             if (self.diagnostics) |d| d.add(.err, switch (err) {
                 error.InvalidOperand => "struct member spread requires a pack or struct type",
@@ -3698,6 +3730,7 @@ pub const Lowering = struct {
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
     pub const registerStructDecl = lower_nominal.registerStructDecl;
+    pub const reserveStructLayout = lower_nominal.reserveStructLayout;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
     pub const plainStructOwnerType = lower_nominal.plainStructOwnerType;

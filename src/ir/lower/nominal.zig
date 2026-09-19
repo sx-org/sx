@@ -922,6 +922,24 @@ pub fn registerGenericStructAlias(self: *Lowering, cd: *const ast.ConstDecl, tmp
     self.putTypeAlias(self.declId(.{ .const_decl = cd }, self.current_source_file), self.current_source_file, cd.name, inst_id);
 }
 
+pub fn reserveStructLayout(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) TypeId {
+    const table = &self.module.types;
+    const decl_key: *const anyopaque = @ptrCast(sd);
+    const name_id = table.internString(sd.name);
+    const ty = table.type_decl_tids.get(decl_key) orelse blk: {
+        const id = table.internNominal(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } }, self.shadowNominalId(name_id));
+        table.type_decl_tids.put(decl_key, id) catch @panic("out of memory");
+        break :blk id;
+    };
+    if (!self.plain_struct_authors.contains(ty) and !self.pending_struct_layouts.contains(ty)) {
+        self.pending_struct_layouts.put(ty, .{ .author = .{
+            .decl = sd,
+            .source = source_file orelse self.current_source_file,
+        } }) catch @panic("out of memory");
+    }
+    return ty;
+}
+
 pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) void {
     const table = &self.module.types;
     const name_id = table.internString(sd.name);
@@ -947,23 +965,15 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         return;
     }
 
-    // Per-decl nominal identity. EACH author of a GENUINE same-name STRUCT
-    // shadow already reserved its distinct slot up-front in `scanDecls` (the
-    // first at id 0, the rest at nonzero ids), so a self / forward / mutual
-    // reference to the shadow name bound to ITS nominal TypeId via
-    // `type_decl_tids`, not the global findByName first-author fallback:
-    // reuse that reserved id. A single-author name (or a phantom
-    // over-counted by the raw import facts) is NOT reserved — it keeps id 0 and
-    // the post-field registration.
-    // `shadowNominalId` here only fires for the non-scanDecls registration paths
-    // (comptime `lowerDecls`, block-local), where module facts are unwired so it
-    // returns 0.
-    const decl_key: *const anyopaque = @ptrCast(sd);
-    const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
-
     const saved_source = self.current_source_file;
     self.setCurrentSourceFile(source_file orelse saved_source);
     defer self.setCurrentSourceFile(saved_source);
+    const struct_ty = self.reserveStructLayout(sd, self.current_source_file);
+    self.pending_struct_layouts.put(struct_ty, .{
+        .author = .{ .decl = sd, .source = self.current_source_file },
+        .state = .resolving,
+    }) catch @panic("out of memory");
+    defer _ = self.pending_struct_layouts.remove(struct_ty);
     const layout = type_bridge.buildStructLayout(sd, table, self) orelse return;
     for (layout.fields, layout.explicit_members) |field, member| {
         const i = member orelse continue;
@@ -982,13 +992,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // second notion of what a cursor is.
     const layout_fields = if (cvariadic.isCursorDecl(sd)) self.cursorStorageFields() else layout.fields;
 
-    // Register under the per-decl nominal identity computed above. A non-first
-    // shadow author's slot was already reserved before fields resolved, so this
-    // fills it (key-stable updatePreservingKey); a first / single author adopts
-    // any forward-reference stub. Same-name structs in DIFFERENT sources get
-    // distinct TypeIds instead of last-wins clobbering the first.
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = layout_fields } };
-    const struct_ty = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    table.updatePreservingKey(struct_ty, stampNominalId(info, nominalIdOf(table.get(struct_ty))));
     // Couple the nominal layout identity to its authoring declaration. Method
     // calls must select through this TypeId-keyed provenance, never through the
     // process-global `StructName.method` spelling.

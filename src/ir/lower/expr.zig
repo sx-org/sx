@@ -477,9 +477,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // and named-against-tuple-names resolution.
     if (sl.struct_name == null and sl.type_expr == null and !ty.isBuiltin()) {
         const tgt = self.module.types.get(ty);
-        const route_len: ?usize = if (self.module.types.isAnonStruct(ty))
-            tgt.@"struct".fields.len
-        else if (tgt == .failable)
+        const route_len: ?usize = if (self.module.types.isAnonStruct(ty)) blk: {
+            for (tgt.@"struct".fields, 0..) |field, i| {
+                const position = std.fmt.parseInt(usize, self.module.types.getString(field.name), 10) catch break :blk null;
+                if (position != i) break :blk null;
+            }
+            break :blk tgt.@"struct".fields.len;
+        } else if (tgt == .failable)
             self.module.types.failableValueSlotCount(tgt.failable) + 1
         else
             null;

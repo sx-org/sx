@@ -144,7 +144,7 @@ if.then.4:                                        ; preds = %and.merge.3
   %call = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %call, ptr %allocaN, align 4
   %si = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %si, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %si, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str, i64 17 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -154,7 +154,7 @@ if.else.5:                                        ; preds = %and.merge.3
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.1, i64 14 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -174,7 +174,7 @@ if.then.25:                                       ; preds = %if.merge.6
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.2, i64 12 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -184,7 +184,7 @@ if.else.26:                                       ; preds = %if.merge.6
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.3, i64 15 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -204,7 +204,7 @@ if.then.28:                                       ; preds = %if.merge.27
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.4, i64 11 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -214,7 +214,7 @@ if.else.29:                                       ; preds = %if.merge.27
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.5, i64 14 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -250,7 +250,7 @@ if.then.33:                                       ; preds = %and.merge.32
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.6, i64 15 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
@@ -260,7 +260,7 @@ if.else.34:                                       ; preds = %and.merge.32
   %callN = call { i32 } @FdWriter.init(ptr @kDefaultContext, i32 1)
   store { i32 } %callN, ptr %allocaN, align 4
   %siN = insertvalue { ptr, i64, ptr } undef, ptr %allocaN, 0
-  %siN = insertvalue { ptr, i64, ptr } %siN, i64 110, 1
+  %siN = insertvalue { ptr, i64, ptr } %siN, i64 100, 1
   %siN = insertvalue { ptr, i64, ptr } %siN, ptr @__Writer__FdWriter__vtable, 2
   call void @FdWriter.write(ptr @kDefaultContext, ptr %allocaN, { ptr, i64 } { ptr @str.7, i64 17 })
   call void @FdWriter.flush(ptr @kDefaultContext, ptr %allocaN)
