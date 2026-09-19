@@ -455,9 +455,9 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
     }
 }
 
-/// Enum and union declarations reuse their per-author nominal slot on
-/// re-registration. The first author (nominal_id == 0) adopts a forward
-/// stub; shadow authors keep distinct slots keyed by declaration identity.
+/// A named type declaration reuses its per-author nominal slot on re-registration.
+/// The first author (nominal_id == 0) adopts a forward stub; shadow authors keep
+/// distinct slots keyed by declaration identity.
 pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id: types.StringId, info: types.TypeInfo, nominal_id: u32) TypeId {
     const table = &self.module.types;
     // Slot already recorded (re-registration, or a reserve-before-fields shadow

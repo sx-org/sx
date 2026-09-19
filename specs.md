@@ -740,8 +740,8 @@ v2 := Vec4{4, 1, 1, 3 };
 v3 := Vec4{w=0, x=2, y=3, z=4 };
 
 // Mixed named + shorthand (bare identifier = field name matches variable name)
-z := 5.0;
-w := 6.0;
+z: f32 = 5.0;
+w: f32 = 6.0;
 v4 := Vec4{y=3, x=9, w, z };
 
 // Trailing commas are allowed in all comma-separated lists
