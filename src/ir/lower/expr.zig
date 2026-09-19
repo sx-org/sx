@@ -5470,20 +5470,21 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // Sequence value equality: `[N]T`, `[N:X]T`, `[]T`, `[:X]T` and `string`
     // compare CONTENT. The operands need one element type; an array meets the
-    // slice, and the lengths answer at run time.
+    // slice, and the lengths answer at run time. A sequence has no comparison
+    // with a non-sequence peer.
     if (bop.op == .eq or bop.op == .neq) {
         const l_ty = refTypeOr(self, lhs, ty);
         const r_ty = refTypeOr(self, rhs, rhs_ty);
-        if (sequenceElement(self, l_ty)) |l_elem| {
-            if (sequenceElement(self, r_ty)) |r_elem| {
-                if (l_elem != r_elem) {
-                    if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
-                        self.formatTypeName(l_ty), self.formatTypeName(r_ty),
-                    });
-                    return self.emitPlaceholder("distinct-sequence-equality");
-                }
-                return lowerSequenceEquality(self, lhs, rhs, l_elem, bop.op == .eq, bop.lhs.span);
-            }
+        const l_elem = sequenceElement(self, l_ty);
+        const r_elem = sequenceElement(self, r_ty);
+        if (l_elem != null and l_elem == r_elem) {
+            return lowerSequenceEquality(self, lhs, rhs, l_elem.?, bop.op == .eq, bop.lhs.span);
+        }
+        if (l_elem != null or r_elem != null) {
+            if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                self.formatTypeName(l_ty), self.formatTypeName(r_ty),
+            });
+            return self.emitPlaceholder("distinct-sequence-equality");
         }
     }
 

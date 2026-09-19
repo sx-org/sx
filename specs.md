@@ -2904,7 +2904,8 @@ are not written onward.
 | `?T == T` / `?T == null` | unchanged |
 | Two error values, or an error against a `.Member` | no conversion — comparable iff one channel ⊆ the other ([§12 Comparison](#comparison)) |
 
-`any`, interface handles against a foreign type, and distinct structs are refused.
+`any`, interface handles against a foreign type, distinct structs, and a
+sequence against a non-sequence are refused.
 
 An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted
