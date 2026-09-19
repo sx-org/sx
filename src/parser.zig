@@ -5744,8 +5744,6 @@ pub const Parser = struct {
         return std.fmt.parseInt(u64, stripped, base) catch null;
     }
 
-    /// Copy `text` into a freshly-allocated buffer with every `_` removed.
-    /// Caller owns the returned slice (`self.allocator.free`).
     /// The content of a `\\` literal: each line's text after its `\\`, joined
     /// with `\n`.
     fn joinRawLines(self: *Parser, text: []const u8) ![]u8 {
@@ -5766,6 +5764,8 @@ pub const Parser = struct {
         return buf[0..n];
     }
 
+    /// Copy `text` into a freshly-allocated buffer with every `_` removed.
+    /// Caller owns the returned slice (`self.allocator.free`).
     fn stripSeparators(self: *Parser, text: []const u8) ![]u8 {
         const buf = try self.allocator.alloc(u8, text.len);
         var n: usize = 0;
