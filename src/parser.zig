@@ -4072,7 +4072,12 @@ pub const Parser = struct {
                 // @string heredoc — token span is content only, no stripping needed
                 const raw = self.tokens.slice(self.tok);
                 self.advance();
-                return try self.createNode(start, .{ .string_literal = .{ .raw = raw, .is_raw = true } });
+                return try self.createNode(start, .{ .string_literal = .{ .raw = raw, .form = .heredoc } });
+            },
+            .multiline_string_literal => {
+                const joined = try self.joinRawLines(self.tokens.slice(self.tok));
+                self.advance();
+                return try self.createNode(start, .{ .string_literal = .{ .raw = joined, .form = .lines } });
             },
             .char_literal => {
                 // raw includes the surrounding `'`s; strip them for the inner body.
@@ -5093,6 +5098,7 @@ pub const Parser = struct {
             .float_literal,
             .string_literal,
             .raw_string_literal,
+            .multiline_string_literal,
             .char_literal,
             .identifier,
             .at_identifier,
@@ -5312,6 +5318,7 @@ pub const Parser = struct {
             .float_literal,
             .string_literal,
             .raw_string_literal,
+            .multiline_string_literal,
             .char_literal,
             .identifier,
             .at_identifier,
@@ -5735,6 +5742,26 @@ pub const Parser = struct {
         const stripped = self.stripSeparators(digits) catch return null;
         defer self.allocator.free(stripped);
         return std.fmt.parseInt(u64, stripped, base) catch null;
+    }
+
+    /// The content of a `\\` literal: each line's text after its `\\`, joined
+    /// with `\n`.
+    fn joinRawLines(self: *Parser, text: []const u8) ![]u8 {
+        const buf = try self.allocator.alloc(u8, text.len);
+        var n: usize = 0;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        var first = true;
+        while (lines.next()) |line| {
+            if (!first) {
+                buf[n] = '\n';
+                n += 1;
+            }
+            first = false;
+            const body = std.mem.trimStart(u8, line, " \t")[2..];
+            @memcpy(buf[n..][0..body.len], body);
+            n += body.len;
+        }
+        return buf[0..n];
     }
 
     /// Copy `text` into a freshly-allocated buffer with every `_` removed.
@@ -6879,6 +6906,19 @@ test "round-trip print: terminated array, slice and many-pointer types" {
         try print.printType(te, &aw.writer);
         try std.testing.expectEqualStrings(spelling, aw.writer.toArrayList().items);
     }
+}
+
+test "round-trip print: a `\\\\` literal joins its lines with a newline" {
+    const source: [:0]const u8 = "v :: \\\\one\n     \\\\two\n;";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const v = root.data.root.decls[0].data.const_decl.value;
+    try std.testing.expectEqualStrings("one\ntwo", v.data.string_literal.raw);
+    var aw = std.Io.Writer.Allocating.init(arena.allocator());
+    try print.printNode(v, &aw.writer);
+    try std.testing.expectEqualStrings("\\\\one\n\\\\two", aw.writer.toArrayList().items);
 }
 
 test "round-trip print: error-set decl" {

@@ -202,6 +202,7 @@ hand-written sx code.
 | Float     | `0.3`, `0.9`        | `f64`   |
 | String    | `"Hello"`, `"z: {z}"` | `[N:0]u8` (may span multiple lines) |
 | Heredoc String | `@string END`...`END` | `[N:0]u8` |
+| Line String | `\\raw line` | `[N:0]u8` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
@@ -247,6 +248,16 @@ void main() {
     gl_Position = vec4(aPos, 1.0);
 }
 GLSL;
+```
+
+**`\\` line strings.** A `\\` starts a raw line: its content runs to the end of
+the line with no escape processing — a `//` there is content — and every
+following line whose first non-blank text is `\\` joins it with a `\n`. There is
+no trailing newline, so the statement terminator sits on the next line.
+```sx
+usage := \\usage: sx <file>
+         \\  --time  report stage timings
+;
 ```
 
 ### Keywords

@@ -51,10 +51,24 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll(l.raw);
             try writer.writeByte('\'');
         },
-        .string_literal => |l| {
-            try writer.writeByte('"');
-            try writer.writeAll(l.raw);
-            try writer.writeByte('"');
+        .string_literal => |l| switch (l.form) {
+            .quoted => {
+                try writer.writeByte('"');
+                try writer.writeAll(l.raw);
+                try writer.writeByte('"');
+            },
+            .lines => {
+                var lines = std.mem.splitScalar(u8, l.raw, '\n');
+                var first = true;
+                while (lines.next()) |line| {
+                    if (!first) try writer.writeByte('\n');
+                    first = false;
+                    try writer.writeAll("\\\\");
+                    try writer.writeAll(line);
+                }
+            },
+            // A heredoc's delimiter has no node to print from.
+            .heredoc => return error.UnsupportedNode,
         },
         .call => |c| {
             try printExpr(c.callee, writer);
