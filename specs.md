@@ -5485,6 +5485,7 @@ An `any` is accepted because it can hold either a value or a `Type`. `@typeName`
 - `variantIndex(av: any) -> ?i64` — the sequential ordinal of a boxed enum value's variant, null when its tag names none.
 - `@convert($T: Type, v: $S/Into(T), alloc: Allocator = context.allocator) -> T` — the `impl Into(T) for S` conversion, funded from `alloc`.
 - `@coerce($T: Type, v: $S) -> T` — the ladder `xx` and `.(T)` enter: `@as`, then `@convert` from the context allocator when the compiler's conversions make no progress.
+- `@reinterpret($T: Type, v: $S) -> T` — `v`'s bytes read as a `T`. No conversion runs on either side: the value's storage is the result, byte for byte. `T` is a type known at compile time, and the pairing is admitted when `@sizeOf(T)` equals `@sizeOf(S)` and that size is not zero — any other pair is a compile-time error naming both sizes. The evaluator reads the same bytes, so a `@run` call folds to the same value compiled code computes.
 - `@assert(ok: bool, msg: ?string = null, site: @SourceSite = @caller)` — stops the program at `site` through `@panic` unless `ok`. `p.(Q)` between interfaces is the handle build plus `@assert(<row present>, "re-erasure to 'Q' failed")` at the site.
 
 ### Vectors

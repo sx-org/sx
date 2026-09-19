@@ -2787,6 +2787,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
         .@"@rawMakeAny",
@@ -3044,6 +3045,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
         .@"@rawMakeAny",
@@ -3287,6 +3289,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
         .@"@rawMakeAny",
@@ -3617,6 +3620,7 @@ fn isReflectionCall(name: []const u8) bool {
         .@"@as",
         .@"@convert",
         .@"@coerce",
+        .@"@reinterpret",
         .@"@anyElement",
         .@"@rawAnyData",
         .@"@rawMakeAny",
@@ -4101,6 +4105,38 @@ fn lowerCoerceIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
     return self.lowerCoerce(val, c.args[1], src_ty, dst);
 }
 
+/// `@reinterpret(T, v)` — `v`'s bytes read as a `T`. The value spills to a slot
+/// typed by its own type and the result is that storage loaded as `T`, so
+/// neither side takes a conversion. Equal, non-zero sizes are the whole
+/// admission rule; anything else is a diagnostic.
+fn lowerReinterpretIntrinsic(self: *Lowering, c: *const ast.Call) Ref {
+    if (c.args.len != 2) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret takes 2 arguments, got {d}", .{c.args.len});
+        return Ref.none;
+    }
+    const dst = if (self.isStaticTypeArg(c.args[0])) self.resolveTypeArg(c.args[0]) else TypeId.unresolved;
+    if (dst == .unresolved) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "@reinterpret expects a type known at compile time", .{});
+        return Ref.none;
+    }
+    // No ambient target: a destination type converts `v` before its bytes are
+    // ever taken.
+    const saved_target = self.target_type;
+    self.target_type = null;
+    const val = self.lowerExpr(c.args[1]);
+    self.target_type = saved_target;
+    const src = self.builder.getRefType(val);
+    const src_size = self.typeSizeBytes(src);
+    const dst_size = self.typeSizeBytes(dst);
+    if (src_size != dst_size or src_size == 0) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "@reinterpret needs two types of the same, non-zero size: '{s}' is {d} bytes, the value's '{s}' is {d}", .{ self.formatTypeName(dst), dst_size, self.formatTypeName(src), src_size });
+        return self.builder.constUndef(dst);
+    }
+    const slot = self.builder.alloca(src);
+    self.builder.store(slot, val);
+    return self.builder.load(slot, dst);
+}
+
 fn lowerBoxedViewIntrinsic(self: *Lowering, id: intrinsics.Id, c: *const ast.Call) Ref {
     const entry = intrinsics.byId(id);
     const sentinel = self.builder.constInt(0, if (id == .@"@len") .i64 else .any);
@@ -4435,6 +4471,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         .@"@as" => return lowerAsIntrinsic(self, c),
         .@"@convert" => return lowerConvertIntrinsic(self, c),
         .@"@coerce" => return lowerCoerceIntrinsic(self, c),
+        .@"@reinterpret" => return lowerReinterpretIntrinsic(self, c),
         else => {},
     };
     if (std.mem.eql(u8, name, "@anyElement")) {
