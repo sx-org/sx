@@ -1,8 +1,8 @@
 // A pointer-shaped explicit cast (`p.(*T)`, `xx`) is typed by its TARGET, not
 // by its receiver: an inferred `live := p.(*i64)` binds `*i64` exactly like the
 // annotated `ann : *i64 = p.(*i64)`, and dereferencing it loads an i64. The
-// family is every address-shaped pair — `*T`, `[*]T`, `cstring`. Implicit
-// same-width pointer assignment (`q : *i64 = p`) stays a plain store.
+// family is every address-shaped pair — `*T`, `[*]T`. Implicit same-width
+// pointer assignment (`q : *i64 = p`) stays a plain store.
 @import "modules/std.sx";
 
 main :: () {
@@ -27,10 +27,4 @@ main :: () {
     many := p.([*]i64);
     back := many.(*i64);
     print("many={} {} back={} {}\n", @typeName(@typeOf(many)), many[0], @typeName(@typeOf(back)), back.*);
-
-    // `cstring` on both sides of the cast.
-    cs : cstring = "hi";
-    head := cs.(*u8);
-    round := head.(cstring);
-    print("head={} {} round={}\n", @typeName(@typeOf(head)), head.*, @typeName(@typeOf(round)));
 }

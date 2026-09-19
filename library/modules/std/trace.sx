@@ -34,7 +34,7 @@ TraceFrame :: struct {
 
 // `n` spaces — used to position the `^` caret under a column.
 spaces :: (n: i32) -> string {
-    s := "";
+    s : string = "";
     i : i32 = 0;
     while i < n {
         s = concat(s, " ");
@@ -59,7 +59,7 @@ toString :: () -> string {
     n := sx_trace_len();
     if n == 0 { return ""; }
 
-    result := "error return trace (most recent call last):\n";
+    result : string = "error return trace (most recent call last):\n";
     if sx_trace_truncated() != 0 {
         result = concat(result, "  ... older frames omitted (buffer full)\n");
     }

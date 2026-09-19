@@ -2,7 +2,7 @@
 // slice and many-pointer shapes. A terminated array's `.len` is the written
 // N while its storage carries the terminator at index N; a terminated slice
 // keeps the `{ptr, len}` fat pointer and a terminated many-pointer stays one
-// word. `[:0]u8` is `string`. A value the program leaves to the type is
+// word. `[:0]u8` is `cstring`. A value the program leaves to the type is
 // zeroed storage plus the terminator of every `[N:X]T` it holds.
 
 @import "modules/std.sx";

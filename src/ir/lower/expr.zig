@@ -523,10 +523,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.coerceToType(arr, self.builder.getRefType(arr), ty);
     }
 
-    const aggregate_ok = if (ty.isBuiltin())
-        ty == .string
-    else switch (self.module.types.get(ty)) {
-        .@"struct", .array, .vector, .slice, .closure, .failable => true,
+    const aggregate_ok = switch (self.module.types.get(ty)) {
+        .string, .@"struct", .array, .vector, .slice, .closure, .failable => true,
         else => false,
     };
     if (!aggregate_ok) {
@@ -940,7 +938,7 @@ fn isSliceHeaderLiteral(sl: *const ast.StructLiteral) bool {
 /// keyed by field name or by position. `getStructFields` is empty for these.
 fn fatPointerSlotType(self: *Lowering, ty: TypeId, name: ?[]const u8, index: usize) ?TypeId {
     const is_string = ty == .string;
-    const is_slice = !ty.isBuiltin() and self.module.types.get(ty) == .slice;
+    const is_slice = self.module.types.get(ty) == .slice;
     const is_closure = !ty.isBuiltin() and self.module.types.get(ty) == .closure;
     if (is_string or is_slice) {
         const is_ptr = if (name) |n| std.mem.eql(u8, n, "ptr") else index == 0;
@@ -1114,6 +1112,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
         .f64 => "f64",
         .bool => "bool",
         .string => "string",
+        .cstring => "cstring",
         else => null,
     };
 }
@@ -1127,10 +1126,10 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// kept as a FALLBACK — `@get len` accessors (e.g. `List.len`) have no
 /// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
-    const is_special_container = ty == .string or (!ty.isBuiltin() and switch (self.module.types.get(ty)) {
-        .slice, .array, .vector => true,
+    const is_special_container = switch (self.module.types.get(ty)) {
+        .string, .slice, .array, .vector => true,
         else => false,
-    });
+    };
     if (is_special_container) {
         if (std.mem.eql(u8, field, "len")) return self.module.types.lenTypeOf(ty);
         if (std.mem.eql(u8, field, "ptr")) {
@@ -1543,10 +1542,10 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // Special fields on slices/strings (NOT structs with .len/.ptr fields)
     if (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr")) {
         // Only use length/data_ptr for slice, string, array, vector types
-        const is_special = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(obj_ty);
-            break :blk info == .slice or info == .array or info == .vector;
-        } else false);
+        const is_special = switch (self.module.types.get(obj_ty)) {
+            .string, .slice, .array, .vector => true,
+            else => false,
+        };
 
         if (is_special) {
             if (std.mem.eql(u8, fa.field, "len")) {
@@ -1692,7 +1691,7 @@ pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
     const ty = if (self.literalKeepsArray(self.target_type))
         self.module.types.arrayOfSentinel(.u8, @intCast(str.len), 0)
     else
-        .string;
+        .cstring;
     return self.builder.emit(.{ .const_string = sid }, ty);
 }
 
@@ -1700,7 +1699,6 @@ pub fn lowerStringLiteral(self: *Lowering, lit: ast.StringLiteral) Ref {
 /// terminated array itself, or a byte pointer that wants the terminator.
 pub fn literalKeepsArray(self: *Lowering, target: ?TypeId) bool {
     const t = target orelse return false;
-    if (t == .cstring) return true;
     if (t.isBuiltin()) return false;
     return switch (self.module.types.get(t)) {
         .array => |a| a.element == .u8,
@@ -5025,7 +5023,7 @@ pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
 ///   • bool / integers (signed/unsigned/usize/isize)
 ///   • integer-backed nominals: `enum` (incl. `enum flags`, e.g. `if p & .read`)
 ///     and an error (a u32 tag) — both reach condBr as a plain integer
-///   • pointers: `*T` / `[*]T` / `cstring` (compared against null)
+///   • pointers: `*T` / `[*]T` (compared against null)
 ///   • `optional` — the caller emits `optional_has_value`
 /// Everything else (float, void, string, any, type_value, struct/union/tuple/
 /// array/slice/vector/function/closure/protocol/pack) reaches condBr as a
@@ -5036,7 +5034,7 @@ fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
     if (ty == .unresolved) return true; // already-diagnosed elsewhere; don't double-report
     return switch (self.module.types.get(ty)) {
         .bool, .signed, .unsigned, .usize, .isize => true,
-        .pointer, .many_pointer, .cstring => true,
+        .pointer, .many_pointer => true,
         .@"enum", .@"error" => true,
         .optional => true,
         else => false,
@@ -5079,7 +5077,7 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
             .lhs = v,
             .rhs = self.builder.constInt(0, ty),
         } }, .bool),
-        .pointer, .many_pointer, .cstring => self.builder.emit(.{ .cmp_ne = .{
+        .pointer, .many_pointer => self.builder.emit(.{ .cmp_ne = .{
             .lhs = v,
             .rhs = self.builder.constNull(ty),
         } }, .bool),
@@ -5702,7 +5700,6 @@ fn refTypeOr(self: *Lowering, r: Ref, fallback: TypeId) TypeId {
 /// `[N:X]T`, `[]T`, `[:X]T`, `string` — or null for every other type.
 fn sequenceElement(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty == .string) return .u8;
-    if (ty.isBuiltin()) return null;
     return switch (self.module.types.get(ty)) {
         .array => |a| a.element,
         .slice => |sl| sl.element,
@@ -5769,10 +5766,10 @@ fn lowerSequenceEquality(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, want
 pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, span: ast.Span) ?Ref {
     if (sequenceElement(self, field_ty)) |elem| return lowerSequenceEquality(self, lf, rf, elem, true, span);
 
-    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize,
-    // cstring): a plain `cmp_eq`. The LLVM emitter picks fcmp for a float
-    // operand and icmp otherwise off the operand's own type, so f32/f64 fields
-    // get the correct ordered-equal compare with no special-casing here.
+    // Builtins (ints, floats, bool, pointers, enums-as-int, usize/isize): a
+    // plain `cmp_eq`. The LLVM emitter picks fcmp for a float operand and icmp
+    // otherwise off the operand's own type, so f32/f64 fields get the correct
+    // ordered-equal compare with no special-casing here.
     if (field_ty.isBuiltin()) return self.builder.cmpEq(lf, rf);
 
     const fi = self.module.types.get(field_ty);
@@ -5894,7 +5891,7 @@ fn isComptimeIntExpr(node: *const Node) bool {
 }
 
 fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
-    if (self.isIntEx(ty) or Lowering.isFloat(ty) or ty == .cstring) return true;
+    if (self.isIntEx(ty) or Lowering.isFloat(ty)) return true;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
         .pointer, .many_pointer, .function => true,

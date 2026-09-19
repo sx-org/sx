@@ -39,19 +39,19 @@ cstringLen :: (c: [*:0]u8) -> i64 {
     n
 }
 
-// A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
+// A zero-copy terminated VIEW over `c`'s bytes ({ptr, strlen}). The view
 // shares C's buffer — copy it if it must outlive the source.
-fromCstring :: (c: [*:0]u8) -> [:0]u8 {
-    string{ ptr = c.([*]u8), len = cstringLen(c) }
+fromCstring :: (c: [*:0]u8) -> cstring {
+    cstring{ ptr = c.([*]u8), len = cstringLen(c) }
 }
 
 // An owned, terminated copy of `s`.
-toCstring :: (s: string) -> [*:0]u8 {
+toCstring :: (s: string) -> cstring {
     sb := StringBuilder.init();
     sb.reserve(s.len + 1);
     sb.write(s);
     sb.write("\0");
-    sb.finish().ptr.([*:0]u8)
+    cstring{ ptr = sb.finish().ptr, len = s.len }
 }
 
 // Join path components with the POSIX separator ('/'). Skips empty
@@ -253,7 +253,10 @@ writeAny :: ufcs (w: Writer, val: any) {
         }
         case .array: writeElements(w, val);
         case .vector: writeElements(w, val);
-        case .slice: writeElements(w, val);
+        case .slice: {
+            if @typeEq(t, cstring) { w.write(@unbox(cstring, val)); }
+            else { writeElements(w, val); }
+        }
         case .pointer: writePointer(w, val);
         case .manyPointer: writePointer(w, val);
         case .optional: {
@@ -309,7 +312,7 @@ emitSegment :: (code: string, sink: string, start: i64, end: i64) -> string {
 // literal run goes out as a view into `fmt`, a `{}` as its argument's
 // rendering, and `{{` / `}}` carry one brace through.
 buildFormat :: (fmt: string, sink: string) -> string {
-    code := "";
+    code : string = "";
     segStart := 0;
     i := 0;
     argIdx := 0;

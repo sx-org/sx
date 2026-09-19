@@ -1,5 +1,5 @@
 kept: [3:0]u8 len 3 size 4 term 0
-decayed: string abc len 3
+decayed: cstring abc len 3
 copy: [3:0]u8 90 99 0
 annotated: string 3
 decays at a string slot: 3

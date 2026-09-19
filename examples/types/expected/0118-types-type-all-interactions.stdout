@@ -46,7 +46,7 @@ fields(Point):     2
 === 10. ..$args walking ===
 typeList():            []
 typeList(1):           [i64]
-typeList(1, "x"):    [i64, string]
+typeList(1, "x"):    [i64, cstring]
 typeList(true, 3.14):  [bool, f64]
 === 11. Type in struct field ===
 h.t == i64:    true

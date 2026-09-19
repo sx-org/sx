@@ -147,12 +147,7 @@ pub const TypeResolver = struct {
         return switch (node.data) {
             .pointer_type_expr => |pt| table.ptrTo(inner.resolveInner(pt.pointee_type)),
             .many_pointer_type_expr => |mp| table.manyPtrToSentinel(inner.resolveInner(mp.element_type), mp.sentinel),
-            .slice_type_expr => |st| blk: {
-                const elem = inner.resolveInner(st.element_type);
-                // `[:0]u8` IS `string`.
-                if (elem == .u8 and st.sentinel != null and st.sentinel.? == 0) break :blk .string;
-                break :blk table.sliceOfSentinel(elem, st.sentinel);
-            },
+            .slice_type_expr => |st| table.sliceOfSentinel(inner.resolveInner(st.element_type), st.sentinel),
             .optional_type_expr => |ot| table.optionalOf(inner.resolveInner(ot.inner_type)),
             .array_type_expr => |at| blk: {
                 const elem = inner.resolveInner(at.element_type);

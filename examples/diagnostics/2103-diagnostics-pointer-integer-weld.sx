@@ -25,7 +25,6 @@ main :: () -> i32 {
     r := give(p);
 
     q : *Obj = m;
-    c : cstring = 5;
 
     wrongTarget : i64 = p.(*void);
     number : i64 = 5;
@@ -38,6 +37,6 @@ main :: () -> i32 {
     explicitXx : i64 = xx p;
     explicitPostfix : i64 = p.(i64);
 
-    print("{} {} {} {} {} {} {} {} {} {}\n", n, r, q == null, c == null, wrongTarget, wrongPointer == null, maybeNumber, maybeArg, explicitXx, explicitPostfix);
+    print("{} {} {} {} {} {} {} {} {}\n", n, r, q == null, wrongTarget, wrongPointer == null, maybeNumber, maybeArg, explicitXx, explicitPostfix);
     0
 }

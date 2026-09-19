@@ -31,7 +31,7 @@ pub const ExprTyper = struct {
             // delegate through `Lowering.inferExprType` so a call node reaching
             // here is typed by that single owner, not mistyped as `.unresolved`.
             .call => self.l.inferExprType(node),
-            .string_literal => .string,
+            .string_literal => .cstring,
             .int_literal => .i64,
             .float_literal => .f64,
             .bool_literal => .bool,
@@ -241,10 +241,10 @@ pub const ExprTyper = struct {
                 // only — a struct/union/tuple member named `len`/`ptr` resolves
                 // below to its DECLARED type (`@get` accessors also
                 // resolve below, via getAccessorFor).
-                const is_special_container = obj_ty == .string or (!obj_ty.isBuiltin() and switch (self.l.module.types.get(obj_ty)) {
-                    .slice, .array, .vector => true,
+                const is_special_container = switch (self.l.module.types.get(obj_ty)) {
+                    .string, .slice, .array, .vector => true,
                     else => false,
-                });
+                };
                 if (is_special_container) {
                     if (std.mem.eql(u8, fa.field, "len")) {
                         const len_ty = self.l.module.types.lenTypeOf(obj_ty);
@@ -534,10 +534,8 @@ pub const ExprTyper = struct {
                 // literal — it would mistype `$T` bindings before the literal
                 // ever lowers.
                 if (self.l.target_type) |tt| {
-                    const usable = if (tt.isBuiltin())
-                        tt == .string
-                    else switch (self.l.module.types.get(tt)) {
-                        .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
+                    const usable = switch (self.l.module.types.get(tt)) {
+                        .string, .@"struct", .array, .vector, .slice, .closure, .@"union", .optional, .failable => true,
                         .@"enum" => |e| e.hasPayload(),
                         else => false,
                     };

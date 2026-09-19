@@ -1472,7 +1472,7 @@ pub fn typedConstInitFits(self: *Lowering, value: *const Node, dst_ty: TypeId) b
         // Float literal → a float type only (the float arm emits `constFloat`).
         .float_literal => isFloat(dst_ty),
         .bool_literal => dst_ty == .bool,
-        .string_literal => dst_ty == .string or self.literalKeepsArray(dst_ty),
+        .string_literal => dst_ty == .string or dst_ty == .cstring or self.literalKeepsArray(dst_ty),
         // `null` → a pointer or optional.
         .null_literal => !dst_ty.isBuiltin() and switch (self.module.types.get(dst_ty)) {
             .pointer, .many_pointer, .optional => true,
@@ -1500,6 +1500,7 @@ pub fn constExprInitFits(self: *Lowering, init_ty: TypeId, dst_ty: TypeId) bool 
     if (isFloat(init_ty)) return isFloat(dst_ty);
     if (init_ty == .bool) return dst_ty == .bool;
     if (init_ty == .string) return dst_ty == .string;
+    if (init_ty == .cstring) return dst_ty == .cstring or dst_ty == .string;
     // Any other concrete initializer type must match the annotation exactly.
     return init_ty == dst_ty;
 }
@@ -2864,7 +2865,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
         if (TypeResolver.resolvePrimitive(name)) |id| return .{ .resolved = id };
     }
     // Structural string-forms that reach the leaf as a literal type-expr
-    // name (`[:0]u8` → string, `[*]T`, `*T`, `?T`) carry NO nominal author —
+    // name (`[:0]u8` → cstring, `[*]T`, `*T`, `?T`) carry NO nominal author —
     // they are wrappers, not declarations, so source-keying does not apply.
     // Resolve them through the stateless namer; only the bare nominal name
     // below goes through the collector.

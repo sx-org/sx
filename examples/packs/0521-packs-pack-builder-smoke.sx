@@ -16,7 +16,7 @@
 // []Type, returns a joined string with each type's name.
 describe :: (..$args) -> string {
     list := $args;
-    s := "[";
+    s : string = "[";
     i : i64 = 0;
     while i < list.len {
         if i > 0 { s = concat(s, ", "); }

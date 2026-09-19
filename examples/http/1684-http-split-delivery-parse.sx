@@ -161,7 +161,7 @@ main :: () -> i32 {
 
         // ── 1. header block split 7 bytes at a time ───────────────────
         push .{ allocator = reqArena } {
-            r1 := "GET /hdr HTTP/1.1\r\nHost: t\r\n";
+            r1 : string = "GET /hdr HTTP/1.1\r\nHost: t\r\n";
             i := 0;
             while i < 24 {
                 r1 = concat(r1, concat("X-Probe-", concat(intToString(i),
@@ -187,7 +187,7 @@ main :: () -> i32 {
             while i < bodyWant { full[i] = xx (65 + (i % 26)); i += 1; }
             chk = checksum(string{ ptr = full, len = bodyWant });
 
-            r2 := "POST /body HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n";
+            r2 : string = "POST /body HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n";
             c := 0;
             while c < N_CHUNKS {
                 // "64;ext=1\r\n" + 100 data bytes + "\r\n"  (0x64 = 100)

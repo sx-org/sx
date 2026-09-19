@@ -288,13 +288,9 @@ pub fn lowerVariadicArgs(self: *Lowering, param_name: []const u8, call_args: []c
         // If AST-based inference falls back to .i64 but the lowered ref is a string/struct, use that
         if (source_ty == .unresolved) {
             const ref_ty = self.builder.getRefType(val);
-            if (ref_ty == .string or ref_ty == .f32 or ref_ty == .f64 or ref_ty == .bool) {
-                source_ty = ref_ty;
-            } else if (!ref_ty.isBuiltin()) {
-                const ri = self.module.types.get(ref_ty);
-                if (ri == .@"struct" or ri == .slice or ri == .optional or ri == .closure) {
-                    source_ty = ref_ty;
-                }
+            switch (self.module.types.get(ref_ty)) {
+                .string, .f32, .f64, .bool, .@"struct", .slice, .optional, .closure => source_ty = ref_ty,
+                else => {},
             }
         }
         // Auto-unwrap optionals: box inner value if present, else box string "null"

@@ -162,8 +162,7 @@ fsCreateDirAll :: (path: [:0]u8) -> bool {
         last -= 1;
     }
     if last > 0 {
-        parent := allocString(last);
-        fsPosixC.memcpy(parent.ptr, path.ptr, last);
+        parent := toCstring(path[0 .. last]);
         parentOk := fsCreateDirAll(parent);
         context.allocator.deallocBytes(parent.ptr);
         if !parentOk { return false; }

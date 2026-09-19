@@ -341,32 +341,7 @@ pub const Reflection = struct {
         const P = tag_size; // payload base offset
 
         var vname: []const u8 = "typeValue";
-        if (tid.isBuiltin()) {
-            switch (tid) {
-                .bool => vname = "bool",
-                .void => vname = "void",
-                .string => vname = "string",
-                .cstring => vname = "cstring",
-                .any => vname = "any",
-                .noreturn => vname = "noreturn",
-                .type_value, .unresolved => vname = "typeValue",
-                .usize, .isize => {
-                    vname = "int";
-                    placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
-                    placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i8, @intFromBool(tid == .isize), 0), .size = 1 }) catch unreachable;
-                },
-                .f32, .f64 => {
-                    vname = "float";
-                    const bits: u64 = if (tid == .f32) 32 else 64;
-                    placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, bits, 0), .size = 8 }) catch unreachable;
-                },
-                else => {
-                    vname = "int";
-                    placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(tt.typeSizeBytes(tid) * 8), 0), .size = 8 }) catch unreachable;
-                    placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i8, @intFromBool(!tt.isUnsignedInt(tid)), 0), .size = 1 }) catch unreachable;
-                },
-            }
-        } else switch (tt.get(tid)) {
+        switch (tt.get(tid)) {
             .signed => |w| {
                 vname = "int";
                 placed.append(self.e.alloc, .{ .off = P, .val = c.LLVMConstInt(self.e.cached_i64, w, 0), .size = 8 }) catch unreachable;
@@ -388,7 +363,6 @@ pub const Reflection = struct {
             .bool => vname = "bool",
             .void => vname = "void",
             .string => vname = "string",
-            .cstring => vname = "cstring",
             .any => vname = "any",
             .noreturn => vname = "noreturn",
             .type_value, .unresolved => vname = "typeValue",

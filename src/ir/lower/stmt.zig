@@ -461,7 +461,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
         self.builder.retVoid();
         return;
     }
-    const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
+    const default_val = if (ret_ty == .string or ret_ty == .cstring or !ret_ty.isBuiltin())
         self.builder.constUndef(ret_ty)
     else
         self.builder.constInt(0, ret_ty);
@@ -1620,12 +1620,10 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
         // walk: a pointer object auto-derefs, and indexing a slice or string
         // targets its backing data, not the context storage.
         const ty = self.inferExprType(obj);
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            if (info == .pointer) return false;
-            if (info == .slice and node.data == .index_expr) return false;
-        } else if (ty == .string and node.data == .index_expr) {
-            return false;
+        switch (self.module.types.get(ty)) {
+            .pointer => return false,
+            .string, .slice => if (node.data == .index_expr) return false,
+            else => {},
         }
         node = obj;
     }
@@ -1653,15 +1651,10 @@ fn nonstoreRootOf(self: *Lowering, target: *const Node) ?NonstoreRoot {
         };
         if (obj.data == .deref_expr) return null;
         const ty = self.inferExprType(obj);
-        if (!ty.isBuiltin()) {
-            const info = self.module.types.get(ty);
-            if (info == .pointer) {
-                if (obj.data == .identifier or node.data == .index_expr) return null;
-            } else if (info == .slice and node.data == .index_expr) {
-                return null;
-            }
-        } else if (ty == .string and node.data == .index_expr) {
-            return null;
+        switch (self.module.types.get(ty)) {
+            .pointer => if (obj.data == .identifier or node.data == .index_expr) return null,
+            .string, .slice => if (node.data == .index_expr) return null,
+            else => {},
         }
         if (obj.data == .identifier) {
             const name = obj.data.identifier.name;
@@ -2485,10 +2478,10 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                     // the RHS and mis-types `s.ptr = xx raw` as an xx-to-string
                     // (surfaced by the explicit-pun refusal). Mirror the
                     // store arm's field types.
-                    const is_special = obj_ty == .string or (!obj_ty.isBuiltin() and blk: {
-                        const oi = self.module.types.get(obj_ty);
-                        break :blk oi == .slice or oi == .array or oi == .vector;
-                    });
+                    const is_special = switch (self.module.types.get(obj_ty)) {
+                        .string, .slice, .array, .vector => true,
+                        else => false,
+                    };
                     if (is_special) {
                         if (std.mem.eql(u8, fa.field, "ptr")) {
                             self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
@@ -2701,10 +2694,10 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             if (self.diagPayloadVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
 
             // Special .len/.ptr handling only for slices, strings, arrays — NOT structs
-            const is_special_container = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
-                const obj_info = self.module.types.get(obj_ty);
-                break :blk obj_info == .slice or obj_info == .array or obj_info == .vector;
-            } else false);
+            const is_special_container = switch (self.module.types.get(obj_ty)) {
+                .string, .slice, .array, .vector => true,
+                else => false,
+            };
 
             if (is_special_container and std.mem.eql(u8, fa.field, "len")) {
                 const len_ty = self.module.types.lenTypeOf(obj_ty);
@@ -2936,10 +2929,10 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
 
             if (isPayloadVariantField(self, obj_ty, fa.field)) return null;
 
-            const is_special_container = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
-                const obj_info = self.module.types.get(obj_ty);
-                break :blk obj_info == .slice or obj_info == .array or obj_info == .vector;
-            } else false);
+            const is_special_container = switch (self.module.types.get(obj_ty)) {
+                .string, .slice, .array, .vector => true,
+                else => false,
+            };
             if (is_special_container and
                 (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr"))) return null;
 

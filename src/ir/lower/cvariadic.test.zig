@@ -344,17 +344,12 @@ test "a named tail refuses a string where its element names a terminator" {
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
         \\joins :: (n: i32, ..args: [][*:0]u8) -> i64 extern;
-        \\texts :: (n: i32, ..args: []string) -> i64 extern;
         \\relay :: (s: string) -> i64 { return joins(1, s); }
-        \\main :: () -> i64 {
-        \\    held: cstring = "de";
-        \\    return relay("ab") + texts(1, held);
-        \\}
+        \\main :: () -> i64 { return relay("ab"); }
     , &lowered);
     defer lowered.module.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "nothing implicitly adds a terminator"));
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "does not coerce to 'string' implicitly"));
 }
 
 test "an unwrapped C boundary and an internal borrow stay legal" {

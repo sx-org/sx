@@ -83,7 +83,6 @@ pub const TypeLowering = struct {
                 return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
             .string => self.e.getStringStructType(),
-            .cstring => self.e.cached_ptr,
             .pointer, .many_pointer, .function => self.e.cached_ptr,
             .closure => self.e.getClosureStructType(),
             .slice => |s| blk: {
