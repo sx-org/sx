@@ -236,7 +236,6 @@ pub const Lexer = struct {
                     .{ "@import", Tag.at_import },
                     .{ "@library", Tag.at_library },
                     .{ "@framework", Tag.at_framework },
-                    .{ "@using", Tag.at_using },
                     .{ "@include", Tag.at_include },
                     .{ "@source", Tag.at_source },
                     .{ "@define", Tag.at_define },

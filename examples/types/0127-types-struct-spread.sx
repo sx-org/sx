@@ -1,0 +1,29 @@
+@import "modules/std.sx";
+@import "modules/math";
+@import "modules/build.sx";
+@import "modules/std/test.sx";
+pkg :: @import "tests/fixtures/testpkg";
+
+main :: () {
+
+    print("=== 26. struct spread ===\n");
+    {
+        UPos :: struct { px: i32; py: i32; }
+        UCol :: struct { r: i32; g: i32; }
+        USprite :: struct { ..UPos; ..UCol; scale: i32; }
+        s := USprite{ px = 10, py = 20, r = 255, g = 128, scale = 1 };
+        print("sprite-px: {}\n", s.px);
+        print("sprite-r: {}\n", s.r);
+        print("sprite-scale: {}\n", s.scale);
+    }
+
+    {
+        ctBody : string : "hello";
+        ctMsg :: format("say: {} (len={})", ctBody, ctBody.len);
+        print("{}\n", ctMsg);
+
+        ctNum :: 42;
+        ctNumMsg :: format("n={}", ctNum);
+        print("{}\n", ctNumMsg);
+    }
+}

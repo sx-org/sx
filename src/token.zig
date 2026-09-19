@@ -130,7 +130,6 @@ pub const Tag = enum(u8) {
     at_import, // @import
     at_library, // @library
     at_framework, // @framework
-    at_using, // @using
     at_include, // @include (inside @import c { ... })
     at_source, // @source (inside @import c { ... })
     at_define, // @define (inside @import c { ... })
@@ -282,7 +281,6 @@ pub const Tag = enum(u8) {
             .at_insert,
             .at_library,
             .at_framework,
-            .at_using,
             .at_include,
             .at_source,
             .at_define,
@@ -473,7 +471,6 @@ pub const Tag = enum(u8) {
             .at_insert,
             .at_library,
             .at_framework,
-            .at_using,
             .at_include,
             .at_source,
             .at_define,

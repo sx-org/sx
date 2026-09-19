@@ -1535,27 +1535,10 @@ pub const Parser = struct {
         var field_types = std.ArrayList(*Node).empty;
         var field_defaults = std.ArrayList(?*Node).empty;
         var field_visibilities = std.ArrayList(ast.Visibility).empty;
-        var using_entries = std.ArrayList(ast.UsingEntry).empty;
         var methods = std.ArrayList(*Node).empty;
         var constants = std.ArrayList(*Node).empty;
 
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            // Check for @using directive
-            if (self.tokens.tag(self.tok) == .at_using) {
-                self.advance(); // skip @using
-                if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected type name after '@using'");
-                }
-                const used_type = self.tokens.slice(self.tok);
-                self.advance();
-                try using_entries.append(self.allocator, .{
-                    .insert_index = @intCast(field_names.items.len),
-                    .type_name = used_type,
-                });
-                try self.expectMemberSemicolon();
-                continue;
-            }
-
             // Method declaration: name :: (params) -> type { body }
             if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
                 const method_start = self.tokens.start(self.tok);
@@ -1600,9 +1583,6 @@ pub const Parser = struct {
                     return self.fail("duplicate 'private'");
                 }
                 self.advance();
-                if (self.tokens.tag(self.tok) == .at_using) {
-                    return self.fail("'private' is not allowed on '@using'");
-                }
                 if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
                     return self.fail("'private' is not allowed on a struct method or constant");
                 }
@@ -1613,6 +1593,7 @@ pub const Parser = struct {
             var group_starts = std.ArrayList(u32).empty;
 
             if (self.tokens.tag(self.tok) == .dot_dot) {
+                if (field_vis == .private) return self.fail("'private' is not allowed on a spread member");
                 const sp_start = self.tokens.start(self.tok);
                 self.advance();
                 const operand = try self.parseTypeExpr();
@@ -1707,7 +1688,6 @@ pub const Parser = struct {
             .field_defaults = try field_defaults.toOwnedSlice(self.allocator),
             .field_visibilities = try field_visibilities.toOwnedSlice(self.allocator),
             .type_params = try type_params.toOwnedSlice(self.allocator),
-            .using_entries = try using_entries.toOwnedSlice(self.allocator),
             .methods = try methods.toOwnedSlice(self.allocator),
             .constants = try constants.toOwnedSlice(self.allocator),
             .abi = struct_abi,
@@ -5193,7 +5173,6 @@ pub const Parser = struct {
             .at_insert,
             .at_library,
             .at_framework,
-            .at_using,
             .at_include,
             .at_source,
             .at_define,
@@ -5404,7 +5383,6 @@ pub const Parser = struct {
             .at_insert,
             .at_library,
             .at_framework,
-            .at_using,
             .at_include,
             .at_source,
             .at_define,
